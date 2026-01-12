@@ -1,0 +1,58 @@
+
+Technical Documentation: Detailing CRM System (Multi-tenant)
+1. Core Stack & Infrastructure
+Backend: Kotlin + Spring Boot 3.x.
+Database: PostgreSQL 15+ with connection pooling (HikariCP).
+Session Management: Stateful sessions managed by Spring Session, backed by a Redis instance for immediate revocation.
+Deployment: Separate Docker containers for App, DB, Redis, and Frontend on a single host (cost-optimized).
+
+2. Multi-tenant Architecture (Isolation)
+The system uses a shared database, shared schema approach with strict row-level isolation.
+Identity: Every record in the database MUST have a company_id column.
+Indexing: Every query MUST use an index starting with (company_id, ...) to ensure performance and isolation.
+Query Enforcement: Every repository method must include the companyId filter.
+Example: findByIdAndCompanyId(id, companyId).
+
+3. Directory Structure (Vertical Slices)
+The project is organized by functional business features (vertical slices) rather than technical layers.
+src/main/kotlin/pl/detailing/crm/
+├── visit/                   # Visit Module (Check-in, Quality Control, Checkout)
+│   ├── create/              # Logic for starting a visit (Handler, Validators, Context)
+│   │   ├── CreateVisitRequest.kt
+│   │   ├── CreateVisitCommand.kt
+│   │   ├── CreateVisitHandler.kt
+│   │   ├── CreateVisitValidatorComposite.kt
+│   │   └── CreateVisitValidationContextBuilder.kt
+│   ├── list/                # Visit history and search
+│   ├── domain/              # Business logic (Visit, VisitStatus, VisitId)
+│   ├── infrastructure/      # JPA Entities and Repositories
+│   └── VisitController.kt
+├── customer/                # Customer & Vehicle management
+├── service/                 # Service Catalog (Immutable Snapshots)
+└── shared/                  # Common Value Classes (CompanyId, Money, Address)
+
+4. Advanced Validation Pattern (Composite & Context)
+To handle complex business rules (e.g., checking vehicle availability or employee schedules), the system uses a 3-step validation pattern:
+ValidationContextBuilder: Parallelizes independent database queries using Kotlin Coroutines (async/await) to gather all data needed for validation in one go.
+Validator Classes: Individual, reusable components that validate a single business rule (e.g., VehicleStatusValidator, EmployeeConflictValidator).
+ValidatorComposite: Orchestrates the process—it builds the context and runs all validators in a defined order before the Handler executes the main logic.
+
+5. Security & RBAC
+Authentication: Session-based (HttpOnly, SameSite=Strict cookies).
+UserPrincipal: Stored in the session, containing userId, companyId, and role.
+
+Roles:
+OWNER: Full access to company data, team management, and billing.
+MANAGER: Full operational access (visits, services, customers).
+
+6. Financial Integrity & Immutability
+Pricing: All monetary values are processed as bigdecimals using the system's financial library to avoid rounding errors.
+Immutable Snapshots: When a service is added to a visit, a snapshot of the name, price, and VAT is stored within the visit record to preserve historical accuracy.
+Always-New-ID: Updating a service in the catalog archives the old version (is_active = false) and creates a new record, ensuring that old visits still reference the correct historical service data.
+
+7. Key Development Rules
+Strict Isolation: NEVER query without a company_id filter.
+No Raw SQL: Use JPA/JPQL with parameters only to prevent SQL injection.
+Vertical Slices: All business logic for a feature must reside within its slice handler.
+Value Classes: Use @JvmInline value class for all IDs to ensure type safety.
+Coroutines: Use suspend functions and Dispatchers.IO for all non-blocking database access.
