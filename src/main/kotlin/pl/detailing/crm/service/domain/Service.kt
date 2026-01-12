@@ -11,6 +11,8 @@ data class Service(
     val vatRate: VatRate,
     val isActive: Boolean,
     val replacesServiceId: ServiceId?,
+    val createdBy: UserId,
+    val updatedBy: UserId,
     val createdAt: Instant,
     val updatedAt: Instant
 ) {

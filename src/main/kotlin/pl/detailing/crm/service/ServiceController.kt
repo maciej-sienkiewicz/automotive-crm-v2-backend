@@ -10,15 +10,16 @@ import pl.detailing.crm.service.create.CreateServiceHandler
 import pl.detailing.crm.service.create.CreateServiceRequest
 import pl.detailing.crm.service.list.ListServicesHandler
 import pl.detailing.crm.service.list.ServiceListItem
-import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.Money
-import pl.detailing.crm.shared.UserRole
-import pl.detailing.crm.shared.VatRate
+import pl.detailing.crm.service.update.UpdateServiceCommand
+import pl.detailing.crm.service.update.UpdateServiceHandler
+import pl.detailing.crm.service.update.UpdateServiceRequest
+import pl.detailing.crm.shared.*
 
 @RestController
 @RequestMapping("/api/v1/services")
 class ServiceController(
     private val createServiceHandler: CreateServiceHandler,
+    private val updateServiceHandler: UpdateServiceHandler,
     private val listServicesHandler: ListServicesHandler
 ) {
 
@@ -83,6 +84,7 @@ class ServiceController(
 
         val command = CreateServiceCommand(
             studioId = principal.studioId,
+            userId = principal.userId,
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
             vatRate = VatRate.fromInt(request.vatRate)
@@ -101,6 +103,39 @@ class ServiceController(
                 createdAt = java.time.Instant.now().toString(),
                 updatedAt = java.time.Instant.now().toString(),
                 replacesServiceId = null
+            ))
+    }
+
+    @PostMapping("/update")
+    fun updateService(@RequestBody request: UpdateServiceRequest): ResponseEntity<ServiceResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can update services")
+        }
+
+        val command = UpdateServiceCommand(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            oldServiceId = ServiceId.fromString(request.originalServiceId),
+            name = request.name,
+            basePriceNet = Money.fromCents(request.basePriceNet),
+            vatRate = VatRate.fromInt(request.vatRate)
+        )
+
+        val result = updateServiceHandler.handle(command)
+
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ServiceResponse(
+                id = result.newServiceId.toString(),
+                name = result.name,
+                basePriceNet = result.basePriceNet,
+                vatRate = result.vatRate,
+                isActive = true,
+                createdAt = java.time.Instant.now().toString(),
+                updatedAt = java.time.Instant.now().toString(),
+                replacesServiceId = result.replacesServiceId.toString()
             ))
     }
 }

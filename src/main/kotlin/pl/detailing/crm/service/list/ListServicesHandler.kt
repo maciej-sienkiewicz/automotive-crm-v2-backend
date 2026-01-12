@@ -27,7 +27,9 @@ class ListServicesHandler(
                     isActive = entity.isActive,
                     createdAt = entity.createdAt.toString(),
                     updatedAt = entity.updatedAt.toString(),
-                    replacesServiceId = entity.replacesServiceId?.toString()
+                    createdBy = entity.createdBy.toString(),
+                    updatedBy = entity.updatedBy.toString(),
+                    replacesServiceId = entity.replacesServiceId?.toString(),
                 )
             }
         }
@@ -41,5 +43,7 @@ data class ServiceListItem(
     val isActive: Boolean,
     val createdAt: String,
     val updatedAt: String,
+    val createdBy: String,
+    val updatedBy: String,
     val replacesServiceId: String?
 )

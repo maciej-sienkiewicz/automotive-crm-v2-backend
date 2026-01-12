@@ -12,7 +12,9 @@ import java.util.UUID
     indexes = [
         Index(name = "idx_services_studio_active", columnList = "studio_id, is_active"),
         Index(name = "idx_services_studio_name", columnList = "studio_id, name"),
-        Index(name = "idx_services_replaces", columnList = "replaces_service_id")
+        Index(name = "idx_services_replaces", columnList = "replaces_service_id"),
+        Index(name = "idx_services_created_by", columnList = "created_by"),
+        Index(name = "idx_services_updated_by", columnList = "updated_by")
     ]
 )
 class ServiceEntity(
@@ -38,6 +40,12 @@ class ServiceEntity(
     @Column(name = "replaces_service_id", columnDefinition = "uuid")
     var replacesServiceId: UUID?,
 
+    @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
+    val createdBy: UUID,
+
+    @Column(name = "updated_by", nullable = false, columnDefinition = "uuid")
+    var updatedBy: UUID,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -52,6 +60,8 @@ class ServiceEntity(
         vatRate = VatRate.fromInt(vatRate),
         isActive = isActive,
         replacesServiceId = replacesServiceId?.let { ServiceId(it) },
+        createdBy = UserId(createdBy),
+        updatedBy = UserId(updatedBy),
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -65,6 +75,8 @@ class ServiceEntity(
             vatRate = service.vatRate.rate,
             isActive = service.isActive,
             replacesServiceId = service.replacesServiceId?.value,
+            createdBy = service.createdBy.value,
+            updatedBy = service.updatedBy.value,
             createdAt = service.createdAt,
             updatedAt = service.updatedAt
         )
