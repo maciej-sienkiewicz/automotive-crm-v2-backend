@@ -48,6 +48,56 @@ enum class SubscriptionStatus {
     EXPIRED     // Subscription ended, access blocked
 }
 
+@JvmInline
+value class ServiceId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ServiceId(UUID.randomUUID())
+        fun fromString(value: String) = ServiceId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+data class Money(
+    val amountInCents: Long
+) : Serializable {
+    init {
+        require(amountInCents >= 0) { "Money amount cannot be negative" }
+    }
+
+    fun plus(other: Money): Money = Money(amountInCents + other.amountInCents)
+    fun minus(other: Money): Money = Money(amountInCents - other.amountInCents)
+    fun times(multiplier: Int): Money = Money(amountInCents * multiplier)
+
+    companion object {
+        val ZERO = Money(0)
+        fun fromCents(cents: Long) = Money(cents)
+        fun fromAmount(amount: Double) = Money((amount * 100).toLong())
+    }
+}
+
+enum class VatRate(val rate: Int) {
+    VAT_23(23),
+    VAT_8(8),
+    VAT_5(5),
+    VAT_0(0),
+    VAT_ZW(-1);
+
+    fun calculateVatAmount(netAmount: Money): Money {
+        if (this == VAT_ZW) return Money.ZERO
+        return Money((netAmount.amountInCents * rate) / 100)
+    }
+
+    fun calculateGrossAmount(netAmount: Money): Money {
+        return netAmount.plus(calculateVatAmount(netAmount))
+    }
+
+    companion object {
+        fun fromInt(value: Int): VatRate = entries.find { it.rate == value }
+            ?: throw IllegalArgumentException("Invalid VAT rate: $value")
+    }
+}
+
 /**
  * Base exception for business logic violations
  */

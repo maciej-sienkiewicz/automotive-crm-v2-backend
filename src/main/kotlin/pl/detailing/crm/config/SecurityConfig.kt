@@ -10,6 +10,8 @@ import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository
+import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
@@ -24,10 +26,21 @@ class SecurityConfig {
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
 
     @Bean
-    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+    fun securityContextRepository(): SecurityContextRepository {
+        return HttpSessionSecurityContextRepository()
+    }
+
+    @Bean
+    fun securityFilterChain(
+        http: HttpSecurity,
+        securityContextRepository: SecurityContextRepository
+    ): SecurityFilterChain {
         http
             .csrf { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
+            .securityContext { context ->
+                context.securityContextRepository(securityContextRepository)
+            }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(
@@ -38,7 +51,9 @@ class SecurityConfig {
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                session
+                    .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                    .maximumSessions(1)
             }
             .httpBasic { it.disable() }
             .formLogin { it.disable() }
