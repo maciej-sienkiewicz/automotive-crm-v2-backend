@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: detailing-crm
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/detailing_crm
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+  
+  session:
+    store-type: redis
+    timeout: 7d
+    redis:
+      namespace: detailing:session
+      flush-mode: on_save
+  
+  security:
+    filter:
+      order: -100
+
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: false
+        same-site: strict
+        name: SESSIONID
+        max-age: 7d
+
+logging:
+  level:
+    root: INFO
+    pl.detailing.crm: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.session: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
