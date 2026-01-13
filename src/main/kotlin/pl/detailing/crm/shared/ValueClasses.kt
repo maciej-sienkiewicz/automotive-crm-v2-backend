@@ -85,6 +85,32 @@ value class VehicleId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for Appointment entities
+ */
+@JvmInline
+value class AppointmentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = AppointmentId(UUID.randomUUID())
+        fun fromString(value: String) = AppointmentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for AppointmentColor entities
+ */
+@JvmInline
+value class AppointmentColorId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = AppointmentColorId(UUID.randomUUID())
+        fun fromString(value: String) = AppointmentColorId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Engine type for vehicles
  */
 enum class EngineType {
