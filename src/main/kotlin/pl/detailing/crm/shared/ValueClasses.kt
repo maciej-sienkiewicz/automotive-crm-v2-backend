@@ -58,6 +58,19 @@ value class ServiceId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+/**
+ * Type-safe ID wrapper for Customer entities
+ */
+@JvmInline
+value class CustomerId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CustomerId(UUID.randomUUID())
+        fun fromString(value: String) = CustomerId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
 data class Money(
     val amountInCents: Long
 ) : Serializable {
