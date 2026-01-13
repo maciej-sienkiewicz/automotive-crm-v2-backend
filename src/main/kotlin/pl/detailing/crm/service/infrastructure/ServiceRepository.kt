@@ -15,6 +15,9 @@ interface ServiceRepository : JpaRepository<ServiceEntity, UUID> {
         @Param("studioId") studioId: UUID
     ): ServiceEntity?
 
+    @Query("SELECT s FROM ServiceEntity s WHERE s.studioId = :studioId")
+    fun findByStudioId(@Param("studioId") studioId: UUID): List<ServiceEntity>
+
     @Query("SELECT s FROM ServiceEntity s WHERE s.studioId = :studioId AND s.isActive = true")
     fun findActiveByStudioId(@Param("studioId") studioId: UUID): List<ServiceEntity>
 

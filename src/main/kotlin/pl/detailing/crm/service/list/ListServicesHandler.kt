@@ -15,15 +15,13 @@ class ListServicesHandler(
     suspend fun handle(studioId: StudioId, showInactive: Boolean): List<ServiceListItem> =
         withContext(Dispatchers.IO) {
             val services = if (showInactive) {
-                serviceRepository.findAll().filter { it.studioId == studioId.value }
+                serviceRepository.findByStudioId(studioId.value)
             } else {
                 serviceRepository.findActiveByStudioId(studioId.value)
             }
 
-            // Collect all unique user IDs from createdBy and updatedBy
             val userIds = services.flatMap { listOf(it.createdBy, it.updatedBy) }.distinct()
 
-            // Fetch all users at once
             val users = userRepository.findAllById(userIds).associateBy { it.id }
 
             services.map { entity ->
