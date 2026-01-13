@@ -1,7 +1,7 @@
 package pl.detailing.crm.vehicle.create
 
 data class CreateVehicleRequest(
-    val customerId: String,
+    val ownerIds: List<String>,
     val licensePlate: String,
     val brand: String,
     val model: String,

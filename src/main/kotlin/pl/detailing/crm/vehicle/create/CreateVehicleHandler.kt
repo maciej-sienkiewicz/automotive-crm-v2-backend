@@ -46,15 +46,18 @@ class CreateVehicleHandler(
         val vehicleEntity = VehicleEntity.fromDomain(vehicle)
         vehicleRepository.save(vehicleEntity)
 
-        val vehicleOwner = VehicleOwner(
-            vehicleId = vehicle.id,
-            customerId = command.customerId,
-            ownershipRole = OwnershipRole.PRIMARY,
-            assignedAt = Instant.now()
-        )
+        command.ownerIds
+            .forEach {
+                val vehicleOwner = VehicleOwner(
+                    vehicleId = vehicle.id,
+                    customerId = it,
+                    ownershipRole = OwnershipRole.PRIMARY,
+                    assignedAt = Instant.now()
+                )
 
-        val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
-        vehicleOwnerRepository.save(vehicleOwnerEntity)
+                val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
+                vehicleOwnerRepository.save(vehicleOwnerEntity)
+            }
 
         CreateVehicleResult(
             vehicleId = vehicle.id,
@@ -68,7 +71,7 @@ class CreateVehicleHandler(
             engineType = vehicle.engineType,
             currentMileage = vehicle.currentMileage,
             status = vehicle.status,
-            customerId = command.customerId
+            ownerIds = command.ownerIds
         )
     }
 }
@@ -85,5 +88,5 @@ data class CreateVehicleResult(
     val engineType: EngineType,
     val currentMileage: Int,
     val status: VehicleStatus,
-    val customerId: CustomerId
+    val ownerIds: List<CustomerId>
 )

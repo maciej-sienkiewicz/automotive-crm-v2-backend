@@ -34,7 +34,7 @@ class VehicleController(
         val command = CreateVehicleCommand(
             studioId = principal.studioId,
             userId = principal.userId,
-            customerId = CustomerId.fromString(request.customerId),
+            ownerIds = request.ownerIds.map { CustomerId.fromString(it) },
             licensePlate = request.licensePlate,
             brand = request.brand,
             model = request.model,
@@ -62,7 +62,7 @@ class VehicleController(
                 engineType = result.engineType.name.lowercase(),
                 currentMileage = result.currentMileage,
                 status = result.status.name.lowercase(),
-                customerId = result.customerId.toString(),
+                ownerIds = result.ownerIds.map { it.toString() },
                 createdAt = Instant.now().toString(),
                 updatedAt = Instant.now().toString()
             ))
@@ -81,7 +81,7 @@ data class VehicleResponse(
     val engineType: String,
     val currentMileage: Int,
     val status: String,
-    val customerId: String,
+    val ownerIds: List<String>,
     val createdAt: String,
     val updatedAt: String
 )
