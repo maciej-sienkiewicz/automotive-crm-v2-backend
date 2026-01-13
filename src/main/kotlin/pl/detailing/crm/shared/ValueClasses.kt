@@ -71,6 +71,47 @@ value class CustomerId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+/**
+ * Type-safe ID wrapper for Vehicle entities
+ */
+@JvmInline
+value class VehicleId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VehicleId(UUID.randomUUID())
+        fun fromString(value: String) = VehicleId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Engine type for vehicles
+ */
+enum class EngineType {
+    GASOLINE,
+    DIESEL,
+    HYBRID,
+    ELECTRIC
+}
+
+/**
+ * Vehicle status
+ */
+enum class VehicleStatus {
+    ACTIVE,
+    SOLD,
+    ARCHIVED
+}
+
+/**
+ * Ownership role for vehicle-customer relationship
+ */
+enum class OwnershipRole {
+    PRIMARY,
+    CO_OWNER,
+    COMPANY
+}
+
 data class Money(
     val amountInCents: Long
 ) : Serializable {
