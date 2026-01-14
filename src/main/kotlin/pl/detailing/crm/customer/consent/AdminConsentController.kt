@@ -7,10 +7,14 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.customer.consent.definition.CreateConsentDefinitionCommand
 import pl.detailing.crm.customer.consent.definition.CreateConsentDefinitionHandler
+import pl.detailing.crm.customer.consent.getdefinitions.GetAllDefinitionsCommand
+import pl.detailing.crm.customer.consent.getdefinitions.GetAllDefinitionsHandler
+import pl.detailing.crm.customer.consent.getdefinitions.DefinitionWithTemplates
 import pl.detailing.crm.customer.consent.template.UploadTemplateCommand
 import pl.detailing.crm.customer.consent.template.UploadTemplateHandler
 import pl.detailing.crm.shared.ConsentDefinitionId
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserRole
 import java.util.*
 
@@ -18,6 +22,7 @@ import java.util.*
  * REST API controller for admin consent operations.
  *
  * Endpoints:
+ * - GET /api/v1/admin/consents/definitions - Get all consent definitions with templates
  * - POST /api/v1/admin/consents/definitions - Create a new consent definition
  * - POST /api/v1/admin/consents/templates - Upload a new consent template version
  *
@@ -27,8 +32,38 @@ import java.util.*
 @RequestMapping("/api/v1/admin/consents")
 class AdminConsentController(
     private val createConsentDefinitionHandler: CreateConsentDefinitionHandler,
-    private val uploadTemplateHandler: UploadTemplateHandler
+    private val uploadTemplateHandler: UploadTemplateHandler,
+    private val getAllDefinitionsHandler: GetAllDefinitionsHandler
 ) {
+
+    /**
+     * Get all consent definitions with their templates.
+     *
+     * Returns a list of all consent definitions for the current studio,
+     * along with their active template and all historical templates.
+     *
+     * Response format matches the frontend ConsentDefinitionWithTemplate interface:
+     * - definition: The consent definition (id, slug, name, description, etc.)
+     * - activeTemplate: The currently active template (if any)
+     * - allTemplates: All templates for this definition, ordered by version DESC
+     */
+    @GetMapping("/definitions")
+    fun getAllDefinitions(): ResponseEntity<List<DefinitionWithTemplates>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        // Authorization: Only OWNER and MANAGER can view definitions
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can view consent definitions")
+        }
+
+        val command = GetAllDefinitionsCommand(
+            studioId = StudioId(principal.studioId)
+        )
+
+        val result = getAllDefinitionsHandler.handle(command)
+
+        ResponseEntity.ok(result.definitions)
+    }
 
     /**
      * Create a new consent definition.
