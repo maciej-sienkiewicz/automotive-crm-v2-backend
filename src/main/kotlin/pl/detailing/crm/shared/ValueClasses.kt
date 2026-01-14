@@ -187,3 +187,4 @@ class UnauthorizedException(message: String = "Unauthorized access") : BusinessE
 class ForbiddenException(message: String = "Access denied") : BusinessException(message)
 class ValidationException(message: String) : BusinessException(message)
 class EntityNotFoundException(message: String) : BusinessException(message)
+class NotFoundException(message: String) : BusinessException(message)
