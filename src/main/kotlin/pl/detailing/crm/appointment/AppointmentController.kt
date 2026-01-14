@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.create.*
+import pl.detailing.crm.appointment.list.AppointmentListItem
+import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -14,8 +16,18 @@ import java.time.ZoneId
 @RestController
 @RequestMapping("/api/v1/appointments")
 class AppointmentController(
-    private val createAppointmentHandler: CreateAppointmentHandler
+    private val createAppointmentHandler: CreateAppointmentHandler,
+    private val listAppointmentsHandler: ListAppointmentsHandler
 ) {
+
+    @GetMapping
+    fun getAppointments(): ResponseEntity<AppointmentListResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val appointments = listAppointmentsHandler.handle(principal.studioId)
+
+        ResponseEntity.ok(AppointmentListResponse(appointments = appointments))
+    }
 
     @PostMapping
     fun createAppointment(@RequestBody request: CreateAppointmentRequest): ResponseEntity<AppointmentCreateResponse> = runBlocking {
@@ -105,4 +117,8 @@ data class AppointmentCreateResponse(
     val totalNet: Long,
     val totalGross: Long,
     val totalVat: Long
+)
+
+data class AppointmentListResponse(
+    val appointments: List<AppointmentListItem>
 )
