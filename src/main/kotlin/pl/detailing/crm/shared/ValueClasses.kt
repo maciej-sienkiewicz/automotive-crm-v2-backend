@@ -138,6 +138,54 @@ enum class OwnershipRole {
     COMPANY
 }
 
+/**
+ * Type-safe ID wrapper for ConsentDefinition entities
+ */
+@JvmInline
+value class ConsentDefinitionId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ConsentDefinitionId(UUID.randomUUID())
+        fun fromString(value: String) = ConsentDefinitionId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for ConsentTemplate entities
+ */
+@JvmInline
+value class ConsentTemplateId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ConsentTemplateId(UUID.randomUUID())
+        fun fromString(value: String) = ConsentTemplateId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for CustomerConsent entities
+ */
+@JvmInline
+value class CustomerConsentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CustomerConsentId(UUID.randomUUID())
+        fun fromString(value: String) = CustomerConsentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Status of a customer's consent for a specific definition
+ */
+enum class ConsentStatus {
+    VALID,      // Customer signed the current active version
+    OUTDATED,   // Customer signed an older version, but new version doesn't require re-sign
+    REQUIRED    // Customer never signed OR new version requires re-sign
+}
+
 data class Money(
     val amountInCents: Long
 ) : Serializable {
