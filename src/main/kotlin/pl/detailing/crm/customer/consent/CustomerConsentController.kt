@@ -18,8 +18,10 @@ import java.util.*
  * REST API controller for customer consent operations.
  *
  * Endpoints:
- * - GET /api/v1/customers/{customerId}/consents/status - Get consent status for a customer
- * - POST /api/v1/customers/{customerId}/consents/{templateId}/sign - Record a consent signature
+ * - GET /api/v1/customers/{customerId}/consents/status
+ *   Zwraca wszystkie aktywne zgody i ich status dla klienta
+ * - POST /api/v1/customers/{customerId}/consents/{templateId}/sign
+ *   Rejestruje podpisanie zgody przez klienta
  */
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/consents")
@@ -30,7 +32,12 @@ class CustomerConsentController(
 
     /**
      * Get consent status for a specific customer.
-     * Returns all active consent definitions and their current status for the customer.
+     * Returns all active consent definitions with clear information:
+     * - ID zgody (definitionId)
+     * - Nazwa zgody (definitionName)
+     * - Czy podpisano (isSigned)
+     * - Kiedy podpisano (signedAt)
+     * - Czy wymagane ponowne podpisanie (requiresResign)
      */
     @GetMapping("/status")
     fun getConsentStatus(
@@ -90,12 +97,11 @@ data class ConsentStatusResponse(
                         definitionId = item.definitionId.value,
                         definitionSlug = item.definitionSlug,
                         definitionName = item.definitionName,
-                        status = item.status.name,
+                        isSigned = item.signedAt != null,
+                        signedAt = item.signedAt,
+                        requiresResign = item.status.name == "REQUIRED",
                         currentTemplateId = item.currentTemplateId.value,
                         currentVersion = item.currentVersion,
-                        signedTemplateId = item.signedTemplateId?.value,
-                        signedVersion = item.signedVersion,
-                        signedAt = item.signedAt,
                         downloadUrl = item.downloadUrl
                     )
                 }
@@ -108,13 +114,12 @@ data class ConsentStatusItemResponse(
     val definitionId: UUID,
     val definitionSlug: String,
     val definitionName: String,
-    val status: String,
-    val currentTemplateId: UUID,
-    val currentVersion: Int,
-    val signedTemplateId: UUID?,
-    val signedVersion: Int?,
-    val signedAt: java.time.Instant?,
-    val downloadUrl: String?
+    val isSigned: Boolean,                  // Czy kiedykolwiek podpisano
+    val signedAt: java.time.Instant?,       // Kiedy ostatnio podpisano
+    val requiresResign: Boolean,            // Czy wymagane (ponowne) podpisanie
+    val currentTemplateId: UUID,            // ID aktualnego szablonu
+    val currentVersion: Int,                // Aktualna wersja szablonu
+    val downloadUrl: String?                // URL do pobrania PDF
 )
 
 data class SignConsentResponse(
