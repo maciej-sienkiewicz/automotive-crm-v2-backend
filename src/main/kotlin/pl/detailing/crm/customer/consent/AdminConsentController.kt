@@ -57,7 +57,7 @@ class AdminConsentController(
         }
 
         val command = GetAllDefinitionsCommand(
-            studioId = StudioId(principal.studioId)
+            studioId = StudioId(principal.studioId.value)
         )
 
         val result = getAllDefinitionsHandler.handle(command)
