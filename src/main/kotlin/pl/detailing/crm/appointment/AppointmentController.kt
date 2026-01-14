@@ -8,6 +8,8 @@ import pl.detailing.crm.appointment.create.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 @RestController
 @RequestMapping("/api/v1/appointments")
@@ -74,8 +76,8 @@ class AppointmentController(
             },
             schedule = ScheduleCommand(
                 isAllDay = request.schedule.isAllDay,
-                startDateTime = Instant.parse(request.schedule.startDateTime),
-                endDateTime = Instant.parse(request.schedule.endDateTime)
+                startDateTime = LocalDateTime.parse(request.schedule.startDateTime).atZone(ZoneId.systemDefault()).toInstant(),
+                endDateTime = LocalDateTime.parse(request.schedule.endDateTime).atZone(ZoneId.systemDefault()).toInstant()
             ),
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId)
