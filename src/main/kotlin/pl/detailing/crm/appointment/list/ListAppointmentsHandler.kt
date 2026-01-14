@@ -57,7 +57,7 @@ class ListAppointmentsHandler(
                         VehicleInfo(
                             brand = it.brand,
                             model = it.model,
-                            year = it.year,
+                            year = it.yearOfProduction,
                             licensePlate = it.licensePlate
                         )
                     },
