@@ -18,6 +18,8 @@ data class User(
     val studioId: StudioId,
     val email: String,
     val passwordHash: String,
+    val firstName: String,
+    val lastName: String,
     val role: UserRole,
     val isActive: Boolean,
     val createdAt: Instant

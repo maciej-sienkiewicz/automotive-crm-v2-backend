@@ -32,6 +32,12 @@ class UserEntity(
     @Column(name = "password_hash", nullable = false, length = 255)
     var passwordHash: String,
 
+    @Column(name = "first_name", nullable = false, length = 100)
+    var firstName: String,
+
+    @Column(name = "last_name", nullable = false, length = 100)
+    var lastName: String,
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     var role: UserRole,
@@ -47,6 +53,8 @@ class UserEntity(
         studioId = StudioId(studioId),
         email = email,
         passwordHash = passwordHash,
+        firstName = firstName,
+        lastName = lastName,
         role = role,
         isActive = isActive,
         createdAt = createdAt
@@ -58,6 +66,8 @@ class UserEntity(
             studioId = user.studioId.value,
             email = user.email,
             passwordHash = user.passwordHash,
+            firstName = user.firstName,
+            lastName = user.lastName,
             role = user.role,
             isActive = user.isActive,
             createdAt = user.createdAt

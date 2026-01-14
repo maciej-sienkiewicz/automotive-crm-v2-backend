@@ -44,6 +44,8 @@ class SignupHandler(
             studioId = studio.id,
             email = command.email,
             passwordHash = command.passwordHash,
+            firstName = command.firstName,
+            lastName = command.lastName,
             role = UserRole.OWNER,
             isActive = true,
             createdAt = Instant.now()

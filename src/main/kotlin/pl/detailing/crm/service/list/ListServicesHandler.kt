@@ -4,21 +4,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.shared.StudioId
 
 @Service
 class ListServicesHandler(
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val userRepository: UserRepository
 ) {
     suspend fun handle(studioId: StudioId, showInactive: Boolean): List<ServiceListItem> =
         withContext(Dispatchers.IO) {
             val services = if (showInactive) {
-                serviceRepository.findAll().filter { it.studioId == studioId.value }
+                serviceRepository.findByStudioId(studioId.value)
             } else {
                 serviceRepository.findActiveByStudioId(studioId.value)
             }
 
+            val userIds = services.flatMap { listOf(it.createdBy, it.updatedBy) }.distinct()
+
+            val users = userRepository.findAllById(userIds).associateBy { it.id }
+
             services.map { entity ->
+                val createdByUser = users[entity.createdBy]
+                val updatedByUser = users[entity.updatedBy]
+
                 ServiceListItem(
                     id = entity.id.toString(),
                     name = entity.name,
@@ -27,8 +36,10 @@ class ListServicesHandler(
                     isActive = entity.isActive,
                     createdAt = entity.createdAt.toString(),
                     updatedAt = entity.updatedAt.toString(),
-                    createdBy = entity.createdBy.toString(),
-                    updatedBy = entity.updatedBy.toString(),
+                    createdByFirstName = createdByUser?.firstName ?: "Unknown",
+                    createdByLastName = createdByUser?.lastName ?: "User",
+                    updatedByFirstName = updatedByUser?.firstName ?: "Unknown",
+                    updatedByLastName = updatedByUser?.lastName ?: "User",
                     replacesServiceId = entity.replacesServiceId?.toString(),
                 )
             }
@@ -43,7 +54,9 @@ data class ServiceListItem(
     val isActive: Boolean,
     val createdAt: String,
     val updatedAt: String,
-    val createdBy: String,
-    val updatedBy: String,
+    val createdByFirstName: String,
+    val createdByLastName: String,
+    val updatedByFirstName: String,
+    val updatedByLastName: String,
     val replacesServiceId: String?
 )
