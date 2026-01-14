@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.create.*
+import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -17,7 +18,8 @@ import java.time.ZoneId
 @RequestMapping("/api/v1/appointments")
 class AppointmentController(
     private val createAppointmentHandler: CreateAppointmentHandler,
-    private val listAppointmentsHandler: ListAppointmentsHandler
+    private val listAppointmentsHandler: ListAppointmentsHandler,
+    private val getAppointmentHandler: GetAppointmentHandler
 ) {
 
     @GetMapping
@@ -27,6 +29,16 @@ class AppointmentController(
         val appointments = listAppointmentsHandler.handle(principal.studioId)
 
         ResponseEntity.ok(AppointmentListResponse(appointments = appointments))
+    }
+
+    @GetMapping("/{id}")
+    fun getAppointment(@PathVariable id: String): ResponseEntity<AppointmentListItem> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val appointmentId = AppointmentId.fromString(id)
+        val appointment = getAppointmentHandler.handle(appointmentId, principal.studioId)
+
+        ResponseEntity.ok(appointment)
     }
 
     @PostMapping
