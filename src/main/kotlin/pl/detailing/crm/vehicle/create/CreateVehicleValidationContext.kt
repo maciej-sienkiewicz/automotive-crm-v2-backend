@@ -6,7 +6,7 @@ import pl.detailing.crm.shared.StudioId
 
 data class CreateVehicleValidationContext(
     val studioId: StudioId,
-    val customerId: CustomerId,
+    val ownerIds: List<CustomerId>,
     val licensePlate: String,
     val vin: String?,
     val yearOfProduction: Int,

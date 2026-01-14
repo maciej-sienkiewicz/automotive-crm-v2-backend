@@ -9,7 +9,7 @@ import pl.detailing.crm.vehicle.create.CreateVehicleValidationContext
 class OwnerAccessValidator {
     fun validate(context: CreateVehicleValidationContext) {
         val customer = context.customerExists
-            ?: throw ValidationException("Customer with ID '${context.customerId}' not found")
+            ?: throw ValidationException("Customer with ID '${context.ownerIds[0]}' not found")
 
         if (customer.studioId != context.studioId.value) {
             throw ValidationException("Customer does not belong to the same company")
