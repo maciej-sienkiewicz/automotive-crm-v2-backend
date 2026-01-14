@@ -11,17 +11,22 @@ import pl.detailing.crm.customer.create.CreateCustomerRequest
 import pl.detailing.crm.customer.domain.CompanyAddress
 import pl.detailing.crm.customer.domain.CompanyData
 import pl.detailing.crm.customer.domain.HomeAddress
+import pl.detailing.crm.customer.get.GetCustomerByIdCommand
+import pl.detailing.crm.customer.get.GetCustomerByIdHandler
 import pl.detailing.crm.customer.list.CustomerListItem
 import pl.detailing.crm.customer.list.ListCustomersHandler
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import java.time.Instant
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/customers")
 class CustomerController(
     private val createCustomerHandler: CreateCustomerHandler,
-    private val listCustomersHandler: ListCustomersHandler
+    private val listCustomersHandler: ListCustomersHandler,
+    private val getCustomerByIdHandler: GetCustomerByIdHandler
 ) {
 
     @GetMapping
@@ -98,6 +103,63 @@ class CustomerController(
                 totalItems = totalItems,
                 itemsPerPage = limit
             )
+        ))
+    }
+
+    @GetMapping("/{customerId}")
+    fun getCustomerById(@PathVariable customerId: String): ResponseEntity<CustomerDetailResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetCustomerByIdCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId
+        )
+
+        val result = getCustomerByIdHandler.handle(command)
+
+        ResponseEntity.ok(CustomerDetailResponse(
+            id = result.id,
+            firstName = result.firstName,
+            lastName = result.lastName,
+            contact = CustomerContactResponse(
+                email = result.contact.email,
+                phone = result.contact.phone
+            ),
+            homeAddress = result.homeAddress?.let {
+                HomeAddressResponse(
+                    street = it.street,
+                    city = it.city,
+                    postalCode = it.postalCode,
+                    country = it.country
+                )
+            },
+            company = result.company?.let {
+                CompanyDetailsResponse(
+                    id = it.id,
+                    name = it.name,
+                    nip = it.nip,
+                    regon = it.regon,
+                    address = it.address?.let { addr ->
+                        CompanyAddressResponse(
+                            street = addr.street,
+                            city = addr.city,
+                            postalCode = addr.postalCode,
+                            country = addr.country
+                        )
+                    }
+                )
+            },
+            notes = result.notes,
+            lastVisitDate = result.lastVisitDate?.toString(),
+            totalVisits = result.totalVisits,
+            vehicleCount = result.vehicleCount,
+            totalRevenue = CustomerRevenueResponse(
+                netAmount = result.totalRevenue.netAmount.toDouble(),
+                grossAmount = result.totalRevenue.grossAmount.toDouble(),
+                currency = result.totalRevenue.currency
+            ),
+            createdAt = result.createdAt.toString(),
+            updatedAt = result.updatedAt.toString()
         ))
     }
 
@@ -228,4 +290,39 @@ data class PaginationMeta(
     val totalPages: Int,
     val totalItems: Int,
     val itemsPerPage: Int
+)
+
+data class CustomerDetailResponse(
+    val id: String,
+    val firstName: String,
+    val lastName: String,
+    val contact: CustomerContactResponse,
+    val homeAddress: HomeAddressResponse?,
+    val company: CompanyDetailsResponse?,
+    val notes: String,
+    val lastVisitDate: String?,
+    val totalVisits: Int,
+    val vehicleCount: Int,
+    val totalRevenue: CustomerRevenueResponse,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+data class CustomerContactResponse(
+    val email: String,
+    val phone: String
+)
+
+data class CompanyDetailsResponse(
+    val id: String,
+    val name: String,
+    val nip: String?,
+    val regon: String?,
+    val address: CompanyAddressResponse?
+)
+
+data class CustomerRevenueResponse(
+    val netAmount: Double,
+    val grossAmount: Double,
+    val currency: String
 )
