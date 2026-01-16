@@ -4,6 +4,7 @@ import jakarta.persistence.*
 import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
+import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.domain.VisitServiceItem
 import java.time.Instant
 import java.util.UUID

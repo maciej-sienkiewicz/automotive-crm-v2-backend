@@ -1,9 +1,16 @@
 package pl.detailing.crm.visit.infrastructure
 
-import jakarta.persistence.*
-import pl.detailing.crm.shared.*
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.Id
+import jakarta.persistence.Index
+import jakarta.persistence.Table
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
+import org.springframework.stereotype.Repository
 import java.time.Instant
 import java.util.UUID
+
 
 @Entity
 @Table(

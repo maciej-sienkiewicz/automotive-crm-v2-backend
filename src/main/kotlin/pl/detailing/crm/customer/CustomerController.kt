@@ -18,7 +18,6 @@ import pl.detailing.crm.customer.list.ListCustomersHandler
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
-import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import java.time.Instant
@@ -29,7 +28,7 @@ import java.util.UUID
 class CustomerController(
     private val createCustomerHandler: CreateCustomerHandler,
     private val listCustomersHandler: ListCustomersHandler,
-    private val getCustomerByIdHandler: GetCustomerByIdHandler
+    private val getCustomerByIdHandler: GetCustomerByIdHandler,
     private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler
 ) {
 
