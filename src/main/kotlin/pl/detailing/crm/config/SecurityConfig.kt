@@ -66,7 +66,7 @@ class SecurityConfig {
         val configuration = CorsConfiguration()
         configuration.allowedOrigins = listOf(
             "http://localhost:5173",
-            "http://localhost:5178",
+            "http://localhost:5179",
             "http://localhost:3000",
             "http://localhost:5174"
         )
