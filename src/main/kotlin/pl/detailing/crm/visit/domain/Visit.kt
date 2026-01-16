@@ -144,3 +144,31 @@ data class VisitPhoto(
     val description: String?,
     val uploadedAt: Instant
 )
+
+/**
+ * Journal entry for tracking internal notes and customer communication
+ */
+data class VisitJournalEntry(
+    val id: VisitJournalEntryId,
+    val type: JournalEntryType,
+    val content: String,
+    val createdBy: UserId,
+    val createdByName: String,
+    val createdAt: Instant,
+    val isDeleted: Boolean = false
+)
+
+/**
+ * Document attached to a visit
+ */
+data class VisitDocument(
+    val id: VisitDocumentId,
+    val type: DocumentType,
+    val fileName: String,
+    val fileId: String,
+    val fileUrl: String,
+    val uploadedAt: Instant,
+    val uploadedBy: UserId,
+    val uploadedByName: String,
+    val category: String?
+)

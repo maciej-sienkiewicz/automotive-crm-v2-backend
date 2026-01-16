@@ -94,3 +94,45 @@ interface VisitServiceItemRepository : JpaRepository<VisitServiceItemEntity, UUI
         @Param("visitId") visitId: UUID
     ): VisitServiceItemEntity?
 }
+
+@Repository
+interface VisitJournalEntryRepository : JpaRepository<VisitJournalEntryEntity, UUID> {
+
+    /**
+     * Find all journal entries for a visit (excluding deleted)
+     */
+    @Query("""
+        SELECT vje FROM VisitJournalEntryEntity vje
+        WHERE vje.visit.id = :visitId AND vje.isDeleted = false
+        ORDER BY vje.createdAt ASC
+    """)
+    fun findByVisitId(@Param("visitId") visitId: UUID): List<VisitJournalEntryEntity>
+
+    /**
+     * Find journal entry by ID with visit validation
+     */
+    @Query("SELECT vje FROM VisitJournalEntryEntity vje WHERE vje.id = :id AND vje.visit.id = :visitId")
+    fun findByIdAndVisitId(
+        @Param("id") id: UUID,
+        @Param("visitId") visitId: UUID
+    ): VisitJournalEntryEntity?
+}
+
+@Repository
+interface VisitDocumentRepository : JpaRepository<VisitDocumentEntity, UUID> {
+
+    /**
+     * Find all documents for a visit
+     */
+    @Query("SELECT vd FROM VisitDocumentEntity vd WHERE vd.visit.id = :visitId ORDER BY vd.uploadedAt ASC")
+    fun findByVisitId(@Param("visitId") visitId: UUID): List<VisitDocumentEntity>
+
+    /**
+     * Find document by ID with visit validation
+     */
+    @Query("SELECT vd FROM VisitDocumentEntity vd WHERE vd.id = :id AND vd.visit.id = :visitId")
+    fun findByIdAndVisitId(
+        @Param("id") id: UUID,
+        @Param("visitId") visitId: UUID
+    ): VisitDocumentEntity?
+}

@@ -244,6 +244,49 @@ value class VisitPhotoId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID for visit journal entries
+ */
+@JvmInline
+value class VisitJournalEntryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitJournalEntryId(UUID.randomUUID())
+        fun fromString(value: String) = VisitJournalEntryId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID for visit documents
+ */
+@JvmInline
+value class VisitDocumentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitDocumentId(UUID.randomUUID())
+        fun fromString(value: String) = VisitDocumentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type of journal entry
+ */
+enum class JournalEntryType {
+    INTERNAL_NOTE,              // Internal notes for team
+    CUSTOMER_COMMUNICATION      // Communication with customer
+}
+
+/**
+ * Type of document
+ */
+enum class DocumentType {
+    PHOTO,      // Photo documentation
+    PDF,        // PDF document
+    PROTOCOL    // Protocol document
+}
+
+/**
  * Type-safe ID wrapper for ConsentDefinition entities
  */
 @JvmInline

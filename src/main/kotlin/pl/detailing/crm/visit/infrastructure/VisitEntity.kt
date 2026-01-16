@@ -6,6 +6,8 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.domain.VisitServiceItem
+import pl.detailing.crm.visit.domain.VisitJournalEntry
+import pl.detailing.crm.visit.domain.VisitDocument
 import java.time.Instant
 import java.util.UUID
 
@@ -341,6 +343,138 @@ class VisitPhotoEntity(
                 fileName = photo.fileName,
                 description = photo.description,
                 uploadedAt = photo.uploadedAt
+            )
+    }
+}
+
+@Entity
+@Table(
+    name = "visit_journal_entries",
+    indexes = [
+        Index(name = "idx_visit_journal_entries_visit_id", columnList = "visit_id"),
+        Index(name = "idx_visit_journal_entries_created_at", columnList = "visit_id, created_at")
+    ]
+)
+class VisitJournalEntryEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "visit_id", nullable = false)
+    var visit: VisitEntity,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 50)
+    val type: JournalEntryType,
+
+    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
+    val content: String,
+
+    @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
+    val createdBy: UUID,
+
+    @Column(name = "created_by_name", nullable = false, length = 200)
+    val createdByName: String,
+
+    @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
+    val createdAt: Instant,
+
+    @Column(name = "is_deleted", nullable = false)
+    var isDeleted: Boolean = false
+) {
+    fun toDomain(): VisitJournalEntry = VisitJournalEntry(
+        id = VisitJournalEntryId(id),
+        type = type,
+        content = content,
+        createdBy = UserId(createdBy),
+        createdByName = createdByName,
+        createdAt = createdAt,
+        isDeleted = isDeleted
+    )
+
+    companion object {
+        fun fromDomain(entry: VisitJournalEntry, visit: VisitEntity): VisitJournalEntryEntity =
+            VisitJournalEntryEntity(
+                id = entry.id.value,
+                visit = visit,
+                type = entry.type,
+                content = entry.content,
+                createdBy = entry.createdBy.value,
+                createdByName = entry.createdByName,
+                createdAt = entry.createdAt,
+                isDeleted = entry.isDeleted
+            )
+    }
+}
+
+@Entity
+@Table(
+    name = "visit_documents",
+    indexes = [
+        Index(name = "idx_visit_documents_visit_id", columnList = "visit_id"),
+        Index(name = "idx_visit_documents_uploaded_at", columnList = "visit_id, uploaded_at")
+    ]
+)
+class VisitDocumentEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "visit_id", nullable = false)
+    var visit: VisitEntity,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 50)
+    val type: DocumentType,
+
+    @Column(name = "file_name", nullable = false, length = 255)
+    val fileName: String,
+
+    @Column(name = "file_id", nullable = false, length = 255)
+    val fileId: String,
+
+    @Column(name = "file_url", nullable = false, length = 500)
+    val fileUrl: String,
+
+    @Column(name = "uploaded_at", nullable = false, columnDefinition = "timestamp with time zone")
+    val uploadedAt: Instant,
+
+    @Column(name = "uploaded_by", nullable = false, columnDefinition = "uuid")
+    val uploadedBy: UUID,
+
+    @Column(name = "uploaded_by_name", nullable = false, length = 200)
+    val uploadedByName: String,
+
+    @Column(name = "category", length = 100)
+    val category: String?
+) {
+    fun toDomain(): VisitDocument = VisitDocument(
+        id = VisitDocumentId(id),
+        type = type,
+        fileName = fileName,
+        fileId = fileId,
+        fileUrl = fileUrl,
+        uploadedAt = uploadedAt,
+        uploadedBy = UserId(uploadedBy),
+        uploadedByName = uploadedByName,
+        category = category
+    )
+
+    companion object {
+        fun fromDomain(document: VisitDocument, visit: VisitEntity): VisitDocumentEntity =
+            VisitDocumentEntity(
+                id = document.id.value,
+                visit = visit,
+                type = document.type,
+                fileName = document.fileName,
+                fileId = document.fileId,
+                fileUrl = document.fileUrl,
+                uploadedAt = document.uploadedAt,
+                uploadedBy = document.uploadedBy.value,
+                uploadedByName = document.uploadedByName,
+                category = document.category
             )
     }
 }
