@@ -15,6 +15,9 @@ import pl.detailing.crm.customer.get.GetCustomerByIdCommand
 import pl.detailing.crm.customer.get.GetCustomerByIdHandler
 import pl.detailing.crm.customer.list.CustomerListItem
 import pl.detailing.crm.customer.list.ListCustomersHandler
+import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
+import pl.detailing.crm.customer.vehicles.VehicleResponse
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
@@ -27,6 +30,7 @@ class CustomerController(
     private val createCustomerHandler: CreateCustomerHandler,
     private val listCustomersHandler: ListCustomersHandler,
     private val getCustomerByIdHandler: GetCustomerByIdHandler
+    private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler
 ) {
 
     @GetMapping
@@ -242,6 +246,18 @@ class CustomerController(
                 createdAt = Instant.now().toString(),
                 updatedAt = Instant.now().toString()
             ))
+    }
+
+    @GetMapping("/{customerId}/vehicles")
+    fun getCustomerVehicles(@PathVariable customerId: String): ResponseEntity<List<VehicleResponse>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val vehicles = getCustomerVehiclesHandler.handle(
+            customerId = CustomerId.fromString(customerId),
+            studioId = principal.studioId
+        )
+
+        ResponseEntity.ok(vehicles)
     }
 }
 
