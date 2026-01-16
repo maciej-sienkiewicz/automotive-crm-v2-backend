@@ -34,12 +34,18 @@ data class Visit(
 
     // Arrival details
     val mileageAtArrival: Long?,
+    val fuelLevel: FuelLevel?,
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
+    val isVeryDirty: Boolean,
+    val inspectionNotes: String?,
     val technicalNotes: String?,
 
     // Service items
     val serviceItems: List<VisitServiceItem>,
+
+    // Photos
+    val photos: List<VisitPhoto>,
 
     // Audit fields
     val createdBy: UserId,
@@ -125,4 +131,16 @@ data class VisitServiceItem(
 
     // Creation timestamp
     val createdAt: Instant
+)
+
+/**
+ * Photo documentation for a visit
+ */
+data class VisitPhoto(
+    val id: VisitPhotoId,
+    val photoType: PhotoType,
+    val fileId: String,
+    val fileName: String,
+    val description: String?,
+    val uploadedAt: Instant
 )

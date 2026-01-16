@@ -81,11 +81,21 @@ class VisitEntity(
     @Column(name = "mileage_at_arrival")
     var mileageAtArrival: Long?,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fuel_level", length = 20)
+    var fuelLevel: FuelLevel?,
+
     @Column(name = "keys_handed_over", nullable = false)
     var keysHandedOver: Boolean,
 
     @Column(name = "documents_handed_over", nullable = false)
     var documentsHandedOver: Boolean,
+
+    @Column(name = "is_very_dirty", nullable = false)
+    var isVeryDirty: Boolean,
+
+    @Column(name = "inspection_notes", columnDefinition = "TEXT")
+    var inspectionNotes: String?,
 
     @Column(name = "technical_notes", columnDefinition = "TEXT")
     var technicalNotes: String?,
@@ -93,6 +103,10 @@ class VisitEntity(
     // Service items (one-to-many)
     @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     var serviceItems: MutableList<VisitServiceItemEntity> = mutableListOf(),
+
+    // Photos (one-to-many)
+    @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    var photos: MutableList<VisitPhotoEntity> = mutableListOf(),
 
     // Audit fields
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
@@ -125,10 +139,14 @@ class VisitEntity(
         scheduledDate = scheduledDate,
         completedDate = completedDate,
         mileageAtArrival = mileageAtArrival,
+        fuelLevel = fuelLevel,
         keysHandedOver = keysHandedOver,
         documentsHandedOver = documentsHandedOver,
+        isVeryDirty = isVeryDirty,
+        inspectionNotes = inspectionNotes,
         technicalNotes = technicalNotes,
         serviceItems = serviceItems.map { it.toDomain() },
+        photos = photos.map { it.toDomain() },
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -155,8 +173,11 @@ class VisitEntity(
                 scheduledDate = visit.scheduledDate,
                 completedDate = visit.completedDate,
                 mileageAtArrival = visit.mileageAtArrival,
+                fuelLevel = visit.fuelLevel,
                 keysHandedOver = visit.keysHandedOver,
                 documentsHandedOver = visit.documentsHandedOver,
+                isVeryDirty = visit.isVeryDirty,
+                inspectionNotes = visit.inspectionNotes,
                 technicalNotes = visit.technicalNotes,
                 createdBy = visit.createdBy.value,
                 updatedBy = visit.updatedBy.value,
@@ -167,6 +188,11 @@ class VisitEntity(
             // Map service items with bidirectional relationship
             entity.serviceItems = visit.serviceItems.map { serviceItem ->
                 VisitServiceItemEntity.fromDomain(serviceItem, entity)
+            }.toMutableList()
+
+            // Map photos with bidirectional relationship
+            entity.photos = visit.photos.map { photo ->
+                VisitPhotoEntity.fromDomain(photo, entity)
             }.toMutableList()
 
             return entity
@@ -258,6 +284,62 @@ class VisitServiceItemEntity(
                 status = serviceItem.status,
                 customNote = serviceItem.customNote,
                 createdAt = serviceItem.createdAt
+            )
+    }
+}
+
+@Entity
+@Table(
+    name = "visit_photos",
+    indexes = [
+        Index(name = "idx_visit_photos_visit_id", columnList = "visit_id"),
+        Index(name = "idx_visit_photos_photo_type", columnList = "photo_type")
+    ]
+)
+class VisitPhotoEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "visit_id", nullable = false)
+    var visit: VisitEntity,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "photo_type", nullable = false, length = 50)
+    val photoType: PhotoType,
+
+    @Column(name = "file_id", nullable = false, length = 255)
+    val fileId: String,
+
+    @Column(name = "file_name", nullable = false, length = 255)
+    val fileName: String,
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    val description: String?,
+
+    @Column(name = "uploaded_at", nullable = false, columnDefinition = "timestamp with time zone")
+    val uploadedAt: Instant
+) {
+    fun toDomain(): VisitPhoto = VisitPhoto(
+        id = VisitPhotoId(id),
+        photoType = photoType,
+        fileId = fileId,
+        fileName = fileName,
+        description = description,
+        uploadedAt = uploadedAt
+    )
+
+    companion object {
+        fun fromDomain(photo: VisitPhoto, visit: VisitEntity): VisitPhotoEntity =
+            VisitPhotoEntity(
+                id = photo.id.value,
+                visit = visit,
+                photoType = photo.photoType,
+                fileId = photo.fileId,
+                fileName = photo.fileName,
+                description = photo.description,
+                uploadedAt = photo.uploadedAt
             )
     }
 }

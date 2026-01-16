@@ -187,6 +187,63 @@ enum class VisitServiceStatus {
 }
 
 /**
+ * Fuel level at vehicle arrival (0%, 25%, 50%, 75%, 100%)
+ */
+enum class FuelLevel(val percentage: Int) {
+    EMPTY(0),
+    QUARTER(25),
+    HALF(50),
+    THREE_QUARTERS(75),
+    FULL(100);
+
+    companion object {
+        fun fromPercentage(value: Int): FuelLevel = entries.find { it.percentage == value }
+            ?: throw IllegalArgumentException("Invalid fuel level: $value. Must be 0, 25, 50, 75, or 100")
+    }
+}
+
+/**
+ * Photo type for vehicle documentation
+ */
+enum class PhotoType {
+    FRONT,
+    REAR,
+    LEFT_SIDE,
+    RIGHT_SIDE,
+    DAMAGE_FRONT,
+    DAMAGE_REAR,
+    DAMAGE_LEFT,
+    DAMAGE_RIGHT,
+    DAMAGE_OTHER
+}
+
+/**
+ * Type-safe ID for photo upload sessions
+ */
+@JvmInline
+value class PhotoUploadSessionId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = PhotoUploadSessionId(UUID.randomUUID())
+        fun fromString(value: String) = PhotoUploadSessionId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID for visit photos
+ */
+@JvmInline
+value class VisitPhotoId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitPhotoId(UUID.randomUUID())
+        fun fromString(value: String) = VisitPhotoId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type-safe ID wrapper for ConsentDefinition entities
  */
 @JvmInline

@@ -28,8 +28,11 @@ CREATE TABLE IF NOT EXISTS visits (
 
     -- Arrival details
     mileage_at_arrival BIGINT,
+    fuel_level VARCHAR(20),
     keys_handed_over BOOLEAN NOT NULL DEFAULT FALSE,
     documents_handed_over BOOLEAN NOT NULL DEFAULT FALSE,
+    is_very_dirty BOOLEAN NOT NULL DEFAULT FALSE,
+    inspection_notes TEXT,
     technical_notes TEXT,
 
     -- Audit fields
@@ -124,3 +127,57 @@ COMMENT ON COLUMN visit_service_items.base_price_net IS 'Base net price in cents
 COMMENT ON COLUMN visit_service_items.final_price_net IS 'Final net price in cents after adjustments';
 COMMENT ON COLUMN visit_service_items.final_price_gross IS 'Final gross price in cents including VAT';
 COMMENT ON COLUMN visit_service_items.status IS 'PENDING, APPROVED, IN_PROGRESS, COMPLETED, or REJECTED';
+
+-- Table: visit_photos
+-- Photo documentation for visits
+CREATE TABLE IF NOT EXISTS visit_photos (
+    id UUID PRIMARY KEY,
+    visit_id UUID NOT NULL,
+    photo_type VARCHAR(50) NOT NULL,
+    file_id VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+
+    -- Foreign key to visits
+    CONSTRAINT fk_visit_photo_visit
+        FOREIGN KEY (visit_id)
+        REFERENCES visits(id)
+        ON DELETE CASCADE
+);
+
+-- Indexes for visit_photos table
+CREATE INDEX IF NOT EXISTS idx_visit_photos_visit_id
+    ON visit_photos(visit_id);
+
+CREATE INDEX IF NOT EXISTS idx_visit_photos_photo_type
+    ON visit_photos(photo_type);
+
+-- Table: photo_upload_sessions
+-- Temporary sessions for mobile photo uploads
+CREATE TABLE IF NOT EXISTS photo_upload_sessions (
+    id UUID PRIMARY KEY,
+    studio_id UUID NOT NULL,
+    appointment_id UUID NOT NULL,
+    token VARCHAR(500) NOT NULL UNIQUE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for photo_upload_sessions table
+CREATE INDEX IF NOT EXISTS idx_photo_sessions_studio_id
+    ON photo_upload_sessions(studio_id);
+
+CREATE INDEX IF NOT EXISTS idx_photo_sessions_appointment_id
+    ON photo_upload_sessions(appointment_id);
+
+CREATE INDEX IF NOT EXISTS idx_photo_sessions_expires_at
+    ON photo_upload_sessions(expires_at);
+
+-- Comments for new tables
+COMMENT ON TABLE visit_photos IS 'Photo documentation for vehicle check-ins';
+COMMENT ON TABLE photo_upload_sessions IS 'Temporary sessions for mobile photo uploads (JWT tokens)';
+
+COMMENT ON COLUMN visits.fuel_level IS 'Fuel level at arrival: EMPTY, QUARTER, HALF, THREE_QUARTERS, FULL';
+COMMENT ON COLUMN visits.is_very_dirty IS 'Indicates if vehicle was extremely dirty at arrival';
+COMMENT ON COLUMN visits.inspection_notes IS 'Technical inspection notes from check-in';
