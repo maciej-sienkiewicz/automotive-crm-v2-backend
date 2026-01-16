@@ -1,7 +1,5 @@
 package pl.detailing.crm.visit.get
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
@@ -21,12 +19,16 @@ class GetVisitDetailHandler(
 ) {
 
     @Transactional(readOnly = true)
-    suspend fun handle(command: GetVisitDetailCommand): GetVisitDetailResult = withContext(Dispatchers.IO) {
+    suspend fun handle(command: GetVisitDetailCommand): GetVisitDetailResult {
         // 1. Find visit with studio isolation
         val visitEntity = visitRepository.findByIdAndStudioId(
             id = command.visitId.value,
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+
+        // Force load lazy collections within transaction
+        visitEntity.serviceItems.size  // Force load serviceItems
+        visitEntity.photos.size  // Force load photos
 
         val visit = visitEntity.toDomain()
 
@@ -62,7 +64,9 @@ class GetVisitDetailHandler(
 
         val totalVisits = customerVisits.size
 
+        // Force load serviceItems for each visit before mapping
         val totalSpent = customerVisits
+            .onEach { it.serviceItems.size }  // Force load serviceItems
             .map { it.toDomain() }
             .filter { it.status == VisitStatus.COMPLETED }
             .fold(Money.ZERO) { acc, v -> acc.plus(v.calculateTotalNet()) }
@@ -76,7 +80,7 @@ class GetVisitDetailHandler(
             vehiclesCount = vehiclesCount
         )
 
-        GetVisitDetailResult(
+        return GetVisitDetailResult(
             visit = visit,
             vehicle = vehicle,
             customer = customer,
