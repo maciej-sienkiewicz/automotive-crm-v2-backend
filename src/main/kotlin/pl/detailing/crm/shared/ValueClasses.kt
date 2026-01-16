@@ -139,6 +139,54 @@ enum class OwnershipRole {
 }
 
 /**
+ * Type-safe ID wrapper for Visit entities
+ */
+@JvmInline
+value class VisitId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitId(UUID.randomUUID())
+        fun fromString(value: String) = VisitId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for VisitServiceItem entities
+ */
+@JvmInline
+value class VisitServiceItemId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitServiceItemId(UUID.randomUUID())
+        fun fromString(value: String) = VisitServiceItemId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Visit status lifecycle
+ */
+enum class VisitStatus {
+    ACCEPTED,       // Visit created from appointment, vehicle accepted
+    IN_PROGRESS,    // Work has started
+    READY,          // All work completed, ready for pickup
+    COMPLETED,      // Vehicle handed over to customer
+    CANCELLED       // Visit cancelled
+}
+
+/**
+ * Service item status for granular tracking within a visit
+ */
+enum class VisitServiceStatus {
+    PENDING,        // Additional work found, awaiting customer approval
+    APPROVED,       // Approved for execution (initial services start here)
+    IN_PROGRESS,    // Currently being worked on
+    COMPLETED,      // Service finished
+    REJECTED        // Customer declined the service
+}
+
+/**
  * Type-safe ID wrapper for ConsentDefinition entities
  */
 @JvmInline
