@@ -22,8 +22,7 @@ enum class AppointmentStatus {
     CONFIRMED,      // Customer confirmed
     IN_PROGRESS,    // Work started
     COMPLETED,      // Work finished
-    CANCELLED,      // Appointment cancelled
-    CONVERTED       // Converted to visit
+    CANCELLED       // Appointment cancelled
 }
 
 /**
