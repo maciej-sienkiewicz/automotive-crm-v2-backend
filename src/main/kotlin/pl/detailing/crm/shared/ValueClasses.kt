@@ -180,10 +180,9 @@ enum class VisitStatus {
  */
 enum class VisitServiceStatus {
     PENDING,        // Additional work found, awaiting customer approval
-    APPROVED,       // Approved for execution (initial services start here)
-    IN_PROGRESS,    // Currently being worked on
-    COMPLETED,      // Service finished
-    REJECTED        // Customer declined the service
+    APPROVED,       // Approved for execution
+    REJECTED,       // Customer declined the service
+    CONFIRMED       // Confirmed and ready to execute (default status for initial services)
 }
 
 /**
