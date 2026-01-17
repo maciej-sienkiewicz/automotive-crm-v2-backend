@@ -20,6 +20,10 @@ class RejectVisitHandler(
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
+        // Force load lazy collections within transaction
+        visitEntity.serviceItems.size  // Force load serviceItems
+        visitEntity.photos.size  // Force load photos
+
         val visit = visitEntity.toDomain()
 
         // Step 2: Perform state transition (domain logic with validation)
