@@ -52,21 +52,21 @@ data class Visit(
     val updatedAt: Instant
 ) {
     /**
-     * Calculate total net amount for APPROVED and COMPLETED services only
+     * Calculate total net amount for CONFIRMED and APPROVED services only
      * PENDING and REJECTED services are excluded from billing
      */
     fun calculateTotalNet(): Money {
         return serviceItems
-            .filter { it.status == VisitServiceStatus.APPROVED || it.status == VisitServiceStatus.COMPLETED }
+            .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
             .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceNet) }
     }
 
     /**
-     * Calculate total gross amount for APPROVED and COMPLETED services only
+     * Calculate total gross amount for CONFIRMED and APPROVED services only
      */
     fun calculateTotalGross(): Money {
         return serviceItems
-            .filter { it.status == VisitServiceStatus.APPROVED || it.status == VisitServiceStatus.COMPLETED }
+            .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
             .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceGross) }
     }
 
@@ -79,12 +79,10 @@ data class Visit(
 
     /**
      * Check if visit can be marked as READY_FOR_PICKUP
-     * All services must be either COMPLETED or REJECTED (no IN_PROGRESS or PENDING)
+     * No services can be in PENDING status (all must be CONFIRMED, APPROVED, or REJECTED)
      */
     fun canBeMarkedAsReady(): Boolean {
-        return serviceItems.all {
-            it.status == VisitServiceStatus.COMPLETED || it.status == VisitServiceStatus.REJECTED
-        }
+        return serviceItems.none { it.status == VisitServiceStatus.PENDING }
     }
 
     /**
@@ -95,10 +93,17 @@ data class Visit(
     }
 
     /**
-     * Get all services currently being worked on
+     * Get all confirmed services ready to execute
      */
-    fun getInProgressServices(): List<VisitServiceItem> {
-        return serviceItems.filter { it.status == VisitServiceStatus.IN_PROGRESS }
+    fun getConfirmedServices(): List<VisitServiceItem> {
+        return serviceItems.filter { it.status == VisitServiceStatus.CONFIRMED }
+    }
+
+    /**
+     * Get all approved services
+     */
+    fun getApprovedServices(): List<VisitServiceItem> {
+        return serviceItems.filter { it.status == VisitServiceStatus.APPROVED }
     }
 
     // ========== State Transitions ==========
@@ -113,8 +118,7 @@ data class Visit(
 
         if (!canBeMarkedAsReady()) {
             throw IllegalStateException(
-                "Cannot mark visit as ready. All services must be completed or rejected. " +
-                "Pending: ${getPendingServices().size}, In Progress: ${getInProgressServices().size}"
+                "Cannot mark visit as ready. There are ${getPendingServices().size} services awaiting approval."
             )
         }
 
