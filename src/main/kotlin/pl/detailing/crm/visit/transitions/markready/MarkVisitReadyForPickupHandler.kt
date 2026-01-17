@@ -1,7 +1,5 @@
 package pl.detailing.crm.visit.transitions.markready
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
@@ -15,7 +13,7 @@ class MarkVisitReadyForPickupHandler(
 ) {
 
     @Transactional
-    suspend fun handle(command: MarkVisitReadyForPickupCommand): MarkVisitReadyForPickupResult = withContext(Dispatchers.IO) {
+    suspend fun handle(command: MarkVisitReadyForPickupCommand): MarkVisitReadyForPickupResult {
         // Step 1: Load visit
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
