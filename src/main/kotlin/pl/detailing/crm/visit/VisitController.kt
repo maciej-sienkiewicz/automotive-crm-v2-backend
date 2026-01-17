@@ -20,16 +20,43 @@ class VisitController(
 ) {
 
     /**
-     * Get all visits for the studio
-     * GET /api/visits
+     * Get all visits for the studio with pagination and filtering
+     * GET /api/visits?page=0&size=20&status=IN_PROGRESS
      */
     @GetMapping
-    fun getVisits(): ResponseEntity<VisitListResponse> = runBlocking {
+    fun getVisits(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) status: String?
+    ): ResponseEntity<VisitListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val visits = listVisitsHandler.handle(principal.studioId)
+        val visitStatus = status?.let {
+            try {
+                VisitStatus.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
 
-        ResponseEntity.ok(VisitListResponse(visits = visits))
+        val command = pl.detailing.crm.visit.list.ListVisitsCommand(
+            studioId = principal.studioId,
+            page = maxOf(0, page),
+            pageSize = maxOf(1, minOf(100, size)), // Limit page size to 100
+            status = visitStatus
+        )
+
+        val result = listVisitsHandler.handle(command)
+
+        ResponseEntity.ok(VisitListResponse(
+            visits = result.items,
+            pagination = PaginationMetadata(
+                total = result.total,
+                page = result.page,
+                pageSize = result.pageSize,
+                totalPages = result.totalPages
+            )
+        ))
     }
 
     /**
@@ -250,8 +277,19 @@ class VisitController(
 }
 
 /**
- * Response wrapper for visit list
+ * Response wrapper for visit list with pagination
  */
 data class VisitListResponse(
-    val visits: List<VisitListItem>
+    val visits: List<VisitListItem>,
+    val pagination: PaginationMetadata
+)
+
+/**
+ * Pagination metadata
+ */
+data class PaginationMetadata(
+    val total: Int,
+    val page: Int,
+    val pageSize: Int,
+    val totalPages: Int
 )

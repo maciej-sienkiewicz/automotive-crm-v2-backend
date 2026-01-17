@@ -15,8 +15,33 @@ class ListVisitsHandler(
     private val vehicleRepository: VehicleRepository
 ) {
     @Transactional(readOnly = true)
-    suspend fun handle(studioId: StudioId): List<VisitListItem> {
-        val visits = visitRepository.findByStudioId(studioId.value)
+    suspend fun handle(command: ListVisitsCommand): ListVisitsResult {
+        // Get all visits matching the criteria
+        val allVisits = if (command.status != null) {
+            visitRepository.findByStudioIdAndStatus(
+                studioId = command.studioId.value,
+                status = command.status
+            )
+        } else {
+            visitRepository.findByStudioId(command.studioId.value)
+        }
+
+        // Calculate pagination
+        val total = allVisits.size
+        val totalPages = if (command.pageSize > 0) {
+            (total + command.pageSize - 1) / command.pageSize
+        } else {
+            1
+        }
+
+        // Apply pagination
+        val startIndex = command.page * command.pageSize
+        val endIndex = minOf(startIndex + command.pageSize, total)
+        val visits = if (startIndex < total) {
+            allVisits.subList(startIndex, endIndex)
+        } else {
+            emptyList()
+        }
 
         // Collect all IDs to fetch in batch
         val customerIds = visits.map { it.customerId }.distinct()
@@ -27,7 +52,7 @@ class ListVisitsHandler(
         val vehicles = vehicleRepository.findAllById(vehicleIds).associateBy { it.id }
 
         // Map to list items
-        return visits.map { visit ->
+        val items = visits.map { visit ->
             // Force load lazy collections
             visit.serviceItems.size
 
@@ -85,8 +110,37 @@ class ListVisitsHandler(
                 updatedAt = visit.updatedAt.toString()
             )
         }
+
+        return ListVisitsResult(
+            items = items,
+            total = total,
+            page = command.page,
+            pageSize = command.pageSize,
+            totalPages = totalPages
+        )
     }
 }
+
+/**
+ * Command for listing visits with pagination and filtering
+ */
+data class ListVisitsCommand(
+    val studioId: StudioId,
+    val page: Int = 0,
+    val pageSize: Int = 20,
+    val status: VisitStatus? = null
+)
+
+/**
+ * Result of listing visits with pagination metadata
+ */
+data class ListVisitsResult(
+    val items: List<VisitListItem>,
+    val total: Int,
+    val page: Int,
+    val pageSize: Int,
+    val totalPages: Int
+)
 
 data class VisitListItem(
     val id: String,

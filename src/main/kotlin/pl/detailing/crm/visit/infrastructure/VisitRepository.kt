@@ -25,6 +25,15 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     fun findByStudioId(@Param("studioId") studioId: UUID): List<VisitEntity>
 
     /**
+     * Find visits by studio and status
+     */
+    @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId AND v.status = :status ORDER BY v.scheduledDate DESC")
+    fun findByStudioIdAndStatus(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.shared.VisitStatus
+    ): List<VisitEntity>
+
+    /**
      * Find visits by customer with studio isolation
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId ORDER BY v.scheduledDate DESC")
