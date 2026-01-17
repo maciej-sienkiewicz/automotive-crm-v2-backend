@@ -187,6 +187,14 @@ enum class VisitServiceStatus {
 }
 
 /**
+ * Comment type for visit comments
+ */
+enum class CommentType {
+    INTERNAL,       // Internal comment visible only to staff
+    FOR_CUSTOMER    // Comment visible to customer
+}
+
+/**
  * Photo type for vehicle documentation
  */
 enum class PhotoType {
@@ -248,6 +256,32 @@ value class VisitDocumentId(val value: UUID) : Serializable {
     companion object {
         fun random() = VisitDocumentId(UUID.randomUUID())
         fun fromString(value: String) = VisitDocumentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID for visit comments
+ */
+@JvmInline
+value class VisitCommentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitCommentId(UUID.randomUUID())
+        fun fromString(value: String) = VisitCommentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID for visit comment revisions
+ */
+@JvmInline
+value class VisitCommentRevisionId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitCommentRevisionId(UUID.randomUUID())
+        fun fromString(value: String) = VisitCommentRevisionId(UUID.fromString(value))
     }
 
     override fun toString(): String = value.toString()
