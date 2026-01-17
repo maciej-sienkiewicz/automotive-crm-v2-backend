@@ -18,12 +18,10 @@ enum class AdjustmentType {
  * Appointment status lifecycle
  */
 enum class AppointmentStatus {
-    CREATED,        // Initial state
-    CONFIRMED,      // Customer confirmed
-    IN_PROGRESS,    // Work started
-    COMPLETED,      // Work finished
-    CANCELLED,      // Appointment cancelled
-    CONVERTED       // Converted to visit
+    CREATED,
+    ABANDONED,
+    CANCELLED,
+    CONVERTED
 }
 
 /**
