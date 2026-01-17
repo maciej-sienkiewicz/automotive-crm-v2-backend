@@ -221,11 +221,11 @@ class VisitController(
      */
     private fun mapVisitStatus(status: VisitStatus): String {
         return when (status) {
-            VisitStatus.ACCEPTED -> "accepted"
             VisitStatus.IN_PROGRESS -> "in_progress"
-            VisitStatus.READY -> "ready"
+            VisitStatus.READY_FOR_PICKUP -> "ready_for_pickup"
             VisitStatus.COMPLETED -> "completed"
-            VisitStatus.CANCELLED -> "cancelled"
+            VisitStatus.REJECTED -> "rejected"
+            VisitStatus.ARCHIVED -> "archived"
         }
     }
 

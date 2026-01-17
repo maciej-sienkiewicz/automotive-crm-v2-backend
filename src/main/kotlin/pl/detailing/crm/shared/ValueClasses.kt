@@ -168,11 +168,11 @@ value class VisitServiceItemId(val value: UUID) : Serializable {
  * Visit status lifecycle
  */
 enum class VisitStatus {
-    ACCEPTED,       // Visit created from appointment, vehicle accepted
-    IN_PROGRESS,    // Work has started
-    READY,          // All work completed, ready for pickup
-    COMPLETED,      // Vehicle handed over to customer
-    CANCELLED       // Visit cancelled
+    IN_PROGRESS,        // Work has started
+    READY_FOR_PICKUP,   // All work completed, ready for pickup
+    COMPLETED,          // Vehicle handed over to customer
+    REJECTED,           // Visit rejected
+    ARCHIVED            // Visit archived
 }
 
 /**
@@ -184,22 +184,6 @@ enum class VisitServiceStatus {
     IN_PROGRESS,    // Currently being worked on
     COMPLETED,      // Service finished
     REJECTED        // Customer declined the service
-}
-
-/**
- * Fuel level at vehicle arrival (0%, 25%, 50%, 75%, 100%)
- */
-enum class FuelLevel(val percentage: Int) {
-    EMPTY(0),
-    QUARTER(25),
-    HALF(50),
-    THREE_QUARTERS(75),
-    FULL(100);
-
-    companion object {
-        fun fromPercentage(value: Int): FuelLevel = entries.find { it.percentage == value }
-            ?: throw IllegalArgumentException("Invalid fuel level: $value. Must be 0, 25, 50, 75, or 100")
-    }
 }
 
 /**

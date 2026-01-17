@@ -34,10 +34,8 @@ data class Visit(
 
     // Arrival details
     val mileageAtArrival: Long?,
-    val fuelLevel: FuelLevel?,
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
-    val isVeryDirty: Boolean,
     val inspectionNotes: String?,
     val technicalNotes: String?,
 
@@ -80,7 +78,7 @@ data class Visit(
     }
 
     /**
-     * Check if visit can be marked as READY
+     * Check if visit can be marked as READY_FOR_PICKUP
      * All services must be either COMPLETED or REJECTED (no IN_PROGRESS or PENDING)
      */
     fun canBeMarkedAsReady(): Boolean {
