@@ -1,0 +1,23 @@
+services:
+  detailing-crm-backend:
+    image: ${ENV_DETAILING_CRM_BACKEND_IMAGE}
+    container_name: ${DETAILING_CRM_BACKEND_CONTAINER_NAME}
+    ports:
+      - '${ENV_DETAILING_CRM_BACKEND_EXTERNAL_PORT}:8080'
+      - '${ENV_DETAILING_CRM_BACKEND_DEBUG_PORT}:5005'
+
+    restart: always
+    environment:
+      DB_ADDR: ${ENV_DB_ADDR}
+      DB_PORT: ${ENV_DB_PORT}
+      DB_NAME: ${ENV_DB_NAME}
+      DB_USER: ${ENV_DB_USER}
+      DB_PASSWORD: ${ENV_DB_PASSWORD}
+    networks:
+      - network
+
+networks:
+  network:
+    name: ${ENV_NETWORK}
+    external: true
+
