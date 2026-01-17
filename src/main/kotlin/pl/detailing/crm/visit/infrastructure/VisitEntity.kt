@@ -84,11 +84,18 @@ class VisitEntity(
     @Column(name = "mileage_at_arrival")
     var mileageAtArrival: Long?,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fuel_level", length = 20)
+    var fuelLevel: FuelLevel?,
+
     @Column(name = "keys_handed_over", nullable = false)
     var keysHandedOver: Boolean,
 
     @Column(name = "documents_handed_over", nullable = false)
     var documentsHandedOver: Boolean,
+
+    @Column(name = "is_very_dirty", nullable = false)
+    var isVeryDirty: Boolean,
 
     @Column(name = "inspection_notes", columnDefinition = "TEXT")
     var inspectionNotes: String?,
@@ -135,8 +142,10 @@ class VisitEntity(
         scheduledDate = scheduledDate,
         completedDate = completedDate,
         mileageAtArrival = mileageAtArrival,
+        fuelLevel = fuelLevel,
         keysHandedOver = keysHandedOver,
         documentsHandedOver = documentsHandedOver,
+        isVeryDirty = isVeryDirty,
         inspectionNotes = inspectionNotes,
         technicalNotes = technicalNotes,
         serviceItems = serviceItems.map { it.toDomain() },
@@ -167,8 +176,10 @@ class VisitEntity(
                 scheduledDate = visit.scheduledDate,
                 completedDate = visit.completedDate,
                 mileageAtArrival = visit.mileageAtArrival,
+                fuelLevel = visit.fuelLevel,
                 keysHandedOver = visit.keysHandedOver,
                 documentsHandedOver = visit.documentsHandedOver,
+                isVeryDirty = visit.isVeryDirty,
                 inspectionNotes = visit.inspectionNotes,
                 technicalNotes = visit.technicalNotes,
                 createdBy = visit.createdBy.value,

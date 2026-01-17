@@ -127,8 +127,10 @@ data class VehicleRequest(
 
 data class TechnicalStateRequest(
     val mileage: Int,
+    val fuelLevel: Int,
     val deposit: DepositItemRequest,
-    val inspectionNotes: String
+    val inspectionNotes: String,
+    val isVeryDirty: Boolean
 )
 
 data class DepositItemRequest(

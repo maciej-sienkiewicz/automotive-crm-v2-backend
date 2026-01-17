@@ -34,8 +34,10 @@ data class Visit(
 
     // Arrival details
     val mileageAtArrival: Long?,
+    val fuelLevel: FuelLevel?,
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
+    val isVeryDirty: Boolean,
     val inspectionNotes: String?,
     val technicalNotes: String?,
 
@@ -52,22 +54,21 @@ data class Visit(
     val updatedAt: Instant
 ) {
     /**
-     * Calculate total net amount for services in progress or completed
-     * REJECTED and ARCHIVED services are excluded from billing
+     * Calculate total net amount for APPROVED and COMPLETED services only
+     * PENDING and REJECTED services are excluded from billing
      */
     fun calculateTotalNet(): Money {
         return serviceItems
-            .filter { it.status != VisitServiceStatus.REJECTED && it.status != VisitServiceStatus.ARCHIVED }
+            .filter { it.status == VisitServiceStatus.APPROVED || it.status == VisitServiceStatus.COMPLETED }
             .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceNet) }
     }
 
     /**
-     * Calculate total gross amount for services in progress or completed
-     * REJECTED and ARCHIVED services are excluded from billing
+     * Calculate total gross amount for APPROVED and COMPLETED services only
      */
     fun calculateTotalGross(): Money {
         return serviceItems
-            .filter { it.status != VisitServiceStatus.REJECTED && it.status != VisitServiceStatus.ARCHIVED }
+            .filter { it.status == VisitServiceStatus.APPROVED || it.status == VisitServiceStatus.COMPLETED }
             .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceGross) }
     }
 
@@ -80,10 +81,19 @@ data class Visit(
 
     /**
      * Check if visit can be marked as READY
-     * All services must be finished (no IN_PROGRESS)
+     * All services must be either COMPLETED or REJECTED (no IN_PROGRESS or PENDING)
      */
     fun canBeMarkedAsReady(): Boolean {
-        return serviceItems.all { it.status != VisitServiceStatus.IN_PROGRESS }
+        return serviceItems.all {
+            it.status == VisitServiceStatus.COMPLETED || it.status == VisitServiceStatus.REJECTED
+        }
+    }
+
+    /**
+     * Get all pending services awaiting customer approval
+     */
+    fun getPendingServices(): List<VisitServiceItem> {
+        return serviceItems.filter { it.status == VisitServiceStatus.PENDING }
     }
 
     /**
