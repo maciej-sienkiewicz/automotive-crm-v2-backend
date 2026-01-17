@@ -35,7 +35,7 @@ class ListVisitsHandler(
         }
 
         // Apply pagination
-        val startIndex = command.page * command.pageSize
+        val startIndex = (command.page-1) * command.pageSize
         val endIndex = minOf(startIndex + command.pageSize, total)
         val visits = if (startIndex < total) {
             allVisits.subList(startIndex, endIndex)
