@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.*
+import pl.detailing.crm.visit.list.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
@@ -14,8 +15,22 @@ import pl.detailing.crm.appointment.domain.AdjustmentType
 @RestController
 @RequestMapping("/api/visits")
 class VisitController(
+    private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler
 ) {
+
+    /**
+     * Get all visits for the studio
+     * GET /api/visits
+     */
+    @GetMapping
+    fun getVisits(): ResponseEntity<VisitListResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val visits = listVisitsHandler.handle(principal.studioId)
+
+        ResponseEntity.ok(VisitListResponse(visits = visits))
+    }
 
     /**
      * Get visit details by ID
@@ -233,3 +248,10 @@ class VisitController(
         }
     }
 }
+
+/**
+ * Response wrapper for visit list
+ */
+data class VisitListResponse(
+    val visits: List<VisitListItem>
+)
