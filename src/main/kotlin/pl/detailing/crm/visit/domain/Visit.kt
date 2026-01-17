@@ -100,6 +100,87 @@ data class Visit(
     fun getInProgressServices(): List<VisitServiceItem> {
         return serviceItems.filter { it.status == VisitServiceStatus.IN_PROGRESS }
     }
+
+    // ========== State Transitions ==========
+
+    /**
+     * Mark visit as ready for pickup
+     * Requires: all services must be completed or rejected
+     * Transition: IN_PROGRESS → READY_FOR_PICKUP
+     */
+    fun markAsReadyForPickup(updatedBy: UserId): Visit {
+        VisitStateMachine.validateTransition(status, VisitStatus.READY_FOR_PICKUP)
+
+        if (!canBeMarkedAsReady()) {
+            throw IllegalStateException(
+                "Cannot mark visit as ready. All services must be completed or rejected. " +
+                "Pending: ${getPendingServices().size}, In Progress: ${getInProgressServices().size}"
+            )
+        }
+
+        return copy(
+            status = VisitStatus.READY_FOR_PICKUP,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Complete visit - mark as handed over to customer
+     * Transition: READY_FOR_PICKUP → COMPLETED
+     */
+    fun complete(updatedBy: UserId): Visit {
+        VisitStateMachine.validateTransition(status, VisitStatus.COMPLETED)
+
+        return copy(
+            status = VisitStatus.COMPLETED,
+            completedDate = Instant.now(),
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Reject visit with reason
+     * Transition: IN_PROGRESS → REJECTED
+     */
+    fun reject(updatedBy: UserId): Visit {
+        VisitStateMachine.validateTransition(status, VisitStatus.REJECTED)
+
+        return copy(
+            status = VisitStatus.REJECTED,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Archive visit
+     * Transition: COMPLETED → ARCHIVED or REJECTED → ARCHIVED
+     */
+    fun archive(updatedBy: UserId): Visit {
+        VisitStateMachine.validateTransition(status, VisitStatus.ARCHIVED)
+
+        return copy(
+            status = VisitStatus.ARCHIVED,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Return visit to in-progress state (e.g., more work needed)
+     * Transition: READY_FOR_PICKUP → IN_PROGRESS
+     */
+    fun returnToInProgress(updatedBy: UserId): Visit {
+        VisitStateMachine.validateTransition(status, VisitStatus.IN_PROGRESS)
+
+        return copy(
+            status = VisitStatus.IN_PROGRESS,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
 }
 
 /**
