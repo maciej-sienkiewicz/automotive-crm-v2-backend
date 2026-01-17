@@ -107,7 +107,7 @@ class CreateVisitFromReservationHandler(
                     adjustmentValue = lineItem.adjustmentValue,
                     finalPriceNet = lineItem.finalPriceNet,
                     finalPriceGross = lineItem.finalPriceGross,
-                    status = VisitServiceStatus.APPROVED,
+                    status = VisitServiceStatus.IN_PROGRESS,
                     customNote = lineItem.customNote,
                     createdAt = Instant.now()
                 )
@@ -135,10 +135,8 @@ class CreateVisitFromReservationHandler(
                 scheduledDate = appointment.schedule.startDateTime,
                 completedDate = null,
                 mileageAtArrival = command.technicalState.mileage.toLong(),
-                fuelLevel = FuelLevel.fromPercentage(command.technicalState.fuelLevel),
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,
-                isVeryDirty = command.technicalState.isVeryDirty,
                 inspectionNotes = command.technicalState.inspectionNotes,
                 technicalNotes = null,
                 serviceItems = serviceItems,

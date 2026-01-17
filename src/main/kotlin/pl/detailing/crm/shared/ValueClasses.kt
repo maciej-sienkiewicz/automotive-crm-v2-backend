@@ -179,27 +179,11 @@ enum class VisitStatus {
  * Service item status for granular tracking within a visit
  */
 enum class VisitServiceStatus {
-    PENDING,        // Additional work found, awaiting customer approval
-    APPROVED,       // Approved for execution (initial services start here)
-    IN_PROGRESS,    // Currently being worked on
-    COMPLETED,      // Service finished
-    REJECTED        // Customer declined the service
-}
-
-/**
- * Fuel level at vehicle arrival (0%, 25%, 50%, 75%, 100%)
- */
-enum class FuelLevel(val percentage: Int) {
-    EMPTY(0),
-    QUARTER(25),
-    HALF(50),
-    THREE_QUARTERS(75),
-    FULL(100);
-
-    companion object {
-        fun fromPercentage(value: Int): FuelLevel = entries.find { it.percentage == value }
-            ?: throw IllegalArgumentException("Invalid fuel level: $value. Must be 0, 25, 50, 75, or 100")
-    }
+    IN_PROGRESS,        // Currently being worked on
+    READY_FOR_PICKUP,   // Service finished, ready for customer pickup
+    COMPLETED,          // Service finished and vehicle handed over
+    REJECTED,           // Service declined or cancelled
+    ARCHIVED            // Service archived for historical purposes
 }
 
 /**
