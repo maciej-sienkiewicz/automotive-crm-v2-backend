@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.comment
 
+import org.apache.coyote.BadRequestException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
