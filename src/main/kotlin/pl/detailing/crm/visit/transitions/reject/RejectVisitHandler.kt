@@ -52,7 +52,7 @@ class RejectVisitHandler(
         //     reason = command.rejectionReason
         // )
 
-        RejectVisitResult(
+        return RejectVisitResult(
             visitId = updatedVisit.id,
             newStatus = updatedVisit.status
         )

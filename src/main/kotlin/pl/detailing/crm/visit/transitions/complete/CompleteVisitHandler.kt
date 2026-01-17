@@ -42,7 +42,7 @@ class CompleteVisitHandler(
         //     visitNumber = visit.visitNumber
         // )
 
-        CompleteVisitResult(
+        return CompleteVisitResult(
             visitId = updatedVisit.id,
             newStatus = updatedVisit.status,
             completedAt = updatedVisit.completedDate!!

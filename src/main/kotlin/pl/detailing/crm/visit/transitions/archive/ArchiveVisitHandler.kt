@@ -39,7 +39,7 @@ class ArchiveVisitHandler(
         // archiveService.moveVisitToArchiveStorage(updatedVisit)
         // reportingService.updateArchivedVisitMetrics(updatedVisit)
 
-        ArchiveVisitResult(
+        return ArchiveVisitResult(
             visitId = updatedVisit.id,
             newStatus = updatedVisit.status
         )

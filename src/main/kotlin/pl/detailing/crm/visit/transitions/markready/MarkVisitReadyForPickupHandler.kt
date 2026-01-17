@@ -48,7 +48,7 @@ class MarkVisitReadyForPickupHandler(
         //     )
         // }
 
-        MarkVisitReadyForPickupResult(
+        return MarkVisitReadyForPickupResult(
             visitId = updatedVisit.id,
             newStatus = updatedVisit.status
         )
