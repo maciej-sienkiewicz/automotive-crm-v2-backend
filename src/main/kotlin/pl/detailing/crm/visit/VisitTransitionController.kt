@@ -38,7 +38,8 @@ class VisitTransitionController(
      */
     @PostMapping("/{visitId}/mark-ready-for-pickup")
     fun markReadyForPickup(
-        @PathVariable visitId: String
+        @PathVariable visitId: String,
+        @RequestBody request: MarkReadyForPickupRequest
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -50,7 +51,9 @@ class VisitTransitionController(
         val command = MarkVisitReadyForPickupCommand(
             studioId = principal.studioId,
             userId = principal.userId,
-            visitId = VisitId.fromString(visitId)
+            visitId = VisitId.fromString(visitId),
+            sendSms = request.sms,
+            sendEmail = request.email
         )
 
         val result = markVisitReadyForPickupHandler.handle(command)
@@ -176,6 +179,14 @@ class VisitTransitionController(
         }
     }
 }
+
+/**
+ * Request to mark visit as ready for pickup with notification preferences
+ */
+data class MarkReadyForPickupRequest(
+    val sms: Boolean,
+    val email: Boolean
+)
 
 /**
  * Request to reject visit with optional reason

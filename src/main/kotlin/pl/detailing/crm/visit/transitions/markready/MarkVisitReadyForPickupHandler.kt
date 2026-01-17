@@ -30,14 +30,21 @@ class MarkVisitReadyForPickupHandler(
         visitRepository.save(updatedEntity)
 
         // Step 4: Side-effects (to be implemented)
-        // TODO: Send notification to customer (SMS/Email)
-        // Example:
-        // notificationService.notifyCustomerVisitReady(
-        //     customerId = visit.customerId,
-        //     visitNumber = visit.visitNumber,
-        //     customerPhone = ...,
-        //     customerEmail = ...
-        // )
+        // TODO: Send notification to customer based on preferences
+        // if (command.sendSms) {
+        //     smsService.sendVisitReadyNotification(
+        //         customerId = visit.customerId,
+        //         visitNumber = visit.visitNumber,
+        //         customerPhone = ...
+        //     )
+        // }
+        // if (command.sendEmail) {
+        //     emailService.sendVisitReadyNotification(
+        //         customerId = visit.customerId,
+        //         visitNumber = visit.visitNumber,
+        //         customerEmail = ...
+        //     )
+        // }
 
         MarkVisitReadyForPickupResult(
             visitId = updatedVisit.id,
@@ -52,7 +59,9 @@ class MarkVisitReadyForPickupHandler(
 data class MarkVisitReadyForPickupCommand(
     val studioId: StudioId,
     val userId: UserId,
-    val visitId: VisitId
+    val visitId: VisitId,
+    val sendSms: Boolean,
+    val sendEmail: Boolean
 )
 
 /**
