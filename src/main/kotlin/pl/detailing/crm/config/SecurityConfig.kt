@@ -1,9 +1,8 @@
-// src/main/kotlin/pl/detailing/crm/config/SecurityConfig.kt
-
 package pl.detailing.crm.config
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -42,12 +41,14 @@ class SecurityConfig {
                 context.securityContextRepository(securityContextRepository)
             }
             .authorizeHttpRequests { auth ->
-                auth
-                    .requestMatchers(
-                        "/api/auth/**",
-                        "/api/v1/auth/**",
-                        "/api/health"
-                    ).permitAll()
+                auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                auth.requestMatchers(
+                    "/api/auth/**",
+                    "/api/v1/auth/**",
+                    "/api/health",
+                    "/actuator/**"
+                ).permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->
@@ -64,11 +65,9 @@ class SecurityConfig {
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val configuration = CorsConfiguration()
-        configuration.allowedOrigins = listOf(
-            "http://localhost:5173",
-            "http://localhost:5181",
-            "http://localhost:3000",
-            "http://localhost:5174"
+        configuration.allowedOriginPatterns = listOf(
+            "http://localhost:[*]",
+            "https://detailboost.pl"
         )
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
