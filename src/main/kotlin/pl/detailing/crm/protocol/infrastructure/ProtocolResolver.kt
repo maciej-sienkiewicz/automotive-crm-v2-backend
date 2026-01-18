@@ -34,8 +34,8 @@ class ProtocolResolver(
         studioId: StudioId,
         stage: ProtocolStage
     ): List<ProtocolRule> = withContext(Dispatchers.IO) {
-        // Fetch the visit to get service IDs
-        val visit = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
+        // Fetch the visit to get service IDs (with photos eagerly loaded to avoid LazyInitializationException)
+        val visit = visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
             ?: throw IllegalArgumentException("Visit not found: $visitId")
 
         val visitDomain = visit.toDomain()

@@ -40,7 +40,8 @@ class CrmDataResolver(
      */
     suspend fun resolveVisitData(visitId: VisitId, studioId: StudioId): Map<CrmDataKey, String> =
         withContext(Dispatchers.IO) {
-            val visit = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
+            // Fetch with photos eagerly loaded to avoid LazyInitializationException
+            val visit = visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
                 ?: throw IllegalArgumentException("Visit not found: $visitId")
 
             val customer = customerRepository.findByIdAndStudioId(visit.customerId, studioId.value)
