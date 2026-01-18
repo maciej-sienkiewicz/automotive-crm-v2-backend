@@ -21,11 +21,11 @@ class VisitController(
 
     /**
      * Get all visits for the studio with pagination and filtering
-     * GET /api/visits?page=0&size=20&status=IN_PROGRESS
+     * GET /api/visits?page=1&size=20&status=IN_PROGRESS
      */
     @GetMapping
     fun getVisits(
-        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
         @RequestParam(required = false) status: String?
     ): ResponseEntity<VisitListResponse> = runBlocking {
@@ -41,7 +41,7 @@ class VisitController(
 
         val command = pl.detailing.crm.visit.list.ListVisitsCommand(
             studioId = principal.studioId,
-            page = maxOf(0, page),
+            page = maxOf(1, page),
             pageSize = maxOf(1, minOf(100, size)), // Limit page size to 100
             status = visitStatus
         )
