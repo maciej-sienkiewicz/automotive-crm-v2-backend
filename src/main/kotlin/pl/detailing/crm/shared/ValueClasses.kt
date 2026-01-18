@@ -351,6 +351,120 @@ enum class ConsentStatus {
     REQUIRED    // Customer never signed OR new version requires re-sign
 }
 
+/**
+ * Type-safe ID wrapper for ProtocolTemplate entities
+ */
+@JvmInline
+value class ProtocolTemplateId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ProtocolTemplateId(UUID.randomUUID())
+        fun fromString(value: String) = ProtocolTemplateId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for ProtocolRule entities
+ */
+@JvmInline
+value class ProtocolRuleId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ProtocolRuleId(UUID.randomUUID())
+        fun fromString(value: String) = ProtocolRuleId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for ProtocolFieldMapping entities
+ */
+@JvmInline
+value class ProtocolFieldMappingId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ProtocolFieldMappingId(UUID.randomUUID())
+        fun fromString(value: String) = ProtocolFieldMappingId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for VisitProtocol entities
+ */
+@JvmInline
+value class VisitProtocolId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VisitProtocolId(UUID.randomUUID())
+        fun fromString(value: String) = VisitProtocolId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Protocol stage in the visit workflow
+ */
+enum class ProtocolStage {
+    CHECK_IN,   // Protocols required at vehicle arrival
+    CHECK_OUT   // Protocols required at vehicle handover
+}
+
+/**
+ * Protocol rule trigger type
+ */
+enum class ProtocolTriggerType {
+    GLOBAL_ALWAYS,      // Required for every visit at specified stage
+    SERVICE_SPECIFIC    // Required only if visit includes specific service
+}
+
+/**
+ * Status of a visit protocol instance
+ */
+enum class VisitProtocolStatus {
+    PENDING,                // Protocol generated but not ready
+    READY_FOR_SIGNATURE,    // PDF filled and ready to be signed
+    SIGNED                  // Signature applied and PDF flattened (immutable)
+}
+
+/**
+ * Standardized CRM data keys available for PDF field mapping
+ */
+enum class CrmDataKey(val description: String) {
+    // Vehicle data
+    VEHICLE_VIN("Vehicle VIN number"),
+    VEHICLE_PLATE("Vehicle license plate"),
+    VEHICLE_BRAND_MODEL("Vehicle brand and model"),
+    VEHICLE_COLOR("Vehicle color"),
+    VEHICLE_YEAR("Vehicle year of production"),
+    VEHICLE_ENGINE_TYPE("Vehicle engine type"),
+
+    // Customer data
+    CUSTOMER_FULL_NAME("Customer full name"),
+    CUSTOMER_PHONE("Customer phone number"),
+    CUSTOMER_EMAIL("Customer email address"),
+
+    // Visit context
+    VISIT_MILEAGE("Vehicle mileage at arrival"),
+    VISIT_NUMBER("Visit number/identifier"),
+    VISIT_DATE("Visit scheduled date"),
+    VISIT_COMPLETED_DATE("Visit completion date"),
+    TOTAL_NET_AMOUNT("Total net amount"),
+    TOTAL_GROSS_AMOUNT("Total gross amount"),
+    TOTAL_VAT_AMOUNT("Total VAT amount"),
+
+    // Services
+    SERVICES_LIST("Formatted list of approved services"),
+
+    // Studio/Company
+    STUDIO_NAME("Studio/Company name"),
+
+    // Current date/time
+    CURRENT_DATE("Current date"),
+    CURRENT_DATETIME("Current date and time")
+}
+
 data class Money(
     val amountInCents: Long
 ) : Serializable {

@@ -19,6 +19,15 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): VisitEntity?
 
     /**
+     * Find visit by ID with studio isolation, eagerly fetching photos
+     */
+    @Query("SELECT v FROM VisitEntity v LEFT JOIN FETCH v.photos WHERE v.id = :id AND v.studioId = :studioId")
+    fun findByIdAndStudioIdWithPhotos(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): VisitEntity?
+
+    /**
      * Find all visits for a studio
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId ORDER BY v.scheduledDate DESC")

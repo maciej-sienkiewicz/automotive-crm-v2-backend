@@ -38,7 +38,6 @@ pipeline {
                         error("Build przerwany: branch '${branch}' nie jest obsługiwany (tylko 'main' lub 'develop').")
                     }
 
-
                     sh """
                       docker build -f ./deploy/Dockerfile -t ${IMAGE_NAME}:${tag} .
                       docker push ${IMAGE_NAME}:${tag}
