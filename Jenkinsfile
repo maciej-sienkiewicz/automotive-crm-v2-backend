@@ -9,9 +9,9 @@ pipeline {
         stage('Build') {
             agent {
                 docker {
-                    image 'gradle:9.3.0-jdk25'
-                    label 'docker'
-                    reuseNode true
+                  image 'gradle:8.14-jdk21'
+                  label 'docker'
+                  reuseNode true
                 }
             }
          steps {
