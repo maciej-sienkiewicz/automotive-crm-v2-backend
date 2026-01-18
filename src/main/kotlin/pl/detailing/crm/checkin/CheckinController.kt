@@ -52,7 +52,6 @@ class CheckinController(
                 model = request.vehicle.model,
                 yearOfProduction = request.vehicle.yearOfProduction,
                 licensePlate = request.vehicle.licensePlate,
-                vin = request.vehicle.vin,
                 color = request.vehicle.color,
                 paintType = request.vehicle.paintType,
                 isNew = request.vehicle.isNew
@@ -119,7 +118,6 @@ data class VehicleRequest(
     val model: String,
     val yearOfProduction: Int,
     val licensePlate: String?,
-    val vin: String?,
     val color: String?,
     val paintType: String?,
     val isNew: Boolean
@@ -185,7 +183,6 @@ data class VehicleData(
     val model: String,
     val yearOfProduction: Int,
     val licensePlate: String?,
-    val vin: String?,
     val color: String?,
     val paintType: String?,
     val isNew: Boolean

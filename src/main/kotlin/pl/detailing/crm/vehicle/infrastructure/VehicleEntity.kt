@@ -11,7 +11,6 @@ import java.util.UUID
     name = "vehicles",
     indexes = [
         Index(name = "idx_vehicles_studio_license_plate", columnList = "studio_id, license_plate"),
-        Index(name = "idx_vehicles_studio_vin", columnList = "studio_id, vin"),
         Index(name = "idx_vehicles_studio_status", columnList = "studio_id, status"),
         Index(name = "idx_vehicles_created_by", columnList = "created_by"),
         Index(name = "idx_vehicles_updated_by", columnList = "updated_by")
@@ -33,9 +32,6 @@ class VehicleEntity(
 
     @Column(name = "model", nullable = false, length = 100)
     var model: String,
-
-    @Column(name = "vin", length = 17)
-    var vin: String?,
 
     @Column(name = "year_of_production", nullable = false)
     var yearOfProduction: Int,
@@ -75,7 +71,6 @@ class VehicleEntity(
         licensePlate = licensePlate,
         brand = brand,
         model = model,
-        vin = vin,
         yearOfProduction = yearOfProduction,
         color = color,
         paintType = paintType,
@@ -95,7 +90,6 @@ class VehicleEntity(
             licensePlate = vehicle.licensePlate,
             brand = vehicle.brand,
             model = vehicle.model,
-            vin = vehicle.vin,
             yearOfProduction = vehicle.yearOfProduction,
             color = vehicle.color,
             paintType = vehicle.paintType,

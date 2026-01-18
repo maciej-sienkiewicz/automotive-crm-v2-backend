@@ -8,9 +8,7 @@ data class CreateVehicleValidationContext(
     val studioId: StudioId,
     val ownerIds: List<CustomerId>,
     val licensePlate: String,
-    val vin: String?,
     val yearOfProduction: Int,
     val customerExists: CustomerEntity?,
-    val vinExists: Boolean,
     val licensePlateExists: Boolean
 )
