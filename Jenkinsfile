@@ -9,16 +9,16 @@ pipeline {
         stage('Build') {
             agent {
                 docker {
-                    image 'gradle:7.6.6-jdk17-corretto'
+                    image 'gradle:9.3.0-jdk25'
                     label 'docker'
                     reuseNode true
                 }
             }
-            steps {
-                sh 'mkdir -p "$GRADLE_USER_HOME"'
-                sh 'chmod +x gradlew || true'
-                sh './gradlew -g "$GRADLE_USER_HOME" build'
-            }
+         steps {
+                    sh 'mkdir -p "$GRADLE_USER_HOME"'
+                    sh 'chmod +x gradlew || true'
+                    sh './gradlew -g "$GRADLE_USER_HOME" bootJar'
+                }
         }
 
         stage('Docker Build & Push') {
