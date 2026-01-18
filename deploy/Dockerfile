@@ -10,6 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu fontconfig \
   && rm -rf /var/lib/apt/lists/*
 
-COPY /build/libs/*SNAPSHOT.jar /detailing-crm-backed.jar
+COPY /build/libs/*.jar /detailing-crm-backed.jar
 
 ENTRYPOINT ["java", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005","-Dspring.profiles.active=docker-props", "-jar", "detailing-crm-backed.jar"]
