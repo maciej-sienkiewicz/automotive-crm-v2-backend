@@ -21,9 +21,9 @@ class UpdateCustomerHandler(
 
             // Check if email is unique (if changed)
             if (entity.email != command.email) {
-                val existingWithEmail = customerRepository.findByEmailAndStudioId(
-                    email = command.email,
-                    studioId = command.studioId.value
+                val existingWithEmail = customerRepository.findActiveByStudioIdAndEmail(
+                    studioId = command.studioId.value,
+                    email = command.email
                 )
                 if (existingWithEmail != null && existingWithEmail.id != entity.id) {
                     throw IllegalArgumentException("Email already in use by another customer")
@@ -32,9 +32,9 @@ class UpdateCustomerHandler(
 
             // Check if phone is unique (if changed)
             if (entity.phone != command.phone) {
-                val existingWithPhone = customerRepository.findByPhoneAndStudioId(
-                    phone = command.phone,
-                    studioId = command.studioId.value
+                val existingWithPhone = customerRepository.findActiveByStudioIdAndPhone(
+                    studioId = command.studioId.value,
+                    phone = command.phone
                 )
                 if (existingWithPhone != null && existingWithPhone.id != entity.id) {
                     throw IllegalArgumentException("Phone already in use by another customer")
