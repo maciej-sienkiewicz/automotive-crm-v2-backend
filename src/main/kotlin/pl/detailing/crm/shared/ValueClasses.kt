@@ -433,7 +433,6 @@ enum class VisitProtocolStatus {
  */
 enum class CrmDataKey(val description: String) {
     // Vehicle data
-    VEHICLE_VIN("Vehicle VIN number"),
     VEHICLE_PLATE("Vehicle license plate"),
     VEHICLE_BRAND_MODEL("Vehicle brand and model"),
     VEHICLE_COLOR("Vehicle color"),

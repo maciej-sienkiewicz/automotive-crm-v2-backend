@@ -22,20 +22,9 @@ interface VehicleRepository : JpaRepository<VehicleEntity, UUID> {
     fun findActiveByStudioId(@Param("studioId") studioId: UUID): List<VehicleEntity>
 
     @Query("""
-        SELECT COUNT(v) > 0 FROM VehicleEntity v 
-        WHERE v.studioId = :studioId 
-        AND v.vin = :vin 
-        AND v.status != 'ARCHIVED'
-    """)
-    fun existsByStudioIdAndVin(
-        @Param("studioId") studioId: UUID,
-        @Param("vin") vin: String
-    ): Boolean
-
-    @Query("""
-        SELECT COUNT(v) > 0 FROM VehicleEntity v 
-        WHERE v.studioId = :studioId 
-        AND v.licensePlate = :licensePlate 
+        SELECT COUNT(v) > 0 FROM VehicleEntity v
+        WHERE v.studioId = :studioId
+        AND v.licensePlate = :licensePlate
         AND v.status != 'ARCHIVED'
     """)
     fun existsByStudioIdAndLicensePlate(
@@ -44,20 +33,9 @@ interface VehicleRepository : JpaRepository<VehicleEntity, UUID> {
     ): Boolean
 
     @Query("""
-        SELECT v FROM VehicleEntity v 
-        WHERE v.studioId = :studioId 
-        AND v.vin = :vin 
-        AND v.status != 'ARCHIVED'
-    """)
-    fun findByStudioIdAndVin(
-        @Param("studioId") studioId: UUID,
-        @Param("vin") vin: String
-    ): VehicleEntity?
-
-    @Query("""
-        SELECT v FROM VehicleEntity v 
-        WHERE v.studioId = :studioId 
-        AND v.licensePlate = :licensePlate 
+        SELECT v FROM VehicleEntity v
+        WHERE v.studioId = :studioId
+        AND v.licensePlate = :licensePlate
         AND v.status != 'ARCHIVED'
     """)
     fun findByStudioIdAndLicensePlate(

@@ -9,7 +9,6 @@ data class CreateVehicleCommand(
     val licensePlate: String,
     val brand: String,
     val model: String,
-    val vin: String?,
     val yearOfProduction: Int,
     val color: String?,
     val paintType: String?,

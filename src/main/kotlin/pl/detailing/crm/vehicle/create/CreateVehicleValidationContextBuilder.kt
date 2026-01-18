@@ -15,17 +15,6 @@ class CreateVehicleValidationContextBuilder(
     suspend fun build(command: CreateVehicleCommand): CreateVehicleValidationContext =
         withContext(Dispatchers.IO) {
 
-            val vinExistsDeferred = async {
-                if (command.vin != null) {
-                    vehicleRepository.existsByStudioIdAndVin(
-                        command.studioId.value,
-                        command.vin
-                    )
-                } else {
-                    false
-                }
-            }
-
             val licensePlateExistsDeferred = async {
                 vehicleRepository.existsByStudioIdAndLicensePlate(
                     command.studioId.value,
@@ -37,10 +26,8 @@ class CreateVehicleValidationContextBuilder(
                 studioId = command.studioId,
                 ownerIds = command.ownerIds,
                 licensePlate = command.licensePlate,
-                vin = command.vin,
                 yearOfProduction = command.yearOfProduction,
                 customerExists = null,
-                vinExists = vinExistsDeferred.await(),
                 licensePlateExists = licensePlateExistsDeferred.await()
             )
         }
