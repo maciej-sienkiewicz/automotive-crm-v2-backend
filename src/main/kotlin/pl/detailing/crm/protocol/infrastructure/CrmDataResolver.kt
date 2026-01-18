@@ -61,7 +61,7 @@ class CrmDataResolver(
                 // Customer data
                 customer?.let {
                     put(CrmDataKey.CUSTOMER_FULL_NAME, "${it.firstName} ${it.lastName}")
-                    put(CrmDataKey.CUSTOMER_PHONE, it.phoneNumber ?: "")
+                    put(CrmDataKey.CUSTOMER_PHONE, it.phone ?: "")
                     put(CrmDataKey.CUSTOMER_EMAIL, it.email ?: "")
                 }
 
