@@ -52,7 +52,6 @@ class CrmDataResolver(
 
             buildMap {
                 // Vehicle data (from visit snapshot)
-                put(CrmDataKey.VEHICLE_VIN, visit.vinSnapshot ?: "")
                 put(CrmDataKey.VEHICLE_PLATE, visit.licensePlateSnapshot)
                 put(CrmDataKey.VEHICLE_BRAND_MODEL, "${visit.brandSnapshot} ${visit.modelSnapshot}")
                 put(CrmDataKey.VEHICLE_COLOR, visit.colorSnapshot ?: "")

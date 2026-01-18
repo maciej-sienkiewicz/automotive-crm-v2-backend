@@ -158,7 +158,6 @@ class CreateAppointmentHandler(
             licensePlate = identity.licensePlate?.trim()?.uppercase() ?: "UNKNOWN",
             brand = identity.brand.trim(),
             model = identity.model.trim(),
-            vin = null,
             yearOfProduction = identity.year ?: 2000,
             color = null,
             paintType = null,
