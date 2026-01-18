@@ -29,7 +29,8 @@ class CustomerController(
     private val createCustomerHandler: CreateCustomerHandler,
     private val listCustomersHandler: ListCustomersHandler,
     private val getCustomerByIdHandler: GetCustomerByIdHandler,
-    private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler
+    private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler,
+    private val getCustomerDetailHandler: pl.detailing.crm.customer.detail.GetCustomerDetailHandler
 ) {
 
     @GetMapping
@@ -247,6 +248,81 @@ class CustomerController(
             ))
     }
 
+    @GetMapping("/{customerId}/detail")
+    fun getCustomerDetail(@PathVariable customerId: String): ResponseEntity<CustomerDetailFullResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = pl.detailing.crm.customer.detail.GetCustomerDetailCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId
+        )
+
+        val result = getCustomerDetailHandler.handle(command)
+
+        ResponseEntity.ok(CustomerDetailFullResponse(
+            customer = CustomerDetailResponse(
+                id = result.customer.id,
+                firstName = result.customer.firstName,
+                lastName = result.customer.lastName,
+                contact = CustomerContactResponse(
+                    email = result.customer.contact.email,
+                    phone = result.customer.contact.phone
+                ),
+                homeAddress = result.customer.homeAddress?.let {
+                    HomeAddressResponse(
+                        street = it.street,
+                        city = it.city,
+                        postalCode = it.postalCode,
+                        country = it.country
+                    )
+                },
+                company = result.customer.company?.let {
+                    CompanyDetailsResponse(
+                        id = it.id,
+                        name = it.name,
+                        nip = it.nip,
+                        regon = it.regon,
+                        address = it.address?.let { addr ->
+                            CompanyAddressResponse(
+                                street = addr.street,
+                                city = addr.city,
+                                postalCode = addr.postalCode,
+                                country = addr.country
+                            )
+                        }
+                    )
+                },
+                notes = result.customer.notes,
+                lastVisitDate = result.customer.lastVisitDate,
+                totalVisits = result.customer.totalVisits,
+                vehicleCount = result.customer.vehicleCount,
+                totalRevenue = CustomerRevenueResponse(
+                    netAmount = result.customer.totalRevenue.netAmount.toDouble(),
+                    grossAmount = result.customer.totalRevenue.grossAmount.toDouble(),
+                    currency = result.customer.totalRevenue.currency
+                ),
+                createdAt = result.customer.createdAt,
+                updatedAt = result.customer.updatedAt
+            ),
+            marketingConsents = result.marketingConsents.map { consent ->
+                MarketingConsentResponse(
+                    id = consent.id,
+                    type = consent.type.name.lowercase(),
+                    granted = consent.granted,
+                    grantedAt = consent.grantedAt,
+                    revokedAt = consent.revokedAt,
+                    lastModifiedBy = consent.lastModifiedBy
+                )
+            },
+            loyaltyTier = result.loyaltyTier.name.lowercase(),
+            lifetimeValue = CustomerRevenueResponse(
+                netAmount = result.lifetimeValue.netAmount.toDouble(),
+                grossAmount = result.lifetimeValue.grossAmount.toDouble(),
+                currency = result.lifetimeValue.currency
+            )
+        ))
+    }
+
     @GetMapping("/{customerId}/vehicles")
     fun getCustomerVehicles(@PathVariable customerId: String): ResponseEntity<List<VehicleResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -340,4 +416,20 @@ data class CustomerRevenueResponse(
     val netAmount: Double,
     val grossAmount: Double,
     val currency: String
+)
+
+data class CustomerDetailFullResponse(
+    val customer: CustomerDetailResponse,
+    val marketingConsents: List<MarketingConsentResponse>,
+    val loyaltyTier: String,
+    val lifetimeValue: CustomerRevenueResponse
+)
+
+data class MarketingConsentResponse(
+    val id: String,
+    val type: String,
+    val granted: Boolean,
+    val grantedAt: String?,
+    val revokedAt: String?,
+    val lastModifiedBy: String
 )
