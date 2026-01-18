@@ -6,7 +6,6 @@ import pl.detailing.crm.appointment.create.validators.*
 @Component
 class CreateAppointmentValidatorComposite(
     private val contextBuilder: CreateAppointmentValidationContextBuilder,
-    private val scheduleConflictValidator: ScheduleConflictValidator,
     private val serviceAvailabilityValidator: ServiceAvailabilityValidator,
     private val customerExistenceValidator: CustomerExistenceValidator,
     private val vehicleExistenceValidator: VehicleExistenceValidator,
@@ -22,6 +21,5 @@ class CreateAppointmentValidatorComposite(
         customerExistenceValidator.validate(context)
         vehicleExistenceValidator.validate(context)
         newCustomerUniquenessValidator.validate(context)
-        scheduleConflictValidator.validate(context)
     }
 }
