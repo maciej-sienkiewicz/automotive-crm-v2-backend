@@ -8,7 +8,7 @@ import java.time.Instant
  *
  * Rules can be:
  * - GLOBAL_ALWAYS: Required for all visits at a specific stage
- * - SERVICE_SPECIFIC: Required only if visit includes a specific service
+ * - SERVICE_SPECIFIC: Required only if visit includes one or more specific services
  */
 data class ProtocolRule(
     val id: ProtocolRuleId,
@@ -16,7 +16,7 @@ data class ProtocolRule(
     val templateId: ProtocolTemplateId,
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
-    val serviceId: ServiceId?,          // Required when triggerType is SERVICE_SPECIFIC
+    val serviceIds: Set<ServiceId>,     // Required when triggerType is SERVICE_SPECIFIC (can be multiple services)
     val isMandatory: Boolean,           // If true, visit cannot proceed without this protocol
     val displayOrder: Int,              // Order in which protocols appear in the UI
     val createdBy: UserId,
@@ -26,10 +26,10 @@ data class ProtocolRule(
 ) {
     init {
         if (triggerType == ProtocolTriggerType.SERVICE_SPECIFIC) {
-            requireNotNull(serviceId) { "Service ID is required for SERVICE_SPECIFIC rules" }
+            require(serviceIds.isNotEmpty()) { "At least one Service ID is required for SERVICE_SPECIFIC rules" }
         }
         if (triggerType == ProtocolTriggerType.GLOBAL_ALWAYS) {
-            require(serviceId == null) { "Service ID must be null for GLOBAL_ALWAYS rules" }
+            require(serviceIds.isEmpty()) { "Service IDs must be empty for GLOBAL_ALWAYS rules" }
         }
         require(displayOrder >= 0) { "Display order must be non-negative" }
     }

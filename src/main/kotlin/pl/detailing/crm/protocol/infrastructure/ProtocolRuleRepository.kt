@@ -53,21 +53,11 @@ interface ProtocolRuleRepository : JpaRepository<ProtocolRuleEntity, UUID> {
     ): List<ProtocolRuleEntity>
 
     @Query("""
-        SELECT pr FROM ProtocolRuleEntity pr
-        WHERE pr.studioId = :studioId
-        AND pr.serviceId = :serviceId
-        ORDER BY pr.displayOrder, pr.createdAt
-    """)
-    fun findAllByStudioIdAndServiceId(
-        @Param("studioId") studioId: UUID,
-        @Param("serviceId") serviceId: UUID
-    ): List<ProtocolRuleEntity>
-
-    @Query("""
-        SELECT pr FROM ProtocolRuleEntity pr
+        SELECT DISTINCT pr FROM ProtocolRuleEntity pr
+        JOIN pr.serviceIds sid
         WHERE pr.studioId = :studioId
         AND pr.stage = :stage
-        AND pr.serviceId IN :serviceIds
+        AND sid IN :serviceIds
         ORDER BY pr.displayOrder, pr.createdAt
     """)
     fun findAllByStudioIdAndStageAndServiceIdIn(

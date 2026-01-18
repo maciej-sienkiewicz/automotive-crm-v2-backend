@@ -137,8 +137,7 @@ class ProtocolController(
 
     @GetMapping("/protocol-rules")
     fun getProtocolRules(
-        @RequestParam(required = false) stage: String?,
-        @RequestParam(required = false) serviceId: String?
+        @RequestParam(required = false) stage: String?
     ): ResponseEntity<List<ProtocolRuleResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -168,7 +167,7 @@ class ProtocolController(
             templateId = ProtocolTemplateId.fromString(request.protocolTemplateId),
             triggerType = request.triggerType,
             stage = request.stage,
-            serviceId = request.serviceId?.let { ServiceId.fromString(it) },
+            serviceIds = request.serviceIds?.map { ServiceId.fromString(it) }?.toSet() ?: emptySet(),
             isMandatory = request.isMandatory,
             displayOrder = request.displayOrder ?: 0
         )
@@ -298,7 +297,7 @@ class ProtocolController(
             studioId.value
         )?.toDomain()
 
-        val serviceName = rule.serviceId?.let { serviceId ->
+        val serviceNames = rule.serviceIds.mapNotNull { serviceId ->
             serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)?.name
         }
 
@@ -308,8 +307,8 @@ class ProtocolController(
             protocolTemplate = template?.let { toProtocolTemplateResponse(it, studioId) },
             triggerType = rule.triggerType.name,
             stage = rule.stage.name,
-            serviceId = rule.serviceId?.toString(),
-            serviceName = serviceName,
+            serviceIds = rule.serviceIds.map { it.toString() },
+            serviceNames = serviceNames,
             isMandatory = rule.isMandatory,
             displayOrder = rule.displayOrder,
             createdAt = rule.createdAt.toString(),

@@ -16,7 +16,6 @@ import java.util.*
     indexes = [
         Index(name = "idx_protocol_rules_studio_stage", columnList = "studio_id, stage"),
         Index(name = "idx_protocol_rules_template", columnList = "template_id"),
-        Index(name = "idx_protocol_rules_service", columnList = "service_id"),
         Index(name = "idx_protocol_rules_display_order", columnList = "studio_id, display_order")
     ]
 )
@@ -39,8 +38,17 @@ class ProtocolRuleEntity(
     @Column(name = "stage", nullable = false, length = 50)
     val stage: ProtocolStage,
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+        name = "protocol_rule_services",
+        joinColumns = [JoinColumn(name = "protocol_rule_id")],
+        indexes = [
+            Index(name = "idx_protocol_rule_services_rule_id", columnList = "protocol_rule_id"),
+            Index(name = "idx_protocol_rule_services_service_id", columnList = "service_id")
+        ]
+    )
     @Column(name = "service_id", columnDefinition = "uuid")
-    val serviceId: UUID?,
+    val serviceIds: MutableSet<UUID> = mutableSetOf(),
 
     @Column(name = "is_mandatory", nullable = false)
     var isMandatory: Boolean = true,
@@ -66,7 +74,7 @@ class ProtocolRuleEntity(
         templateId = ProtocolTemplateId(templateId),
         triggerType = triggerType,
         stage = stage,
-        serviceId = serviceId?.let { ServiceId(it) },
+        serviceIds = serviceIds.map { ServiceId(it) }.toSet(),
         isMandatory = isMandatory,
         displayOrder = displayOrder,
         createdBy = UserId(createdBy),
@@ -83,7 +91,7 @@ class ProtocolRuleEntity(
                 templateId = rule.templateId.value,
                 triggerType = rule.triggerType,
                 stage = rule.stage,
-                serviceId = rule.serviceId?.value,
+                serviceIds = rule.serviceIds.map { it.value }.toMutableSet(),
                 isMandatory = rule.isMandatory,
                 displayOrder = rule.displayOrder,
                 createdBy = rule.createdBy.value,

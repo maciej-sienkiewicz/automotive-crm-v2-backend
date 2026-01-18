@@ -21,7 +21,7 @@ data class CreateProtocolRuleRequest(
     val protocolTemplateId: String,
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
-    val serviceId: String?,
+    val serviceIds: List<String>?,
     val isMandatory: Boolean,
     val displayOrder: Int?
 )
@@ -30,7 +30,7 @@ data class UpdateProtocolRuleRequest(
     val protocolTemplateId: String?,
     val triggerType: ProtocolTriggerType?,
     val stage: ProtocolStage?,
-    val serviceId: String?,
+    val serviceIds: List<String>?,
     val isMandatory: Boolean?,
     val displayOrder: Int?
 )
@@ -69,8 +69,8 @@ data class ProtocolRuleResponse(
     val protocolTemplate: ProtocolTemplateResponse?,
     val triggerType: String,
     val stage: String,
-    val serviceId: String?,
-    val serviceName: String?,
+    val serviceIds: List<String>,
+    val serviceNames: List<String>,
     val isMandatory: Boolean,
     val displayOrder: Int,
     val createdAt: String,

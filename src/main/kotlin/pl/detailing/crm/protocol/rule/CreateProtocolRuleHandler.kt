@@ -27,11 +27,11 @@ class CreateProtocolRuleHandler(
             ) ?: throw ValidationException("Protocol template not found")
 
             // Validate service-specific rules
-            if (command.triggerType == ProtocolTriggerType.SERVICE_SPECIFIC && command.serviceId == null) {
-                throw ValidationException("Service ID is required for SERVICE_SPECIFIC rules")
+            if (command.triggerType == ProtocolTriggerType.SERVICE_SPECIFIC && command.serviceIds.isEmpty()) {
+                throw ValidationException("At least one Service ID is required for SERVICE_SPECIFIC rules")
             }
-            if (command.triggerType == ProtocolTriggerType.GLOBAL_ALWAYS && command.serviceId != null) {
-                throw ValidationException("Service ID must be null for GLOBAL_ALWAYS rules")
+            if (command.triggerType == ProtocolTriggerType.GLOBAL_ALWAYS && command.serviceIds.isNotEmpty()) {
+                throw ValidationException("Service IDs must be empty for GLOBAL_ALWAYS rules")
             }
 
             val rule = ProtocolRule(
@@ -40,7 +40,7 @@ class CreateProtocolRuleHandler(
                 templateId = command.templateId,
                 triggerType = command.triggerType,
                 stage = command.stage,
-                serviceId = command.serviceId,
+                serviceIds = command.serviceIds,
                 isMandatory = command.isMandatory,
                 displayOrder = command.displayOrder,
                 createdBy = command.userId,
@@ -62,7 +62,7 @@ data class CreateProtocolRuleCommand(
     val templateId: ProtocolTemplateId,
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
-    val serviceId: ServiceId?,
+    val serviceIds: Set<ServiceId>,
     val isMandatory: Boolean,
     val displayOrder: Int
 )
