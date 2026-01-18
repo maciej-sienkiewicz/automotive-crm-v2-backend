@@ -34,7 +34,8 @@ class CustomerController(
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
-    private val updateNotesHandler: pl.detailing.crm.customer.update.UpdateNotesHandler
+    private val updateNotesHandler: pl.detailing.crm.customer.update.UpdateNotesHandler,
+    private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler
 ) {
 
     @GetMapping
@@ -339,6 +340,51 @@ class CustomerController(
         ResponseEntity.ok(vehicles)
     }
 
+    @GetMapping("/{customerId}/visits")
+    fun getCustomerVisits(
+        @PathVariable customerId: String,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int
+    ): ResponseEntity<CustomerVisitsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = pl.detailing.crm.customer.visits.GetCustomerVisitsCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            page = page,
+            limit = limit
+        )
+
+        val result = getCustomerVisitsHandler.handle(command)
+
+        ResponseEntity.ok(CustomerVisitsResponse(
+            visits = result.visits.map { visit ->
+                VisitResponse(
+                    id = visit.id,
+                    date = visit.date,
+                    type = visit.type.name.lowercase(),
+                    vehicleId = visit.vehicleId,
+                    vehicleName = visit.vehicleName,
+                    description = visit.description,
+                    totalCost = VisitCostResponse(
+                        netAmount = visit.totalCost.netAmount.toDouble(),
+                        grossAmount = visit.totalCost.grossAmount.toDouble(),
+                        currency = visit.totalCost.currency
+                    ),
+                    status = visit.status,
+                    technician = visit.technician,
+                    notes = visit.notes
+                )
+            },
+            pagination = PaginationMeta(
+                currentPage = result.pagination.currentPage,
+                totalPages = result.pagination.totalPages,
+                totalItems = result.pagination.totalItems,
+                itemsPerPage = result.pagination.itemsPerPage
+            )
+        ))
+    }
+
     @PatchMapping("/{customerId}")
     fun updateCustomer(
         @PathVariable customerId: String,
@@ -632,4 +678,29 @@ data class UpdateNotesRequest(
 data class UpdateNotesResponse(
     val notes: String,
     val updatedAt: String
+)
+
+// Customer Visits DTOs
+data class CustomerVisitsResponse(
+    val visits: List<VisitResponse>,
+    val pagination: PaginationMeta
+)
+
+data class VisitResponse(
+    val id: String,
+    val date: String,
+    val type: String,
+    val vehicleId: String,
+    val vehicleName: String,
+    val description: String,
+    val totalCost: VisitCostResponse,
+    val status: String,
+    val technician: String,
+    val notes: String
+)
+
+data class VisitCostResponse(
+    val netAmount: Double,
+    val grossAmount: Double,
+    val currency: String
 )
