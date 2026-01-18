@@ -30,7 +30,11 @@ class CustomerController(
     private val listCustomersHandler: ListCustomersHandler,
     private val getCustomerByIdHandler: GetCustomerByIdHandler,
     private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler,
-    private val getCustomerDetailHandler: pl.detailing.crm.customer.detail.GetCustomerDetailHandler
+    private val getCustomerDetailHandler: pl.detailing.crm.customer.detail.GetCustomerDetailHandler,
+    private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
+    private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
+    private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
+    private val updateNotesHandler: pl.detailing.crm.customer.update.UpdateNotesHandler
 ) {
 
     @GetMapping
@@ -334,6 +338,140 @@ class CustomerController(
 
         ResponseEntity.ok(vehicles)
     }
+
+    @PatchMapping("/{customerId}")
+    fun updateCustomer(
+        @PathVariable customerId: String,
+        @RequestBody request: UpdateCustomerRequest
+    ): ResponseEntity<UpdateCustomerResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can update customers")
+        }
+
+        val command = pl.detailing.crm.customer.update.UpdateCustomerCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            firstName = request.firstName,
+            lastName = request.lastName,
+            email = request.contact.email,
+            phone = request.contact.phone,
+            homeAddress = request.homeAddress?.let {
+                HomeAddress(
+                    street = it.street,
+                    city = it.city,
+                    postalCode = it.postalCode,
+                    country = it.country
+                )
+            }
+        )
+
+        val result = updateCustomerHandler.handle(command)
+
+        ResponseEntity.ok(UpdateCustomerResponse(
+            id = result.id,
+            firstName = result.firstName,
+            lastName = result.lastName,
+            contact = CustomerContactResponse(
+                email = result.email,
+                phone = result.phone
+            ),
+            homeAddress = result.homeAddress?.let {
+                HomeAddressResponse(
+                    street = it.street,
+                    city = it.city,
+                    postalCode = it.postalCode,
+                    country = it.country
+                )
+            },
+            updatedAt = result.updatedAt
+        ))
+    }
+
+    @PatchMapping("/{customerId}/company")
+    fun updateCompany(
+        @PathVariable customerId: String,
+        @RequestBody request: UpdateCompanyRequest
+    ): ResponseEntity<UpdateCompanyResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can update company data")
+        }
+
+        val command = pl.detailing.crm.customer.update.UpdateCompanyCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            name = request.name,
+            nip = request.nip,
+            regon = request.regon,
+            address = CompanyAddress(
+                street = request.address.street,
+                city = request.address.city,
+                postalCode = request.address.postalCode,
+                country = request.address.country
+            )
+        )
+
+        val result = updateCompanyHandler.handle(command)
+
+        ResponseEntity.ok(UpdateCompanyResponse(
+            id = result.id,
+            name = result.name,
+            nip = result.nip,
+            regon = result.regon,
+            address = CompanyAddressResponse(
+                street = result.address.street,
+                city = result.address.city,
+                postalCode = result.address.postalCode,
+                country = result.address.country
+            )
+        ))
+    }
+
+    @DeleteMapping("/{customerId}/company")
+    fun deleteCompany(@PathVariable customerId: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can delete company data")
+        }
+
+        val command = pl.detailing.crm.customer.update.DeleteCompanyCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            userId = principal.userId
+        )
+
+        deleteCompanyHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    @PatchMapping("/{customerId}/notes")
+    fun updateNotes(
+        @PathVariable customerId: String,
+        @RequestBody request: UpdateNotesRequest
+    ): ResponseEntity<UpdateNotesResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = pl.detailing.crm.customer.update.UpdateNotesCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            notes = request.notes
+        )
+
+        val result = updateNotesHandler.handle(command)
+
+        ResponseEntity.ok(UpdateNotesResponse(
+            notes = result.notes,
+            updatedAt = result.updatedAt
+        ))
+    }
 }
 
 data class CustomerResponse(
@@ -432,4 +570,66 @@ data class MarketingConsentResponse(
     val grantedAt: String?,
     val revokedAt: String?,
     val lastModifiedBy: String
+)
+
+// Update Customer DTOs
+data class UpdateCustomerRequest(
+    val firstName: String,
+    val lastName: String,
+    val contact: CustomerContactRequest,
+    val homeAddress: HomeAddressRequest?
+)
+
+data class CustomerContactRequest(
+    val email: String,
+    val phone: String
+)
+
+data class HomeAddressRequest(
+    val street: String,
+    val city: String,
+    val postalCode: String,
+    val country: String
+)
+
+data class UpdateCustomerResponse(
+    val id: String,
+    val firstName: String,
+    val lastName: String,
+    val contact: CustomerContactResponse,
+    val homeAddress: HomeAddressResponse?,
+    val updatedAt: String
+)
+
+// Update Company DTOs
+data class UpdateCompanyRequest(
+    val name: String,
+    val nip: String,
+    val regon: String,
+    val address: CompanyAddressRequest
+)
+
+data class CompanyAddressRequest(
+    val street: String,
+    val city: String,
+    val postalCode: String,
+    val country: String
+)
+
+data class UpdateCompanyResponse(
+    val id: String,
+    val name: String,
+    val nip: String,
+    val regon: String,
+    val address: CompanyAddressResponse
+)
+
+// Update Notes DTOs
+data class UpdateNotesRequest(
+    val notes: String
+)
+
+data class UpdateNotesResponse(
+    val notes: String,
+    val updatedAt: String
 )
