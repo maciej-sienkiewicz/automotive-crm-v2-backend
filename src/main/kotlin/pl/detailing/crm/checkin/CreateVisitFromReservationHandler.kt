@@ -223,7 +223,7 @@ class CreateVisitFromReservationHandler(
         val vehicle = Vehicle(
             id = VehicleId.random(),
             studioId = studioId,
-            licensePlate = vehicleData.licensePlate?.trim()?.uppercase() ?: "UNKNOWN",
+            licensePlate = vehicleData.licensePlate?.trim()?.uppercase(),
             brand = vehicleData.brand.trim(),
             model = vehicleData.model.trim(),
             yearOfProduction = vehicleData.yearOfProduction,

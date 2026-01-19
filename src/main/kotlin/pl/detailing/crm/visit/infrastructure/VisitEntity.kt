@@ -56,14 +56,14 @@ class VisitEntity(
     @Column(name = "model_snapshot", nullable = false, length = 100)
     val modelSnapshot: String,
 
-    @Column(name = "license_plate_snapshot", nullable = false, length = 20)
-    val licensePlateSnapshot: String,
+    @Column(name = "license_plate_snapshot", nullable = true, length = 20)
+    val licensePlateSnapshot: String?,
 
     @Column(name = "vin_snapshot", length = 17)
     val vinSnapshot: String?,
 
-    @Column(name = "year_of_production_snapshot", nullable = false)
-    val yearOfProductionSnapshot: Int,
+    @Column(name = "year_of_production_snapshot", nullable = true)
+    val yearOfProductionSnapshot: Int?,
 
     @Column(name = "color_snapshot", length = 50)
     val colorSnapshot: String?,

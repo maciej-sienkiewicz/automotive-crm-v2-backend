@@ -46,7 +46,11 @@ class GetCustomerVisitsHandler(
                 }
 
                 // Build vehicle name from snapshots
-                val vehicleName = "${visit.brandSnapshot} ${visit.modelSnapshot} (${visit.licensePlateSnapshot})"
+                val vehicleName = if (visit.licensePlateSnapshot != null) {
+                    "${visit.brandSnapshot} ${visit.modelSnapshot} (${visit.licensePlateSnapshot})"
+                } else {
+                    "${visit.brandSnapshot} ${visit.modelSnapshot}"
+                }
 
                 // Determine visit type based on service items or notes
                 // Since we don't have a type field, we'll default to SERVICE
