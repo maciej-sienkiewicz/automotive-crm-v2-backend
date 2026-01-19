@@ -24,8 +24,8 @@ class VehicleEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "license_plate", nullable = false, length = 20)
-    var licensePlate: String,
+    @Column(name = "license_plate", nullable = true, length = 20)
+    var licensePlate: String?,
 
     @Column(name = "brand", nullable = false, length = 100)
     var brand: String,
@@ -33,8 +33,8 @@ class VehicleEntity(
     @Column(name = "model", nullable = false, length = 100)
     var model: String,
 
-    @Column(name = "year_of_production", nullable = false)
-    var yearOfProduction: Int,
+    @Column(name = "year_of_production", nullable = true)
+    var yearOfProduction: Int?,
 
     @Column(name = "color", length = 50)
     var color: String?,

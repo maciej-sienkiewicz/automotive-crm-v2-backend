@@ -8,14 +8,17 @@ import java.time.Year
 @Component
 class ProductionYearValidator {
     fun validate(context: CreateVehicleValidationContext) {
+        // If year of production is null, no validation needed
+        val year = context.yearOfProduction ?: return
+
         val currentYear = Year.now().value
         val minYear = 1900
 
-        if (context.yearOfProduction > currentYear) {
+        if (year > currentYear) {
             throw ValidationException("Production year cannot be in the future (current year: $currentYear)")
         }
 
-        if (context.yearOfProduction < minYear) {
+        if (year < minYear) {
             throw ValidationException("Production year must be greater than $minYear")
         }
     }

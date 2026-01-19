@@ -40,6 +40,6 @@ data class VehicleResponse(
     val id: String,
     val brand: String,
     val model: String,
-    val year: Int,
-    val licensePlate: String
+    val year: Int?,
+    val licensePlate: String?
 )
