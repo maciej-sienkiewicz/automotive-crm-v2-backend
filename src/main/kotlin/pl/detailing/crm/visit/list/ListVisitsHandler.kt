@@ -7,12 +7,14 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 
 @Service
 class ListVisitsHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val appointmentColorRepository: AppointmentColorRepository
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: ListVisitsCommand): ListVisitsResult {
@@ -46,10 +48,12 @@ class ListVisitsHandler(
         // Collect all IDs to fetch in batch
         val customerIds = visits.map { it.customerId }.distinct()
         val vehicleIds = visits.map { it.vehicleId }.distinct()
+        val appointmentColorIds = visits.mapNotNull { it.appointmentColorId }.distinct()
 
         // Batch fetch related entities
         val customers = customerRepository.findAllById(customerIds).associateBy { it.id }
         val vehicles = vehicleRepository.findAllById(vehicleIds).associateBy { it.id }
+        val appointmentColors = appointmentColorRepository.findAllById(appointmentColorIds).associateBy { it.id }
 
         // Map to list items
         val items = visits.map { visit ->
@@ -58,6 +62,7 @@ class ListVisitsHandler(
 
             val customer = customers[visit.customerId]
             val vehicle = vehicles[visit.vehicleId]
+            val appointmentColor = visit.appointmentColorId?.let { appointmentColors[it] }
 
             val domain = visit.toDomain()
             val totalNet = domain.calculateTotalNet()
@@ -81,6 +86,13 @@ class ListVisitsHandler(
                     licensePlate = vehicle?.licensePlate ?: visit.licensePlateSnapshot,
                     yearOfProduction = vehicle?.yearOfProduction ?: visit.yearOfProductionSnapshot
                 ),
+                appointmentColor = appointmentColor?.let { color ->
+                    AppointmentColorInfo(
+                        id = color.id.toString(),
+                        name = color.name,
+                        hexColor = color.hexColor
+                    )
+                },
                 services = visit.serviceItems.map { serviceItem ->
                     VisitServiceLineItemInfo(
                         id = serviceItem.id.toString(),
@@ -149,6 +161,7 @@ data class VisitListItem(
     val vehicleId: String,
     val customer: VisitCustomerInfo,
     val vehicle: VisitVehicleInfo,
+    val appointmentColor: AppointmentColorInfo?,
     val services: List<VisitServiceLineItemInfo>,
     val status: VisitStatus,
     val scheduledDate: String,
@@ -193,4 +206,10 @@ data class VisitServiceLineItemInfo(
 data class VisitPriceAdjustmentInfo(
     val type: AdjustmentType,
     val value: Long
+)
+
+data class AppointmentColorInfo(
+    val id: String,
+    val name: String,
+    val hexColor: String
 )

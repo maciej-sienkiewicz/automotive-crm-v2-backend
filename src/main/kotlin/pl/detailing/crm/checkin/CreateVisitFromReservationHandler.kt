@@ -122,6 +122,7 @@ class CreateVisitFromReservationHandler(
                 customerId = customerId,
                 vehicleId = vehicleId,
                 appointmentId = appointment.id,
+                appointmentColorId = command.appointmentColorId,
                 // Immutable vehicle snapshots
                 brandSnapshot = vehicle.brand,
                 modelSnapshot = vehicle.model,
