@@ -141,9 +141,28 @@ interface VisitDocumentRepository : JpaRepository<VisitDocumentEntity, UUID> {
 
     /**
      * Find all documents for a visit
+     * Ordered by upload date descending (newest first)
      */
-    @Query("SELECT vd FROM VisitDocumentEntity vd WHERE vd.visit.id = :visitId ORDER BY vd.uploadedAt ASC")
+    @Query("SELECT vd FROM VisitDocumentEntity vd WHERE vd.visit.id = :visitId ORDER BY vd.uploadedAt DESC")
     fun findByVisitId(@Param("visitId") visitId: UUID): List<VisitDocumentEntity>
+
+    /**
+     * Find all documents for a specific visit
+     * Ordered by upload date descending (newest first)
+     */
+    fun findByVisit_IdOrderByUploadedAtDesc(visitId: UUID): List<VisitDocumentEntity>
+
+    /**
+     * Find all documents for a specific customer across all visits
+     * Ordered by upload date descending (newest first)
+     * This uses the denormalized customer_id for fast historical lookups
+     */
+    fun findByCustomerIdOrderByUploadedAtDesc(customerId: UUID): List<VisitDocumentEntity>
+
+    /**
+     * Find all documents for a specific visit and customer
+     */
+    fun findByVisit_IdAndCustomerId(visitId: UUID, customerId: UUID): List<VisitDocumentEntity>
 
     /**
      * Find document by ID with visit validation
@@ -153,4 +172,15 @@ interface VisitDocumentRepository : JpaRepository<VisitDocumentEntity, UUID> {
         @Param("id") id: UUID,
         @Param("visitId") visitId: UUID
     ): VisitDocumentEntity?
+
+    /**
+     * Check if a document exists for a visit
+     */
+    fun existsByVisit_Id(visitId: UUID): Boolean
+
+    /**
+     * Delete all documents for a specific visit
+     * Note: This should be called before visit deletion
+     */
+    fun deleteByVisit_Id(visitId: UUID)
 }
