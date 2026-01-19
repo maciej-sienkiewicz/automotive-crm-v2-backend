@@ -173,8 +173,8 @@ data class VisitCustomerInfo(
 data class VisitVehicleInfo(
     val brand: String,
     val model: String,
-    val licensePlate: String,
-    val yearOfProduction: Int
+    val licensePlate: String?,
+    val yearOfProduction: Int?
 )
 
 data class VisitServiceLineItemInfo(

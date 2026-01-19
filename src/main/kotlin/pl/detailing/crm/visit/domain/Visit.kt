@@ -21,9 +21,9 @@ data class Visit(
     // Immutable vehicle snapshots - frozen at visit creation
     val brandSnapshot: String,
     val modelSnapshot: String,
-    val licensePlateSnapshot: String,
+    val licensePlateSnapshot: String?,
     val vinSnapshot: String?,
-    val yearOfProductionSnapshot: Int,
+    val yearOfProductionSnapshot: Int?,
     val colorSnapshot: String?,
     val engineTypeSnapshot: EngineType,
 
