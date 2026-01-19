@@ -12,7 +12,6 @@ data class Vehicle(
     val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
-    val engineType: EngineType,
     val currentMileage: Int,
     val status: VehicleStatus,
     val createdBy: UserId,

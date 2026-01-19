@@ -33,7 +33,6 @@ class CreateVehicleHandler(
             yearOfProduction = command.yearOfProduction,
             color = command.color?.trim(),
             paintType = command.paintType?.trim(),
-            engineType = command.engineType,
             currentMileage = command.currentMileage,
             status = VehicleStatus.ACTIVE,
             createdBy = command.userId,
@@ -66,7 +65,6 @@ class CreateVehicleHandler(
             yearOfProduction = vehicle.yearOfProduction,
             color = vehicle.color,
             paintType = vehicle.paintType,
-            engineType = vehicle.engineType,
             currentMileage = vehicle.currentMileage,
             status = vehicle.status,
             ownerIds = command.ownerIds
@@ -82,7 +80,6 @@ data class CreateVehicleResult(
     val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
-    val engineType: EngineType,
     val currentMileage: Int,
     val status: VehicleStatus,
     val ownerIds: List<CustomerId>

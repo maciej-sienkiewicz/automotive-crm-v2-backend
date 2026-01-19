@@ -43,12 +43,11 @@ data class VisitResponse(
  */
 data class VehicleInfoResponse(
     val id: String,
-    val licensePlate: String,
+    val licensePlate: String?,
     val brand: String,
     val model: String,
-    val yearOfProduction: Int,
+    val yearOfProduction: Int?,
     val color: String?,
-    val engineType: String,
     val currentMileage: Int?
 )
 

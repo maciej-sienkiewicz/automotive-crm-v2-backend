@@ -42,10 +42,6 @@ class VehicleEntity(
     @Column(name = "paint_type", length = 50)
     var paintType: String?,
 
-    @Column(name = "engine_type", nullable = false, length = 20)
-    @Enumerated(EnumType.STRING)
-    var engineType: EngineType,
-
     @Column(name = "current_mileage", nullable = false)
     var currentMileage: Int,
 
@@ -74,7 +70,6 @@ class VehicleEntity(
         yearOfProduction = yearOfProduction,
         color = color,
         paintType = paintType,
-        engineType = engineType,
         currentMileage = currentMileage,
         status = status,
         createdBy = UserId(createdBy),
@@ -93,7 +88,6 @@ class VehicleEntity(
             yearOfProduction = vehicle.yearOfProduction,
             color = vehicle.color,
             paintType = vehicle.paintType,
-            engineType = vehicle.engineType,
             currentMileage = vehicle.currentMileage,
             status = vehicle.status,
             createdBy = vehicle.createdBy.value,

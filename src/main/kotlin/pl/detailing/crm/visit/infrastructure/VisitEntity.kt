@@ -68,10 +68,6 @@ class VisitEntity(
     @Column(name = "color_snapshot", length = 50)
     val colorSnapshot: String?,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "engine_type_snapshot", nullable = false, length = 20)
-    val engineTypeSnapshot: EngineType,
-
     // Visit status and dates
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
@@ -134,7 +130,6 @@ class VisitEntity(
         vinSnapshot = vinSnapshot,
         yearOfProductionSnapshot = yearOfProductionSnapshot,
         colorSnapshot = colorSnapshot,
-        engineTypeSnapshot = engineTypeSnapshot,
         status = status,
         scheduledDate = scheduledDate,
         completedDate = completedDate,
@@ -167,7 +162,6 @@ class VisitEntity(
                 vinSnapshot = visit.vinSnapshot,
                 yearOfProductionSnapshot = visit.yearOfProductionSnapshot,
                 colorSnapshot = visit.colorSnapshot,
-                engineTypeSnapshot = visit.engineTypeSnapshot,
                 status = visit.status,
                 scheduledDate = visit.scheduledDate,
                 completedDate = visit.completedDate,

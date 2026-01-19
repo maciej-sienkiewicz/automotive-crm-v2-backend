@@ -56,7 +56,6 @@ class CrmDataResolver(
                 put(CrmDataKey.VEHICLE_BRAND_MODEL, "${visit.brandSnapshot} ${visit.modelSnapshot}")
                 put(CrmDataKey.VEHICLE_COLOR, visit.colorSnapshot ?: "")
                 put(CrmDataKey.VEHICLE_YEAR, visit.yearOfProductionSnapshot?.toString() ?: "")
-                put(CrmDataKey.VEHICLE_ENGINE_TYPE, visit.engineTypeSnapshot.name)
 
                 // Customer data
                 customer?.let {

@@ -25,12 +25,6 @@ class VehicleController(
             throw ForbiddenException("Only OWNER and MANAGER can create vehicles")
         }
 
-        val engineType = try {
-            EngineType.valueOf(request.engineType.uppercase())
-        } catch (e: IllegalArgumentException) {
-            throw ValidationException("Invalid engine type: ${request.engineType}. Valid values are: GASOLINE, DIESEL, HYBRID, ELECTRIC")
-        }
-
         val command = CreateVehicleCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -41,7 +35,6 @@ class VehicleController(
             yearOfProduction = request.yearOfProduction,
             color = request.color,
             paintType = request.paintType,
-            engineType = engineType,
             currentMileage = request.currentMileage
         )
 
@@ -57,7 +50,6 @@ class VehicleController(
                 yearOfProduction = result.yearOfProduction,
                 color = result.color,
                 paintType = result.paintType,
-                engineType = result.engineType.name.lowercase(),
                 currentMileage = result.currentMileage,
                 status = result.status.name.lowercase(),
                 ownerIds = result.ownerIds.map { it.toString() },
@@ -75,7 +67,6 @@ data class VehicleResponse(
     val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
-    val engineType: String,
     val currentMileage: Int,
     val status: String,
     val ownerIds: List<String>,

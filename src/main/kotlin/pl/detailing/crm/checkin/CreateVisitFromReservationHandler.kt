@@ -130,7 +130,6 @@ class CreateVisitFromReservationHandler(
                 vinSnapshot = null,
                 yearOfProductionSnapshot = vehicle.yearOfProduction,
                 colorSnapshot = vehicle.color,
-                engineTypeSnapshot = vehicle.engineType,
                 // Visit details
                 status = VisitStatus.IN_PROGRESS,
                 scheduledDate = appointment.schedule.startDateTime,
@@ -229,7 +228,6 @@ class CreateVisitFromReservationHandler(
             yearOfProduction = vehicleData.yearOfProduction,
             color = vehicleData.color?.trim(),
             paintType = vehicleData.paintType?.trim(),
-            engineType = EngineType.GASOLINE, // Default, can be enhanced later
             currentMileage = 0, // Will be set from mileageAtArrival
             status = VehicleStatus.ACTIVE,
             createdBy = userId,

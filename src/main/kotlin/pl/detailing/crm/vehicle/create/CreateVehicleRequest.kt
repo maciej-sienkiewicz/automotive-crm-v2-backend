@@ -8,6 +8,5 @@ data class CreateVehicleRequest(
     val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
-    val engineType: String,
     val currentMileage: Int
 )

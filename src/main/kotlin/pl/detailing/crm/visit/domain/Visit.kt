@@ -26,7 +26,6 @@ data class Visit(
     val vinSnapshot: String?,
     val yearOfProductionSnapshot: Int?,
     val colorSnapshot: String?,
-    val engineTypeSnapshot: EngineType,
 
     // Visit status and dates
     val status: VisitStatus,

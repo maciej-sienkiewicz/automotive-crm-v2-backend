@@ -111,16 +111,6 @@ value class AppointmentColorId(val value: UUID) : Serializable {
 }
 
 /**
- * Engine type for vehicles
- */
-enum class EngineType {
-    GASOLINE,
-    DIESEL,
-    HYBRID,
-    ELECTRIC
-}
-
-/**
  * Vehicle status
  */
 enum class VehicleStatus {

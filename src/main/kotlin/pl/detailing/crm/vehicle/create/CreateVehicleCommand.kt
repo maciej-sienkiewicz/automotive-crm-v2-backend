@@ -12,6 +12,5 @@ data class CreateVehicleCommand(
     val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
-    val engineType: EngineType,
     val currentMileage: Int
 )

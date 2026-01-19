@@ -147,7 +147,6 @@ class VisitController(
             model = vehicle.model,
             yearOfProduction = vehicle.yearOfProduction,
             color = vehicle.color,
-            engineType = mapEngineType(vehicle.engineType),
             currentMileage = vehicle.currentMileage
         )
     }
@@ -234,18 +233,6 @@ class VisitController(
             VisitStatus.COMPLETED -> "completed"
             VisitStatus.REJECTED -> "rejected"
             VisitStatus.ARCHIVED -> "archived"
-        }
-    }
-
-    /**
-     * Map EngineType enum to frontend string
-     */
-    private fun mapEngineType(engineType: EngineType): String {
-        return when (engineType) {
-            EngineType.GASOLINE -> "gasoline"
-            EngineType.DIESEL -> "diesel"
-            EngineType.HYBRID -> "hybrid"
-            EngineType.ELECTRIC -> "electric"
         }
     }
 
