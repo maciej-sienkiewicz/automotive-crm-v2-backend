@@ -136,7 +136,7 @@ data class VehicleRequest(
 )
 
 data class TechnicalStateRequest(
-    val mileage: Int,
+    val mileage: Long,
     val deposit: DepositItemRequest,
     val inspectionNotes: String
 )
