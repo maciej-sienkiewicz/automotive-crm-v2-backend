@@ -87,7 +87,7 @@ class VisitController(
      */
     private fun mapToVisitDetailResponse(result: GetVisitDetailResult): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
             documents = result.documents.map { mapToDocumentResponse(it) }
         )
@@ -100,7 +100,8 @@ class VisitController(
         visit: Visit,
         vehicle: Vehicle,
         customer: Customer,
-        customerStats: CustomerStats
+        customerStats: CustomerStats,
+        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?
     ): VisitResponse {
         val totalNet = visit.calculateTotalNet()
         val totalGross = visit.calculateTotalGross()
@@ -113,6 +114,13 @@ class VisitController(
             completedDate = visit.completedDate?.toString(),
             vehicle = mapToVehicleInfoResponse(vehicle),
             customer = mapToCustomerInfoResponse(customer, customerStats),
+            appointmentColor = appointmentColor?.let { color ->
+                AppointmentColorResponse(
+                    id = color.id.value.toString(),
+                    name = color.name,
+                    hexColor = color.hexColor
+                )
+            },
             services = visit.serviceItems.map { mapToServiceLineItemResponse(it) },
             totalCost = MoneyAmountResponse(
                 netAmount = totalNet.amountInCents,

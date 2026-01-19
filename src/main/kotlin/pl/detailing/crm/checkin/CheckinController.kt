@@ -58,7 +58,8 @@ class CheckinController(
             ),
             technicalState = request.technicalState,
             photoIds = request.photoIds,
-            services = request.services
+            services = request.services,
+            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) }
         )
 
         val result = createVisitFromReservationHandler.handle(command)
@@ -77,7 +78,8 @@ data class ReservationToVisitRequest(
     val vehicle: VehicleRequest,
     val technicalState: TechnicalStateRequest,
     val photoIds: List<String>,
-    val services: List<ServiceLineItemRequest>
+    val services: List<ServiceLineItemRequest>,
+    val appointmentColorId: String?
 )
 
 data class CustomerRequest(
@@ -163,7 +165,8 @@ data class ReservationToVisitCommand(
     val vehicle: VehicleData,
     val technicalState: TechnicalStateRequest,
     val photoIds: List<String>,
-    val services: List<ServiceLineItemRequest>
+    val services: List<ServiceLineItemRequest>,
+    val appointmentColorId: AppointmentColorId?
 )
 
 data class CustomerData(

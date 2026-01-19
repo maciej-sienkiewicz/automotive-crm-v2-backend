@@ -4,6 +4,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
+import pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity
 import java.time.Instant
 
 /**
@@ -26,6 +27,7 @@ data class VisitResponse(
     val completedDate: String?,
     val vehicle: VehicleInfoResponse,
     val customer: CustomerInfoResponse,
+    val appointmentColor: AppointmentColorResponse?,
     val services: List<ServiceLineItemResponse>,
     val totalCost: MoneyAmountResponse,
     val mileageAtArrival: Long?,
@@ -145,6 +147,7 @@ data class GetVisitDetailResult(
     val visit: Visit,
     val vehicle: Vehicle,
     val customer: Customer,
+    val appointmentColor: AppointmentColorEntity.AppointmentColorDomain?,
     val journalEntries: List<VisitJournalEntry>,
     val documents: List<VisitDocument>,
     val customerStats: CustomerStats
@@ -157,4 +160,13 @@ data class CustomerStats(
     val totalVisits: Int,
     val totalSpent: Money,
     val vehiclesCount: Int
+)
+
+/**
+ * Appointment color response
+ */
+data class AppointmentColorResponse(
+    val id: String,
+    val name: String,
+    val hexColor: String
 )

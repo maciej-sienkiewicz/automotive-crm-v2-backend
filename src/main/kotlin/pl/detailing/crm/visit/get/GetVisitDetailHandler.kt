@@ -7,6 +7,7 @@ import pl.detailing.crm.visit.infrastructure.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
+import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 
 @Service
 class GetVisitDetailHandler(
@@ -15,7 +16,8 @@ class GetVisitDetailHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val journalEntryRepository: VisitJournalEntryRepository,
-    private val documentRepository: VisitDocumentRepository
+    private val documentRepository: VisitDocumentRepository,
+    private val appointmentColorRepository: AppointmentColorRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -48,15 +50,23 @@ class GetVisitDetailHandler(
 
         val vehicle = vehicleEntity.toDomain()
 
-        // 4. Find journal entries
+        // 4. Find appointment color if present
+        val appointmentColor = visit.appointmentColorId?.let { colorId ->
+            appointmentColorRepository.findByIdAndStudioId(
+                id = colorId.value,
+                studioId = command.studioId.value
+            )?.toDomain()
+        }
+
+        // 5. Find journal entries
         val journalEntries = journalEntryRepository.findByVisitId(visit.id.value)
             .map { it.toDomain() }
 
-        // 5. Find documents
+        // 6. Find documents
         val documents = documentRepository.findByVisitId(visit.id.value)
             .map { it.toDomain() }
 
-        // 6. Calculate customer statistics
+        // 7. Calculate customer statistics
         val customerVisits = visitRepository.findByCustomerIdAndStudioId(
             customerId = customer.id.value,
             studioId = command.studioId.value
@@ -84,6 +94,7 @@ class GetVisitDetailHandler(
             visit = visit,
             vehicle = vehicle,
             customer = customer,
+            appointmentColor = appointmentColor,
             journalEntries = journalEntries,
             documents = documents,
             customerStats = customerStats
