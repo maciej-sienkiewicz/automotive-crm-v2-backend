@@ -6,10 +6,10 @@ import java.time.Instant
 data class Vehicle(
     val id: VehicleId,
     val studioId: StudioId,
-    val licensePlate: String,
+    val licensePlate: String?,
     val brand: String,
     val model: String,
-    val yearOfProduction: Int,
+    val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
     val engineType: EngineType,

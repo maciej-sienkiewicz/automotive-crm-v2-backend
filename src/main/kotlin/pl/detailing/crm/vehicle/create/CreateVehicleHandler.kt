@@ -27,7 +27,7 @@ class CreateVehicleHandler(
         val vehicle = Vehicle(
             id = VehicleId.random(),
             studioId = command.studioId,
-            licensePlate = command.licensePlate.trim().uppercase(),
+            licensePlate = command.licensePlate?.trim()?.uppercase(),
             brand = command.brand.trim(),
             model = command.model.trim(),
             yearOfProduction = command.yearOfProduction,
@@ -76,10 +76,10 @@ class CreateVehicleHandler(
 
 data class CreateVehicleResult(
     val vehicleId: VehicleId,
-    val licensePlate: String,
+    val licensePlate: String?,
     val brand: String,
     val model: String,
-    val yearOfProduction: Int,
+    val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
     val engineType: EngineType,

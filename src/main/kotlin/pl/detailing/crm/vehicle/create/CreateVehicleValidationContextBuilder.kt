@@ -15,11 +15,16 @@ class CreateVehicleValidationContextBuilder(
     suspend fun build(command: CreateVehicleCommand): CreateVehicleValidationContext =
         withContext(Dispatchers.IO) {
 
-            val licensePlateExistsDeferred = async {
-                vehicleRepository.existsByStudioIdAndLicensePlate(
-                    command.studioId.value,
-                    command.licensePlate
-                )
+            val licensePlateExists = if (command.licensePlate != null) {
+                val licensePlateExistsDeferred = async {
+                    vehicleRepository.existsByStudioIdAndLicensePlate(
+                        command.studioId.value,
+                        command.licensePlate
+                    )
+                }
+                licensePlateExistsDeferred.await()
+            } else {
+                false
             }
 
             CreateVehicleValidationContext(
@@ -28,7 +33,7 @@ class CreateVehicleValidationContextBuilder(
                 licensePlate = command.licensePlate,
                 yearOfProduction = command.yearOfProduction,
                 customerExists = null,
-                licensePlateExists = licensePlateExistsDeferred.await()
+                licensePlateExists = licensePlateExists
             )
         }
 }
