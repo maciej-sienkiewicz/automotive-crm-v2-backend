@@ -24,6 +24,8 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.convert.VisitNumberGenerator
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.domain.VisitServiceItem
+import pl.detailing.crm.visit.infrastructure.DamageMarkingService
+import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -35,7 +37,9 @@ class CreateVisitFromReservationHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val vehicleOwnerRepository: VehicleOwnerRepository
+    private val vehicleOwnerRepository: VehicleOwnerRepository,
+    private val damageMarkingService: DamageMarkingService,
+    private val s3DamageMapStorageService: S3DamageMapStorageService
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -115,7 +119,7 @@ class CreateVisitFromReservationHandler(
 
             // Step 7: Create Visit domain object
             val visitId = VisitId.random()
-            val visit = Visit(
+            var visit = Visit(
                 id = visitId,
                 studioId = command.studioId,
                 visitNumber = visitNumber,
@@ -141,6 +145,7 @@ class CreateVisitFromReservationHandler(
                 technicalNotes = null,
                 serviceItems = serviceItems,
                 photos = emptyList(), // Photos will be added separately
+                damageMapFileId = null, // Will be set after generating damage map
                 // Audit
                 createdBy = command.userId,
                 updatedBy = command.userId,
@@ -148,11 +153,35 @@ class CreateVisitFromReservationHandler(
                 updatedAt = Instant.now()
             )
 
-            // Step 8: Persist Visit entity
+            // Step 8: Generate and upload damage map if damage points are provided
+            if (command.damagePoints.isNotEmpty()) {
+                try {
+                    // Generate damage map image
+                    val damageMapBytes = damageMarkingService.generateDamageMap(command.damagePoints)
+
+                    if (damageMapBytes != null) {
+                        // Upload to S3 and get the file ID
+                        val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
+                            studioId = command.studioId.value,
+                            visitId = visitId.value,
+                            imageBytes = damageMapBytes
+                        )
+
+                        // Update visit with damage map file ID
+                        visit = visit.withDamageMap(damageMapFileId, command.userId)
+                    }
+                } catch (e: Exception) {
+                    // Log error but don't fail the entire visit creation
+                    // The visit can still be created without a damage map
+                    println("Warning: Failed to generate damage map: ${e.message}")
+                }
+            }
+
+            // Step 9: Persist Visit entity
             val visitEntity = VisitEntity.fromDomain(visit)
             visitRepository.save(visitEntity)
 
-            // Step 9: Update appointment status to CONVERTED
+            // Step 10: Update appointment status to CONVERTED
             val appointmentEntity = appointmentRepository.findByIdAndStudioId(
                 appointment.id.value,
                 command.studioId.value
@@ -162,7 +191,7 @@ class CreateVisitFromReservationHandler(
             appointmentEntity.updatedAt = Instant.now()
             appointmentRepository.save(appointmentEntity)
 
-            // Step 10: Return result
+            // Step 11: Return result
             ReservationToVisitResult(visitId = visitId)
         }
 

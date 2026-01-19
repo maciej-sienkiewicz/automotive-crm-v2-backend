@@ -103,6 +103,10 @@ class VisitEntity(
     @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     var photos: MutableList<VisitPhotoEntity> = mutableListOf(),
 
+    // Damage map (S3 file ID for the generated damage map image)
+    @Column(name = "damage_map_file_id", length = 500)
+    var damageMapFileId: String?,
+
     // Audit fields
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
@@ -140,6 +144,7 @@ class VisitEntity(
         technicalNotes = technicalNotes,
         serviceItems = serviceItems.map { it.toDomain() },
         photos = photos.map { it.toDomain() },
+        damageMapFileId = damageMapFileId,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -170,6 +175,7 @@ class VisitEntity(
                 documentsHandedOver = visit.documentsHandedOver,
                 inspectionNotes = visit.inspectionNotes,
                 technicalNotes = visit.technicalNotes,
+                damageMapFileId = visit.damageMapFileId,
                 createdBy = visit.createdBy.value,
                 updatedBy = visit.updatedBy.value,
                 createdAt = visit.createdAt,

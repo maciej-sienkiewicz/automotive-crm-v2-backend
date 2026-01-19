@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.DamagePoint
 
 @RestController
 @RequestMapping("/api/checkin")
@@ -58,6 +59,14 @@ class CheckinController(
             ),
             technicalState = request.technicalState,
             photoIds = request.photoIds,
+            damagePoints = request.damagePoints?.map { damagePointReq ->
+                DamagePoint(
+                    id = damagePointReq.id,
+                    x = damagePointReq.x,
+                    y = damagePointReq.y,
+                    note = damagePointReq.note
+                )
+            } ?: emptyList(),
             services = request.services,
             appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) }
         )
@@ -78,6 +87,7 @@ data class ReservationToVisitRequest(
     val vehicle: VehicleRequest,
     val technicalState: TechnicalStateRequest,
     val photoIds: List<String>,
+    val damagePoints: List<DamagePointRequest>?,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?
 )
@@ -136,6 +146,13 @@ data class DepositItemRequest(
     val registrationDocument: Boolean
 )
 
+data class DamagePointRequest(
+    val id: Int,
+    val x: Double,
+    val y: Double,
+    val note: String?
+)
+
 data class ServiceLineItemRequest(
     val id: String,
     val serviceId: String,
@@ -165,6 +182,7 @@ data class ReservationToVisitCommand(
     val vehicle: VehicleData,
     val technicalState: TechnicalStateRequest,
     val photoIds: List<String>,
+    val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: AppointmentColorId?
 )

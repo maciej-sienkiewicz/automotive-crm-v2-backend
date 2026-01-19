@@ -45,6 +45,9 @@ data class Visit(
     // Photos
     val photos: List<VisitPhoto>,
 
+    // Damage map (S3 file ID for the generated damage map image)
+    val damageMapFileId: String?,
+
     // Audit fields
     val createdBy: UserId,
     val updatedBy: UserId,
@@ -124,6 +127,17 @@ data class Visit(
 
         return copy(
             status = VisitStatus.READY_FOR_PICKUP,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Update visit with damage map file ID
+     */
+    fun withDamageMap(damageMapFileId: String?, updatedBy: UserId): Visit {
+        return copy(
+            damageMapFileId = damageMapFileId,
             updatedBy = updatedBy,
             updatedAt = Instant.now()
         )
