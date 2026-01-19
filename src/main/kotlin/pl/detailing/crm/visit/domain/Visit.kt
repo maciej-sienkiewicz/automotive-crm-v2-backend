@@ -260,7 +260,9 @@ data class VisitJournalEntry(
  */
 data class VisitDocument(
     val id: VisitDocumentId,
+    val customerId: CustomerId,
     val type: DocumentType,
+    val name: String,
     val fileName: String,
     val fileId: String,
     val fileUrl: String,

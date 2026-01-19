@@ -288,9 +288,13 @@ enum class JournalEntryType {
  * Type of document
  */
 enum class DocumentType {
-    PHOTO,      // Photo documentation
-    PDF,        // PDF document
-    PROTOCOL    // Protocol document
+    PHOTO,       // Photo documentation
+    PDF,         // PDF document
+    PROTOCOL,    // Protocol document
+    INTAKE,      // Intake protocol/document
+    OUTTAKE,     // Outtake protocol/document
+    DAMAGE_MAP,  // Generated damage map image
+    OTHER        // Other documents (scanned registration, etc.)
 }
 
 /**

@@ -25,6 +25,7 @@ import pl.detailing.crm.visit.convert.VisitNumberGenerator
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.DamageMarkingService
+import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -39,7 +40,8 @@ class CreateVisitFromReservationHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val damageMarkingService: DamageMarkingService,
-    private val s3DamageMapStorageService: S3DamageMapStorageService
+    private val s3DamageMapStorageService: S3DamageMapStorageService,
+    private val documentService: DocumentService
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -177,9 +179,29 @@ class CreateVisitFromReservationHandler(
                 }
             }
 
-            // Step 9: Persist Visit entity
+            // Step 9: Persist Visit entity (must be done before registering documents)
             val visitEntity = VisitEntity.fromDomain(visit)
             visitRepository.save(visitEntity)
+
+            // Step 9.5: Register damage map as a document if it was generated
+            if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {
+                try {
+                    documentService.registerDocument(
+                        visitId = visitId.value,
+                        customerId = customerId.value,
+                        documentType = DocumentType.DAMAGE_MAP,
+                        name = "Damage Map - ${visit.visitNumber}",
+                        s3Key = visit.damageMapFileId!!,
+                        fileName = "damage-map.jpg",
+                        createdBy = command.userId.value,
+                        createdByName = "System",
+                        category = "damage"
+                    )
+                } catch (e: Exception) {
+                    // Log error but don't fail the visit creation
+                    println("Warning: Failed to register damage map document: ${e.message}")
+                }
+            }
 
             // Step 10: Update appointment status to CONVERTED
             val appointmentEntity = appointmentRepository.findByIdAndStudioId(

@@ -407,7 +407,8 @@ class VisitJournalEntryEntity(
     name = "visit_documents",
     indexes = [
         Index(name = "idx_visit_documents_visit_id", columnList = "visit_id"),
-        Index(name = "idx_visit_documents_uploaded_at", columnList = "visit_id, uploaded_at")
+        Index(name = "idx_visit_documents_uploaded_at", columnList = "visit_id, uploaded_at"),
+        Index(name = "idx_visit_documents_customer_id", columnList = "customer_id, uploaded_at")
     ]
 )
 class VisitDocumentEntity(
@@ -419,9 +420,15 @@ class VisitDocumentEntity(
     @JoinColumn(name = "visit_id", nullable = false)
     var visit: VisitEntity,
 
+    @Column(name = "customer_id", nullable = false, columnDefinition = "uuid")
+    val customerId: UUID,
+
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 50)
     val type: DocumentType,
+
+    @Column(name = "name", nullable = false, length = 255)
+    val name: String,
 
     @Column(name = "file_name", nullable = false, length = 255)
     val fileName: String,
@@ -446,7 +453,9 @@ class VisitDocumentEntity(
 ) {
     fun toDomain(): VisitDocument = VisitDocument(
         id = VisitDocumentId(id),
+        customerId = CustomerId(customerId),
         type = type,
+        name = name,
         fileName = fileName,
         fileId = fileId,
         fileUrl = fileUrl,
@@ -461,7 +470,9 @@ class VisitDocumentEntity(
             VisitDocumentEntity(
                 id = document.id.value,
                 visit = visit,
+                customerId = document.customerId.value,
                 type = document.type,
+                name = document.name,
                 fileName = document.fileName,
                 fileId = document.fileId,
                 fileUrl = document.fileUrl,
