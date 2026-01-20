@@ -76,8 +76,14 @@ class VisitEntity(
     @Column(name = "scheduled_date", nullable = false, columnDefinition = "timestamp with time zone")
     val scheduledDate: Instant,
 
-    @Column(name = "completed_date", columnDefinition = "timestamp with time zone")
-    var completedDate: Instant?,
+    @Column(name = "estimated_completion_date", columnDefinition = "timestamp with time zone")
+    var estimatedCompletionDate: Instant?,
+
+    @Column(name = "actual_completion_date", columnDefinition = "timestamp with time zone")
+    var actualCompletionDate: Instant?,
+
+    @Column(name = "pickup_date", columnDefinition = "timestamp with time zone")
+    var pickupDate: Instant?,
 
     // Arrival details
     @Column(name = "mileage_at_arrival")
@@ -136,7 +142,9 @@ class VisitEntity(
         colorSnapshot = colorSnapshot,
         status = status,
         scheduledDate = scheduledDate,
-        completedDate = completedDate,
+        estimatedCompletionDate = estimatedCompletionDate,
+        actualCompletionDate = actualCompletionDate,
+        pickupDate = pickupDate,
         mileageAtArrival = mileageAtArrival,
         keysHandedOver = keysHandedOver,
         documentsHandedOver = documentsHandedOver,
@@ -169,7 +177,9 @@ class VisitEntity(
                 colorSnapshot = visit.colorSnapshot,
                 status = visit.status,
                 scheduledDate = visit.scheduledDate,
-                completedDate = visit.completedDate,
+                estimatedCompletionDate = visit.estimatedCompletionDate,
+                actualCompletionDate = visit.actualCompletionDate,
+                pickupDate = visit.pickupDate,
                 mileageAtArrival = visit.mileageAtArrival,
                 keysHandedOver = visit.keysHandedOver,
                 documentsHandedOver = visit.documentsHandedOver,

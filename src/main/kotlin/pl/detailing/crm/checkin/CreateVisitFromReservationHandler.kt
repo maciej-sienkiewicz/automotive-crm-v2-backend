@@ -139,7 +139,9 @@ class CreateVisitFromReservationHandler(
                 // Visit details
                 status = VisitStatus.IN_PROGRESS,
                 scheduledDate = appointment.schedule.startDateTime,
-                completedDate = null,
+                estimatedCompletionDate = appointment.schedule.endDateTime,
+                actualCompletionDate = null,
+                pickupDate = null,
                 mileageAtArrival = command.technicalState.mileage,
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,

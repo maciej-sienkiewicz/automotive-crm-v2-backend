@@ -124,7 +124,9 @@ class VisitController(
             visitNumber = visit.visitNumber,
             status = mapVisitStatus(visit.status),
             scheduledDate = visit.scheduledDate.toString(),
-            completedDate = visit.completedDate?.toString(),
+            estimatedCompletionDate = visit.estimatedCompletionDate?.toString(),
+            actualCompletionDate = visit.actualCompletionDate?.toString(),
+            pickupDate = visit.pickupDate?.toString(),
             vehicle = mapToVehicleInfoResponse(vehicle),
             customer = mapToCustomerInfoResponse(customer, customerStats),
             appointmentColor = appointmentColor?.let { color ->

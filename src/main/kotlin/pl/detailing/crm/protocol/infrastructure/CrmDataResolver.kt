@@ -68,7 +68,7 @@ class CrmDataResolver(
                 put(CrmDataKey.VISIT_MILEAGE, visit.mileageAtArrival?.toString() ?: "")
                 put(CrmDataKey.VISIT_NUMBER, visit.visitNumber)
                 put(CrmDataKey.VISIT_DATE, formatDate(visit.scheduledDate))
-                put(CrmDataKey.VISIT_COMPLETED_DATE, visit.completedDate?.let { formatDate(it) } ?: "")
+                put(CrmDataKey.VISIT_COMPLETED_DATE, visit.pickupDate?.let { formatDate(it) } ?: "")
 
                 // Financial data
                 val totalNet = visitDomain.calculateTotalNet()

@@ -45,7 +45,7 @@ class CompleteVisitHandler(
         return CompleteVisitResult(
             visitId = updatedVisit.id,
             newStatus = updatedVisit.status,
-            completedAt = updatedVisit.completedDate!!
+            completedAt = updatedVisit.pickupDate!!
         )
     }
 }

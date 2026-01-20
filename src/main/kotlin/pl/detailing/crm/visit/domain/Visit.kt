@@ -29,8 +29,10 @@ data class Visit(
 
     // Visit status and dates
     val status: VisitStatus,
-    val scheduledDate: Instant,
-    val completedDate: Instant?,
+    val scheduledDate: Instant,  // Start date (set when visit is created/scheduled)
+    val estimatedCompletionDate: Instant?,  // Estimated completion date (set when visit is scheduled)
+    val actualCompletionDate: Instant?,  // Actual completion date (set when status changes to READY_FOR_PICKUP)
+    val pickupDate: Instant?,  // Pickup date (set when status changes to COMPLETED)
 
     // Arrival details
     val mileageAtArrival: Long?,
@@ -127,6 +129,7 @@ data class Visit(
 
         return copy(
             status = VisitStatus.READY_FOR_PICKUP,
+            actualCompletionDate = Instant.now(),
             updatedBy = updatedBy,
             updatedAt = Instant.now()
         )
@@ -152,7 +155,7 @@ data class Visit(
 
         return copy(
             status = VisitStatus.COMPLETED,
-            completedDate = Instant.now(),
+            pickupDate = Instant.now(),
             updatedBy = updatedBy,
             updatedAt = Instant.now()
         )
