@@ -2,6 +2,8 @@ package pl.detailing.crm.appointment.list
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.appointment.domain.AppointmentStatus
@@ -10,6 +12,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import java.time.LocalDate
 
 @Service
 class ListAppointmentsHandler(
@@ -18,9 +21,25 @@ class ListAppointmentsHandler(
     private val vehicleRepository: VehicleRepository,
     private val appointmentColorRepository: AppointmentColorRepository
 ) {
-    suspend fun handle(studioId: StudioId): List<AppointmentListItem> =
+    suspend fun handle(command: ListAppointmentsCommand): ListAppointmentsResult =
         withContext(Dispatchers.IO) {
-            val appointments = appointmentRepository.findByStudioId(studioId.value)
+            // Create pageable with zero-based indexing (Spring Data uses 0-based, but we accept 1-based from API)
+            val pageRequest = PageRequest.of(
+                command.page - 1, // Convert to 0-based
+                command.pageSize,
+                Sort.by(Sort.Direction.DESC, "startDateTime")
+            )
+
+            // Execute query with filters and pagination at database level
+            val page = appointmentRepository.findAppointmentsWithFilters(
+                studioId = command.studioId.value,
+                status = command.status,
+                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                scheduledDate = command.scheduledDate,
+                pageable = pageRequest
+            )
+
+            val appointments = page.content
 
             // Collect all IDs to fetch in batch
             val customerIds = appointments.map { it.customerId }.distinct()
@@ -33,7 +52,7 @@ class ListAppointmentsHandler(
             val colors = appointmentColorRepository.findAllById(colorIds).associateBy { it.id }
 
             // Map to list items
-            appointments.map { appointment ->
+            val items = appointments.map { appointment ->
                 val customer = customers[appointment.customerId]
                 val vehicle = vehicles[appointment.vehicleId]
                 val color = colors[appointment.appointmentColorId]
@@ -96,8 +115,39 @@ class ListAppointmentsHandler(
                     updatedAt = appointment.updatedAt.toString()
                 )
             }
+
+            ListAppointmentsResult(
+                items = items,
+                total = page.totalElements.toInt(),
+                page = command.page, // Return original 1-based page number
+                pageSize = command.pageSize,
+                totalPages = page.totalPages
+            )
         }
 }
+
+/**
+ * Command for listing appointments with pagination and filtering
+ */
+data class ListAppointmentsCommand(
+    val studioId: StudioId,
+    val page: Int = 1,
+    val pageSize: Int = 20,
+    val status: AppointmentStatus? = null,
+    val searchTerm: String? = null,
+    val scheduledDate: LocalDate? = null
+)
+
+/**
+ * Result of listing appointments with pagination metadata
+ */
+data class ListAppointmentsResult(
+    val items: List<AppointmentListItem>,
+    val total: Int,
+    val page: Int,
+    val pageSize: Int,
+    val totalPages: Int
+)
 
 data class AppointmentListItem(
     val id: String,

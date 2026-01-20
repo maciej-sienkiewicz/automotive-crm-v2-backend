@@ -1,10 +1,13 @@
 package pl.detailing.crm.appointment.infrastructure
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 @Repository
@@ -53,4 +56,34 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("vehicleId") vehicleId: UUID
     ): List<AppointmentEntity>
+
+    /**
+     * Find appointments with filtering and pagination (database-side)
+     * Joins with Customer and Vehicle tables for filtering
+     */
+    @Query("""
+        SELECT DISTINCT a FROM AppointmentEntity a
+        LEFT JOIN CustomerEntity c ON a.customerId = c.id
+        LEFT JOIN VehicleEntity v ON a.vehicleId = v.id
+        WHERE a.studioId = :studioId
+        AND (:status IS NULL OR a.status = :status)
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(a.appointmentTitle) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        AND (:scheduledDate IS NULL OR CAST(a.startDateTime AS date) = :scheduledDate)
+        ORDER BY a.startDateTime DESC
+    """)
+    fun findAppointmentsWithFilters(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        @Param("scheduledDate") scheduledDate: LocalDate?,
+        pageable: Pageable
+    ): Page<AppointmentEntity>
 }

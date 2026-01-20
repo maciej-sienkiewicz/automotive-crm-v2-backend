@@ -5,12 +5,14 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.create.*
+import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
+import pl.detailing.crm.appointment.list.ListAppointmentsCommand
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
-import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -23,12 +25,51 @@ class AppointmentController(
 ) {
 
     @GetMapping
-    fun getAppointments(): ResponseEntity<AppointmentListResponse> = runBlocking {
+    fun getAppointments(
+        @RequestParam(defaultValue = "1") page: Int,
+        @RequestParam(defaultValue = "20") limit: Int,
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) scheduledDate: String?
+    ): ResponseEntity<AppointmentListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val appointments = listAppointmentsHandler.handle(principal.studioId)
+        val appointmentStatus = status?.let {
+            try {
+                AppointmentStatus.valueOf(it.uppercase())
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
 
-        ResponseEntity.ok(AppointmentListResponse(appointments = appointments))
+        val scheduledDateFilter = scheduledDate?.let {
+            try {
+                LocalDate.parse(it)
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        val command = ListAppointmentsCommand(
+            studioId = principal.studioId,
+            page = maxOf(1, page),
+            pageSize = maxOf(1, minOf(100, limit)), // Limit page size to 100
+            status = appointmentStatus,
+            searchTerm = search,
+            scheduledDate = scheduledDateFilter
+        )
+
+        val result = listAppointmentsHandler.handle(command)
+
+        ResponseEntity.ok(AppointmentListResponse(
+            appointments = result.items,
+            pagination = PaginationMeta(
+                currentPage = result.page,
+                totalPages = result.totalPages,
+                totalItems = result.total,
+                itemsPerPage = result.pageSize
+            )
+        ))
     }
 
     @GetMapping("/{id}")
@@ -132,5 +173,13 @@ data class AppointmentCreateResponse(
 )
 
 data class AppointmentListResponse(
-    val appointments: List<AppointmentListItem>
+    val appointments: List<AppointmentListItem>,
+    val pagination: PaginationMeta
+)
+
+data class PaginationMeta(
+    val currentPage: Int,
+    val totalPages: Int,
+    val totalItems: Int,
+    val itemsPerPage: Int
 )

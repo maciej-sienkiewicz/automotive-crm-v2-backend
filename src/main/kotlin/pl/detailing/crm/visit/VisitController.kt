@@ -11,6 +11,7 @@ import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
+import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/visits")
@@ -21,20 +22,30 @@ class VisitController(
 
     /**
      * Get all visits for the studio with pagination and filtering
-     * GET /api/visits?page=1&size=20&status=IN_PROGRESS
+     * GET /api/visits?page=1&size=20&status=IN_PROGRESS&search=kowalski&scheduledDate=2024-01-15
      */
     @GetMapping
     fun getVisits(
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
-        @RequestParam(required = false) status: String?
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) scheduledDate: String?
     ): ResponseEntity<VisitListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val visitStatus = status?.let {
             try {
-                VisitStatus.valueOf(it)
+                VisitStatus.valueOf(it.uppercase())
             } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+
+        val scheduledDateFilter = scheduledDate?.let {
+            try {
+                LocalDate.parse(it)
+            } catch (e: Exception) {
                 null
             }
         }
@@ -43,7 +54,9 @@ class VisitController(
             studioId = principal.studioId,
             page = maxOf(1, page),
             pageSize = maxOf(1, minOf(100, size)), // Limit page size to 100
-            status = visitStatus
+            status = visitStatus,
+            searchTerm = search,
+            scheduledDate = scheduledDateFilter
         )
 
         val result = listVisitsHandler.handle(command)
@@ -270,7 +283,7 @@ class VisitController(
             DocumentType.INTAKE -> "intake"
             DocumentType.DAMAGE_MAP -> "damage_map"
             DocumentType.OUTTAKE -> "outtake"
-            DocumentType.OTHER -> " other"
+            DocumentType.OTHER -> "other"
         }
     }
 }

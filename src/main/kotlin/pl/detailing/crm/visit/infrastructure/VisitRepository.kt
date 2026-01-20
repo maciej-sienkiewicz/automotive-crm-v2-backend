@@ -1,9 +1,12 @@
 package pl.detailing.crm.visit.infrastructure
 
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.LocalDate
 import java.util.*
 
 @Repository
@@ -92,6 +95,67 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("yearPattern") yearPattern: String
     ): List<String>
+
+    /**
+     * Find visits with filtering and pagination (database-side)
+     * Joins with Customer and Vehicle tables for filtering
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        LEFT JOIN CustomerEntity c ON v.customerId = c.id
+        LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
+        WHERE v.studioId = :studioId
+        AND (:status IS NULL OR v.status = :status)
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        AND (:scheduledDate IS NULL OR CAST(v.scheduledDate AS date) = :scheduledDate)
+        ORDER BY v.scheduledDate DESC
+    """)
+    fun findVisitsWithFilters(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        @Param("scheduledDate") scheduledDate: LocalDate?,
+        pageable: Pageable
+    ): Page<VisitEntity>
+
+    /**
+     * Count visits matching filters (for pagination metadata)
+     */
+    @Query("""
+        SELECT COUNT(DISTINCT v.id) FROM VisitEntity v
+        LEFT JOIN CustomerEntity c ON v.customerId = c.id
+        LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
+        WHERE v.studioId = :studioId
+        AND (:status IS NULL OR v.status = :status)
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        AND (:scheduledDate IS NULL OR CAST(v.scheduledDate AS date) = :scheduledDate)
+    """)
+    fun countVisitsWithFilters(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        @Param("scheduledDate") scheduledDate: LocalDate?
+    ): Long
 }
 
 @Repository

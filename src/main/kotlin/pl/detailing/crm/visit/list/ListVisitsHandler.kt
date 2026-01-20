@@ -1,5 +1,7 @@
 package pl.detailing.crm.visit.list
 
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AdjustmentType
@@ -8,6 +10,7 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
+import java.time.LocalDate
 
 @Service
 class ListVisitsHandler(
@@ -18,32 +21,23 @@ class ListVisitsHandler(
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: ListVisitsCommand): ListVisitsResult {
-        // Get all visits matching the criteria
-        val allVisits = if (command.status != null) {
-            visitRepository.findByStudioIdAndStatus(
-                studioId = command.studioId.value,
-                status = command.status
-            )
-        } else {
-            visitRepository.findByStudioId(command.studioId.value)
-        }
+        // Create pageable with zero-based indexing (Spring Data uses 0-based, but we accept 1-based from API)
+        val pageRequest = PageRequest.of(
+            command.page - 1, // Convert to 0-based
+            command.pageSize,
+            Sort.by(Sort.Direction.DESC, "scheduledDate")
+        )
 
-        // Calculate pagination
-        val total = allVisits.size
-        val totalPages = if (command.pageSize > 0) {
-            (total + command.pageSize - 1) / command.pageSize
-        } else {
-            1
-        }
+        // Execute query with filters and pagination at database level
+        val page = visitRepository.findVisitsWithFilters(
+            studioId = command.studioId.value,
+            status = command.status,
+            searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+            scheduledDate = command.scheduledDate,
+            pageable = pageRequest
+        )
 
-        // Apply pagination (one-based: page 1 = first page)
-        val startIndex = (command.page - 1) * command.pageSize
-        val endIndex = minOf(startIndex + command.pageSize, total)
-        val visits = if (startIndex >= 0 && startIndex < total) {
-            allVisits.subList(startIndex, endIndex)
-        } else {
-            emptyList()
-        }
+        val visits = page.content
 
         // Collect all IDs to fetch in batch
         val customerIds = visits.map { it.customerId }.distinct()
@@ -125,10 +119,10 @@ class ListVisitsHandler(
 
         return ListVisitsResult(
             items = items,
-            total = total,
-            page = command.page,
+            total = page.totalElements.toInt(),
+            page = command.page, // Return original 1-based page number
             pageSize = command.pageSize,
-            totalPages = totalPages
+            totalPages = page.totalPages
         )
     }
 }
@@ -140,7 +134,9 @@ data class ListVisitsCommand(
     val studioId: StudioId,
     val page: Int = 1,
     val pageSize: Int = 20,
-    val status: VisitStatus? = null
+    val status: VisitStatus? = null,
+    val searchTerm: String? = null,
+    val scheduledDate: LocalDate? = null
 )
 
 /**
@@ -160,8 +156,8 @@ data class VisitListItem(
     val customerId: String,
     val vehicleId: String,
     val customer: VisitCustomerInfo,
-    val vehicle: VisitVehicleInfo,
     val appointmentColor: AppointmentColorInfo?,
+    val vehicle: VisitVehicleInfo,
     val services: List<VisitServiceLineItemInfo>,
     val status: VisitStatus,
     val scheduledDate: String,
