@@ -7,15 +7,18 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VehicleId
+import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 
 @Service
 class GetVehicleDetailHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val visitRepository: VisitRepository
 ) {
     suspend fun handle(command: GetVehicleDetailCommand): GetVehicleDetailResult =
         withContext(Dispatchers.IO) {
@@ -36,6 +39,23 @@ class GetVehicleDetailHandler(
                 )
             }
 
+            // Calculate statistics from completed visits
+            val visits = visitRepository.findByVehicleIdAndStudioId(vehicleEntity.id, command.studioId.value)
+            val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
+
+            val totalVisits = completedVisits.size
+            val lastVisitDate = completedVisits.maxByOrNull { it.scheduledDate }?.scheduledDate
+
+            var totalNetAmount = 0L
+            var totalGrossAmount = 0L
+
+            completedVisits.forEach { visit ->
+                visit.serviceItems.forEach { serviceItem ->
+                    totalNetAmount += serviceItem.finalPriceNet
+                    totalGrossAmount += serviceItem.finalPriceGross
+                }
+            }
+
             GetVehicleDetailResult(
                 vehicle = VehicleDetail(
                     id = vehicleEntity.id.toString(),
@@ -50,16 +70,11 @@ class GetVehicleDetailHandler(
                     technicalNotes = "",
                     owners = ownersInfo,
                     stats = VehicleStatsDetail(
-                        totalVisits = 0,
-                        lastVisitDate = null,
+                        totalVisits = totalVisits,
+                        lastVisitDate = lastVisitDate?.toString(),
                         totalSpent = MoneyDetail(
-                            netAmount = BigDecimal.ZERO,
-                            grossAmount = BigDecimal.ZERO,
-                            currency = "PLN"
-                        ),
-                        averageVisitCost = MoneyDetail(
-                            netAmount = BigDecimal.ZERO,
-                            grossAmount = BigDecimal.ZERO,
+                            netAmount = BigDecimal.valueOf(totalNetAmount).divide(BigDecimal.valueOf(100)),
+                            grossAmount = BigDecimal.valueOf(totalGrossAmount).divide(BigDecimal.valueOf(100)),
                             currency = "PLN"
                         )
                     ),
@@ -114,8 +129,7 @@ data class VehicleOwnerDetail(
 data class VehicleStatsDetail(
     val totalVisits: Int,
     val lastVisitDate: String?,
-    val totalSpent: MoneyDetail,
-    val averageVisitCost: MoneyDetail
+    val totalSpent: MoneyDetail
 )
 
 data class MoneyDetail(

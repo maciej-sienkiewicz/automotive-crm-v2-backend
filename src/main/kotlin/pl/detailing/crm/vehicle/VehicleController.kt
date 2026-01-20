@@ -153,11 +153,6 @@ class VehicleController(
                         netAmount = result.vehicle.stats.totalSpent.netAmount.toDouble(),
                         grossAmount = result.vehicle.stats.totalSpent.grossAmount.toDouble(),
                         currency = result.vehicle.stats.totalSpent.currency
-                    ),
-                    averageVisitCost = MoneyResponse(
-                        netAmount = result.vehicle.stats.averageVisitCost.netAmount.toDouble(),
-                        grossAmount = result.vehicle.stats.averageVisitCost.grossAmount.toDouble(),
-                        currency = result.vehicle.stats.averageVisitCost.currency
                     )
                 ),
                 createdAt = result.vehicle.createdAt,
@@ -427,8 +422,7 @@ data class OwnerResponse(
 data class StatsResponse(
     val totalVisits: Int,
     val lastVisitDate: String?,
-    val totalSpent: MoneyResponse,
-    val averageVisitCost: MoneyResponse
+    val totalSpent: MoneyResponse
 )
 
 data class MoneyResponse(

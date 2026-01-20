@@ -5,15 +5,18 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 
 @Service
 class ListVehiclesHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val visitRepository: VisitRepository
 ) {
     suspend fun handle(studioId: StudioId): List<VehicleListItem> =
         withContext(Dispatchers.IO) {
@@ -32,6 +35,23 @@ class ListVehiclesHandler(
                     )
                 }
 
+                // Calculate statistics from completed visits
+                val visits = visitRepository.findByVehicleIdAndStudioId(vehicleEntity.id, studioId.value)
+                val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
+
+                val totalVisits = completedVisits.size
+                val lastVisitDate = completedVisits.maxByOrNull { it.scheduledDate }?.scheduledDate
+
+                var totalNetAmount = 0L
+                var totalGrossAmount = 0L
+
+                completedVisits.forEach { visit ->
+                    visit.serviceItems.forEach { serviceItem ->
+                        totalNetAmount += serviceItem.finalPriceNet
+                        totalGrossAmount += serviceItem.finalPriceGross
+                    }
+                }
+
                 VehicleListItem(
                     id = vehicleEntity.id.toString(),
                     licensePlate = vehicleEntity.licensePlate ?: "",
@@ -40,16 +60,11 @@ class ListVehiclesHandler(
                     yearOfProduction = vehicleEntity.yearOfProduction,
                     owners = ownersInfo,
                     stats = VehicleStats(
-                        totalVisits = 0,
-                        lastVisitDate = null,
+                        totalVisits = totalVisits,
+                        lastVisitDate = lastVisitDate?.toString(),
                         totalSpent = MoneyInfo(
-                            netAmount = BigDecimal.ZERO,
-                            grossAmount = BigDecimal.ZERO,
-                            currency = "PLN"
-                        ),
-                        averageVisitCost = MoneyInfo(
-                            netAmount = BigDecimal.ZERO,
-                            grossAmount = BigDecimal.ZERO,
+                            netAmount = BigDecimal.valueOf(totalNetAmount).divide(BigDecimal.valueOf(100)),
+                            grossAmount = BigDecimal.valueOf(totalGrossAmount).divide(BigDecimal.valueOf(100)),
                             currency = "PLN"
                         )
                     ),
@@ -80,8 +95,7 @@ data class VehicleOwnerInfo(
 data class VehicleStats(
     val totalVisits: Int,
     val lastVisitDate: String?,
-    val totalSpent: MoneyInfo,
-    val averageVisitCost: MoneyInfo
+    val totalSpent: MoneyInfo
 )
 
 data class MoneyInfo(

@@ -5,11 +5,16 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.shared.VisitStatus
+import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 
 @Service
 class GetCustomerByIdHandler(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val visitRepository: VisitRepository,
+    private val vehicleOwnerRepository: VehicleOwnerRepository
 ) {
     suspend fun handle(command: GetCustomerByIdCommand): GetCustomerByIdResult =
         withContext(Dispatchers.IO) {
@@ -17,6 +22,37 @@ class GetCustomerByIdHandler(
                 id = command.customerId.value,
                 studioId = command.studioId.value
             ) ?: throw NotFoundException("Customer not found")
+
+            // Calculate visit statistics
+            val visits = visitRepository.findByCustomerIdAndStudioId(
+                customerId = command.customerId.value,
+                studioId = command.studioId.value
+            )
+
+            val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
+            val totalVisits = completedVisits.size
+            val lastVisitDate = completedVisits.maxByOrNull { it.scheduledDate }?.scheduledDate
+
+            // Calculate revenue from completed visits only
+            var totalNetAmount = 0L
+            var totalGrossAmount = 0L
+
+            completedVisits.forEach { visit ->
+                visit.serviceItems.forEach { serviceItem ->
+                    totalNetAmount += serviceItem.finalPriceNet
+                    totalGrossAmount += serviceItem.finalPriceGross
+                }
+            }
+
+            val revenueInfo = RevenueInfo(
+                netAmount = BigDecimal.valueOf(totalNetAmount).divide(BigDecimal.valueOf(100)),
+                grossAmount = BigDecimal.valueOf(totalGrossAmount).divide(BigDecimal.valueOf(100)),
+                currency = "PLN"
+            )
+
+            // Calculate vehicle count
+            val vehicleOwners = vehicleOwnerRepository.findByCustomerId(command.customerId.value)
+            val vehicleCount = vehicleOwners.size
 
             GetCustomerByIdResult(
                 id = entity.id.toString(),
@@ -59,14 +95,10 @@ class GetCustomerByIdHandler(
                     )
                 } else null,
                 notes = entity.notes ?: "",
-                lastVisitDate = null, // TODO: Calculate from visits
-                totalVisits = 0, // TODO: Calculate from visits
-                vehicleCount = 0, // TODO: Calculate from vehicles
-                totalRevenue = RevenueInfo(
-                    netAmount = BigDecimal.ZERO,
-                    grossAmount = BigDecimal.ZERO,
-                    currency = "PLN"
-                ), // TODO: Calculate from visits
+                lastVisitDate = lastVisitDate,
+                totalVisits = totalVisits,
+                vehicleCount = vehicleCount,
+                totalRevenue = revenueInfo,
                 createdAt = entity.createdAt,
                 updatedAt = entity.updatedAt
             )
