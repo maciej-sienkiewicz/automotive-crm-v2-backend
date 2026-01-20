@@ -267,6 +267,10 @@ class VisitController(
             DocumentType.PHOTO -> "photo"
             DocumentType.PDF -> "pdf"
             DocumentType.PROTOCOL -> "protocol"
+            DocumentType.INTAKE -> "intake"
+            DocumentType.DAMAGE_MAP -> "damage_map"
+            DocumentType.OUTTAKE -> "outtake"
+            DocumentType.OTHER -> " other"
         }
     }
 }

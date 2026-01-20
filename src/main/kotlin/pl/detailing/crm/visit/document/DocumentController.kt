@@ -134,7 +134,7 @@ class DocumentController(
             fileBytes = file.bytes,
             contentType = file.contentType ?: "application/pdf",
             uploadedBy = principal.userId.value,
-            uploadedByName = principal.fullName,
+            uploadedByName = principal.name,
             category = category
         )
 
