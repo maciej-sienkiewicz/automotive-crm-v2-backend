@@ -13,7 +13,7 @@ services:
       DB_NAME: ${ENV_DB_NAME}
       DB_USER: ${ENV_DB_USER}
       DB_PASSWORD: ${ENV_DB_PASSWORD}
-      REDIS_ADDR: ${ENV_DB_PASSWORD}
+      REDIS_ADDR: ${ENV_REDIS_ADDR}
       REDIS_PORT: ${ENV_REDIS_PORT}
     depends_on:
       - redis
