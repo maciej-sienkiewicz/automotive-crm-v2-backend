@@ -67,7 +67,7 @@ class SecurityConfig {
         val configuration = CorsConfiguration()
         configuration.allowedOriginPatterns = listOf(
             "http://localhost:[*]",
-            "https://detailboost.pl"
+            "https://detailboost.pl/"
         )
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
