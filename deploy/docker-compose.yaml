@@ -13,6 +13,13 @@ services:
       DB_NAME: ${ENV_DB_NAME}
       DB_USER: ${ENV_DB_USER}
       DB_PASSWORD: ${ENV_DB_PASSWORD}
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_PORT: ${REDIS_PORT}
+    networks:
+      - network
+
+  redis:
+    image: redis:alpine
     networks:
       - network
 
@@ -20,4 +27,3 @@ networks:
   network:
     name: ${ENV_NETWORK}
     external: true
-
