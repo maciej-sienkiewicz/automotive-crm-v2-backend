@@ -31,6 +31,7 @@ class CreateServiceHandler(
             basePriceNet = netAmount,
             vatRate = command.vatRate,
             isActive = true,
+            requireManualPrice = command.requireManualPrice,
             replacesServiceId = null,
             createdBy = command.userId,
             updatedBy = command.userId,
@@ -47,7 +48,8 @@ class CreateServiceHandler(
             basePriceNet = netAmount.amountInCents,
             vatRate = command.vatRate.rate,
             vatAmount = vatAmount.amountInCents,
-            priceGross = grossAmount.amountInCents
+            priceGross = grossAmount.amountInCents,
+            requireManualPrice = service.requireManualPrice
         )
     }
 }
@@ -58,5 +60,6 @@ data class CreateServiceResult(
     val basePriceNet: Long,
     val vatRate: Int,
     val vatAmount: Long,
-    val priceGross: Long
+    val priceGross: Long,
+    val requireManualPrice: Boolean
 )

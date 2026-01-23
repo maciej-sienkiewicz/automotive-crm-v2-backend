@@ -42,6 +42,7 @@ class UpdateServiceHandler(
             basePriceNet = netAmount,
             vatRate = command.vatRate,
             isActive = true,
+            requireManualPrice = command.requireManualPrice,
             replacesServiceId = command.oldServiceId,
             createdBy = UserId(oldServiceEntity.createdBy),
             updatedBy = command.userId,
@@ -60,6 +61,7 @@ class UpdateServiceHandler(
             vatRate = command.vatRate.rate,
             vatAmount = vatAmount.amountInCents,
             priceGross = grossAmount.amountInCents,
+            requireManualPrice = newService.requireManualPrice,
             replacesServiceId = command.oldServiceId
         )
     }
@@ -73,5 +75,6 @@ data class UpdateServiceResult(
     val vatRate: Int,
     val vatAmount: Long,
     val priceGross: Long,
+    val requireManualPrice: Boolean,
     val replacesServiceId: ServiceId
 )

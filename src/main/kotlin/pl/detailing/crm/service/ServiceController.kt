@@ -87,7 +87,8 @@ class ServiceController(
             userId = principal.userId,
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
-            vatRate = VatRate.fromInt(request.vatRate)
+            vatRate = VatRate.fromInt(request.vatRate),
+            requireManualPrice = request.requireManualPrice
         )
 
         val result = createServiceHandler.handle(command)
@@ -100,6 +101,7 @@ class ServiceController(
                 basePriceNet = result.basePriceNet,
                 vatRate = result.vatRate,
                 isActive = true,
+                requireManualPrice = result.requireManualPrice,
                 createdAt = java.time.Instant.now().toString(),
                 updatedAt = java.time.Instant.now().toString(),
                 replacesServiceId = null
@@ -120,7 +122,8 @@ class ServiceController(
             oldServiceId = ServiceId.fromString(request.originalServiceId),
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
-            vatRate = VatRate.fromInt(request.vatRate)
+            vatRate = VatRate.fromInt(request.vatRate),
+            requireManualPrice = request.requireManualPrice
         )
 
         val result = updateServiceHandler.handle(command)
@@ -133,6 +136,7 @@ class ServiceController(
                 basePriceNet = result.basePriceNet,
                 vatRate = result.vatRate,
                 isActive = true,
+                requireManualPrice = result.requireManualPrice,
                 createdAt = java.time.Instant.now().toString(),
                 updatedAt = java.time.Instant.now().toString(),
                 replacesServiceId = result.replacesServiceId.toString()
@@ -146,6 +150,7 @@ data class ServiceResponse(
     val basePriceNet: Long,
     val vatRate: Int,
     val isActive: Boolean,
+    val requireManualPrice: Boolean,
     val createdAt: String,
     val updatedAt: String,
     val replacesServiceId: String?

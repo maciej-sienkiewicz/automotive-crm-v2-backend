@@ -10,6 +10,7 @@ data class Service(
     val basePriceNet: Money,
     val vatRate: VatRate,
     val isActive: Boolean,
+    val requireManualPrice: Boolean,
     val replacesServiceId: ServiceId?,
     val createdBy: UserId,
     val updatedBy: UserId,
