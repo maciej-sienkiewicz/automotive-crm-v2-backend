@@ -41,7 +41,8 @@ class CreateVisitFromReservationHandler(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val damageMarkingService: DamageMarkingService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
-    private val documentService: DocumentService
+    private val documentService: DocumentService,
+    private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -89,6 +90,27 @@ class CreateVisitFromReservationHandler(
 
             // Step 5: Generate visit number
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
+
+            // Step 5.5: Load services and validate manual price requirements
+            val requestedServiceIds = command.services.map { ServiceId.fromString(it.serviceId) }
+            val services = serviceRepository.findActiveByStudioId(command.studioId.value)
+                .filter { it.id in requestedServiceIds.map { id -> id.value } }
+                .map { it.toDomain() }
+                .associateBy { it.id }
+
+            // Validate that services requiring manual price have explicit price set
+            command.services.forEach { serviceReq ->
+                val service = services[ServiceId.fromString(serviceReq.serviceId)]
+                if (service?.requireManualPrice == true) {
+                    val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
+                    if (adjustmentType != AdjustmentType.SET_NET && adjustmentType != AdjustmentType.SET_GROSS) {
+                        throw ValidationException(
+                            "Service '${service.name}' requires manual price input. " +
+                            "Please provide an explicit price using SET_NET or SET_GROSS adjustment type."
+                        )
+                    }
+                }
+            }
 
             // Step 6: Map services to visit service items
             val serviceItems = command.services.map { serviceReq ->

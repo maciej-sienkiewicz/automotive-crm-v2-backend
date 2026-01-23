@@ -106,6 +106,7 @@ class CreateAppointmentValidationContextBuilder(
                 customerEmailExists = emailExistsDeferred.await(),
                 customerPhoneExists = phoneExistsDeferred.await(),
                 requestedServiceIds = command.services.map { it.serviceId },
+                requestedServiceLineItems = command.services,
                 schedule = AppointmentSchedule(
                     isAllDay = command.schedule.isAllDay,
                     startDateTime = command.schedule.startDateTime,
@@ -127,6 +128,7 @@ data class CreateAppointmentValidationContext(
     val customerEmailExists: Boolean,
     val customerPhoneExists: Boolean,
     val requestedServiceIds: List<pl.detailing.crm.shared.ServiceId>,
+    val requestedServiceLineItems: List<ServiceLineItemCommand>,
     val schedule: AppointmentSchedule,
     val customerIdentity: CustomerIdentity,
     val vehicleIdentity: VehicleIdentity
