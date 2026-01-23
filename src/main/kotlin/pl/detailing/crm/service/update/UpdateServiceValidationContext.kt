@@ -13,5 +13,6 @@ data class UpdateServiceValidationContext(
     val name: String,
     val basePriceNet: Money,
     val vatRate: VatRate,
+    val requireManualPrice: Boolean,
     val nameConflictExists: Boolean
 )

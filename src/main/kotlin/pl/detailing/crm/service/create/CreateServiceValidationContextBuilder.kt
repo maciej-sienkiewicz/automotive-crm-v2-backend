@@ -24,6 +24,7 @@ class CreateServiceValidationContextBuilder(
                 name = command.name,
                 basePriceNet = command.basePriceNet,
                 vatRate = command.vatRate,
+                requireManualPrice = command.requireManualPrice,
                 serviceNameExists = serviceExistsDeferred.await()
             )
         }

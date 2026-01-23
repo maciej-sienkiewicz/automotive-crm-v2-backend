@@ -9,5 +9,6 @@ data class CreateServiceValidationContext(
     val name: String,
     val basePriceNet: Money,
     val vatRate: VatRate,
+    val requireManualPrice: Boolean,
     val serviceNameExists: Boolean
 )

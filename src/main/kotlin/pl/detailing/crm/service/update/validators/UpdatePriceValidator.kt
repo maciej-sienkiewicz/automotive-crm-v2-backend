@@ -7,8 +7,14 @@ import pl.detailing.crm.shared.ValidationException
 @Component
 class UpdatePriceValidator {
     fun validate(context: UpdateServiceValidationContext) {
-        if (context.basePriceNet.amountInCents <= 0) {
+        // If service requires manual price, base price can be zero (it will be set manually)
+        if (!context.requireManualPrice && context.basePriceNet.amountInCents <= 0) {
             throw ValidationException("Base price must be greater than zero")
+        }
+
+        // Price cannot be negative even for manual price services
+        if (context.basePriceNet.amountInCents < 0) {
+            throw ValidationException("Base price cannot be negative")
         }
 
         if (context.basePriceNet.amountInCents > 100_000_000) {

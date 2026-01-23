@@ -34,6 +34,7 @@ class UpdateServiceValidationContextBuilder(
                 name = command.name,
                 basePriceNet = command.basePriceNet,
                 vatRate = command.vatRate,
+                requireManualPrice = command.requireManualPrice,
                 nameConflictExists = nameConflictDeferred.await()
             )
         }
