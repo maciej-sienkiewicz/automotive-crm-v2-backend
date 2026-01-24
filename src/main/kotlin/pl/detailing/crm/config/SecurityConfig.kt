@@ -42,6 +42,7 @@ class SecurityConfig {
             }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                auth.requestMatchers("/api/v1/inbound/calls").permitAll()
 
                 auth.requestMatchers(
                     "/api/auth/**",
