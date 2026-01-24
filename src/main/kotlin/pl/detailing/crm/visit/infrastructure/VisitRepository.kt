@@ -156,6 +156,41 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("searchTerm") searchTerm: String?,
         @Param("scheduledDate") scheduledDate: LocalDate?
     ): Long
+
+    /**
+     * Find visits scheduled for a specific date with studio isolation
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND CAST(v.scheduledDate AS date) = :date
+        AND v.status != 'ARCHIVED'
+        ORDER BY v.scheduledDate ASC
+    """)
+    fun findByStudioIdAndScheduledDate(
+        @Param("studioId") studioId: UUID,
+        @Param("date") date: LocalDate
+    ): List<VisitEntity>
+
+    /**
+     * Calculate total revenue for visits within a date range
+     * Uses service items' finalPriceGross for historical accuracy
+     */
+    @Query("""
+        SELECT COALESCE(SUM(vsi.finalPriceGross), 0)
+        FROM VisitEntity v
+        JOIN v.serviceItems vsi
+        WHERE v.studioId = :studioId
+        AND v.createdAt >= :startDate
+        AND v.createdAt < :endDate
+        AND v.status != 'REJECTED'
+        AND v.status != 'ARCHIVED'
+    """)
+    fun sumRevenueByStudioIdAndDateRange(
+        @Param("studioId") studioId: UUID,
+        @Param("startDate") startDate: java.time.Instant,
+        @Param("endDate") endDate: java.time.Instant
+    ): Long
 }
 
 @Repository

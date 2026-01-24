@@ -72,6 +72,19 @@ value class CustomerId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for CallLog entities
+ */
+@JvmInline
+value class CallId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CallId(UUID.randomUUID())
+        fun fromString(value: String) = CallId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type-safe ID wrapper for Vehicle entities
  */
 @JvmInline
@@ -181,6 +194,15 @@ enum class VisitServiceStatus {
 enum class CommentType {
     INTERNAL,       // Internal comment visible only to staff
     FOR_CUSTOMER    // Comment visible to customer
+}
+
+/**
+ * CallLog status for inbound call tracking
+ */
+enum class CallLogStatus {
+    PENDING,        // New call, awaiting action
+    ACCEPTED,       // Call accepted and converted to lead/visit
+    REJECTED        // Call rejected/dismissed
 }
 
 /**
