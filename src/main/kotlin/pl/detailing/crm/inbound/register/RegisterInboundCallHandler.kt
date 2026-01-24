@@ -2,6 +2,7 @@ package pl.detailing.crm.inbound.register
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.inbound.domain.CallLog
@@ -12,7 +13,8 @@ import java.time.Instant
 
 @Service
 class RegisterInboundCallHandler(
-    private val callLogRepository: CallLogRepository
+    private val callLogRepository: CallLogRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: RegisterInboundCallCommand): RegisterInboundCallResult =
@@ -40,7 +42,17 @@ class RegisterInboundCallHandler(
             val entity = CallLogEntity.fromDomain(callLog)
             callLogRepository.save(entity)
 
-            // TODO: Publish NewCallReceivedEvent for WebSocket integration
+            // Publish event for WebSocket notification
+            eventPublisher.publishEvent(
+                NewCallReceivedEvent(
+                    source = this@RegisterInboundCallHandler,
+                    studioId = callLog.studioId,
+                    callId = callLog.id,
+                    phoneNumber = callLog.phoneNumber,
+                    callerName = callLog.callerName,
+                    receivedAt = callLog.receivedAt
+                )
+            )
 
             RegisterInboundCallResult(
                 callId = callLog.id,

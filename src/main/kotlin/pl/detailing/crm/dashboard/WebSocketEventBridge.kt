@@ -1,0 +1,36 @@
+package pl.detailing.crm.dashboard
+
+import org.springframework.context.event.EventListener
+import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.stereotype.Component
+import pl.detailing.crm.shared.*
+
+/**
+ * Bridges internal Spring ApplicationEvents to WebSocket STOMP messages.
+ * Listens for domain events and pushes real-time updates to the correct
+ * tenant-specific topic: /topic/studio.{studioId}.dashboard
+ */
+@Component
+class WebSocketEventBridge(
+    private val messagingTemplate: SimpMessagingTemplate
+) {
+
+    @EventListener
+    fun handleNewCallReceived(event: NewCallReceivedEvent) {
+        val payload = NewCallPayload(
+            id = event.callId.value.toString(),
+            phoneNumber = event.phoneNumber,
+            callerName = event.callerName,
+            receivedAt = event.receivedAt
+        )
+
+        val dashboardEvent = DashboardEvent(
+            type = DashboardEventType.NEW_INBOUND_CALL,
+            payload = payload,
+            timestamp = event.receivedAt
+        )
+
+        val destination = "/topic/studio.${event.studioId.value}.dashboard"
+        messagingTemplate.convertAndSend(destination, dashboardEvent)
+    }
+}
