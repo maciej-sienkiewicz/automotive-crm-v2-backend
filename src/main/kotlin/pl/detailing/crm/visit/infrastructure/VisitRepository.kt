@@ -158,21 +158,6 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Long
 
     /**
-     * Find visits scheduled for a specific date with studio isolation
-     */
-    @Query("""
-        SELECT v FROM VisitEntity v
-        WHERE v.studioId = :studioId
-        AND CAST(v.scheduledDate AS date) = :date
-        AND v.status != 'ARCHIVED'
-        ORDER BY v.scheduledDate ASC
-    """)
-    fun findByStudioIdAndScheduledDate(
-        @Param("studioId") studioId: UUID,
-        @Param("date") date: LocalDate
-    ): List<VisitEntity>
-
-    /**
      * Calculate total revenue for visits within a date range
      * Uses service items' finalPriceGross for historical accuracy
      */

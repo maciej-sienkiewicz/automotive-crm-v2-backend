@@ -2,18 +2,23 @@ package pl.detailing.crm.dashboard.query
 
 import kotlinx.coroutines.*
 import org.springframework.stereotype.Service
+import pl.detailing.crm.appointment.domain.AppointmentStatus
+import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.dashboard.domain.*
 import pl.detailing.crm.inbound.infrastructure.CallLogRepository
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.*
 
 @Service
 class GetDashboardSummaryHandler(
     private val visitRepository: VisitRepository,
+    private val appointmentRepository: AppointmentRepository,
     private val callLogRepository: CallLogRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val vehicleRepository: VehicleRepository
 ) {
     suspend fun handle(command: GetDashboardSummaryCommand): DashboardSummary = coroutineScope {
         // Calculate date ranges for week-over-week comparison
@@ -43,9 +48,10 @@ class GetDashboardSummaryHandler(
             )
         }
 
-        val incomingTodayVisitsDeferred = async(Dispatchers.IO) {
-            visitRepository.findByStudioIdAndScheduledDate(
+        val incomingTodayAppointmentsDeferred = async(Dispatchers.IO) {
+            appointmentRepository.findByStudioIdAndStatusAndDate(
                 command.studioId.value,
+                AppointmentStatus.CREATED,
                 today
             )
         }
@@ -89,7 +95,7 @@ class GetDashboardSummaryHandler(
         // Await all results
         val inProgressVisits = inProgressVisitsDeferred.await()
         val readyForPickupVisits = readyForPickupVisitsDeferred.await()
-        val incomingTodayVisits = incomingTodayVisitsDeferred.await()
+        val incomingTodayAppointments = incomingTodayAppointmentsDeferred.await()
         val currentWeekRevenue = currentWeekRevenueDeferred.await()
         val previousWeekRevenue = previousWeekRevenueDeferred.await()
         val currentWeekCalls = currentWeekCallsDeferred.await()
@@ -99,12 +105,12 @@ class GetDashboardSummaryHandler(
         // Build operational stats with details
         val inProgressDetails = buildVisitDetails(inProgressVisits, command.studioId)
         val readyForPickupDetails = buildVisitDetails(readyForPickupVisits, command.studioId)
-        val incomingTodayDetails = buildVisitDetails(incomingTodayVisits, command.studioId)
+        val incomingTodayDetails = buildAppointmentDetails(incomingTodayAppointments, command.studioId)
 
         val stats = OperationalStats(
             inProgress = inProgressVisits.size,
             readyForPickup = readyForPickupVisits.size,
-            incomingToday = incomingTodayVisits.size,
+            incomingToday = incomingTodayAppointments.size,
             inProgressDetails = inProgressDetails,
             readyForPickupDetails = readyForPickupDetails,
             incomingTodayDetails = incomingTodayDetails
@@ -157,6 +163,31 @@ class GetDashboardSummaryHandler(
                 id = VisitId(visit.id),
                 brand = visit.brandSnapshot,
                 model = visit.modelSnapshot,
+                amount = Money.fromCents(totalAmount),
+                customerFirstName = customer?.firstName ?: "Unknown",
+                customerLastName = customer?.lastName ?: "Unknown",
+                phoneNumber = customer?.phone
+            )
+        }
+    }
+
+    private fun buildAppointmentDetails(appointments: List<pl.detailing.crm.appointment.infrastructure.AppointmentEntity>, studioId: StudioId): List<VisitDetail> {
+        return appointments.map { appointment ->
+            // Fetch customer
+            val customer = customerRepository.findByIdAndStudioId(appointment.customerId, studioId.value)
+
+            // Fetch vehicle if vehicleId is not null
+            val vehicle = appointment.vehicleId?.let { vehicleId ->
+                vehicleRepository.findByIdAndStudioId(vehicleId, studioId.value)
+            }
+
+            // Calculate total amount from line items
+            val totalAmount = appointment.lineItems.sumOf { it.finalPriceGross }
+
+            VisitDetail(
+                id = VisitId(appointment.id), // Use appointment ID as temporary visit ID
+                brand = vehicle?.brand ?: "Unknown",
+                model = vehicle?.model ?: "Unknown",
                 amount = Money.fromCents(totalAmount),
                 customerFirstName = customer?.firstName ?: "Unknown",
                 customerLastName = customer?.lastName ?: "Unknown",

@@ -86,4 +86,20 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("scheduledDate") scheduledDate: LocalDate?,
         pageable: Pageable
     ): Page<AppointmentEntity>
+
+    /**
+     * Find appointments by studio, status and scheduled date
+     */
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+        AND a.status = :status
+        AND CAST(a.startDateTime AS date) = :date
+        ORDER BY a.startDateTime ASC
+    """)
+    fun findByStudioIdAndStatusAndDate(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus,
+        @Param("date") date: LocalDate
+    ): List<AppointmentEntity>
 }
