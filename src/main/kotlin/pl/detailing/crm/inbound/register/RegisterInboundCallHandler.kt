@@ -2,6 +2,7 @@ package pl.detailing.crm.inbound.register
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -16,6 +17,7 @@ class RegisterInboundCallHandler(
     private val callLogRepository: CallLogRepository,
     private val eventPublisher: ApplicationEventPublisher
 ) {
+    private val log = LoggerFactory.getLogger(RegisterInboundCallHandler::class.java)
     @Transactional
     suspend fun handle(command: RegisterInboundCallCommand): RegisterInboundCallResult =
         withContext(Dispatchers.IO) {
@@ -43,6 +45,8 @@ class RegisterInboundCallHandler(
             callLogRepository.save(entity)
 
             // Publish event for WebSocket notification
+            log.info("[INBOUND] Publishing NewCallReceivedEvent: callId={}, studioId={}, phone={}",
+                callLog.id.value, callLog.studioId.value, callLog.phoneNumber)
             eventPublisher.publishEvent(
                 NewCallReceivedEvent(
                     source = this@RegisterInboundCallHandler,
@@ -53,6 +57,7 @@ class RegisterInboundCallHandler(
                     receivedAt = callLog.receivedAt
                 )
             )
+            log.debug("[INBOUND] Event published successfully")
 
             RegisterInboundCallResult(
                 callId = callLog.id,
