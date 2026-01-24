@@ -14,6 +14,8 @@ import pl.detailing.crm.inbound.reject.RejectCallHandler
 import pl.detailing.crm.inbound.update.UpdateCallCommand
 import pl.detailing.crm.inbound.update.UpdateCallHandler
 import pl.detailing.crm.shared.CallId
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.Instant
 
 @RestController
@@ -22,7 +24,8 @@ class InboundController(
     private val registerInboundCallHandler: RegisterInboundCallHandler,
     private val updateCallHandler: UpdateCallHandler,
     private val acceptCallHandler: AcceptCallHandler,
-    private val rejectCallHandler: RejectCallHandler
+    private val rejectCallHandler: RejectCallHandler,
+    private val studioRepository: StudioRepository,
 ) {
 
     /**
@@ -32,10 +35,12 @@ class InboundController(
     @PostMapping
     fun registerCall(@RequestBody request: RegisterCallRequest): ResponseEntity<RegisterCallResponse> =
         runBlocking {
-            val principal = SecurityContextHelper.getCurrentUser()
+            val principal = StudioId.fromString(studioRepository.findAll().get(0).id.toString())
+            println(request)
+            println("dupa")
 
             val command = RegisterInboundCallCommand(
-                studioId = principal.studioId,
+                studioId = principal,
                 phoneNumber = request.phoneNumber,
                 callerName = request.callerName,
                 note = request.note,
