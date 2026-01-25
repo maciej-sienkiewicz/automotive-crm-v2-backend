@@ -65,8 +65,16 @@ class CreateVisitFromReservationHandler(
                     createCustomer(command.customer, command.studioId, command.userId)
                 }
                 else -> {
-                    // Use existing customer
-                    command.customer.id ?: throw ValidationException("Customer ID required for existing customer")
+                    // Use existing customer and update if data changed
+                    val existingCustomerId = command.customer.id
+                        ?: throw ValidationException("Customer ID required for existing customer")
+                    updateCustomerIfNeeded(
+                        CustomerId.fromString(existingCustomerId),
+                        command.customer,
+                        command.studioId,
+                        command.userId
+                    )
+                    CustomerId.fromString(existingCustomerId)
                 }
             }
 
@@ -326,5 +334,97 @@ class CreateVisitFromReservationHandler(
         vehicleOwnerRepository.save(vehicleOwnerEntity)
 
         return vehicle.id
+    }
+
+    private fun updateCustomerIfNeeded(
+        customerId: CustomerId,
+        customerData: CustomerData,
+        studioId: StudioId,
+        userId: UserId
+    ) {
+        val existingEntity = customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
+            ?: throw EntityNotFoundException("Customer not found")
+
+        // Check if any data has changed
+        val newFirstName = customerData.firstName.trim()
+        val newLastName = customerData.lastName.trim()
+        val newEmail = customerData.email.trim().lowercase()
+        val newPhone = customerData.phone.trim()
+
+        val newHomeAddress = customerData.homeAddress
+        val newCompany = customerData.company
+
+        val hasBasicDataChanged = existingEntity.firstName != newFirstName ||
+            existingEntity.lastName != newLastName ||
+            existingEntity.email != newEmail ||
+            existingEntity.phone != newPhone
+
+        val hasHomeAddressChanged = when {
+            newHomeAddress == null && existingEntity.homeAddressStreet == null -> false
+            newHomeAddress == null -> true // Was set, now null
+            existingEntity.homeAddressStreet == null -> true // Was null, now set
+            else -> existingEntity.homeAddressStreet != newHomeAddress.street ||
+                existingEntity.homeAddressCity != newHomeAddress.city ||
+                existingEntity.homeAddressPostalCode != newHomeAddress.postalCode ||
+                existingEntity.homeAddressCountry != newHomeAddress.country
+        }
+
+        val hasCompanyDataChanged = when {
+            newCompany == null && existingEntity.companyName == null -> false
+            newCompany == null -> true // Was set, now null
+            existingEntity.companyName == null -> true // Was null, now set
+            else -> existingEntity.companyName != newCompany.name ||
+                existingEntity.companyNip != newCompany.nip ||
+                existingEntity.companyRegon != newCompany.regon ||
+                existingEntity.companyAddressStreet != newCompany.address.street ||
+                existingEntity.companyAddressCity != newCompany.address.city ||
+                existingEntity.companyAddressPostalCode != newCompany.address.postalCode ||
+                existingEntity.companyAddressCountry != newCompany.address.country
+        }
+
+        if (hasBasicDataChanged || hasHomeAddressChanged || hasCompanyDataChanged) {
+            // Update the entity
+            existingEntity.firstName = newFirstName
+            existingEntity.lastName = newLastName
+            existingEntity.email = newEmail
+            existingEntity.phone = newPhone
+
+            // Update home address
+            if (newHomeAddress != null) {
+                existingEntity.homeAddressStreet = newHomeAddress.street
+                existingEntity.homeAddressCity = newHomeAddress.city
+                existingEntity.homeAddressPostalCode = newHomeAddress.postalCode
+                existingEntity.homeAddressCountry = newHomeAddress.country
+            } else {
+                existingEntity.homeAddressStreet = null
+                existingEntity.homeAddressCity = null
+                existingEntity.homeAddressPostalCode = null
+                existingEntity.homeAddressCountry = null
+            }
+
+            // Update company data
+            if (newCompany != null) {
+                existingEntity.companyName = newCompany.name
+                existingEntity.companyNip = newCompany.nip
+                existingEntity.companyRegon = newCompany.regon
+                existingEntity.companyAddressStreet = newCompany.address.street
+                existingEntity.companyAddressCity = newCompany.address.city
+                existingEntity.companyAddressPostalCode = newCompany.address.postalCode
+                existingEntity.companyAddressCountry = newCompany.address.country
+            } else {
+                existingEntity.companyName = null
+                existingEntity.companyNip = null
+                existingEntity.companyRegon = null
+                existingEntity.companyAddressStreet = null
+                existingEntity.companyAddressCity = null
+                existingEntity.companyAddressPostalCode = null
+                existingEntity.companyAddressCountry = null
+            }
+
+            existingEntity.updatedBy = userId.value
+            existingEntity.updatedAt = Instant.now()
+
+            customerRepository.save(existingEntity)
+        }
     }
 }
