@@ -23,9 +23,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         AND (:statuses IS NULL OR l.status IN :statuses)
         AND (:sources IS NULL OR l.source IN :sources)
         AND (:search IS NULL OR 
-             LOWER(l.contactIdentifier) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(l.customerName) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(l.initialMessage) LIKE LOWER(CONCAT('%', :search, '%')))
+             UPPER(CAST(l.contactIdentifier AS string)) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(CAST(l.customerName AS string)) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(CAST(l.initialMessage AS string)) LIKE UPPER(CONCAT('%', :search, '%')))
         ORDER BY 
             CASE WHEN l.requiresVerification = true THEN 0 ELSE 1 END,
             l.createdAt DESC

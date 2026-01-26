@@ -35,10 +35,10 @@ class LeadEntity(
     @Column(name = "status", nullable = false, length = 20)
     var status: LeadStatus,
 
-    @Column(name = "contact_identifier", nullable = false, length = 255)
+    @Column(name = "contact_identifier", nullable = false, columnDefinition = "text")
     val contactIdentifier: String,
 
-    @Column(name = "customer_name", nullable = true, length = 200)
+    @Column(name = "customer_name", nullable = true, columnDefinition = "text")
     var customerName: String?,
 
     @Column(name = "initial_message", nullable = true, columnDefinition = "text")
