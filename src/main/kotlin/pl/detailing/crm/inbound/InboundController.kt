@@ -51,7 +51,7 @@ class InboundController(
 
             ResponseEntity.status(HttpStatus.CREATED).body(
                 RegisterCallResponse(
-                    id = result.callId.toString(),
+                    id = result.leadId.toString(),
                     phoneNumber = result.phoneNumber,
                     contactName = result.callerName,
                     timestamp = result.receivedAt.toString(),

@@ -27,7 +27,8 @@ data class NewCallPayload(
     val id: String,
     val phoneNumber: String,
     val callerName: String?,
-    val receivedAt: Instant
+    val receivedAt: Instant,
+    val estimatedValue: Long
 )
 
 /**
@@ -38,7 +39,9 @@ class NewCallReceivedEvent(
     source: Any,
     val studioId: StudioId,
     val callId: CallId,
+    val leadId: LeadId,
     val phoneNumber: String,
     val callerName: String?,
-    val receivedAt: Instant
+    val receivedAt: Instant,
+    val estimatedValue: Long
 ) : ApplicationEvent(source)

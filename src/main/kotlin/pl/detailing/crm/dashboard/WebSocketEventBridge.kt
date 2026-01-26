@@ -19,14 +19,15 @@ class WebSocketEventBridge(
 
     @EventListener
     fun handleNewCallReceived(event: NewCallReceivedEvent) {
-        log.debug("[WS-BRIDGE] Received NewCallReceivedEvent: callId={}, studioId={}, phone={}",
-            event.callId.value, event.studioId.value, event.phoneNumber)
+        log.debug("[WS-BRIDGE] Received NewCallReceivedEvent: callId={}, leadId={}, studioId={}, phone={}",
+            event.callId.value, event.leadId.value, event.studioId.value, event.phoneNumber)
 
         val payload = NewCallPayload(
-            id = event.callId.value.toString(),
+            id = event.leadId.value.toString(),
             phoneNumber = event.phoneNumber,
             callerName = event.callerName,
-            receivedAt = event.receivedAt
+            receivedAt = event.receivedAt,
+            estimatedValue = event.estimatedValue
         )
 
         val dashboardEvent = DashboardEvent(
@@ -36,7 +37,8 @@ class WebSocketEventBridge(
         )
 
         val destination = "/topic/studio.${event.studioId.value}.dashboard"
-        log.info("[WS-BRIDGE] Sending DashboardEvent to destination={}, type={}", destination, dashboardEvent.type)
+        log.info("[WS-BRIDGE] Sending DashboardEvent to destination={}, type={}, leadId={}", 
+            destination, dashboardEvent.type, event.leadId.value)
         messagingTemplate.convertAndSend(destination, dashboardEvent)
         log.debug("[WS-BRIDGE] Message sent successfully to {}", destination)
     }

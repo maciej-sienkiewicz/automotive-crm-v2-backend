@@ -206,6 +206,37 @@ enum class CallLogStatus {
 }
 
 /**
+ * Type-safe ID wrapper for Lead entities
+ */
+@JvmInline
+value class LeadId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = LeadId(UUID.randomUUID())
+        fun fromString(value: String) = LeadId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Source of the lead inquiry
+ */
+enum class LeadSource {
+    PHONE,      // Lead from phone call
+    EMAIL,      // Lead from email
+    MANUAL      // Manually created lead
+}
+
+/**
+ * Lead lifecycle status
+ */
+enum class LeadStatus {
+    IN_PROGRESS,    // Lead is being worked on (contacted)
+    CONVERTED,      // Lead converted to customer (closed won)
+    ABANDONED       // Lead abandoned (closed lost)
+}
+
+/**
  * Photo type for vehicle documentation
  */
 enum class PhotoType {
