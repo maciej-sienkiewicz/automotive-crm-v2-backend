@@ -66,7 +66,7 @@ class CreateVisitFromReservationHandler(
                 }
                 else -> {
                     // Use existing customer and update if data changed
-                    val existingCustomerId = command.customer.id
+                    val existingCustomerId = command.customer.id?.value.toString()
                         ?: throw ValidationException("Customer ID required for existing customer")
                     updateCustomerIfNeeded(
                         CustomerId.fromString(existingCustomerId),
