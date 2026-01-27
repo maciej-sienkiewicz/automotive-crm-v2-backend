@@ -36,8 +36,6 @@ class InboundController(
     fun registerCall(@RequestBody request: RegisterCallRequest): ResponseEntity<RegisterCallResponse> =
         runBlocking {
             val principal = StudioId.fromString(studioRepository.findAll().get(0).id.toString())
-            println(request)
-            println("dupa")
 
             val command = RegisterInboundCallCommand(
                 studioId = principal,

@@ -34,6 +34,7 @@ class DashboardController(
                 inProgress = summary.stats.inProgress,
                 readyForPickup = summary.stats.readyForPickup,
                 incomingToday = summary.stats.incomingToday,
+                overdue = summary.stats.overdue,
                 inProgressDetails = summary.stats.inProgressDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
@@ -42,7 +43,8 @@ class DashboardController(
                         amount = detail.amount.amountInCents / 100.0,
                         customerFirstName = detail.customerFirstName,
                         customerLastName = detail.customerLastName,
-                        phoneNumber = detail.phoneNumber
+                        phoneNumber = detail.phoneNumber,
+                        estimatedCompletionDate = detail.estimatedCompletionDate?.toString()
                     )
                 },
                 readyForPickupDetails = summary.stats.readyForPickupDetails.map { detail ->
@@ -53,7 +55,8 @@ class DashboardController(
                         amount = detail.amount.amountInCents / 100.0,
                         customerFirstName = detail.customerFirstName,
                         customerLastName = detail.customerLastName,
-                        phoneNumber = detail.phoneNumber
+                        phoneNumber = detail.phoneNumber,
+                        estimatedCompletionDate = detail.estimatedCompletionDate?.toString()
                     )
                 },
                 incomingTodayDetails = summary.stats.incomingTodayDetails.map { detail ->
@@ -64,7 +67,8 @@ class DashboardController(
                         amount = detail.amount.amountInCents / 100.0,
                         customerFirstName = detail.customerFirstName,
                         customerLastName = detail.customerLastName,
-                        phoneNumber = detail.phoneNumber
+                        phoneNumber = detail.phoneNumber,
+                        estimatedCompletionDate = detail.estimatedCompletionDate?.toString()
                     )
                 }
             ),
@@ -106,13 +110,15 @@ data class VisitDetailResponse(
     val amount: Double,
     val customerFirstName: String,
     val customerLastName: String,
-    val phoneNumber: String?
+    val phoneNumber: String?,
+    val estimatedCompletionDate: String?
 )
 
 data class OperationalStatsResponse(
     val inProgress: Int,
     val readyForPickup: Int,
     val incomingToday: Int,
+    val overdue: Int,
     val inProgressDetails: List<VisitDetailResponse>,
     val readyForPickupDetails: List<VisitDetailResponse>,
     val incomingTodayDetails: List<VisitDetailResponse>

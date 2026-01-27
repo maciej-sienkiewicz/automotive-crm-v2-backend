@@ -1,5 +1,6 @@
 package pl.detailing.crm.dashboard.domain
 
+import java.time.Instant
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.VisitId
 
@@ -13,7 +14,8 @@ data class VisitDetail(
     val amount: Money,
     val customerFirstName: String,
     val customerLastName: String,
-    val phoneNumber: String?
+    val phoneNumber: String?,
+    val estimatedCompletionDate: Instant?
 )
 
 /**
@@ -23,6 +25,7 @@ data class OperationalStats(
     val inProgress: Int,
     val readyForPickup: Int,
     val incomingToday: Int,
+    val overdue: Int,
     val inProgressDetails: List<VisitDetail>,
     val readyForPickupDetails: List<VisitDetail>,
     val incomingTodayDetails: List<VisitDetail>

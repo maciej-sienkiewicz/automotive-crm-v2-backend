@@ -17,23 +17,31 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
     /**
      * Find all leads for a studio with optional filters
      */
-    @Query("""
-        SELECT l FROM LeadEntity l
-        WHERE l.studioId = :studioId
-        AND (:statuses IS NULL OR l.status IN :statuses)
-        AND (:sources IS NULL OR l.source IN :sources)
-        AND (:search IS NULL OR 
-             UPPER(CAST(l.contactIdentifier AS string)) LIKE UPPER(CONCAT('%', :search, '%')) OR
-             UPPER(CAST(l.customerName AS string)) LIKE UPPER(CONCAT('%', :search, '%')) OR
-             UPPER(CAST(l.initialMessage AS string)) LIKE UPPER(CONCAT('%', :search, '%')))
-        ORDER BY 
-            CASE WHEN l.requiresVerification = true THEN 0 ELSE 1 END,
-            l.createdAt DESC
-    """)
+    @Query(value = """
+        SELECT * FROM leads l
+        WHERE l.studio_id = CAST(:studioId AS uuid)
+        AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
+        AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
+        AND (CAST(:search AS text) IS NULL OR 
+             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
+    """, 
+    countQuery = """
+        SELECT count(*) FROM leads l
+        WHERE l.studio_id = CAST(:studioId AS uuid)
+        AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
+        AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
+        AND (CAST(:search AS text) IS NULL OR 
+             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
+    """,
+    nativeQuery = true)
     fun findByStudioIdWithFilters(
         @Param("studioId") studioId: UUID,
-        @Param("statuses") statuses: List<LeadStatus>?,
-        @Param("sources") sources: List<LeadSource>?,
+        @Param("statuses") statuses: List<String>?,
+        @Param("sources") sources: List<String>?,
         @Param("search") search: String?,
         pageable: Pageable
     ): Page<LeadEntity>

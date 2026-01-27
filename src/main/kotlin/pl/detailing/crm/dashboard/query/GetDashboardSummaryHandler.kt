@@ -104,6 +104,9 @@ class GetDashboardSummaryHandler(
 
         // Build operational stats with details
         val inProgressDetails = buildVisitDetails(inProgressVisits, command.studioId)
+        val overdueCount = inProgressVisits.count { visit ->
+            visit.estimatedCompletionDate?.let { it.isBefore(now) } ?: false
+        }
         val readyForPickupDetails = buildVisitDetails(readyForPickupVisits, command.studioId)
         val incomingTodayDetails = buildAppointmentDetails(incomingTodayAppointments, command.studioId)
 
@@ -111,6 +114,7 @@ class GetDashboardSummaryHandler(
             inProgress = inProgressVisits.size,
             readyForPickup = readyForPickupVisits.size,
             incomingToday = incomingTodayAppointments.size,
+            overdue = overdueCount,
             inProgressDetails = inProgressDetails,
             readyForPickupDetails = readyForPickupDetails,
             incomingTodayDetails = incomingTodayDetails
@@ -166,7 +170,8 @@ class GetDashboardSummaryHandler(
                 amount = Money.fromCents(totalAmount),
                 customerFirstName = customer?.firstName ?: "Unknown",
                 customerLastName = customer?.lastName ?: "Unknown",
-                phoneNumber = customer?.phone
+                phoneNumber = customer?.phone,
+                estimatedCompletionDate = visit.estimatedCompletionDate
             )
         }
     }
@@ -191,7 +196,8 @@ class GetDashboardSummaryHandler(
                 amount = Money.fromCents(totalAmount),
                 customerFirstName = customer?.firstName ?: "Unknown",
                 customerLastName = customer?.lastName ?: "Unknown",
-                phoneNumber = customer?.phone
+                phoneNumber = customer?.phone,
+                estimatedCompletionDate = null // Appointments don't have estimatedCompletionDate yet
             )
         }
     }

@@ -24,8 +24,8 @@ class ListLeadsHandler(
             // Query with filters
             val page = leadRepository.findByStudioIdWithFilters(
                 studioId = query.studioId.value,
-                statuses = query.statuses?.takeIf { it.isNotEmpty() },
-                sources = query.sources?.takeIf { it.isNotEmpty() },
+                statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
+                sources = query.sources?.takeIf { it.isNotEmpty() }?.map { it.name },
                 search = query.search?.takeIf { it.isNotBlank() },
                 pageable = pageable
             )
