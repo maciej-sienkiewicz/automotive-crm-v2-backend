@@ -98,8 +98,8 @@ class ListAppointmentsHandler(
                     },
                     schedule = ScheduleInfo(
                         isAllDay = appointment.isAllDay,
-                        startDateTime = appointment.startDateTime.toString(),
-                        endDateTime = appointment.endDateTime.toString()
+                        startDateTime = appointment.startDateTime.atZone(java.time.ZoneOffset.UTC).toString(),
+                        endDateTime = appointment.endDateTime.atZone(java.time.ZoneOffset.UTC).toString()
                     ),
                     appointmentTitle = appointment.appointmentTitle,
                     appointmentColor = AppointmentColorInfo(
@@ -111,8 +111,8 @@ class ListAppointmentsHandler(
                     totalNet = totalNet.amountInCents,
                     totalGross = totalGross.amountInCents,
                     totalVat = totalVat.amountInCents,
-                    createdAt = appointment.createdAt.toString(),
-                    updatedAt = appointment.updatedAt.toString()
+                    createdAt = appointment.createdAt.atZone(java.time.ZoneOffset.UTC).toString(),
+                    updatedAt = appointment.updatedAt.atZone(java.time.ZoneOffset.UTC).toString()
                 )
             }
 
