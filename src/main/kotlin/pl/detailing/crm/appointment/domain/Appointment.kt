@@ -37,6 +37,7 @@ data class Appointment(
     val lineItems: List<AppointmentLineItem>,
     val schedule: AppointmentSchedule,
     val status: AppointmentStatus,
+    val note: String?,
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,

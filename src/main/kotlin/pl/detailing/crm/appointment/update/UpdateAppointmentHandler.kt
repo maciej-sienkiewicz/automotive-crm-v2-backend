@@ -1,11 +1,13 @@
-package pl.detailing.crm.appointment.create
+package pl.detailing.crm.appointment.update
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.appointment.create.*
 import pl.detailing.crm.appointment.domain.*
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
+import pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
@@ -21,7 +23,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 
 @Service
-class CreateAppointmentHandler(
+class UpdateAppointmentHandler(
     private val validatorComposite: CreateAppointmentValidatorComposite,
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
@@ -31,18 +33,22 @@ class CreateAppointmentHandler(
 ) {
 
     @Transactional
-    suspend fun handle(command: CreateAppointmentCommand): CreateAppointmentResult = withContext(Dispatchers.IO) {
-        // Step 1: Validation
-        validatorComposite.validate(command)
+    suspend fun handle(command: UpdateAppointmentCommand): CreateAppointmentResult = withContext(Dispatchers.IO) {
+        // Step 1: Find existing appointment
+        val existingEntity = appointmentRepository.findByIdAndStudioId(command.appointmentId.value, command.studioId.value)
+            ?: throw NotFoundException("Appointment not found")
 
-        // Step 2: Identity Resolution - Customer
+        // Step 2: Validation (reuse create validation for now, as it covers core rules)
+        validatorComposite.validate(command.toCreateCommand())
+
+        // Step 3: Identity Resolution - Customer (reusing create logic)
         val customerId = when (val identity = command.customer) {
             is CustomerIdentity.Existing -> identity.customerId
             is CustomerIdentity.New -> createCustomer(identity, command.studioId, command.userId)
             is CustomerIdentity.Update -> updateCustomer(identity, command.studioId, command.userId)
         }
 
-        // Step 3: Identity Resolution - Vehicle
+        // Step 4: Identity Resolution - Vehicle (reusing create logic)
         val vehicleId = when (val identity = command.vehicle) {
             is VehicleIdentity.Existing -> identity.vehicleId
             is VehicleIdentity.New -> createVehicle(identity, customerId, command.studioId, command.userId)
@@ -50,7 +56,7 @@ class CreateAppointmentHandler(
             VehicleIdentity.None -> null
         }
 
-        // Step 4: Fetch Services and Create Line Items
+        // Step 5: Fetch Services and Create Line Items
         val services = serviceRepository.findActiveByStudioId(command.studioId.value)
             .filter { it.id in command.services.map { svc -> svc.serviceId.value } }
             .map { it.toDomain() }
@@ -71,39 +77,34 @@ class CreateAppointmentHandler(
             )
         }
 
-        // Step 5: Create Appointment Domain Object
-        val appointment = Appointment(
-            id = AppointmentId.random(),
-            studioId = command.studioId,
-            customerId = customerId,
-            vehicleId = vehicleId,
-            appointmentTitle = command.appointmentTitle,
-            appointmentColorId = command.appointmentColorId,
-            lineItems = lineItems,
-            schedule = AppointmentSchedule(
-                isAllDay = command.schedule.isAllDay,
-                startDateTime = command.schedule.startDateTime,
-                endDateTime = command.schedule.endDateTime
-            ),
-            status = AppointmentStatus.CREATED,
-            note = command.note,
-            createdBy = command.userId,
-            updatedBy = command.userId,
-            createdAt = Instant.now(),
-            updatedAt = Instant.now()
-        )
+        // Step 6: Update Appointment Entity
+        existingEntity.customerId = customerId.value
+        existingEntity.vehicleId = vehicleId?.value
+        existingEntity.appointmentTitle = command.appointmentTitle
+        existingEntity.appointmentColorId = command.appointmentColorId.value
+        existingEntity.note = command.note
+        existingEntity.isAllDay = command.schedule.isAllDay
+        existingEntity.startDateTime = command.schedule.startDateTime
+        existingEntity.endDateTime = command.schedule.endDateTime
+        existingEntity.updatedBy = command.userId.value
+        existingEntity.updatedAt = Instant.now()
 
-        // Step 6: Persist Appointment
-        val appointmentEntity = AppointmentEntity.fromDomain(appointment)
-        appointmentRepository.save(appointmentEntity)
+        // Update line items
+        existingEntity.lineItems.clear()
+        existingEntity.lineItems.addAll(lineItems.map { AppointmentLineItemEntity.fromDomain(it, existingEntity) })
+
+        // Step 7: Persist Appointment
+        appointmentRepository.save(existingEntity)
+
+        val updatedDomain = existingEntity.toDomain()
 
         CreateAppointmentResult(
-            appointmentId = appointment.id,
+            appointmentId = updatedDomain.id,
             customerId = customerId,
             vehicleId = vehicleId,
-            totalNet = appointment.calculateTotalNet(),
-            totalGross = appointment.calculateTotalGross(),
-            totalVat = appointment.calculateTotalVat()
+            totalNet = updatedDomain.calculateTotalNet(),
+            totalGross = updatedDomain.calculateTotalGross(),
+            totalVat = updatedDomain.calculateTotalVat()
         )
     }
 
@@ -161,7 +162,7 @@ class CreateAppointmentHandler(
         entity.lastName = identity.lastName?.trim()
         entity.email = identity.email?.trim()?.lowercase()
         entity.phone = identity.phone?.trim()
-        
+
         if (identity.companyName != null) {
             entity.companyName = identity.companyName
             entity.companyNip = identity.companyNip
@@ -239,12 +240,3 @@ class CreateAppointmentHandler(
         return identity.vehicleId
     }
 }
-
-data class CreateAppointmentResult(
-    val appointmentId: AppointmentId,
-    val customerId: CustomerId,
-    val vehicleId: VehicleId?,
-    val totalNet: Money,
-    val totalGross: Money,
-    val totalVat: Money
-)

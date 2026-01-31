@@ -184,7 +184,9 @@ class CreateVisitFromReservationHandler(
                 mileageAtArrival = command.technicalState.mileage,
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,
-                inspectionNotes = command.technicalState.inspectionNotes,
+                inspectionNotes = listOfNotNull(appointment.note, command.technicalState.inspectionNotes)
+                    .joinToString("\n")
+                    .ifBlank { null },
                 technicalNotes = null,
                 serviceItems = serviceItems,
                 photos = emptyList(), // Photos will be added separately

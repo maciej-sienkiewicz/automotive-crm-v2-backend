@@ -169,7 +169,8 @@ class AppointmentController(
                 endDateTime = request.schedule.endDateTime
             ),
             appointmentTitle = request.appointmentTitle,
-            appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId)
+            appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
+            note = request.note
         )
 
         val result = createAppointmentHandler.handle(command)
@@ -276,7 +277,8 @@ class AppointmentController(
                 endDateTime = request.schedule.endDateTime
             ),
             appointmentTitle = request.appointmentTitle,
-            appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId)
+            appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
+            note = request.note
         )
 
         val result = updateAppointmentHandler.handle(command)

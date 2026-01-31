@@ -15,7 +15,8 @@ data class CreateAppointmentCommand(
     val services: List<ServiceLineItemCommand>,
     val schedule: ScheduleCommand,
     val appointmentTitle: String?,
-    val appointmentColorId: AppointmentColorId
+    val appointmentColorId: AppointmentColorId,
+    val note: String?
 )
 
 sealed class CustomerIdentity {

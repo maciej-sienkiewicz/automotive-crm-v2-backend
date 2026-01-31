@@ -52,6 +52,9 @@ class AppointmentEntity(
     @Column(name = "status", nullable = false, length = 50)
     var status: AppointmentStatus,
 
+    @Column(name = "note", columnDefinition = "TEXT")
+    var note: String?,
+
     @OneToMany(mappedBy = "appointment", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     var lineItems: MutableList<AppointmentLineItemEntity> = mutableListOf(),
 
@@ -81,6 +84,7 @@ class AppointmentEntity(
             endDateTime = endDateTime
         ),
         status = status,
+        note = note,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -100,6 +104,7 @@ class AppointmentEntity(
                 startDateTime = appointment.schedule.startDateTime,
                 endDateTime = appointment.schedule.endDateTime,
                 status = appointment.status,
+                note = appointment.note,
                 createdBy = appointment.createdBy.value,
                 updatedBy = appointment.updatedBy.value,
                 createdAt = appointment.createdAt,

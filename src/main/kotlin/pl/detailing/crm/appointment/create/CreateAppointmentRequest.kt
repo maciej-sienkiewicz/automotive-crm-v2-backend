@@ -12,7 +12,8 @@ data class CreateAppointmentRequest(
     val services: List<ServiceLineItemRequest>,
     val schedule: ScheduleRequest,
     val appointmentTitle: String?,
-    val appointmentColorId: String
+    val appointmentColorId: String,
+    val note: String?
 )
 
 data class CustomerIdentityRequest(
