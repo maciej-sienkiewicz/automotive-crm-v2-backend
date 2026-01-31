@@ -1,5 +1,6 @@
 package pl.detailing.crm.service.list
 
+import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -35,8 +36,8 @@ class ListServicesHandler(
                     vatRate = entity.vatRate,
                     isActive = entity.isActive,
                     requireManualPrice = entity.requireManualPrice,
-                    createdAt = entity.createdAt.toString(),
-                    updatedAt = entity.updatedAt.toString(),
+                    createdAt = entity.createdAt,
+                    updatedAt = entity.updatedAt,
                     createdByFirstName = createdByUser?.firstName ?: "Unknown",
                     createdByLastName = createdByUser?.lastName ?: "User",
                     updatedByFirstName = updatedByUser?.firstName ?: "Unknown",
@@ -54,8 +55,8 @@ data class ServiceListItem(
     val vatRate: Int,
     val isActive: Boolean,
     val requireManualPrice: Boolean,
-    val createdAt: String,
-    val updatedAt: String,
+    val createdAt: Instant,
+    val updatedAt: Instant,
     val createdByFirstName: String,
     val createdByLastName: String,
     val updatedByFirstName: String,

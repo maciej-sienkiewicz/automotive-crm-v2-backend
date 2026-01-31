@@ -99,11 +99,11 @@ class GetCustomerDetailHandler(
                     granted = latestConsent != null &&
                               activeTemplate != null &&
                               latestConsent.templateId == activeTemplate.id,
-                    grantedAt = if (latestConsent != null) latestConsent.signedAt.toString() else null,
+                    grantedAt = latestConsent?.signedAt,
                     revokedAt = if (latestConsent != null && activeTemplate != null &&
                                     latestConsent.templateId != activeTemplate.id) {
                         // If there's a newer template they haven't signed, consider it revoked
-                        latestConsent.signedAt.toString()
+                        latestConsent.signedAt
                     } else null,
                     lastModifiedBy = "System" // We don't track who modified it yet
                 )
@@ -154,12 +154,12 @@ class GetCustomerDetailHandler(
                     )
                 } else null,
                 notes = customerEntity.notes ?: "",
-                lastVisitDate = lastVisitDate?.toString(),
+                lastVisitDate = lastVisitDate,
                 totalVisits = totalVisits,
                 vehicleCount = vehicleCount,
                 totalRevenue = revenueInfo,
-                createdAt = customerEntity.createdAt.toString(),
-                updatedAt = customerEntity.updatedAt.toString()
+                createdAt = customerEntity.createdAt,
+                updatedAt = customerEntity.updatedAt
             )
 
             GetCustomerDetailResult(

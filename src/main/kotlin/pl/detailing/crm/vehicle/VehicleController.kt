@@ -237,8 +237,8 @@ class VehicleController(
                     currentMileage = result.currentMileage.toLong(),
                     status = result.status.name.lowercase(),
                     ownerIds = result.ownerIds.map { it.toString() },
-                    createdAt = Instant.now().toString(),
-                    updatedAt = Instant.now().toString()
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now()
                 )
             ))
     }
@@ -383,8 +383,8 @@ data class VehicleDataResponse(
     val currentMileage: Long,
     val status: String,
     val ownerIds: List<String>,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class VehicleDetailResponse(
@@ -407,21 +407,21 @@ data class VehicleFullResponse(
     val technicalNotes: String,
     val owners: List<OwnerResponse>,
     val stats: StatsResponse,
-    val createdAt: String,
-    val updatedAt: String,
-    val deletedAt: String?
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val deletedAt: Instant?
 )
 
 data class OwnerResponse(
     val customerId: String,
     val customerName: String,
     val role: String,
-    val assignedAt: String
+    val assignedAt: Instant
 )
 
 data class StatsResponse(
     val totalVisits: Int,
-    val lastVisitDate: String?,
+    val lastVisitDate: Instant?,
     val totalSpent: MoneyResponse
 )
 
@@ -433,7 +433,7 @@ data class MoneyResponse(
 
 data class VisitSummaryResponse(
     val id: String,
-    val date: String,
+    val date: Instant,
     val type: String,
     val description: String,
     val status: String,
@@ -447,7 +447,7 @@ data class ActivityResponse(
     val type: String,
     val description: String,
     val performedBy: String,
-    val performedAt: String,
+    val performedAt: Instant,
     val metadata: Map<String, Any>
 )
 
@@ -457,8 +457,8 @@ data class PhotoResponse(
     val photoUrl: String,
     val thumbnailUrl: String,
     val description: String,
-    val capturedAt: String,
-    val uploadedAt: String,
+    val capturedAt: Instant,
+    val uploadedAt: Instant,
     val visitId: String?
 )
 
@@ -484,7 +484,7 @@ data class UpdateVehicleDataResponse(
     val paintType: String?,
     val currentMileage: Long,
     val status: String,
-    val updatedAt: String
+    val updatedAt: Instant
 )
 
 data class AssignOwnerRequest(
@@ -500,5 +500,5 @@ data class OwnerAssignmentData(
     val vehicleId: String,
     val customerId: String,
     val role: String,
-    val assignedAt: String
+    val assignedAt: Instant
 )

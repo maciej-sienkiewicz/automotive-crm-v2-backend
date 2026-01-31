@@ -74,7 +74,7 @@ class UpdateCustomerHandler(
                 email = saved.email,
                 phone = saved.phone,
                 homeAddress = command.homeAddress,
-                updatedAt = saved.updatedAt.toString()
+                updatedAt = saved.updatedAt
             )
         }
 }

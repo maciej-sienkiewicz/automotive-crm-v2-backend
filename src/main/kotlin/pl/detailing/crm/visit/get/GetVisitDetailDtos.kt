@@ -23,10 +23,10 @@ data class VisitResponse(
     val id: String,
     val visitNumber: String,
     val status: String,
-    val scheduledDate: String,
-    val estimatedCompletionDate: String?,
-    val actualCompletionDate: String?,
-    val pickupDate: String?,
+    val scheduledDate: Instant,
+    val estimatedCompletionDate: Instant?,
+    val actualCompletionDate: Instant?,
+    val pickupDate: Instant?,
     val vehicle: VehicleInfoResponse,
     val customer: CustomerInfoResponse,
     val appointmentColor: AppointmentColorResponse?,
@@ -36,8 +36,8 @@ data class VisitResponse(
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
     val technicalNotes: String?,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 /**
@@ -115,7 +115,7 @@ data class JournalEntryResponse(
     val type: String,
     val content: String,
     val createdBy: String,
-    val createdAt: String,
+    val createdAt: Instant,
     val isDeleted: Boolean
 )
 
@@ -127,7 +127,7 @@ data class VisitDocumentResponse(
     val type: String,
     val fileName: String,
     val fileUrl: String,
-    val uploadedAt: String,
+    val uploadedAt: Instant,
     val uploadedBy: String,
     val category: String?
 )

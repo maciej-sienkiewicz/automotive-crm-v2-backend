@@ -159,7 +159,7 @@ class CustomerController(
                 )
             },
             notes = result.notes,
-            lastVisitDate = result.lastVisitDate?.toString(),
+            lastVisitDate = result.lastVisitDate,
             totalVisits = result.totalVisits,
             vehicleCount = result.vehicleCount,
             totalRevenue = CustomerRevenueResponse(
@@ -167,8 +167,8 @@ class CustomerController(
                 grossAmount = result.totalRevenue.grossAmount.toDouble(),
                 currency = result.totalRevenue.currency
             ),
-            createdAt = result.createdAt.toString(),
-            updatedAt = result.updatedAt.toString()
+            createdAt = result.createdAt,
+            updatedAt = result.updatedAt
         ))
     }
 
@@ -248,8 +248,8 @@ class CustomerController(
                 },
                 notes = request.notes,
                 isActive = true,
-                createdAt = Instant.now().toString(),
-                updatedAt = Instant.now().toString()
+                createdAt = Instant.now(),
+                updatedAt = Instant.now()
             ))
     }
 
@@ -530,8 +530,8 @@ data class CustomerResponse(
     val companyData: CompanyDataResponse?,
     val notes: String?,
     val isActive: Boolean,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class HomeAddressResponse(
@@ -575,12 +575,12 @@ data class CustomerDetailResponse(
     val homeAddress: HomeAddressResponse?,
     val company: CompanyDetailsResponse?,
     val notes: String,
-    val lastVisitDate: String?,
+    val lastVisitDate: Instant?,
     val totalVisits: Int,
     val vehicleCount: Int,
     val totalRevenue: CustomerRevenueResponse,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class CustomerContactResponse(
@@ -613,8 +613,8 @@ data class MarketingConsentResponse(
     val id: String,
     val type: String,
     val granted: Boolean,
-    val grantedAt: String?,
-    val revokedAt: String?,
+    val grantedAt: Instant?,
+    val revokedAt: Instant?,
     val lastModifiedBy: String
 )
 
@@ -644,7 +644,7 @@ data class UpdateCustomerResponse(
     val lastName: String,
     val contact: CustomerContactResponse,
     val homeAddress: HomeAddressResponse?,
-    val updatedAt: String
+    val updatedAt: Instant
 )
 
 // Update Company DTOs
@@ -677,7 +677,7 @@ data class UpdateNotesRequest(
 
 data class UpdateNotesResponse(
     val notes: String,
-    val updatedAt: String
+    val updatedAt: Instant
 )
 
 // Customer Visits DTOs
@@ -688,7 +688,7 @@ data class CustomerVisitsResponse(
 
 data class VisitResponse(
     val id: String,
-    val date: String,
+    val date: Instant,
     val type: String,
     val vehicleId: String,
     val vehicleName: String,

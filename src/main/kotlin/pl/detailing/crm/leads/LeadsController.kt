@@ -108,8 +108,8 @@ class LeadsController(
                 contactIdentifier = result.contactIdentifier,
                 customerName = result.customerName,
                 initialMessage = result.initialMessage,
-                createdAt = result.createdAt.toString(),
-                updatedAt = result.updatedAt.toString(),
+                createdAt = result.createdAt,
+                updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
                 requiresVerification = result.requiresVerification
             )
@@ -147,7 +147,7 @@ class LeadsController(
                 customerName = result.customerName,
                 initialMessage = result.initialMessage,
                 createdAt = null, // Not returned in update
-                updatedAt = result.updatedAt.toString(),
+                updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
                 requiresVerification = result.requiresVerification
             )
@@ -236,7 +236,7 @@ class LeadsController(
                 customerName = result.customerName,
                 initialMessage = result.initialMessage,
                 createdAt = null,
-                updatedAt = result.updatedAt.toString(),
+                updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
                 requiresVerification = result.requiresVerification
             )
@@ -274,7 +274,7 @@ class LeadsController(
                 customerName = result.customerName,
                 initialMessage = result.initialMessage,
                 createdAt = null,
-                updatedAt = result.updatedAt.toString(),
+                updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
                 requiresVerification = result.requiresVerification
             )

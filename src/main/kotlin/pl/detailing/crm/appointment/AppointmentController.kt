@@ -14,10 +14,6 @@ import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 @RestController
 @RequestMapping("/api/v1/appointments")
@@ -27,21 +23,6 @@ class AppointmentController(
     private val listAppointmentsHandler: ListAppointmentsHandler,
     private val getAppointmentHandler: GetAppointmentHandler
 ) {
-
-    private fun parseDateTime(dateTimeStr: String): java.time.Instant {
-        return try {
-            // Try parsing as ISO-8601 with offset (e.g., 2026-01-15T04:00:00Z or 2026-01-15T04:00:00+01:00)
-            OffsetDateTime.parse(dateTimeStr).toInstant()
-        } catch (e: Exception) {
-            try {
-                // Fallback to LocalDateTime without offset, treat as system default
-                LocalDateTime.parse(dateTimeStr).atZone(ZoneId.systemDefault()).toInstant()
-            } catch (e2: Exception) {
-                // If everything fails, try to parse with a flexible formatter or just rethrow
-                throw IllegalArgumentException("Invalid date format: $dateTimeStr. Expected ISO-8601 format.")
-            }
-        }
-    }
 
     @GetMapping
     fun getAppointments(
@@ -160,8 +141,8 @@ class AppointmentController(
             },
             schedule = ScheduleCommand(
                 isAllDay = request.schedule.isAllDay,
-                startDateTime = parseDateTime(request.schedule.startDateTime),
-                endDateTime = parseDateTime(request.schedule.endDateTime)
+                startDateTime = request.schedule.startDateTime,
+                endDateTime = request.schedule.endDateTime
             ),
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId)
@@ -243,8 +224,8 @@ class AppointmentController(
             },
             schedule = ScheduleCommand(
                 isAllDay = request.schedule.isAllDay,
-                startDateTime = parseDateTime(request.schedule.startDateTime),
-                endDateTime = parseDateTime(request.schedule.endDateTime)
+                startDateTime = request.schedule.startDateTime,
+                endDateTime = request.schedule.endDateTime
             ),
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId)

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
+import java.time.Instant
 
 @Service
 class GetCustomerVisitsHandler(
@@ -63,7 +64,7 @@ class GetCustomerVisitsHandler(
 
                 VisitInfo(
                     id = visit.id.toString(),
-                    date = visit.scheduledDate.toString(),
+                    date = visit.scheduledDate,
                     type = visitType,
                     vehicleId = visit.vehicleId.toString(),
                     vehicleName = vehicleName,

@@ -10,6 +10,7 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
+import java.time.Instant
 import java.time.LocalDate
 
 @Service
@@ -105,17 +106,17 @@ class ListVisitsHandler(
                     )
                 },
                 status = visit.status,
-                scheduledDate = visit.scheduledDate.toString(),
-                estimatedCompletionDate = visit.estimatedCompletionDate?.toString(),
-                actualCompletionDate = visit.actualCompletionDate?.toString(),
-                pickupDate = visit.pickupDate?.toString(),
+                scheduledDate = visit.scheduledDate,
+                estimatedCompletionDate = visit.estimatedCompletionDate,
+                actualCompletionDate = visit.actualCompletionDate,
+                pickupDate = visit.pickupDate,
                 mileageAtArrival = visit.mileageAtArrival,
                 keysHandedOver = visit.keysHandedOver,
                 documentsHandedOver = visit.documentsHandedOver,
                 totalNet = totalNet.amountInCents,
                 totalGross = totalGross.amountInCents,
-                createdAt = visit.createdAt.toString(),
-                updatedAt = visit.updatedAt.toString()
+                createdAt = visit.createdAt,
+                updatedAt = visit.updatedAt
             )
         }
 
@@ -162,17 +163,17 @@ data class VisitListItem(
     val vehicle: VisitVehicleInfo,
     val services: List<VisitServiceLineItemInfo>,
     val status: VisitStatus,
-    val scheduledDate: String,
-    val estimatedCompletionDate: String?,
-    val actualCompletionDate: String?,
-    val pickupDate: String?,
+    val scheduledDate: Instant,
+    val estimatedCompletionDate: Instant?,
+    val actualCompletionDate: Instant?,
+    val pickupDate: Instant?,
     val mileageAtArrival: Long?,
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
     val totalNet: Long,
     val totalGross: Long,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class VisitCustomerInfo(

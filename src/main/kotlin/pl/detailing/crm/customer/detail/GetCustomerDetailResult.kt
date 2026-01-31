@@ -20,12 +20,12 @@ data class CustomerDetailInfo(
     val homeAddress: HomeAddress?,
     val company: CompanyDetails?,
     val notes: String,
-    val lastVisitDate: String?,
+    val lastVisitDate: Instant?,
     val totalVisits: Int,
     val vehicleCount: Int,
     val totalRevenue: RevenueInfo,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class ContactInfo(
@@ -51,8 +51,8 @@ data class MarketingConsentInfo(
     val id: String,
     val type: MarketingConsentType,
     val granted: Boolean,
-    val grantedAt: String?,
-    val revokedAt: String?,
+    val grantedAt: Instant?,
+    val revokedAt: Instant?,
     val lastModifiedBy: String
 )
 

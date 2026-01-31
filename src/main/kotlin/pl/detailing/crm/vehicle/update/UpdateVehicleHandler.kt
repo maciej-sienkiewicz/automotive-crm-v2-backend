@@ -55,7 +55,7 @@ class UpdateVehicleHandler(
             paintType = vehicleEntity.paintType,
             currentMileage = vehicleEntity.currentMileage.toLong(),
             status = vehicleEntity.status.name.lowercase(),
-            updatedAt = vehicleEntity.updatedAt.toString()
+            updatedAt = vehicleEntity.updatedAt
         )
     }
 }
@@ -81,5 +81,5 @@ data class UpdateVehicleResult(
     val paintType: String?,
     val currentMileage: Long,
     val status: String,
-    val updatedAt: String
+    val updatedAt: Instant
 )

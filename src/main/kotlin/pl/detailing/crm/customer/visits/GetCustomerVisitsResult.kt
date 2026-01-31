@@ -1,6 +1,7 @@
 package pl.detailing.crm.customer.visits
 
 import java.math.BigDecimal
+import java.time.Instant
 
 data class GetCustomerVisitsResult(
     val visits: List<VisitInfo>,
@@ -9,7 +10,7 @@ data class GetCustomerVisitsResult(
 
 data class VisitInfo(
     val id: String,
-    val date: String,
+    val date: Instant,
     val type: VisitType,
     val vehicleId: String,
     val vehicleName: String,

@@ -31,7 +31,7 @@ class UpdateNotesHandler(
 
             UpdateNotesResult(
                 notes = saved.notes ?: "",
-                updatedAt = saved.updatedAt.toString()
+                updatedAt = saved.updatedAt
             )
         }
 }

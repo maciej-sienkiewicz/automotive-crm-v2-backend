@@ -12,6 +12,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import java.time.Instant
 import java.time.LocalDate
 
 @Service
@@ -98,8 +99,8 @@ class ListAppointmentsHandler(
                     },
                     schedule = ScheduleInfo(
                         isAllDay = appointment.isAllDay,
-                        startDateTime = appointment.startDateTime.atZone(java.time.ZoneOffset.UTC).toString(),
-                        endDateTime = appointment.endDateTime.atZone(java.time.ZoneOffset.UTC).toString()
+                        startDateTime = appointment.startDateTime,
+                        endDateTime = appointment.endDateTime
                     ),
                     appointmentTitle = appointment.appointmentTitle,
                     appointmentColor = AppointmentColorInfo(
@@ -111,8 +112,8 @@ class ListAppointmentsHandler(
                     totalNet = totalNet.amountInCents,
                     totalGross = totalGross.amountInCents,
                     totalVat = totalVat.amountInCents,
-                    createdAt = appointment.createdAt.atZone(java.time.ZoneOffset.UTC).toString(),
-                    updatedAt = appointment.updatedAt.atZone(java.time.ZoneOffset.UTC).toString()
+                    createdAt = appointment.createdAt,
+                    updatedAt = appointment.updatedAt
                 )
             }
 
@@ -163,8 +164,8 @@ data class AppointmentListItem(
     val totalNet: Long,
     val totalGross: Long,
     val totalVat: Long,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class CustomerInfo(
@@ -200,8 +201,8 @@ data class PriceAdjustmentInfo(
 
 data class ScheduleInfo(
     val isAllDay: Boolean,
-    val startDateTime: String,
-    val endDateTime: String
+    val startDateTime: Instant,
+    val endDateTime: Instant
 )
 
 data class AppointmentColorInfo(

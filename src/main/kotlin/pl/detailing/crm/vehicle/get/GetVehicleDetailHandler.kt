@@ -1,5 +1,6 @@
 package pl.detailing.crm.vehicle.get
 
+import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -35,7 +36,7 @@ class GetVehicleDetailHandler(
                     customerId = ownerEntity.id.customerId.toString(),
                     customerName = if (customer != null) "${customer.firstName} ${customer.lastName}" else "Unknown",
                     role = ownerEntity.ownershipRole.name,
-                    assignedAt = ownerEntity.assignedAt.toString()
+                    assignedAt = ownerEntity.assignedAt
                 )
             }
 
@@ -71,15 +72,15 @@ class GetVehicleDetailHandler(
                     owners = ownersInfo,
                     stats = VehicleStatsDetail(
                         totalVisits = totalVisits,
-                        lastVisitDate = lastVisitDate?.toString(),
+                        lastVisitDate = lastVisitDate,
                         totalSpent = MoneyDetail(
                             netAmount = BigDecimal.valueOf(totalNetAmount).divide(BigDecimal.valueOf(100)),
                             grossAmount = BigDecimal.valueOf(totalGrossAmount).divide(BigDecimal.valueOf(100)),
                             currency = "PLN"
                         )
                     ),
-                    createdAt = vehicleEntity.createdAt.toString(),
-                    updatedAt = vehicleEntity.updatedAt.toString(),
+                    createdAt = vehicleEntity.createdAt,
+                    updatedAt = vehicleEntity.updatedAt,
                     deletedAt = null
                 ),
                 recentVisits = emptyList(),
@@ -114,21 +115,21 @@ data class VehicleDetail(
     val technicalNotes: String,
     val owners: List<VehicleOwnerDetail>,
     val stats: VehicleStatsDetail,
-    val createdAt: String,
-    val updatedAt: String,
-    val deletedAt: String?
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val deletedAt: Instant?
 )
 
 data class VehicleOwnerDetail(
     val customerId: String,
     val customerName: String,
     val role: String,
-    val assignedAt: String
+    val assignedAt: Instant
 )
 
 data class VehicleStatsDetail(
     val totalVisits: Int,
-    val lastVisitDate: String?,
+    val lastVisitDate: Instant?,
     val totalSpent: MoneyDetail
 )
 
@@ -140,7 +141,7 @@ data class MoneyDetail(
 
 data class VisitSummary(
     val id: String,
-    val date: String,
+    val date: Instant,
     val type: String,
     val description: String,
     val status: String,
@@ -154,7 +155,7 @@ data class VehicleActivity(
     val type: String,
     val description: String,
     val performedBy: String,
-    val performedAt: String,
+    val performedAt: Instant,
     val metadata: Map<String, Any>
 )
 
@@ -164,7 +165,7 @@ data class VehiclePhoto(
     val photoUrl: String,
     val thumbnailUrl: String,
     val description: String,
-    val capturedAt: String,
-    val uploadedAt: String,
+    val capturedAt: Instant,
+    val uploadedAt: Instant,
     val visitId: String?
 )

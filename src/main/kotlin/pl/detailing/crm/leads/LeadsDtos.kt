@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads
 
+import java.time.Instant
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.shared.LeadSource
 
@@ -13,8 +14,8 @@ data class LeadDto(
     val contactIdentifier: String?,
     val customerName: String?,
     val initialMessage: String?,
-    val createdAt: String?,
-    val updatedAt: String?,
+    val createdAt: Instant?,
+    val updatedAt: Instant?,
     val estimatedValue: Long,
     val requiresVerification: Boolean
 )
@@ -29,8 +30,8 @@ fun Lead.toDto(): LeadDto = LeadDto(
     contactIdentifier = this.contactIdentifier,
     customerName = this.customerName,
     initialMessage = this.initialMessage,
-    createdAt = this.createdAt.toString(),
-    updatedAt = this.updatedAt.toString(),
+    createdAt = this.createdAt,
+    updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
     requiresVerification = this.requiresVerification
 )

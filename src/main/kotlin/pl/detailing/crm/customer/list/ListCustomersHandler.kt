@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
+import java.time.Instant
 
 @Service
 class ListCustomersHandler(
@@ -61,7 +62,7 @@ class ListCustomersHandler(
                         )
                     } else null,
                     notes = "",
-                    lastVisitDate = lastVisitDate?.toString(),
+                    lastVisitDate = lastVisitDate,
                     totalVisits = totalVisits,
                     vehicleCount = vehicleCount,
                     totalRevenue = RevenueInfo(
@@ -69,8 +70,8 @@ class ListCustomersHandler(
                         grossAmount = BigDecimal.valueOf(totalGrossAmount).divide(BigDecimal.valueOf(100)),
                         currency = "PLN"
                     ),
-                    createdAt = entity.createdAt.toString(),
-                    updatedAt = entity.updatedAt.toString()
+                    createdAt = entity.createdAt,
+                    updatedAt = entity.updatedAt
                 )
             }
         }
@@ -84,12 +85,12 @@ data class CustomerListItem(
     val homeAddress: HomeAddressInfo?,
     val company: CompanyInfo?,
     val notes: String,
-    val lastVisitDate: String?,
+    val lastVisitDate: Instant?,
     val totalVisits: Int,
     val vehicleCount: Int,
     val totalRevenue: RevenueInfo,
-    val createdAt: String,
-    val updatedAt: String
+    val createdAt: Instant,
+    val updatedAt: Instant
 )
 
 data class ContactInfo(

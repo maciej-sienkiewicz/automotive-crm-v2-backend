@@ -1,5 +1,6 @@
 package pl.detailing.crm.service
 
+import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -102,8 +103,8 @@ class ServiceController(
                 vatRate = result.vatRate,
                 isActive = true,
                 requireManualPrice = result.requireManualPrice,
-                createdAt = java.time.Instant.now().toString(),
-                updatedAt = java.time.Instant.now().toString(),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
                 replacesServiceId = null
             ))
     }
@@ -137,8 +138,8 @@ class ServiceController(
                 vatRate = result.vatRate,
                 isActive = true,
                 requireManualPrice = result.requireManualPrice,
-                createdAt = java.time.Instant.now().toString(),
-                updatedAt = java.time.Instant.now().toString(),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
                 replacesServiceId = result.replacesServiceId.toString()
             ))
     }
@@ -151,8 +152,8 @@ data class ServiceResponse(
     val vatRate: Int,
     val isActive: Boolean,
     val requireManualPrice: Boolean,
-    val createdAt: String,
-    val updatedAt: String,
+    val createdAt: Instant,
+    val updatedAt: Instant,
     val replacesServiceId: String?
 )
 

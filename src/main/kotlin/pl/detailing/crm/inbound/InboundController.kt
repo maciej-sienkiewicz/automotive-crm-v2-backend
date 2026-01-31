@@ -42,7 +42,7 @@ class InboundController(
                 phoneNumber = request.phoneNumber,
                 callerName = request.callerName,
                 note = request.note,
-                receivedAt = request.receivedAt?.let { Instant.parse(it) } ?: Instant.now()
+                receivedAt = request.receivedAt ?: Instant.now()
             )
 
             val result = registerInboundCallHandler.handle(command)
@@ -52,7 +52,7 @@ class InboundController(
                     id = result.leadId.toString(),
                     phoneNumber = result.phoneNumber,
                     contactName = result.callerName,
-                    timestamp = result.receivedAt.toString(),
+                    timestamp = result.receivedAt,
                     note = null
                 )
             )
@@ -127,14 +127,14 @@ data class RegisterCallRequest(
     val phoneNumber: String,
     val callerName: String?,
     val note: String?,
-    val receivedAt: String? // ISO timestamp
+    val receivedAt: Instant? // ISO timestamp
 )
 
 data class RegisterCallResponse(
     val id: String,
     val phoneNumber: String,
     val contactName: String?,
-    val timestamp: String,
+    val timestamp: Instant,
     val note: String?
 )
 

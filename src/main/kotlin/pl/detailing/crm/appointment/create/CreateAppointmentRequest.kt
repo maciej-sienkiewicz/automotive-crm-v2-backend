@@ -1,5 +1,6 @@
 package pl.detailing.crm.appointment.create
 
+import java.time.Instant
 import pl.detailing.crm.appointment.domain.AdjustmentType
 
 /**
@@ -76,6 +77,6 @@ data class PriceAdjustmentRequest(
 
 data class ScheduleRequest(
     val isAllDay: Boolean,
-    val startDateTime: String, // ISO-8601 format
-    val endDateTime: String    // ISO-8601 format
+    val startDateTime: Instant, // ISO-8601 format
+    val endDateTime: Instant    // ISO-8601 format
 )

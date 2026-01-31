@@ -123,10 +123,10 @@ class VisitController(
             id = visit.id.value.toString(),
             visitNumber = visit.visitNumber,
             status = mapVisitStatus(visit.status),
-            scheduledDate = visit.scheduledDate.toString(),
-            estimatedCompletionDate = visit.estimatedCompletionDate?.toString(),
-            actualCompletionDate = visit.actualCompletionDate?.toString(),
-            pickupDate = visit.pickupDate?.toString(),
+            scheduledDate = visit.scheduledDate,
+            estimatedCompletionDate = visit.estimatedCompletionDate,
+            actualCompletionDate = visit.actualCompletionDate,
+            pickupDate = visit.pickupDate,
             vehicle = mapToVehicleInfoResponse(vehicle),
             customer = mapToCustomerInfoResponse(customer, customerStats),
             appointmentColor = appointmentColor?.let { color ->
@@ -146,8 +146,8 @@ class VisitController(
             keysHandedOver = visit.keysHandedOver,
             documentsHandedOver = visit.documentsHandedOver,
             technicalNotes = visit.technicalNotes,
-            createdAt = visit.createdAt.toString(),
-            updatedAt = visit.updatedAt.toString()
+            createdAt = visit.createdAt,
+            updatedAt = visit.updatedAt
         )
     }
 
@@ -218,7 +218,7 @@ class VisitController(
             type = mapJournalEntryType(entry.type),
             content = entry.content,
             createdBy = entry.createdByName,
-            createdAt = entry.createdAt.toString(),
+            createdAt = entry.createdAt,
             isDeleted = entry.isDeleted
         )
     }
@@ -232,7 +232,7 @@ class VisitController(
             type = mapDocumentType(document.type),
             fileName = document.fileName,
             fileUrl = document.fileUrl,
-            uploadedAt = document.uploadedAt.toString(),
+            uploadedAt = document.uploadedAt,
             uploadedBy = document.uploadedByName,
             category = document.category
         )

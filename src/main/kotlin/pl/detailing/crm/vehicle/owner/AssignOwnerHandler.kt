@@ -48,7 +48,7 @@ class AssignOwnerHandler(
             vehicleId = vehicleEntity.id.toString(),
             customerId = command.customerId.toString(),
             role = command.role.name,
-            assignedAt = vehicleOwner.assignedAt.toString()
+            assignedAt = vehicleOwner.assignedAt
         )
     }
 }
@@ -64,5 +64,5 @@ data class AssignOwnerResult(
     val vehicleId: String,
     val customerId: String,
     val role: String,
-    val assignedAt: String
+    val assignedAt: Instant
 )
