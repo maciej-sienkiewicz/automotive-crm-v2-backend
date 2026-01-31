@@ -15,7 +15,8 @@ class WebMvcConfig(
             .excludePathPatterns(
                 "/api/auth/**",
                 "/api/v1/auth/**",
-                "/api/health"
+                "/api/health",
+                "/api/v1/vehicle-metadata/**"
             )
     }
 }

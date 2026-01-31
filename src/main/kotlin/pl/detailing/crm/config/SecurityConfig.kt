@@ -48,6 +48,7 @@ class SecurityConfig {
                     "/api/auth/**",
                     "/api/v1/auth/**",
                     "/api/health",
+                    "/api/v1/vehicle-metadata/**",
                     "/actuator/**"
                 ).permitAll()
                     .anyRequest().authenticated()
