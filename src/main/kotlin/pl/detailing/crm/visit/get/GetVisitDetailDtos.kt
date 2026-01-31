@@ -58,10 +58,10 @@ data class VehicleInfoResponse(
  */
 data class CustomerInfoResponse(
     val id: String,
-    val firstName: String,
-    val lastName: String,
-    val email: String,
-    val phone: String,
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?,
     val companyName: String?,
     val stats: CustomerStatsResponse
 )

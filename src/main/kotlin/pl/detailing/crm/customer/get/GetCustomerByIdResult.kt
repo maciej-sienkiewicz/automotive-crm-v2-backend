@@ -8,8 +8,8 @@ import java.time.Instant
 
 data class GetCustomerByIdResult(
     val id: String,
-    val firstName: String,
-    val lastName: String,
+    val firstName: String?,
+    val lastName: String?,
     val contact: ContactInfo,
     val homeAddress: HomeAddress?,
     val company: CompanyDetails?,
@@ -23,8 +23,8 @@ data class GetCustomerByIdResult(
 )
 
 data class ContactInfo(
-    val email: String,
-    val phone: String
+    val email: String?,
+    val phone: String?
 )
 
 data class CompanyDetails(

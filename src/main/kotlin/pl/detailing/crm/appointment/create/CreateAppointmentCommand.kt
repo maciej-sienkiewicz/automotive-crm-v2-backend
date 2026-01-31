@@ -21,10 +21,10 @@ data class CreateAppointmentCommand(
 sealed class CustomerIdentity {
     data class Existing(val customerId: CustomerId) : CustomerIdentity()
     data class New(
-        val firstName: String,
-        val lastName: String,
-        val phone: String,
-        val email: String,
+        val firstName: String?,
+        val lastName: String?,
+        val phone: String?,
+        val email: String?,
         val companyName: String?,
         val companyNip: String?,
         val companyRegon: String?,
@@ -32,10 +32,10 @@ sealed class CustomerIdentity {
     ) : CustomerIdentity()
     data class Update(
         val customerId: CustomerId,
-        val firstName: String,
-        val lastName: String,
-        val phone: String,
-        val email: String,
+        val firstName: String?,
+        val lastName: String?,
+        val phone: String?,
+        val email: String?,
         val companyName: String?,
         val companyNip: String?,
         val companyRegon: String?,

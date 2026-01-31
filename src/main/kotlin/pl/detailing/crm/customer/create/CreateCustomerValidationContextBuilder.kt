@@ -13,17 +13,23 @@ class CreateCustomerValidationContextBuilder(
     suspend fun build(command: CreateCustomerCommand): CreateCustomerValidationContext =
         withContext(Dispatchers.IO) {
             val emailExistsDeferred = async {
-                customerRepository.existsActiveByStudioIdAndEmail(
-                    command.studioId.value,
-                    command.email.trim().lowercase()
-                )
+                val email = command.email?.trim()?.lowercase()
+                if (email != null) {
+                    customerRepository.existsActiveByStudioIdAndEmail(
+                        command.studioId.value,
+                        email
+                    )
+                } else false
             }
 
             val phoneExistsDeferred = async {
-                customerRepository.existsActiveByStudioIdAndPhone(
-                    command.studioId.value,
-                    command.phone.trim()
-                )
+                val phone = command.phone?.trim()
+                if (phone != null) {
+                    customerRepository.existsActiveByStudioIdAndPhone(
+                        command.studioId.value,
+                        phone
+                    )
+                } else false
             }
 
             CreateCustomerValidationContext(

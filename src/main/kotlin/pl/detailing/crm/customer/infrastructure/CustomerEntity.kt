@@ -28,17 +28,17 @@ class CustomerEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "first_name", nullable = false, length = 100)
-    var firstName: String,
+    @Column(name = "first_name", nullable = true, length = 100)
+    var firstName: String?,
 
-    @Column(name = "last_name", nullable = false, length = 100)
-    var lastName: String,
+    @Column(name = "last_name", nullable = true, length = 100)
+    var lastName: String?,
 
-    @Column(name = "email", nullable = false, length = 255)
-    var email: String,
+    @Column(name = "email", nullable = true, length = 255)
+    var email: String?,
 
-    @Column(name = "phone", nullable = false, length = 20)
-    var phone: String,
+    @Column(name = "phone", nullable = true, length = 20)
+    var phone: String?,
 
     @Column(name = "home_address_street", length = 200)
     var homeAddressStreet: String?,

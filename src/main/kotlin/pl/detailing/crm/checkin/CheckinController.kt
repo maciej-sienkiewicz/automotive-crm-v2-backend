@@ -41,6 +41,9 @@ class CheckinController(
                     )
                     IdentityMode.NEW -> {
                         val newData = customerReq.newData!!
+                        if (newData.firstName.isNullOrBlank() || newData.lastName.isNullOrBlank()) {
+                            throw ValidationException("Imię i nazwisko są wymagane podczas przyjmowania pojazdu.")
+                        }
                         CustomerData.New(
                             firstName = newData.firstName,
                             lastName = newData.lastName,
@@ -52,6 +55,9 @@ class CheckinController(
                     }
                     IdentityMode.UPDATE -> {
                         val updateData = customerReq.updateData!!
+                        if (updateData.firstName.isNullOrBlank() || updateData.lastName.isNullOrBlank()) {
+                            throw ValidationException("Imię i nazwisko są wymagane podczas przyjmowania pojazdu.")
+                        }
                         CustomerData.Update(
                             id = CustomerId.fromString(customerReq.id!!),
                             firstName = updateData.firstName,
@@ -140,10 +146,10 @@ data class CustomerRequest(
 )
 
 data class CustomerDataRequest(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String,
+    val firstName: String?,
+    val lastName: String?,
+    val phone: String?,
+    val email: String?,
     val homeAddress: HomeAddressRequest?,
     val company: CompanyRequest?
 )
@@ -242,8 +248,8 @@ sealed class CustomerData {
     data class New(
         val firstName: String,
         val lastName: String,
-        val phone: String,
-        val email: String,
+        val phone: String?,
+        val email: String?,
         val homeAddress: HomeAddressRequest?,
         val company: CompanyRequest?
     ) : CustomerData()
@@ -251,8 +257,8 @@ sealed class CustomerData {
         val id: CustomerId,
         val firstName: String,
         val lastName: String,
-        val phone: String,
-        val email: String,
+        val phone: String?,
+        val email: String?,
         val homeAddress: HomeAddressRequest?,
         val company: CompanyRequest?
     ) : CustomerData()

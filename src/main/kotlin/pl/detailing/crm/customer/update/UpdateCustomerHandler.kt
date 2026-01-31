@@ -20,7 +20,7 @@ class UpdateCustomerHandler(
             ) ?: throw NotFoundException("Customer not found")
 
             // Check if email is unique (if changed)
-            if (entity.email != command.email) {
+            if (command.email != null && entity.email != command.email) {
                 val existingWithEmail = customerRepository.findActiveByStudioIdAndEmail(
                     studioId = command.studioId.value,
                     email = command.email
@@ -31,7 +31,7 @@ class UpdateCustomerHandler(
             }
 
             // Check if phone is unique (if changed)
-            if (entity.phone != command.phone) {
+            if (command.phone != null && entity.phone != command.phone) {
                 val existingWithPhone = customerRepository.findActiveByStudioIdAndPhone(
                     studioId = command.studioId.value,
                     phone = command.phone
@@ -41,11 +41,15 @@ class UpdateCustomerHandler(
                 }
             }
 
+            if (command.email.isNullOrBlank() && command.phone.isNullOrBlank()) {
+                throw IllegalArgumentException("Wymagany jest co najmniej numer telefonu lub adres email klienta.")
+            }
+
             // Update basic fields
-            entity.firstName = command.firstName
-            entity.lastName = command.lastName
-            entity.email = command.email
-            entity.phone = command.phone
+            entity.firstName = command.firstName?.trim()
+            entity.lastName = command.lastName?.trim()
+            entity.email = command.email?.trim()?.lowercase()
+            entity.phone = command.phone?.trim()
 
             // Update home address
             if (command.homeAddress != null) {

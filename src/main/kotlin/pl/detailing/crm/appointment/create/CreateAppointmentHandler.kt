@@ -114,10 +114,10 @@ class CreateAppointmentHandler(
         val customer = Customer(
             id = CustomerId.random(),
             studioId = studioId,
-            firstName = identity.firstName.trim(),
-            lastName = identity.lastName.trim(),
-            email = identity.email.trim().lowercase(),
-            phone = identity.phone.trim(),
+            firstName = identity.firstName?.trim(),
+            lastName = identity.lastName?.trim(),
+            email = identity.email?.trim()?.lowercase(),
+            phone = identity.phone?.trim(),
             homeAddress = null,
             companyData = if (identity.companyName != null) {
                 pl.detailing.crm.customer.domain.CompanyData(
@@ -156,10 +156,10 @@ class CreateAppointmentHandler(
         val entity = customerRepository.findByIdAndStudioId(identity.customerId.value, studioId.value)
             ?: throw EntityNotFoundException("Customer with ID '${identity.customerId}' not found")
 
-        entity.firstName = identity.firstName.trim()
-        entity.lastName = identity.lastName.trim()
-        entity.email = identity.email.trim().lowercase()
-        entity.phone = identity.phone.trim()
+        entity.firstName = identity.firstName?.trim()
+        entity.lastName = identity.lastName?.trim()
+        entity.email = identity.email?.trim()?.lowercase()
+        entity.phone = identity.phone?.trim()
         
         if (identity.companyName != null) {
             entity.companyName = identity.companyName

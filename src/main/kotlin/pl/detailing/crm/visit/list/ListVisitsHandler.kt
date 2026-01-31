@@ -177,10 +177,10 @@ data class VisitListItem(
 )
 
 data class VisitCustomerInfo(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String,
+    val firstName: String?,
+    val lastName: String?,
+    val phone: String?,
+    val email: String?,
     val companyName: String?
 )
 

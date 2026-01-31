@@ -11,13 +11,13 @@ class NewCustomerUniquenessValidator {
         when (val identity = context.customerIdentity) {
             is CustomerIdentity.New
             -> {
-                if (context.customerEmailExists) {
+                if (identity.email != null && context.customerEmailExists) {
                     throw ValidationException(
                         "Customer with email '${identity.email}' already exists in this studio"
                     )
                 }
 
-                if (context.customerPhoneExists) {
+                if (identity.phone != null && context.customerPhoneExists) {
                     throw ValidationException(
                         "Customer with phone '${identity.phone}' already exists in this studio"
                     )
@@ -28,7 +28,7 @@ class NewCustomerUniquenessValidator {
             }
             is CustomerIdentity.Update
                 -> {
-                if (context.customerEmailExists) {
+                if (identity.email != null && context.customerEmailExists) {
                     throw ValidationException(
                         "Customer with email '${identity.email}' already exists in this studio"
                     )

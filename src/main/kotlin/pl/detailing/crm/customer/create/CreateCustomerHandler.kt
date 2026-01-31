@@ -23,10 +23,10 @@ class CreateCustomerHandler(
         val customer = Customer(
             id = CustomerId.random(),
             studioId = command.studioId,
-            firstName = command.firstName.trim(),
-            lastName = command.lastName.trim(),
-            email = command.email.trim().lowercase(),
-            phone = command.phone.trim(),
+            firstName = command.firstName?.trim(),
+            lastName = command.lastName?.trim(),
+            email = command.email?.trim()?.lowercase(),
+            phone = command.phone?.trim(),
             homeAddress = command.homeAddress,
             companyData = command.companyData,
             notes = command.notes?.trim(),
@@ -52,8 +52,8 @@ class CreateCustomerHandler(
 
 data class CreateCustomerResult(
     val customerId: CustomerId,
-    val firstName: String,
-    val lastName: String,
-    val email: String,
-    val phone: String
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?
 )

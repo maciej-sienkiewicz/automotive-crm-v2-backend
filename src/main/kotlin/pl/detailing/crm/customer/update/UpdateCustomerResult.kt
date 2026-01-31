@@ -5,10 +5,10 @@ import java.time.Instant
 
 data class UpdateCustomerResult(
     val id: String,
-    val firstName: String,
-    val lastName: String,
-    val email: String,
-    val phone: String,
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?,
     val homeAddress: HomeAddress?,
     val updatedAt: Instant
 )

@@ -52,10 +52,10 @@ class CustomerController(
 
         if (search.isNotBlank()) {
             customers = customers.filter {
-                it.firstName.contains(search, ignoreCase = true) ||
-                it.lastName.contains(search, ignoreCase = true) ||
-                it.contact.email.contains(search, ignoreCase = true) ||
-                it.contact.phone.contains(search, ignoreCase = true) ||
+                (it.firstName?.contains(search, ignoreCase = true) ?: false) ||
+                (it.lastName?.contains(search, ignoreCase = true) ?: false) ||
+                (it.contact.email?.contains(search, ignoreCase = true) ?: false) ||
+                (it.contact.phone?.contains(search, ignoreCase = true) ?: false) ||
                 (it.company?.name?.contains(search, ignoreCase = true) ?: false) ||
                 (it.company?.nip?.contains(search, ignoreCase = true) ?: false)
             }
@@ -63,9 +63,9 @@ class CustomerController(
 
         customers = when (sortBy) {
             "lastName" -> if (sortDirection == "asc") {
-                customers.sortedBy { it.lastName }
+                customers.sortedBy { it.lastName ?: "" }
             } else {
-                customers.sortedByDescending { it.lastName }
+                customers.sortedByDescending { it.lastName ?: "" }
             }
             "lastVisitDate" -> if (sortDirection == "asc") {
                 customers.sortedBy { it.lastVisitDate }
@@ -92,7 +92,7 @@ class CustomerController(
             } else {
                 customers.sortedByDescending { it.createdAt }
             }
-            else -> customers.sortedBy { it.lastName }
+            else -> customers.sortedBy { it.lastName ?: "" }
         }
 
         val totalItems = customers.size
@@ -522,10 +522,10 @@ class CustomerController(
 
 data class CustomerResponse(
     val id: String,
-    val firstName: String,
-    val lastName: String,
-    val email: String,
-    val phone: String,
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?,
     val homeAddress: HomeAddressResponse?,
     val companyData: CompanyDataResponse?,
     val notes: String?,
@@ -569,8 +569,8 @@ data class PaginationMeta(
 
 data class CustomerDetailResponse(
     val id: String,
-    val firstName: String,
-    val lastName: String,
+    val firstName: String?,
+    val lastName: String?,
     val contact: CustomerContactResponse,
     val homeAddress: HomeAddressResponse?,
     val company: CompanyDetailsResponse?,
@@ -584,8 +584,8 @@ data class CustomerDetailResponse(
 )
 
 data class CustomerContactResponse(
-    val email: String,
-    val phone: String
+    val email: String?,
+    val phone: String?
 )
 
 data class CompanyDetailsResponse(
@@ -620,15 +620,15 @@ data class MarketingConsentResponse(
 
 // Update Customer DTOs
 data class UpdateCustomerRequest(
-    val firstName: String,
-    val lastName: String,
+    val firstName: String?,
+    val lastName: String?,
     val contact: CustomerContactRequest,
     val homeAddress: HomeAddressRequest?
 )
 
 data class CustomerContactRequest(
-    val email: String,
-    val phone: String
+    val email: String?,
+    val phone: String?
 )
 
 data class HomeAddressRequest(
@@ -640,8 +640,8 @@ data class HomeAddressRequest(
 
 data class UpdateCustomerResponse(
     val id: String,
-    val firstName: String,
-    val lastName: String,
+    val firstName: String?,
+    val lastName: String?,
     val contact: CustomerContactResponse,
     val homeAddress: HomeAddressResponse?,
     val updatedAt: Instant

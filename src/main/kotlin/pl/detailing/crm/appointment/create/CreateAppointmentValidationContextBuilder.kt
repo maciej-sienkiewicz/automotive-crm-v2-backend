@@ -87,17 +87,23 @@ class CreateAppointmentValidationContextBuilder(
             val emailExistsDeferred = async {
                 when (val identity = command.customer) {
                     is CustomerIdentity.New -> {
-                        customerRepository.existsActiveByStudioIdAndEmail(
-                            command.studioId.value,
-                            identity.email.trim().lowercase()
-                        )
+                        val email = identity.email?.trim()?.lowercase()
+                        if (email != null) {
+                            customerRepository.existsActiveByStudioIdAndEmail(
+                                command.studioId.value,
+                                email
+                            )
+                        } else false
                     }
                     is CustomerIdentity.Update -> {
-                        val existing = customerRepository.findActiveByStudioIdAndEmail(
-                            command.studioId.value,
-                            identity.email.trim().lowercase()
-                        )
-                        existing != null && existing.id != identity.customerId.value
+                        val email = identity.email?.trim()?.lowercase()
+                        if (email != null) {
+                            val existing = customerRepository.findActiveByStudioIdAndEmail(
+                                command.studioId.value,
+                                email
+                            )
+                            existing != null && existing.id != identity.customerId.value
+                        } else false
                     }
                     is CustomerIdentity.Existing -> false
                 }
@@ -106,17 +112,23 @@ class CreateAppointmentValidationContextBuilder(
             val phoneExistsDeferred = async {
                 when (val identity = command.customer) {
                     is CustomerIdentity.New -> {
-                        customerRepository.existsActiveByStudioIdAndPhone(
-                            command.studioId.value,
-                            identity.phone.trim()
-                        )
+                        val phone = identity.phone?.trim()
+                        if (phone != null) {
+                            customerRepository.existsActiveByStudioIdAndPhone(
+                                command.studioId.value,
+                                phone
+                            )
+                        } else false
                     }
                     is CustomerIdentity.Update -> {
-                        val existing = customerRepository.findActiveByStudioIdAndPhone(
-                            command.studioId.value,
-                            identity.phone.trim()
-                        )
-                        existing != null && existing.id != identity.customerId.value
+                        val phone = identity.phone?.trim()
+                        if (phone != null) {
+                            val existing = customerRepository.findActiveByStudioIdAndPhone(
+                                command.studioId.value,
+                                phone
+                            )
+                            existing != null && existing.id != identity.customerId.value
+                        } else false
                     }
                     is CustomerIdentity.Existing -> false
                 }

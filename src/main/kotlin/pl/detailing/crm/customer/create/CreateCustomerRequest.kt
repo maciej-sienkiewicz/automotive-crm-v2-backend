@@ -1,10 +1,10 @@
 package pl.detailing.crm.customer.create
 
 data class CreateCustomerRequest(
-    val firstName: String,
-    val lastName: String,
-    val email: String,
-    val phone: String,
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?,
     val homeAddress: HomeAddressRequest?,
     val companyData: CompanyDataRequest?,
     val notes: String?

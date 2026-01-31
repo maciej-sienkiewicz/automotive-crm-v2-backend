@@ -79,8 +79,8 @@ class ListCustomersHandler(
 
 data class CustomerListItem(
     val id: String,
-    val firstName: String,
-    val lastName: String,
+    val firstName: String?,
+    val lastName: String?,
     val contact: ContactInfo,
     val homeAddress: HomeAddressInfo?,
     val company: CompanyInfo?,
@@ -94,8 +94,8 @@ data class CustomerListItem(
 )
 
 data class ContactInfo(
-    val email: String,
-    val phone: String
+    val email: String?,
+    val phone: String?
 )
 
 data class HomeAddressInfo(
