@@ -35,28 +35,64 @@ class CheckinController(
             userId = principal.userId,
             reservationId = AppointmentId.fromString(request.reservationId),
             customer = request.customer?.let { customerReq ->
-                CustomerData(
-                    id = customerReq.id?.let { CustomerId.fromString(it) },
-                    firstName = customerReq.firstName,
-                    lastName = customerReq.lastName,
-                    phone = customerReq.phone,
-                    email = customerReq.email,
-                    homeAddress = customerReq.homeAddress,
-                    company = customerReq.company,
-                    isNew = customerReq.isNew
-                )
+                when (customerReq.mode) {
+                    IdentityMode.EXISTING -> CustomerData.Existing(
+                        id = CustomerId.fromString(customerReq.id!!)
+                    )
+                    IdentityMode.NEW -> {
+                        val newData = customerReq.newData!!
+                        CustomerData.New(
+                            firstName = newData.firstName,
+                            lastName = newData.lastName,
+                            phone = newData.phone,
+                            email = newData.email,
+                            homeAddress = newData.homeAddress,
+                            company = newData.company
+                        )
+                    }
+                    IdentityMode.UPDATE -> {
+                        val updateData = customerReq.updateData!!
+                        CustomerData.Update(
+                            id = CustomerId.fromString(customerReq.id!!),
+                            firstName = updateData.firstName,
+                            lastName = updateData.lastName,
+                            phone = updateData.phone,
+                            email = updateData.email,
+                            homeAddress = updateData.homeAddress,
+                            company = updateData.company
+                        )
+                    }
+                }
             },
             customerAlias = request.customerAlias,
-            vehicle = VehicleData(
-                id = request.vehicle.id?.let { VehicleId.fromString(it) },
-                brand = request.vehicle.brand,
-                model = request.vehicle.model,
-                yearOfProduction = request.vehicle.yearOfProduction,
-                licensePlate = request.vehicle.licensePlate,
-                color = request.vehicle.color,
-                paintType = request.vehicle.paintType,
-                isNew = request.vehicle.isNew
-            ),
+            vehicle = when (request.vehicle.mode) {
+                IdentityMode.EXISTING -> VehicleData.Existing(
+                    id = VehicleId.fromString(request.vehicle.id!!)
+                )
+                IdentityMode.NEW -> {
+                    val newData = request.vehicle.newData!!
+                    VehicleData.New(
+                        brand = newData.brand,
+                        model = newData.model,
+                        yearOfProduction = newData.yearOfProduction,
+                        licensePlate = newData.licensePlate,
+                        color = newData.color,
+                        paintType = newData.paintType
+                    )
+                }
+                IdentityMode.UPDATE -> {
+                    val updateData = request.vehicle.updateData!!
+                    VehicleData.Update(
+                        id = VehicleId.fromString(request.vehicle.id!!),
+                        brand = updateData.brand,
+                        model = updateData.model,
+                        yearOfProduction = updateData.yearOfProduction,
+                        licensePlate = updateData.licensePlate,
+                        color = updateData.color,
+                        paintType = updateData.paintType
+                    )
+                }
+            },
             technicalState = request.technicalState,
             photoIds = request.photoIds,
             damagePoints = request.damagePoints?.map { damagePointReq ->
@@ -92,15 +128,24 @@ data class ReservationToVisitRequest(
     val appointmentColorId: String?
 )
 
+enum class IdentityMode {
+    EXISTING, NEW, UPDATE
+}
+
 data class CustomerRequest(
+    val mode: IdentityMode,
     val id: String?,
+    val newData: CustomerDataRequest?,
+    val updateData: CustomerDataRequest?
+)
+
+data class CustomerDataRequest(
     val firstName: String,
     val lastName: String,
     val phone: String,
     val email: String,
     val homeAddress: HomeAddressRequest?,
-    val company: CompanyRequest?,
-    val isNew: Boolean
+    val company: CompanyRequest?
 )
 
 data class HomeAddressRequest(
@@ -113,7 +158,7 @@ data class HomeAddressRequest(
 data class CompanyRequest(
     val name: String,
     val nip: String,
-    val regon: String,
+    val regon: String?,
     val address: CompanyAddressRequest
 )
 
@@ -125,14 +170,19 @@ data class CompanyAddressRequest(
 )
 
 data class VehicleRequest(
+    val mode: IdentityMode,
     val id: String?,
+    val newData: VehicleDataRequest?,
+    val updateData: VehicleDataRequest?
+)
+
+data class VehicleDataRequest(
     val brand: String,
     val model: String,
     val yearOfProduction: Int?,
     val licensePlate: String?,
     val color: String?,
-    val paintType: String?,
-    val isNew: Boolean
+    val paintType: String?
 )
 
 data class TechnicalStateRequest(
@@ -187,27 +237,47 @@ data class ReservationToVisitCommand(
     val appointmentColorId: AppointmentColorId?
 )
 
-data class CustomerData(
-    val id: CustomerId?,
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String,
-    val homeAddress: HomeAddressRequest?,
-    val company: CompanyRequest?,
-    val isNew: Boolean
-)
+sealed class CustomerData {
+    data class Existing(val id: CustomerId) : CustomerData()
+    data class New(
+        val firstName: String,
+        val lastName: String,
+        val phone: String,
+        val email: String,
+        val homeAddress: HomeAddressRequest?,
+        val company: CompanyRequest?
+    ) : CustomerData()
+    data class Update(
+        val id: CustomerId,
+        val firstName: String,
+        val lastName: String,
+        val phone: String,
+        val email: String,
+        val homeAddress: HomeAddressRequest?,
+        val company: CompanyRequest?
+    ) : CustomerData()
+}
 
-data class VehicleData(
-    val id: VehicleId?,
-    val brand: String,
-    val model: String,
-    val yearOfProduction: Int?,
-    val licensePlate: String?,
-    val color: String?,
-    val paintType: String?,
-    val isNew: Boolean
-)
+sealed class VehicleData {
+    data class Existing(val id: VehicleId) : VehicleData()
+    data class New(
+        val brand: String,
+        val model: String,
+        val yearOfProduction: Int?,
+        val licensePlate: String?,
+        val color: String?,
+        val paintType: String?
+    ) : VehicleData()
+    data class Update(
+        val id: VehicleId,
+        val brand: String,
+        val model: String,
+        val yearOfProduction: Int?,
+        val licensePlate: String?,
+        val color: String?,
+        val paintType: String?
+    ) : VehicleData()
+}
 
 // Result
 data class ReservationToVisitResult(

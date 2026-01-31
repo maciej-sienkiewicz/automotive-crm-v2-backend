@@ -54,39 +54,48 @@ class CreateVisitFromReservationHandler(
             )?.toDomain() ?: throw EntityNotFoundException("Appointment not found")
 
             // Step 2: Handle customer (create new or use existing)
-            val customerId = when {
-                command.customer == null -> {
+            val customerId = when (val customerData = command.customer) {
+                null -> {
                     // Customer alias only - we'll need to handle this case differently
                     // For now, throw exception as we need full customer data
                     throw ValidationException("Customer data required for check-in")
                 }
-                command.customer.isNew -> {
+                is CustomerData.New -> {
                     // Create new customer
-                    createCustomer(command.customer, command.studioId, command.userId)
+                    createCustomer(customerData, command.studioId, command.userId)
                 }
-                else -> {
+                is CustomerData.Existing -> {
+                    customerData.id
+                }
+                is CustomerData.Update -> {
                     // Use existing customer and update if data changed
-                    val existingCustomerId = command.customer.id?.value.toString()
-                        ?: throw ValidationException("Customer ID required for existing customer")
                     updateCustomerIfNeeded(
-                        CustomerId.fromString(existingCustomerId),
-                        command.customer,
+                        customerData.id,
+                        customerData,
                         command.studioId,
                         command.userId
                     )
-                    CustomerId.fromString(existingCustomerId)
+                    customerData.id
                 }
             }
 
             // Step 3: Handle vehicle (create new or use existing)
-            val vehicleId = when {
-                command.vehicle.isNew -> {
+            val vehicleId = when (val vehicleData = command.vehicle) {
+                is VehicleData.New -> {
                     // Create new vehicle
-                    createVehicle(command.vehicle, customerId, command.studioId, command.userId)
+                    createVehicle(vehicleData, customerId, command.studioId, command.userId)
                 }
-                else -> {
-                    // Use existing vehicle
-                    command.vehicle.id ?: throw ValidationException("Vehicle ID required for existing vehicle")
+                is VehicleData.Existing -> {
+                    vehicleData.id
+                }
+                is VehicleData.Update -> {
+                    updateVehicleIfNeeded(
+                        vehicleData.id,
+                        vehicleData,
+                        command.studioId,
+                        command.userId
+                    )
+                    vehicleData.id
                 }
             }
 
@@ -254,14 +263,41 @@ class CreateVisitFromReservationHandler(
         studioId: StudioId,
         userId: UserId
     ): CustomerId {
+        val firstName: String
+        val lastName: String
+        val email: String
+        val phone: String
+        val homeAddress: HomeAddressRequest?
+        val company: CompanyRequest?
+
+        when (customerData) {
+            is CustomerData.New -> {
+                firstName = customerData.firstName
+                lastName = customerData.lastName
+                email = customerData.email
+                phone = customerData.phone
+                homeAddress = customerData.homeAddress
+                company = customerData.company
+            }
+            is CustomerData.Update -> {
+                firstName = customerData.firstName
+                lastName = customerData.lastName
+                email = customerData.email
+                phone = customerData.phone
+                homeAddress = customerData.homeAddress
+                company = customerData.company
+            }
+            else -> throw IllegalArgumentException("Cannot create customer from Existing state")
+        }
+
         val customer = Customer(
             id = CustomerId.random(),
             studioId = studioId,
-            firstName = customerData.firstName.trim(),
-            lastName = customerData.lastName.trim(),
-            email = customerData.email.trim().lowercase(),
-            phone = customerData.phone.trim(),
-            homeAddress = customerData.homeAddress?.let {
+            firstName = firstName.trim(),
+            lastName = lastName.trim(),
+            email = email.trim().lowercase(),
+            phone = phone.trim(),
+            homeAddress = homeAddress?.let {
                 HomeAddress(
                     street = it.street,
                     city = it.city,
@@ -269,7 +305,7 @@ class CreateVisitFromReservationHandler(
                     country = it.country
                 )
             },
-            companyData = customerData.company?.let {
+            companyData = company?.let {
                 CompanyData(
                     name = it.name,
                     nip = it.nip,
@@ -297,7 +333,7 @@ class CreateVisitFromReservationHandler(
     }
 
     private fun createVehicle(
-        vehicleData: VehicleData,
+        vehicleData: VehicleData.New,
         customerId: CustomerId,
         studioId: StudioId,
         userId: UserId
@@ -338,7 +374,7 @@ class CreateVisitFromReservationHandler(
 
     private fun updateCustomerIfNeeded(
         customerId: CustomerId,
-        customerData: CustomerData,
+        customerData: CustomerData.Update,
         studioId: StudioId,
         userId: UserId
     ) {
@@ -425,6 +461,35 @@ class CreateVisitFromReservationHandler(
             existingEntity.updatedAt = Instant.now()
 
             customerRepository.save(existingEntity)
+        }
+    }
+
+    private fun updateVehicleIfNeeded(
+        vehicleId: VehicleId,
+        vehicleData: VehicleData.Update,
+        studioId: StudioId,
+        userId: UserId
+    ) {
+        val existingEntity = vehicleRepository.findByIdAndStudioId(vehicleId.value, studioId.value)
+            ?: throw EntityNotFoundException("Vehicle not found")
+
+        val hasChanged = existingEntity.brand != vehicleData.brand.trim() ||
+            existingEntity.model != vehicleData.model.trim() ||
+            existingEntity.yearOfProduction != vehicleData.yearOfProduction ||
+            existingEntity.licensePlate != vehicleData.licensePlate?.trim()?.uppercase() ||
+            existingEntity.color != vehicleData.color?.trim() ||
+            existingEntity.paintType != vehicleData.paintType?.trim()
+
+        if (hasChanged) {
+            existingEntity.brand = vehicleData.brand.trim()
+            existingEntity.model = vehicleData.model.trim()
+            existingEntity.yearOfProduction = vehicleData.yearOfProduction
+            existingEntity.licensePlate = vehicleData.licensePlate?.trim()?.uppercase()
+            existingEntity.color = vehicleData.color?.trim()
+            existingEntity.paintType = vehicleData.paintType?.trim()
+            existingEntity.updatedBy = userId.value
+            existingEntity.updatedAt = Instant.now()
+            vehicleRepository.save(existingEntity)
         }
     }
 }
