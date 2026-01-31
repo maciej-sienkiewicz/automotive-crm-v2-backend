@@ -48,6 +48,12 @@ class CreateAppointmentValidationContextBuilder(
                             command.studioId.value
                         )
                     }
+                    is CustomerIdentity.Update -> {
+                        customerRepository.findByIdAndStudioId(
+                            identity.customerId.value,
+                            command.studioId.value
+                        )
+                    }
                     is CustomerIdentity.New -> null
                 }
             }
@@ -55,6 +61,12 @@ class CreateAppointmentValidationContextBuilder(
             val existingVehicleDeferred = async {
                 when (val identity = command.vehicle) {
                     is VehicleIdentity.Existing -> {
+                        vehicleRepository.findByIdAndStudioId(
+                            identity.vehicleId.value,
+                            command.studioId.value
+                        )
+                    }
+                    is VehicleIdentity.Update -> {
                         vehicleRepository.findByIdAndStudioId(
                             identity.vehicleId.value,
                             command.studioId.value
@@ -80,6 +92,13 @@ class CreateAppointmentValidationContextBuilder(
                             identity.email.trim().lowercase()
                         )
                     }
+                    is CustomerIdentity.Update -> {
+                        val existing = customerRepository.findActiveByStudioIdAndEmail(
+                            command.studioId.value,
+                            identity.email.trim().lowercase()
+                        )
+                        existing != null && existing.id != identity.customerId.value
+                    }
                     is CustomerIdentity.Existing -> false
                 }
             }
@@ -91,6 +110,13 @@ class CreateAppointmentValidationContextBuilder(
                             command.studioId.value,
                             identity.phone.trim()
                         )
+                    }
+                    is CustomerIdentity.Update -> {
+                        val existing = customerRepository.findActiveByStudioIdAndPhone(
+                            command.studioId.value,
+                            identity.phone.trim()
+                        )
+                        existing != null && existing.id != identity.customerId.value
                     }
                     is CustomerIdentity.Existing -> false
                 }

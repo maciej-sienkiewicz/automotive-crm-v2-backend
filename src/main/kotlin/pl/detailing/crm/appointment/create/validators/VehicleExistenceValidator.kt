@@ -16,6 +16,13 @@ class VehicleExistenceValidator {
                     )
                 }
             }
+            is VehicleIdentity.Update -> {
+                if (context.existingVehicle == null) {
+                    throw EntityNotFoundException(
+                        "Vehicle with ID '${identity.vehicleId}' not found in this studio"
+                    )
+                }
+            }
             is VehicleIdentity.New, VehicleIdentity.None -> {
                 // No validation needed for new or no vehicle
             }

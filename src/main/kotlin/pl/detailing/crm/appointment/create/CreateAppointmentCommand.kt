@@ -30,11 +30,29 @@ sealed class CustomerIdentity {
         val companyRegon: String?,
         val companyAddress: String?
     ) : CustomerIdentity()
+    data class Update(
+        val customerId: CustomerId,
+        val firstName: String,
+        val lastName: String,
+        val phone: String,
+        val email: String,
+        val companyName: String?,
+        val companyNip: String?,
+        val companyRegon: String?,
+        val companyAddress: String?
+    ) : CustomerIdentity()
 }
 
 sealed class VehicleIdentity {
     data class Existing(val vehicleId: VehicleId) : VehicleIdentity()
     data class New(
+        val brand: String,
+        val model: String,
+        val year: Int?,
+        val licensePlate: String?
+    ) : VehicleIdentity()
+    data class Update(
+        val vehicleId: VehicleId,
         val brand: String,
         val model: String,
         val year: Int?,

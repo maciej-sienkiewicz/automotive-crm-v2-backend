@@ -16,6 +16,13 @@ class CustomerExistenceValidator {
                     )
                 }
             }
+            is CustomerIdentity.Update -> {
+                if (context.existingCustomer == null) {
+                    throw EntityNotFoundException(
+                        "Customer with ID '${identity.customerId}' not found in this studio"
+                    )
+                }
+            }
             is CustomerIdentity.New -> {
                 // Validation for new customer creation will be handled by separate validators
             }

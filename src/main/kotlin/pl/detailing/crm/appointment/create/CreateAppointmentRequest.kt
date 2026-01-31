@@ -18,12 +18,14 @@ data class CreateAppointmentRequest(
 data class CustomerIdentityRequest(
     val mode: CustomerMode,
     val id: String?,
-    val newData: NewCustomerDataRequest?
+    val newData: NewCustomerDataRequest?,
+    val updateData: NewCustomerDataRequest? // Reusing the same structure as NewCustomerDataRequest
 )
 
 enum class CustomerMode {
     EXISTING,
-    NEW
+    NEW,
+    UPDATE
 }
 
 data class NewCustomerDataRequest(
@@ -44,12 +46,14 @@ data class CompanyDataRequest(
 data class VehicleIdentityRequest(
     val mode: VehicleMode,
     val id: String?,
-    val newData: NewVehicleDataRequest?
+    val newData: NewVehicleDataRequest?,
+    val updateData: NewVehicleDataRequest? // Reusing the same structure as NewVehicleDataRequest
 )
 
 enum class VehicleMode {
     EXISTING,
     NEW,
+    UPDATE,
     NONE
 }
 

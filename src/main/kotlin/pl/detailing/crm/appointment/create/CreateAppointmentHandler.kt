@@ -39,12 +39,14 @@ class CreateAppointmentHandler(
         val customerId = when (val identity = command.customer) {
             is CustomerIdentity.Existing -> identity.customerId
             is CustomerIdentity.New -> createCustomer(identity, command.studioId, command.userId)
+            is CustomerIdentity.Update -> updateCustomer(identity, command.studioId, command.userId)
         }
 
         // Step 3: Identity Resolution - Vehicle
         val vehicleId = when (val identity = command.vehicle) {
             is VehicleIdentity.Existing -> identity.vehicleId
             is VehicleIdentity.New -> createVehicle(identity, customerId, command.studioId, command.userId)
+            is VehicleIdentity.Update -> updateVehicle(identity, command.studioId, command.userId)
             VehicleIdentity.None -> null
         }
 
@@ -146,6 +148,36 @@ class CreateAppointmentHandler(
         return customer.id
     }
 
+    private fun updateCustomer(
+        identity: CustomerIdentity.Update,
+        studioId: StudioId,
+        userId: UserId
+    ): CustomerId {
+        val entity = customerRepository.findByIdAndStudioId(identity.customerId.value, studioId.value)
+            ?: throw EntityNotFoundException("Customer with ID '${identity.customerId}' not found")
+
+        entity.firstName = identity.firstName.trim()
+        entity.lastName = identity.lastName.trim()
+        entity.email = identity.email.trim().lowercase()
+        entity.phone = identity.phone.trim()
+        
+        if (identity.companyName != null) {
+            entity.companyName = identity.companyName
+            entity.companyNip = identity.companyNip
+            entity.companyRegon = identity.companyRegon
+            if (identity.companyAddress != null) {
+                entity.companyAddressStreet = identity.companyAddress
+            }
+        }
+
+        entity.updatedBy = userId.value
+        entity.updatedAt = Instant.now()
+
+        customerRepository.save(entity)
+
+        return identity.customerId
+    }
+
     private fun createVehicle(
         identity: VehicleIdentity.New,
         customerId: CustomerId,
@@ -184,6 +216,26 @@ class CreateAppointmentHandler(
         vehicleOwnerRepository.save(vehicleOwnerEntity)
 
         return vehicle.id
+    }
+
+    private fun updateVehicle(
+        identity: VehicleIdentity.Update,
+        studioId: StudioId,
+        userId: UserId
+    ): VehicleId {
+        val vehicleEntity = vehicleRepository.findByIdAndStudioId(identity.vehicleId.value, studioId.value)
+            ?: throw EntityNotFoundException("Vehicle with ID '${identity.vehicleId}' not found")
+
+        vehicleEntity.brand = identity.brand.trim()
+        vehicleEntity.model = identity.model.trim()
+        vehicleEntity.yearOfProduction = identity.year
+        vehicleEntity.licensePlate = identity.licensePlate?.trim()?.uppercase()
+        vehicleEntity.updatedBy = userId.value
+        vehicleEntity.updatedAt = Instant.now()
+
+        vehicleRepository.save(vehicleEntity)
+
+        return identity.vehicleId
     }
 }
 

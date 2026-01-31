@@ -9,7 +9,8 @@ import pl.detailing.crm.shared.ValidationException
 class NewCustomerUniquenessValidator {
     fun validate(context: CreateAppointmentValidationContext) {
         when (val identity = context.customerIdentity) {
-            is CustomerIdentity.New -> {
+            is CustomerIdentity.New
+            -> {
                 if (context.customerEmailExists) {
                     throw ValidationException(
                         "Customer with email '${identity.email}' already exists in this studio"
@@ -24,6 +25,14 @@ class NewCustomerUniquenessValidator {
             }
             is CustomerIdentity.Existing -> {
                 // No validation needed for existing customer
+            }
+            is CustomerIdentity.Update
+                -> {
+                if (context.customerEmailExists) {
+                    throw ValidationException(
+                        "Customer with email '${identity.email}' already exists in this studio"
+                    )
+                }
             }
         }
     }

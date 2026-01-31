@@ -113,6 +113,20 @@ class AppointmentController(
                         companyAddress = newData.company?.address
                     )
                 }
+                CustomerMode.UPDATE -> {
+                    val updateData = request.customer.updateData!!
+                    CustomerIdentity.Update(
+                        customerId = CustomerId.fromString(request.customer.id!!),
+                        firstName = updateData.firstName,
+                        lastName = updateData.lastName,
+                        phone = updateData.phone,
+                        email = updateData.email,
+                        companyName = updateData.company?.name,
+                        companyNip = updateData.company?.nip,
+                        companyRegon = updateData.company?.regon,
+                        companyAddress = updateData.company?.address
+                    )
+                }
             },
             vehicle = when (request.vehicle.mode) {
                 VehicleMode.EXISTING -> {
@@ -127,6 +141,16 @@ class AppointmentController(
                         model = newData.model,
                         year = newData.year,
                         licensePlate = newData.licensePlate
+                    )
+                }
+                VehicleMode.UPDATE -> {
+                    val updateData = request.vehicle.updateData!!
+                    VehicleIdentity.Update(
+                        vehicleId = VehicleId.fromString(request.vehicle.id!!),
+                        brand = updateData.brand,
+                        model = updateData.model,
+                        year = updateData.year,
+                        licensePlate = updateData.licensePlate
                     )
                 }
                 VehicleMode.NONE -> VehicleIdentity.None
@@ -196,6 +220,20 @@ class AppointmentController(
                         companyAddress = newData.company?.address
                     )
                 }
+                CustomerMode.UPDATE -> {
+                    val updateData = request.customer.updateData!!
+                    CustomerIdentity.Update(
+                        customerId = CustomerId.fromString(request.customer.id!!),
+                        firstName = updateData.firstName,
+                        lastName = updateData.lastName,
+                        phone = updateData.phone,
+                        email = updateData.email,
+                        companyName = updateData.company?.name,
+                        companyNip = updateData.company?.nip,
+                        companyRegon = updateData.company?.regon,
+                        companyAddress = updateData.company?.address
+                    )
+                }
             },
             vehicle = when (request.vehicle.mode) {
                 VehicleMode.EXISTING -> {
@@ -210,6 +248,16 @@ class AppointmentController(
                         model = newData.model,
                         year = newData.year,
                         licensePlate = newData.licensePlate
+                    )
+                }
+                VehicleMode.UPDATE -> {
+                    val updateData = request.vehicle.updateData!!
+                    VehicleIdentity.Update(
+                        vehicleId = VehicleId.fromString(request.vehicle.id!!),
+                        brand = updateData.brand,
+                        model = updateData.model,
+                        year = updateData.year,
+                        licensePlate = updateData.licensePlate
                     )
                 }
                 VehicleMode.NONE -> VehicleIdentity.None
