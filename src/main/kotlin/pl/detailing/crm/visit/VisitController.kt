@@ -11,13 +11,16 @@ import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
+import pl.detailing.crm.visit.services.SaveVisitServicesHandler
+import pl.detailing.crm.visit.services.ServicesChangesPayload
 import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/visits")
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
-    private val getVisitDetailHandler: GetVisitDetailHandler
+    private val getVisitDetailHandler: GetVisitDetailHandler,
+    private val saveVisitServicesHandler: SaveVisitServicesHandler
 ) {
 
     /**
@@ -93,6 +96,27 @@ class VisitController(
         val response = mapToVisitDetailResponse(result)
 
         ResponseEntity.ok(response)
+    }
+
+    /**
+     * Update visit services (add, update, delete)
+     * PATCH /api/visits/{visitId}/services/
+     */
+    @PatchMapping("/{visitId}/services/")
+    fun saveServicesChanges(
+        @PathVariable visitId: String,
+        @RequestBody payload: ServicesChangesPayload
+    ): ResponseEntity<Unit> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        saveVisitServicesHandler.handle(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            payload = payload
+        )
+
+        ResponseEntity.noContent().build()
     }
 
     /**
@@ -204,6 +228,7 @@ class VisitController(
                 value = serviceItem.adjustmentValue
             ),
             note = serviceItem.customNote ?: "",
+            status = mapServiceStatus(serviceItem.status),
             finalPriceNet = serviceItem.finalPriceNet.amountInCents,
             finalPriceGross = serviceItem.finalPriceGross.amountInCents
         )
@@ -236,6 +261,18 @@ class VisitController(
             uploadedBy = document.uploadedByName,
             category = document.category
         )
+    }
+
+    /**
+     * Map VisitServiceStatus enum to frontend string
+     */
+    private fun mapServiceStatus(status: VisitServiceStatus): String {
+        return when (status) {
+            VisitServiceStatus.PENDING -> "PENDING"
+            VisitServiceStatus.APPROVED -> "APPROVED"
+            VisitServiceStatus.REJECTED -> "REJECTED"
+            VisitServiceStatus.CONFIRMED -> "CONFIRMED"
+        }
     }
 
     /**

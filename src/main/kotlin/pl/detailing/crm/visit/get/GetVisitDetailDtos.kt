@@ -86,6 +86,7 @@ data class ServiceLineItemResponse(
     val vatRate: Int,
     val adjustment: AdjustmentResponse,
     val note: String?,
+    val status: String,
     val finalPriceNet: Long,
     val finalPriceGross: Long
 )

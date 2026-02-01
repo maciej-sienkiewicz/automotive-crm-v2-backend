@@ -202,6 +202,44 @@ data class Visit(
             updatedAt = Instant.now()
         )
     }
+
+    /**
+     * Save services changes - adds, updates and deletes services.
+     * All changes result in service items being set to PENDING status,
+     * requiring customer approval.
+     */
+    fun saveServicesChanges(
+        added: List<VisitServiceItem>,
+        updated: List<VisitServiceItem>,
+        deletedIds: List<VisitServiceItemId>,
+        updatedBy: UserId
+    ): Visit {
+        // Only allowed in certain states, though usually allowed while IN_PROGRESS
+        // If we want to restrict this to only IN_PROGRESS:
+        // if (status != VisitStatus.IN_PROGRESS) throw IllegalStateException("Can only change services when visit is IN_PROGRESS")
+
+        val currentItems = serviceItems.toMutableList()
+
+        // 1. Remove deleted
+        currentItems.removeIf { item -> deletedIds.any { it == item.id } }
+
+        // 2. Update existing
+        updated.forEach { updatedItem ->
+            val index = currentItems.indexOfFirst { it.id == updatedItem.id }
+            if (index != -1) {
+                currentItems[index] = updatedItem
+            }
+        }
+
+        // 3. Add new
+        currentItems.addAll(added)
+
+        return copy(
+            serviceItems = currentItems,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
 }
 
 /**
@@ -231,7 +269,97 @@ data class VisitServiceItem(
 
     // Creation timestamp
     val createdAt: Instant
-)
+) {
+    companion object {
+        fun createPending(
+            serviceId: ServiceId,
+            serviceName: String,
+            basePriceNet: Money,
+            vatRate: VatRate,
+            adjustmentType: AdjustmentType,
+            adjustmentValue: Long,
+            customNote: String?
+        ): VisitServiceItem {
+            val finalNet = PriceCalculator.calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
+            val finalGross = vatRate.calculateGrossAmount(finalNet)
+
+            return VisitServiceItem(
+                id = VisitServiceItemId.random(),
+                serviceId = serviceId,
+                serviceName = serviceName,
+                basePriceNet = basePriceNet,
+                vatRate = vatRate,
+                adjustmentType = adjustmentType,
+                adjustmentValue = adjustmentValue,
+                finalPriceNet = finalNet,
+                finalPriceGross = finalGross,
+                status = VisitServiceStatus.PENDING,
+                customNote = customNote,
+                createdAt = Instant.now()
+            )
+        }
+    }
+
+    fun toPending(newBasePriceNet: Money): VisitServiceItem {
+        val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, vatRate, adjustmentType, adjustmentValue)
+        val finalGross = vatRate.calculateGrossAmount(finalNet)
+
+        return copy(
+            basePriceNet = newBasePriceNet,
+            finalPriceNet = finalNet,
+            finalPriceGross = finalGross,
+            status = VisitServiceStatus.PENDING
+        )
+    }
+}
+
+/**
+ * Common price calculation logic for services
+ */
+object PriceCalculator {
+    /**
+     * Price calculation engine - applies adjustment based on type
+     */
+    fun calculateFinalNet(
+        basePriceNet: Money,
+        vatRate: VatRate,
+        adjustmentType: AdjustmentType,
+        adjustmentValue: Long
+    ): Money {
+        return when (adjustmentType) {
+            AdjustmentType.PERCENT -> {
+                // adjustmentValue is percentage (e.g., -10 for 10% discount, +20 for 20% markup)
+                val multiplier = 1.0 + (adjustmentValue.toDouble() / 100.0)
+                val calculatedNet = (basePriceNet.amountInCents * multiplier).toLong()
+                Money(calculatedNet.coerceAtLeast(0))
+            }
+            AdjustmentType.FIXED_NET -> {
+                // adjustmentValue is fixed amount in cents to add/subtract from net
+                val calculatedNet = basePriceNet.amountInCents + adjustmentValue
+                Money(calculatedNet.coerceAtLeast(0))
+            }
+            AdjustmentType.FIXED_GROSS -> {
+                // adjustmentValue is fixed amount to add/subtract from gross, recalculate net
+                val baseGross = vatRate.calculateGrossAmount(basePriceNet)
+                val newGross = (baseGross.amountInCents + adjustmentValue).coerceAtLeast(0)
+                // Calculate net from gross: net = gross / (1 + vatRate/100)
+                val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
+                val calculatedNet = (newGross / vatMultiplier).toLong()
+                Money(calculatedNet.coerceAtLeast(0))
+            }
+            AdjustmentType.SET_NET -> {
+                // adjustmentValue is the final net price
+                Money(adjustmentValue.coerceAtLeast(0))
+            }
+            AdjustmentType.SET_GROSS -> {
+                // adjustmentValue is the final gross price, calculate net from it
+                val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
+                val calculatedNet = (adjustmentValue / vatMultiplier).toLong()
+                Money(calculatedNet.coerceAtLeast(0))
+            }
+        }
+    }
+}
 
 /**
  * Photo documentation for a visit
