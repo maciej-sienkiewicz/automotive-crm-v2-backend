@@ -109,6 +109,7 @@ class ListAppointmentsHandler(
                         hexColor = color?.hexColor ?: "#808080"
                     ),
                     status = appointment.status,
+                    note = appointment.note,
                     totalNet = totalNet.amountInCents,
                     totalGross = totalGross.amountInCents,
                     totalVat = totalVat.amountInCents,
@@ -161,6 +162,7 @@ data class AppointmentListItem(
     val appointmentTitle: String?,
     val appointmentColor: AppointmentColorInfo,
     val status: AppointmentStatus,
+    val note: String?,
     val totalNet: Long,
     val totalGross: Long,
     val totalVat: Long,

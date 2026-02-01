@@ -80,6 +80,7 @@ class GetAppointmentHandler(
                     hexColor = color?.hexColor ?: "#808080"
                 ),
                 status = appointment.status,
+                note = appointment.note,
                 totalNet = totalNet.amountInCents,
                 totalGross = totalGross.amountInCents,
                 totalVat = totalVat.amountInCents,
