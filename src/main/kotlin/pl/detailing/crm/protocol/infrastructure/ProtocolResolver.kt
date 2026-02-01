@@ -46,7 +46,7 @@ class ProtocolResolver(
                 it.status == VisitServiceStatus.CONFIRMED ||
                 it.status == VisitServiceStatus.APPROVED
             }
-            .map { it.serviceId.value }
+            .mapNotNull { it.serviceId?.value }
             .distinct()
 
         // Fetch GLOBAL_ALWAYS rules for this stage

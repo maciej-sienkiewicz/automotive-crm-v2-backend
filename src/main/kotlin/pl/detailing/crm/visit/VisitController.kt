@@ -219,7 +219,7 @@ class VisitController(
     private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse {
         return ServiceLineItemResponse(
             id = serviceItem.id.value.toString(),
-            serviceId = serviceItem.serviceId.value.toString(),
+            serviceId = serviceItem.serviceId?.value?.toString(),
             serviceName = serviceItem.serviceName,
             basePriceNet = serviceItem.basePriceNet.amountInCents,
             vatRate = serviceItem.vatRate.rate,

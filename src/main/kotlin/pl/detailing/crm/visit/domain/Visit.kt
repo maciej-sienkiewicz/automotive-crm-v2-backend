@@ -250,7 +250,7 @@ data class Visit(
  */
 data class VisitServiceItem(
     val id: VisitServiceItemId,
-    val serviceId: ServiceId,
+    val serviceId: ServiceId?,
     val serviceName: String,
 
     // Frozen pricing snapshot
@@ -272,7 +272,7 @@ data class VisitServiceItem(
 ) {
     companion object {
         fun createPending(
-            serviceId: ServiceId,
+            serviceId: ServiceId?,
             serviceName: String,
             basePriceNet: Money,
             vatRate: VatRate,

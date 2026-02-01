@@ -10,9 +10,9 @@ data class ServicesChangesPayload(
 )
 
 data class AddedService(
-    val serviceId: String,
+    val serviceId: String?,
     val serviceName: String,
-    val basePriceNet: Double,
+    val basePriceNet: Long,
     val vatRate: Int,
     val adjustment: ServiceAdjustment?,
     val note: String?
@@ -25,7 +25,7 @@ data class ServiceAdjustment(
 
 data class UpdatedService(
     val serviceLineItemId: String,
-    val basePriceNet: Double
+    val basePriceNet: Long
 )
 
 data class DeletedService(

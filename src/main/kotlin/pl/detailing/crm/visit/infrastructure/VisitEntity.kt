@@ -225,8 +225,8 @@ class VisitServiceItemEntity(
     @JoinColumn(name = "visit_id", nullable = false)
     var visit: VisitEntity,
 
-    @Column(name = "service_id", nullable = false, columnDefinition = "uuid")
-    val serviceId: UUID,
+    @Column(name = "service_id", nullable = true, columnDefinition = "uuid")
+    val serviceId: UUID?,
 
     @Column(name = "service_name", nullable = false, length = 255)
     val serviceName: String,
@@ -262,7 +262,7 @@ class VisitServiceItemEntity(
 ) {
     fun toDomain(): VisitServiceItem = VisitServiceItem(
         id = VisitServiceItemId(id),
-        serviceId = ServiceId(serviceId),
+        serviceId = serviceId?.let { ServiceId(it) },
         serviceName = serviceName,
         basePriceNet = Money(basePriceNet),
         vatRate = VatRate.fromInt(vatRate),
@@ -280,7 +280,7 @@ class VisitServiceItemEntity(
             VisitServiceItemEntity(
                 id = serviceItem.id.value,
                 visit = visit,
-                serviceId = serviceItem.serviceId.value,
+                serviceId = serviceItem.serviceId?.value,
                 serviceName = serviceItem.serviceName,
                 basePriceNet = serviceItem.basePriceNet.amountInCents,
                 vatRate = serviceItem.vatRate.rate,

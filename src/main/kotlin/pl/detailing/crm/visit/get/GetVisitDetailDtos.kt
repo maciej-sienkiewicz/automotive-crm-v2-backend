@@ -80,7 +80,7 @@ data class CustomerStatsResponse(
  */
 data class ServiceLineItemResponse(
     val id: String,
-    val serviceId: String,
+    val serviceId: String?,
     val serviceName: String,
     val basePriceNet: Long,
     val vatRate: Int,
