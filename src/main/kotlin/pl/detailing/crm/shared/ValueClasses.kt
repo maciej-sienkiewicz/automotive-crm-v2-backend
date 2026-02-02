@@ -189,6 +189,15 @@ enum class VisitServiceStatus {
 }
 
 /**
+ * Type of pending operation on a service item
+ */
+enum class PendingOperation {
+    ADD,      // New service awaiting approval
+    EDIT,     // Edit of existing service awaiting approval
+    DELETE    // Deletion of service awaiting approval
+}
+
+/**
  * Comment type for visit comments
  */
 enum class CommentType {

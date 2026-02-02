@@ -88,7 +88,15 @@ data class ServiceLineItemResponse(
     val note: String?,
     val status: String,
     val finalPriceNet: Long,
-    val finalPriceGross: Long
+    val finalPriceGross: Long,
+    
+    // Pending operation tracking
+    val pendingOperation: String?,  // ADD, EDIT, DELETE or null
+    val hasPendingChange: Boolean,
+    
+    // Previous values for EDIT operations (for displaying changes)
+    val previousPriceNet: Long?,
+    val previousPriceGross: Long?
 )
 
 /**

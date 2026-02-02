@@ -8,8 +8,11 @@ import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.domain.VisitJournalEntry
 import pl.detailing.crm.visit.domain.VisitDocument
+import pl.detailing.crm.visit.domain.ConfirmedServiceSnapshot
 import java.time.Instant
 import java.util.UUID
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 
 @Entity
 @Table(
@@ -254,30 +257,76 @@ class VisitServiceItemEntity(
     @Column(name = "status", nullable = false, length = 50)
     var status: VisitServiceStatus,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pending_operation", nullable = true, length = 50)
+    var pendingOperation: PendingOperation?,
+
+    @Column(name = "confirmed_snapshot", columnDefinition = "TEXT")
+    var confirmedSnapshot: String?,
+
     @Column(name = "custom_note", columnDefinition = "TEXT")
     var customNote: String?,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    @Column(name = "confirmed_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var confirmedAt: Instant?,
+
+    @Column(name = "pending_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var pendingAt: Instant?
 ) {
-    fun toDomain(): VisitServiceItem = VisitServiceItem(
-        id = VisitServiceItemId(id),
-        serviceId = serviceId?.let { ServiceId(it) },
-        serviceName = serviceName,
-        basePriceNet = Money(basePriceNet),
-        vatRate = VatRate.fromInt(vatRate),
-        adjustmentType = adjustmentType,
-        adjustmentValue = adjustmentValue,
-        finalPriceNet = Money(finalPriceNet),
-        finalPriceGross = Money(finalPriceGross),
-        status = status,
-        customNote = customNote,
-        createdAt = createdAt
-    )
+    fun toDomain(): VisitServiceItem {
+        val snapshot = confirmedSnapshot?.let { json ->
+            val mapper = jacksonObjectMapper()
+            val data = mapper.readValue<Map<String, Any>>(json)
+            ConfirmedServiceSnapshot(
+                basePriceNet = Money((data["basePriceNet"] as Number).toLong()),
+                vatRate = VatRate.fromInt(data["vatRate"] as Int),
+                adjustmentType = AdjustmentType.valueOf(data["adjustmentType"] as String),
+                adjustmentValue = (data["adjustmentValue"] as Number).toLong(),
+                finalPriceNet = Money((data["finalPriceNet"] as Number).toLong()),
+                finalPriceGross = Money((data["finalPriceGross"] as Number).toLong()),
+                customNote = data["customNote"] as String?
+            )
+        }
+        
+        return VisitServiceItem(
+            id = VisitServiceItemId(id),
+            serviceId = serviceId?.let { ServiceId(it) },
+            serviceName = serviceName,
+            basePriceNet = Money(basePriceNet),
+            vatRate = VatRate.fromInt(vatRate),
+            adjustmentType = adjustmentType,
+            adjustmentValue = adjustmentValue,
+            finalPriceNet = Money(finalPriceNet),
+            finalPriceGross = Money(finalPriceGross),
+            status = status,
+            pendingOperation = pendingOperation,
+            confirmedSnapshot = snapshot,
+            customNote = customNote,
+            createdAt = createdAt,
+            confirmedAt = confirmedAt,
+            pendingAt = pendingAt
+        )
+    }
 
     companion object {
-        fun fromDomain(serviceItem: VisitServiceItem, visit: VisitEntity): VisitServiceItemEntity =
-            VisitServiceItemEntity(
+        fun fromDomain(serviceItem: VisitServiceItem, visit: VisitEntity): VisitServiceItemEntity {
+            val snapshotJson = serviceItem.confirmedSnapshot?.let { snapshot ->
+                val mapper = jacksonObjectMapper()
+                mapper.writeValueAsString(mapOf(
+                    "basePriceNet" to snapshot.basePriceNet.amountInCents,
+                    "vatRate" to snapshot.vatRate.rate,
+                    "adjustmentType" to snapshot.adjustmentType.name,
+                    "adjustmentValue" to snapshot.adjustmentValue,
+                    "finalPriceNet" to snapshot.finalPriceNet.amountInCents,
+                    "finalPriceGross" to snapshot.finalPriceGross.amountInCents,
+                    "customNote" to snapshot.customNote
+                ))
+            }
+            
+            return VisitServiceItemEntity(
                 id = serviceItem.id.value,
                 visit = visit,
                 serviceId = serviceItem.serviceId?.value,
@@ -289,9 +338,14 @@ class VisitServiceItemEntity(
                 finalPriceNet = serviceItem.finalPriceNet.amountInCents,
                 finalPriceGross = serviceItem.finalPriceGross.amountInCents,
                 status = serviceItem.status,
+                pendingOperation = serviceItem.pendingOperation,
+                confirmedSnapshot = snapshotJson,
                 customNote = serviceItem.customNote,
-                createdAt = serviceItem.createdAt
+                createdAt = serviceItem.createdAt,
+                confirmedAt = serviceItem.confirmedAt,
+                pendingAt = serviceItem.pendingAt
             )
+        }
     }
 }
 

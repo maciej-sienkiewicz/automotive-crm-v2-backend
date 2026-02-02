@@ -240,7 +240,63 @@ data class Visit(
             updatedAt = Instant.now()
         )
     }
+
+    /**
+     * Approve a pending service item
+     * Transitions the service from PENDING to CONFIRMED, or removes it if operation was DELETE
+     */
+    fun approveService(serviceItemId: VisitServiceItemId, updatedBy: UserId): Visit {
+        val updatedItems = serviceItems.mapNotNull { item ->
+            if (item.id == serviceItemId) {
+                item.approve()  // Returns null for DELETE operations, confirmed item for ADD/EDIT
+            } else {
+                item
+            }
+        }
+
+        return copy(
+            serviceItems = updatedItems,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Reject a pending service item
+     * Reverts the change or removes the item depending on the pending operation type
+     */
+    fun rejectService(serviceItemId: VisitServiceItemId, updatedBy: UserId): Visit {
+        val updatedItems = serviceItems.mapNotNull { item ->
+            if (item.id == serviceItemId) {
+                item.reject()  // Returns null for ADD operations, restored item for EDIT/DELETE
+            } else {
+                item
+            }
+        }
+
+        return copy(
+            serviceItems = updatedItems,
+            updatedBy = updatedBy,
+            updatedAt = Instant.now()
+        )
+    }
 }
+
+/**
+ * Snapshot of confirmed service state for rollback capability
+ *
+ * Stores the last confirmed state of a service item to enable
+ * reverting pending changes (edit/delete operations).
+ */
+data class ConfirmedServiceSnapshot(
+    val basePriceNet: Money,
+    val vatRate: VatRate,
+    val adjustmentType: AdjustmentType,
+    val adjustmentValue: Long,
+    val finalPriceNet: Money,
+    val finalPriceGross: Money,
+    val customNote: String?
+)
 
 /**
  * Individual service item within a visit with granular status tracking
@@ -264,11 +320,19 @@ data class VisitServiceItem(
     // Granular status tracking
     val status: VisitServiceStatus,
 
+    // Pending operation tracking
+    val pendingOperation: PendingOperation?,
+
+    // Snapshot of confirmed state (for rollback)
+    val confirmedSnapshot: ConfirmedServiceSnapshot?,
+
     // Optional note
     val customNote: String?,
 
-    // Creation timestamp
-    val createdAt: Instant
+    // Timestamps
+    val createdAt: Instant,
+    val confirmedAt: Instant?,
+    val pendingAt: Instant?
 ) {
     companion object {
         fun createPending(
@@ -294,13 +358,29 @@ data class VisitServiceItem(
                 finalPriceNet = finalNet,
                 finalPriceGross = finalGross,
                 status = VisitServiceStatus.PENDING,
+                pendingOperation = PendingOperation.ADD,
+                confirmedSnapshot = null,
                 customNote = customNote,
-                createdAt = Instant.now()
+                createdAt = Instant.now(),
+                confirmedAt = null,
+                pendingAt = Instant.now()
             )
         }
     }
 
     fun toPending(newBasePriceNet: Money): VisitServiceItem {
+        require(status == VisitServiceStatus.CONFIRMED) { "Only confirmed items can be edited" }
+        
+        val snapshot = ConfirmedServiceSnapshot(
+            basePriceNet = basePriceNet,
+            vatRate = vatRate,
+            adjustmentType = adjustmentType,
+            adjustmentValue = adjustmentValue,
+            finalPriceNet = finalPriceNet,
+            finalPriceGross = finalPriceGross,
+            customNote = customNote
+        )
+        
         val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, vatRate, adjustmentType, adjustmentValue)
         val finalGross = vatRate.calculateGrossAmount(finalNet)
 
@@ -308,7 +388,87 @@ data class VisitServiceItem(
             basePriceNet = newBasePriceNet,
             finalPriceNet = finalNet,
             finalPriceGross = finalGross,
-            status = VisitServiceStatus.PENDING
+            status = VisitServiceStatus.PENDING,
+            pendingOperation = PendingOperation.EDIT,
+            confirmedSnapshot = snapshot,
+            pendingAt = Instant.now()
+        )
+    }
+
+    /**
+     * Approve pending service item
+     * Returns null if operation was DELETE (item should be removed)
+     * Returns confirmed item for ADD and EDIT operations
+     */
+    fun approve(): VisitServiceItem? {
+        require(status == VisitServiceStatus.PENDING) { "Only pending items can be approved" }
+        
+        return when (pendingOperation) {
+            PendingOperation.DELETE -> null  // Remove the item
+            PendingOperation.ADD, PendingOperation.EDIT -> {
+                copy(
+                    status = VisitServiceStatus.CONFIRMED,
+                    pendingOperation = null,
+                    confirmedSnapshot = null,
+                    confirmedAt = Instant.now(),
+                    pendingAt = null
+                )
+            }
+            null -> this  // Should not happen, but handle gracefully
+        }
+    }
+
+    /**
+     * Reject pending service item
+     * Returns null if operation was ADD (item should be removed)
+     * Returns restored item if operation was EDIT or DELETE
+     */
+    fun reject(): VisitServiceItem? {
+        require(status == VisitServiceStatus.PENDING) { "Only pending items can be rejected" }
+        
+        return when (pendingOperation) {
+            PendingOperation.ADD -> null  // Remove the item
+            PendingOperation.EDIT -> {
+                // Restore from snapshot
+                confirmedSnapshot?.let { snapshot ->
+                    copy(
+                        basePriceNet = snapshot.basePriceNet,
+                        vatRate = snapshot.vatRate,
+                        adjustmentType = snapshot.adjustmentType,
+                        adjustmentValue = snapshot.adjustmentValue,
+                        finalPriceNet = snapshot.finalPriceNet,
+                        finalPriceGross = snapshot.finalPriceGross,
+                        customNote = snapshot.customNote,
+                        status = VisitServiceStatus.CONFIRMED,
+                        pendingOperation = null,
+                        confirmedSnapshot = null,
+                        pendingAt = null
+                    )
+                }
+            }
+            PendingOperation.DELETE -> {
+                // Restore the item
+                copy(
+                    status = VisitServiceStatus.CONFIRMED,
+                    pendingOperation = null,
+                    pendingAt = null
+                )
+            }
+            null -> this
+        }
+    }
+
+    /**
+     * Mark confirmed service item for deletion
+     * Sets status to PENDING with DELETE operation
+     */
+    fun markForDeletion(): VisitServiceItem {
+        require(status == VisitServiceStatus.CONFIRMED) { "Only confirmed items can be marked for deletion" }
+        
+        return copy(
+            status = VisitServiceStatus.PENDING,
+            pendingOperation = PendingOperation.DELETE,
+            pendingAt = Instant.now()
         )
     }
 }

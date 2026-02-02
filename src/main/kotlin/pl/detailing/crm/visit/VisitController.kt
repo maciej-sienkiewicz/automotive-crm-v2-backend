@@ -230,7 +230,15 @@ class VisitController(
             note = serviceItem.customNote ?: "",
             status = mapServiceStatus(serviceItem.status),
             finalPriceNet = serviceItem.finalPriceNet.amountInCents,
-            finalPriceGross = serviceItem.finalPriceGross.amountInCents
+            finalPriceGross = serviceItem.finalPriceGross.amountInCents,
+            
+            // Pending operation tracking
+            pendingOperation = serviceItem.pendingOperation?.let { mapPendingOperation(it) },
+            hasPendingChange = serviceItem.pendingOperation != null,
+            
+            // Previous values for EDIT operations
+            previousPriceNet = serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents,
+            previousPriceGross = serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents
         )
     }
 
@@ -272,6 +280,17 @@ class VisitController(
             VisitServiceStatus.APPROVED -> "APPROVED"
             VisitServiceStatus.REJECTED -> "REJECTED"
             VisitServiceStatus.CONFIRMED -> "CONFIRMED"
+        }
+    }
+
+    /**
+     * Map PendingOperation enum to frontend string
+     */
+    private fun mapPendingOperation(operation: PendingOperation): String {
+        return when (operation) {
+            PendingOperation.ADD -> "ADD"
+            PendingOperation.EDIT -> "EDIT"
+            PendingOperation.DELETE -> "DELETE"
         }
     }
 

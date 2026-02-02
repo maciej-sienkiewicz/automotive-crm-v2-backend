@@ -42,12 +42,17 @@ class SaveVisitServicesHandler(
             existingItem.toPending(Money(updated.basePriceNet))
         }
 
-        val deletedIds = payload.deleted.map { VisitServiceItemId(UUID.fromString(it.serviceLineItemId)) }
+        val deletedItems = payload.deleted.map { deleted ->
+            val existingItem = visit.serviceItems.find { it.id.value.toString() == deleted.serviceLineItemId }
+                ?: throw EntityNotFoundException("Service item ${deleted.serviceLineItemId} not found in visit $visitId")
+            
+            existingItem.markForDeletion()
+        }
 
         val updatedVisit = visit.saveServicesChanges(
             added = addedItems,
-            updated = updatedItems,
-            deletedIds = deletedIds,
+            updated = updatedItems + deletedItems,  // Deleted items are now updated items with DELETE operation
+            deletedIds = emptyList(),  // No physical deletion
             updatedBy = userId
         )
 

@@ -153,8 +153,12 @@ class CreateVisitFromReservationHandler(
                     finalPriceNet = lineItem.finalPriceNet,
                     finalPriceGross = lineItem.finalPriceGross,
                     status = VisitServiceStatus.CONFIRMED,
+                    pendingOperation = null,
+                    confirmedSnapshot = null,
                     customNote = lineItem.customNote,
-                    createdAt = Instant.now()
+                    createdAt = Instant.now(),
+                    confirmedAt = Instant.now(),
+                    pendingAt = null
                 )
             }
 
