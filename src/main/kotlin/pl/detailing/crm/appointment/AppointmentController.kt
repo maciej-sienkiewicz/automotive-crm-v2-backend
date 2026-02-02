@@ -158,6 +158,7 @@ class AppointmentController(
             services = request.services.map { service ->
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
+                    serviceName = service.serviceName,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
                     customNote = service.note
@@ -266,6 +267,7 @@ class AppointmentController(
             services = request.services.map { service ->
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
+                    serviceName = service.serviceName,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
                     customNote = service.note

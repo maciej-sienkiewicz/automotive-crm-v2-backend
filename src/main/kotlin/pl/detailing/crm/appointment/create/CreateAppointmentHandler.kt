@@ -75,7 +75,7 @@ class CreateAppointmentHandler(
                 // Custom service without serviceId - use provided data directly
                 AppointmentLineItem.create(
                     serviceId = null,
-                    serviceName = "Custom Service", // Will be overridden by handler logic if needed
+                    serviceName = serviceLineItem.serviceName ?: "Custom Service",
                     basePriceNet = Money.ZERO, // Will be calculated based on adjustment
                     vatRate = VatRate.fromInt(23), // Default VAT rate
                     adjustmentType = serviceLineItem.adjustmentType,

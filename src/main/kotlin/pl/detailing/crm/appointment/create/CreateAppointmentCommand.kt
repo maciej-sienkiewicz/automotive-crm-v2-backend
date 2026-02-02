@@ -64,6 +64,7 @@ sealed class VehicleIdentity {
 
 data class ServiceLineItemCommand(
     val serviceId: ServiceId?,
+    val serviceName: String?,
     val adjustmentType: AdjustmentType,
     val adjustmentValue: Long,
     val customNote: String?
