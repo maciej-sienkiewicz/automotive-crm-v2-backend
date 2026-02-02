@@ -109,7 +109,7 @@ class CreateVisitFromReservationHandler(
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
 
             // Step 5.5: Load services and validate manual price requirements
-            val requestedServiceIds = command.services.map { ServiceId.fromString(it.serviceId) }
+            val requestedServiceIds = command.services.mapNotNull { it.serviceId?.let { id -> ServiceId.fromString(id) } }
             val services = serviceRepository.findActiveByStudioId(command.studioId.value)
                 .filter { it.id in requestedServiceIds.map { id -> id.value } }
                 .map { it.toDomain() }
@@ -117,7 +117,7 @@ class CreateVisitFromReservationHandler(
 
             // Validate that services requiring manual price have explicit price set
             command.services.forEach { serviceReq ->
-                val service = services[ServiceId.fromString(serviceReq.serviceId)]
+                val service = serviceReq.serviceId?.let { services[ServiceId.fromString(it)] }
                 if (service?.requireManualPrice == true) {
                     val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
                     if (adjustmentType != AdjustmentType.SET_NET && adjustmentType != AdjustmentType.SET_GROSS) {
@@ -133,7 +133,7 @@ class CreateVisitFromReservationHandler(
             val serviceItems = command.services.map { serviceReq ->
                 // Calculate prices using AppointmentLineItem logic
                 val lineItem = AppointmentLineItem.create(
-                    serviceId = ServiceId.fromString(serviceReq.serviceId),
+                    serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = serviceReq.serviceName,
                     basePriceNet = Money.fromCents(serviceReq.basePriceNet),
                     vatRate = VatRate.fromInt(serviceReq.vatRate),

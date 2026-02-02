@@ -91,7 +91,7 @@ data class AppointmentSchedule(
  * Individual service line item with price adjustment
  */
 data class AppointmentLineItem(
-    val serviceId: ServiceId,
+    val serviceId: ServiceId?,
     val serviceName: String,
     val basePriceNet: Money,
     val vatRate: VatRate,
@@ -115,7 +115,7 @@ data class AppointmentLineItem(
          * Create a line item by applying price adjustment to base price
          */
         fun create(
-            serviceId: ServiceId,
+            serviceId: ServiceId?,
             serviceName: String,
             basePriceNet: Money,
             vatRate: VatRate,

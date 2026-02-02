@@ -26,7 +26,7 @@ class CreateAppointmentValidationContextBuilder(
         withContext(Dispatchers.IO) {
             // Parallel async queries for all validation data
             val servicesDeferred = async {
-                val serviceIds = command.services.map { it.serviceId.value }
+                val serviceIds = command.services.mapNotNull { it.serviceId?.value }
                 serviceRepository.findActiveByStudioId(command.studioId.value)
                     .filter { it.id in serviceIds }
                     .map { it.toDomain() }
@@ -165,7 +165,7 @@ data class CreateAppointmentValidationContext(
     val appointmentColorExists: Boolean,
     val customerEmailExists: Boolean,
     val customerPhoneExists: Boolean,
-    val requestedServiceIds: List<pl.detailing.crm.shared.ServiceId>,
+    val requestedServiceIds: List<pl.detailing.crm.shared.ServiceId?>,
     val requestedServiceLineItems: List<ServiceLineItemCommand>,
     val schedule: AppointmentSchedule,
     val customerIdentity: CustomerIdentity,

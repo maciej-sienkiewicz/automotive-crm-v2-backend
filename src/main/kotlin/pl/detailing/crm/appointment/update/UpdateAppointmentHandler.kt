@@ -57,24 +57,38 @@ class UpdateAppointmentHandler(
         }
 
         // Step 5: Fetch Services and Create Line Items
+        val requestedServiceIds = command.services.mapNotNull { it.serviceId?.value }
         val services = serviceRepository.findActiveByStudioId(command.studioId.value)
-            .filter { it.id in command.services.map { svc -> svc.serviceId.value } }
+            .filter { it.id in requestedServiceIds }
             .map { it.toDomain() }
             .associateBy { it.id }
 
         val lineItems = command.services.map { serviceLineItem ->
-            val service = services[serviceLineItem.serviceId]
-                ?: throw EntityNotFoundException("Service with ID '${serviceLineItem.serviceId}' not found")
+            if (serviceLineItem.serviceId != null) {
+                val service = services[serviceLineItem.serviceId]
+                    ?: throw EntityNotFoundException("Service with ID '${serviceLineItem.serviceId}' not found")
 
-            AppointmentLineItem.create(
-                serviceId = service.id,
-                serviceName = service.name,
-                basePriceNet = service.basePriceNet,
-                vatRate = service.vatRate,
-                adjustmentType = serviceLineItem.adjustmentType,
-                adjustmentValue = serviceLineItem.adjustmentValue,
-                customNote = serviceLineItem.customNote
-            )
+                AppointmentLineItem.create(
+                    serviceId = service.id,
+                    serviceName = service.name,
+                    basePriceNet = service.basePriceNet,
+                    vatRate = service.vatRate,
+                    adjustmentType = serviceLineItem.adjustmentType,
+                    adjustmentValue = serviceLineItem.adjustmentValue,
+                    customNote = serviceLineItem.customNote
+                )
+            } else {
+                // Custom service without serviceId - use provided data directly
+                AppointmentLineItem.create(
+                    serviceId = null,
+                    serviceName = "Custom Service",
+                    basePriceNet = Money.ZERO,
+                    vatRate = VatRate.fromInt(23),
+                    adjustmentType = serviceLineItem.adjustmentType,
+                    adjustmentValue = serviceLineItem.adjustmentValue,
+                    customNote = serviceLineItem.customNote
+                )
+            }
         }
 
         // Step 6: Update Appointment Entity

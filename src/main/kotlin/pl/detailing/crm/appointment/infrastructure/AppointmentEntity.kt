@@ -139,8 +139,8 @@ class AppointmentLineItemEntity(
     @JoinColumn(name = "appointment_id", nullable = false)
     var appointment: AppointmentEntity,
 
-    @Column(name = "service_id", nullable = false, columnDefinition = "uuid")
-    var serviceId: UUID,
+    @Column(name = "service_id", nullable = true, columnDefinition = "uuid")
+    var serviceId: UUID?,
 
     @Column(name = "service_name", nullable = false, length = 255)
     var serviceName: String,
@@ -168,7 +168,7 @@ class AppointmentLineItemEntity(
     var customNote: String?
 ) {
     fun toDomain(): AppointmentLineItem = AppointmentLineItem(
-        serviceId = ServiceId(serviceId),
+        serviceId = serviceId?.let { ServiceId(it) },
         serviceName = serviceName,
         basePriceNet = Money(basePriceNet),
         vatRate = VatRate.fromInt(vatRate),
@@ -183,7 +183,7 @@ class AppointmentLineItemEntity(
         fun fromDomain(lineItem: AppointmentLineItem, appointment: AppointmentEntity): AppointmentLineItemEntity =
             AppointmentLineItemEntity(
                 appointment = appointment,
-                serviceId = lineItem.serviceId.value,
+                serviceId = lineItem.serviceId?.value,
                 serviceName = lineItem.serviceName,
                 basePriceNet = lineItem.basePriceNet.amountInCents,
                 vatRate = lineItem.vatRate.rate,

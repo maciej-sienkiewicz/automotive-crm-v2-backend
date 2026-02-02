@@ -6,7 +6,6 @@ import pl.detailing.crm.appointment.create.validators.*
 @Component
 class CreateAppointmentValidatorComposite(
     private val contextBuilder: CreateAppointmentValidationContextBuilder,
-    private val serviceAvailabilityValidator: ServiceAvailabilityValidator,
     private val customerExistenceValidator: CustomerExistenceValidator,
     private val vehicleExistenceValidator: VehicleExistenceValidator,
     private val appointmentColorValidator: AppointmentColorValidator,
@@ -19,7 +18,6 @@ class CreateAppointmentValidatorComposite(
 
         // Run validators in order
         customerContactInfoValidator.validate(context)
-        serviceAvailabilityValidator.validate(context)
         manualPriceRequiredValidator.validate(context)
         appointmentColorValidator.validate(context)
         customerExistenceValidator.validate(context)
