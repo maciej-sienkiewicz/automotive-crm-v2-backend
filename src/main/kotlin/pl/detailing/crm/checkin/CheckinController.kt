@@ -31,16 +31,19 @@ class CheckinController(
         }
 
         val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
+            // If contactPerson is provided, automatically set isHandedOffByOtherPerson to true
+            val contactPerson = handoffReq.contactPerson?.let { contactReq ->
+                pl.detailing.crm.visit.domain.ContactPerson(
+                    firstName = contactReq.firstName,
+                    lastName = contactReq.lastName,
+                    phone = contactReq.phone,
+                    email = contactReq.email
+                )
+            }
+
             pl.detailing.crm.visit.domain.VehicleHandoff(
-                isHandedOffByOtherPerson = handoffReq.isHandedOffByOtherPerson,
-                contactPerson = handoffReq.contactPerson?.let { contactReq ->
-                    pl.detailing.crm.visit.domain.ContactPerson(
-                        firstName = contactReq.firstName,
-                        lastName = contactReq.lastName,
-                        phone = contactReq.phone,
-                        email = contactReq.email
-                    )
-                }
+                isHandedOffByOtherPerson = contactPerson != null || handoffReq.isHandedOffByOtherPerson,
+                contactPerson = contactPerson
             )
         }
 
@@ -219,7 +222,7 @@ data class DepositItemRequest(
 )
 
 data class VehicleHandoffRequest(
-    val isHandedOffByOtherPerson: Boolean,
+    val isHandedOffByOtherPerson: Boolean = false,
     val contactPerson: ContactPersonRequest?
 )
 

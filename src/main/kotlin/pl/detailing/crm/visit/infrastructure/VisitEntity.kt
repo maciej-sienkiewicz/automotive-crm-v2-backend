@@ -170,20 +170,21 @@ class VisitEntity(
         inspectionNotes = inspectionNotes,
         technicalNotes = technicalNotes,
         vehicleHandoff = if (isHandedOffByOtherPerson != null) {
+            val contactPerson = if (contactPersonFirstName != null &&
+                contactPersonLastName != null &&
+                contactPersonPhone != null &&
+                contactPersonEmail != null) {
+                pl.detailing.crm.visit.domain.ContactPerson(
+                    firstName = contactPersonFirstName!!,
+                    lastName = contactPersonLastName!!,
+                    phone = contactPersonPhone!!,
+                    email = contactPersonEmail!!
+                )
+            } else null
+
             pl.detailing.crm.visit.domain.VehicleHandoff(
-                isHandedOffByOtherPerson = isHandedOffByOtherPerson!!,
-                contactPerson = if (isHandedOffByOtherPerson == true &&
-                    contactPersonFirstName != null &&
-                    contactPersonLastName != null &&
-                    contactPersonPhone != null &&
-                    contactPersonEmail != null) {
-                    pl.detailing.crm.visit.domain.ContactPerson(
-                        firstName = contactPersonFirstName!!,
-                        lastName = contactPersonLastName!!,
-                        phone = contactPersonPhone!!,
-                        email = contactPersonEmail!!
-                    )
-                } else null
+                isHandedOffByOtherPerson = contactPerson != null || isHandedOffByOtherPerson!!,
+                contactPerson = contactPerson
             )
         } else null,
         serviceItems = serviceItems.map { it.toDomain() },
