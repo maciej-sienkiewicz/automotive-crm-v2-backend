@@ -66,7 +66,7 @@ data class ServiceLineItemCommand(
     val serviceId: ServiceId?,
     val serviceName: String?,
     val adjustmentType: AdjustmentType,
-    val adjustmentValue: Long,
+    val adjustmentValue: Double,  // Double to support decimal percentages
     val customNote: String?
 )
 
