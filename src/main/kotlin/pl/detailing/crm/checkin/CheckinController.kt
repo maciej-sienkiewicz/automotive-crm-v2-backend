@@ -252,7 +252,7 @@ data class ServiceLineItemRequest(
 
 data class AdjustmentRequest(
     val type: String,
-    val value: Long
+    val value: Double  // Double to support decimal percentages like -49.19
 )
 
 data class ReservationToVisitResponse(

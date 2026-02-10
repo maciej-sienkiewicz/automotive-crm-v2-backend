@@ -24,13 +24,24 @@ class SaveVisitServicesHandler(
         val visit = visitEntity.toDomain()
 
         val addedItems = payload.added.map { added ->
+            val adjustmentType = added.adjustment?.type ?: pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT
+            val adjustmentValue = added.adjustment?.value ?: 0.0
+
+            // Convert adjustment value based on type:
+            // - For PERCENT: convert to basis points (multiply by 100) to preserve decimals
+            // - For others: round to Long (cents)
+            val adjustmentValueLong = when (adjustmentType) {
+                pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT -> (adjustmentValue * 100).toLong()
+                else -> adjustmentValue.toLong()
+            }
+
             VisitServiceItem.createPending(
                 serviceId = added.serviceId?.let { ServiceId.fromString(it) },
                 serviceName = added.serviceName,
                 basePriceNet = Money(added.basePriceNet),
                 vatRate = VatRate.fromInt(added.vatRate),
-                adjustmentType = added.adjustment?.type ?: pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT,
-                adjustmentValue = added.adjustment?.value ?: 0L,
+                adjustmentType = adjustmentType,
+                adjustmentValue = adjustmentValueLong,
                 customNote = added.note
             )
         }

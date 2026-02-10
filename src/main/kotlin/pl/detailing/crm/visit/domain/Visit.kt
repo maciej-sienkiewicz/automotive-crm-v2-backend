@@ -491,8 +491,9 @@ object PriceCalculator {
     ): Money {
         return when (adjustmentType) {
             AdjustmentType.PERCENT -> {
-                // adjustmentValue is percentage (e.g., -10 for 10% discount, +20 for 20% markup)
-                val multiplier = 1.0 + (adjustmentValue.toDouble() / 100.0)
+                // adjustmentValue is in basis points (hundredths of percent)
+                // e.g., -4919 for -49.19% discount, +2050 for +20.50% markup
+                val multiplier = 1.0 + (adjustmentValue.toDouble() / 10000.0)
                 val calculatedNet = (basePriceNet.amountInCents * multiplier).toLong()
                 Money(calculatedNet.coerceAtLeast(0))
             }

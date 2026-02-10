@@ -20,7 +20,7 @@ data class AddedService(
 
 data class ServiceAdjustment(
     val type: AdjustmentType,
-    val value: Long
+    val value: Double  // Double to support decimal percentages like -49.19
 )
 
 data class UpdatedService(

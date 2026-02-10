@@ -77,7 +77,7 @@ data class ServiceLineItemRequest(
 
 data class PriceAdjustmentRequest(
     val type: AdjustmentType,
-    val value: Long
+    val value: Double  // Double to support decimal percentages like -49.19
 )
 
 data class ScheduleRequest(

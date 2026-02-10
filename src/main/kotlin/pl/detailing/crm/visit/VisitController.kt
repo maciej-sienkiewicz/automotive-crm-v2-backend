@@ -230,6 +230,14 @@ class VisitController(
      * Map VisitServiceItem to ServiceLineItemResponse
      */
     private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse {
+        // Convert adjustment value based on type:
+        // - For PERCENT: convert from basis points back to percentage (divide by 100)
+        // - For others: keep as-is (in cents)
+        val adjustmentValue = when (serviceItem.adjustmentType) {
+            AdjustmentType.PERCENT -> serviceItem.adjustmentValue / 100.0 // Convert from basis points to percentage
+            else -> serviceItem.adjustmentValue.toDouble() // Keep in cents
+        }
+
         return ServiceLineItemResponse(
             id = serviceItem.id.value.toString(),
             serviceId = serviceItem.serviceId?.value?.toString(),
@@ -238,7 +246,7 @@ class VisitController(
             vatRate = serviceItem.vatRate.rate,
             adjustment = AdjustmentResponse(
                 type = mapAdjustmentType(serviceItem.adjustmentType),
-                value = serviceItem.adjustmentValue
+                value = adjustmentValue
             ),
             note = serviceItem.customNote ?: "",
             status = mapServiceStatus(serviceItem.status),

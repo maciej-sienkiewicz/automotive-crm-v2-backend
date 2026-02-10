@@ -64,6 +64,14 @@ class UpdateAppointmentHandler(
             .associateBy { it.id }
 
         val lineItems = command.services.map { serviceLineItem ->
+            // Convert adjustment value based on type:
+            // - For PERCENT: convert to basis points (multiply by 100) to preserve decimals
+            // - For others: round to Long (cents)
+            val adjustmentValue = when (serviceLineItem.adjustmentType) {
+                AdjustmentType.PERCENT -> (serviceLineItem.adjustmentValue * 100).toLong()
+                else -> serviceLineItem.adjustmentValue.toLong()
+            }
+
             if (serviceLineItem.serviceId != null) {
                 val service = services[serviceLineItem.serviceId]
                     ?: throw EntityNotFoundException("Service with ID '${serviceLineItem.serviceId}' not found")
@@ -74,7 +82,7 @@ class UpdateAppointmentHandler(
                     basePriceNet = service.basePriceNet,
                     vatRate = service.vatRate,
                     adjustmentType = serviceLineItem.adjustmentType,
-                    adjustmentValue = serviceLineItem.adjustmentValue,
+                    adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote
                 )
             } else {
@@ -85,7 +93,7 @@ class UpdateAppointmentHandler(
                     basePriceNet = Money.ZERO,
                     vatRate = VatRate.fromInt(23),
                     adjustmentType = serviceLineItem.adjustmentType,
-                    adjustmentValue = serviceLineItem.adjustmentValue,
+                    adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote
                 )
             }

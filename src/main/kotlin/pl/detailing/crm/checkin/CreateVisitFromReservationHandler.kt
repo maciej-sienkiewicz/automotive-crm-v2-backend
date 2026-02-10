@@ -131,14 +131,24 @@ class CreateVisitFromReservationHandler(
 
             // Step 6: Map services to visit service items
             val serviceItems = command.services.map { serviceReq ->
+                val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
+
+                // Convert adjustment value based on type:
+                // - For PERCENT: convert to basis points (multiply by 100) to preserve decimals
+                // - For others: round to Long (cents)
+                val adjustmentValue = when (adjustmentType) {
+                    AdjustmentType.PERCENT -> (serviceReq.adjustment.value * 100).toLong() // Convert to basis points
+                    else -> serviceReq.adjustment.value.toLong() // Keep in cents
+                }
+
                 // Calculate prices using AppointmentLineItem logic
                 val lineItem = AppointmentLineItem.create(
                     serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = serviceReq.serviceName,
                     basePriceNet = Money.fromCents(serviceReq.basePriceNet),
                     vatRate = VatRate.fromInt(serviceReq.vatRate),
-                    adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type),
-                    adjustmentValue = serviceReq.adjustment.value,
+                    adjustmentType = adjustmentType,
+                    adjustmentValue = adjustmentValue,
                     customNote = serviceReq.note
                 )
 

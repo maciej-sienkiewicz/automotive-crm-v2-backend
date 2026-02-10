@@ -82,6 +82,14 @@ class ListAppointmentsHandler(
                         )
                     },
                     services = appointment.lineItems.map { lineItem ->
+                        // Convert adjustment value based on type:
+                        // - For PERCENT: convert from basis points back to percentage (divide by 100)
+                        // - For others: keep as-is (in cents)
+                        val adjustmentValue = when (lineItem.adjustmentType) {
+                            AdjustmentType.PERCENT -> lineItem.adjustmentValue / 100.0
+                            else -> lineItem.adjustmentValue.toDouble()
+                        }
+
                         ServiceLineItemInfo(
                             id = lineItem.id.toString(),
                             serviceId = lineItem.serviceId.toString(),
@@ -90,7 +98,7 @@ class ListAppointmentsHandler(
                             vatRate = lineItem.vatRate,
                             adjustment = PriceAdjustmentInfo(
                                 type = lineItem.adjustmentType,
-                                value = lineItem.adjustmentValue
+                                value = adjustmentValue
                             ),
                             note = lineItem.customNote,
                             finalPriceNet = lineItem.finalPriceNet,
@@ -198,7 +206,7 @@ data class ServiceLineItemInfo(
 
 data class PriceAdjustmentInfo(
     val type: AdjustmentType,
-    val value: Long
+    val value: Double  // Double to support decimal percentages like -49.19
 )
 
 data class ScheduleInfo(
