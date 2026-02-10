@@ -104,6 +104,22 @@ class VisitEntity(
     @Column(name = "technical_notes", columnDefinition = "TEXT")
     var technicalNotes: String?,
 
+    // Vehicle handoff information
+    @Column(name = "is_handed_off_by_other_person", nullable = true)
+    var isHandedOffByOtherPerson: Boolean?,
+
+    @Column(name = "contact_person_first_name", length = 100)
+    var contactPersonFirstName: String?,
+
+    @Column(name = "contact_person_last_name", length = 100)
+    var contactPersonLastName: String?,
+
+    @Column(name = "contact_person_phone", length = 20)
+    var contactPersonPhone: String?,
+
+    @Column(name = "contact_person_email", length = 255)
+    var contactPersonEmail: String?,
+
     // Service items (one-to-many)
     @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     var serviceItems: MutableList<VisitServiceItemEntity> = mutableListOf(),
@@ -153,6 +169,23 @@ class VisitEntity(
         documentsHandedOver = documentsHandedOver,
         inspectionNotes = inspectionNotes,
         technicalNotes = technicalNotes,
+        vehicleHandoff = if (isHandedOffByOtherPerson != null) {
+            pl.detailing.crm.visit.domain.VehicleHandoff(
+                isHandedOffByOtherPerson = isHandedOffByOtherPerson!!,
+                contactPerson = if (isHandedOffByOtherPerson == true &&
+                    contactPersonFirstName != null &&
+                    contactPersonLastName != null &&
+                    contactPersonPhone != null &&
+                    contactPersonEmail != null) {
+                    pl.detailing.crm.visit.domain.ContactPerson(
+                        firstName = contactPersonFirstName!!,
+                        lastName = contactPersonLastName!!,
+                        phone = contactPersonPhone!!,
+                        email = contactPersonEmail!!
+                    )
+                } else null
+            )
+        } else null,
         serviceItems = serviceItems.map { it.toDomain() },
         photos = photos.map { it.toDomain() },
         damageMapFileId = damageMapFileId,
@@ -188,6 +221,11 @@ class VisitEntity(
                 documentsHandedOver = visit.documentsHandedOver,
                 inspectionNotes = visit.inspectionNotes,
                 technicalNotes = visit.technicalNotes,
+                isHandedOffByOtherPerson = visit.vehicleHandoff?.isHandedOffByOtherPerson,
+                contactPersonFirstName = visit.vehicleHandoff?.contactPerson?.firstName,
+                contactPersonLastName = visit.vehicleHandoff?.contactPerson?.lastName,
+                contactPersonPhone = visit.vehicleHandoff?.contactPerson?.phone,
+                contactPersonEmail = visit.vehicleHandoff?.contactPerson?.email,
                 damageMapFileId = visit.damageMapFileId,
                 createdBy = visit.createdBy.value,
                 updatedBy = visit.updatedBy.value,

@@ -35,6 +35,7 @@ data class VisitResponse(
     val mileageAtArrival: Long?,
     val keysHandedOver: Boolean,
     val documentsHandedOver: Boolean,
+    val vehicleHandoff: VehicleHandoffResponse?,
     val technicalNotes: String?,
     val createdAt: Instant,
     val updatedAt: Instant
@@ -179,4 +180,22 @@ data class AppointmentColorResponse(
     val id: String,
     val name: String,
     val hexColor: String
+)
+
+/**
+ * Vehicle handoff response
+ */
+data class VehicleHandoffResponse(
+    val isHandedOffByOtherPerson: Boolean,
+    val contactPerson: ContactPersonResponse?
+)
+
+/**
+ * Contact person response
+ */
+data class ContactPersonResponse(
+    val firstName: String,
+    val lastName: String,
+    val phone: String,
+    val email: String
 )

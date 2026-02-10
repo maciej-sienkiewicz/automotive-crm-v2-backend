@@ -169,6 +169,19 @@ class VisitController(
             mileageAtArrival = visit.mileageAtArrival,
             keysHandedOver = visit.keysHandedOver,
             documentsHandedOver = visit.documentsHandedOver,
+            vehicleHandoff = visit.vehicleHandoff?.let { handoff ->
+                VehicleHandoffResponse(
+                    isHandedOffByOtherPerson = handoff.isHandedOffByOtherPerson,
+                    contactPerson = handoff.contactPerson?.let { contact ->
+                        ContactPersonResponse(
+                            firstName = contact.firstName,
+                            lastName = contact.lastName,
+                            phone = contact.phone,
+                            email = contact.email
+                        )
+                    }
+                )
+            },
             technicalNotes = visit.technicalNotes,
             createdAt = visit.createdAt,
             updatedAt = visit.updatedAt

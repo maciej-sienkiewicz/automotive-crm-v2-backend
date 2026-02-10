@@ -30,6 +30,20 @@ class CheckinController(
             throw ForbiddenException("Only OWNER and MANAGER can perform vehicle check-in")
         }
 
+        val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
+            pl.detailing.crm.visit.domain.VehicleHandoff(
+                isHandedOffByOtherPerson = handoffReq.isHandedOffByOtherPerson,
+                contactPerson = handoffReq.contactPerson?.let { contactReq ->
+                    pl.detailing.crm.visit.domain.ContactPerson(
+                        firstName = contactReq.firstName,
+                        lastName = contactReq.lastName,
+                        phone = contactReq.phone,
+                        email = contactReq.email
+                    )
+                }
+            )
+        }
+
         val command = ReservationToVisitCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -100,6 +114,7 @@ class CheckinController(
                 }
             },
             technicalState = request.technicalState,
+            vehicleHandoff = vehicleHandoff,
             photoIds = request.photoIds,
             damagePoints = request.damagePoints?.map { damagePointReq ->
                 DamagePoint(
@@ -128,6 +143,7 @@ data class ReservationToVisitRequest(
     val customerAlias: String?,
     val vehicle: VehicleRequest,
     val technicalState: TechnicalStateRequest,
+    val vehicleHandoff: VehicleHandoffRequest?,
     val photoIds: List<String>,
     val damagePoints: List<DamagePointRequest>?,
     val services: List<ServiceLineItemRequest>,
@@ -202,6 +218,18 @@ data class DepositItemRequest(
     val registrationDocument: Boolean
 )
 
+data class VehicleHandoffRequest(
+    val isHandedOffByOtherPerson: Boolean,
+    val contactPerson: ContactPersonRequest?
+)
+
+data class ContactPersonRequest(
+    val firstName: String,
+    val lastName: String,
+    val phone: String,
+    val email: String
+)
+
 data class DamagePointRequest(
     val id: Int,
     val x: Double,
@@ -237,6 +265,7 @@ data class ReservationToVisitCommand(
     val customerAlias: String?,
     val vehicle: VehicleData,
     val technicalState: TechnicalStateRequest,
+    val vehicleHandoff: pl.detailing.crm.visit.domain.VehicleHandoff?,
     val photoIds: List<String>,
     val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,

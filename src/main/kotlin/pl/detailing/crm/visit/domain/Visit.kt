@@ -41,6 +41,9 @@ data class Visit(
     val inspectionNotes: String?,
     val technicalNotes: String?,
 
+    // Vehicle handoff information
+    val vehicleHandoff: VehicleHandoff?,
+
     // Service items
     val serviceItems: List<VisitServiceItem>,
 
@@ -562,3 +565,32 @@ data class VisitDocument(
     val uploadedByName: String,
     val category: String?
 )
+
+/**
+ * Contact person information for vehicle handoff
+ */
+data class ContactPerson(
+    val firstName: String,
+    val lastName: String,
+    val phone: String,
+    val email: String
+)
+
+/**
+ * Vehicle handoff information
+ * Tracks whether the vehicle was handed off by someone other than the primary customer
+ */
+data class VehicleHandoff(
+    val isHandedOffByOtherPerson: Boolean,
+    val contactPerson: ContactPerson?
+) {
+    companion object {
+        /**
+         * Create a default handoff (customer hands off their own vehicle)
+         */
+        fun customerHandoff(): VehicleHandoff = VehicleHandoff(
+            isHandedOffByOtherPerson = false,
+            contactPerson = null
+        )
+    }
+}

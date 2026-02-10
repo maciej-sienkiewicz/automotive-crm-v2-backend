@@ -192,6 +192,7 @@ class CreateVisitFromReservationHandler(
                     .joinToString("\n")
                     .ifBlank { null },
                 technicalNotes = null,
+                vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
                 photos = emptyList(), // Photos will be added separately
                 damageMapFileId = null, // Will be set after generating damage map
