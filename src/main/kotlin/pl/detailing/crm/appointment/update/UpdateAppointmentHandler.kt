@@ -90,8 +90,8 @@ class UpdateAppointmentHandler(
                 AppointmentLineItem.create(
                     serviceId = null,
                     serviceName = serviceLineItem.serviceName ?: "Custom Service",
-                    basePriceNet = Money.ZERO,
-                    vatRate = VatRate.fromInt(23),
+                    basePriceNet = Money.fromCents(serviceLineItem.basePriceNet),
+                    vatRate = VatRate.fromInt(serviceLineItem.vatRate),
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote

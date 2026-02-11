@@ -84,8 +84,8 @@ class CreateAppointmentHandler(
                 AppointmentLineItem.create(
                     serviceId = null,
                     serviceName = serviceLineItem.serviceName ?: "Custom Service",
-                    basePriceNet = Money.ZERO, // Will be calculated based on adjustment
-                    vatRate = VatRate.fromInt(23), // Default VAT rate
+                    basePriceNet = Money.fromCents(serviceLineItem.basePriceNet), // Will be calculated based on adjustment
+                    vatRate = VatRate.fromInt(serviceLineItem.vatRate), // Default VAT rate
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote

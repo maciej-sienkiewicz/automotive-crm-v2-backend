@@ -65,6 +65,8 @@ sealed class VehicleIdentity {
 data class ServiceLineItemCommand(
     val serviceId: ServiceId?,
     val serviceName: String?,
+    val basePriceNet: Long,  // Base price in cents
+    val vatRate: Int,  // VAT rate percentage
     val adjustmentType: AdjustmentType,
     val adjustmentValue: Double,  // Double to support decimal percentages
     val customNote: String?

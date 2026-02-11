@@ -159,6 +159,8 @@ class AppointmentController(
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = service.serviceName,
+                    basePriceNet = service.basePriceNet,
+                    vatRate = service.vatRate,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
                     customNote = service.note
@@ -268,6 +270,8 @@ class AppointmentController(
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = service.serviceName,
+                    basePriceNet = service.basePriceNet,
+                    vatRate = service.vatRate,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
                     customNote = service.note
