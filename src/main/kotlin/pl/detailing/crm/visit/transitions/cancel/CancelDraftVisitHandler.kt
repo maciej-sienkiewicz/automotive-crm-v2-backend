@@ -44,12 +44,10 @@ class CancelDraftVisitHandler(
                 command.studioId.value
             ) ?: throw EntityNotFoundException("Visit not found")
 
-            val visit = visitEntity.toDomain()
-
-            // Validate visit is in DRAFT status
-            if (visit.status != VisitStatus.DRAFT) {
+            // Validate visit is in DRAFT status (check directly on entity to avoid lazy loading issues)
+            if (visitEntity.status != VisitStatus.DRAFT) {
                 throw ValidationException(
-                    "Only DRAFT visits can be cancelled. Current status: ${visit.status}. " +
+                    "Only DRAFT visits can be cancelled. Current status: ${visitEntity.status}. " +
                     "To cancel a confirmed visit, use the rejection flow instead."
                 )
             }
@@ -86,7 +84,7 @@ class CancelDraftVisitHandler(
             }
 
             // Delete damage map from S3 if exists
-            visit.damageMapFileId?.let { s3Key ->
+            visitEntity.damageMapFileId?.let { s3Key ->
                 try {
                     s3DamageMapStorageService.deleteFile(s3Key)
                 } catch (e: Exception) {
