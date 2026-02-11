@@ -35,11 +35,9 @@ class ConfirmVisitHandler(
                 command.studioId.value
             ) ?: throw EntityNotFoundException("Visit not found")
 
-            val visit = visitEntity.toDomain()
-
-            // Validate visit is in DRAFT status
-            if (visit.status != VisitStatus.DRAFT) {
-                throw ValidationException("Only DRAFT visits can be confirmed. Current status: ${visit.status}")
+            // Validate visit is in DRAFT status (check directly on entity to avoid lazy loading issues)
+            if (visitEntity.status != VisitStatus.DRAFT) {
+                throw ValidationException("Only DRAFT visits can be confirmed. Current status: ${visitEntity.status}")
             }
 
             // Check if all mandatory protocols are signed
@@ -66,9 +64,9 @@ class ConfirmVisitHandler(
             visitRepository.save(visitEntity)
 
             // Update appointment status to CONVERTED
-            if (visit.appointmentId != null) {
+            if (visitEntity.appointmentId != null) {
                 val appointmentEntity = appointmentRepository.findByIdAndStudioId(
-                    visit.appointmentId.value,
+                    visitEntity.appointmentId!!,
                     command.studioId.value
                 )
                 if (appointmentEntity != null) {
