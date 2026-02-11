@@ -13,8 +13,8 @@ object DefaultProtocolFieldMappings {
      * The order of fields matches the expected order in the PDF form.
      */
     fun getDefaultMappings(): Map<String, CrmDataKey> = linkedMapOf(
-        "brand" to CrmDataKey.VEHICLE_BRAND_MODEL,
-        "model" to CrmDataKey.VEHICLE_BRAND_MODEL,
+        "brand" to CrmDataKey.VEHICLE_BRAND,
+        "model" to CrmDataKey.VEHICLE_MODEL,
         "licenseplate" to CrmDataKey.VEHICLE_PLATE,
         "mileage" to CrmDataKey.VISIT_MILEAGE,
         "services" to CrmDataKey.SERVICES_LIST,
@@ -22,8 +22,8 @@ object DefaultProtocolFieldMappings {
         "companyname" to CrmDataKey.STUDIO_NAME,
         "phonenumber" to CrmDataKey.CUSTOMER_PHONE,
         "email" to CrmDataKey.CUSTOMER_EMAIL,
-        "tax" to CrmDataKey.TOTAL_VAT_AMOUNT,
-        "date" to CrmDataKey.VISIT_DATE,
+        "tax" to CrmDataKey.CUSTOMER_COMPANY_NIP,
+        "date" to CrmDataKey.CURRENT_DATETIME,
         "price" to CrmDataKey.TOTAL_GROSS_AMOUNT
     )
 }

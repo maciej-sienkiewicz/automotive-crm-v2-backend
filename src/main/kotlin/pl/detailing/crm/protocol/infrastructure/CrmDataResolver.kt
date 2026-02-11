@@ -30,7 +30,7 @@ class CrmDataResolver(
 
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm")
     }
 
     /**
@@ -53,6 +53,8 @@ class CrmDataResolver(
             buildMap {
                 // Vehicle data (from visit snapshot)
                 put(CrmDataKey.VEHICLE_PLATE, visit.licensePlateSnapshot ?: "")
+                put(CrmDataKey.VEHICLE_BRAND, visit.brandSnapshot)
+                put(CrmDataKey.VEHICLE_MODEL, visit.modelSnapshot)
                 put(CrmDataKey.VEHICLE_BRAND_MODEL, "${visit.brandSnapshot} ${visit.modelSnapshot}")
                 put(CrmDataKey.VEHICLE_COLOR, visit.colorSnapshot ?: "")
                 put(CrmDataKey.VEHICLE_YEAR, visit.yearOfProductionSnapshot?.toString() ?: "")
@@ -62,6 +64,7 @@ class CrmDataResolver(
                     put(CrmDataKey.CUSTOMER_FULL_NAME, "${it.firstName} ${it.lastName}")
                     put(CrmDataKey.CUSTOMER_PHONE, it.phone ?: "")
                     put(CrmDataKey.CUSTOMER_EMAIL, it.email ?: "")
+                    put(CrmDataKey.CUSTOMER_COMPANY_NIP, it.companyNip ?: "")
                 }
 
                 // Visit context
@@ -79,11 +82,17 @@ class CrmDataResolver(
                 put(CrmDataKey.TOTAL_GROSS_AMOUNT, formatMoney(totalGross.amountInCents))
                 put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents))
 
-                // Services list
+                // Services list - comma-separated with notes in parentheses
                 val servicesList = visitDomain.serviceItems
                     .filter { it.status == pl.detailing.crm.shared.VisitServiceStatus.CONFIRMED ||
                              it.status == pl.detailing.crm.shared.VisitServiceStatus.APPROVED }
-                    .joinToString("\n") { "• ${it.serviceName}" }
+                    .joinToString(", ") { service ->
+                        if (service.customNote.isNullOrBlank()) {
+                            service.serviceName
+                        } else {
+                            "${service.serviceName} (${service.customNote})"
+                        }
+                    }
                 put(CrmDataKey.SERVICES_LIST, servicesList)
 
                 // Studio/Company data

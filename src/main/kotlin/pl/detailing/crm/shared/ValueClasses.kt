@@ -490,6 +490,8 @@ enum class VisitProtocolStatus {
 enum class CrmDataKey(val description: String) {
     // Vehicle data
     VEHICLE_PLATE("Vehicle license plate"),
+    VEHICLE_BRAND("Vehicle brand"),
+    VEHICLE_MODEL("Vehicle model"),
     VEHICLE_BRAND_MODEL("Vehicle brand and model"),
     VEHICLE_COLOR("Vehicle color"),
     VEHICLE_YEAR("Vehicle year of production"),
@@ -499,6 +501,7 @@ enum class CrmDataKey(val description: String) {
     CUSTOMER_FULL_NAME("Customer full name"),
     CUSTOMER_PHONE("Customer phone number"),
     CUSTOMER_EMAIL("Customer email address"),
+    CUSTOMER_COMPANY_NIP("Customer company NIP/Tax ID"),
 
     // Visit context
     VISIT_MILEAGE("Vehicle mileage at arrival"),

@@ -87,6 +87,7 @@ data class VisitProtocolResponse(
     val isSigned: Boolean,
     val signedAt: String?,
     val signedBy: String?,
+    val filledPdfUrl: String?,
     val signatureUrl: String?,
     val notes: String?,
     val createdAt: String,

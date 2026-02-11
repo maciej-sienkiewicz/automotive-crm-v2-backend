@@ -325,6 +325,10 @@ class ProtocolController(
             studioId.value
         )?.toDomain()
 
+        val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
+            s3StorageService.generateDownloadUrl(s3Key)
+        }
+
         val signatureUrl = protocol.signedPdfS3Key?.let { s3Key ->
             s3StorageService.generateDownloadUrl(s3Key)
         }
@@ -339,6 +343,7 @@ class ProtocolController(
             isSigned = protocol.status == VisitProtocolStatus.SIGNED,
             signedAt = protocol.signedAt?.toString(),
             signedBy = protocol.signedBy,
+            filledPdfUrl = filledPdfUrl,
             signatureUrl = signatureUrl,
             notes = protocol.notes,
             createdAt = protocol.createdAt.toString(),
