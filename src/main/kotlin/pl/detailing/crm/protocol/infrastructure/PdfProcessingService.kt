@@ -103,6 +103,7 @@ class PdfProcessingService(
 
     /**
      * Fill PDF form fields with provided data.
+     * Makes all fields read-only (flattened) EXCEPT the signature field.
      */
     private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
@@ -125,7 +126,16 @@ class PdfProcessingService(
                         }
                     } catch (e: Exception) {
                         // Log warning but continue processing other fields
-                        println("Warning: Could not set value for field '$fieldName': ${e.message}")
+                        logger.warn("Warning: Could not set value for field '$fieldName': ${e.message}")
+                    }
+                }
+
+                // Make all fields read-only EXCEPT the signature field
+                // This "flattens" them by making them non-editable
+                acroForm.fields.forEach { field ->
+                    val fieldName = field.fullyQualifiedName
+                    if (fieldName != "signature") {
+                        field.isReadOnly = true
                     }
                 }
 

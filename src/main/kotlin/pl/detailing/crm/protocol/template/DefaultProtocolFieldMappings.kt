@@ -24,6 +24,8 @@ object DefaultProtocolFieldMappings {
         "email" to CrmDataKey.CUSTOMER_EMAIL,
         "tax" to CrmDataKey.CUSTOMER_COMPANY_NIP,
         "date" to CrmDataKey.CURRENT_DATETIME,
-        "price" to CrmDataKey.TOTAL_GROSS_AMOUNT
+        "price" to CrmDataKey.TOTAL_GROSS_AMOUNT,
+        "keys" to CrmDataKey.VEHICLE_KEYS_RECEIVED,
+        "documents" to CrmDataKey.VEHICLE_DOCUMENTS_RECEIVED
     )
 }

@@ -512,6 +512,10 @@ enum class CrmDataKey(val description: String) {
     TOTAL_GROSS_AMOUNT("Total gross amount"),
     TOTAL_VAT_AMOUNT("Total VAT amount"),
 
+    // Checkin/Checkout items
+    VEHICLE_KEYS_RECEIVED("Vehicle keys received (checkbox)"),
+    VEHICLE_DOCUMENTS_RECEIVED("Vehicle documents received (checkbox)"),
+
     // Services
     SERVICES_LIST("Formatted list of approved services"),
 

@@ -120,6 +120,10 @@ class CrmDataResolver(
                 val now = Instant.now()
                 put(CrmDataKey.CURRENT_DATE, formatDate(now))
                 put(CrmDataKey.CURRENT_DATETIME, formatDateTime(now))
+
+                // Checkin/Checkout checkboxes - leave empty (unchecked) for manual completion
+                put(CrmDataKey.VEHICLE_KEYS_RECEIVED, "")
+                put(CrmDataKey.VEHICLE_DOCUMENTS_RECEIVED, "")
             }
         }
 
