@@ -171,7 +171,8 @@ value class VisitServiceItemId(val value: UUID) : Serializable {
  * Visit status lifecycle
  */
 enum class VisitStatus {
-    IN_PROGRESS,        // Work has started
+    DRAFT,              // Visit created, awaiting document signatures (can be cancelled)
+    IN_PROGRESS,        // Documents signed, work has started
     READY_FOR_PICKUP,   // All work completed, ready for pickup
     COMPLETED,          // Vehicle handed over to customer
     REJECTED,           // Visit rejected

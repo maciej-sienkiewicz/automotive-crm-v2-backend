@@ -5,13 +5,20 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
+import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
+import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
+import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.DamagePoint
 
 @RestController
 @RequestMapping("/api/checkin")
 class CheckinController(
-    private val createVisitFromReservationHandler: CreateVisitFromReservationHandler
+    private val createVisitFromReservationHandler: CreateVisitFromReservationHandler,
+    private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,
+    private val protocolTemplateRepository: ProtocolTemplateRepository,
+    private val s3StorageService: S3ProtocolStorageService
     // TODO: Add PhotoUploadSession handlers when implemented
 ) {
 
@@ -133,9 +140,43 @@ class CheckinController(
 
         val result = createVisitFromReservationHandler.handle(command)
 
+        // Generate protocols immediately for CHECK_IN stage
+        val protocolsResult = generateVisitProtocolsHandler.handle(
+            GenerateVisitProtocolsCommand(
+                visitId = result.visitId,
+                studioId = principal.studioId,
+                stage = ProtocolStage.CHECK_IN
+            )
+        )
+
+        // Convert protocols to DTOs
+        val protocolDtos = protocolsResult.protocols.map { protocol ->
+            val template = protocolTemplateRepository.findByIdAndStudioId(
+                protocol.templateId.value,
+                principal.studioId.value
+            )?.toDomain()
+
+            val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
+                s3StorageService.generateDownloadUrl(s3Key)
+            }
+
+            VisitProtocolDto(
+                id = protocol.id.toString(),
+                templateId = protocol.templateId.toString(),
+                templateName = template?.name ?: "Unknown Template",
+                stage = protocol.stage.name,
+                isMandatory = protocol.isMandatory,
+                status = protocol.status.name,
+                filledPdfUrl = filledPdfUrl
+            )
+        }
+
         ResponseEntity
             .status(HttpStatus.CREATED)
-            .body(ReservationToVisitResponse(visitId = result.visitId.value.toString()))
+            .body(ReservationToVisitResponse(
+                visitId = result.visitId.value.toString(),
+                protocols = protocolDtos
+            ))
     }
 }
 
@@ -256,7 +297,18 @@ data class AdjustmentRequest(
 )
 
 data class ReservationToVisitResponse(
-    val visitId: String
+    val visitId: String,
+    val protocols: List<VisitProtocolDto>
+)
+
+data class VisitProtocolDto(
+    val id: String,
+    val templateId: String,
+    val templateName: String,
+    val stage: String,
+    val isMandatory: Boolean,
+    val status: String,
+    val filledPdfUrl: String?
 )
 
 // Command for handler

@@ -1,7 +1,12 @@
 package pl.detailing.crm.protocol.infrastructure
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
@@ -30,10 +35,12 @@ import java.util.*
 @Service
 class S3ProtocolStorageService(
     private val s3Presigner: S3Presigner,
+    private val s3Client: S3Client,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String
 ) {
 
     companion object {
+        private val logger = LoggerFactory.getLogger(S3ProtocolStorageService::class.java)
         private val UPLOAD_URL_DURATION = Duration.ofMinutes(15)
         private val DOWNLOAD_URL_DURATION = Duration.ofMinutes(10)
     }
@@ -133,5 +140,26 @@ class S3ProtocolStorageService(
 
         val presignedRequest = s3Presigner.presignPutObject(presignRequest)
         return presignedRequest.url().toString()
+    }
+
+    /**
+     * Delete a file from S3.
+     * Used when cancelling draft visits to clean up generated protocols.
+     */
+    suspend fun deleteFile(s3Key: String): Unit = withContext(Dispatchers.IO) {
+        try {
+            val deleteObjectRequest = DeleteObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .build()
+
+            s3Client.deleteObject(deleteObjectRequest)
+
+            logger.info("Successfully deleted protocol file from S3: $s3Key")
+
+        } catch (e: Exception) {
+            logger.error("Failed to delete protocol file from S3: $s3Key", e)
+            throw e
+        }
     }
 }

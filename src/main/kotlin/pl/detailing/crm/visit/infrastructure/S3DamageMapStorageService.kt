@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
@@ -107,5 +108,28 @@ class S3DamageMapStorageService(
      */
     fun buildDamageMapS3Key(studioId: UUID, visitId: UUID): String {
         return "$studioId/visits/$visitId/damage-map.jpg"
+    }
+
+    /**
+     * Delete a damage map file from S3.
+     * Used when cancelling draft visits to clean up generated damage maps.
+     *
+     * @param s3Key The S3 key of the damage map to delete
+     */
+    suspend fun deleteFile(s3Key: String): Unit = withContext(Dispatchers.IO) {
+        try {
+            val deleteObjectRequest = DeleteObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .build()
+
+            s3Client.deleteObject(deleteObjectRequest)
+
+            logger.info("Successfully deleted damage map from S3: $s3Key")
+
+        } catch (e: Exception) {
+            logger.error("Failed to delete damage map from S3: $s3Key", e)
+            throw e
+        }
     }
 }

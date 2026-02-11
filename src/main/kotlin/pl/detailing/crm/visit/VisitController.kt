@@ -1,6 +1,7 @@
 package pl.detailing.crm.visit
 
 import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -8,6 +9,10 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.*
 import pl.detailing.crm.visit.list.*
 import pl.detailing.crm.visit.domain.*
+import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitCommand
+import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitHandler
+import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitCommand
+import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
@@ -20,7 +25,9 @@ import java.time.LocalDate
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,
-    private val saveVisitServicesHandler: SaveVisitServicesHandler
+    private val saveVisitServicesHandler: SaveVisitServicesHandler,
+    private val confirmVisitHandler: ConfirmVisitHandler,
+    private val cancelDraftVisitHandler: CancelDraftVisitHandler
 ) {
 
     /**
@@ -115,6 +122,77 @@ class VisitController(
             userId = principal.userId,
             payload = payload
         )
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Confirm a DRAFT visit and make it active (IN_PROGRESS)
+     * POST /api/visits/{visitId}/confirm
+     *
+     * This endpoint:
+     * - Validates all mandatory protocols are signed
+     * - Changes visit status from DRAFT to IN_PROGRESS
+     * - Updates appointment status from CONFIRMED to CONVERTED
+     * - Makes the visit immutable (cannot be cancelled anymore)
+     */
+    @PostMapping("/{visitId}/confirm")
+    fun confirmVisit(
+        @PathVariable visitId: String
+    ): ResponseEntity<ConfirmVisitResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        // Only OWNER and MANAGER can confirm visits
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can confirm visits")
+        }
+
+        val command = ConfirmVisitCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId
+        )
+
+        val result = confirmVisitHandler.handle(command)
+
+        ResponseEntity.ok(ConfirmVisitResponse(
+            visitId = result.visitId.value.toString(),
+            message = "Visit confirmed successfully"
+        ))
+    }
+
+    /**
+     * Cancel a DRAFT visit
+     * DELETE /api/visits/{visitId}
+     *
+     * This endpoint:
+     * - Validates visit is in DRAFT status (only DRAFT visits can be cancelled)
+     * - Deletes all associated protocols from database and S3
+     * - Deletes damage map from S3 if exists
+     * - Deletes all documents associated with the visit
+     * - Deletes the visit from database
+     * - Appointment remains in CONFIRMED status (ready to be converted again)
+     *
+     * Note: Only DRAFT visits can be cancelled. Confirmed visits should use rejection flow.
+     */
+    @DeleteMapping("/{visitId}")
+    fun cancelDraftVisit(
+        @PathVariable visitId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        // Only OWNER and MANAGER can cancel visits
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can cancel visits")
+        }
+
+        val command = CancelDraftVisitCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId
+        )
+
+        cancelDraftVisitHandler.handle(command)
 
         ResponseEntity.noContent().build()
     }
@@ -320,6 +398,7 @@ class VisitController(
      */
     private fun mapVisitStatus(status: VisitStatus): String {
         return when (status) {
+            VisitStatus.DRAFT -> "draft"
             VisitStatus.IN_PROGRESS -> "in_progress"
             VisitStatus.READY_FOR_PICKUP -> "ready_for_pickup"
             VisitStatus.COMPLETED -> "completed"
@@ -383,4 +462,12 @@ data class PaginationMetadata(
     val page: Int,
     val pageSize: Int,
     val totalPages: Int
+)
+
+/**
+ * Response for visit confirmation
+ */
+data class ConfirmVisitResponse(
+    val visitId: String,
+    val message: String
 )

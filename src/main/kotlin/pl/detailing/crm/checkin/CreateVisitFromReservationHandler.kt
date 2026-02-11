@@ -190,7 +190,7 @@ class CreateVisitFromReservationHandler(
                 yearOfProductionSnapshot = vehicle.yearOfProduction,
                 colorSnapshot = vehicle.color,
                 // Visit details
-                status = VisitStatus.IN_PROGRESS,
+                status = VisitStatus.DRAFT,  // Start in DRAFT - will be confirmed after document signing
                 scheduledDate = appointment.schedule.startDateTime,
                 estimatedCompletionDate = appointment.schedule.endDateTime,
                 actualCompletionDate = null,
@@ -261,15 +261,9 @@ class CreateVisitFromReservationHandler(
                 }
             }
 
-            // Step 10: Update appointment status to CONVERTED
-            val appointmentEntity = appointmentRepository.findByIdAndStudioId(
-                appointment.id.value,
-                command.studioId.value
-            )!!
-            appointmentEntity.status = AppointmentStatus.CONVERTED
-            appointmentEntity.updatedBy = command.userId.value
-            appointmentEntity.updatedAt = Instant.now()
-            appointmentRepository.save(appointmentEntity)
+            // Step 10: DO NOT update appointment status yet
+            // Appointment will be marked as CONVERTED only when visit is confirmed (after documents are signed)
+            // This allows users to cancel the draft visit and return to reservation
 
             // Step 11: Return result
             ReservationToVisitResult(visitId = visitId)

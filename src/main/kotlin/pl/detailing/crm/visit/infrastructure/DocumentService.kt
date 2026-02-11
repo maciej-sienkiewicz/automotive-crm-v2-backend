@@ -296,4 +296,38 @@ class DocumentService(
 
         return documentStorageService.generateDownloadUrl(documentEntity.fileId)
     }
+
+    /**
+     * Delete all documents for a visit (used when cancelling a draft visit)
+     * Removes documents from database and S3
+     *
+     * @param visitId The visit ID
+     */
+    @Transactional
+    suspend fun deleteAllDocumentsForVisit(visitId: UUID): Unit = withContext(Dispatchers.IO) {
+        try {
+            val documents = visitDocumentRepository.findByVisit_IdOrderByUploadedAtDesc(visitId)
+
+            documents.forEach { documentEntity ->
+                val s3Key = documentEntity.fileId
+
+                // Delete from database first
+                visitDocumentRepository.delete(documentEntity)
+
+                // Then delete from S3
+                try {
+                    documentStorageService.deleteDocument(s3Key)
+                } catch (e: Exception) {
+                    // Log but don't fail - database record is already deleted
+                    logger.warn("Failed to delete document from S3 (database record already deleted): $s3Key", e)
+                }
+            }
+
+            logger.info("Deleted ${documents.size} documents for visit $visitId")
+
+        } catch (e: Exception) {
+            logger.error("Failed to delete documents for visit $visitId", e)
+            throw IllegalStateException("Failed to delete documents: ${e.message}", e)
+        }
+    }
 }
