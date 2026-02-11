@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.infrastructure.DocumentService
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 
 /**
@@ -23,7 +25,10 @@ class GenerateVisitProtocolsHandler(
     private val crmDataResolver: CrmDataResolver,
     private val pdfProcessingService: PdfProcessingService,
     private val s3StorageService: S3ProtocolStorageService,
-    private val protocolFieldMappingRepository: ProtocolFieldMappingRepository
+    private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
+    private val protocolTemplateRepository: ProtocolTemplateRepository,
+    private val visitRepository: VisitRepository,
+    private val documentService: DocumentService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -143,6 +148,41 @@ class GenerateVisitProtocolsHandler(
             val entity = VisitProtocolEntity.fromDomain(updated)
             visitProtocolRepository.save(entity)
             logger.info("[PERF]   - Update status: ${System.currentTimeMillis() - updateStart}ms")
+
+            // Register protocol as a document in the visit documents system
+            val docRegisterStart = System.currentTimeMillis()
+            try {
+                // Get visit entity to retrieve customerId and userId
+                val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
+
+                if (visitEntity != null) {
+                    // Get template name
+                    val template = protocolTemplateRepository.findByIdAndStudioId(
+                        visitProtocol.templateId.value,
+                        studioId.value
+                    )
+                    val templateName = template?.name ?: "Protocol"
+
+                    // Register as document
+                    documentService.registerDocument(
+                        visitId = visitProtocol.visitId.value,
+                        customerId = visitEntity.customerId,
+                        documentType = DocumentType.PROTOCOL,
+                        name = "$templateName - ${if (visitProtocol.stage == ProtocolStage.CHECK_IN) "Przyjęcie" else "Wydanie"}",
+                        s3Key = filledPdfS3Key,
+                        fileName = "${templateName.replace(" ", "_")}_${visitProtocol.id.value}.pdf",
+                        createdBy = visitEntity.createdBy,
+                        createdByName = "System", // Will be updated when signed
+                        category = "protocol"
+                    )
+                    logger.info("[PERF]   - Document registration: ${System.currentTimeMillis() - docRegisterStart}ms")
+                } else {
+                    logger.warn("Could not register protocol as document - visit not found: ${visitProtocol.visitId}")
+                }
+            } catch (e: Exception) {
+                // Log but don't fail the protocol generation
+                logger.error("Failed to register protocol as document: ${e.message}", e)
+            }
 
             updated
         } catch (e: Exception) {
