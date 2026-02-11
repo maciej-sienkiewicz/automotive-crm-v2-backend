@@ -7,6 +7,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import software.amazon.awssdk.core.sync.RequestBody
@@ -26,6 +27,7 @@ class PdfProcessingService(
     private val s3Client: S3Client,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
      * Fill a PDF form with data and upload to S3.
@@ -41,13 +43,19 @@ class PdfProcessingService(
         outputS3Key: String
     ): String {
         // Download template from S3
+        val downloadStart = System.currentTimeMillis()
         val templateBytes = downloadFromS3(templateS3Key)
+        logger.info("[PERF]     - S3 download template: ${System.currentTimeMillis() - downloadStart}ms (${templateBytes.size} bytes)")
 
         // Fill the form
+        val fillStart = System.currentTimeMillis()
         val filledPdfBytes = fillForm(templateBytes, fieldMappings)
+        logger.info("[PERF]     - PDF form filling (PDFBox): ${System.currentTimeMillis() - fillStart}ms (${fieldMappings.size} fields)")
 
         // Upload filled PDF to S3
+        val uploadStart = System.currentTimeMillis()
         uploadToS3(outputS3Key, filledPdfBytes, "application/pdf")
+        logger.info("[PERF]     - S3 upload filled PDF: ${System.currentTimeMillis() - uploadStart}ms (${filledPdfBytes.size} bytes)")
 
         return outputS3Key
     }

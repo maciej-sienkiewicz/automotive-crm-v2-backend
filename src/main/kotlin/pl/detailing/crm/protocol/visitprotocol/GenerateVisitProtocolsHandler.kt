@@ -2,6 +2,7 @@ package pl.detailing.crm.protocol.visitprotocol
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.protocol.domain.VisitProtocol
@@ -24,16 +25,22 @@ class GenerateVisitProtocolsHandler(
     private val s3StorageService: S3ProtocolStorageService,
     private val protocolFieldMappingRepository: ProtocolFieldMappingRepository
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     @Transactional
     suspend fun handle(command: GenerateVisitProtocolsCommand): GenerateVisitProtocolsResult =
         withContext(Dispatchers.IO) {
+            val totalStart = System.currentTimeMillis()
+            logger.info("[PERF] Starting protocol generation for visit ${command.visitId}")
+
             // Check if protocols already exist for this visit and stage
+            val checkStart = System.currentTimeMillis()
             val existingProtocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
                 command.visitId.value,
                 command.studioId.value,
                 command.stage
             )
+            logger.info("[PERF] Check existing protocols: ${System.currentTimeMillis() - checkStart}ms")
 
             if (existingProtocols.isNotEmpty()) {
                 // Protocols already exist, return them
@@ -43,14 +50,18 @@ class GenerateVisitProtocolsHandler(
             }
 
             // Resolve required protocols for this visit
+            val resolveStart = System.currentTimeMillis()
             val requiredRules = protocolResolver.resolveRequiredProtocols(
                 command.visitId,
                 command.studioId,
                 command.stage
             )
+            logger.info("[PERF] Resolve rules: ${System.currentTimeMillis() - resolveStart}ms (${requiredRules.size} rules)")
 
             // Create visit protocol instances
             val visitProtocols = requiredRules.map { rule ->
+                val createStart = System.currentTimeMillis()
+
                 val visitProtocol = VisitProtocol(
                     id = VisitProtocolId.random(),
                     studioId = command.studioId,
@@ -69,29 +80,38 @@ class GenerateVisitProtocolsHandler(
                     updatedAt = Instant.now()
                 )
 
+                val saveStart = System.currentTimeMillis()
                 val entity = VisitProtocolEntity.fromDomain(visitProtocol)
                 visitProtocolRepository.save(entity)
+                logger.info("[PERF] Save protocol entity: ${System.currentTimeMillis() - saveStart}ms")
 
                 // Automatically fill the PDF with CRM data
-                fillProtocolPdf(visitProtocol, command.studioId)
+                val fillStart = System.currentTimeMillis()
+                val updatedProtocol = fillProtocolPdf(visitProtocol, command.studioId)
+                logger.info("[PERF] Fill PDF total: ${System.currentTimeMillis() - fillStart}ms")
 
-                // Reload to get updated status
-                visitProtocolRepository.findById(visitProtocol.id.value).get().toDomain()
+                logger.info("[PERF] Single protocol creation: ${System.currentTimeMillis() - createStart}ms")
+                updatedProtocol
             }
 
+            logger.info("[PERF] TOTAL protocol generation: ${System.currentTimeMillis() - totalStart}ms")
             GenerateVisitProtocolsResult(visitProtocols)
         }
 
     private suspend fun fillProtocolPdf(visitProtocol: VisitProtocol, studioId: StudioId): VisitProtocol {
         return try {
             // Resolve CRM data for the visit
+            val crmStart = System.currentTimeMillis()
             val crmData = crmDataResolver.resolveVisitData(visitProtocol.visitId, studioId)
+            logger.info("[PERF]   - CRM data resolution: ${System.currentTimeMillis() - crmStart}ms")
 
             // Get field mappings for this template
+            val mappingStart = System.currentTimeMillis()
             val fieldMappings = protocolFieldMappingRepository.findAllByTemplateIdAndStudioId(
                 visitProtocol.templateId.value,
                 studioId.value
             )
+            logger.info("[PERF]   - Field mappings query: ${System.currentTimeMillis() - mappingStart}ms (${fieldMappings.size} mappings)")
 
             // Build field name to value map
             val fieldValues = fieldMappings.associate { mapping ->
@@ -113,17 +133,21 @@ class GenerateVisitProtocolsHandler(
             )
 
             // Fill the PDF
+            val pdfStart = System.currentTimeMillis()
             pdfProcessingService.fillPdfForm(templateS3Key, fieldValues, filledPdfS3Key)
+            logger.info("[PERF]   - PDF processing (download + fill + upload): ${System.currentTimeMillis() - pdfStart}ms")
 
             // Update protocol status
+            val updateStart = System.currentTimeMillis()
             val updated = visitProtocol.markAsReadyForSignature(filledPdfS3Key)
             val entity = VisitProtocolEntity.fromDomain(updated)
             visitProtocolRepository.save(entity)
+            logger.info("[PERF]   - Update status: ${System.currentTimeMillis() - updateStart}ms")
 
             updated
         } catch (e: Exception) {
             // Log error but don't fail the entire generation
-            println("Failed to fill PDF for protocol ${visitProtocol.id}: ${e.message}")
+            logger.error("Failed to fill PDF for protocol ${visitProtocol.id}: ${e.message}", e)
             visitProtocol
         }
     }

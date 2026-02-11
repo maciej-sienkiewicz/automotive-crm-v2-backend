@@ -2,6 +2,7 @@ package pl.detailing.crm.protocol.infrastructure
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CrmDataKey
@@ -27,6 +28,7 @@ class CrmDataResolver(
     private val vehicleRepository: VehicleRepository,
     private val studioRepository: StudioRepository
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
@@ -40,13 +42,27 @@ class CrmDataResolver(
      */
     suspend fun resolveVisitData(visitId: VisitId, studioId: StudioId): Map<CrmDataKey, String> =
         withContext(Dispatchers.IO) {
+            val dbStart = System.currentTimeMillis()
+
             // Fetch with photos eagerly loaded to avoid LazyInitializationException
+            val visitStart = System.currentTimeMillis()
             val visit = visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
                 ?: throw IllegalArgumentException("Visit not found: $visitId")
+            logger.info("[PERF]     - Query visit: ${System.currentTimeMillis() - visitStart}ms")
 
+            val customerStart = System.currentTimeMillis()
             val customer = customerRepository.findByIdAndStudioId(visit.customerId, studioId.value)
+            logger.info("[PERF]     - Query customer: ${System.currentTimeMillis() - customerStart}ms")
+
+            val vehicleStart = System.currentTimeMillis()
             val vehicle = vehicleRepository.findByIdAndStudioId(visit.vehicleId, studioId.value)
+            logger.info("[PERF]     - Query vehicle: ${System.currentTimeMillis() - vehicleStart}ms")
+
+            val studioStart = System.currentTimeMillis()
             val studio = studioRepository.findById(studioId.value).orElse(null)
+            logger.info("[PERF]     - Query studio: ${System.currentTimeMillis() - studioStart}ms")
+
+            logger.info("[PERF]     - Total DB queries: ${System.currentTimeMillis() - dbStart}ms")
 
             val visitDomain = visit.toDomain()
 
