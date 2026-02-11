@@ -4,7 +4,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.protocol.domain.ProtocolFieldMapping
 import pl.detailing.crm.protocol.domain.ProtocolTemplate
+import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingEntity
+import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -14,6 +17,7 @@ import java.time.Instant
 @Service
 class CreateProtocolTemplateHandler(
     private val protocolTemplateRepository: ProtocolTemplateRepository,
+    private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
     private val s3StorageService: S3ProtocolStorageService
 ) {
 
@@ -55,11 +59,38 @@ class CreateProtocolTemplateHandler(
             val entity = ProtocolTemplateEntity.fromDomain(template)
             protocolTemplateRepository.save(entity)
 
+            // Create default field mappings
+            createDefaultFieldMappings(template)
+
             CreateProtocolTemplateResult(
                 template = template,
                 uploadUrl = uploadUrl
             )
         }
+
+    /**
+     * Creates default field mappings for the template.
+     * This ensures that newly created templates have a standard set of field mappings
+     * that can be used immediately or customized by the user later.
+     */
+    private fun createDefaultFieldMappings(template: ProtocolTemplate) {
+        val defaultMappings = DefaultProtocolFieldMappings.getDefaultMappings()
+        val now = Instant.now()
+
+        val mappingEntities = defaultMappings.map { (pdfFieldName, crmDataKey) ->
+            val mapping = ProtocolFieldMapping(
+                id = ProtocolFieldMappingId.random(),
+                studioId = template.studioId,
+                templateId = template.id,
+                pdfFieldName = pdfFieldName,
+                crmDataKey = crmDataKey,
+                createdAt = now
+            )
+            ProtocolFieldMappingEntity.fromDomain(mapping)
+        }
+
+        protocolFieldMappingRepository.saveAll(mappingEntities)
+    }
 }
 
 data class CreateProtocolTemplateCommand(
