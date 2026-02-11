@@ -176,6 +176,7 @@ class VisitTransitionController(
             VisitStatus.COMPLETED -> "completed"
             VisitStatus.REJECTED -> "rejected"
             VisitStatus.ARCHIVED -> "archived"
+            VisitStatus.DRAFT -> "draft"
         }
     }
 }

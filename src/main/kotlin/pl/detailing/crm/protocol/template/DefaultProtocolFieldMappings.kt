@@ -18,6 +18,7 @@ object DefaultProtocolFieldMappings {
         "licenseplate" to CrmDataKey.VEHICLE_PLATE,
         "mileage" to CrmDataKey.VISIT_MILEAGE,
         "services" to CrmDataKey.SERVICES_LIST,
+        "remarks" to CrmDataKey.NOTES,
         "fullname" to CrmDataKey.CUSTOMER_FULL_NAME,
         "companyname" to CrmDataKey.STUDIO_NAME,
         "phonenumber" to CrmDataKey.CUSTOMER_PHONE,

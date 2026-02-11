@@ -110,6 +110,7 @@ class CrmDataResolver(
                         }
                     }
                 put(CrmDataKey.SERVICES_LIST, servicesList)
+                put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
 
                 // Studio/Company data
                 studio?.let {

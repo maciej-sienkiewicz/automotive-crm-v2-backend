@@ -519,6 +519,7 @@ enum class CrmDataKey(val description: String) {
 
     // Services
     SERVICES_LIST("Formatted list of approved services"),
+    NOTES("Notes"),
 
     // Studio/Company
     STUDIO_NAME("Studio/Company name"),
