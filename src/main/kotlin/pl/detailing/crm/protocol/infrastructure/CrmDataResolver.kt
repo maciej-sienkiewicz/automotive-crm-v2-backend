@@ -81,6 +81,7 @@ class CrmDataResolver(
                     put(CrmDataKey.CUSTOMER_PHONE, it.phone ?: "")
                     put(CrmDataKey.CUSTOMER_EMAIL, it.email ?: "")
                     put(CrmDataKey.CUSTOMER_COMPANY_NIP, it.companyNip ?: "")
+                    put(CrmDataKey.STUDIO_NAME, it.companyName ?: "")
                 }
 
                 // Visit context
@@ -111,11 +112,6 @@ class CrmDataResolver(
                     }
                 put(CrmDataKey.SERVICES_LIST, servicesList)
                 put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
-
-                // Studio/Company data
-                studio?.let {
-                    put(CrmDataKey.STUDIO_NAME, it.name)
-                }
 
                 // Current date/time
                 val now = Instant.now()

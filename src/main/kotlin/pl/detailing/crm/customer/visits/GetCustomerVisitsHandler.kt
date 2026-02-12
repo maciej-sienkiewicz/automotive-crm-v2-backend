@@ -76,7 +76,7 @@ class GetCustomerVisitsHandler(
                     ),
                     status = visit.status.name.lowercase(),
                     technician = technician,
-                    notes = visit.technicalNotes ?: ""
+                    notes = visit.technicalNotes ?: visit.inspectionNotes ?: ""
                 )
             }
 
