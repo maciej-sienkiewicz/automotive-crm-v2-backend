@@ -18,7 +18,8 @@ import java.util.UUID
     indexes = [
         Index(name = "idx_photo_sessions_studio_id", columnList = "studio_id"),
         Index(name = "idx_photo_sessions_appointment_id", columnList = "appointment_id"),
-        Index(name = "idx_photo_sessions_expires_at", columnList = "expires_at")
+        Index(name = "idx_photo_sessions_expires_at", columnList = "expires_at"),
+        Index(name = "idx_photo_sessions_claimed_at", columnList = "claimed_at")
     ]
 )
 class PhotoUploadSessionEntity(
@@ -39,10 +40,20 @@ class PhotoUploadSessionEntity(
     val expiresAt: Instant,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    @Column(name = "claimed_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var claimedAt: Instant? = null,
+
+    @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
+    var visitId: UUID? = null
 ) {
     fun isExpired(): Boolean {
         return Instant.now().isAfter(expiresAt)
+    }
+
+    fun isClaimed(): Boolean {
+        return claimedAt != null
     }
 }
 
@@ -63,4 +74,7 @@ interface PhotoUploadSessionRepository : org.springframework.data.jpa.repository
         @Param("appointmentId") appointmentId: UUID,
         @Param("studioId") studioId: UUID
     ): PhotoUploadSessionEntity?
+
+    @Query("SELECT s FROM PhotoUploadSessionEntity s WHERE s.expiresAt < :now AND s.claimedAt IS NULL")
+    fun findExpiredUnclaimedSessions(@Param("now") now: Instant): List<PhotoUploadSessionEntity>
 }

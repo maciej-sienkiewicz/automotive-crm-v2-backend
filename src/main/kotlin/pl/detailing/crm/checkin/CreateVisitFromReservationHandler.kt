@@ -42,7 +42,8 @@ class CreateVisitFromReservationHandler(
     private val damageMarkingService: DamageMarkingService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val documentService: DocumentService,
-    private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository
+    private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
+    private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -174,6 +175,41 @@ class CreateVisitFromReservationHandler(
 
             // Step 7: Create Visit domain object
             val visitId = VisitId.random()
+
+            // Step 7.5: Process photos from upload session
+            val visitPhotos = if (command.photoIds.isNotEmpty()) {
+                val photoUUIDs = command.photoIds.mapNotNull {
+                    try {
+                        java.util.UUID.fromString(it)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                if (photoUUIDs.isNotEmpty()) {
+                    val claimedPhotos = photoSessionService.claimPhotosForVisit(
+                        photoIds = photoUUIDs,
+                        visitId = visitId,
+                        studioId = command.studioId
+                    )
+
+                    claimedPhotos.map { claimed ->
+                        pl.detailing.crm.visit.domain.VisitPhoto(
+                            id = VisitPhotoId(claimed.id),
+                            photoType = claimed.photoType,
+                            fileId = claimed.fileId,
+                            fileName = claimed.fileName,
+                            description = null,
+                            uploadedAt = Instant.now()
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+
             var visit = Visit(
                 id = visitId,
                 studioId = command.studioId,
@@ -206,7 +242,7 @@ class CreateVisitFromReservationHandler(
                     .ifBlank { null }, // Also save to technicalNotes for visibility in API response
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
-                photos = emptyList(), // Photos will be added separately
+                photos = visitPhotos,  // Use claimed photos from upload session
                 damageMapFileId = null, // Will be set after generating damage map
                 // Audit
                 createdBy = command.userId,
