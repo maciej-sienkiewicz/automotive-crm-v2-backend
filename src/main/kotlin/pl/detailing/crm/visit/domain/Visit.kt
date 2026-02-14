@@ -530,7 +530,6 @@ object PriceCalculator {
  */
 data class VisitPhoto(
     val id: VisitPhotoId,
-    val photoType: PhotoType,
     val fileId: String,
     val fileName: String,
     val description: String?,

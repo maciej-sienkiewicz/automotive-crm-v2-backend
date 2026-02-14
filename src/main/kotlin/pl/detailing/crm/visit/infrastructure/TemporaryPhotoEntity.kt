@@ -30,9 +30,6 @@ class TemporaryPhotoEntity(
     @Column(name = "session_id", nullable = false, columnDefinition = "uuid")
     val sessionId: UUID,
 
-    @Column(name = "photo_type", nullable = false, length = 50)
-    val photoType: String,
-
     @Column(name = "s3_key", nullable = false, length = 500)
     val s3Key: String,
 
@@ -50,9 +47,7 @@ class TemporaryPhotoEntity(
 
     @Column(name = "claimed", nullable = false)
     var claimed: Boolean = false
-) {
-    fun toPhotoType(): PhotoType = PhotoType.valueOf(photoType)
-}
+)
 
 @Repository
 interface TemporaryPhotoRepository : org.springframework.data.jpa.repository.JpaRepository<TemporaryPhotoEntity, UUID> {

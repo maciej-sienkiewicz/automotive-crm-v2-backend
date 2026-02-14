@@ -90,7 +90,6 @@ class PhotoSessionService(
         sessionId: UUID,
         studioId: StudioId,
         fileName: String,
-        photoType: PhotoType,
         contentType: String,
         fileSize: Long,
         sessionToken: String
@@ -157,7 +156,6 @@ class PhotoSessionService(
         val tempPhoto = TemporaryPhotoEntity(
             id = photoId,
             sessionId = sessionId,
-            photoType = photoType.name,
             s3Key = s3Key,
             fileName = fileName,
             fileSize = fileSize,
@@ -195,7 +193,6 @@ class PhotoSessionService(
 
             SessionPhotoInfo(
                 id = photo.id,
-                photoType = PhotoType.valueOf(photo.photoType),
                 fileName = photo.fileName,
                 fileSize = photo.fileSize,
                 uploadedAt = photo.uploadedAt,
@@ -276,9 +273,8 @@ class PhotoSessionService(
             // Copy file from temp to final location
             val tempKey = tempPhoto.s3Key
             val extension = tempKey.substringAfterLast('.')
-            val photoType = PhotoType.valueOf(tempPhoto.photoType)
             val timestamp = Instant.now().toEpochMilli()
-            val finalKey = "${studioId.value}/visits/${visitId.value}/photos/${photoType}_${timestamp}.$extension"
+            val finalKey = "${studioId.value}/visits/${visitId.value}/photos/${photoId}_${timestamp}.$extension"
 
             try {
                 copyInS3(tempKey, finalKey)
@@ -294,7 +290,6 @@ class PhotoSessionService(
 
             claimedPhotos.add(ClaimedPhoto(
                 id = photoId,
-                photoType = photoType,
                 fileId = finalKey,
                 fileName = tempPhoto.fileName
             ))
@@ -393,7 +388,6 @@ data class UploadUrlResult(
 
 data class SessionPhotoInfo(
     val id: UUID,
-    val photoType: PhotoType,
     val fileName: String,
     val fileSize: Long,
     val uploadedAt: Instant,
@@ -402,7 +396,6 @@ data class SessionPhotoInfo(
 
 data class ClaimedPhoto(
     val id: UUID,
-    val photoType: PhotoType,
     val fileId: String,
     val fileName: String
 )

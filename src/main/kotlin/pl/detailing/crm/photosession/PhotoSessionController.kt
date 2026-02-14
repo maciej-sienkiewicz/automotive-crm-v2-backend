@@ -59,7 +59,6 @@ class PhotoSessionController(
             sessionId = UUID.fromString(sessionId),
             studioId = principal.studioId,
             fileName = request.fileName,
-            photoType = PhotoType.valueOf(request.photoType),
             contentType = request.contentType,
             fileSize = request.fileSize,
             sessionToken = request.sessionToken
@@ -123,7 +122,6 @@ data class CreateSessionRequest(
 
 data class GenerateUploadUrlRequest(
     val fileName: String,
-    val photoType: String,  // PhotoType enum name
     val contentType: String,
     val fileSize: Long,
     val sessionToken: String
@@ -149,7 +147,6 @@ data class GetSessionPhotosResponse(
 
 data class PhotoResponse(
     val id: String,
-    val photoType: String,
     val fileName: String,
     val fileSize: Long,
     val uploadedAt: Instant,
@@ -160,7 +157,6 @@ data class PhotoResponse(
 
 private fun SessionPhotoInfo.toResponse() = PhotoResponse(
     id = this.id.toString(),
-    photoType = this.photoType.name,
     fileName = this.fileName,
     fileSize = this.fileSize,
     uploadedAt = this.uploadedAt,

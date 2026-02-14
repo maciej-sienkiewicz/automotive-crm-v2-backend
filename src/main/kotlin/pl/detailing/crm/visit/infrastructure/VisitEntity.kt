@@ -392,8 +392,7 @@ class VisitServiceItemEntity(
 @Table(
     name = "visit_photos",
     indexes = [
-        Index(name = "idx_visit_photos_visit_id", columnList = "visit_id"),
-        Index(name = "idx_visit_photos_photo_type", columnList = "photo_type")
+        Index(name = "idx_visit_photos_visit_id", columnList = "visit_id")
     ]
 )
 class VisitPhotoEntity(
@@ -404,10 +403,6 @@ class VisitPhotoEntity(
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "visit_id", nullable = false)
     var visit: VisitEntity,
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "photo_type", nullable = false, length = 50)
-    val photoType: PhotoType,
 
     @Column(name = "file_id", nullable = false, length = 255)
     val fileId: String,
@@ -423,7 +418,6 @@ class VisitPhotoEntity(
 ) {
     fun toDomain(): VisitPhoto = VisitPhoto(
         id = VisitPhotoId(id),
-        photoType = photoType,
         fileId = fileId,
         fileName = fileName,
         description = description,
@@ -435,7 +429,6 @@ class VisitPhotoEntity(
             VisitPhotoEntity(
                 id = photo.id.value,
                 visit = visit,
-                photoType = photo.photoType,
                 fileId = photo.fileId,
                 fileName = photo.fileName,
                 description = photo.description,

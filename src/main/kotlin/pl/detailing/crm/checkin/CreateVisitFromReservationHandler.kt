@@ -196,7 +196,6 @@ class CreateVisitFromReservationHandler(
                     claimedPhotos.map { claimed ->
                         pl.detailing.crm.visit.domain.VisitPhoto(
                             id = VisitPhotoId(claimed.id),
-                            photoType = claimed.photoType,
                             fileId = claimed.fileId,
                             fileName = claimed.fileName,
                             description = null,
