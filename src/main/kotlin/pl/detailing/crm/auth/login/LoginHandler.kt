@@ -42,7 +42,8 @@ class LoginHandler(
                 userId = user.id,
                 studioId = user.studioId,
                 role = user.role,
-                email = user.email
+                email = user.email,
+                fullName = "${user.firstName} ${user.lastName}"
             )
 
             val response = UnifiedAuthResponse(

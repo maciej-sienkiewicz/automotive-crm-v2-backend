@@ -198,10 +198,10 @@ class CreateVisitFromReservationHandler(
                 mileageAtArrival = command.technicalState.mileage,
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,
-                inspectionNotes = listOfNotNull(appointment.note, command.technicalState.inspectionNotes)
+                inspectionNotes = listOfNotNull(command.technicalState.inspectionNotes)
                     .joinToString("\n")
                     .ifBlank { null },
-                technicalNotes = listOfNotNull(appointment.note, command.technicalState.inspectionNotes)
+                technicalNotes = listOfNotNull(appointment.note)
                     .joinToString("\n")
                     .ifBlank { null }, // Also save to technicalNotes for visibility in API response
                 vehicleHandoff = command.vehicleHandoff,
@@ -254,7 +254,7 @@ class CreateVisitFromReservationHandler(
                         s3Key = visit.damageMapFileId!!,
                         fileName = "damage-map.jpg",
                         createdBy = command.userId.value,
-                        createdByName = "System",
+                        createdByName = command.userName,
                         category = "damage"
                     )
                 } catch (e: Exception) {

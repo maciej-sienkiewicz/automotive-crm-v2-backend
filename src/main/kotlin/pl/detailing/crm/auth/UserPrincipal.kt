@@ -11,10 +11,11 @@ data class UserPrincipal(
     val userId: UserId,
     val studioId: StudioId,
     val role: UserRole,
-    val email: String
+    val email: String,
+    val fullName: String
 ) : Authentication, Serializable {
 
-    override fun getName(): String = email
+    override fun getName(): String = fullName
 
     override fun getAuthorities(): Collection<GrantedAuthority> {
         return listOf(SimpleGrantedAuthority("ROLE_${role.name}"))

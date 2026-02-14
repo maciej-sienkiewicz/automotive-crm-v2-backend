@@ -77,9 +77,12 @@ class CrmDataResolver(
 
                 // Customer data
                 customer?.let {
-                    put(CrmDataKey.CUSTOMER_FULL_NAME, "${it.firstName} ${it.lastName}")
-                    put(CrmDataKey.CUSTOMER_PHONE, it.phone ?: "")
-                    put(CrmDataKey.CUSTOMER_EMAIL, it.email ?: "")
+                    val customerFullName = if(visit.isHandedOffByOtherPerson == true) "${visit.contactPersonFirstName} ${visit.contactPersonLastName}" else "${it.firstName} ${it.lastName}"
+                    val customerPhone = (if(visit.isHandedOffByOtherPerson == true) visit.contactPersonPhone else it.phone) ?: ""
+                    val customerEmail = (if(visit.isHandedOffByOtherPerson == true) visit.contactPersonEmail else it.email) ?: ""
+                    put(CrmDataKey.CUSTOMER_FULL_NAME, customerFullName)
+                    put(CrmDataKey.CUSTOMER_PHONE, customerPhone)
+                    put(CrmDataKey.CUSTOMER_EMAIL, customerEmail)
                     put(CrmDataKey.CUSTOMER_COMPANY_NIP, it.companyNip ?: "")
                     put(CrmDataKey.STUDIO_NAME, it.companyName ?: "")
                 }
@@ -134,6 +137,6 @@ class CrmDataResolver(
 
     private fun formatMoney(amountInCents: Long): String {
         val amount = amountInCents / 100.0
-        return String.format("%.2f zł", amount)
+        return String.format("%.2f PLN (brutto)", amount)
     }
 }

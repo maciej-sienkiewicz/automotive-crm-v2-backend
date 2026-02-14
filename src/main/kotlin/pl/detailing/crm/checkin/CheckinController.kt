@@ -57,6 +57,7 @@ class CheckinController(
         val command = ReservationToVisitCommand(
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.name,
             reservationId = AppointmentId.fromString(request.reservationId),
             customer = request.customer?.let { customerReq ->
                 when (customerReq.mode) {
@@ -315,6 +316,7 @@ data class VisitProtocolDto(
 data class ReservationToVisitCommand(
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String,
     val reservationId: AppointmentId,
     val customer: CustomerData?,
     val customerAlias: String?,
