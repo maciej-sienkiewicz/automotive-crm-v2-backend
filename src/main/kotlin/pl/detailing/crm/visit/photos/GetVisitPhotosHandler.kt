@@ -1,7 +1,5 @@
 package pl.detailing.crm.visit.photos
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -21,20 +19,17 @@ class GetVisitPhotosHandler(
 ) {
 
     @Transactional(readOnly = true)
-    suspend fun handle(command: GetVisitPhotosCommand): GetVisitPhotosResult = withContext(Dispatchers.IO) {
-        // 1. Fetch visit entity with studio isolation
-        val visitEntity = visitRepository.findByIdAndStudioId(
+    suspend fun handle(command: GetVisitPhotosCommand): GetVisitPhotosResult {
+        // 1. Fetch visit entity with studio isolation and eager-load photos
+        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(
             id = command.visitId.value,
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
 
-        // 2. Force load photos collection within transaction
-        visitEntity.photos.size
-
-        // 3. Convert to domain model
+        // 2. Convert to domain model (photos already loaded)
         val visit = visitEntity.toDomain()
 
-        // 4. Get photos and generate presigned URLs
+        // 3. Get photos and generate presigned URLs
         val photoResponses = visit.photos.map { photo ->
             VisitPhotoInfo(
                 id = photo.id.value.toString(),
@@ -46,7 +41,7 @@ class GetVisitPhotosHandler(
             )
         }
 
-        GetVisitPhotosResult(photos = photoResponses)
+        return GetVisitPhotosResult(photos = photoResponses)
     }
 }
 
