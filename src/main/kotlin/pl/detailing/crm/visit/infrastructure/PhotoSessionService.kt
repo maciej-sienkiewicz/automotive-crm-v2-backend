@@ -338,7 +338,7 @@ class PhotoSessionService(
     /**
      * Generate presigned download URL
      */
-    private fun generateDownloadUrl(s3Key: String): String {
+    fun generateDownloadUrl(s3Key: String): String {
         val getObjectRequest = GetObjectRequest.builder()
             .bucket(bucketName)
             .key(s3Key)

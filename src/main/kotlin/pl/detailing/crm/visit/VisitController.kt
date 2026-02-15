@@ -18,13 +18,18 @@ import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.visit.services.SaveVisitServicesHandler
 import pl.detailing.crm.visit.services.ServicesChangesPayload
+import pl.detailing.crm.visit.photos.GetVisitPhotosHandler
+import pl.detailing.crm.visit.photos.GetVisitPhotosCommand
+import pl.detailing.crm.visit.photos.VisitPhotoInfo
 import java.time.LocalDate
+import java.time.Instant
 
 @RestController
 @RequestMapping("/api/visits")
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,
+    private val getVisitPhotosHandler: GetVisitPhotosHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler
@@ -103,6 +108,37 @@ class VisitController(
         val response = mapToVisitDetailResponse(result)
 
         ResponseEntity.ok(response)
+    }
+
+    /**
+     * Get visit photos with presigned download URLs
+     * GET /api/visits/{visitId}/photos
+     */
+    @GetMapping("/{visitId}/photos")
+    fun getVisitPhotos(
+        @PathVariable visitId: String
+    ): ResponseEntity<VisitPhotosResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetVisitPhotosCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId
+        )
+
+        val result = getVisitPhotosHandler.handle(command)
+
+        ResponseEntity.ok(VisitPhotosResponse(
+            photos = result.photos.map { photo ->
+                VisitPhotoResponse(
+                    id = photo.id,
+                    fileName = photo.fileName,
+                    description = photo.description,
+                    uploadedAt = photo.uploadedAt,
+                    thumbnailUrl = photo.thumbnailUrl,
+                    fullSizeUrl = photo.fullSizeUrl
+                )
+            }
+        ))
     }
 
     /**
@@ -470,4 +506,23 @@ data class PaginationMetadata(
 data class ConfirmVisitResponse(
     val visitId: String,
     val message: String
+)
+
+/**
+ * Response for visit photos
+ */
+data class VisitPhotosResponse(
+    val photos: List<VisitPhotoResponse>
+)
+
+/**
+ * Individual photo response with presigned URLs
+ */
+data class VisitPhotoResponse(
+    val id: String,
+    val fileName: String,
+    val description: String?,
+    val uploadedAt: Instant,
+    val thumbnailUrl: String,
+    val fullSizeUrl: String
 )
