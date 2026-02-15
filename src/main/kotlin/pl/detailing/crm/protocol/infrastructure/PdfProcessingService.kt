@@ -7,6 +7,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm
+import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -122,7 +123,26 @@ class PdfProcessingService(
                     try {
                         val field = acroForm.getField(fieldName)
                         if (field != null) {
-                            field.setValue(value)
+                            // Special handling for checkboxes
+                            // PDFBox checkboxes need specific values from their export value list
+                            if (field is org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox) {
+                                // For checkboxes: check if we should check or uncheck
+                                // If value is "Yes", "On", or "true", check the box
+                                // Otherwise, uncheck it with "Off"
+                                when (value.uppercase()) {
+                                    "YES", "ON", "TRUE", "1" -> {
+                                        // Try to get the "on" value from export values
+                                        val onValue = field.onValues.firstOrNull() ?: "Yes"
+                                        field.setValue(onValue)
+                                    }
+                                    else -> {
+                                        field.setValue("Off")
+                                    }
+                                }
+                            } else {
+                                // For all other fields (text, etc.), set value directly
+                                field.setValue(value)
+                            }
                         }
                     } catch (e: Exception) {
                         // Log warning but continue processing other fields
