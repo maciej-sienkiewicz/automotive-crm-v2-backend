@@ -21,6 +21,8 @@ import pl.detailing.crm.visit.services.ServicesChangesPayload
 import pl.detailing.crm.visit.photos.GetVisitPhotosHandler
 import pl.detailing.crm.visit.photos.GetVisitPhotosCommand
 import pl.detailing.crm.visit.photos.VisitPhotoInfo
+import pl.detailing.crm.visit.photos.AddVisitPhotoHandler
+import pl.detailing.crm.visit.photos.AddVisitPhotoCommand
 import java.time.LocalDate
 import java.time.Instant
 
@@ -30,6 +32,7 @@ class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,
     private val getVisitPhotosHandler: GetVisitPhotosHandler,
+    private val addVisitPhotoHandler: AddVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler
@@ -138,6 +141,33 @@ class VisitController(
                     fullSizeUrl = photo.fullSizeUrl
                 )
             }
+        ))
+    }
+
+    /**
+     * Add a photo to an existing visit
+     * POST /api/visits/{visitId}/photos
+     */
+    @PostMapping("/{visitId}/photos")
+    fun addVisitPhoto(
+        @PathVariable visitId: String,
+        @RequestBody request: AddPhotoRequest
+    ): ResponseEntity<AddPhotoResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = AddVisitPhotoCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            fileName = request.fileName,
+            description = request.description
+        )
+
+        val result = addVisitPhotoHandler.handle(command)
+
+        ResponseEntity.status(HttpStatus.CREATED).body(AddPhotoResponse(
+            photoId = result.photoId,
+            uploadUrl = result.uploadUrl,
+            fileId = result.fileId
         ))
     }
 
@@ -525,4 +555,21 @@ data class VisitPhotoResponse(
     val uploadedAt: Instant,
     val thumbnailUrl: String,
     val fullSizeUrl: String
+)
+
+/**
+ * Request to add a photo to a visit
+ */
+data class AddPhotoRequest(
+    val fileName: String,
+    val description: String?
+)
+
+/**
+ * Response when adding a photo
+ */
+data class AddPhotoResponse(
+    val photoId: String,
+    val uploadUrl: String,
+    val fileId: String
 )

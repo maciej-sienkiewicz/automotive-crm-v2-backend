@@ -354,6 +354,26 @@ class PhotoSessionService(
     }
 
     /**
+     * Generate presigned upload URL for direct photo upload (bypassing session)
+     * Used for adding photos to existing visits
+     */
+    fun generateSimpleUploadUrl(s3Key: String, contentType: String = "image/jpeg"): String {
+        val putObjectRequest = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .contentType(contentType)
+            .build()
+
+        val presignRequest = PutObjectPresignRequest.builder()
+            .signatureDuration(PRESIGNED_URL_DURATION)
+            .putObjectRequest(putObjectRequest)
+            .build()
+
+        val presignedRequest = s3Presigner.presignPutObject(presignRequest)
+        return presignedRequest.url().toString()
+    }
+
+    /**
      * Copy object within S3
      */
     private fun copyInS3(sourceKey: String, destinationKey: String) {
