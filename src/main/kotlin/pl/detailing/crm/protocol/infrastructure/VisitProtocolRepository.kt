@@ -79,4 +79,18 @@ interface VisitProtocolRepository : JpaRepository<VisitProtocolEntity, UUID> {
         @Param("protocolId") protocolId: UUID,
         @Param("studioId") studioId: UUID
     ): VisitProtocolEntity?
+
+    @Query("""
+        SELECT COALESCE(MAX(vp.version), 0) FROM VisitProtocolEntity vp
+        WHERE vp.visitId = :visitId
+        AND vp.studioId = :studioId
+        AND vp.stage = :stage
+        AND vp.templateId = :templateId
+    """)
+    fun findMaxVersionByVisitAndStageAndTemplate(
+        @Param("visitId") visitId: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("stage") stage: ProtocolStage,
+        @Param("templateId") templateId: UUID
+    ): Int
 }

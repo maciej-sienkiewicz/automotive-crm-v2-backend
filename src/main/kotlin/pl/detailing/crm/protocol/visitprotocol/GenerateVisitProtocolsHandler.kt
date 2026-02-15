@@ -54,6 +54,11 @@ class GenerateVisitProtocolsHandler(
                 )
             }
 
+            // Get visit to retrieve visit number
+            val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
+                ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+            val visitNumber = visitEntity.visitNumber
+
             // Resolve required protocols for this visit
             val resolveStart = System.currentTimeMillis()
             val requiredRules = protocolResolver.resolveRequiredProtocols(
@@ -67,12 +72,22 @@ class GenerateVisitProtocolsHandler(
             val visitProtocols = requiredRules.map { rule ->
                 val createStart = System.currentTimeMillis()
 
+                // Get next version number for this template
+                val maxVersion = visitProtocolRepository.findMaxVersionByVisitAndStageAndTemplate(
+                    visitId = command.visitId.value,
+                    studioId = command.studioId.value,
+                    stage = command.stage,
+                    templateId = rule.templateId.value
+                )
+                val nextVersion = maxVersion + 1
+
                 val visitProtocol = VisitProtocol(
                     id = VisitProtocolId.random(),
                     studioId = command.studioId,
                     visitId = command.visitId,
                     templateId = rule.templateId,
                     stage = command.stage,
+                    version = nextVersion,
                     isMandatory = rule.isMandatory,
                     status = VisitProtocolStatus.PENDING,
                     filledPdfS3Key = null,
@@ -92,7 +107,7 @@ class GenerateVisitProtocolsHandler(
 
                 // Automatically fill the PDF with CRM data
                 val fillStart = System.currentTimeMillis()
-                val updatedProtocol = fillProtocolPdf(visitProtocol, command.studioId)
+                val updatedProtocol = fillProtocolPdf(visitProtocol, command.studioId, visitNumber)
                 logger.info("[PERF] Fill PDF total: ${System.currentTimeMillis() - fillStart}ms")
 
                 logger.info("[PERF] Single protocol creation: ${System.currentTimeMillis() - createStart}ms")
@@ -103,7 +118,7 @@ class GenerateVisitProtocolsHandler(
             GenerateVisitProtocolsResult(visitProtocols)
         }
 
-    private suspend fun fillProtocolPdf(visitProtocol: VisitProtocol, studioId: StudioId): VisitProtocol {
+    private suspend fun fillProtocolPdf(visitProtocol: VisitProtocol, studioId: StudioId, visitNumber: String): VisitProtocol {
         return try {
             // Resolve CRM data for the visit
             val crmStart = System.currentTimeMillis()
@@ -130,11 +145,12 @@ class GenerateVisitProtocolsHandler(
                 visitProtocol.templateId.value
             )
 
-            // Build output S3 key for filled PDF
+            // Build output S3 key for filled PDF with visit number and version
             val filledPdfS3Key = s3StorageService.buildFilledPdfS3Key(
                 studioId.value,
                 visitProtocol.visitId.value,
-                visitProtocol.id.value
+                visitNumber,
+                visitProtocol.version
             )
 
             // Fill the PDF

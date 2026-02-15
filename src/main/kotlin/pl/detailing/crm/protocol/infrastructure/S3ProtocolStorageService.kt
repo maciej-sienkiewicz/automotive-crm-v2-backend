@@ -28,8 +28,8 @@ import java.util.*
  *
  * Storage Path Patterns:
  * - Templates: {studioId}/protocols/templates/{templateId}.pdf
- * - Filled PDFs: {studioId}/protocols/visits/{visitId}/filled/{protocolId}.pdf
- * - Signed PDFs: {studioId}/protocols/visits/{visitId}/signed/{protocolId}.pdf
+ * - Filled PDFs: {studioId}/protocols/visits/{visitId}/filled/PPP_{visitNumber}_{version}.pdf
+ * - Signed PDFs: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}.pdf
  * - Signatures: {studioId}/protocols/visits/{visitId}/signatures/{protocolId}.png
  */
 @Service
@@ -56,16 +56,16 @@ class S3ProtocolStorageService(
     /**
      * Generate a presigned URL for uploading a filled protocol PDF.
      */
-    fun generateFilledPdfUploadUrl(studioId: UUID, visitId: UUID, protocolId: UUID): String {
-        val s3Key = buildFilledPdfS3Key(studioId, visitId, protocolId)
+    fun generateFilledPdfUploadUrl(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
+        val s3Key = buildFilledPdfS3Key(studioId, visitId, visitNumber, version)
         return generateUploadUrl(s3Key, "application/pdf")
     }
 
     /**
      * Generate a presigned URL for uploading a signed protocol PDF.
      */
-    fun generateSignedPdfUploadUrl(studioId: UUID, visitId: UUID, protocolId: UUID): String {
-        val s3Key = buildSignedPdfS3Key(studioId, visitId, protocolId)
+    fun generateSignedPdfUploadUrl(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
+        val s3Key = buildSignedPdfS3Key(studioId, visitId, visitNumber, version)
         return generateUploadUrl(s3Key, "application/pdf")
     }
 
@@ -104,16 +104,20 @@ class S3ProtocolStorageService(
 
     /**
      * Build S3 key for a filled protocol PDF.
+     * Format: {studioId}/protocols/visits/{visitId}/filled/PPP_{visitNumber}_{version}.pdf
+     * Example: studio123/protocols/visits/visit456/filled/PPP_VIS-2026-00005_1.pdf
      */
-    fun buildFilledPdfS3Key(studioId: UUID, visitId: UUID, protocolId: UUID): String {
-        return "$studioId/protocols/visits/$visitId/filled/$protocolId.pdf"
+    fun buildFilledPdfS3Key(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
+        return "$studioId/protocols/visits/$visitId/filled/PPP_${visitNumber}_$version.pdf"
     }
 
     /**
      * Build S3 key for a signed protocol PDF.
+     * Format: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}.pdf
+     * Example: studio123/protocols/visits/visit456/signed/PPP_VIS-2026-00005_1.pdf
      */
-    fun buildSignedPdfS3Key(studioId: UUID, visitId: UUID, protocolId: UUID): String {
-        return "$studioId/protocols/visits/$visitId/signed/$protocolId.pdf"
+    fun buildSignedPdfS3Key(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
+        return "$studioId/protocols/visits/$visitId/signed/PPP_${visitNumber}_$version.pdf"
     }
 
     /**

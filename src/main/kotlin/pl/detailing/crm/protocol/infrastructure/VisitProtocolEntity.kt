@@ -38,6 +38,9 @@ class VisitProtocolEntity(
     @Column(name = "stage", nullable = false, length = 50)
     val stage: ProtocolStage,
 
+    @Column(name = "version", nullable = false)
+    val version: Int = 1,
+
     @Column(name = "is_mandatory", nullable = false)
     val isMandatory: Boolean,
 
@@ -75,6 +78,7 @@ class VisitProtocolEntity(
         visitId = VisitId(visitId),
         templateId = ProtocolTemplateId(templateId),
         stage = stage,
+        version = version,
         isMandatory = isMandatory,
         status = status,
         filledPdfS3Key = filledPdfS3Key,
@@ -95,6 +99,7 @@ class VisitProtocolEntity(
                 visitId = visitProtocol.visitId.value,
                 templateId = visitProtocol.templateId.value,
                 stage = visitProtocol.stage,
+                version = visitProtocol.version,
                 isMandatory = visitProtocol.isMandatory,
                 status = visitProtocol.status,
                 filledPdfS3Key = visitProtocol.filledPdfS3Key,

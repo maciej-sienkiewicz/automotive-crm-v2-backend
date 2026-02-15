@@ -19,6 +19,7 @@ data class VisitProtocol(
     val visitId: VisitId,
     val templateId: ProtocolTemplateId,
     val stage: ProtocolStage,
+    val version: Int,                   // Version number for protocol regeneration (1, 2, 3...)
     val isMandatory: Boolean,
     val status: VisitProtocolStatus,
     val filledPdfS3Key: String?,        // S3 key for the filled PDF (before signature)

@@ -9,6 +9,7 @@ import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolEntity
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
 
 /**
@@ -20,6 +21,7 @@ import pl.detailing.crm.shared.*
 @Service
 class SignVisitProtocolHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
+    private val visitRepository: VisitRepository,
     private val pdfProcessingService: PdfProcessingService,
     private val s3StorageService: S3ProtocolStorageService
 ) {
@@ -47,11 +49,17 @@ class SignVisitProtocolHandler(
 
             requireNotNull(protocol.filledPdfS3Key) { "Filled PDF S3 key is missing" }
 
-            // Build S3 keys
+            // Get visit to retrieve visit number
+            val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
+                ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+            val visitNumber = visitEntity.visitNumber
+
+            // Build S3 keys with visit number and version
             val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
                 command.studioId.value,
                 command.visitId.value,
-                command.protocolId.value
+                visitNumber,
+                protocol.version
             )
 
             // The signature image URL from the frontend is assumed to be already uploaded to S3
