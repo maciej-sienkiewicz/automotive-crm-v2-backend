@@ -179,14 +179,14 @@ class GenerateVisitProtocolsHandler(
                     )
                     val templateName = template?.name ?: "Protocol"
 
-                    // Register as document
+                    // Register as document with new naming convention
                     documentService.registerDocument(
                         visitId = visitProtocol.visitId.value,
                         customerId = visitEntity.customerId,
                         documentType = DocumentType.PROTOCOL,
                         name = "$templateName - ${if (visitProtocol.stage == ProtocolStage.CHECK_IN) "Przyjęcie" else "Wydanie"}",
                         s3Key = filledPdfS3Key,
-                        fileName = "${templateName.replace(" ", "_")}_${visitProtocol.id.value}.pdf",
+                        fileName = "PPP_${visitNumber}_${visitProtocol.version}.pdf",
                         createdBy = visitEntity.createdBy,
                         createdByName = "System", // Will be updated when signed
                         category = "protocol"
