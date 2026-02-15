@@ -56,7 +56,7 @@ class AddVisitPhotoHandler(
         visitEntity.photos.addAll(updatedPhotos.map { photo ->
             pl.detailing.crm.visit.infrastructure.VisitPhotoEntity(
                 id = photo.id.value,
-                visitId = visitEntity.id,
+                visit = visitEntity,
                 fileId = photo.fileId,
                 fileName = photo.fileName,
                 description = photo.description,
