@@ -3,11 +3,10 @@ package pl.detailing.crm.visit.photos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
-import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.NotFoundException
+import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.visit.domain.VisitId
-import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
@@ -21,17 +20,21 @@ class GetVisitPhotosHandler(
     private val photoSessionService: PhotoSessionService
 ) {
 
+    @Transactional(readOnly = true)
     suspend fun handle(command: GetVisitPhotosCommand): GetVisitPhotosResult = withContext(Dispatchers.IO) {
-        // 1. Fetch visit
-        val visit = visitRepository.findById(command.visitId)
-            ?: throw NotFoundException("Visit not found")
+        // 1. Fetch visit entity with studio isolation
+        val visitEntity = visitRepository.findByIdAndStudioId(
+            id = command.visitId.value,
+            studioId = command.studioId.value
+        ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
 
-        // 2. Verify studio access
-        if (visit.studioId != command.studioId) {
-            throw ForbiddenException("Access denied to this visit")
-        }
+        // 2. Force load photos collection within transaction
+        visitEntity.photos.size
 
-        // 3. Get photos and generate presigned URLs
+        // 3. Convert to domain model
+        val visit = visitEntity.toDomain()
+
+        // 4. Get photos and generate presigned URLs
         val photoResponses = visit.photos.map { photo ->
             VisitPhotoInfo(
                 id = photo.id.value.toString(),
