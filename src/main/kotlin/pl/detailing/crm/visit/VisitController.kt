@@ -23,6 +23,8 @@ import pl.detailing.crm.visit.photos.GetVisitPhotosCommand
 import pl.detailing.crm.visit.photos.VisitPhotoInfo
 import pl.detailing.crm.visit.photos.AddVisitPhotoHandler
 import pl.detailing.crm.visit.photos.AddVisitPhotoCommand
+import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
+import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
 import java.time.LocalDate
 import java.time.Instant
 
@@ -33,6 +35,7 @@ class VisitController(
     private val getVisitDetailHandler: GetVisitDetailHandler,
     private val getVisitPhotosHandler: GetVisitPhotosHandler,
     private val addVisitPhotoHandler: AddVisitPhotoHandler,
+    private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler
@@ -169,6 +172,28 @@ class VisitController(
             uploadUrl = result.uploadUrl,
             fileId = result.fileId
         ))
+    }
+
+    /**
+     * Delete a photo from a visit
+     * DELETE /api/visits/{visitId}/photos/{photoId}
+     */
+    @DeleteMapping("/{visitId}/photos/{photoId}")
+    fun deleteVisitPhoto(
+        @PathVariable visitId: String,
+        @PathVariable photoId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = DeleteVisitPhotoCommand(
+            visitId = VisitId.fromString(visitId),
+            photoId = VisitPhotoId.fromString(photoId),
+            studioId = principal.studioId
+        )
+
+        deleteVisitPhotoHandler.handle(command)
+
+        ResponseEntity.noContent().build()
     }
 
     /**
