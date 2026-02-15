@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.create.*
 import pl.detailing.crm.appointment.update.*
+import pl.detailing.crm.appointment.cancel.*
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
@@ -20,6 +21,7 @@ import java.time.LocalDate
 class AppointmentController(
     private val createAppointmentHandler: CreateAppointmentHandler,
     private val updateAppointmentHandler: UpdateAppointmentHandler,
+    private val cancelAppointmentHandler: CancelAppointmentHandler,
     private val listAppointmentsHandler: ListAppointmentsHandler,
     private val getAppointmentHandler: GetAppointmentHandler
 ) {
@@ -300,7 +302,38 @@ class AppointmentController(
             )
         )
     }
+
+    @PatchMapping("/{id}")
+    fun updateAppointmentStatus(
+        @PathVariable id: String,
+        @RequestBody request: UpdateAppointmentStatusRequest
+    ): ResponseEntity<Unit> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can cancel appointments")
+        }
+
+        // Only support CANCELLED status for now
+        if (request.status != "CANCELLED") {
+            throw BadRequestException("Only CANCELLED status is supported via PATCH")
+        }
+
+        val command = CancelAppointmentCommand(
+            appointmentId = AppointmentId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId
+        )
+
+        cancelAppointmentHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
 }
+
+data class UpdateAppointmentStatusRequest(
+    val status: String
+)
 
 data class AppointmentCreateResponse(
     val id: String,
