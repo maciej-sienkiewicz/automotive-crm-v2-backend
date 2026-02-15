@@ -236,7 +236,7 @@ class CreateVisitFromReservationHandler(
                 inspectionNotes = listOfNotNull(command.technicalState.inspectionNotes)
                     .joinToString("\n")
                     .ifBlank { null },
-                technicalNotes = listOfNotNull(appointment.note)
+                technicalNotes = listOfNotNull(command.technicalState.inspectionNotes)
                     .joinToString("\n")
                     .ifBlank { null }, // Also save to technicalNotes for visibility in API response
                 vehicleHandoff = command.vehicleHandoff,

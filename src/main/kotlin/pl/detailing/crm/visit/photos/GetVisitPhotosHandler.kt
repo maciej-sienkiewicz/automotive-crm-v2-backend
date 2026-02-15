@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.visit.domain.VisitId
+import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
