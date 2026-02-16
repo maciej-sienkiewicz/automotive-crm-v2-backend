@@ -3,6 +3,7 @@ package pl.detailing.crm.vehicle.infrastructure
 import jakarta.persistence.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.Vehicle
+import pl.detailing.crm.vehicle.domain.VehiclePhoto
 import java.time.Instant
 import java.util.UUID
 
@@ -59,7 +60,10 @@ class VehicleEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
-    var updatedAt: Instant = Instant.now()
+    var updatedAt: Instant = Instant.now(),
+
+    @OneToMany(mappedBy = "vehicle", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    val photos: MutableList<VehiclePhotoEntity> = mutableListOf()
 ) {
     fun toDomain(): Vehicle = Vehicle(
         id = VehicleId(id),
@@ -96,4 +100,44 @@ class VehicleEntity(
             updatedAt = vehicle.updatedAt
         )
     }
+}
+
+/**
+ * Entity for vehicle photos stored directly on the vehicle (not associated with a specific visit)
+ */
+@Entity
+@Table(
+    name = "vehicle_photos",
+    indexes = [
+        Index(name = "idx_vehicle_photos_vehicle_id", columnList = "vehicle_id")
+    ]
+)
+class VehiclePhotoEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "vehicle_id", nullable = false)
+    var vehicle: VehicleEntity,
+
+    @Column(name = "file_id", nullable = false, length = 255)
+    val fileId: String,
+
+    @Column(name = "file_name", nullable = false, length = 255)
+    val fileName: String,
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    val description: String?,
+
+    @Column(name = "uploaded_at", nullable = false, columnDefinition = "timestamp with time zone")
+    val uploadedAt: Instant
+) {
+    fun toDomain(): VehiclePhoto = VehiclePhoto(
+        id = VehiclePhotoId(id),
+        fileId = fileId,
+        fileName = fileName,
+        description = description,
+        uploadedAt = uploadedAt
+    )
 }

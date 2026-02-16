@@ -26,3 +26,14 @@ data class VehicleOwner(
     val ownershipRole: OwnershipRole,
     val assignedAt: Instant
 )
+
+/**
+ * Photo attached directly to a vehicle (not associated with a specific visit)
+ */
+data class VehiclePhoto(
+    val id: VehiclePhotoId,
+    val fileId: String,
+    val fileName: String,
+    val description: String?,
+    val uploadedAt: Instant
+)
