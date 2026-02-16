@@ -14,7 +14,7 @@ import java.time.Instant
  * Controller for vehicle photo operations
  */
 @RestController
-@RequestMapping("/api/vehicles/{vehicleId}/photos")
+@RequestMapping("/api/v1/vehicles/{vehicleId}/photos")
 class VehiclePhotoController(
     private val getVehiclePhotosHandler: GetVehiclePhotosHandler,
     private val addVehiclePhotoHandler: AddVehiclePhotoHandler,
