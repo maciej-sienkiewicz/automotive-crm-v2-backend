@@ -288,6 +288,19 @@ value class VisitPhotoId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID for vehicle photos
+ */
+@JvmInline
+value class VehiclePhotoId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = VehiclePhotoId(UUID.randomUUID())
+        fun fromString(value: String) = VehiclePhotoId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type-safe ID for visit journal entries
  */
 @JvmInline

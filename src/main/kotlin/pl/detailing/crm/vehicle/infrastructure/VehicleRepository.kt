@@ -15,6 +15,15 @@ interface VehicleRepository : JpaRepository<VehicleEntity, UUID> {
         @Param("studioId") studioId: UUID
     ): VehicleEntity?
 
+    /**
+     * Find vehicle by ID with studio isolation, eagerly fetching photos
+     */
+    @Query("SELECT v FROM VehicleEntity v LEFT JOIN FETCH v.photos WHERE v.id = :id AND v.studioId = :studioId")
+    fun findByIdAndStudioIdWithPhotos(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): VehicleEntity?
+
     @Query("SELECT v FROM VehicleEntity v WHERE v.studioId = :studioId")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<VehicleEntity>
 
