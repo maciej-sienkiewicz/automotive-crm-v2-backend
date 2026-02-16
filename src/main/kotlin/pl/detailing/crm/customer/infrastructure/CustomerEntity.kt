@@ -13,8 +13,6 @@ import java.util.UUID
 @Table(
     name = "customers",
     indexes = [
-        Index(name = "idx_customers_studio_email", columnList = "studio_id, email", unique = true),
-        Index(name = "idx_customers_studio_phone", columnList = "studio_id, phone", unique = true),
         Index(name = "idx_customers_studio_active", columnList = "studio_id, is_active"),
         Index(name = "idx_customers_created_by", columnList = "created_by"),
         Index(name = "idx_customers_updated_by", columnList = "updated_by")
