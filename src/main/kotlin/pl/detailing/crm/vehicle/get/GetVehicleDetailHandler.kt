@@ -142,11 +142,10 @@ data class MoneyDetail(
 data class VisitSummary(
     val id: String,
     val date: Instant,
-    val type: String,
     val description: String,
     val status: String,
     val totalCost: MoneyDetail,
-    val technician: String
+    val createdBy: String
 )
 
 data class VehicleActivity(

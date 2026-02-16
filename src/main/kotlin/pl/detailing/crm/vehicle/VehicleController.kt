@@ -163,7 +163,6 @@ class VehicleController(
                 VisitSummaryResponse(
                     id = visit.id,
                     date = visit.date,
-                    type = visit.type,
                     description = visit.description,
                     status = visit.status,
                     totalCost = MoneyResponse(
@@ -171,7 +170,7 @@ class VehicleController(
                         grossAmount = visit.totalCost.grossAmount.toDouble(),
                         currency = visit.totalCost.currency
                     ),
-                    technician = visit.technician
+                    createdBy = visit.createdBy
                 )
             },
             activities = result.activities.map { activity ->
@@ -434,11 +433,10 @@ data class MoneyResponse(
 data class VisitSummaryResponse(
     val id: String,
     val date: Instant,
-    val type: String,
     val description: String,
     val status: String,
     val totalCost: MoneyResponse,
-    val technician: String
+    val createdBy: String
 )
 
 data class ActivityResponse(

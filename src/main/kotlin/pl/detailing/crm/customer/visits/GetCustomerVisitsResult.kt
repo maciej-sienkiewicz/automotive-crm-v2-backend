@@ -11,22 +11,14 @@ data class GetCustomerVisitsResult(
 data class VisitInfo(
     val id: String,
     val date: Instant,
-    val type: VisitType,
     val vehicleId: String,
     val vehicleName: String,
     val description: String,
     val totalCost: CostInfo,
     val status: String,
-    val technician: String,
+    val createdBy: String,
     val notes: String
 )
-
-enum class VisitType {
-    SERVICE,
-    REPAIR,
-    INSPECTION,
-    CONSULTATION
-}
 
 data class CostInfo(
     val netAmount: BigDecimal,

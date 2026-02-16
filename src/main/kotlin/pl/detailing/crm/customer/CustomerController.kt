@@ -362,7 +362,6 @@ class CustomerController(
                 VisitResponse(
                     id = visit.id,
                     date = visit.date,
-                    type = visit.type.name.lowercase(),
                     vehicleId = visit.vehicleId,
                     vehicleName = visit.vehicleName,
                     description = visit.description,
@@ -372,7 +371,7 @@ class CustomerController(
                         currency = visit.totalCost.currency
                     ),
                     status = visit.status,
-                    technician = visit.technician,
+                    createdBy = visit.createdBy,
                     notes = visit.notes
                 )
             },
@@ -689,13 +688,12 @@ data class CustomerVisitsResponse(
 data class VisitResponse(
     val id: String,
     val date: Instant,
-    val type: String,
     val vehicleId: String,
     val vehicleName: String,
     val description: String,
     val totalCost: VisitCostResponse,
     val status: String,
-    val technician: String,
+    val createdBy: String,
     val notes: String
 )
 
