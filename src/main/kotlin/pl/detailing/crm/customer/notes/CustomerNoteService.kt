@@ -34,6 +34,7 @@ class CustomerNoteService(
         customerRepository.findByIdAndStudioId(customerId, studioId)
             ?: throw EntityNotFoundException("Customer not found")
 
+        val now = Instant.now()
         val entity = CustomerNoteEntity(
             id = UUID.randomUUID(),
             studioId = studioId,
@@ -41,8 +42,8 @@ class CustomerNoteService(
             content = content.trim(),
             createdBy = createdBy,
             createdByName = createdByName,
-            createdAt = Instant.now(),
-            updatedAt = Instant.now()
+            createdAt = now,
+            updatedAt = now
         )
 
         customerNoteRepository.save(entity).toItem()
