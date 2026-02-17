@@ -25,6 +25,9 @@ import pl.detailing.crm.vehicle.visits.GetVehicleVisitsCommand
 import pl.detailing.crm.vehicle.visits.GetVehicleVisitsHandler
 import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsCommand
 import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsHandler
+import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsHandler
+import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsCommand
+import pl.detailing.crm.vehicle.documents.VehicleDocumentItem
 import java.time.Instant
 
 @RestController
@@ -38,7 +41,8 @@ class VehicleController(
     private val assignOwnerHandler: AssignOwnerHandler,
     private val removeOwnerHandler: RemoveOwnerHandler,
     private val getVehicleVisitsHandler: GetVehicleVisitsHandler,
-    private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler
+    private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler,
+    private val getVehicleDocumentsHandler: GetVehicleDocumentsHandler
 ) {
 
     @GetMapping
@@ -448,6 +452,34 @@ class VehicleController(
             )
         ))
     }
+
+    @GetMapping("/{vehicleId}/documents")
+    fun getVehicleDocuments(
+        @PathVariable vehicleId: String
+    ): ResponseEntity<VehicleDocumentsResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetVehicleDocumentsCommand(
+            vehicleId = VehicleId.fromString(vehicleId),
+            studioId = principal.studioId
+        )
+
+        val result = getVehicleDocumentsHandler.handle(command)
+
+        ResponseEntity.ok(VehicleDocumentsResponse(
+            documents = result.documents.map { document ->
+                VehicleDocumentResponse(
+                    id = document.id,
+                    name = document.name,
+                    fileName = document.fileName,
+                    fileUrl = document.fileUrl,
+                    uploadedAt = document.uploadedAt,
+                    uploadedByName = document.uploadedByName,
+                    source = document.source
+                )
+            }
+        ))
+    }
 }
 
 // Response DTOs
@@ -633,4 +665,19 @@ data class VehicleAppointmentResponse(
     val totalCost: MoneyResponse,
     val note: String,
     val createdAt: Instant
+)
+
+// Vehicle Documents DTOs
+data class VehicleDocumentsResponse(
+    val documents: List<VehicleDocumentResponse>
+)
+
+data class VehicleDocumentResponse(
+    val id: String,
+    val name: String,
+    val fileName: String,
+    val fileUrl: String,
+    val uploadedAt: Instant,
+    val uploadedByName: String,
+    val source: String // "VEHICLE" or "VISIT"
 )
