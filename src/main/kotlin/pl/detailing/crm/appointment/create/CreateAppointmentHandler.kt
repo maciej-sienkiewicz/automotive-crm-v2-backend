@@ -157,7 +157,6 @@ class CreateAppointmentHandler(
                     } else null
                 )
             } else null,
-            notes = null,
             isActive = true,
             createdBy = userId,
             updatedBy = userId,

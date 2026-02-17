@@ -471,7 +471,7 @@ class VehicleController(
 
         val result = getVehicleDocumentsHandler.handle(command)
 
-        ResponseEntity.ok(VehicleDocumentsResponse(
+        return ResponseEntity.ok(VehicleDocumentsResponse(
             documents = result.documents.map { document ->
                 VehicleDocumentResponse(
                     id = document.id,
