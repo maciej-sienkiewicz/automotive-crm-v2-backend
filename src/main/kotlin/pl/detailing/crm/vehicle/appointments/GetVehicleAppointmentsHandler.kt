@@ -20,7 +20,7 @@ class GetVehicleAppointmentsHandler(
             val allAppointments = appointmentRepository.findByStudioIdAndVehicleId(
                 studioId = command.studioId.value,
                 vehicleId = command.vehicleId.value
-            )
+            ).filter { it.status != pl.detailing.crm.appointment.domain.AppointmentStatus.CONVERTED }
 
             val totalItems = allAppointments.size
             val totalPages = if (command.limit > 0) {
