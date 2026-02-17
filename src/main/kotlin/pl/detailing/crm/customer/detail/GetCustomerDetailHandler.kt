@@ -9,6 +9,8 @@ import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepositor
 import pl.detailing.crm.customer.domain.CompanyAddress
 import pl.detailing.crm.customer.domain.HomeAddress
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.customer.notes.CustomerNoteItem
+import pl.detailing.crm.customer.notes.CustomerNoteRepository
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -18,6 +20,7 @@ import java.time.Instant
 @Service
 class GetCustomerDetailHandler(
     private val customerRepository: CustomerRepository,
+    private val customerNoteRepository: CustomerNoteRepository,
     private val visitRepository: VisitRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val consentDefinitionRepository: ConsentDefinitionRepository,
@@ -75,20 +78,16 @@ class GetCustomerDetailHandler(
             )
 
             val marketingConsents = activeDefinitions.mapNotNull { definition ->
-                // Map definition slug to consent type
                 val consentType = mapSlugToConsentType(definition.slug) ?: return@mapNotNull null
 
-                // Find active template for this definition
                 val activeTemplate = allTemplates.firstOrNull {
                     it.definitionId == definition.id && it.isActive
                 }
 
-                // Find all templates for this definition
                 val definitionTemplates = allTemplates
                     .filter { it.definitionId == definition.id }
                     .map { it.id }
 
-                // Find customer's consent for this definition (latest)
                 val latestConsent = customerConsents
                     .filter { it.templateId in definitionTemplates }
                     .maxByOrNull { it.signedAt }
@@ -102,17 +101,33 @@ class GetCustomerDetailHandler(
                     grantedAt = latestConsent?.signedAt,
                     revokedAt = if (latestConsent != null && activeTemplate != null &&
                                     latestConsent.templateId != activeTemplate.id) {
-                        // If there's a newer template they haven't signed, consider it revoked
                         latestConsent.signedAt
                     } else null,
-                    lastModifiedBy = "System" // We don't track who modified it yet
+                    lastModifiedBy = "System"
                 )
             }
 
             // Step 6: Calculate loyalty tier based on lifetime value
             val loyaltyTier = calculateLoyaltyTier(revenueInfo.grossAmount)
 
-            // Step 7: Build customer info
+            // Step 7: Load notes
+            val notes = customerNoteRepository
+                .findByCustomerIdAndStudioIdOrderByCreatedAtDesc(
+                    customerId = command.customerId.value,
+                    studioId = command.studioId.value
+                )
+                .map { note ->
+                    CustomerNoteItem(
+                        id = note.id.toString(),
+                        content = note.content,
+                        createdBy = note.createdBy.toString(),
+                        createdByName = note.createdByName,
+                        createdAt = note.createdAt,
+                        updatedAt = note.updatedAt
+                    )
+                }
+
+            // Step 8: Build customer info
             val customerInfo = CustomerDetailInfo(
                 id = customerEntity.id.toString(),
                 firstName = customerEntity.firstName,
@@ -153,7 +168,7 @@ class GetCustomerDetailHandler(
                         } else null
                     )
                 } else null,
-                notes = customerEntity.notes ?: "",
+                notes = notes,
                 lastVisitDate = lastVisitDate,
                 totalVisits = totalVisits,
                 vehicleCount = vehicleCount,
@@ -176,7 +191,7 @@ class GetCustomerDetailHandler(
             "sms", "marketing-sms", "sms-marketing" -> MarketingConsentType.SMS
             "phone", "marketing-phone", "phone-marketing" -> MarketingConsentType.PHONE
             "postal", "marketing-postal", "postal-marketing" -> MarketingConsentType.POSTAL
-            else -> null // Skip non-marketing consents like RODO
+            else -> null
         }
     }
 

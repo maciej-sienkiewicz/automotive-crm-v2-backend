@@ -29,7 +29,6 @@ class CreateCustomerHandler(
             phone = command.phone?.trim(),
             homeAddress = command.homeAddress,
             companyData = command.companyData,
-            notes = command.notes?.trim(),
             isActive = true,
             createdBy = command.userId,
             updatedBy = command.userId,

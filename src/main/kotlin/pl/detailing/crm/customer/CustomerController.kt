@@ -15,6 +15,7 @@ import pl.detailing.crm.customer.get.GetCustomerByIdCommand
 import pl.detailing.crm.customer.get.GetCustomerByIdHandler
 import pl.detailing.crm.customer.list.CustomerListItem
 import pl.detailing.crm.customer.list.ListCustomersHandler
+import pl.detailing.crm.customer.notes.CustomerNoteItem
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
@@ -34,7 +35,6 @@ class CustomerController(
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
-    private val updateNotesHandler: pl.detailing.crm.customer.update.UpdateNotesHandler,
     private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler
 ) {
 
@@ -158,7 +158,7 @@ class CustomerController(
                     }
                 )
             },
-            notes = result.notes,
+            notes = result.notes.map { it.toResponse() },
             lastVisitDate = result.lastVisitDate,
             totalVisits = result.totalVisits,
             vehicleCount = result.vehicleCount,
@@ -209,8 +209,7 @@ class CustomerController(
                         )
                     }
                 )
-            },
-            notes = request.notes
+            }
         )
 
         val result = createCustomerHandler.handle(command)
@@ -246,7 +245,6 @@ class CustomerController(
                         }
                     )
                 },
-                notes = request.notes,
                 isActive = true,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
@@ -297,7 +295,7 @@ class CustomerController(
                         }
                     )
                 },
-                notes = result.customer.notes,
+                notes = result.customer.notes.map { it.toResponse() },
                 lastVisitDate = result.customer.lastVisitDate,
                 totalVisits = result.customer.totalVisits,
                 vehicleCount = result.customer.vehicleCount,
@@ -495,29 +493,25 @@ class CustomerController(
 
         ResponseEntity.noContent().build()
     }
-
-    @PatchMapping("/{customerId}/notes")
-    fun updateNotes(
-        @PathVariable customerId: String,
-        @RequestBody request: UpdateNotesRequest
-    ): ResponseEntity<UpdateNotesResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = pl.detailing.crm.customer.update.UpdateNotesCommand(
-            customerId = CustomerId(UUID.fromString(customerId)),
-            studioId = principal.studioId,
-            userId = principal.userId,
-            notes = request.notes
-        )
-
-        val result = updateNotesHandler.handle(command)
-
-        ResponseEntity.ok(UpdateNotesResponse(
-            notes = result.notes,
-            updatedAt = result.updatedAt
-        ))
-    }
 }
+
+private fun CustomerNoteItem.toResponse() = NoteItemResponse(
+    id = id,
+    content = content,
+    createdBy = createdBy,
+    createdByName = createdByName,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
+
+data class NoteItemResponse(
+    val id: String,
+    val content: String,
+    val createdBy: String,
+    val createdByName: String,
+    val createdAt: Instant,
+    val updatedAt: Instant
+)
 
 data class CustomerResponse(
     val id: String,
@@ -527,7 +521,6 @@ data class CustomerResponse(
     val phone: String?,
     val homeAddress: HomeAddressResponse?,
     val companyData: CompanyDataResponse?,
-    val notes: String?,
     val isActive: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
@@ -573,7 +566,7 @@ data class CustomerDetailResponse(
     val contact: CustomerContactResponse,
     val homeAddress: HomeAddressResponse?,
     val company: CompanyDetailsResponse?,
-    val notes: String,
+    val notes: List<NoteItemResponse>,
     val lastVisitDate: Instant?,
     val totalVisits: Int,
     val vehicleCount: Int,
@@ -667,16 +660,6 @@ data class UpdateCompanyResponse(
     val nip: String,
     val regon: String,
     val address: CompanyAddressResponse
-)
-
-// Update Notes DTOs
-data class UpdateNotesRequest(
-    val notes: String
-)
-
-data class UpdateNotesResponse(
-    val notes: String,
-    val updatedAt: Instant
 )
 
 // Customer Visits DTOs

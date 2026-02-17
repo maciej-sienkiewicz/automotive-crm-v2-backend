@@ -14,7 +14,6 @@ data class Customer(
     val phone: String?,
     val homeAddress: HomeAddress?,
     val companyData: CompanyData?,
-    val notes: String?,
     val isActive: Boolean,
     val createdBy: UserId,
     val updatedBy: UserId,

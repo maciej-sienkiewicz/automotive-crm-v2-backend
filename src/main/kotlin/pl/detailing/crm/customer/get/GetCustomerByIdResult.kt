@@ -1,8 +1,8 @@
 package pl.detailing.crm.customer.get
 
 import pl.detailing.crm.customer.domain.CompanyAddress
-import pl.detailing.crm.customer.domain.CompanyData
 import pl.detailing.crm.customer.domain.HomeAddress
+import pl.detailing.crm.customer.notes.CustomerNoteItem
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -13,7 +13,7 @@ data class GetCustomerByIdResult(
     val contact: ContactInfo,
     val homeAddress: HomeAddress?,
     val company: CompanyDetails?,
-    val notes: String,
+    val notes: List<CustomerNoteItem>,
     val lastVisitDate: Instant?,
     val totalVisits: Int,
     val vehicleCount: Int,

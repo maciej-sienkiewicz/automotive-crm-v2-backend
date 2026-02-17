@@ -13,6 +13,5 @@ data class CreateCustomerCommand(
     val email: String?,
     val phone: String?,
     val homeAddress: HomeAddress?,
-    val companyData: CompanyData?,
-    val notes: String?
+    val companyData: CompanyData?
 )

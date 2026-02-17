@@ -71,9 +71,6 @@ class CustomerEntity(
     @Column(name = "company_address_country", length = 100)
     var companyAddressCountry: String?,
 
-    @Column(name = "notes", columnDefinition = "TEXT")
-    var notes: String?,
-
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
 
@@ -121,7 +118,6 @@ class CustomerEntity(
                 } else null
             )
         } else null,
-        notes = notes,
         isActive = isActive,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
@@ -148,7 +144,6 @@ class CustomerEntity(
             companyAddressCity = customer.companyData?.address?.city,
             companyAddressPostalCode = customer.companyData?.address?.postalCode,
             companyAddressCountry = customer.companyData?.address?.country,
-            notes = customer.notes,
             isActive = customer.isActive,
             createdBy = customer.createdBy.value,
             updatedBy = customer.updatedBy.value,

@@ -6,8 +6,7 @@ data class CreateCustomerRequest(
     val email: String?,
     val phone: String?,
     val homeAddress: HomeAddressRequest?,
-    val companyData: CompanyDataRequest?,
-    val notes: String?
+    val companyData: CompanyDataRequest?
 )
 
 data class HomeAddressRequest(

@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.customer.notes.CustomerNoteItem
+import pl.detailing.crm.customer.notes.CustomerNoteRepository
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
@@ -13,6 +15,7 @@ import java.math.BigDecimal
 @Service
 class GetCustomerByIdHandler(
     private val customerRepository: CustomerRepository,
+    private val customerNoteRepository: CustomerNoteRepository,
     private val visitRepository: VisitRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository
 ) {
@@ -54,6 +57,23 @@ class GetCustomerByIdHandler(
             val vehicleOwners = vehicleOwnerRepository.findByCustomerId(command.customerId.value)
             val vehicleCount = vehicleOwners.size
 
+            // Load notes
+            val notes = customerNoteRepository
+                .findByCustomerIdAndStudioIdOrderByCreatedAtDesc(
+                    customerId = command.customerId.value,
+                    studioId = command.studioId.value
+                )
+                .map { note ->
+                    CustomerNoteItem(
+                        id = note.id.toString(),
+                        content = note.content,
+                        createdBy = note.createdBy.toString(),
+                        createdByName = note.createdByName,
+                        createdAt = note.createdAt,
+                        updatedAt = note.updatedAt
+                    )
+                }
+
             GetCustomerByIdResult(
                 id = entity.id.toString(),
                 firstName = entity.firstName,
@@ -94,7 +114,7 @@ class GetCustomerByIdHandler(
                         } else null
                     )
                 } else null,
-                notes = entity.notes ?: "",
+                notes = notes,
                 lastVisitDate = lastVisitDate,
                 totalVisits = totalVisits,
                 vehicleCount = vehicleCount,
