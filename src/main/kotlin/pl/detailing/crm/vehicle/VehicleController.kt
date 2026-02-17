@@ -28,6 +28,7 @@ import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsHandler
 import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsHandler
 import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsCommand
 import pl.detailing.crm.vehicle.documents.VehicleDocumentItem
+import pl.detailing.crm.vehicle.documents.VehicleDocumentService
 import java.time.Instant
 
 @RestController
@@ -42,7 +43,8 @@ class VehicleController(
     private val removeOwnerHandler: RemoveOwnerHandler,
     private val getVehicleVisitsHandler: GetVehicleVisitsHandler,
     private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler,
-    private val getVehicleDocumentsHandler: GetVehicleDocumentsHandler
+    private val getVehicleDocumentsHandler: GetVehicleDocumentsHandler,
+    private val vehicleDocumentService: VehicleDocumentService
 ) {
 
     @GetMapping
@@ -480,6 +482,50 @@ class VehicleController(
             }
         ))
     }
+
+    /**
+     * Initiates a document upload for a vehicle.
+     * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
+     */
+    @PostMapping("/{vehicleId}/documents")
+    fun initiateDocumentUpload(
+        @PathVariable vehicleId: String,
+        @RequestBody request: InitiateVehicleDocumentUploadRequest
+    ): ResponseEntity<InitiateVehicleDocumentUploadResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = vehicleDocumentService.initiateUpload(
+            studioId = principal.studioId.value,
+            vehicleId = VehicleId.fromString(vehicleId).value,
+            name = request.name,
+            fileName = request.fileName,
+            contentType = request.contentType,
+            uploadedBy = principal.userId.value,
+            uploadedByName = principal.fullName
+        )
+
+        ResponseEntity.status(HttpStatus.CREATED).body(
+            InitiateVehicleDocumentUploadResponse(
+                documentId = result.documentId,
+                uploadUrl = result.uploadUrl
+            )
+        )
+    }
+
+    @DeleteMapping("/{vehicleId}/documents/{documentId}")
+    fun deleteVehicleDocument(
+        @PathVariable vehicleId: String,
+        @PathVariable documentId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        vehicleDocumentService.deleteDocument(
+            documentId = java.util.UUID.fromString(documentId),
+            studioId = principal.studioId.value
+        )
+
+        ResponseEntity.noContent().build()
+    }
 }
 
 // Response DTOs
@@ -680,4 +726,15 @@ data class VehicleDocumentResponse(
     val uploadedAt: Instant,
     val uploadedByName: String,
     val source: String // "VEHICLE" or "VISIT"
+)
+
+data class InitiateVehicleDocumentUploadRequest(
+    val name: String,
+    val fileName: String,
+    val contentType: String
+)
+
+data class InitiateVehicleDocumentUploadResponse(
+    val documentId: String,
+    val uploadUrl: String
 )
