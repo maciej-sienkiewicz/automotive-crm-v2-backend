@@ -270,6 +270,9 @@ class VehicleController(
             studioId = principal.studioId,
             userId = principal.userId,
             licensePlate = request.licensePlate,
+            brand = request.brand,
+            model = request.model,
+            yearOfProduction = request.yearOfProduction,
             color = request.color,
             paintType = request.paintType,
             currentMileage = request.currentMileage?.toInt(),
@@ -636,6 +639,9 @@ data class PhotoResponse(
 
 data class UpdateVehicleRequest(
     val licensePlate: String?,
+    val brand: String?,
+    val model: String?,
+    val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
     val currentMileage: Long?,

@@ -24,6 +24,18 @@ class UpdateVehicleHandler(
             vehicleEntity.licensePlate = it.trim().uppercase()
         }
 
+        command.brand?.let {
+            vehicleEntity.brand = it.trim()
+        }
+
+        command.model?.let {
+            vehicleEntity.model = it.trim()
+        }
+
+        command.yearOfProduction?.let {
+            vehicleEntity.yearOfProduction = it
+        }
+
         command.color?.let {
             vehicleEntity.color = it.trim()
         }
@@ -65,6 +77,9 @@ data class UpdateVehicleCommand(
     val studioId: StudioId,
     val userId: UserId,
     val licensePlate: String?,
+    val brand: String?,
+    val model: String?,
+    val yearOfProduction: Int?,
     val color: String?,
     val paintType: String?,
     val currentMileage: Int?,
