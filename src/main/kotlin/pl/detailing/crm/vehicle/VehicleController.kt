@@ -21,6 +21,10 @@ import pl.detailing.crm.vehicle.update.DeleteVehicleCommand
 import pl.detailing.crm.vehicle.update.DeleteVehicleHandler
 import pl.detailing.crm.vehicle.update.UpdateVehicleCommand
 import pl.detailing.crm.vehicle.update.UpdateVehicleHandler
+import pl.detailing.crm.vehicle.visits.GetVehicleVisitsCommand
+import pl.detailing.crm.vehicle.visits.GetVehicleVisitsHandler
+import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsCommand
+import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsHandler
 import java.time.Instant
 
 @RestController
@@ -32,7 +36,9 @@ class VehicleController(
     private val updateVehicleHandler: UpdateVehicleHandler,
     private val deleteVehicleHandler: DeleteVehicleHandler,
     private val assignOwnerHandler: AssignOwnerHandler,
-    private val removeOwnerHandler: RemoveOwnerHandler
+    private val removeOwnerHandler: RemoveOwnerHandler,
+    private val getVehicleVisitsHandler: GetVehicleVisitsHandler,
+    private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler
 ) {
 
     @GetMapping
@@ -352,6 +358,96 @@ class VehicleController(
 
         ResponseEntity.noContent().build()
     }
+
+    @GetMapping("/{vehicleId}/visits")
+    fun getVehicleVisits(
+        @PathVariable vehicleId: String,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int
+    ): ResponseEntity<VehicleVisitsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetVehicleVisitsCommand(
+            vehicleId = VehicleId.fromString(vehicleId),
+            studioId = principal.studioId,
+            page = page,
+            limit = limit
+        )
+
+        val result = getVehicleVisitsHandler.handle(command)
+
+        ResponseEntity.ok(VehicleVisitsResponse(
+            visits = result.visits.map { visit ->
+                VehicleVisitResponse(
+                    id = visit.id,
+                    date = visit.date,
+                    customerId = visit.customerId,
+                    customerName = visit.customerName,
+                    description = visit.description,
+                    totalCost = MoneyResponse(
+                        netAmount = visit.totalCost.netAmount.toDouble(),
+                        grossAmount = visit.totalCost.grossAmount.toDouble(),
+                        currency = visit.totalCost.currency
+                    ),
+                    status = visit.status,
+                    createdBy = visit.createdBy,
+                    notes = visit.notes
+                )
+            },
+            pagination = PaginationMeta(
+                currentPage = result.pagination.currentPage,
+                totalPages = result.pagination.totalPages,
+                totalItems = result.pagination.totalItems,
+                itemsPerPage = result.pagination.itemsPerPage
+            )
+        ))
+    }
+
+    @GetMapping("/{vehicleId}/appointments")
+    fun getVehicleAppointments(
+        @PathVariable vehicleId: String,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int
+    ): ResponseEntity<VehicleAppointmentsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetVehicleAppointmentsCommand(
+            vehicleId = VehicleId.fromString(vehicleId),
+            studioId = principal.studioId,
+            page = page,
+            limit = limit
+        )
+
+        val result = getVehicleAppointmentsHandler.handle(command)
+
+        ResponseEntity.ok(VehicleAppointmentsResponse(
+            appointments = result.appointments.map { appointment ->
+                VehicleAppointmentResponse(
+                    id = appointment.id,
+                    title = appointment.title,
+                    customerId = appointment.customerId,
+                    customerName = appointment.customerName,
+                    startDateTime = appointment.startDateTime,
+                    endDateTime = appointment.endDateTime,
+                    isAllDay = appointment.isAllDay,
+                    status = appointment.status,
+                    totalCost = MoneyResponse(
+                        netAmount = appointment.totalCost.netAmount.toDouble(),
+                        grossAmount = appointment.totalCost.grossAmount.toDouble(),
+                        currency = appointment.totalCost.currency
+                    ),
+                    note = appointment.note,
+                    createdAt = appointment.createdAt
+                )
+            },
+            pagination = PaginationMeta(
+                currentPage = result.pagination.currentPage,
+                totalPages = result.pagination.totalPages,
+                totalItems = result.pagination.totalItems,
+                itemsPerPage = result.pagination.itemsPerPage
+            )
+        ))
+    }
 }
 
 // Response DTOs
@@ -499,4 +595,42 @@ data class OwnerAssignmentData(
     val customerId: String,
     val role: String,
     val assignedAt: Instant
+)
+
+// Vehicle Visits DTOs
+data class VehicleVisitsResponse(
+    val visits: List<VehicleVisitResponse>,
+    val pagination: PaginationMeta
+)
+
+data class VehicleVisitResponse(
+    val id: String,
+    val date: Instant,
+    val customerId: String,
+    val customerName: String,
+    val description: String,
+    val totalCost: MoneyResponse,
+    val status: String,
+    val createdBy: String,
+    val notes: String
+)
+
+// Vehicle Appointments DTOs
+data class VehicleAppointmentsResponse(
+    val appointments: List<VehicleAppointmentResponse>,
+    val pagination: PaginationMeta
+)
+
+data class VehicleAppointmentResponse(
+    val id: String,
+    val title: String,
+    val customerId: String,
+    val customerName: String,
+    val startDateTime: Instant,
+    val endDateTime: Instant,
+    val isAllDay: Boolean,
+    val status: String,
+    val totalCost: MoneyResponse,
+    val note: String,
+    val createdAt: Instant
 )
