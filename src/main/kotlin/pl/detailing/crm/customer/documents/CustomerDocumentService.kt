@@ -8,7 +8,6 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.customer.infrastructure.CustomerDocumentEntity
 import pl.detailing.crm.customer.infrastructure.CustomerDocumentRepository
 import pl.detailing.crm.shared.EntityNotFoundException
-import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
 import java.util.UUID
@@ -23,50 +22,37 @@ class CustomerDocumentService(
     }
 
     @Transactional(readOnly = true)
-    fun listDocuments(customerId: UUID, studioId: UUID): List<CustomerDocumentItem> {
-        return customerDocumentRepository.findByCustomerIdAndStudioId(customerId, studioId)
-            .map { entity ->
-                CustomerDocumentItem(
-                    id = entity.id.toString(),
-                    name = entity.name,
-                    fileName = entity.fileName,
-                    fileUrl = documentStorageService.generateDownloadUrl(entity.fileId),
-                    uploadedAt = entity.uploadedAt,
-                    uploadedBy = entity.uploadedBy.toString(),
-                    uploadedByName = entity.uploadedByName
-                )
-            }
-    }
+    suspend fun listDocuments(customerId: UUID, studioId: UUID): List<CustomerDocumentItem> =
+        withContext(Dispatchers.IO) {
+            customerDocumentRepository.findByCustomerIdAndStudioId(customerId, studioId)
+                .map { entity ->
+                    CustomerDocumentItem(
+                        id = entity.id.toString(),
+                        name = entity.name,
+                        fileName = entity.fileName,
+                        fileUrl = documentStorageService.generateDownloadUrl(entity.fileId),
+                        uploadedAt = entity.uploadedAt,
+                        uploadedByName = entity.uploadedByName
+                    )
+                }
+        }
 
+    /**
+     * Creates the document record in DB and returns a presigned S3 upload URL.
+     * The frontend uploads the file directly to S3 using the returned URL.
+     */
     @Transactional
-    suspend fun uploadDocument(
+    suspend fun initiateUpload(
         studioId: UUID,
         customerId: UUID,
         name: String,
         fileName: String,
-        fileBytes: ByteArray,
         contentType: String,
         uploadedBy: UUID,
         uploadedByName: String
-    ): CustomerDocumentItem = withContext(Dispatchers.IO) {
-        val extension = when {
-            contentType.contains("pdf") -> "pdf"
-            contentType.contains("jpeg") || contentType.contains("jpg") -> "jpg"
-            contentType.contains("png") -> "png"
-            else -> fileName.substringAfterLast('.', "bin")
-        }
-
+    ): CustomerDocumentUploadResult = withContext(Dispatchers.IO) {
+        val extension = fileName.substringAfterLast('.', "bin")
         val s3Key = "$studioId/customers/$customerId/documents/${Instant.now().toEpochMilli()}_${UUID.randomUUID()}.$extension"
-
-        documentStorageService.uploadDocument(
-            s3Key = s3Key,
-            fileBytes = fileBytes,
-            contentType = contentType,
-            metadata = mapOf(
-                "studio-id" to studioId.toString(),
-                "customer-id" to customerId.toString()
-            )
-        )
 
         val entity = CustomerDocumentEntity(
             id = UUID.randomUUID(),
@@ -81,17 +67,13 @@ class CustomerDocumentService(
         )
 
         val saved = customerDocumentRepository.save(entity)
+        val uploadUrl = documentStorageService.generateUploadUrl(s3Key, contentType)
 
-        logger.info("Uploaded customer document '$name' for customer $customerId")
+        logger.info("Initiated customer document upload '$name' for customer $customerId")
 
-        CustomerDocumentItem(
-            id = saved.id.toString(),
-            name = saved.name,
-            fileName = saved.fileName,
-            fileUrl = documentStorageService.generateDownloadUrl(saved.fileId),
-            uploadedAt = saved.uploadedAt,
-            uploadedBy = saved.uploadedBy.toString(),
-            uploadedByName = saved.uploadedByName
+        CustomerDocumentUploadResult(
+            documentId = saved.id.toString(),
+            uploadUrl = uploadUrl
         )
     }
 
@@ -118,6 +100,10 @@ data class CustomerDocumentItem(
     val fileName: String,
     val fileUrl: String,
     val uploadedAt: Instant,
-    val uploadedBy: String,
     val uploadedByName: String
+)
+
+data class CustomerDocumentUploadResult(
+    val documentId: String,
+    val uploadUrl: String
 )

@@ -2,12 +2,9 @@ package pl.detailing.crm.customer.documents
 
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
-import pl.detailing.crm.shared.CustomerId
 import java.time.Instant
 import java.util.UUID
 
@@ -20,7 +17,7 @@ class CustomerDocumentController(
     @GetMapping
     fun listDocuments(
         @PathVariable customerId: String
-    ): ResponseEntity<List<CustomerDocumentResponse>> {
+    ): ResponseEntity<List<CustomerDocumentResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val documents = customerDocumentService.listDocuments(
@@ -28,33 +25,36 @@ class CustomerDocumentController(
             studioId = principal.studioId.value
         )
 
-        return ResponseEntity.ok(documents.map { it.toResponse() })
+        ResponseEntity.ok(documents.map { it.toResponse() })
     }
 
-    @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    fun uploadDocument(
+    /**
+     * Initiates a document upload.
+     * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
+     */
+    @PostMapping
+    fun initiateUpload(
         @PathVariable customerId: String,
-        @RequestParam name: String,
-        @RequestParam("file") file: MultipartFile
-    ): ResponseEntity<CustomerDocumentResponse> = runBlocking {
+        @RequestBody request: InitiateDocumentUploadRequest
+    ): ResponseEntity<InitiateDocumentUploadResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (file.isEmpty) {
-            return@runBlocking ResponseEntity.badRequest().build()
-        }
-
-        val document = customerDocumentService.uploadDocument(
+        val result = customerDocumentService.initiateUpload(
             studioId = principal.studioId.value,
             customerId = UUID.fromString(customerId),
-            name = name,
-            fileName = file.originalFilename ?: file.name,
-            fileBytes = file.bytes,
-            contentType = file.contentType ?: "application/octet-stream",
+            name = request.name,
+            fileName = request.fileName,
+            contentType = request.contentType,
             uploadedBy = principal.userId.value,
             uploadedByName = principal.fullName
         )
 
-        ResponseEntity.status(HttpStatus.CREATED).body(document.toResponse())
+        ResponseEntity.status(HttpStatus.CREATED).body(
+            InitiateDocumentUploadResponse(
+                documentId = result.documentId,
+                uploadUrl = result.uploadUrl
+            )
+        )
     }
 
     @DeleteMapping("/{documentId}")
@@ -72,6 +72,17 @@ class CustomerDocumentController(
         ResponseEntity.noContent().build()
     }
 }
+
+data class InitiateDocumentUploadRequest(
+    val name: String,
+    val fileName: String,
+    val contentType: String
+)
+
+data class InitiateDocumentUploadResponse(
+    val documentId: String,
+    val uploadUrl: String
+)
 
 data class CustomerDocumentResponse(
     val id: String,
