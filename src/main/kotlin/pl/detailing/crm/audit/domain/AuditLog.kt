@@ -83,6 +83,8 @@ enum class AuditAction {
     // Vehicle-specific
     OWNER_ADDED,
     OWNER_REMOVED,
+    APPOINTMENT_ADDED,
+    VISIT_ADDED,
 
     // Company data
     COMPANY_UPDATED,

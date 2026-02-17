@@ -27,6 +27,10 @@ import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.DamageMarkingService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -43,7 +47,8 @@ class CreateVisitFromReservationHandler(
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val documentService: DocumentService,
     private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
-    private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService
+    private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
+    private val auditService: AuditService
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -277,6 +282,24 @@ class CreateVisitFromReservationHandler(
             // Step 9: Persist Visit entity (must be done before registering documents)
             val visitEntity = VisitEntity.fromDomain(visit)
             visitRepository.save(visitEntity)
+
+            // Step 9.1: Log visit creation on the vehicle's audit trail
+            val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
+                (vehicle.licensePlate?.let { " ($it)" } ?: "")
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.VEHICLE,
+                entityId = vehicleId.value.toString(),
+                entityDisplayName = vehicleDisplayName,
+                action = AuditAction.VISIT_ADDED,
+                metadata = mapOf(
+                    "visitId" to visitId.value.toString(),
+                    "visitNumber" to visit.visitNumber,
+                    "appointmentId" to appointment.id.value.toString()
+                )
+            ))
 
             // Step 9.5: Register damage map as a document if it was generated
             if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {

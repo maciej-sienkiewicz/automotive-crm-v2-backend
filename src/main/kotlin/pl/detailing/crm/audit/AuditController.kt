@@ -212,6 +212,8 @@ class AuditController(
         AuditAction.CALL_REJECTED -> "Odrzucenie polaczenia"
         AuditAction.OWNER_ADDED -> "Dodanie wlasciciela"
         AuditAction.OWNER_REMOVED -> "Usuniecie wlasciciela"
+        AuditAction.APPOINTMENT_ADDED -> "Dodanie rezerwacji"
+        AuditAction.VISIT_ADDED -> "Dodanie wizyty"
         AuditAction.COMPANY_UPDATED -> "Aktualizacja danych firmy"
         AuditAction.COMPANY_DELETED -> "Usuniecie danych firmy"
     }

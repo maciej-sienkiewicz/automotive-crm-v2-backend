@@ -137,6 +137,24 @@ class CreateAppointmentHandler(
             ) + if (vehicleId != null) mapOf("vehicleId" to vehicleId.value.toString()) else emptyMap()
         ))
 
+        // Log on the vehicle side so its history shows the new appointment
+        if (vehicleId != null) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VEHICLE,
+                entityId = vehicleId.value.toString(),
+                action = AuditAction.APPOINTMENT_ADDED,
+                metadata = buildMap {
+                    put("appointmentId", appointment.id.value.toString())
+                    if (command.appointmentTitle != null) put("appointmentTitle", command.appointmentTitle)
+                    put("startDateTime", command.schedule.startDateTime.toString())
+                    put("endDateTime", command.schedule.endDateTime.toString())
+                }
+            ))
+        }
+
         CreateAppointmentResult(
             appointmentId = appointment.id,
             customerId = customerId,
