@@ -353,6 +353,19 @@ value class VisitCommentRevisionId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID for customer documents
+ */
+@JvmInline
+value class CustomerDocumentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CustomerDocumentId(UUID.randomUUID())
+        fun fromString(value: String) = CustomerDocumentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type of journal entry
  */
 enum class JournalEntryType {
