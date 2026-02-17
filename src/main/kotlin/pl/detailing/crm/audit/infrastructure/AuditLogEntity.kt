@@ -1,6 +1,8 @@
 package pl.detailing.crm.audit.infrastructure
 
 import jakarta.persistence.*
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -46,9 +48,11 @@ class AuditLogEntity(
     @Enumerated(EnumType.STRING)
     val action: AuditAction,
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "changes", columnDefinition = "jsonb")
     val changes: String?,
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
     val metadata: String?,
 
