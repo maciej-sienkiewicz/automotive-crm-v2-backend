@@ -31,7 +31,8 @@ class VisitServiceOperationsController(
             visitId = VisitId.fromString(visitId),
             serviceItemId = VisitServiceItemId.fromString(serviceItemId),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
         
         ResponseEntity.ok().build()
@@ -52,7 +53,8 @@ class VisitServiceOperationsController(
             visitId = VisitId.fromString(visitId),
             serviceItemId = VisitServiceItemId.fromString(serviceItemId),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
         
         ResponseEntity.ok().build()

@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
-import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import org.springframework.beans.factory.annotation.Value
@@ -21,7 +20,8 @@ import org.springframework.beans.factory.annotation.Value
 class DeleteVisitPhotoHandler(
     private val visitRepository: VisitRepository,
     private val s3Client: S3Client,
-    @Value("\${aws.s3.bucket-name}") private val bucketName: String
+    @Value("\${aws.s3.bucket-name}") private val bucketName: String,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -73,6 +73,19 @@ class DeleteVisitPhotoHandler(
             // S3 cleanup can happen later if needed
             println("Warning: Could not delete photo from S3: ${photoToDelete.fileId}")
         }
+
+        // 8. Audit logging
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = command.visitId.value.toString(),
+            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            action = AuditAction.PHOTO_DELETED,
+            changes = listOf(FieldChange("fileName", photoToDelete.fileName, null)),
+            metadata = mapOf("photoId" to command.photoId.value.toString())
+        ))
     }
 }
 
@@ -82,5 +95,7 @@ class DeleteVisitPhotoHandler(
 data class DeleteVisitPhotoCommand(
     val visitId: VisitId,
     val photoId: VisitPhotoId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    val userId: UserId,
+    val userName: String? = null
 )

@@ -162,7 +162,9 @@ class VisitController(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
             fileName = request.fileName,
-            description = request.description
+            description = request.description,
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         val result = addVisitPhotoHandler.handle(command)
@@ -188,7 +190,9 @@ class VisitController(
         val command = DeleteVisitPhotoCommand(
             visitId = VisitId.fromString(visitId),
             photoId = VisitPhotoId.fromString(photoId),
-            studioId = principal.studioId
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         deleteVisitPhotoHandler.handle(command)
@@ -211,7 +215,8 @@ class VisitController(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
             userId = principal.userId,
-            payload = payload
+            payload = payload,
+            userName = principal.fullName
         )
 
         ResponseEntity.noContent().build()
@@ -241,7 +246,8 @@ class VisitController(
         val command = ConfirmVisitCommand(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         val result = confirmVisitHandler.handle(command)
@@ -280,7 +286,8 @@ class VisitController(
         val command = CancelDraftVisitCommand(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         cancelDraftVisitHandler.handle(command)

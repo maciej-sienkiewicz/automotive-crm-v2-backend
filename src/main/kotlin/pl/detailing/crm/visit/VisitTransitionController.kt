@@ -53,7 +53,8 @@ class VisitTransitionController(
             userId = principal.userId,
             visitId = VisitId.fromString(visitId),
             sendSms = request.sms,
-            sendEmail = request.email
+            sendEmail = request.email,
+            userName = principal.fullName
         )
 
         val result = markVisitReadyForPickupHandler.handle(command)
@@ -86,7 +87,8 @@ class VisitTransitionController(
         val command = CompleteVisitCommand(
             studioId = principal.studioId,
             userId = principal.userId,
-            visitId = VisitId.fromString(visitId)
+            visitId = VisitId.fromString(visitId),
+            userName = principal.fullName
         )
 
         val result = completeVisitHandler.handle(command)
@@ -121,7 +123,8 @@ class VisitTransitionController(
             studioId = principal.studioId,
             userId = principal.userId,
             visitId = VisitId.fromString(visitId),
-            rejectionReason = request.reason
+            rejectionReason = request.reason,
+            userName = principal.fullName
         )
 
         val result = rejectVisitHandler.handle(command)
@@ -154,7 +157,8 @@ class VisitTransitionController(
         val command = ArchiveVisitCommand(
             studioId = principal.studioId,
             userId = principal.userId,
-            visitId = VisitId.fromString(visitId)
+            visitId = VisitId.fromString(visitId),
+            userName = principal.fullName
         )
 
         val result = archiveVisitHandler.handle(command)

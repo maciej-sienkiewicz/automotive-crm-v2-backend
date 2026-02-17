@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.comment
 import org.apache.coyote.BadRequestException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.visit.domain.VisitCommentRevision
@@ -17,7 +18,8 @@ class UpdateVisitCommentHandler(
     private val visitRepository: VisitRepository,
     private val visitCommentRepository: VisitCommentRepository,
     private val visitCommentRevisionRepository: VisitCommentRevisionRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val auditService: AuditService
 ) {
     @Transactional
     suspend fun handle(command: UpdateVisitCommentCommand): UpdateVisitCommentResult {
@@ -72,6 +74,19 @@ class UpdateVisitCommentHandler(
         commentEntity.updatedByName = userName
         commentEntity.updatedAt = Instant.now()
         visitCommentRepository.save(commentEntity)
+
+        // Step 8: Audit log
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = userName,
+            module = AuditModule.VISIT,
+            entityId = commentEntity.visitId.toString(),
+            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            action = AuditAction.COMMENT_UPDATED,
+            changes = listOf(FieldChange("content", revision.oldContent, revision.newContent)),
+            metadata = mapOf("commentId" to command.commentId.value.toString())
+        ))
 
         return UpdateVisitCommentResult(
             commentId = command.commentId,

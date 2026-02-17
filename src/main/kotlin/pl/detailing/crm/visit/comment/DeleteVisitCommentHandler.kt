@@ -2,6 +2,7 @@ package pl.detailing.crm.visit.comment
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.visit.infrastructure.VisitCommentRepository
@@ -12,7 +13,8 @@ import java.time.Instant
 class DeleteVisitCommentHandler(
     private val visitRepository: VisitRepository,
     private val visitCommentRepository: VisitCommentRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val auditService: AuditService
 ) {
     @Transactional
     suspend fun handle(command: DeleteVisitCommentCommand): DeleteVisitCommentResult {
@@ -48,6 +50,18 @@ class DeleteVisitCommentHandler(
         commentEntity.deletedByName = userName
         commentEntity.deletedAt = Instant.now()
         visitCommentRepository.save(commentEntity)
+
+        // Step 6: Audit log
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = userName,
+            module = AuditModule.VISIT,
+            entityId = commentEntity.visitId.toString(),
+            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            action = AuditAction.COMMENT_DELETED,
+            metadata = mapOf("commentId" to command.commentId.value.toString())
+        ))
 
         return DeleteVisitCommentResult(
             commentId = command.commentId,
