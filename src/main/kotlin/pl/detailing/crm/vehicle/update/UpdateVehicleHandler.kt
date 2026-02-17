@@ -4,13 +4,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 
 @Service
 class UpdateVehicleHandler(
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -19,6 +21,18 @@ class UpdateVehicleHandler(
             command.vehicleId.value,
             command.studioId.value
         ) ?: throw EntityNotFoundException("Vehicle not found with id: ${command.vehicleId}")
+
+        // Capture old values for audit
+        val oldValues = mapOf(
+            "licensePlate" to vehicleEntity.licensePlate,
+            "brand" to vehicleEntity.brand,
+            "model" to vehicleEntity.model,
+            "yearOfProduction" to vehicleEntity.yearOfProduction?.toString(),
+            "color" to vehicleEntity.color,
+            "paintType" to vehicleEntity.paintType,
+            "currentMileage" to vehicleEntity.currentMileage.toString(),
+            "status" to vehicleEntity.status.name
+        )
 
         command.licensePlate?.let {
             vehicleEntity.licensePlate = it.trim().uppercase()
@@ -57,6 +71,34 @@ class UpdateVehicleHandler(
 
         vehicleRepository.save(vehicleEntity)
 
+        // Compute changes for audit
+        val newValues = mapOf(
+            "licensePlate" to vehicleEntity.licensePlate,
+            "brand" to vehicleEntity.brand,
+            "model" to vehicleEntity.model,
+            "yearOfProduction" to vehicleEntity.yearOfProduction?.toString(),
+            "color" to vehicleEntity.color,
+            "paintType" to vehicleEntity.paintType,
+            "currentMileage" to vehicleEntity.currentMileage.toString(),
+            "status" to vehicleEntity.status.name
+        )
+
+        val changes = auditService.computeChanges(oldValues, newValues)
+        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
+
+        if (changes.isNotEmpty()) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VEHICLE,
+                entityId = command.vehicleId.value.toString(),
+                entityDisplayName = displayName,
+                action = AuditAction.UPDATE,
+                changes = changes
+            ))
+        }
+
         UpdateVehicleResult(
             id = vehicleEntity.id.toString(),
             licensePlate = vehicleEntity.licensePlate,
@@ -76,6 +118,7 @@ data class UpdateVehicleCommand(
     val vehicleId: VehicleId,
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val licensePlate: String?,
     val brand: String?,
     val model: String?,

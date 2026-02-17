@@ -89,7 +89,8 @@ class ServiceController(
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
             vatRate = VatRate.fromInt(request.vatRate),
-            requireManualPrice = request.requireManualPrice
+            requireManualPrice = request.requireManualPrice,
+            userName = principal.fullName
         )
 
         val result = createServiceHandler.handle(command)
@@ -124,7 +125,8 @@ class ServiceController(
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
             vatRate = VatRate.fromInt(request.vatRate),
-            requireManualPrice = request.requireManualPrice
+            requireManualPrice = request.requireManualPrice,
+            userName = principal.fullName
         )
 
         val result = updateServiceHandler.handle(command)

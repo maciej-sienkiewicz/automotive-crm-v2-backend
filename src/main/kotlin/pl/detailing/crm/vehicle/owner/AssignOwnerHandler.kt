@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.VehicleOwner
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerEntity
@@ -14,7 +15,8 @@ import java.time.Instant
 @Service
 class AssignOwnerHandler(
     private val vehicleRepository: VehicleRepository,
-    private val vehicleOwnerRepository: VehicleOwnerRepository
+    private val vehicleOwnerRepository: VehicleOwnerRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -44,6 +46,24 @@ class AssignOwnerHandler(
         val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
         vehicleOwnerRepository.save(vehicleOwnerEntity)
 
+        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
+
+        if (command.userId != null) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VEHICLE,
+                entityId = command.vehicleId.value.toString(),
+                entityDisplayName = displayName,
+                action = AuditAction.OWNER_ADDED,
+                metadata = mapOf(
+                    "customerId" to command.customerId.value.toString(),
+                    "role" to command.role.name
+                )
+            ))
+        }
+
         AssignOwnerResult(
             vehicleId = vehicleEntity.id.toString(),
             customerId = command.customerId.toString(),
@@ -56,6 +76,8 @@ class AssignOwnerHandler(
 data class AssignOwnerCommand(
     val vehicleId: VehicleId,
     val studioId: StudioId,
+    val userId: UserId? = null,
+    val userName: String? = null,
     val customerId: CustomerId,
     val role: OwnershipRole
 )

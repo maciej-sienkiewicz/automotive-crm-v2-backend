@@ -66,7 +66,9 @@ class CustomerDocumentController(
 
         customerDocumentService.deleteDocument(
             documentId = UUID.fromString(documentId),
-            studioId = principal.studioId.value
+            studioId = principal.studioId.value,
+            deletedBy = principal.userId.value,
+            deletedByName = principal.fullName
         )
 
         ResponseEntity.noContent().build()

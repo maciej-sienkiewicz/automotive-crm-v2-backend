@@ -183,6 +183,7 @@ class CustomerController(
         val command = CreateCustomerCommand(
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             firstName = request.firstName,
             lastName = request.lastName,
             email = request.email,
@@ -397,6 +398,7 @@ class CustomerController(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             firstName = request.firstName,
             lastName = request.lastName,
             email = request.contact.email,
@@ -448,6 +450,7 @@ class CustomerController(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             name = request.name,
             nip = request.nip,
             regon = request.regon,
@@ -486,7 +489,8 @@ class CustomerController(
         val command = pl.detailing.crm.customer.update.DeleteCompanyCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         deleteCompanyHandler.handle(command)

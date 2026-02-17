@@ -2,6 +2,7 @@ package pl.detailing.crm.vehicle.photos
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.VehiclePhoto
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
@@ -18,7 +19,8 @@ import java.time.Instant
 @Service
 class AddVehiclePhotoHandler(
     private val vehicleRepository: VehicleRepository,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -54,6 +56,22 @@ class AddVehiclePhotoHandler(
         // 6. Generate presigned upload URL
         val uploadUrl = photoSessionService.generateSimpleUploadUrl(fileId, "image/jpeg")
 
+        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
+
+        if (command.userId != null) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VEHICLE,
+                entityId = command.vehicleId.value.toString(),
+                entityDisplayName = displayName,
+                action = AuditAction.PHOTO_ADDED,
+                changes = listOf(FieldChange("fileName", null, command.fileName)),
+                metadata = mapOf("photoId" to photoId.value.toString())
+            ))
+        }
+
         return AddVehiclePhotoResult(
             photoId = photoId.value.toString(),
             uploadUrl = uploadUrl,
@@ -68,6 +86,8 @@ class AddVehiclePhotoHandler(
 data class AddVehiclePhotoCommand(
     val vehicleId: VehicleId,
     val studioId: StudioId,
+    val userId: UserId? = null,
+    val userName: String? = null,
     val fileName: String,
     val description: String?
 )

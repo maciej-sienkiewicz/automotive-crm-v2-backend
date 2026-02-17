@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.service.domain.Service as ServiceDomain
 import pl.detailing.crm.service.infrastructure.ServiceEntity
 import pl.detailing.crm.service.infrastructure.ServiceRepository
@@ -15,7 +16,8 @@ import java.time.Instant
 @Service
 class UpdateServiceHandler(
     private val validatorComposite: UpdateServiceValidatorComposite,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -52,6 +54,32 @@ class UpdateServiceHandler(
 
         val newEntity = ServiceEntity.fromDomain(newService)
         serviceRepository.save(newEntity)
+
+        val oldValues = mapOf(
+            "name" to oldServiceEntity.name,
+            "basePriceNet" to oldServiceEntity.basePriceNet.toString(),
+            "vatRate" to oldServiceEntity.vatRate.toString(),
+            "requireManualPrice" to oldServiceEntity.requireManualPrice.toString()
+        )
+        val newValues = mapOf(
+            "name" to newService.name,
+            "basePriceNet" to netAmount.amountInCents.toString(),
+            "vatRate" to command.vatRate.rate.toString(),
+            "requireManualPrice" to newService.requireManualPrice.toString()
+        )
+        val changes = auditService.computeChanges(oldValues, newValues)
+
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.SERVICE,
+            entityId = newService.id.value.toString(),
+            entityDisplayName = newService.name,
+            action = AuditAction.UPDATE,
+            changes = changes,
+            metadata = mapOf("replacesServiceId" to command.oldServiceId.value.toString())
+        ))
 
         UpdateServiceResult(
             oldServiceId = command.oldServiceId,

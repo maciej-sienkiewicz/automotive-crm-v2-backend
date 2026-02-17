@@ -3,13 +3,18 @@ package pl.detailing.crm.customer.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.NotFoundException
 import java.time.Instant
 
 @Service
 class UpdateCustomerHandler(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val auditService: AuditService
 ) {
     suspend fun handle(command: UpdateCustomerCommand): UpdateCustomerResult =
         withContext(Dispatchers.IO) {
@@ -18,6 +23,18 @@ class UpdateCustomerHandler(
                 id = command.customerId.value,
                 studioId = command.studioId.value
             ) ?: throw NotFoundException("Customer not found")
+
+            // Capture old values for audit
+            val oldValues = mapOf(
+                "firstName" to entity.firstName,
+                "lastName" to entity.lastName,
+                "email" to entity.email,
+                "phone" to entity.phone,
+                "homeAddressStreet" to entity.homeAddressStreet,
+                "homeAddressCity" to entity.homeAddressCity,
+                "homeAddressPostalCode" to entity.homeAddressPostalCode,
+                "homeAddressCountry" to entity.homeAddressCountry
+            )
 
             // Check if email is unique (if changed)
             if (command.email != null && entity.email != command.email) {
@@ -70,6 +87,34 @@ class UpdateCustomerHandler(
 
             // Save
             val saved = customerRepository.save(entity)
+
+            // Compute changes for audit
+            val newValues = mapOf(
+                "firstName" to saved.firstName,
+                "lastName" to saved.lastName,
+                "email" to saved.email,
+                "phone" to saved.phone,
+                "homeAddressStreet" to saved.homeAddressStreet,
+                "homeAddressCity" to saved.homeAddressCity,
+                "homeAddressPostalCode" to saved.homeAddressPostalCode,
+                "homeAddressCountry" to saved.homeAddressCountry
+            )
+
+            val changes = auditService.computeChanges(oldValues, newValues)
+            val displayName = listOfNotNull(saved.firstName, saved.lastName).joinToString(" ").ifBlank { saved.email ?: saved.phone ?: "" }
+
+            if (changes.isNotEmpty()) {
+                auditService.log(LogAuditCommand(
+                    studioId = command.studioId,
+                    userId = command.userId,
+                    userDisplayName = command.userName ?: "",
+                    module = AuditModule.CUSTOMER,
+                    entityId = command.customerId.value.toString(),
+                    entityDisplayName = displayName,
+                    action = AuditAction.UPDATE,
+                    changes = changes
+                ))
+            }
 
             UpdateCustomerResult(
                 id = saved.id.toString(),

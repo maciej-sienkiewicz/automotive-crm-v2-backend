@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -14,7 +15,8 @@ import java.time.Instant
 
 @Service
 class DeleteVehicleHandler(
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -24,17 +26,31 @@ class DeleteVehicleHandler(
             command.studioId.value
         ) ?: throw EntityNotFoundException("Vehicle not found with id: ${command.vehicleId}")
 
+        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
+
         // Soft delete - archive the vehicle
         vehicleEntity.status = VehicleStatus.ARCHIVED
         vehicleEntity.updatedBy = command.userId.value
         vehicleEntity.updatedAt = Instant.now()
 
         vehicleRepository.save(vehicleEntity)
+
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VEHICLE,
+            entityId = command.vehicleId.value.toString(),
+            entityDisplayName = displayName,
+            action = AuditAction.DELETE,
+            changes = listOf(FieldChange("status", "ACTIVE", "ARCHIVED"))
+        ))
     }
 }
 
 data class DeleteVehicleCommand(
     val vehicleId: VehicleId,
     val studioId: StudioId,
-    val userId: UserId
+    val userId: UserId,
+    val userName: String? = null
 )

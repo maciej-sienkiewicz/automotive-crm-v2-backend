@@ -97,6 +97,7 @@ class AppointmentController(
         val command = CreateAppointmentCommand(
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             customer = when (request.customer.mode) {
                 CustomerMode.EXISTING -> {
                     CustomerIdentity.Existing(
@@ -208,6 +209,7 @@ class AppointmentController(
             appointmentId = AppointmentId.fromString(id),
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             customer = when (request.customer.mode) {
                 CustomerMode.EXISTING -> {
                     CustomerIdentity.Existing(
@@ -323,7 +325,8 @@ class AppointmentController(
         val command = CancelAppointmentCommand(
             appointmentId = AppointmentId.fromString(id),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         cancelAppointmentHandler.handle(command)

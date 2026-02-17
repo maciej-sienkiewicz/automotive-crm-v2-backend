@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
@@ -31,7 +32,8 @@ class CancelDraftVisitHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val s3ProtocolStorageService: S3ProtocolStorageService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
-    private val documentService: DocumentService
+    private val documentService: DocumentService,
+    private val auditService: AuditService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -102,10 +104,22 @@ class CancelDraftVisitHandler(
             }
 
             // Delete visit from database
+            val visitNumber = visitEntity.visitNumber
             visitRepository.delete(visitEntity)
 
             // Note: Appointment remains in CONFIRMED status and is NOT modified
             // This allows the appointment to be converted to a new visit later
+
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VISIT,
+                entityId = command.visitId.value.toString(),
+                entityDisplayName = "Wizyta #$visitNumber",
+                action = AuditAction.VISIT_CANCELLED,
+                changes = listOf(FieldChange("status", VisitStatus.DRAFT.name, "CANCELLED"))
+            ))
 
             CancelDraftVisitResult(visitId = command.visitId)
         }
@@ -114,7 +128,8 @@ class CancelDraftVisitHandler(
 data class CancelDraftVisitCommand(
     val visitId: VisitId,
     val studioId: StudioId,
-    val userId: UserId
+    val userId: UserId,
+    val userName: String? = null
 )
 
 data class CancelDraftVisitResult(

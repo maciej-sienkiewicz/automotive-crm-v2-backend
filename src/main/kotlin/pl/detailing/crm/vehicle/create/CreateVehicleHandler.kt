@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.vehicle.domain.VehicleOwner
@@ -17,7 +18,8 @@ import java.time.Instant
 class CreateVehicleHandler(
     private val validatorComposite: CreateVehicleValidatorComposite,
     private val vehicleRepository: VehicleRepository,
-    private val vehicleOwnerRepository: VehicleOwnerRepository
+    private val vehicleOwnerRepository: VehicleOwnerRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -56,6 +58,27 @@ class CreateVehicleHandler(
                 val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
                 vehicleOwnerRepository.save(vehicleOwnerEntity)
             }
+
+        val displayName = listOfNotNull(vehicle.brand, vehicle.model, vehicle.licensePlate).joinToString(" ")
+
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VEHICLE,
+            entityId = vehicle.id.value.toString(),
+            entityDisplayName = displayName,
+            action = AuditAction.CREATE,
+            changes = listOfNotNull(
+                vehicle.licensePlate?.let { FieldChange("licensePlate", null, it) },
+                FieldChange("brand", null, vehicle.brand),
+                FieldChange("model", null, vehicle.model),
+                vehicle.yearOfProduction?.let { FieldChange("yearOfProduction", null, it.toString()) },
+                vehicle.color?.let { FieldChange("color", null, it) },
+                vehicle.paintType?.let { FieldChange("paintType", null, it) },
+                FieldChange("currentMileage", null, vehicle.currentMileage.toString())
+            )
+        ))
 
         CreateVehicleResult(
             vehicleId = vehicle.id,

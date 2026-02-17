@@ -8,6 +8,7 @@ import pl.detailing.crm.shared.UserId
 data class CreateCustomerCommand(
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val firstName: String?,
     val lastName: String?,
     val email: String?,

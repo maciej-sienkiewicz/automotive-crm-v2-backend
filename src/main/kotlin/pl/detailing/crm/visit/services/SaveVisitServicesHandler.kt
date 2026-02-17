@@ -2,6 +2,7 @@ package pl.detailing.crm.visit.services
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -10,11 +11,12 @@ import java.util.*
 
 @Service
 class SaveVisitServicesHandler(
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
-    suspend fun handle(visitId: VisitId, studioId: StudioId, userId: UserId, payload: ServicesChangesPayload) {
+    suspend fun handle(visitId: VisitId, studioId: StudioId, userId: UserId, payload: ServicesChangesPayload, userName: String? = null) {
         val visitEntity = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: throw EntityNotFoundException("Visit $visitId not found in studio $studioId")
 
@@ -69,5 +71,27 @@ class SaveVisitServicesHandler(
 
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
+
+        val changes = mutableListOf<FieldChange>()
+        if (payload.added.isNotEmpty()) {
+            changes.add(FieldChange("servicesAdded", null, payload.added.size.toString()))
+        }
+        if (payload.updated.isNotEmpty()) {
+            changes.add(FieldChange("servicesUpdated", null, payload.updated.size.toString()))
+        }
+        if (payload.deleted.isNotEmpty()) {
+            changes.add(FieldChange("servicesDeleted", null, payload.deleted.size.toString()))
+        }
+
+        auditService.log(LogAuditCommand(
+            studioId = studioId,
+            userId = userId,
+            userDisplayName = userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = visitId.value.toString(),
+            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            action = AuditAction.SERVICES_UPDATED,
+            changes = changes
+        ))
     }
 }

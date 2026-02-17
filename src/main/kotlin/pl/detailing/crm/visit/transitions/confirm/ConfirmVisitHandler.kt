@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -24,7 +25,8 @@ import java.time.Instant
 class ConfirmVisitHandler(
     private val visitRepository: VisitRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
-    private val appointmentRepository: AppointmentRepository
+    private val appointmentRepository: AppointmentRepository,
+    private val auditService: AuditService
 ) {
     @Transactional
     suspend fun handle(command: ConfirmVisitCommand): ConfirmVisitResult =
@@ -77,6 +79,17 @@ class ConfirmVisitHandler(
                 }
             }
 
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VISIT,
+                entityId = command.visitId.value.toString(),
+                entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+                action = AuditAction.VISIT_CONFIRMED,
+                changes = listOf(FieldChange("status", VisitStatus.DRAFT.name, VisitStatus.IN_PROGRESS.name))
+            ))
+
             ConfirmVisitResult(visitId = command.visitId)
         }
 }
@@ -84,7 +97,8 @@ class ConfirmVisitHandler(
 data class ConfirmVisitCommand(
     val visitId: VisitId,
     val studioId: StudioId,
-    val userId: UserId
+    val userId: UserId,
+    val userName: String? = null
 )
 
 data class ConfirmVisitResult(

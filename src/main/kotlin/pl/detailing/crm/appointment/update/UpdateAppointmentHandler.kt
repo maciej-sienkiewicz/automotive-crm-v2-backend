@@ -9,6 +9,7 @@ import pl.detailing.crm.appointment.domain.*
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -29,7 +30,8 @@ class UpdateAppointmentHandler(
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -37,6 +39,18 @@ class UpdateAppointmentHandler(
         // Step 1: Find existing appointment
         val existingEntity = appointmentRepository.findByIdAndStudioId(command.appointmentId.value, command.studioId.value)
             ?: throw NotFoundException("Appointment not found")
+
+        // Capture old values for audit
+        val oldValues = mapOf(
+            "customerId" to existingEntity.customerId.toString(),
+            "vehicleId" to existingEntity.vehicleId?.toString(),
+            "appointmentTitle" to existingEntity.appointmentTitle,
+            "appointmentColorId" to existingEntity.appointmentColorId.toString(),
+            "note" to existingEntity.note,
+            "isAllDay" to existingEntity.isAllDay.toString(),
+            "startDateTime" to existingEntity.startDateTime.toString(),
+            "endDateTime" to existingEntity.endDateTime.toString()
+        )
 
         // Step 2: Validation (reuse create validation for now, as it covers core rules)
         validatorComposite.validate(command.toCreateCommand())
@@ -119,6 +133,32 @@ class UpdateAppointmentHandler(
         appointmentRepository.save(existingEntity)
 
         val updatedDomain = existingEntity.toDomain()
+
+        // Step 8: Audit log
+        val newValues = mapOf(
+            "customerId" to existingEntity.customerId.toString(),
+            "vehicleId" to existingEntity.vehicleId?.toString(),
+            "appointmentTitle" to existingEntity.appointmentTitle,
+            "appointmentColorId" to existingEntity.appointmentColorId.toString(),
+            "note" to existingEntity.note,
+            "isAllDay" to existingEntity.isAllDay.toString(),
+            "startDateTime" to existingEntity.startDateTime.toString(),
+            "endDateTime" to existingEntity.endDateTime.toString()
+        )
+
+        val changes = auditService.computeChanges(oldValues, newValues)
+        if (changes.isNotEmpty()) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.APPOINTMENT,
+                entityId = command.appointmentId.value.toString(),
+                entityDisplayName = command.appointmentTitle,
+                action = AuditAction.UPDATE,
+                changes = changes
+            ))
+        }
 
         CreateAppointmentResult(
             appointmentId = updatedDomain.id,

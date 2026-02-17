@@ -2,13 +2,15 @@ package pl.detailing.crm.visit.transitions.complete
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
 class CompleteVisitHandler(
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val auditService: AuditService
     // TODO: Add services for side-effects (InvoiceService, EmailService, etc.)
 ) {
 
@@ -31,7 +33,19 @@ class CompleteVisitHandler(
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
 
-        // Step 4: Side-effects (to be implemented)
+        // Step 4: Audit logging
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = command.visitId.value.toString(),
+            entityDisplayName = "Wizyta #${visit.visitNumber}",
+            action = AuditAction.VISIT_COMPLETED,
+            changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
+        ))
+
+        // Step 5: Side-effects (to be implemented)
         // TODO: Generate invoice if needed
         // TODO: Send completion notification to customer
         // TODO: Update vehicle mileage if needed
@@ -56,7 +70,8 @@ class CompleteVisitHandler(
 data class CompleteVisitCommand(
     val studioId: StudioId,
     val userId: UserId,
-    val visitId: VisitId
+    val visitId: VisitId,
+    val userName: String? = null
 )
 
 /**

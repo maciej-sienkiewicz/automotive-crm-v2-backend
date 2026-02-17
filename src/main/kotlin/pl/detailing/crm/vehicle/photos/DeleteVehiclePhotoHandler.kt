@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import software.amazon.awssdk.services.s3.S3Client
@@ -20,7 +21,8 @@ import java.util.UUID
 class DeleteVehiclePhotoHandler(
     private val vehicleRepository: VehicleRepository,
     private val s3Client: S3Client,
-    @Value("\${aws.s3.bucket-name}") private val bucketName: String
+    @Value("\${aws.s3.bucket-name}") private val bucketName: String,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -38,10 +40,28 @@ class DeleteVehiclePhotoHandler(
         val photoToDelete = vehicleEntity.photos.find { it.id == command.photoId.value }
             ?: throw EntityNotFoundException("Photo not found: ${command.photoId}")
 
+        val deletedFileName = photoToDelete.fileName
+
         // 4. Remove photo from list
         vehicleEntity.photos.remove(photoToDelete)
 
         vehicleRepository.save(vehicleEntity)
+
+        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
+
+        if (command.userId != null) {
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.VEHICLE,
+                entityId = command.vehicleId.value.toString(),
+                entityDisplayName = displayName,
+                action = AuditAction.PHOTO_DELETED,
+                changes = listOf(FieldChange("fileName", deletedFileName, null)),
+                metadata = mapOf("photoId" to command.photoId.value.toString())
+            ))
+        }
 
         // 5. Delete file from S3
         try {
@@ -65,5 +85,7 @@ class DeleteVehiclePhotoHandler(
 data class DeleteVehiclePhotoCommand(
     val vehicleId: VehicleId,
     val photoId: VehiclePhotoId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    val userId: UserId? = null,
+    val userName: String? = null
 )

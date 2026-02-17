@@ -7,6 +7,7 @@ data class UpdateAppointmentCommand(
     val appointmentId: AppointmentId,
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val customer: CustomerIdentity,
     val vehicle: VehicleIdentity,
     val services: List<ServiceLineItemCommand>,
@@ -19,6 +20,7 @@ data class UpdateAppointmentCommand(
 fun UpdateAppointmentCommand.toCreateCommand() = CreateAppointmentCommand(
     studioId = studioId,
     userId = userId,
+    userName = userName,
     customer = customer,
     vehicle = vehicle,
     services = services,

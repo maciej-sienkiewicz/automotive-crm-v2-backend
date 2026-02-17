@@ -10,6 +10,7 @@ import java.time.Instant
 data class CreateAppointmentCommand(
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val customer: CustomerIdentity,
     val vehicle: VehicleIdentity,
     val services: List<ServiceLineItemCommand>,

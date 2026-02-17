@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.service.domain.Service as ServiceDomain
 import pl.detailing.crm.service.infrastructure.ServiceEntity
 import pl.detailing.crm.service.infrastructure.ServiceRepository
@@ -13,7 +14,8 @@ import java.time.Instant
 @Service
 class CreateServiceHandler(
     private val validatorComposite: CreateServiceValidatorComposite,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -41,6 +43,22 @@ class CreateServiceHandler(
 
         val entity = ServiceEntity.fromDomain(service)
         serviceRepository.save(entity)
+
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.SERVICE,
+            entityId = service.id.value.toString(),
+            entityDisplayName = service.name,
+            action = AuditAction.CREATE,
+            changes = listOf(
+                FieldChange("name", null, service.name),
+                FieldChange("basePriceNet", null, netAmount.amountInCents.toString()),
+                FieldChange("vatRate", null, command.vatRate.rate.toString()),
+                FieldChange("requireManualPrice", null, service.requireManualPrice.toString())
+            )
+        ))
 
         CreateServiceResult(
             serviceId = service.id,

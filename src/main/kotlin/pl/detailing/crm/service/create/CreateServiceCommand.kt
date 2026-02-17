@@ -11,5 +11,6 @@ data class CreateServiceCommand(
     val name: String,
     val basePriceNet: Money,
     val vatRate: VatRate,
-    val requireManualPrice: Boolean
+    val requireManualPrice: Boolean,
+    val userName: String? = null
 )

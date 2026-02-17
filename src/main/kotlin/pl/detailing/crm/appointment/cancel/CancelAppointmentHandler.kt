@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -14,7 +15,8 @@ import java.time.Instant
  */
 @Service
 class CancelAppointmentHandler(
-    private val appointmentRepository: AppointmentRepository
+    private val appointmentRepository: AppointmentRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -34,13 +36,28 @@ class CancelAppointmentHandler(
             throw BadRequestException("Appointment is already cancelled")
         }
 
-        // 3. Update status to CANCELLED
+        // 3. Capture previous status and update to CANCELLED
+        val previousStatus = appointmentEntity.status.name
         appointmentEntity.status = AppointmentStatus.CANCELLED
         appointmentEntity.updatedBy = command.userId.value
         appointmentEntity.updatedAt = Instant.now()
 
         // 4. Save
         appointmentRepository.save(appointmentEntity)
+
+        // 5. Audit log
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.APPOINTMENT,
+            entityId = command.appointmentId.value.toString(),
+            entityDisplayName = appointmentEntity.appointmentTitle,
+            action = AuditAction.APPOINTMENT_CANCELLED,
+            changes = listOf(
+                FieldChange("status", previousStatus, AppointmentStatus.CANCELLED.name)
+            )
+        ))
 
         return CancelAppointmentResult(
             appointmentId = command.appointmentId
@@ -54,7 +71,8 @@ class CancelAppointmentHandler(
 data class CancelAppointmentCommand(
     val appointmentId: AppointmentId,
     val studioId: StudioId,
-    val userId: UserId
+    val userId: UserId,
+    val userName: String? = null
 )
 
 /**

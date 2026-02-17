@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
@@ -13,7 +14,8 @@ import java.time.Instant
 
 @Service
 class CreateLeadHandler(
-    private val leadRepository: LeadRepository
+    private val leadRepository: LeadRepository,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(CreateLeadHandler::class.java)
 
@@ -59,6 +61,23 @@ class CreateLeadHandler(
 
             log.info("[LEADS] Created lead: leadId={}, studioId={}, source={}, contact={}",
                 lead.id.value, lead.studioId.value, lead.source, lead.contactIdentifier)
+
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId ?: UserId(java.util.UUID.randomUUID()),
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.LEAD,
+                entityId = lead.id.value.toString(),
+                entityDisplayName = lead.customerName ?: lead.contactIdentifier,
+                action = AuditAction.CREATE,
+                changes = listOfNotNull(
+                    FieldChange("source", null, lead.source.name),
+                    FieldChange("contactIdentifier", null, lead.contactIdentifier),
+                    lead.customerName?.let { FieldChange("customerName", null, it) },
+                    lead.initialMessage?.let { FieldChange("initialMessage", null, it) },
+                    FieldChange("estimatedValue", null, lead.estimatedValue.toString())
+                )
+            ))
 
             CreateLeadResult(
                 leadId = lead.id,

@@ -5,6 +5,7 @@ import pl.detailing.crm.shared.*
 data class CreateVehicleCommand(
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val ownerIds: List<CustomerId>,
     val licensePlate: String?,
     val brand: String,

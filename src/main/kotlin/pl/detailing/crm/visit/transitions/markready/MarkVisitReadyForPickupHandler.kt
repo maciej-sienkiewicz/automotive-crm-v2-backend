@@ -2,13 +2,15 @@ package pl.detailing.crm.visit.transitions.markready
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
 class MarkVisitReadyForPickupHandler(
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val auditService: AuditService
     // TODO: Add services for side-effects (EmailService, SMSService, etc.)
 ) {
 
@@ -31,7 +33,19 @@ class MarkVisitReadyForPickupHandler(
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
 
-        // Step 4: Side-effects (to be implemented)
+        // Step 4: Audit logging
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = command.visitId.value.toString(),
+            entityDisplayName = "Wizyta #${visit.visitNumber}",
+            action = AuditAction.VISIT_MARKED_READY,
+            changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
+        ))
+
+        // Step 5: Side-effects (to be implemented)
         // TODO: Send notification to customer based on preferences
         // if (command.sendSms) {
         //     smsService.sendVisitReadyNotification(
@@ -63,7 +77,8 @@ data class MarkVisitReadyForPickupCommand(
     val userId: UserId,
     val visitId: VisitId,
     val sendSms: Boolean,
-    val sendEmail: Boolean
+    val sendEmail: Boolean,
+    val userName: String? = null
 )
 
 /**

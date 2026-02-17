@@ -55,7 +55,9 @@ class CustomerNoteController(
         val note = customerNoteService.updateNote(
             noteId = UUID.fromString(noteId),
             studioId = principal.studioId.value,
-            content = request.content
+            content = request.content,
+            updatedBy = principal.userId.value,
+            updatedByName = principal.fullName
         )
 
         ResponseEntity.ok(note.toResponse())
@@ -70,7 +72,9 @@ class CustomerNoteController(
 
         customerNoteService.deleteNote(
             noteId = UUID.fromString(noteId),
-            studioId = principal.studioId.value
+            studioId = principal.studioId.value,
+            deletedBy = principal.userId.value,
+            deletedByName = principal.fullName
         )
 
         ResponseEntity.noContent().build()

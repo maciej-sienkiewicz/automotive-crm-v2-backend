@@ -2,6 +2,7 @@ package pl.detailing.crm.visit.photos
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -18,7 +19,8 @@ import java.util.UUID
 @Service
 class AddVisitPhotoHandler(
     private val visitRepository: VisitRepository,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -66,7 +68,19 @@ class AddVisitPhotoHandler(
 
         visitRepository.save(visitEntity)
 
-        // 8. Generate presigned upload URL
+        // 8. Audit logging
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = command.visitId.value.toString(),
+            action = AuditAction.PHOTO_ADDED,
+            changes = listOf(FieldChange("fileName", null, command.fileName)),
+            metadata = mapOf("photoId" to photoId.value.toString())
+        ))
+
+        // 9. Generate presigned upload URL
         val uploadUrl = photoSessionService.generateSimpleUploadUrl(fileId, "image/jpeg")
 
         return AddVisitPhotoResult(
@@ -84,7 +98,9 @@ data class AddVisitPhotoCommand(
     val visitId: VisitId,
     val studioId: StudioId,
     val fileName: String,
-    val description: String?
+    val description: String?,
+    val userId: UserId,
+    val userName: String? = null
 )
 
 /**

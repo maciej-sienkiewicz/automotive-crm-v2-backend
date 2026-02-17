@@ -111,6 +111,8 @@ class VehiclePhotoController(
         val command = AddVehiclePhotoCommand(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
             fileName = request.fileName,
             description = request.description
         )

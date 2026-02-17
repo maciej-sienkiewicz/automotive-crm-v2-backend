@@ -222,6 +222,7 @@ class VehicleController(
         val command = CreateVehicleCommand(
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             ownerIds = request.ownerIds.map { CustomerId.fromString(it) },
             licensePlate = request.licensePlate,
             brand = request.brand,
@@ -269,6 +270,7 @@ class VehicleController(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             licensePlate = request.licensePlate,
             brand = request.brand,
             model = request.model,
@@ -308,7 +310,8 @@ class VehicleController(
         val command = DeleteVehicleCommand(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
-            userId = principal.userId
+            userId = principal.userId,
+            userName = principal.fullName
         )
 
         deleteVehicleHandler.handle(command)
@@ -330,6 +333,8 @@ class VehicleController(
         val command = AssignOwnerCommand(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
             customerId = CustomerId.fromString(request.customerId),
             role = OwnershipRole.valueOf(request.role.uppercase())
         )
@@ -360,6 +365,8 @@ class VehicleController(
         val command = RemoveOwnerCommand(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
             customerId = CustomerId.fromString(customerId)
         )
 
@@ -524,7 +531,9 @@ class VehicleController(
 
         vehicleDocumentService.deleteDocument(
             documentId = java.util.UUID.fromString(documentId),
-            studioId = principal.studioId.value
+            studioId = principal.studioId.value,
+            deletedBy = principal.userId.value,
+            deletedByName = principal.fullName
         )
 
         ResponseEntity.noContent().build()

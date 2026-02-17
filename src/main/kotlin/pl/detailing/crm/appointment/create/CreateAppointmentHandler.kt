@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.*
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -27,7 +28,8 @@ class CreateAppointmentHandler(
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val auditService: AuditService
 ) {
 
     @Transactional
@@ -118,6 +120,22 @@ class CreateAppointmentHandler(
         // Step 6: Persist Appointment
         val appointmentEntity = AppointmentEntity.fromDomain(appointment)
         appointmentRepository.save(appointmentEntity)
+
+        // Step 7: Audit log
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.APPOINTMENT,
+            entityId = appointment.id.value.toString(),
+            entityDisplayName = command.appointmentTitle,
+            action = AuditAction.CREATE,
+            metadata = mapOf(
+                "customerId" to customerId.value.toString(),
+                "startDateTime" to command.schedule.startDateTime.toString(),
+                "endDateTime" to command.schedule.endDateTime.toString()
+            ) + if (vehicleId != null) mapOf("vehicleId" to vehicleId.value.toString()) else emptyMap()
+        ))
 
         CreateAppointmentResult(
             appointmentId = appointment.id,

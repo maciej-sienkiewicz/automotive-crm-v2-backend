@@ -9,6 +9,7 @@ data class UpdateCustomerCommand(
     val customerId: CustomerId,
     val studioId: StudioId,
     val userId: UserId,
+    val userName: String? = null,
     val firstName: String?,
     val lastName: String?,
     val email: String?,

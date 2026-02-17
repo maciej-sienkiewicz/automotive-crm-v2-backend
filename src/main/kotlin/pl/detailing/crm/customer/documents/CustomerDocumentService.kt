@@ -5,9 +5,12 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerDocumentEntity
 import pl.detailing.crm.customer.infrastructure.CustomerDocumentRepository
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
 import java.util.UUID
@@ -15,7 +18,8 @@ import java.util.UUID
 @Service
 class CustomerDocumentService(
     private val customerDocumentRepository: CustomerDocumentRepository,
-    private val documentStorageService: DocumentStorageService
+    private val documentStorageService: DocumentStorageService,
+    private val auditService: AuditService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(CustomerDocumentService::class.java)
@@ -37,10 +41,6 @@ class CustomerDocumentService(
                 }
         }
 
-    /**
-     * Creates the document record in DB and returns a presigned S3 upload URL.
-     * The frontend uploads the file directly to S3 using the returned URL.
-     */
     @Transactional
     suspend fun initiateUpload(
         studioId: UUID,
@@ -71,6 +71,20 @@ class CustomerDocumentService(
 
         logger.info("Initiated customer document upload '$name' for customer $customerId")
 
+        auditService.log(LogAuditCommand(
+            studioId = StudioId(studioId),
+            userId = UserId(uploadedBy),
+            userDisplayName = uploadedByName,
+            module = AuditModule.CUSTOMER,
+            entityId = customerId.toString(),
+            action = AuditAction.DOCUMENT_ADDED,
+            changes = listOf(
+                FieldChange("documentName", null, name),
+                FieldChange("fileName", null, fileName)
+            ),
+            metadata = mapOf("documentId" to saved.id.toString())
+        ))
+
         CustomerDocumentUploadResult(
             documentId = saved.id.toString(),
             uploadUrl = uploadUrl
@@ -78,9 +92,17 @@ class CustomerDocumentService(
     }
 
     @Transactional
-    suspend fun deleteDocument(documentId: UUID, studioId: UUID): Unit = withContext(Dispatchers.IO) {
+    suspend fun deleteDocument(
+        documentId: UUID,
+        studioId: UUID,
+        deletedBy: UUID? = null,
+        deletedByName: String? = null
+    ): Unit = withContext(Dispatchers.IO) {
         val entity = customerDocumentRepository.findByIdAndStudioId(documentId, studioId)
             ?: throw EntityNotFoundException("Document not found: $documentId")
+
+        val docName = entity.name
+        val customerId = entity.customerId
 
         customerDocumentRepository.delete(entity)
 
@@ -91,6 +113,19 @@ class CustomerDocumentService(
         }
 
         logger.info("Deleted customer document ${entity.name} (id: $documentId)")
+
+        if (deletedBy != null) {
+            auditService.log(LogAuditCommand(
+                studioId = StudioId(studioId),
+                userId = UserId(deletedBy),
+                userDisplayName = deletedByName ?: "",
+                module = AuditModule.CUSTOMER,
+                entityId = customerId.toString(),
+                action = AuditAction.DOCUMENT_DELETED,
+                changes = listOf(FieldChange("documentName", docName, null)),
+                metadata = mapOf("documentId" to documentId.toString())
+            ))
+        }
     }
 }
 

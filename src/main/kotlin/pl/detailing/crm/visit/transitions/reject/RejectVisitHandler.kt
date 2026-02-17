@@ -2,13 +2,15 @@ package pl.detailing.crm.visit.transitions.reject
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
 class RejectVisitHandler(
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val auditService: AuditService
     // TODO: Add services for side-effects (EmailService, SMSService, etc.)
 ) {
 
@@ -42,7 +44,20 @@ class RejectVisitHandler(
             visitRepository.save(updatedEntity)
         }
 
-        // Step 5: Side-effects (to be implemented)
+        // Step 5: Audit logging
+        auditService.log(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.VISIT,
+            entityId = command.visitId.value.toString(),
+            entityDisplayName = "Wizyta #${visit.visitNumber}",
+            action = AuditAction.VISIT_REJECTED,
+            changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name)),
+            metadata = command.rejectionReason?.let { mapOf("rejectionReason" to it) } ?: emptyMap()
+        ))
+
+        // Step 6: Side-effects (to be implemented)
         // TODO: Send notification to customer about rejection
         // TODO: Cancel any pending operations
         // Example:
@@ -66,7 +81,8 @@ data class RejectVisitCommand(
     val studioId: StudioId,
     val userId: UserId,
     val visitId: VisitId,
-    val rejectionReason: String?
+    val rejectionReason: String?,
+    val userName: String? = null
 )
 
 /**

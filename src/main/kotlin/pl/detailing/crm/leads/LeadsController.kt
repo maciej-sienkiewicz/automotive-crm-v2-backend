@@ -91,11 +91,13 @@ class LeadsController(
 
         val command = CreateLeadCommand(
             studioId = principal.studioId,
+            userId = principal.userId,
             source = request.source,
             contactIdentifier = request.contactIdentifier,
             customerName = request.customerName,
             initialMessage = request.initialMessage,
-            estimatedValue = request.estimatedValue
+            estimatedValue = request.estimatedValue,
+            userName = principal.fullName
         )
 
         val result = createLeadHandler.handle(command)
@@ -130,10 +132,12 @@ class LeadsController(
         val command = UpdateLeadCommand(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId,
+            userId = principal.userId,
             status = request.status?.let { LeadStatus.valueOf(it) },
             customerName = request.customerName,
             initialMessage = request.initialMessage,
-            estimatedValue = request.estimatedValue
+            estimatedValue = request.estimatedValue,
+            userName = principal.fullName
         )
 
         val result = updateLeadHandler.handle(command)
@@ -219,10 +223,12 @@ class LeadsController(
         val command = UpdateLeadCommand(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId,
+            userId = principal.userId,
             status = LeadStatus.valueOf(request.status),
             customerName = null,
             initialMessage = null,
-            estimatedValue = null
+            estimatedValue = null,
+            userName = principal.fullName
         )
 
         val result = updateLeadHandler.handle(command)
@@ -257,10 +263,12 @@ class LeadsController(
         val command = UpdateLeadCommand(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId,
+            userId = principal.userId,
             status = null,
             customerName = null,
             initialMessage = null,
-            estimatedValue = request.estimatedValue
+            estimatedValue = request.estimatedValue,
+            userName = principal.fullName
         )
 
         val result = updateLeadHandler.handle(command)
