@@ -24,7 +24,7 @@ class GetDashboardSummaryHandler(
         // Calculate date ranges for week-over-week comparison
         val now = Instant.now()
         val today = LocalDate.now()
-        val currentWeekStart = now.atZone(ZoneId.systemDefault())
+        val currentWeekStart = now.atZone( ZoneId.of("Europe/Warsaw"))
             .with(DayOfWeek.MONDAY)
             .toLocalDate()
             .atStartOfDay(ZoneId.systemDefault())

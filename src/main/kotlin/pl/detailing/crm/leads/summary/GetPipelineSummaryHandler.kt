@@ -43,7 +43,7 @@ class GetPipelineSummaryHandler(
 
             // Calculate this month's metrics
             val now = Instant.now()
-            val zoneId = ZoneId.systemDefault()
+            val zoneId = ZoneId.of("Europe/Warsaw")
             val startOfMonth = now.atZone(zoneId)
                 .withDayOfMonth(1)
                 .withHour(0)

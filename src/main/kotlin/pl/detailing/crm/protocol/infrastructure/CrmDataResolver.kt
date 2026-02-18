@@ -129,11 +129,11 @@ class CrmDataResolver(
         }
 
     private fun formatDate(instant: Instant): String {
-        return instant.atZone(ZoneId.systemDefault()).format(DATE_FORMATTER)
+        return instant.atZone(ZoneId.of("Europe/Warsaw")).format(DATE_FORMATTER)
     }
 
     private fun formatDateTime(instant: Instant): String {
-        return instant.atZone(ZoneId.systemDefault()).format(DATETIME_FORMATTER)
+        return instant.atZone(ZoneId.of("Europe/Warsaw")).format(DATETIME_FORMATTER)
     }
 
     private fun formatMoney(amountInCents: Long): String {
