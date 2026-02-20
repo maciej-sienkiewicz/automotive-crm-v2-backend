@@ -66,6 +66,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         LEFT JOIN CustomerEntity c ON a.customerId = c.id
         LEFT JOIN VehicleEntity v ON a.vehicleId = v.id
         WHERE a.studioId = :studioId
+        AND (:customerId IS NULL OR a.customerId = :customerId)
         AND (:status IS NULL OR a.status = :status)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
              LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -81,6 +82,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
     """)
     fun findAppointmentsWithFilters(
         @Param("studioId") studioId: UUID,
+        @Param("customerId") customerId: UUID?,
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
         @Param("searchTerm") searchTerm: String?,
         @Param("scheduledDate") scheduledDate: LocalDate?,

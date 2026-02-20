@@ -16,6 +16,7 @@ import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import java.time.LocalDate
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/appointments")
@@ -33,7 +34,8 @@ class AppointmentController(
         @RequestParam(defaultValue = "20") limit: Int,
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) search: String?,
-        @RequestParam(required = false) scheduledDate: String?
+        @RequestParam(required = false) scheduledDate: String?,
+        @RequestParam(required = false) customerId: String?
     ): ResponseEntity<AppointmentListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -53,13 +55,22 @@ class AppointmentController(
             }
         }
 
+        val customerIdFilter = customerId?.let {
+            try {
+                UUID.fromString(it)
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+
         val command = ListAppointmentsCommand(
             studioId = principal.studioId,
             page = maxOf(1, page),
             pageSize = maxOf(1, minOf(100, limit)), // Limit page size to 100
             status = appointmentStatus,
             searchTerm = search,
-            scheduledDate = scheduledDateFilter
+            scheduledDate = scheduledDateFilter,
+            customerId = customerIdFilter
         )
 
         val result = listAppointmentsHandler.handle(command)
