@@ -345,8 +345,8 @@ class CreateVisitFromReservationHandler(
             studioId = studioId,
             firstName = firstName.trim(),
             lastName = lastName.trim(),
-            email = email?.trim()?.lowercase(),
-            phone = phone?.trim(),
+            email = email?.trim()?.lowercase()?.ifBlank { null },
+            phone = phone?.trim()?.ifBlank { null },
             homeAddress = homeAddress?.let {
                 HomeAddress(
                     street = it.street,
@@ -433,8 +433,8 @@ class CreateVisitFromReservationHandler(
         // Check if any data has changed
         val newFirstName = customerData.firstName.trim()
         val newLastName = customerData.lastName.trim()
-        val newEmail = customerData.email?.trim()?.lowercase()
-        val newPhone = customerData.phone?.trim()
+        val newEmail = customerData.email?.trim()?.lowercase()?.ifBlank { null }
+        val newPhone = customerData.phone?.trim()?.ifBlank { null }
 
         val newHomeAddress = customerData.homeAddress
         val newCompany = customerData.company

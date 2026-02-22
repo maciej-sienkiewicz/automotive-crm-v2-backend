@@ -175,8 +175,8 @@ class CreateAppointmentHandler(
             studioId = studioId,
             firstName = identity.firstName?.trim(),
             lastName = identity.lastName?.trim(),
-            email = identity.email?.trim()?.lowercase(),
-            phone = identity.phone?.trim(),
+            email = identity.email?.trim()?.lowercase()?.ifBlank { null },
+            phone = identity.phone?.trim()?.ifBlank { null },
             homeAddress = null,
             companyData = if (identity.companyName != null) {
                 pl.detailing.crm.customer.domain.CompanyData(
@@ -216,9 +216,9 @@ class CreateAppointmentHandler(
 
         entity.firstName = identity.firstName?.trim()
         entity.lastName = identity.lastName?.trim()
-        entity.email = identity.email?.trim()?.lowercase()
-        entity.phone = identity.phone?.trim()
-        
+        entity.email = identity.email?.trim()?.lowercase()?.ifBlank { null }
+        entity.phone = identity.phone?.trim()?.ifBlank { null }
+
         if (identity.companyName != null) {
             entity.companyName = identity.companyName
             entity.companyNip = identity.companyNip

@@ -87,7 +87,7 @@ class CreateAppointmentValidationContextBuilder(
             val emailExistsDeferred = async {
                 when (val identity = command.customer) {
                     is CustomerIdentity.New -> {
-                        val email = identity.email?.trim()?.lowercase()
+                        val email = identity.email?.trim()?.lowercase()?.ifBlank { null }
                         if (email != null) {
                             customerRepository.existsActiveByStudioIdAndEmail(
                                 command.studioId.value,
@@ -96,7 +96,7 @@ class CreateAppointmentValidationContextBuilder(
                         } else false
                     }
                     is CustomerIdentity.Update -> {
-                        val email = identity.email?.trim()?.lowercase()
+                        val email = identity.email?.trim()?.lowercase()?.ifBlank { null }
                         if (email != null) {
                             val existing = customerRepository.findActiveByStudioIdAndEmail(
                                 command.studioId.value,
@@ -112,7 +112,7 @@ class CreateAppointmentValidationContextBuilder(
             val phoneExistsDeferred = async {
                 when (val identity = command.customer) {
                     is CustomerIdentity.New -> {
-                        val phone = identity.phone?.trim()
+                        val phone = identity.phone?.trim()?.ifBlank { null }
                         if (phone != null) {
                             customerRepository.existsActiveByStudioIdAndPhone(
                                 command.studioId.value,
@@ -121,7 +121,7 @@ class CreateAppointmentValidationContextBuilder(
                         } else false
                     }
                     is CustomerIdentity.Update -> {
-                        val phone = identity.phone?.trim()
+                        val phone = identity.phone?.trim()?.ifBlank { null }
                         if (phone != null) {
                             val existing = customerRepository.findActiveByStudioIdAndPhone(
                                 command.studioId.value,

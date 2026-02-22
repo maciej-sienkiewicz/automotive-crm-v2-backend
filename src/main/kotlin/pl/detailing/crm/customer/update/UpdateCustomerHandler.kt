@@ -36,11 +36,14 @@ class UpdateCustomerHandler(
                 "homeAddressCountry" to entity.homeAddressCountry
             )
 
+            val normalizedEmail = command.email?.trim()?.lowercase()?.ifBlank { null }
+            val normalizedPhone = command.phone?.trim()?.ifBlank { null }
+
             // Check if email is unique (if changed)
-            if (command.email != null && entity.email != command.email) {
+            if (normalizedEmail != null && entity.email != normalizedEmail) {
                 val existingWithEmail = customerRepository.findActiveByStudioIdAndEmail(
                     studioId = command.studioId.value,
-                    email = command.email
+                    email = normalizedEmail
                 )
                 if (existingWithEmail != null && existingWithEmail.id != entity.id) {
                     throw IllegalArgumentException("Email already in use by another customer")
@@ -48,25 +51,25 @@ class UpdateCustomerHandler(
             }
 
             // Check if phone is unique (if changed)
-            if (command.phone != null && entity.phone != command.phone) {
+            if (normalizedPhone != null && entity.phone != normalizedPhone) {
                 val existingWithPhone = customerRepository.findActiveByStudioIdAndPhone(
                     studioId = command.studioId.value,
-                    phone = command.phone
+                    phone = normalizedPhone
                 )
                 if (existingWithPhone != null && existingWithPhone.id != entity.id) {
                     throw IllegalArgumentException("Phone already in use by another customer")
                 }
             }
 
-            if (command.email.isNullOrBlank() && command.phone.isNullOrBlank()) {
+            if (normalizedEmail == null && normalizedPhone == null) {
                 throw IllegalArgumentException("Wymagany jest co najmniej numer telefonu lub adres email klienta.")
             }
 
             // Update basic fields
             entity.firstName = command.firstName?.trim()
             entity.lastName = command.lastName?.trim()
-            entity.email = command.email?.trim()?.lowercase()
-            entity.phone = command.phone?.trim()
+            entity.email = normalizedEmail
+            entity.phone = normalizedPhone
 
             // Update home address
             if (command.homeAddress != null) {
