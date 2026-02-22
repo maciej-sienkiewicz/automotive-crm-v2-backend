@@ -32,7 +32,7 @@ class CrmDataResolver(
 
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm")
+        private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 
     /**
