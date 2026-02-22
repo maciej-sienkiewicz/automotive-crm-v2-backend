@@ -114,27 +114,6 @@ class CreateVisitFromReservationHandler(
             // Step 5: Generate visit number
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
 
-            // Step 5.5: Load services and validate manual price requirements
-            val requestedServiceIds = command.services.mapNotNull { it.serviceId?.let { id -> ServiceId.fromString(id) } }
-            val services = serviceRepository.findActiveByStudioId(command.studioId.value)
-                .filter { it.id in requestedServiceIds.map { id -> id.value } }
-                .map { it.toDomain() }
-                .associateBy { it.id }
-
-            // Validate that services requiring manual price have explicit price set
-            command.services.forEach { serviceReq ->
-                val service = serviceReq.serviceId?.let { services[ServiceId.fromString(it)] }
-                if (service?.requireManualPrice == true) {
-                    val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
-                    if (adjustmentType != AdjustmentType.SET_NET && adjustmentType != AdjustmentType.SET_GROSS) {
-                        throw ValidationException(
-                            "Service '${service.name}' requires manual price input. " +
-                            "Please provide an explicit price using SET_NET or SET_GROSS adjustment type."
-                        )
-                    }
-                }
-            }
-
             // Step 6: Map services to visit service items
             val serviceItems = command.services.map { serviceReq ->
                 val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)

@@ -10,15 +10,13 @@ class CreateAppointmentValidatorComposite(
     private val vehicleExistenceValidator: VehicleExistenceValidator,
     private val appointmentColorValidator: AppointmentColorValidator,
     private val newCustomerUniquenessValidator: NewCustomerUniquenessValidator,
-    private val customerContactInfoValidator: CustomerContactInfoValidator,
-    private val manualPriceRequiredValidator: ManualPriceRequiredValidator
+    private val customerContactInfoValidator: CustomerContactInfoValidator
 ) {
     suspend fun validate(command: CreateAppointmentCommand) {
         val context = contextBuilder.build(command)
 
         // Run validators in order
         customerContactInfoValidator.validate(context)
-        manualPriceRequiredValidator.validate(context)
         appointmentColorValidator.validate(context)
         customerExistenceValidator.validate(context)
         vehicleExistenceValidator.validate(context)
