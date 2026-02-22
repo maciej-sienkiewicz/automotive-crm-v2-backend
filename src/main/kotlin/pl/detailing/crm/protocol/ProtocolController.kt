@@ -11,6 +11,8 @@ import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.protocol.rule.CreateProtocolRuleCommand
 import pl.detailing.crm.protocol.rule.CreateProtocolRuleHandler
+import pl.detailing.crm.protocol.rule.DeleteProtocolRuleCommand
+import pl.detailing.crm.protocol.rule.DeleteProtocolRuleHandler
 import pl.detailing.crm.protocol.rule.GetProtocolRulesHandler
 import pl.detailing.crm.protocol.template.CreateProtocolTemplateCommand
 import pl.detailing.crm.protocol.template.CreateProtocolTemplateHandler
@@ -30,6 +32,7 @@ class ProtocolController(
     private val createProtocolTemplateHandler: CreateProtocolTemplateHandler,
     private val getProtocolTemplatesHandler: GetProtocolTemplatesHandler,
     private val createProtocolRuleHandler: CreateProtocolRuleHandler,
+    private val deleteProtocolRuleHandler: DeleteProtocolRuleHandler,
     private val getProtocolRulesHandler: GetProtocolRulesHandler,
     private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,
     private val signVisitProtocolHandler: SignVisitProtocolHandler,
@@ -187,9 +190,14 @@ class ProtocolController(
             throw ForbiddenException("Only OWNER and MANAGER can delete protocol rules")
         }
 
-        // Note: Delete is intentionally not implemented to prevent accidental data loss
-        // Instead, rules should be managed through creation of new rules
-        throw ForbiddenException("Deleting protocol rules is not allowed. Create new rules instead.")
+        deleteProtocolRuleHandler.handle(
+            DeleteProtocolRuleCommand(
+                ruleId = ProtocolRuleId.fromString(id),
+                studioId = principal.studioId
+            )
+        )
+
+        ResponseEntity.noContent().build()
     }
 
     // ==================== CRM Data Keys ====================
