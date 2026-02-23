@@ -30,10 +30,12 @@ class SaveVisitServicesHandler(
             val adjustmentValue = added.adjustment?.value ?: 0.0
 
             // Convert adjustment value based on type:
-            // - For PERCENT: convert to basis points (multiply by 100) to preserve decimals
+            // - For PERCENT: validate non-negative and convert using semantic convention
+            //   (0–100 = discount, >100 = markup) to basis points
             // - For others: round to Long (cents)
             val adjustmentValueLong = when (adjustmentType) {
-                pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT -> (adjustmentValue * 100).toLong()
+                pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT ->
+                    pl.detailing.crm.appointment.domain.AdjustmentType.convertPercentValueToBasisPoints(adjustmentValue)
                 else -> adjustmentValue.toLong()
             }
 

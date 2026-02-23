@@ -119,10 +119,11 @@ class CreateVisitFromReservationHandler(
                 val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
 
                 // Convert adjustment value based on type:
-                // - For PERCENT: convert to basis points (multiply by 100) to preserve decimals
+                // - For PERCENT: validate non-negative and convert using semantic convention
+                //   (0–100 = discount, >100 = markup) to basis points
                 // - For others: round to Long (cents)
                 val adjustmentValue = when (adjustmentType) {
-                    AdjustmentType.PERCENT -> (serviceReq.adjustment.value * 100).toLong() // Convert to basis points
+                    AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
                     else -> serviceReq.adjustment.value.toLong() // Keep in cents
                 }
 

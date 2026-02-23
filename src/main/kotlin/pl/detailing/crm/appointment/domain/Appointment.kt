@@ -11,7 +11,28 @@ enum class AdjustmentType {
     FIXED_NET,      // Fixed amount added to net price
     FIXED_GROSS,    // Fixed amount added to gross price
     SET_NET,        // Override net price completely
-    SET_GROSS       // Override gross price completely
+    SET_GROSS;      // Override gross price completely
+
+    companion object {
+        /**
+         * Converts PERCENT adjustment value from API input to internal basis points representation.
+         *
+         * Input value semantics:
+         * - 0..100 → discount (e.g. 5 = 5% rabatu → -500 bp, 95 = 95% rabatu → -9500 bp)
+         * - >100   → markup  (e.g. 120 = +20% → +2000 bp)
+         * - <0     → niedozwolone (throws ValidationException)
+         */
+        fun convertPercentValueToBasisPoints(value: Double): Long {
+            if (value < 0.0) throw pl.detailing.crm.shared.ValidationException(
+                "Wartość procentowa nie może być ujemna. Podaj wartość z zakresu 0–100 dla rabatu lub powyżej 100 dla narzutu."
+            )
+            return if (value <= 100.0) {
+                -(value * 100).toLong()   // discount: e.g. 5 → -500 bp
+            } else {
+                ((value - 100.0) * 100).toLong()  // markup: e.g. 120 → 2000 bp
+            }
+        }
+    }
 }
 
 /**
