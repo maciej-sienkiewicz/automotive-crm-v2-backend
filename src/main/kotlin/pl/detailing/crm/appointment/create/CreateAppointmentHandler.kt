@@ -60,10 +60,6 @@ class CreateAppointmentHandler(
             .associateBy { it.id }
 
         val lineItems = command.services.map { serviceLineItem ->
-            // Convert adjustment value based on type:
-            // - For PERCENT: validate non-negative and convert using semantic convention
-            //   (0–100 = discount, >100 = markup) to basis points
-            // - For others: round to Long (cents)
             val adjustmentValue = when (serviceLineItem.adjustmentType) {
                 AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceLineItem.adjustmentValue)
                 else -> serviceLineItem.adjustmentValue.toLong()

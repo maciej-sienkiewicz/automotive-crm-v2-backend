@@ -64,7 +64,7 @@ class GetAppointmentHandler(
 
                     ServiceLineItemInfo(
                         id = lineItem.id.toString(),
-                        serviceId = lineItem.serviceId.toString(),
+                        serviceId = lineItem.serviceId?.toString(),
                         serviceName = lineItem.serviceName,
                         basePriceNet = lineItem.basePriceNet,
                         vatRate = lineItem.vatRate,
