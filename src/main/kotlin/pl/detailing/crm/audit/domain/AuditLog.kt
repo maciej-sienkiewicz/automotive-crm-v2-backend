@@ -62,6 +62,8 @@ enum class AuditAction {
 
     // Appointment-specific
     APPOINTMENT_CANCELLED,
+    APPOINTMENT_RESTORED,
+    APPOINTMENT_DELETED,
     APPOINTMENT_CONVERTED,
 
     // Protocol-specific

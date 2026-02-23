@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.create.*
 import pl.detailing.crm.appointment.update.*
 import pl.detailing.crm.appointment.cancel.*
+import pl.detailing.crm.appointment.restore.*
+import pl.detailing.crm.appointment.delete.*
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
@@ -24,6 +26,8 @@ class AppointmentController(
     private val createAppointmentHandler: CreateAppointmentHandler,
     private val updateAppointmentHandler: UpdateAppointmentHandler,
     private val cancelAppointmentHandler: CancelAppointmentHandler,
+    private val restoreAppointmentHandler: RestoreAppointmentHandler,
+    private val deleteAppointmentHandler: DeleteAppointmentHandler,
     private val listAppointmentsHandler: ListAppointmentsHandler,
     private val getAppointmentHandler: GetAppointmentHandler
 ) {
@@ -341,6 +345,46 @@ class AppointmentController(
         )
 
         cancelAppointmentHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    @PostMapping("/{id}/restore")
+    fun restoreAppointment(@PathVariable id: String): ResponseEntity<Unit> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can restore appointments")
+        }
+
+        val command = RestoreAppointmentCommand(
+            appointmentId = AppointmentId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+
+        restoreAppointmentHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/{id}")
+    fun deleteAppointment(@PathVariable id: String): ResponseEntity<Unit> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can delete appointments")
+        }
+
+        val command = DeleteAppointmentCommand(
+            appointmentId = AppointmentId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+
+        deleteAppointmentHandler.handle(command)
 
         ResponseEntity.noContent().build()
     }

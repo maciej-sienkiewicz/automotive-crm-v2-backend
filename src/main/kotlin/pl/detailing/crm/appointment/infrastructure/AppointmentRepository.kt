@@ -13,18 +13,19 @@ import java.util.UUID
 @Repository
 interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
 
-    @Query("SELECT a FROM AppointmentEntity a WHERE a.id = :id AND a.studioId = :studioId")
+    @Query("SELECT a FROM AppointmentEntity a WHERE a.id = :id AND a.studioId = :studioId AND a.deletedAt IS NULL")
     fun findByIdAndStudioId(
         @Param("id") id: UUID,
         @Param("studioId") studioId: UUID
     ): AppointmentEntity?
 
-    @Query("SELECT a FROM AppointmentEntity a WHERE a.studioId = :studioId")
+    @Query("SELECT a FROM AppointmentEntity a WHERE a.studioId = :studioId AND a.deletedAt IS NULL")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<AppointmentEntity>
 
     @Query("""
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
         AND a.status <> 'CANCELLED'
         AND a.endDateTime >= :startDateTime
         AND a.startDateTime <= :endDateTime
@@ -39,6 +40,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
         AND a.customerId = :customerId
+        AND a.deletedAt IS NULL
         ORDER BY a.startDateTime DESC
     """)
     fun findByStudioIdAndCustomerId(
@@ -50,6 +52,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
         AND a.vehicleId = :vehicleId
+        AND a.deletedAt IS NULL
         ORDER BY a.startDateTime DESC
     """)
     fun findByStudioIdAndVehicleId(
@@ -66,6 +69,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         LEFT JOIN CustomerEntity c ON a.customerId = c.id
         LEFT JOIN VehicleEntity v ON a.vehicleId = v.id
         WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
         AND (:customerId IS NULL OR a.customerId = :customerId)
         AND (:status IS NULL OR a.status = :status)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
@@ -95,6 +99,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
     @Query("""
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
         AND a.status = :status
         AND CAST(a.startDateTime AS date) = :date
         ORDER BY a.startDateTime ASC
