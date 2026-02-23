@@ -216,6 +216,8 @@ class AuditController(
         AuditAction.VISIT_ADDED -> "Dodanie wizyty"
         AuditAction.COMPANY_UPDATED -> "Aktualizacja danych firmy"
         AuditAction.COMPANY_DELETED -> "Usuniecie danych firmy"
+        AuditAction.APPOINTMENT_DELETED -> "Usunięcie rezerwacji"
+        AuditAction.APPOINTMENT_RESTORED -> "Przywrócenie rezerwacji"
     }
 }
 
