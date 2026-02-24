@@ -18,6 +18,7 @@ data class Visit(
     val vehicleId: VehicleId,
     val appointmentId: AppointmentId,
     val appointmentColorId: AppointmentColorId?,
+    val title: String?,
 
     // Immutable vehicle snapshots - frozen at visit creation
     val brandSnapshot: String,

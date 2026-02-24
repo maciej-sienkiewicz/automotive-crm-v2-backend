@@ -22,6 +22,7 @@ data class VisitDetailResponse(
 data class VisitResponse(
     val id: String,
     val visitNumber: String,
+    val title: String?,
     val status: String,
     val scheduledDate: Instant,
     val estimatedCompletionDate: Instant?,

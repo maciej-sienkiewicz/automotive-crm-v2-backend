@@ -66,6 +66,7 @@ class ListVisitsHandler(
             VisitListItem(
                 id = visit.id.toString(),
                 visitNumber = visit.visitNumber,
+                title = visit.title,
                 customerId = visit.customerId.toString(),
                 vehicleId = visit.vehicleId.toString(),
                 customer = VisitCustomerInfo(
@@ -157,6 +158,7 @@ data class ListVisitsResult(
 data class VisitListItem(
     val id: String,
     val visitNumber: String,
+    val title: String?,
     val customerId: String,
     val vehicleId: String,
     val customer: VisitCustomerInfo,

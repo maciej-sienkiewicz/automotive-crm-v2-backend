@@ -322,6 +322,7 @@ class VisitController(
         return VisitResponse(
             id = visit.id.value.toString(),
             visitNumber = visit.visitNumber,
+            title = visit.title,
             status = mapVisitStatus(visit.status),
             scheduledDate = visit.scheduledDate,
             estimatedCompletionDate = visit.estimatedCompletionDate,

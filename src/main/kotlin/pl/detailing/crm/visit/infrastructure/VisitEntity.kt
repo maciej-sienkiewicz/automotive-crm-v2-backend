@@ -52,6 +52,9 @@ class VisitEntity(
     @Column(name = "appointment_color_id", columnDefinition = "uuid")
     val appointmentColorId: UUID?,
 
+    @Column(name = "title", length = 255)
+    var title: String?,
+
     // Immutable vehicle snapshots - frozen at visit creation
     @Column(name = "brand_snapshot", nullable = false, length = 100)
     val brandSnapshot: String,
@@ -153,6 +156,7 @@ class VisitEntity(
         vehicleId = VehicleId(vehicleId),
         appointmentId = AppointmentId(appointmentId),
         appointmentColorId = appointmentColorId?.let { AppointmentColorId(it) },
+        title = title,
         brandSnapshot = brandSnapshot,
         modelSnapshot = modelSnapshot,
         licensePlateSnapshot = licensePlateSnapshot,
@@ -206,6 +210,7 @@ class VisitEntity(
                 vehicleId = visit.vehicleId.value,
                 appointmentId = visit.appointmentId.value,
                 appointmentColorId = visit.appointmentColorId?.value,
+                title = visit.title,
                 brandSnapshot = visit.brandSnapshot,
                 modelSnapshot = visit.modelSnapshot,
                 licensePlateSnapshot = visit.licensePlateSnapshot,
