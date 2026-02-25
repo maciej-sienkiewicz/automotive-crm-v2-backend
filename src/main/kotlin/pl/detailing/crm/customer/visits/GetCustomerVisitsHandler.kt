@@ -14,8 +14,8 @@ class GetCustomerVisitsHandler(
 ) {
     suspend fun handle(command: GetCustomerVisitsCommand): GetCustomerVisitsResult =
         withContext(Dispatchers.IO) {
-            // Get all visits for the customer
-            val allVisits = visitRepository.findByCustomerIdAndStudioId(
+            // Get all visits for the customer, excluding drafts
+            val allVisits = visitRepository.findByCustomerIdAndStudioIdExcludingDraft(
                 customerId = command.customerId.value,
                 studioId = command.studioId.value
             )

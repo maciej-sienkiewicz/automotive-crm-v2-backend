@@ -19,7 +19,7 @@ class GetVehicleVisitsHandler(
 ) {
     suspend fun handle(command: GetVehicleVisitsCommand): GetVehicleVisitsResult =
         withContext(Dispatchers.IO) {
-            val allVisits = visitRepository.findByVehicleIdAndStudioId(
+            val allVisits = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(
                 vehicleId = command.vehicleId.value,
                 studioId = command.studioId.value
             )
