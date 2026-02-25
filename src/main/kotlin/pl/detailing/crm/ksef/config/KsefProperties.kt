@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "ksef")
 data class KsefProperties(
-    val baseUrl: String = "https://api-test.ksef.mf.gov.pl",
+    val baseUrl: String = "https://api.ksef.mf.gov.pl",
     val apiPath: String = "/api/v2",
     val requestTimeoutSeconds: Long = 30
 )

@@ -266,8 +266,8 @@ data class KsefSessionResponse(
 data class FetchKsefInvoicesRequest(
     val dateFrom: OffsetDateTime,
     val dateTo: OffsetDateTime,
-    val dateType: String?,       // InvoicingDate | AcquisitionDate | IssueDate
-    val subjectType: String?,    // Subject1 | Subject2 | Subject3
+    val dateType: String?,    // INVOICING (default) | ISSUE | PERMANENTSTORAGE
+    val subjectType: String?, // SUBJECT1 sprzedawca (default) | SUBJECT2 nabywca (kosztowe) | SUBJECT3 | SUBJECTAUTHORIZED
     val pageSize: Int?
 )
 
