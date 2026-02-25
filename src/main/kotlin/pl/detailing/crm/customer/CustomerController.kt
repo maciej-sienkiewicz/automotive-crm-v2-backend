@@ -95,6 +95,10 @@ class CustomerController(
             else -> customers.sortedBy { it.lastName ?: "" }
         }
 
+        // Primary sort: customers with both firstName and lastName filled in come first.
+        // Kotlin's sort is stable, so the secondary sort order is preserved within each group.
+        customers = customers.sortedByDescending { !it.firstName.isNullOrBlank() && !it.lastName.isNullOrBlank() }
+
         val totalItems = customers.size
         val start = (page - 1) * limit
         val end = minOf(start + limit, totalItems)
