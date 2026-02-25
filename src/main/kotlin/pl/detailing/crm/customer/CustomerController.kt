@@ -95,6 +95,10 @@ class CustomerController(
             else -> customers.sortedBy { it.lastName ?: "" }
         }
 
+        // Secondary sort: within each group sort by last visit date descending (nulls last).
+        // Kotlin's sort is stable, so the tertiary sort order from sortBy param is preserved.
+        customers = customers.sortedWith(compareByDescending(nullsLast()) { it.lastVisitDate })
+
         // Primary sort: customers with both firstName and lastName filled in come first.
         // Kotlin's sort is stable, so the secondary sort order is preserved within each group.
         customers = customers.sortedByDescending { !it.firstName.isNullOrBlank() && !it.lastName.isNullOrBlank() }
