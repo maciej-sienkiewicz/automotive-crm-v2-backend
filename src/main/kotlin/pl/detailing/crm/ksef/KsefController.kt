@@ -4,6 +4,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryDateType
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.auth.KsefSessionCache
@@ -15,6 +17,7 @@ import pl.detailing.crm.ksef.list.ListKsefInvoicesCommand
 import pl.detailing.crm.ksef.list.ListKsefInvoicesHandler
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.OffsetDateTime
 
@@ -144,13 +147,26 @@ class KsefController(
             throw ForbiddenException("Only OWNER or MANAGER can fetch KSeF invoices")
         }
 
+        val dateType = when (request.dateType?.uppercase()) {
+            "ISSUE", "ISSUEDATE" -> InvoiceQueryDateType.ISSUE
+            "PERMANENTSTORAGE", "PERMANENTSTORAGEDATE" -> InvoiceQueryDateType.PERMANENTSTORAGE
+            else -> InvoiceQueryDateType.INVOICING  // default: invoicing date
+        }
+
+        val subjectType = when (request.subjectType?.uppercase()) {
+            "SUBJECT2" -> InvoiceQuerySubjectType.SUBJECT2
+            "SUBJECT3" -> InvoiceQuerySubjectType.SUBJECT3
+            "SUBJECTAUTHORIZED" -> InvoiceQuerySubjectType.SUBJECTAUTHORIZED
+            else -> InvoiceQuerySubjectType.SUBJECT1  // default: seller perspective
+        }
+
         val result = fetchInvoicesHandler.handle(
             FetchKsefInvoicesCommand(
                 studioId = principal.studioId,
                 dateFrom = request.dateFrom,
                 dateTo = request.dateTo,
-                dateType = request.dateType ?: "InvoicingDate",
-                subjectType = request.subjectType ?: "Subject1",
+                dateType = dateType,
+                subjectType = subjectType,
                 pageSize = request.pageSize ?: 50
             )
         )

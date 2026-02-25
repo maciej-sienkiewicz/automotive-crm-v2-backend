@@ -17,6 +17,18 @@ java {
 
 repositories {
     mavenCentral()
+    // KSeF SDK – GitHub Packages (requires a PAT with read:packages scope).
+    // Set credentials via env vars: GITHUB_ACTOR + GITHUB_TOKEN
+    // OR in ~/.gradle/gradle.properties:  gpr.user=<login>  gpr.key=<PAT>
+    maven {
+        url = uri("https://maven.pkg.github.com/CIRFMF/ksef-client-java")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+                ?: (project.findProperty("gpr.user") as String? ?: "")
+            password = System.getenv("GITHUB_TOKEN")
+                ?: (project.findProperty("gpr.key") as String? ?: "")
+        }
+    }
 }
 
 dependencies {
@@ -48,6 +60,9 @@ dependencies {
     // Apache PDFBox for PDF form filling and manipulation
     implementation("org.apache.pdfbox:pdfbox:3.0.1")
     implementation("org.apache.pdfbox:fontbox:3.0.1")
+
+    // KSeF SDK – official Java client for the Polish National e-Invoicing System
+    implementation("pl.akmf.ksef-sdk:ksef-client:3.0.17")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

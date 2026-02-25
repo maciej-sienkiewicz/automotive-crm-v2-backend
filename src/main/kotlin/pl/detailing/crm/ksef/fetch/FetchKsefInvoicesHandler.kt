@@ -3,22 +3,26 @@ package pl.detailing.crm.ksef.fetch
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.akmf.ksef.sdk.client.interfaces.KSeFClient
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryDateRange
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryDateType
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryFilters
+import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
+import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
-import pl.detailing.crm.ksef.client.KsefApiClient
-import pl.detailing.crm.ksef.client.KsefInvoiceQueryDateRange
-import pl.detailing.crm.ksef.client.KsefInvoiceQueryFilters
 import pl.detailing.crm.ksef.domain.KsefInvoice
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.ValidationException
 import java.time.OffsetDateTime
 
 data class FetchKsefInvoicesCommand(
     val studioId: StudioId,
     val dateFrom: OffsetDateTime,
     val dateTo: OffsetDateTime,
-    val dateType: String = "InvoicingDate",  // InvoicingDate | AcquisitionDate | IssueDate
-    val subjectType: String = "Subject1",    // Subject1 = seller, Subject2 = buyer, Subject3 = other
+    val dateType: InvoiceQueryDateType = InvoiceQueryDateType.INVOICING,
+    val subjectType: InvoiceQuerySubjectType = InvoiceQuerySubjectType.SUBJECT1,
     val pageSize: Int = 50
 )
 
@@ -31,18 +35,20 @@ data class FetchKsefInvoicesResult(
 @Service
 class FetchKsefInvoicesHandler(
     private val ksefAuthService: KsefAuthService,
-    private val ksefApiClient: KsefApiClient,
+    private val ksefClient: KSeFClient,
     private val invoiceRepository: KsefInvoiceRepository
 ) {
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
     /**
-     * Fetches invoice metadata from KSeF for the given date range and persists new invoices.
-     * Invoices already present in the database (by ksefNumber) are skipped.
-     * Pagination is handled automatically by fetching all pages.
+     * Fetches invoice metadata from KSeF using the official SDK and persists new invoices.
+     * Invoices already present in the database (by ksefNumber + studioId) are skipped.
+     * All pages are automatically fetched.
      */
     @Transactional
     fun handle(command: FetchKsefInvoicesCommand): FetchKsefInvoicesResult {
+        val effectivePageSize = command.pageSize.coerceIn(10, 250)
+
         log.info(
             "Fetching KSeF invoices for studio={} from={} to={} subjectType={}",
             command.studioId, command.dateFrom, command.dateTo, command.subjectType
@@ -50,16 +56,12 @@ class FetchKsefInvoicesHandler(
 
         val accessToken = ksefAuthService.getValidAccessToken(command.studioId)
 
-        val filters = KsefInvoiceQueryFilters(
-            subjectType = command.subjectType,
-            dateRange = KsefInvoiceQueryDateRange(
-                type = command.dateType,
-                from = command.dateFrom,
-                to = command.dateTo
-            )
-        )
+        val filters = InvoiceQueryFilters().apply {
+            subjectType = command.subjectType
+            dateRange = InvoiceQueryDateRange(command.dateType, command.dateFrom, command.dateTo)
+        }
 
-        val allMetadata = fetchAllPages(filters, accessToken, command.pageSize)
+        val allMetadata = fetchAllPages(filters, accessToken, effectivePageSize)
 
         var fetchedCount = 0
         var skippedCount = 0
@@ -83,7 +85,7 @@ class FetchKsefInvoicesHandler(
                 grossAmount = metadata.grossAmount,
                 vatAmount = metadata.vatAmount,
                 currency = metadata.currency,
-                invoiceType = metadata.invoiceType
+                invoiceType = metadata.invoiceType?.value
             )
             val saved = invoiceRepository.save(entity)
             savedInvoices.add(saved.toDomain())
@@ -103,24 +105,24 @@ class FetchKsefInvoicesHandler(
     }
 
     private fun fetchAllPages(
-        filters: KsefInvoiceQueryFilters,
+        filters: InvoiceQueryFilters,
         accessToken: String,
         pageSize: Int
     ) = buildList {
         var pageOffset = 0
         var hasMore = true
-        val effectivePageSize = pageSize.coerceIn(10, 250)
 
         while (hasMore) {
-            val response = ksefApiClient.queryInvoiceMetadata(
-                pageOffset = pageOffset,
-                pageSize = effectivePageSize,
-                filters = filters,
-                accessToken = accessToken
+            val response = ksefClient.queryInvoiceMetadata(
+                pageOffset,
+                pageSize,
+                SortOrder.ASC,
+                filters,
+                accessToken
             )
             addAll(response.invoices)
             hasMore = response.hasMore == true && response.invoices.isNotEmpty()
-            pageOffset += effectivePageSize
+            pageOffset += pageSize
         }
     }
 }
