@@ -596,6 +596,19 @@ enum class VatRate(val rate: Int) {
 }
 
 /**
+ * Type-safe ID wrapper for KSeF invoice entities
+ */
+@JvmInline
+value class KsefInvoiceId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = KsefInvoiceId(UUID.randomUUID())
+        fun fromString(value: String) = KsefInvoiceId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Base exception for business logic violations
  */
 sealed class BusinessException(message: String) : RuntimeException(message)
