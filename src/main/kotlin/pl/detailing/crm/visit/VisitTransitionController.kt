@@ -4,18 +4,21 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.finance.domain.DocumentType
+import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.transitions.markready.*
 import pl.detailing.crm.visit.transitions.complete.*
 import pl.detailing.crm.visit.transitions.reject.*
 import pl.detailing.crm.visit.transitions.archive.*
+import java.time.LocalDate
 
 /**
  * REST Controller for visit state transitions
  *
  * Provides dedicated endpoints for each state transition:
  * - Mark as ready for pickup
- * - Complete (hand over to customer)
+ * - Complete (hand over to customer) – auto-issues a financial document
  * - Reject
  * - Archive
  */
@@ -43,7 +46,6 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can mark visit as ready
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can mark visit as ready for pickup")
         }
@@ -67,37 +69,60 @@ class VisitTransitionController(
     }
 
     /**
-     * Complete visit - hand over vehicle to customer
+     * Complete visit – hand over vehicle to customer and issue a financial document.
      * POST /api/visits/{visitId}/complete
      *
      * Transition: READY_FOR_PICKUP → COMPLETED
+     *
+     * A financial document (receipt / invoice) is automatically created for all
+     * CONFIRMED and APPROVED service items.  Pass an optional [CompleteVisitRequest]
+     * body to control payment method, document type and counterparty data.
+     * Omitting the body defaults to CASH + RECEIPT with no counterparty.
+     *
      * Access: OWNER, MANAGER
      */
     @PostMapping("/{visitId}/complete")
     fun completeVisit(
-        @PathVariable visitId: String
-    ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
+        @PathVariable visitId: String,
+        @RequestBody(required = false) request: CompleteVisitRequest?
+    ): ResponseEntity<CompleteVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can complete visit
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can complete visit")
         }
 
+        val paymentMethod = request?.paymentMethod
+            ?.let { parsePaymentMethod(it) }
+            ?: PaymentMethod.CASH
+
+        val documentType = request?.documentType
+            ?.let { parseDocumentType(it) }
+            ?: DocumentType.RECEIPT
+
         val command = CompleteVisitCommand(
-            studioId = principal.studioId,
-            userId = principal.userId,
-            visitId = VisitId.fromString(visitId),
-            userName = principal.fullName
+            studioId         = principal.studioId,
+            userId           = principal.userId,
+            visitId          = VisitId.fromString(visitId),
+            userName         = principal.fullName,
+            paymentMethod    = paymentMethod,
+            documentType     = documentType,
+            dueDate          = request?.dueDate,
+            counterpartyName = request?.counterpartyName,
+            counterpartyNip  = request?.counterpartyNip
         )
 
         val result = completeVisitHandler.handle(command)
 
-        ResponseEntity.ok(VisitStatusChangeResponse(
-            visitId = result.visitId.value.toString(),
-            newStatus = mapVisitStatus(result.newStatus),
-            message = "Visit completed successfully"
-        ))
+        ResponseEntity.ok(
+            CompleteVisitResponse(
+                visitId                 = result.visitId.value.toString(),
+                newStatus               = mapVisitStatus(result.newStatus),
+                message                 = "Visit completed successfully",
+                financialDocumentId     = result.financialDocumentId?.toString(),
+                financialDocumentNumber = result.financialDocumentNumber
+            )
+        )
     }
 
     /**
@@ -114,7 +139,6 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can reject visit
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can reject visit")
         }
@@ -149,7 +173,6 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER can archive visit
         if (principal.role != UserRole.OWNER) {
             throw ForbiddenException("Only OWNER can archive visit")
         }
@@ -170,41 +193,106 @@ class VisitTransitionController(
         ))
     }
 
-    /**
-     * Map VisitStatus enum to frontend string
-     */
-    private fun mapVisitStatus(status: VisitStatus): String {
-        return when (status) {
-            VisitStatus.IN_PROGRESS -> "in_progress"
-            VisitStatus.READY_FOR_PICKUP -> "ready_for_pickup"
-            VisitStatus.COMPLETED -> "completed"
-            VisitStatus.REJECTED -> "rejected"
-            VisitStatus.ARCHIVED -> "archived"
-            VisitStatus.DRAFT -> "draft"
-        }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun mapVisitStatus(status: VisitStatus): String = when (status) {
+        VisitStatus.IN_PROGRESS       -> "in_progress"
+        VisitStatus.READY_FOR_PICKUP  -> "ready_for_pickup"
+        VisitStatus.COMPLETED         -> "completed"
+        VisitStatus.REJECTED          -> "rejected"
+        VisitStatus.ARCHIVED          -> "archived"
+        VisitStatus.DRAFT             -> "draft"
     }
+
+    private fun parsePaymentMethod(value: String): PaymentMethod =
+        runCatching { PaymentMethod.valueOf(value.uppercase()) }.getOrElse {
+            throw ValidationException(
+                "Nieprawidłowa metoda płatności: '$value'. Dozwolone: ${PaymentMethod.entries.joinToString { it.name }}"
+            )
+        }
+
+    private fun parseDocumentType(value: String): DocumentType =
+        runCatching { DocumentType.valueOf(value.uppercase()) }.getOrElse {
+            throw ValidationException(
+                "Nieprawidłowy typ dokumentu: '$value'. Dozwolone: ${DocumentType.entries.joinToString { it.name }}"
+            )
+        }
 }
 
-/**
- * Request to mark visit as ready for pickup with notification preferences
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Request DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
 data class MarkReadyForPickupRequest(
     val sms: Boolean,
     val email: Boolean
 )
 
-/**
- * Request to reject visit with optional reason
- */
 data class RejectVisitRequest(
     val reason: String?
 )
 
 /**
- * Response for status change operations
+ * Optional request body for `POST /api/visits/{visitId}/complete`.
+ *
+ * All fields are optional.  Omitting the body entirely defaults to:
+ * - paymentMethod = "CASH"
+ * - documentType  = "RECEIPT"
+ * - no counterparty data, no dueDate
+ *
+ * Example – invoice paid by bank transfer (due in 14 days):
+ * ```json
+ * {
+ *   "paymentMethod": "TRANSFER",
+ *   "documentType": "INVOICE",
+ *   "dueDate": "2024-08-14",
+ *   "counterpartyName": "Firma ABC Sp. z o.o.",
+ *   "counterpartyNip": "1234567890"
+ * }
+ * ```
  */
+data class CompleteVisitRequest(
+    /** CASH | CARD | TRANSFER  (default: CASH) */
+    val paymentMethod: String? = null,
+
+    /** RECEIPT | INVOICE | OTHER  (default: RECEIPT) */
+    val documentType: String? = null,
+
+    /** Required when paymentMethod == TRANSFER. */
+    val dueDate: LocalDate? = null,
+
+    /** Buyer name to appear on the document. */
+    val counterpartyName: String? = null,
+
+    /** Buyer NIP (Polish tax ID) to appear on the document. */
+    val counterpartyNip: String? = null
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Response DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
 data class VisitStatusChangeResponse(
     val visitId: String,
     val newStatus: String,
     val message: String
+)
+
+/**
+ * Response for `POST /api/visits/{visitId}/complete`.
+ *
+ * Extends the standard status-change response with financial document details.
+ */
+data class CompleteVisitResponse(
+    val visitId: String,
+    val newStatus: String,
+    val message: String,
+
+    /** UUID of the auto-issued financial document. Null if the visit had no service items. */
+    val financialDocumentId: String?,
+
+    /** Human-readable document number, e.g. "PAR/2024/0001". */
+    val financialDocumentNumber: String?
 )
