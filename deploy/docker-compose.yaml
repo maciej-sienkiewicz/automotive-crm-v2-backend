@@ -17,6 +17,8 @@ services:
       REDIS_PORT: ${ENV_REDIS_PORT}
       S3_ACCESS_KEY: ${ENV_S3_ACCESS_KEY}
       S3_SECRET_KEY: ${ENV_S3_SECRET_KEY}
+      GITHUB_ACTOR: ${ENV_GITHUB_ACTOR}
+      GITHUB_TOKEN: ${ENV_GITHUB_TOKEN}
     depends_on:
       - redis
     networks:
