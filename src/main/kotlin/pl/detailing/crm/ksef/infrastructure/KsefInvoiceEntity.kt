@@ -52,8 +52,14 @@ class KsefInvoiceEntity(
     @Column(name = "seller_nip", length = 20)
     val sellerNip: String?,
 
+    @Column(name = "seller_name", length = 500)
+    val sellerName: String?,
+
     @Column(name = "buyer_nip", length = 20)
     val buyerNip: String?,
+
+    @Column(name = "buyer_name", length = 500)
+    val buyerName: String?,
 
     @Column(name = "net_amount")
     val netAmount: Double?,
@@ -106,7 +112,9 @@ class KsefInvoiceEntity(
         invoicingDate = invoicingDate,
         issueDate = issueDate,
         sellerNip = sellerNip,
+        sellerName = sellerName,
         buyerNip = buyerNip,
+        buyerName = buyerName,
         netAmount = netAmount,
         grossAmount = grossAmount,
         vatAmount = vatAmount,
@@ -123,7 +131,8 @@ class KsefInvoiceEntity(
     fun withStatus(newStatus: String): KsefInvoiceEntity = KsefInvoiceEntity(
         id = id, studioId = studioId, ksefNumber = ksefNumber, invoiceNumber = invoiceNumber,
         invoicingDate = invoicingDate, issueDate = issueDate, sellerNip = sellerNip,
-        buyerNip = buyerNip, netAmount = netAmount, grossAmount = grossAmount,
+        sellerName = sellerName, buyerNip = buyerNip, buyerName = buyerName,
+        netAmount = netAmount, grossAmount = grossAmount,
         vatAmount = vatAmount, currency = currency, invoiceType = invoiceType,
         fetchedAt = fetchedAt, direction = direction, isCorrection = isCorrection,
         originalKsefNumber = originalKsefNumber, status = newStatus,

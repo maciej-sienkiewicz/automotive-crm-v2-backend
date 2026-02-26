@@ -11,7 +11,6 @@ import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.domain.KsefInvoice
-import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
@@ -89,7 +88,7 @@ class FetchKsefInvoicesHandler(
             // jest dostępna tylko w pełnym XML faktury (TODO dla przyszłej implementacji).
             val originalKsefNumber: String? = null
 
-            val paymentForm = fetchPaymentForm(metadata.ksefNumber, accessToken)
+            val xmlData = fetchInvoiceXmlData(metadata.ksefNumber, accessToken)
 
             val entity = KsefInvoiceEntity(
                 studioId = command.studioId.value,
@@ -98,7 +97,9 @@ class FetchKsefInvoicesHandler(
                 invoicingDate = metadata.invoicingDate,
                 issueDate = metadata.issueDate,
                 sellerNip = metadata.seller?.nip,
+                sellerName = xmlData.sellerName,
                 buyerNip = metadata.buyer?.identifier?.value,
+                buyerName = xmlData.buyerName,
                 netAmount = metadata.netAmount,
                 grossAmount = metadata.grossAmount,
                 vatAmount = metadata.vatAmount,
@@ -108,7 +109,7 @@ class FetchKsefInvoicesHandler(
                 isCorrection = isCorrection,
                 originalKsefNumber = originalKsefNumber,
                 status = "ACTIVE",
-                paymentForm = paymentForm?.name
+                paymentForm = xmlData.paymentForm?.name
             )
             val saved = invoiceRepository.save(entity)
             savedInvoices.add(saved.toDomain())
@@ -134,20 +135,21 @@ class FetchKsefInvoicesHandler(
     }
 
     /**
-     * Pobiera pełny XML faktury i wyciąga formę płatności.
+     * Pobiera pełny XML faktury i wyciąga formę płatności oraz nazwy sprzedawcy/nabywcy.
      *
-     * Błędy sieciowe / parsowania są obsługiwane gracefully – zwracamy null
+     * Błędy sieciowe / parsowania są obsługiwane gracefully – zwracamy pusty obiekt
      * zamiast przerywać cały import faktur z powodu jednego nieudanego pobrania.
      */
-    private fun fetchPaymentForm(ksefNumber: String, accessToken: String): PaymentForm? {
+    private fun fetchInvoiceXmlData(ksefNumber: String, accessToken: String): KsefXmlData {
         return try {
             val invoiceXml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
-            xmlParser.parsePaymentForm(invoiceXml).also { form ->
-                log.debug("Invoice {} paymentForm={}", ksefNumber, form)
+            xmlParser.parseInvoiceData(invoiceXml).also { data ->
+                log.debug("Invoice {} paymentForm={} seller='{}' buyer='{}'",
+                    ksefNumber, data.paymentForm, data.sellerName, data.buyerName)
             }
         } catch (e: Exception) {
             log.warn("Nie udało się pobrać pełnego XML dla faktury {}: {}", ksefNumber, e.message)
-            null
+            KsefXmlData(null, null, null)
         }
     }
 

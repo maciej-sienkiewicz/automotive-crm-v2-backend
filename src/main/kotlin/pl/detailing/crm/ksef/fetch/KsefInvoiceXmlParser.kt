@@ -10,15 +10,28 @@ import javax.xml.xpath.XPathConstants
 import javax.xml.xpath.XPathFactory
 
 /**
+ * Wynik parsowania pełnego XML faktury KSeF.
+ */
+data class KsefXmlData(
+    val paymentForm: PaymentForm?,
+    val sellerName: String?,
+    val buyerName: String?
+)
+
+/**
  * Parsuje pełny XML faktury KSeF (format FA v2) i wyciąga wybrane pola.
  *
  * Schemat MF FA(2): http://crd.gov.pl/wzor/2023/06/29/12648/
- * Forma płatności jest w: //Platnosc/FormaPlatnosci lub //Fa/Platnosc/FormaPlatnosci
+ *
+ * Struktura XML:
+ *  - Forma płatności:  //Platnosc/FormaPlatnosci
+ *  - Nazwa sprzedawcy: //Podmiot1/DaneIdentyfikacyjne/Nazwa
+ *  - Nazwa nabywcy:    //Podmiot2/DaneIdentyfikacyjne/Nazwa
  *
  * Parser jest odporny na:
  *  - przestrzenie nazw (namespace-aware + namespace-ignorant fallback)
- *  - brak pola <FormaPlatnosci> (faktury bez określonej formy płatności)
- *  - uszkodzone lub puste XML-e (zwraca null zamiast rzucać wyjątek)
+ *  - brak poszczególnych pól (zwraca null dla brakujących wartości)
+ *  - uszkodzone lub puste XML-e (zwraca obiekt z samymi nullami)
  */
 @Component
 class KsefInvoiceXmlParser {
@@ -26,27 +39,47 @@ class KsefInvoiceXmlParser {
     private val log = LoggerFactory.getLogger(KsefInvoiceXmlParser::class.java)
 
     /**
-     * Wyciąga formę płatności z XML faktury.
+     * Parsuje pełny XML faktury i wyciąga: formę płatności, nazwę sprzedawcy i nabywcy.
      *
      * @param xmlBytes surowy XML z KSeF (wynik [KSeFClient.getInvoice])
-     * @return [PaymentForm] lub null gdy brak pola lub nieznany kod
+     * @return [KsefXmlData] z dostępnymi polami (pola niedostępne mają null)
      */
-    fun parsePaymentForm(xmlBytes: ByteArray): PaymentForm? {
-        if (xmlBytes.isEmpty()) return null
+    fun parseInvoiceData(xmlBytes: ByteArray): KsefXmlData {
+        if (xmlBytes.isEmpty()) return KsefXmlData(null, null, null)
 
         return try {
             val doc = parseXml(xmlBytes)
-            val code = extractPaymentMethod(doc)
-            PaymentForm.fromKsefCode(code).also { form ->
-                if (code != null && form == null) {
-                    log.warn("Nieznany kod FormaPlatnosci w XML KSeF: '{}'", code)
+            val xpath = XPathFactory.newInstance().newXPath()
+
+            val paymentCode = extractText(xpath, doc, listOf(
+                "//Platnosc/FormaPlatnosci",
+                "//*[local-name()='FormaPlatnosci']"
+            ))
+            val paymentForm = PaymentForm.fromKsefCode(paymentCode).also { form ->
+                if (paymentCode != null && form == null) {
+                    log.warn("Nieznany kod FormaPlatnosci w XML KSeF: '{}'", paymentCode)
                 }
             }
+
+            val sellerName = extractText(xpath, doc, listOf(
+                "//Podmiot1/DaneIdentyfikacyjne/Nazwa",
+                "//*[local-name()='Podmiot1']/*[local-name()='DaneIdentyfikacyjne']/*[local-name()='Nazwa']"
+            ))
+
+            val buyerName = extractText(xpath, doc, listOf(
+                "//Podmiot2/DaneIdentyfikacyjne/Nazwa",
+                "//*[local-name()='Podmiot2']/*[local-name()='DaneIdentyfikacyjne']/*[local-name()='Nazwa']"
+            ))
+
+            KsefXmlData(paymentForm, sellerName, buyerName)
         } catch (e: Exception) {
             log.warn("Nie udało się sparsować XML faktury KSeF: {}", e.message)
-            null
+            KsefXmlData(null, null, null)
         }
     }
+
+    /** Zachowana dla kompatybilności wstecznej – deleguje do [parseInvoiceData]. */
+    fun parsePaymentForm(xmlBytes: ByteArray): PaymentForm? = parseInvoiceData(xmlBytes).paymentForm
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -62,22 +95,13 @@ class KsefInvoiceXmlParser {
             .parse(ByteArrayInputStream(xmlBytes))
     }
 
-    private fun extractPaymentMethod(doc: Document): String? {
-        val xpath = XPathFactory.newInstance().newXPath()
-
-        val candidates = listOf(
-            "//Platnosc/FormaPlatnosci",
-            "//*[local-name()='FormaPlatnosci']"
-        )
-
+    private fun extractText(xpath: javax.xml.xpath.XPath, doc: Document, candidates: List<String>): String? {
         for (expression in candidates) {
             val value = runCatching {
                 (xpath.evaluate(expression, doc, XPathConstants.STRING) as String).trim()
             }.getOrNull()
-
             if (!value.isNullOrEmpty()) return value
         }
-
         return null
     }
 }
