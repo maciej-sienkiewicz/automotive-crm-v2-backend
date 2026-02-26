@@ -13,23 +13,22 @@ pipeline {
                     image 'gradle:8.14-jdk17'
                     label 'docker'
                     reuseNode true
-                    // KLUCZ: Przekazujemy zmienne z hosta Jenkinsa do wnętrza kontenera Gradle
-                    args "-e GITHUB_ACTOR=${env.ENV_GITHUB_ACTOR} -e GITHUB_TOKEN=${env.ENV_GITHUB_TOKEN}"
+                    // Przekazujemy zmienne środowiskowe pobrane wewnątrz kroku script
+                    args "-e GITHUB_ACTOR=${env.G_ACTOR} -e GITHUB_TOKEN=${env.G_TOKEN}"
                 }
             }
             steps {
-                // Wczytujemy Twój plik z Managed Files
                 configFileProvider([configFile(fileId: 'PROD_ENV_FILE', variable: 'PROD_ENV_PATH')]) {
                     script {
-                        // Odczytujemy plik i eksportujemy zmienne do środowiska Jenkinsa (env)
-                        def props = readProperties file: PROD_ENV_PATH
-                        env.ENV_GITHUB_ACTOR = props['ENV_GITHUB_ACTOR']
-                        env.ENV_GITHUB_TOKEN = props['ENV_GITHUB_TOKEN']
+                        // Wyciągamy wartości bezpośrednio z pliku za pomocą shella
+                        // Zakładamy format w pliku: ENV_GITHUB_ACTOR=wartosc
+                        env.G_ACTOR = sh(script: "grep 'ENV_GITHUB_ACTOR' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
+                        env.G_TOKEN = sh(script: "grep 'ENV_GITHUB_TOKEN' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
 
                         sh 'mkdir -p "$GRADLE_USER_HOME"'
                         sh 'chmod +x gradlew || true'
 
-                        // Uruchamiamy Gradle - on teraz "zobaczy" te zmienne w System.getenv()
+                        // Budujemy projekt
                         sh './gradlew -g "$GRADLE_USER_HOME" bootJar'
                     }
                 }
