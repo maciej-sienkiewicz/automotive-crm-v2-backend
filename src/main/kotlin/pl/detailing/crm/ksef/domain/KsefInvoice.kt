@@ -20,5 +20,9 @@ data class KsefInvoice(
     val vatAmount: Double?,
     val currency: String?,
     val invoiceType: String?,
-    val fetchedAt: Instant
+    val fetchedAt: Instant,
+    val direction: String,           // INCOME (SUBJECT1 - sprzedawca) | EXPENSE (SUBJECT2 - nabywca)
+    val isCorrection: Boolean,       // true gdy invoiceType == FA_KOR
+    val originalKsefNumber: String?, // numer korygowanej faktury (jeśli dostępny w SDK)
+    val status: String               // ACTIVE | CORRECTED | CANCELLED
 )

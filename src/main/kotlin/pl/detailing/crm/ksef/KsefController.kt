@@ -15,11 +15,16 @@ import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
 import pl.detailing.crm.ksef.list.ListKsefInvoicesCommand
 import pl.detailing.crm.ksef.list.ListKsefInvoicesHandler
+import pl.detailing.crm.ksef.statistics.KsefStatisticsHandler
+import pl.detailing.crm.ksef.statistics.KsefStatisticsQuery
+import pl.detailing.crm.ksef.sync.KsefSyncCursorRepository
+import pl.detailing.crm.ksef.sync.KsefSyncService
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/ksef")
@@ -28,7 +33,10 @@ class KsefController(
     private val sessionCache: KsefSessionCache,
     private val ksefAuthService: KsefAuthService,
     private val fetchInvoicesHandler: FetchKsefInvoicesHandler,
-    private val listInvoicesHandler: ListKsefInvoicesHandler
+    private val listInvoicesHandler: ListKsefInvoicesHandler,
+    private val statisticsHandler: KsefStatisticsHandler,
+    private val syncService: KsefSyncService,
+    private val syncCursorRepository: KsefSyncCursorRepository
 ) {
 
     // ─────────────────────────────────────────────────────────────────────
@@ -36,9 +44,7 @@ class KsefController(
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Save (create or replace) KSeF credentials for the current studio.
-     * Only OWNER role can manage KSeF credentials.
-     *
+     * Zapisz (utwórz lub zastąp) dane dostępowe KSeF dla bieżącego studia.
      * POST /api/v1/ksef/credentials
      */
     @PostMapping("/credentials")
@@ -51,7 +57,6 @@ class KsefController(
 
         val studioId = principal.studioId.value
 
-        // Remove existing credentials and cached session before saving new ones
         credentialsRepository.deleteByStudioId(studioId)
         sessionCache.invalidate(principal.studioId)
 
@@ -67,8 +72,7 @@ class KsefController(
     }
 
     /**
-     * Get KSeF credentials summary for the current studio (token is masked).
-     *
+     * Pobierz dane dostępowe KSeF (token zamaskowany).
      * GET /api/v1/ksef/credentials
      */
     @GetMapping("/credentials")
@@ -85,8 +89,7 @@ class KsefController(
     }
 
     /**
-     * Delete KSeF credentials for the current studio.
-     *
+     * Usuń dane dostępowe KSeF.
      * DELETE /api/v1/ksef/credentials
      */
     @DeleteMapping("/credentials")
@@ -108,9 +111,7 @@ class KsefController(
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Authenticate with KSeF and open a session. Useful to verify credentials
-     * or to pre-warm the session cache.
-     *
+     * Otwórz sesję KSeF (weryfikacja credentials lub pre-warm cache).
      * POST /api/v1/ksef/session
      */
     @PostMapping("/session")
@@ -131,13 +132,11 @@ class KsefController(
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Invoice fetching
+    // Invoice fetching (manual)
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Fetch invoice metadata from KSeF for the given date range and persist it locally.
-     * Returns the count of new invoices saved and any already-present ones skipped.
-     *
+     * Ręczny fetch faktur z KSeF dla podanego zakresu dat.
      * POST /api/v1/ksef/invoices/fetch
      */
     @PostMapping("/invoices/fetch")
@@ -148,26 +147,26 @@ class KsefController(
         }
 
         val dateType = when (request.dateType?.uppercase()) {
-            "ISSUE", "ISSUEDATE" -> InvoiceQueryDateType.ISSUE
-            "PERMANENTSTORAGE", "PERMANENTSTORAGEDATE" -> InvoiceQueryDateType.PERMANENTSTORAGE
-            else -> InvoiceQueryDateType.INVOICING  // default: invoicing date
+            "ISSUE", "ISSUEDATE"                                 -> InvoiceQueryDateType.ISSUE
+            "PERMANENTSTORAGE", "PERMANENTSTORAGEDATE"           -> InvoiceQueryDateType.PERMANENTSTORAGE
+            else                                                 -> InvoiceQueryDateType.INVOICING
         }
 
         val subjectType = when (request.subjectType?.uppercase()) {
-            "SUBJECT2" -> InvoiceQuerySubjectType.SUBJECT2
-            "SUBJECT3" -> InvoiceQuerySubjectType.SUBJECT3
+            "SUBJECT2"          -> InvoiceQuerySubjectType.SUBJECT2
+            "SUBJECT3"          -> InvoiceQuerySubjectType.SUBJECT3
             "SUBJECTAUTHORIZED" -> InvoiceQuerySubjectType.SUBJECTAUTHORIZED
-            else -> InvoiceQuerySubjectType.SUBJECT1  // default: seller perspective
+            else                -> InvoiceQuerySubjectType.SUBJECT1
         }
 
         val result = fetchInvoicesHandler.handle(
             FetchKsefInvoicesCommand(
-                studioId = principal.studioId,
-                dateFrom = request.dateFrom,
-                dateTo = request.dateTo,
-                dateType = dateType,
+                studioId    = principal.studioId,
+                dateFrom    = request.dateFrom,
+                dateTo      = request.dateTo,
+                dateType    = dateType,
                 subjectType = subjectType,
-                pageSize = request.pageSize ?: 50
+                pageSize    = request.pageSize ?: 50
             )
         )
 
@@ -175,15 +174,20 @@ class KsefController(
             FetchKsefInvoicesResponse(
                 fetched = result.fetched,
                 skipped = result.skipped,
-                total = result.fetched + result.skipped
+                total   = result.fetched + result.skipped
             )
         )
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Invoice listing
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * List locally stored KSeF invoices for the current studio.
+     * Lista lokalnie zapisanych faktur KSeF.
+     * GET /api/v1/ksef/invoices?page=1&size=20&direction=INCOME
      *
-     * GET /api/v1/ksef/invoices?page=1&size=20
+     * direction (opcjonalne): INCOME | EXPENSE – filtruje po kierunku faktury
      */
     @GetMapping("/invoices")
     fun listInvoices(
@@ -195,7 +199,7 @@ class KsefController(
         val result = listInvoicesHandler.handle(
             ListKsefInvoicesCommand(
                 studioId = principal.studioId,
-                page = maxOf(1, page),
+                page     = maxOf(1, page),
                 pageSize = size.coerceIn(1, 100)
             )
         )
@@ -204,24 +208,144 @@ class KsefController(
             KsefInvoiceListResponse(
                 invoices = result.invoices.map { inv ->
                     KsefInvoiceResponse(
-                        id = inv.id.toString(),
-                        ksefNumber = inv.ksefNumber,
-                        invoiceNumber = inv.invoiceNumber,
-                        invoicingDate = inv.invoicingDate,
-                        issueDate = inv.issueDate?.toString(),
-                        sellerNip = inv.sellerNip,
-                        buyerNip = inv.buyerNip,
-                        netAmount = inv.netAmount,
-                        grossAmount = inv.grossAmount,
-                        vatAmount = inv.vatAmount,
-                        currency = inv.currency,
-                        invoiceType = inv.invoiceType,
-                        fetchedAt = inv.fetchedAt
+                        id              = inv.id.toString(),
+                        ksefNumber      = inv.ksefNumber,
+                        invoiceNumber   = inv.invoiceNumber,
+                        invoicingDate   = inv.invoicingDate,
+                        issueDate       = inv.issueDate?.toString(),
+                        sellerNip       = inv.sellerNip,
+                        buyerNip        = inv.buyerNip,
+                        netAmount       = inv.netAmount,
+                        grossAmount     = inv.grossAmount,
+                        vatAmount       = inv.vatAmount,
+                        currency        = inv.currency,
+                        invoiceType     = inv.invoiceType,
+                        fetchedAt       = inv.fetchedAt,
+                        direction       = inv.direction,
+                        isCorrection    = inv.isCorrection,
+                        status          = inv.status
                     )
                 },
-                total = result.total,
-                page = result.page,
+                total    = result.total,
+                page     = result.page,
                 pageSize = result.pageSize
+            )
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Synchronizacja (background sync management)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Status synchronizacji KSeF dla bieżącego studia.
+     * GET /api/v1/ksef/sync/status
+     */
+    @GetMapping("/sync/status")
+    fun getSyncStatus(): ResponseEntity<KsefSyncStatusResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER or MANAGER can view KSeF sync status")
+        }
+
+        val cursor = syncCursorRepository.findById(principal.studioId.value).orElse(null)
+
+        return ResponseEntity.ok(
+            KsefSyncStatusResponse(
+                syncStatus      = cursor?.syncStatus ?: "NEVER_SYNCED",
+                lastIncomeSync  = cursor?.lastIncomeSync,
+                lastExpenseSync = cursor?.lastExpenseSync,
+                lastError       = cursor?.lastError,
+                updatedAt       = cursor?.updatedAt
+            )
+        )
+    }
+
+    /**
+     * Wyzwolenie ręcznej synchronizacji dla bieżącego studia.
+     * POST /api/v1/ksef/sync/trigger
+     *
+     * Uruchamia sync asynchronicznie w osobnym wątku – odpowiedź wraca natychmiast.
+     * Status sync możesz śledzić przez GET /api/v1/ksef/sync/status.
+     */
+    @PostMapping("/sync/trigger")
+    fun triggerSync(): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER or MANAGER can trigger KSeF sync")
+        }
+
+        val studioId = principal.studioId
+
+        // Uruchomienie w osobnym wątku – nie blokuje requesta
+        Thread.ofVirtual().name("ksef-manual-sync-${studioId.value}").start {
+            syncService.syncStudio(studioId)
+        }
+
+        return ResponseEntity.accepted().build()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Statystyki finansowe
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Statystyki przychodów i kosztów z KSeF z podziałem miesięcznym.
+     * GET /api/v1/ksef/statistics?year=2024
+     *
+     * Korekty (FA_KOR) wliczane automatycznie – ich kwoty mają odpowiedni znak,
+     * więc SUM() daje prawidłowy wynik netto bez dodatkowego filtrowania.
+     */
+    @GetMapping("/statistics")
+    fun getStatistics(
+        @RequestParam year: Int
+    ): ResponseEntity<KsefStatisticsResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (year < 2000 || year > 2100) {
+            throw ValidationException("Year must be between 2000 and 2100")
+        }
+
+        val result = statisticsHandler.handle(
+            KsefStatisticsQuery(studioId = principal.studioId, year = year)
+        )
+
+        val cursor = syncCursorRepository.findById(principal.studioId.value).orElse(null)
+
+        return ResponseEntity.ok(
+            KsefStatisticsResponse(
+                year = result.year,
+                totals = KsefStatisticsTotalsResponse(
+                    revenueGross    = result.totals.revenueGross,
+                    revenueNet      = result.totals.revenueNet,
+                    revenueVat      = result.totals.revenueVat,
+                    costsGross      = result.totals.costsGross,
+                    costsNet        = result.totals.costsNet,
+                    costsVat        = result.totals.costsVat,
+                    profitGross     = result.totals.profitGross,
+                    profitNet       = result.totals.profitNet,
+                    incomeCount     = result.totals.incomeCount,
+                    expenseCount    = result.totals.expenseCount,
+                    correctionCount = result.totals.correctionCount
+                ),
+                monthly = result.monthly.map { m ->
+                    KsefMonthlyBreakdownResponse(
+                        monthLabel      = m.monthLabel,
+                        revenueGross    = m.revenueGross,
+                        revenueNet      = m.revenueNet,
+                        revenueVat      = m.revenueVat,
+                        costsGross      = m.costsGross,
+                        costsNet        = m.costsNet,
+                        costsVat        = m.costsVat,
+                        profitGross     = m.profitGross,
+                        profitNet       = m.profitNet,
+                        incomeCount     = m.incomeCount,
+                        expenseCount    = m.expenseCount,
+                        correctionCount = m.correctionCount
+                    )
+                },
+                dataAsOf = cursor?.lastIncomeSync ?: cursor?.updatedAt,
+                syncStatus = cursor?.syncStatus ?: "NEVER_SYNCED"
             )
         )
     }
@@ -231,15 +355,14 @@ class KsefController(
     // ─────────────────────────────────────────────────────────────────────
 
     private fun KsefCredentialsEntity.toResponse() = KsefCredentialsResponse(
-        nip = nip,
-        tokenMasked = maskToken(ksefToken),
-        createdAt = createdAt,
-        updatedAt = updatedAt
+        nip          = nip,
+        tokenMasked  = maskToken(ksefToken),
+        createdAt    = createdAt,
+        updatedAt    = updatedAt
     )
 
-    private fun maskToken(token: String): String {
-        return if (token.length <= 8) "****" else token.take(4) + "****" + token.takeLast(4)
-    }
+    private fun maskToken(token: String): String =
+        if (token.length <= 8) "****" else token.take(4) + "****" + token.takeLast(4)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +390,7 @@ data class FetchKsefInvoicesRequest(
     val dateFrom: OffsetDateTime,
     val dateTo: OffsetDateTime,
     val dateType: String?,    // INVOICING (default) | ISSUE | PERMANENTSTORAGE
-    val subjectType: String?, // SUBJECT1 sprzedawca (default) | SUBJECT2 nabywca (kosztowe) | SUBJECT3 | SUBJECTAUTHORIZED
+    val subjectType: String?, // SUBJECT1 sprzedawca/przychód (default) | SUBJECT2 nabywca/koszt
     val pageSize: Int?
 )
 
@@ -290,7 +413,10 @@ data class KsefInvoiceResponse(
     val vatAmount: Double?,
     val currency: String?,
     val invoiceType: String?,
-    val fetchedAt: Instant
+    val fetchedAt: Instant,
+    val direction: String,       // INCOME | EXPENSE
+    val isCorrection: Boolean,   // true = FA_KOR
+    val status: String           // ACTIVE | CORRECTED | CANCELLED
 )
 
 data class KsefInvoiceListResponse(
@@ -298,4 +424,49 @@ data class KsefInvoiceListResponse(
     val total: Long,
     val page: Int,
     val pageSize: Int
+)
+
+data class KsefSyncStatusResponse(
+    val syncStatus: String,             // IDLE | RUNNING | ERROR | NEVER_SYNCED
+    val lastIncomeSync: OffsetDateTime?,
+    val lastExpenseSync: OffsetDateTime?,
+    val lastError: String?,
+    val updatedAt: OffsetDateTime?
+)
+
+data class KsefStatisticsResponse(
+    val year: Int,
+    val totals: KsefStatisticsTotalsResponse,
+    val monthly: List<KsefMonthlyBreakdownResponse>,
+    val dataAsOf: OffsetDateTime?,      // data ostatniej synchronizacji
+    val syncStatus: String
+)
+
+data class KsefStatisticsTotalsResponse(
+    val revenueGross: Double,
+    val revenueNet: Double,
+    val revenueVat: Double,
+    val costsGross: Double,
+    val costsNet: Double,
+    val costsVat: Double,
+    val profitGross: Double,
+    val profitNet: Double,
+    val incomeCount: Long,
+    val expenseCount: Long,
+    val correctionCount: Long
+)
+
+data class KsefMonthlyBreakdownResponse(
+    val monthLabel: String,
+    val revenueGross: Double,
+    val revenueNet: Double,
+    val revenueVat: Double,
+    val costsGross: Double,
+    val costsNet: Double,
+    val costsVat: Double,
+    val profitGross: Double,
+    val profitNet: Double,
+    val incomeCount: Long,
+    val expenseCount: Long,
+    val correctionCount: Long
 )

@@ -1,6 +1,7 @@
 package pl.detailing.crm.ksef.credentials
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 import java.util.UUID
 
@@ -9,4 +10,7 @@ interface KsefCredentialsRepository : JpaRepository<KsefCredentialsEntity, UUID>
     fun findByStudioId(studioId: UUID): KsefCredentialsEntity?
     fun deleteByStudioId(studioId: UUID)
     fun existsByStudioId(studioId: UUID): Boolean
+
+    @Query("SELECT c.studioId FROM KsefCredentialsEntity c")
+    fun findAllStudioIds(): List<UUID>
 }

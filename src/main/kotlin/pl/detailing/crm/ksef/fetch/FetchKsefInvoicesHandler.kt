@@ -14,7 +14,6 @@ import pl.detailing.crm.ksef.domain.KsefInvoice
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.shared.ValidationException
 import java.time.OffsetDateTime
 
 data class FetchKsefInvoicesCommand(
@@ -41,17 +40,26 @@ class FetchKsefInvoicesHandler(
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
     /**
-     * Fetches invoice metadata from KSeF using the official SDK and persists new invoices.
-     * Invoices already present in the database (by ksefNumber + studioId) are skipped.
-     * All pages are automatically fetched.
+     * Pobiera metadane faktur z KSeF i zapisuje nowe lokalnie.
+     *
+     * Logika kategoryzacji:
+     * - SUBJECT1 → direction = INCOME  (studio jest sprzedawcą – przychód)
+     * - SUBJECT2 → direction = EXPENSE (studio jest nabywcą   – koszt)
+     *
+     * Korekty (FA_KOR) są oznaczane flagą isCorrection=true.
+     * Po zapisaniu korekty automatycznie aktualizowany jest status faktury korygowanej
+     * (jeśli znamy jej ksefNumber z metadanych SDK).
+     *
+     * Wszystkie strony są pobierane automatycznie (pagination loop).
      */
     @Transactional
     fun handle(command: FetchKsefInvoicesCommand): FetchKsefInvoicesResult {
         val effectivePageSize = command.pageSize.coerceIn(10, 250)
+        val direction = directionFor(command.subjectType)
 
         log.info(
-            "Fetching KSeF invoices for studio={} from={} to={} subjectType={}",
-            command.studioId, command.dateFrom, command.dateTo, command.subjectType
+            "Fetching KSeF invoices for studio={} direction={} from={} to={}",
+            command.studioId, direction, command.dateFrom, command.dateTo
         )
 
         val accessToken = ksefAuthService.getValidAccessToken(command.studioId)
@@ -73,6 +81,13 @@ class FetchKsefInvoicesHandler(
                 continue
             }
 
+            val isCorrection = metadata.invoiceType?.value == "FA_KOR"
+
+            // originalKsefNumber: KSeF API v2 nie zwraca tej informacji w metadanych –
+            // jest dostępna tylko w pełnym XML faktury. Zostawione jako TODO dla przyszłej
+            // implementacji pełnego pobierania XML.
+            val originalKsefNumber: String? = null
+
             val entity = KsefInvoiceEntity(
                 studioId = command.studioId.value,
                 ksefNumber = metadata.ksefNumber,
@@ -85,16 +100,26 @@ class FetchKsefInvoicesHandler(
                 grossAmount = metadata.grossAmount,
                 vatAmount = metadata.vatAmount,
                 currency = metadata.currency,
-                invoiceType = metadata.invoiceType?.value
+                invoiceType = metadata.invoiceType?.value,
+                direction = direction,
+                isCorrection = isCorrection,
+                originalKsefNumber = originalKsefNumber,
+                status = "ACTIVE"
             )
             val saved = invoiceRepository.save(entity)
             savedInvoices.add(saved.toDomain())
             fetchedCount++
+
+            // Jeśli to korekta i znamy numer korygowanej faktury – zaktualizuj jej status
+            if (isCorrection && originalKsefNumber != null) {
+                invoiceRepository.updateStatus(command.studioId.value, originalKsefNumber, "CORRECTED")
+                log.debug("Marked invoice {} as CORRECTED due to FA_KOR {}", originalKsefNumber, metadata.ksefNumber)
+            }
         }
 
         log.info(
-            "KSeF fetch complete for studio={}: fetched={} skipped={}",
-            command.studioId, fetchedCount, skippedCount
+            "KSeF fetch complete for studio={} direction={}: fetched={} skipped={}",
+            command.studioId, direction, fetchedCount, skippedCount
         )
 
         return FetchKsefInvoicesResult(
@@ -102,6 +127,11 @@ class FetchKsefInvoicesHandler(
             skipped = skippedCount,
             invoices = savedInvoices
         )
+    }
+
+    private fun directionFor(subjectType: InvoiceQuerySubjectType): String = when (subjectType) {
+        InvoiceQuerySubjectType.SUBJECT1 -> "INCOME"
+        else -> "EXPENSE"
     }
 
     private fun fetchAllPages(
