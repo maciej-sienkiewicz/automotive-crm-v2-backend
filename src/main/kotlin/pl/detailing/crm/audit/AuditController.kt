@@ -173,6 +173,8 @@ class AuditController(
         AuditModule.APPOINTMENT_COLOR -> "Kolory rezerwacji"
         AuditModule.STUDIO -> "Studio"
         AuditModule.USER -> "Uzytkownicy"
+        AuditModule.CASH_REGISTER -> "Kasa"
+        AuditModule.FINANCE -> "Finanse"
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
@@ -218,6 +220,9 @@ class AuditController(
         AuditAction.COMPANY_DELETED -> "Usuniecie danych firmy"
         AuditAction.APPOINTMENT_DELETED -> "Usunięcie rezerwacji"
         AuditAction.APPOINTMENT_RESTORED -> "Przywrócenie rezerwacji"
+        AuditAction.DOCUMENT_ISSUED -> "Wydanie dokumentu"
+        AuditAction.DOCUMENT_STATUS_CHANGED -> "Zmiana statusu dokumentu"
+        AuditAction.CASH_ADJUSTED -> "Dostosowanie kasy"
     }
 }
 

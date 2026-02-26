@@ -122,9 +122,9 @@ class FinanceController(
         val result = listDocumentsHandler.handle(
             ListFinancialDocumentsCommand(
                 studioId     = principal.studioId,
-                documentType = documentType?.let { parseEnum(it, "documentType") },
-                direction    = direction?.let    { parseEnum(it, "direction") },
-                status       = status?.let       { parseEnum(it, "status") },
+                documentType = documentType?.let { parseEnum<DocumentType>(it, "documentType") },
+                direction    = direction?.let    { parseEnum<DocumentDirection>(it, "direction") },
+                status       = status?.let       { parseEnum<DocumentStatus>(it, "status") },
                 visitId      = visitId?.let { VisitId(it) },
                 dateFrom     = dateFrom,
                 dateTo       = dateTo,

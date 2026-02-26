@@ -263,30 +263,6 @@ class KsefController(
         )
     }
 
-    /**
-     * Wyzwolenie ręcznej synchronizacji dla bieżącego studia.
-     * POST /api/v1/ksef/sync/trigger
-     *
-     * Uruchamia sync asynchronicznie w osobnym wątku – odpowiedź wraca natychmiast.
-     * Status sync możesz śledzić przez GET /api/v1/ksef/sync/status.
-     */
-    @PostMapping("/sync/trigger")
-    fun triggerSync(): ResponseEntity<Void> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can trigger KSeF sync")
-        }
-
-        val studioId = principal.studioId
-
-        // Uruchomienie w osobnym wątku – nie blokuje requesta
-        Thread.ofVirtual().name("ksef-manual-sync-${studioId.value}").start {
-            syncService.syncStudio(studioId)
-        }
-
-        return ResponseEntity.accepted().build()
-    }
-
     // ─────────────────────────────────────────────────────────────────────
     // Statystyki finansowe
     // ─────────────────────────────────────────────────────────────────────

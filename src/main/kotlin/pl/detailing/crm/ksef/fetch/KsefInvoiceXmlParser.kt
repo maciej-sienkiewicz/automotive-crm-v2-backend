@@ -3,10 +3,8 @@ package pl.detailing.crm.ksef.fetch
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.w3c.dom.Document
-import org.xml.sax.InputSource
 import pl.detailing.crm.ksef.domain.PaymentForm
 import java.io.ByteArrayInputStream
-import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.xpath.XPathConstants
 import javax.xml.xpath.XPathFactory
@@ -38,7 +36,7 @@ class KsefInvoiceXmlParser {
 
         return try {
             val doc = parseXml(xmlBytes)
-            val code = extractFormaPlatnosci(doc)
+            val code = extractPaymentMethod(doc)
             PaymentForm.fromKsefCode(code).also { form ->
                 if (code != null && form == null) {
                     log.warn("Nieznany kod FormaPlatnosci w XML KSeF: '{}'", code)
@@ -64,15 +62,7 @@ class KsefInvoiceXmlParser {
             .parse(ByteArrayInputStream(xmlBytes))
     }
 
-    /**
-     * Próbuje wyciągnąć tekst <FormaPlatnosci> kilkoma XPath-ami.
-     *
-     * KSeF FA(2) może mieć tę samą strukturę pod różnymi ścieżkami w zależności
-     * od wersji schematu, dlatego sprawdzamy kolejno:
-     *   1. //Platnosc/FormaPlatnosci  – najczęstszy w FA v2
-     *   2. //*[local-name()='FormaPlatnosci']  – fallback ignorujący namespace
-     */
-    private fun extractFormaPlatnosci(doc: Document): String? {
+    private fun extractPaymentMethod(doc: Document): String? {
         val xpath = XPathFactory.newInstance().newXPath()
 
         val candidates = listOf(
