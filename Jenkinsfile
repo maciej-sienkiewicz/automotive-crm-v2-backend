@@ -13,39 +13,49 @@ pipeline {
                     image 'gradle:8.14-jdk17'
                     label 'docker'
                     reuseNode true
-                    // Przekazujemy zmienne środowiskowe pobrane wewnątrz kroku script
-                    args "-e GITHUB_ACTOR=${env.G_ACTOR} -e GITHUB_TOKEN=${env.G_TOKEN}"
                 }
             }
             steps {
+                // 1. Pobieramy plik środowiskowy z Managed Files
                 configFileProvider([configFile(fileId: 'PROD_ENV_FILE', variable: 'PROD_ENV_PATH')]) {
                     script {
-                        // Wyciągamy wartości bezpośrednio z pliku za pomocą shella
-                        // Zakładamy format w pliku: ENV_GITHUB_ACTOR=wartosc
-                        env.G_ACTOR = sh(script: "grep 'ENV_GITHUB_ACTOR' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
-                        env.G_TOKEN = sh(script: "grep 'ENV_GITHUB_TOKEN' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
+                        // 2. Wyciągamy poświadczenia GitHub za pomocą shella (zabezpieczenie przed brakiem pluginu Utility Steps)
+                        def gActor = sh(script: "grep 'ENV_GITHUB_ACTOR' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
+                        def gToken = sh(script: "grep 'ENV_GITHUB_TOKEN' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim()
+
+                        // Czyszczenie ewentualnych cudzysłowów, jeśli występują w pliku (opcjonalne)
+                        gActor = gActor.replace('"', '').replace("'", "")
+                        gToken = gToken.replace('"', '').replace("'", "")
 
                         sh 'mkdir -p "$GRADLE_USER_HOME"'
                         sh 'chmod +x gradlew || true'
 
-                        // Budujemy projekt
-                        sh './gradlew -g "$GRADLE_USER_HOME" bootJar'
+                        // 3. Budujemy JARa, przekazując poświadczenia jako Project Properties (-P)
+                        // To omija problem pustych zmiennych środowiskowych wewnątrz kontenera
+                        sh "./gradlew -g \"\$GRADLE_USER_HOME\" bootJar -Pgpr.user=${gActor} -Pgpr.key=${gToken} --no-daemon"
                     }
                 }
             }
         }
 
         stage('Docker Build & Push') {
-            agent { label 'docker' }
+            agent {
+                label 'docker'
+            }
             steps {
                 script {
                     def branch = env.GIT_BRANCH ?: 'unknown'
-                    def tag = (branch == 'origin/main') ? 'latest' : 'develop'
+                    def tag
 
-                    if (branch != 'origin/main' && branch != 'origin/develop') {
-                        error("Build przerwany: branch '${branch}' nie jest obsługiwany.")
+                    if (branch == 'origin/main') {
+                        tag = 'latest'
+                    } else if (branch == 'origin/develop') {
+                        tag = 'develop'
+                    } else {
+                        error("Build przerwany: branch '${branch}' nie jest obsługiwany (tylko 'main' lub 'develop').")
                     }
 
+                    // Budowanie obrazu Docker z wykorzystaniem wygenerowanego wcześniej pliku JAR
                     sh """
                       docker build -f ./deploy/Dockerfile -t ${IMAGE_NAME}:${tag} .
                       docker push ${IMAGE_NAME}:${tag}
