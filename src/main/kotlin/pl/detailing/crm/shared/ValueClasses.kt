@@ -609,6 +609,45 @@ value class KsefInvoiceId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for FinancialDocument entities
+ */
+@JvmInline
+value class FinancialDocumentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = FinancialDocumentId(UUID.randomUUID())
+        fun fromString(value: String) = FinancialDocumentId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for CashRegister entities
+ */
+@JvmInline
+value class CashRegisterId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CashRegisterId(UUID.randomUUID())
+        fun fromString(value: String) = CashRegisterId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for CashOperation entries (immutable audit log)
+ */
+@JvmInline
+value class CashOperationId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CashOperationId(UUID.randomUUID())
+        fun fromString(value: String) = CashOperationId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Base exception for business logic violations
  */
 sealed class BusinessException(message: String) : RuntimeException(message)

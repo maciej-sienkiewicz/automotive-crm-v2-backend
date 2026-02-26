@@ -21,7 +21,9 @@ enum class AuditModule {
     INBOUND_CALL,
     APPOINTMENT_COLOR,
     STUDIO,
-    USER
+    USER,
+    FINANCE,
+    CASH_REGISTER
 }
 
 /**
@@ -90,7 +92,13 @@ enum class AuditAction {
 
     // Company data
     COMPANY_UPDATED,
-    COMPANY_DELETED
+    COMPANY_DELETED,
+
+    // Finance
+    DOCUMENT_ISSUED,
+    DOCUMENT_STATUS_CHANGED,
+    DOCUMENT_DELETED,
+    CASH_ADJUSTED
 }
 
 /**
