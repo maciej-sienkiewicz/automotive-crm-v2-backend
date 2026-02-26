@@ -2,6 +2,7 @@ package pl.detailing.crm.ksef.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.ksef.domain.KsefInvoice
+import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.time.LocalDate
@@ -86,7 +87,15 @@ class KsefInvoiceEntity(
 
     /** ACTIVE (domyślnie) | CORRECTED (do tej faktury wystawiono korektę) | CANCELLED */
     @Column(name = "status", nullable = false, length = 20)
-    val status: String = "ACTIVE"
+    val status: String = "ACTIVE",
+
+    /**
+     * Forma płatności wyciągnięta z pełnego XML faktury KSeF (pole <FormaPlatnosci>).
+     * Przechowywana jako nazwa enuma (np. "PRZELEW"), null gdy nie udało się pobrać XML.
+     * Mapowanie: PaymentForm.name ↔ PaymentForm.fromName()
+     */
+    @Column(name = "payment_form", length = 20)
+    val paymentForm: String? = null
 
 ) {
     fun toDomain(): KsefInvoice = KsefInvoice(
@@ -107,7 +116,8 @@ class KsefInvoiceEntity(
         direction = direction,
         isCorrection = isCorrection,
         originalKsefNumber = originalKsefNumber,
-        status = status
+        status = status,
+        paymentForm = paymentForm?.let { runCatching { PaymentForm.valueOf(it) }.getOrNull() }
     )
 
     fun withStatus(newStatus: String): KsefInvoiceEntity = KsefInvoiceEntity(
@@ -116,6 +126,7 @@ class KsefInvoiceEntity(
         buyerNip = buyerNip, netAmount = netAmount, grossAmount = grossAmount,
         vatAmount = vatAmount, currency = currency, invoiceType = invoiceType,
         fetchedAt = fetchedAt, direction = direction, isCorrection = isCorrection,
-        originalKsefNumber = originalKsefNumber, status = newStatus
+        originalKsefNumber = originalKsefNumber, status = newStatus,
+        paymentForm = paymentForm
     )
 }

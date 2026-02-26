@@ -208,22 +208,24 @@ class KsefController(
             KsefInvoiceListResponse(
                 invoices = result.invoices.map { inv ->
                     KsefInvoiceResponse(
-                        id              = inv.id.toString(),
-                        ksefNumber      = inv.ksefNumber,
-                        invoiceNumber   = inv.invoiceNumber,
-                        invoicingDate   = inv.invoicingDate,
-                        issueDate       = inv.issueDate?.toString(),
-                        sellerNip       = inv.sellerNip,
-                        buyerNip        = inv.buyerNip,
-                        netAmount       = inv.netAmount,
-                        grossAmount     = inv.grossAmount,
-                        vatAmount       = inv.vatAmount,
-                        currency        = inv.currency,
-                        invoiceType     = inv.invoiceType,
-                        fetchedAt       = inv.fetchedAt,
-                        direction       = inv.direction,
-                        isCorrection    = inv.isCorrection,
-                        status          = inv.status
+                        id               = inv.id.toString(),
+                        ksefNumber       = inv.ksefNumber,
+                        invoiceNumber    = inv.invoiceNumber,
+                        invoicingDate    = inv.invoicingDate,
+                        issueDate        = inv.issueDate?.toString(),
+                        sellerNip        = inv.sellerNip,
+                        buyerNip         = inv.buyerNip,
+                        netAmount        = inv.netAmount,
+                        grossAmount      = inv.grossAmount,
+                        vatAmount        = inv.vatAmount,
+                        currency         = inv.currency,
+                        invoiceType      = inv.invoiceType,
+                        fetchedAt        = inv.fetchedAt,
+                        direction        = inv.direction,
+                        isCorrection     = inv.isCorrection,
+                        status           = inv.status,
+                        paymentForm      = inv.paymentForm?.name,
+                        paymentFormLabel = inv.paymentForm?.displayName
                     )
                 },
                 total    = result.total,
@@ -414,9 +416,11 @@ data class KsefInvoiceResponse(
     val currency: String?,
     val invoiceType: String?,
     val fetchedAt: Instant,
-    val direction: String,       // INCOME | EXPENSE
-    val isCorrection: Boolean,   // true = FA_KOR
-    val status: String           // ACTIVE | CORRECTED | CANCELLED
+    val direction: String,           // INCOME | EXPENSE
+    val isCorrection: Boolean,       // true = FA_KOR
+    val status: String,              // ACTIVE | CORRECTED | CANCELLED
+    val paymentForm: String?,        // np. "PRZELEW", "GOTOWKA" – null gdy niedostępna
+    val paymentFormLabel: String?    // czytelna etykieta np. "Przelew", "Gotówka"
 )
 
 data class KsefInvoiceListResponse(

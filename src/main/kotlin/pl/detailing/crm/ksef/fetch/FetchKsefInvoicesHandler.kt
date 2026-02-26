@@ -11,6 +11,7 @@ import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.domain.KsefInvoice
+import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
@@ -35,7 +36,8 @@ data class FetchKsefInvoicesResult(
 class FetchKsefInvoicesHandler(
     private val ksefAuthService: KsefAuthService,
     private val ksefClient: KSeFClient,
-    private val invoiceRepository: KsefInvoiceRepository
+    private val invoiceRepository: KsefInvoiceRepository,
+    private val xmlParser: KsefInvoiceXmlParser
 ) {
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
@@ -84,9 +86,10 @@ class FetchKsefInvoicesHandler(
             val isCorrection = metadata.invoiceType?.value == "FA_KOR"
 
             // originalKsefNumber: KSeF API v2 nie zwraca tej informacji w metadanych –
-            // jest dostępna tylko w pełnym XML faktury. Zostawione jako TODO dla przyszłej
-            // implementacji pełnego pobierania XML.
+            // jest dostępna tylko w pełnym XML faktury (TODO dla przyszłej implementacji).
             val originalKsefNumber: String? = null
+
+            val paymentForm = fetchPaymentForm(metadata.ksefNumber, accessToken)
 
             val entity = KsefInvoiceEntity(
                 studioId = command.studioId.value,
@@ -104,7 +107,8 @@ class FetchKsefInvoicesHandler(
                 direction = direction,
                 isCorrection = isCorrection,
                 originalKsefNumber = originalKsefNumber,
-                status = "ACTIVE"
+                status = "ACTIVE",
+                paymentForm = paymentForm?.name
             )
             val saved = invoiceRepository.save(entity)
             savedInvoices.add(saved.toDomain())
@@ -127,6 +131,24 @@ class FetchKsefInvoicesHandler(
             skipped = skippedCount,
             invoices = savedInvoices
         )
+    }
+
+    /**
+     * Pobiera pełny XML faktury i wyciąga formę płatności.
+     *
+     * Błędy sieciowe / parsowania są obsługiwane gracefully – zwracamy null
+     * zamiast przerywać cały import faktur z powodu jednego nieudanego pobrania.
+     */
+    private fun fetchPaymentForm(ksefNumber: String, accessToken: String): PaymentForm? {
+        return try {
+            val invoiceXml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
+            xmlParser.parsePaymentForm(invoiceXml).also { form ->
+                log.debug("Invoice {} paymentForm={}", ksefNumber, form)
+            }
+        } catch (e: Exception) {
+            log.warn("Nie udało się pobrać pełnego XML dla faktury {}: {}", ksefNumber, e.message)
+            null
+        }
     }
 
     private fun directionFor(subjectType: InvoiceQuerySubjectType): String = when (subjectType) {
