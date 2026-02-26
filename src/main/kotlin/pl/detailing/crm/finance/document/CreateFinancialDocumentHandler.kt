@@ -9,6 +9,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.finance.domain.CashOperationType
 import pl.detailing.crm.finance.domain.DocumentDirection
+import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
@@ -40,7 +41,16 @@ data class CreateFinancialDocumentCommand(
     val userId: UserId,
     val userDisplayName: String,
 
+    /** How this document entered the system. Defaults to MANUAL for API-created documents. */
+    val source: DocumentSource = DocumentSource.MANUAL,
+
     val visitId: VisitId?,
+
+    // ── Denormalised vehicle / customer context (optional) ────────────────
+    val vehicleBrand: String? = null,
+    val vehicleModel: String? = null,
+    val customerFirstName: String? = null,
+    val customerLastName: String? = null,
 
     val documentType: DocumentType,
     val direction: DocumentDirection,
@@ -79,7 +89,7 @@ data class CreateFinancialDocumentCommand(
  *
  * ## Business rules applied:
  * - `totalNet + totalVat` must equal `totalGross` (financial integrity)
- * - CASH   → status = PAID, cash register updated immediately
+ * - CASH   → status = PAID, cash register credited; operation comment = document description
  * - CARD   → status = PAID, no cash register effect
  * - TRANSFER → status = PENDING, dueDate required
  * - Document number generated as `{TYPE_PREFIX}/{YEAR}/{SEQ:04d}` per studio/type/year
@@ -104,53 +114,59 @@ class CreateFinancialDocumentHandler(
         )
 
         val entity = FinancialDocumentEntity(
-            id               = UUID.randomUUID(),
-            studioId         = command.studioId.value,
-            visitId          = command.visitId?.value,
-            documentNumber   = documentNumber,
-            documentType     = command.documentType,
-            direction        = command.direction,
-            status           = status,
-            paymentMethod    = command.paymentMethod,
-            totalNet         = command.totalNet,
-            totalVat         = command.totalVat,
-            totalGross       = command.totalGross,
-            currency         = command.currency,
-            issueDate        = command.issueDate,
-            dueDate          = command.dueDate,
-            paidAt           = paidAt,
-            description      = command.description,
-            counterpartyName = command.counterpartyName,
-            counterpartyNip  = command.counterpartyNip,
-            ksefInvoiceId    = command.ksefInvoiceId,
-            ksefNumber       = command.ksefNumber,
-            createdBy        = command.userId.value,
-            updatedBy        = command.userId.value
+            id                = UUID.randomUUID(),
+            studioId          = command.studioId.value,
+            source            = command.source,
+            visitId           = command.visitId?.value,
+            vehicleBrand      = command.vehicleBrand,
+            vehicleModel      = command.vehicleModel,
+            customerFirstName = command.customerFirstName,
+            customerLastName  = command.customerLastName,
+            documentNumber    = documentNumber,
+            documentType      = command.documentType,
+            direction         = command.direction,
+            status            = status,
+            paymentMethod     = command.paymentMethod,
+            totalNet          = command.totalNet,
+            totalVat          = command.totalVat,
+            totalGross        = command.totalGross,
+            currency          = command.currency,
+            issueDate         = command.issueDate,
+            dueDate           = command.dueDate,
+            paidAt            = paidAt,
+            description       = command.description,
+            counterpartyName  = command.counterpartyName,
+            counterpartyNip   = command.counterpartyNip,
+            ksefInvoiceId     = command.ksefInvoiceId,
+            ksefNumber        = command.ksefNumber,
+            createdBy         = command.userId.value,
+            updatedBy         = command.userId.value
         )
 
         val saved = documentRepository.save(entity)
 
         // Update cash register for cash payments settled immediately
         if (command.paymentMethod.affectsCashRegister()) {
-            recordCashMovement(command, saved.id, status)
+            recordCashMovement(command, saved.id, status, documentNumber)
         }
 
         log.info(
-            "Financial document created: studio={} number={} type={} direction={} gross={} method={}",
-            command.studioId, documentNumber, command.documentType,
+            "Financial document created: studio={} number={} source={} type={} direction={} gross={} method={}",
+            command.studioId, documentNumber, command.source, command.documentType,
             command.direction, command.totalGross, command.paymentMethod
         )
 
         auditService.logSync(
             LogAuditCommand(
-                studioId           = command.studioId,
-                userId             = command.userId,
-                userDisplayName    = command.userDisplayName,
-                module             = AuditModule.FINANCE,
-                entityId           = saved.id.toString(),
-                entityDisplayName  = documentNumber,
-                action             = AuditAction.DOCUMENT_ISSUED,
-                metadata           = mapOf(
+                studioId          = command.studioId,
+                userId            = command.userId,
+                userDisplayName   = command.userDisplayName,
+                module            = AuditModule.FINANCE,
+                entityId          = saved.id.toString(),
+                entityDisplayName = documentNumber,
+                action            = AuditAction.DOCUMENT_ISSUED,
+                metadata          = mapOf(
+                    "source"        to command.source.name,
                     "documentType"  to command.documentType.name,
                     "direction"     to command.direction.name,
                     "paymentMethod" to command.paymentMethod.name,
@@ -189,18 +205,13 @@ class CreateFinancialDocumentHandler(
     /**
      * Generates a human-readable document number: `{PREFIX}/{YEAR}/{SEQ:04d}`.
      * Example: `PAR/2024/0001`, `FAK/2024/0012`.
-     *
-     * Sequential number is derived from the count of existing documents of the
-     * same type/year for this studio.  Under normal single-user CRM usage this
-     * is deterministic; for very high concurrency a unique constraint on
-     * (studio_id, document_number) would prevent duplicates.
      */
     private fun generateDocumentNumber(
         studioId: UUID,
         type: DocumentType,
         issueDate: LocalDate
     ): String {
-        val year     = issueDate.year
+        val year      = issueDate.year
         val yearStart = LocalDate.of(year, 1, 1)
         val yearEnd   = LocalDate.of(year + 1, 1, 1)
         val count = documentRepository.countByStudioTypeAndYear(studioId, type, yearStart, yearEnd)
@@ -210,23 +221,26 @@ class CreateFinancialDocumentHandler(
 
     /**
      * Updates the cash-register balance and appends an immutable operation record.
-     * Acquires a pessimistic write lock on the cash register to prevent concurrent
-     * balance corruption.
+     *
+     * The operation [comment] is set to [documentDescription] so that the cash
+     * history clearly shows which visit / document triggered each movement.
+     * Acquires a pessimistic write lock on the register row to prevent concurrent
+     * balance corruption in multi-user scenarios.
      */
     private fun recordCashMovement(
         command: CreateFinancialDocumentCommand,
         documentId: UUID,
-        documentStatus: DocumentStatus
+        documentStatus: DocumentStatus,
+        documentNumber: String
     ) {
-        // Only record movement when the document is PAID (should always be true for cash)
         if (documentStatus != DocumentStatus.PAID) return
 
         val cashRegister = getOrCreateCashRegister(command.studioId.value)
         val balanceBefore = cashRegister.balance
 
         val changeAmount = when (command.direction) {
-            DocumentDirection.INCOME  ->  command.totalGross  // + into the register
-            DocumentDirection.EXPENSE -> -command.totalGross  // - out of the register
+            DocumentDirection.INCOME  ->  command.totalGross
+            DocumentDirection.EXPENSE -> -command.totalGross
         }
 
         val newBalance = balanceBefore + changeAmount
@@ -235,8 +249,6 @@ class CreateFinancialDocumentHandler(
                 "Cash register balance would go negative for studio={}: before={} change={}",
                 command.studioId, balanceBefore, changeAmount
             )
-            // We allow it – the studio may track corrections afterward.
-            // Throw ValidationException here if a strict non-negative policy is required.
         }
 
         cashRegister.balance   = newBalance
@@ -248,6 +260,12 @@ class CreateFinancialDocumentHandler(
             DocumentDirection.EXPENSE -> CashOperationType.PAYMENT_OUT
         }
 
+        // Build a descriptive comment for the cash operation log.
+        // Priority: explicit description from the command (e.g. "Wizyta #42 – Toyota Corolla (WA 12345)")
+        // Fallback: just the document number.
+        val cashComment = command.description?.takeIf { it.isNotBlank() }
+            ?: documentNumber
+
         cashOperationRepository.save(
             CashOperationEntity(
                 id                  = UUID.randomUUID(),
@@ -257,15 +275,15 @@ class CreateFinancialDocumentHandler(
                 balanceBefore       = balanceBefore,
                 balanceAfter        = newBalance,
                 operationType       = operationType,
-                comment             = null,
+                comment             = cashComment,
                 financialDocumentId = documentId,
                 createdBy           = command.userId.value
             )
         )
 
         log.debug(
-            "Cash register updated: studio={} before={} change={} after={}",
-            command.studioId, balanceBefore, changeAmount, newBalance
+            "Cash register updated: studio={} before={} change={} after={} comment={}",
+            command.studioId, balanceBefore, changeAmount, newBalance, cashComment
         )
     }
 

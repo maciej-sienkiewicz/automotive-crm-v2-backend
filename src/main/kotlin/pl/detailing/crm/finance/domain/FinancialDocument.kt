@@ -69,6 +69,19 @@ enum class PaymentMethod(val displayName: String) {
     fun affectsCashRegister(): Boolean = this == CASH
 }
 
+/**
+ * Origin of the document – how it entered the system.
+ *
+ * VISIT  – auto-created when a visit is completed ([CompleteVisitHandler]).
+ * KSEF   – imported from the Polish e-invoicing system (KSeF sync).
+ * MANUAL – entered manually by a studio user via the finance API.
+ */
+enum class DocumentSource(val displayName: String) {
+    VISIT("Wizyta"),
+    KSEF("KSeF"),
+    MANUAL("Ręcznie")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Domain Model
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,8 +102,24 @@ data class FinancialDocument(
     val id: FinancialDocumentId,
     val studioId: StudioId,
 
+    /** How this document entered the system. */
+    val source: DocumentSource,
+
     /** Optional link to the visit this document was issued for. */
     val visitId: VisitId?,
+
+    // ── Denormalised visit / vehicle context ────────────────────────────────
+    /** Vehicle brand snapshot at the time of the visit (e.g. "Toyota"). */
+    val vehicleBrand: String?,
+
+    /** Vehicle model snapshot at the time of the visit (e.g. "Corolla"). */
+    val vehicleModel: String?,
+
+    /** First name of the customer at the time of document creation. */
+    val customerFirstName: String?,
+
+    /** Last name of the customer at the time of document creation. */
+    val customerLastName: String?,
 
     /** Human-readable document number, e.g. "PAR/2024/0001". */
     val documentNumber: String,

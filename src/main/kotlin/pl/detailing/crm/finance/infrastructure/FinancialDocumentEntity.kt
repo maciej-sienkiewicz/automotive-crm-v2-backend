@@ -2,6 +2,7 @@ package pl.detailing.crm.finance.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.finance.domain.DocumentDirection
+import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
@@ -25,7 +26,6 @@ import java.util.UUID
  * queries; they remain in the database for audit/compliance purposes.
  *
  * Multi-tenancy: every query MUST include a studioId predicate.
- * Indexed columns: studio_id, status, document_type, visit_id, issue_date.
  */
 @Entity
 @Table(
@@ -35,6 +35,7 @@ import java.util.UUID
         Index(name = "idx_fin_docs_studio_status",  columnList = "studio_id, status"),
         Index(name = "idx_fin_docs_studio_type",    columnList = "studio_id, document_type"),
         Index(name = "idx_fin_docs_studio_dir",     columnList = "studio_id, direction"),
+        Index(name = "idx_fin_docs_studio_source",  columnList = "studio_id, source"),
         Index(name = "idx_fin_docs_visit_id",       columnList = "visit_id"),
         Index(name = "idx_fin_docs_issue_date",     columnList = "studio_id, issue_date"),
         Index(name = "idx_fin_docs_due_date",       columnList = "studio_id, due_date")
@@ -49,9 +50,35 @@ class FinancialDocumentEntity(
     @Column(name = "studio_id", columnDefinition = "uuid", nullable = false)
     val studioId: UUID,
 
+    /**
+     * How this document entered the system.
+     * Column definition includes a DEFAULT so that rows created before this
+     * column was added read as MANUAL when Hibernate runs ddl-auto=update.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20, columnDefinition = "VARCHAR(20) DEFAULT 'MANUAL'")
+    val source: DocumentSource = DocumentSource.MANUAL,
+
     /** Optional reference to the visit this document was issued for. */
     @Column(name = "visit_id", columnDefinition = "uuid")
     val visitId: UUID?,
+
+    // ── Denormalised vehicle / customer context ──────────────────────────
+    /** Vehicle brand snapshot captured from the associated visit. */
+    @Column(name = "vehicle_brand", length = 100)
+    val vehicleBrand: String?,
+
+    /** Vehicle model snapshot captured from the associated visit. */
+    @Column(name = "vehicle_model", length = 100)
+    val vehicleModel: String?,
+
+    /** Customer first name at the time of document creation. */
+    @Column(name = "customer_first_name", length = 100)
+    val customerFirstName: String?,
+
+    /** Customer last name at the time of document creation. */
+    @Column(name = "customer_last_name", length = 100)
+    val customerLastName: String?,
 
     @Column(name = "document_number", nullable = false, length = 50)
     val documentNumber: String,
@@ -110,11 +137,9 @@ class FinancialDocumentEntity(
     val counterpartyNip: String?,
 
     // ── KSeF placeholders ─────────────────────────────────────────────────
-    /** Reserved for future KSeF integration: FK to ksef_invoices.id. */
     @Column(name = "ksef_invoice_id", columnDefinition = "uuid")
     val ksefInvoiceId: UUID?,
 
-    /** Reserved for future KSeF integration: KSeF reference number. */
     @Column(name = "ksef_number", length = 100)
     val ksefNumber: String?,
 
@@ -138,7 +163,12 @@ class FinancialDocumentEntity(
     fun toDomain(): FinancialDocument = FinancialDocument(
         id                = FinancialDocumentId(id),
         studioId          = StudioId(studioId),
+        source            = source,
         visitId           = visitId?.let { VisitId(it) },
+        vehicleBrand      = vehicleBrand,
+        vehicleModel      = vehicleModel,
+        customerFirstName = customerFirstName,
+        customerLastName  = customerLastName,
         documentNumber    = documentNumber,
         documentType      = documentType,
         direction         = direction,
@@ -164,30 +194,35 @@ class FinancialDocumentEntity(
 
     companion object {
         fun fromDomain(doc: FinancialDocument): FinancialDocumentEntity = FinancialDocumentEntity(
-            id               = doc.id.value,
-            studioId         = doc.studioId.value,
-            visitId          = doc.visitId?.value,
-            documentNumber   = doc.documentNumber,
-            documentType     = doc.documentType,
-            direction        = doc.direction,
-            status           = doc.status,
-            paymentMethod    = doc.paymentMethod,
-            totalNet         = doc.totalNet.amountInCents,
-            totalVat         = doc.totalVat.amountInCents,
-            totalGross       = doc.totalGross.amountInCents,
-            currency         = doc.currency,
-            issueDate        = doc.issueDate,
-            dueDate          = doc.dueDate,
-            paidAt           = doc.paidAt,
-            description      = doc.description,
-            counterpartyName = doc.counterpartyName,
-            counterpartyNip  = doc.counterpartyNip,
-            ksefInvoiceId    = doc.ksefInvoiceId,
-            ksefNumber       = doc.ksefNumber,
-            createdBy        = doc.createdBy.value,
-            updatedBy        = doc.updatedBy.value,
-            createdAt        = doc.createdAt,
-            updatedAt        = doc.updatedAt
+            id                = doc.id.value,
+            studioId          = doc.studioId.value,
+            source            = doc.source,
+            visitId           = doc.visitId?.value,
+            vehicleBrand      = doc.vehicleBrand,
+            vehicleModel      = doc.vehicleModel,
+            customerFirstName = doc.customerFirstName,
+            customerLastName  = doc.customerLastName,
+            documentNumber    = doc.documentNumber,
+            documentType      = doc.documentType,
+            direction         = doc.direction,
+            status            = doc.status,
+            paymentMethod     = doc.paymentMethod,
+            totalNet          = doc.totalNet.amountInCents,
+            totalVat          = doc.totalVat.amountInCents,
+            totalGross        = doc.totalGross.amountInCents,
+            currency          = doc.currency,
+            issueDate         = doc.issueDate,
+            dueDate           = doc.dueDate,
+            paidAt            = doc.paidAt,
+            description       = doc.description,
+            counterpartyName  = doc.counterpartyName,
+            counterpartyNip   = doc.counterpartyNip,
+            ksefInvoiceId     = doc.ksefInvoiceId,
+            ksefNumber        = doc.ksefNumber,
+            createdBy         = doc.createdBy.value,
+            updatedBy         = doc.updatedBy.value,
+            createdAt         = doc.createdAt,
+            updatedAt         = doc.updatedAt
         )
     }
 }

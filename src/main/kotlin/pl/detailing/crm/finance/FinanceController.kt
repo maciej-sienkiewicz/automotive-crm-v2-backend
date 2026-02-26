@@ -20,6 +20,7 @@ import pl.detailing.crm.finance.domain.CashOperation
 import pl.detailing.crm.finance.domain.CashOperationType
 import pl.detailing.crm.finance.domain.CashRegister
 import pl.detailing.crm.finance.domain.DocumentDirection
+import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
@@ -74,22 +75,27 @@ class FinanceController(
 
         val result = createDocumentHandler.handle(
             CreateFinancialDocumentCommand(
-                studioId         = principal.studioId,
-                userId           = principal.userId,
-                userDisplayName  = principal.fullName,
-                visitId          = request.visitId?.let { VisitId(it) },
-                documentType     = documentType,
-                direction        = direction,
-                paymentMethod    = paymentMethod,
-                totalNet         = request.totalNet,
-                totalVat         = request.totalVat,
-                totalGross       = request.totalGross,
-                currency         = request.currency ?: "PLN",
-                issueDate        = request.issueDate,
-                dueDate          = request.dueDate,
-                description      = request.description,
-                counterpartyName = request.counterpartyName,
-                counterpartyNip  = request.counterpartyNip
+                studioId          = principal.studioId,
+                userId            = principal.userId,
+                userDisplayName   = principal.fullName,
+                source            = DocumentSource.MANUAL,
+                visitId           = request.visitId?.let { VisitId(it) },
+                vehicleBrand      = request.vehicleBrand,
+                vehicleModel      = request.vehicleModel,
+                customerFirstName = request.customerFirstName,
+                customerLastName  = request.customerLastName,
+                documentType      = documentType,
+                direction         = direction,
+                paymentMethod     = paymentMethod,
+                totalNet          = request.totalNet,
+                totalVat          = request.totalVat,
+                totalGross        = request.totalGross,
+                currency          = request.currency ?: "PLN",
+                issueDate         = request.issueDate,
+                dueDate           = request.dueDate,
+                description       = request.description,
+                counterpartyName  = request.counterpartyName,
+                counterpartyNip   = request.counterpartyNip
             )
         )
 
@@ -382,7 +388,13 @@ data class CreateDocumentRequest(
     val counterpartyNip: String?,
 
     /** Optional: UUID of the visit this document relates to. */
-    val visitId: UUID? = null
+    val visitId: UUID? = null,
+
+    // ── Optional vehicle / customer context ───────────────────────────────
+    val vehicleBrand: String? = null,
+    val vehicleModel: String? = null,
+    val customerFirstName: String? = null,
+    val customerLastName: String? = null
 )
 
 data class UpdateStatusRequest(
@@ -411,6 +423,11 @@ data class CashAdjustRequest(
 data class FinancialDocumentResponse(
     val id: String,
     val documentNumber: String,
+
+    /** How this document entered the system: VISIT | KSEF | MANUAL. */
+    val source: String,
+    val sourceLabel: String,
+
     val documentType: String,
     val documentTypeLabel: String,
     val direction: String,
@@ -436,7 +453,13 @@ data class FinancialDocumentResponse(
 
     val visitId: String?,
 
-    // KSeF placeholders
+    // ── Denormalised vehicle / customer context ───────────────────────────
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
+    val customerFirstName: String?,
+    val customerLastName: String?,
+
+    // ── KSeF placeholders ─────────────────────────────────────────────────
     val ksefInvoiceId: String?,
     val ksefNumber: String?,
 
@@ -514,6 +537,8 @@ data class FinanceSummaryResponse(
 private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     id                 = id.toString(),
     documentNumber     = documentNumber,
+    source             = source.name,
+    sourceLabel        = source.displayName,
     documentType       = documentType.name,
     documentTypeLabel  = documentType.displayName,
     direction          = direction.name,
@@ -533,6 +558,10 @@ private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     counterpartyName   = counterpartyName,
     counterpartyNip    = counterpartyNip,
     visitId            = visitId?.toString(),
+    vehicleBrand       = vehicleBrand,
+    vehicleModel       = vehicleModel,
+    customerFirstName  = customerFirstName,
+    customerLastName   = customerLastName,
     ksefInvoiceId      = ksefInvoiceId?.toString(),
     ksefNumber         = ksefNumber,
     createdBy          = createdBy.toString(),
