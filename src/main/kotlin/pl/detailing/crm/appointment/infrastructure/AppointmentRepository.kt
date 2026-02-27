@@ -109,4 +109,18 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus,
         @Param("date") date: LocalDate
     ): List<AppointmentEntity>
+
+    /**
+     * Find appointments that should be marked as abandoned:
+     * - Status is CREATED (not yet converted to a visit, cancelled, or already abandoned)
+     * - Start date has already passed (startDateTime < now)
+     * - Not soft-deleted
+     */
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.deletedAt IS NULL
+        AND a.status = 'CREATED'
+        AND a.startDateTime < :now
+    """)
+    fun findAbandonedCandidates(@Param("now") now: Instant): List<AppointmentEntity>
 }
