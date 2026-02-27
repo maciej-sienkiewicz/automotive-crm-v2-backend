@@ -648,6 +648,19 @@ value class CashOperationId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for ServiceCategory entities
+ */
+@JvmInline
+value class ServiceCategoryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ServiceCategoryId(UUID.randomUUID())
+        fun fromString(value: String) = ServiceCategoryId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Base exception for business logic violations
  */
 sealed class BusinessException(message: String) : RuntimeException(message)
