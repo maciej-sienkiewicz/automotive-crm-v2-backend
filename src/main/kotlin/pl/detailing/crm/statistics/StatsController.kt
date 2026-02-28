@@ -78,7 +78,8 @@ data class BreakdownTotalsResponse(
 )
 
 data class ServiceBreakdownItemResponse(
-    val serviceId: String,
+    /** null for manually-entered visit services (no catalog entry) */
+    val serviceId: String?,
     val serviceName: String,
     val isActive: Boolean,
     val totals: BreakdownTotalsResponse

@@ -58,7 +58,7 @@ class StatsRepository(
             INNER JOIN visits v ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
-              AND v.status NOT IN ('REJECTED', 'ARCHIVED')
+              AND v.status = 'COMPLETED'
               AND v.scheduled_date >= ?
               AND v.scheduled_date < ?
             GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
@@ -120,7 +120,7 @@ class StatsRepository(
             INNER JOIN visits v ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
-              AND v.status NOT IN ('REJECTED', 'ARCHIVED')
+              AND v.status = 'COMPLETED'
               AND v.scheduled_date >= ?
               AND v.scheduled_date < ?
             GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
@@ -162,7 +162,7 @@ class StatsRepository(
             FROM visit_service_items vsi
             INNER JOIN visits v ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
-              AND v.status NOT IN ('REJECTED', 'ARCHIVED')
+              AND v.status = 'COMPLETED'
               AND v.scheduled_date >= ?
               AND v.scheduled_date < ?
             GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
@@ -417,6 +417,52 @@ class StatsRepository(
             studioId,
             studioId,
             studioId,
+            studioId,
+            Timestamp.from(startDate),
+            Timestamp.from(endDate)
+        )
+        return result
+    }
+
+    /**
+     * Returns aggregated totals for visit service items with NULL service_id
+     * (manually-entered services not linked to the service catalog).
+     *
+     * Grouped by service_name so each distinct manual service name appears as a
+     * separate entry. Only COMPLETED visits are included.
+     *
+     * Result: map of serviceName → (orderCount, totalRevenueGross).
+     * Names with no visits in the range are NOT included.
+     */
+    fun getBreakdownManualServiceTotals(
+        studioId: UUID,
+        startDate: Instant,
+        endDate: Instant
+    ): Map<String, Pair<Long, Long>> {
+        val sql = """
+            SELECT
+                vsi.service_name                        AS service_name,
+                COUNT(DISTINCT v.id)                    AS order_count,
+                COALESCE(SUM(vsi.final_price_gross), 0) AS total_revenue_gross
+            FROM visit_service_items vsi
+            INNER JOIN visits v ON vsi.visit_id = v.id
+            WHERE v.studio_id = ?
+              AND vsi.service_id IS NULL
+              AND v.status = 'COMPLETED'
+              AND v.scheduled_date >= ?
+              AND v.scheduled_date < ?
+            GROUP BY vsi.service_name
+        """.trimIndent()
+
+        val result = mutableMapOf<String, Pair<Long, Long>>()
+        jdbcTemplate.query(
+            sql,
+            { rs ->
+                val name = rs.getString("service_name")
+                val orderCount = rs.getLong("order_count")
+                val revenue = rs.getLong("total_revenue_gross")
+                result[name] = orderCount to revenue
+            },
             studioId,
             Timestamp.from(startDate),
             Timestamp.from(endDate)
