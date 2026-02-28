@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.ServiceCategoryId
 import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.shared.UserRole
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesCommand
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesHandler
 import pl.detailing.crm.statistics.category.assignservices.AssignSingleServiceHandler
@@ -181,6 +182,11 @@ class CategoryController(
         val principal = SecurityContextHelper.getCurrentUser()
         requireManagerOrOwner(principal.role)
 
+        val invalidIds = request.serviceIds.filter { it == "null" || it.isBlank() }
+        if (invalidIds.isNotEmpty()) {
+            throw ValidationException("Manual services (without a catalog serviceId) cannot be assigned to categories")
+        }
+
         val command = AssignServicesCommand(
             categoryId = ServiceCategoryId.fromString(categoryId),
             studioId = principal.studioId,
@@ -207,6 +213,10 @@ class CategoryController(
         val principal = SecurityContextHelper.getCurrentUser()
         requireManagerOrOwner(principal.role)
 
+        if (serviceId == "null" || serviceId.isBlank()) {
+            throw ValidationException("Manual services (without a catalog serviceId) cannot be assigned to categories")
+        }
+
         assignSingleServiceHandler.handle(
             categoryId = ServiceCategoryId.fromString(categoryId),
             serviceId = ServiceId.fromString(serviceId),
@@ -227,6 +237,10 @@ class CategoryController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         requireManagerOrOwner(principal.role)
+
+        if (serviceId == "null" || serviceId.isBlank()) {
+            throw ValidationException("Manual services (without a catalog serviceId) cannot be assigned to categories")
+        }
 
         unassignSingleServiceHandler.handle(
             categoryId = ServiceCategoryId.fromString(categoryId),
