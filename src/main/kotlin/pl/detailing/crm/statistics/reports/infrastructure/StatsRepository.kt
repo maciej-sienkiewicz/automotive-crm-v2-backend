@@ -195,8 +195,12 @@ class StatsRepository(
               AND s.is_active = true
               AND s.id NOT IN (
                   WITH RECURSIVE assigned_family AS (
+                      -- Only assignments to ACTIVE categories count — services
+                      -- belonging to a soft-deleted category are treated as unassigned.
                       SELECT csa.service_id AS id
                       FROM category_service_assignments csa
+                      INNER JOIN service_categories sc
+                          ON sc.id = csa.category_id AND sc.is_active = true
                       WHERE csa.studio_id = ?
 
                       UNION ALL
