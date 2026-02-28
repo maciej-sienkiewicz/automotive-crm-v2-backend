@@ -68,6 +68,17 @@ class GlobalExceptionHandler {
             ))
     }
 
+    @ExceptionHandler(ConflictException::class)
+    fun handleConflict(ex: ConflictException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(ErrorResponse(
+                error = "Conflict",
+                message = ex.message ?: "Conflict",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
         ex.printStackTrace()

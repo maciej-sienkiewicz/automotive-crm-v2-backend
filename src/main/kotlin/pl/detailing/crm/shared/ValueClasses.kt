@@ -670,3 +670,4 @@ class ForbiddenException(message: String = "Access denied") : BusinessException(
 class ValidationException(message: String) : BusinessException(message)
 class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
+class ConflictException(message: String) : BusinessException(message)

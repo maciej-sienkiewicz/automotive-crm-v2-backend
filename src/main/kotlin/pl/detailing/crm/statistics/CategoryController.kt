@@ -11,6 +11,8 @@ import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesCommand
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesHandler
+import pl.detailing.crm.statistics.category.assignservices.AssignSingleServiceHandler
+import pl.detailing.crm.statistics.category.assignservices.UnassignSingleServiceHandler
 import pl.detailing.crm.statistics.category.create.CreateCategoryCommand
 import pl.detailing.crm.statistics.category.create.CreateCategoryHandler
 import pl.detailing.crm.statistics.category.delete.DeleteCategoryHandler
@@ -62,12 +64,15 @@ class CategoryController(
     private val updateCategoryHandler: UpdateCategoryHandler,
     private val deleteCategoryHandler: DeleteCategoryHandler,
     private val assignServicesHandler: AssignServicesHandler,
+    private val assignSingleServiceHandler: AssignSingleServiceHandler,
+    private val unassignSingleServiceHandler: UnassignSingleServiceHandler,
     private val listCategoriesHandler: ListCategoriesHandler,
     private val getCategoryHandler: GetCategoryHandler
 ) {
 
     /**
      * List all categories for the authenticated studio.
+     * Response includes `serviceIds` — the list of root service IDs assigned to each category.
      * Query param `includeInactive=true` also returns deactivated categories.
      */
     @GetMapping
@@ -162,8 +167,8 @@ class CategoryController(
     }
 
     /**
-     * Bulk-assign services to a category. This is a full replacement:
-     * the provided list becomes the complete set of services for the category.
+     * Bulk-assign services to a category (full replacement).
+     * The provided list becomes the complete set of services for the category.
      * An empty list removes all assignments.
      *
      * OWNER and MANAGER only.
@@ -184,6 +189,50 @@ class CategoryController(
         )
 
         assignServicesHandler.handle(command)
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Assign a single service to a category. Idempotent — 204 if already assigned.
+     * Enforces the one-category-per-service rule: if the service is in another category it is moved.
+     * Returns 409 if the target category is inactive.
+     *
+     * OWNER and MANAGER only.
+     */
+    @PostMapping("/{categoryId}/services/{serviceId}")
+    fun assignSingleService(
+        @PathVariable categoryId: String,
+        @PathVariable serviceId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role)
+
+        assignSingleServiceHandler.handle(
+            categoryId = ServiceCategoryId.fromString(categoryId),
+            serviceId = ServiceId.fromString(serviceId),
+            studioId = principal.studioId
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Remove a single service from a category. Idempotent — 204 even if not assigned.
+     *
+     * OWNER and MANAGER only.
+     */
+    @DeleteMapping("/{categoryId}/services/{serviceId}")
+    fun unassignSingleService(
+        @PathVariable categoryId: String,
+        @PathVariable serviceId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role)
+
+        unassignSingleServiceHandler.handle(
+            categoryId = ServiceCategoryId.fromString(categoryId),
+            serviceId = ServiceId.fromString(serviceId),
+            studioId = principal.studioId
+        )
         ResponseEntity.noContent().build()
     }
 

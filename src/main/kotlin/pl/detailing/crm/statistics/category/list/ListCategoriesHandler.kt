@@ -16,6 +16,7 @@ data class CategoryListItem(
     val color: String?,
     val isActive: Boolean,
     val serviceCount: Long,
+    val serviceIds: List<String>,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -33,10 +34,16 @@ class ListCategoriesHandler(
                 serviceCategoryRepository.findActiveByStudioId(studioId.value)
             }
 
-            // Single aggregation query — avoids N+1 per category
-            val serviceCounts: Map<UUID, Long> = categoryServiceAssignmentRepository
-                .countServicesByCategoryForStudio(studioId.value)
-                .associate { row -> row.categoryId to row.serviceCount }
+            // Single batch query — avoids N+1 per category
+            val rows = categoryServiceAssignmentRepository.findAllServiceIdsByStudio(studioId.value)
+
+            val serviceCounts: Map<UUID, Long> = rows
+                .groupBy { it.categoryId }
+                .mapValues { (_, v) -> v.size.toLong() }
+
+            val serviceIdsByCategory: Map<UUID, List<String>> = rows
+                .groupBy { it.categoryId }
+                .mapValues { (_, v) -> v.map { it.serviceId.toString() } }
 
             categories.map { entity ->
                 CategoryListItem(
@@ -46,6 +53,7 @@ class ListCategoriesHandler(
                     color = entity.color,
                     isActive = entity.isActive,
                     serviceCount = serviceCounts[entity.id] ?: 0L,
+                    serviceIds = serviceIdsByCategory[entity.id] ?: emptyList(),
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
                 )

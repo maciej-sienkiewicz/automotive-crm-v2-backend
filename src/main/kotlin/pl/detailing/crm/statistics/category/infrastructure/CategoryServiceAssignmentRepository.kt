@@ -17,6 +17,15 @@ data class CategoryServiceCountRow(
     val serviceCount: Long
 )
 
+/**
+ * DTO for the batch service-ids-per-category query.
+ * Must be a concrete class (not interface) for JPQL constructor expressions.
+ */
+data class CategoryServiceIdRow(
+    val categoryId: UUID,
+    val serviceId: UUID
+)
+
 @Repository
 interface CategoryServiceAssignmentRepository : JpaRepository<CategoryServiceAssignmentEntity, UUID> {
 
@@ -29,6 +38,15 @@ interface CategoryServiceAssignmentRepository : JpaRepository<CategoryServiceAss
         @Param("studioId") studioId: UUID
     ): List<CategoryServiceAssignmentEntity>
 
+    @Query("""
+        SELECT a FROM CategoryServiceAssignmentEntity a
+        WHERE a.serviceId = :serviceId AND a.studioId = :studioId
+    """)
+    fun findByServiceIdAndStudioId(
+        @Param("serviceId") serviceId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<CategoryServiceAssignmentEntity>
+
     @Modifying
     @Transactional
     @Query("""
@@ -37,6 +55,17 @@ interface CategoryServiceAssignmentRepository : JpaRepository<CategoryServiceAss
     """)
     fun deleteAllByCategoryIdAndStudioId(
         @Param("categoryId") categoryId: UUID,
+        @Param("studioId") studioId: UUID
+    )
+
+    @Modifying
+    @Transactional
+    @Query("""
+        DELETE FROM CategoryServiceAssignmentEntity a
+        WHERE a.serviceId = :serviceId AND a.studioId = :studioId
+    """)
+    fun deleteByServiceIdAndStudioId(
+        @Param("serviceId") serviceId: UUID,
         @Param("studioId") studioId: UUID
     )
 
@@ -56,6 +85,22 @@ interface CategoryServiceAssignmentRepository : JpaRepository<CategoryServiceAss
     fun countServicesByCategoryForStudio(
         @Param("studioId") studioId: UUID
     ): List<CategoryServiceCountRow>
+
+    /**
+     * Batch fetch of all (categoryId, serviceId) pairs for a studio.
+     * Used to populate serviceIds in the category list response and for breakdown queries.
+     */
+    @Query("""
+        SELECT new pl.detailing.crm.statistics.category.infrastructure.CategoryServiceIdRow(
+            a.categoryId,
+            a.serviceId
+        )
+        FROM CategoryServiceAssignmentEntity a
+        WHERE a.studioId = :studioId
+    """)
+    fun findAllServiceIdsByStudio(
+        @Param("studioId") studioId: UUID
+    ): List<CategoryServiceIdRow>
 
     @Query("""
         SELECT COUNT(a) FROM CategoryServiceAssignmentEntity a
