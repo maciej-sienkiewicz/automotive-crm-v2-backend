@@ -8,6 +8,9 @@ import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentEntity
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentEntity
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -15,14 +18,18 @@ import java.util.UUID
 class AssignServicesHandler(
     private val serviceCategoryRepository: ServiceCategoryRepository,
     private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val manualServiceRepository: ManualServiceRepository,
+    private val manualServiceCategoryAssignmentRepository: ManualServiceCategoryAssignmentRepository
 ) {
     /**
-     * Replaces all service assignments for a category.
+     * Replaces ALL service assignments for a category (catalog + manual).
      *
-     * For each provided service ID, resolves the ROOT ancestor (following replaces_service_id
-     * backward until null). Only root IDs are stored, so recursive CTE stats queries can
-     * automatically include all current and future versions without needing assignment updates.
+     * Each UUID in the command is resolved as either a catalog service (via the
+     * [services] table) or a manual service (via [manual_services]). Unknown UUIDs
+     * throw [EntityNotFoundException].
+     *
+     * An empty list removes all assignments of both types.
      */
     suspend fun handle(command: AssignServicesCommand) = withContext(Dispatchers.IO) {
         serviceCategoryRepository.findByIdAndStudioId(
@@ -30,45 +37,66 @@ class AssignServicesHandler(
             command.studioId.value
         ) ?: throw EntityNotFoundException("Category ${command.categoryId} not found")
 
-        val rootServiceIds: Set<UUID> = command.serviceIds
-            .map { serviceId -> resolveRootServiceId(serviceId.value, command.studioId.value) }
-            .toSet()
+        // Classify each UUID as catalog or manual
+        val catalogRootIds = mutableSetOf<UUID>()
+        val manualIds = mutableSetOf<UUID>()
 
-        // Full replacement: remove existing, add new
+        for (serviceId in command.serviceIds) {
+            val catalogService = serviceRepository.findByIdAndStudioId(serviceId.value, command.studioId.value)
+            if (catalogService != null) {
+                catalogRootIds.add(resolveRootServiceId(serviceId.value, command.studioId.value))
+            } else {
+                manualServiceRepository.findByIdAndStudioId(serviceId.value, command.studioId.value)
+                    ?: throw EntityNotFoundException("Service ${serviceId.value} not found in studio")
+                manualIds.add(serviceId.value)
+            }
+        }
+
+        // Full replacement for catalog assignments
         categoryServiceAssignmentRepository.deleteAllByCategoryIdAndStudioId(
             command.categoryId.value,
             command.studioId.value
         )
+        if (catalogRootIds.isNotEmpty()) {
+            categoryServiceAssignmentRepository.saveAll(
+                catalogRootIds.map { rootId ->
+                    CategoryServiceAssignmentEntity(
+                        id = UUID.randomUUID(),
+                        categoryId = command.categoryId.value,
+                        serviceId = rootId,
+                        studioId = command.studioId.value,
+                        assignedAt = Instant.now()
+                    )
+                }
+            )
+        }
 
-        if (rootServiceIds.isNotEmpty()) {
-            val assignments = rootServiceIds.map { rootServiceId ->
-                CategoryServiceAssignmentEntity(
-                    id = UUID.randomUUID(),
-                    categoryId = command.categoryId.value,
-                    serviceId = rootServiceId,
-                    studioId = command.studioId.value,
-                    assignedAt = Instant.now()
-                )
-            }
-            categoryServiceAssignmentRepository.saveAll(assignments)
+        // Full replacement for manual assignments
+        manualServiceCategoryAssignmentRepository.deleteAllByCategoryIdAndStudioId(
+            command.categoryId.value,
+            command.studioId.value
+        )
+        if (manualIds.isNotEmpty()) {
+            manualServiceCategoryAssignmentRepository.saveAll(
+                manualIds.map { manualId ->
+                    ManualServiceCategoryAssignmentEntity(
+                        id = UUID.randomUUID(),
+                        studioId = command.studioId.value,
+                        manualServiceId = manualId,
+                        categoryId = command.categoryId.value,
+                        assignedAt = Instant.now()
+                    )
+                }
+            )
         }
     }
 
-    /**
-     * Traverses the replaces_service_id chain backward until the root service
-     * (one with replaces_service_id = null) is found.
-     *
-     * Example: S3.replaces_service_id -> S2.replaces_service_id -> S1 (root, replaces_service_id = null)
-     * Assigning S3 stores S1, so future stats include S1, S2, S3 and any S4+ created later.
-     */
     private fun resolveRootServiceId(serviceId: UUID, studioId: UUID): UUID {
         var currentId = serviceId
         while (true) {
             val service = serviceRepository.findByIdAndStudioId(currentId, studioId)
                 ?: throw EntityNotFoundException("Service $currentId not found in studio")
-            if (service.replacesServiceId == null) {
-                return currentId
-            }
+            if (service.replacesServiceId == null) return currentId
             currentId = service.replacesServiceId!!
         }
     }

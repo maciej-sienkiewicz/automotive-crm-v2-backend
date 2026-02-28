@@ -9,6 +9,10 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceEntity
+import pl.detailing.crm.statistics.category.manual.ManualServiceRegistry
+import pl.detailing.crm.statistics.category.manual.ManualServiceRepository
 import pl.detailing.crm.statistics.reports.domain.Granularity
 import pl.detailing.crm.statistics.reports.domain.StatsDataPoint
 import pl.detailing.crm.statistics.reports.infrastructure.StatsRepository
@@ -24,10 +28,11 @@ data class BreakdownTotals(
 
 data class ServiceBreakdownItem(
     /**
-     * UUID string for catalog services; null for manually-entered visit services
-     * (visit_service_items rows where service_id IS NULL).
+     * UUID string for both catalog services and manual services (the stable UUID
+     * from [pl.detailing.crm.statistics.category.manual.ManualServiceEntity]).
+     * Never null — every service in the breakdown now has a real identifier.
      */
-    val serviceId: String?,
+    val serviceId: String,
     val serviceName: String,
     val isActive: Boolean,
     val totals: BreakdownTotals
@@ -59,21 +64,22 @@ class GetBreakdownStatsHandler(
     private val statsRepository: StatsRepository,
     private val serviceCategoryRepository: ServiceCategoryRepository,
     private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val manualServiceRegistry: ManualServiceRegistry,
+    private val manualServiceRepository: ManualServiceRepository,
+    private val manualServiceCategoryAssignmentRepository: ManualServiceCategoryAssignmentRepository
 ) {
 
     /**
      * Single-query aggregation that drives the statistics view.
      *
-     * Replaces: overview + unassigned-services + N×category-detail + M×service-stats.
-     *
      * Rules:
      * - Only COMPLETED visits are counted.
-     * - All assigned services appear even if orderCount = 0 for the given range.
+     * - All assigned catalog services appear even if orderCount = 0 for the given range.
+     * - All assigned manual services appear even if orderCount = 0 for the given range.
+     * - Unassigned manual services only appear if they have visits in the range.
      * - All periods in the range are present in overviewData (zero-filled).
      * - One service belongs to at most one category.
-     * - Visit service items with service_id = NULL (manual/ad-hoc services) appear
-     *   in unassignedServices with serviceId = null, grouped by service_name.
      */
     suspend fun handle(
         studioId: StudioId,
@@ -102,40 +108,57 @@ class GetBreakdownStatsHandler(
             totalRevenueGross = overviewData.sumOf { it.totalRevenueGross }
         )
 
-        // ── 2. Assigned-service totals (one batch SQL) ────────────────────────
+        // ── 2. Catalog-service totals ─────────────────────────────────────────
         val assignedTotals: Map<UUID, Pair<Long, Long>> =
             statsRepository.getBreakdownAssignedServiceTotals(studioId.value, startDate, endDate)
 
-        // ── 3. Unassigned catalog-service totals (one batch SQL) ──────────────
         val unassignedTotals: Map<UUID, Pair<Long, Long>> =
             statsRepository.getBreakdownUnassignedServiceTotals(studioId.value, startDate, endDate)
 
-        // ── 4. Manual service totals (null service_id, grouped by name) ───────
-        val manualTotals: Map<String, Pair<Long, Long>> =
+        // ── 3. Manual service totals (grouped by name) ────────────────────────
+        val manualTotalsByName: Map<String, Pair<Long, Long>> =
             statsRepository.getBreakdownManualServiceTotals(studioId.value, startDate, endDate)
 
-        // ── 5. Load JPA entities ──────────────────────────────────────────────
+        // Register any new manual service names encountered in this date range,
+        // returning a name→entity map with stable UUIDs.
+        val manualByName: Map<String, ManualServiceEntity> =
+            manualServiceRegistry.findOrCreateAll(studioId.value, manualTotalsByName.keys)
+
+        // ── 4. Manual service category assignments ────────────────────────────
+        // All assignments (studio-wide) — used to split manual services into
+        // "in category" vs "unassigned" and to zero-fill assigned-but-inactive ones.
+        val allManualAssignments =
+            manualServiceCategoryAssignmentRepository.findByStudioId(studioId.value)
+
+        // Pre-load the ManualServiceEntity for every assignment so we have names
+        // even for manual services with no visits in the current date range.
+        val assignedManualIds = allManualAssignments.map { it.manualServiceId }.toSet()
+        val assignedManualById: Map<UUID, ManualServiceEntity> =
+            if (assignedManualIds.isEmpty()) emptyMap()
+            else manualServiceRepository.findAllById(assignedManualIds).associateBy { it.id }
+
+        val manualCatByManualId: Map<UUID, UUID> =  // manualServiceId → categoryId
+            allManualAssignments.associate { it.manualServiceId to it.categoryId }
+
+        // ── 5. Load JPA entities for catalog services ─────────────────────────
         val activeCategories = serviceCategoryRepository.findActiveByStudioId(studioId.value)
         val allStudioServices = serviceRepository.findByStudioId(studioId.value)
 
-        // Build service lookup maps
         val allServicesById = allStudioServices.associateBy { it.id }
         val replacedBy: Map<UUID, UUID> = allStudioServices
             .filter { it.replacesServiceId != null }
             .associate { it.replacesServiceId!! to it.id }
 
-        // Map from root service ID → latest-version service entity
         val latestByRoot: Map<UUID, ServiceEntity> =
             allStudioServices
-                .filter { it.replacesServiceId == null }   // roots only
+                .filter { it.replacesServiceId == null }
                 .mapNotNull { root ->
                     val latest = resolveLatest(root.id, replacedBy, allServicesById)
                     latest?.let { root.id to it }
                 }
                 .toMap()
 
-        // ── 6. Build category assignments map ─────────────────────────────────
-        // categoryId → list of root service IDs
+        // ── 6. Catalog category assignments ───────────────────────────────────
         val activeCategoryIds = activeCategories.map { it.id }.toSet()
         val assignmentRows = categoryServiceAssignmentRepository.findAllServiceIdsByStudio(studioId.value)
         val servicesByCategory: Map<UUID, List<UUID>> = assignmentRows
@@ -144,18 +167,39 @@ class GetBreakdownStatsHandler(
 
         // ── 7. Assemble categories ────────────────────────────────────────────
         val categories: List<CategoryBreakdownItem> = activeCategories.map { cat ->
-            val assignedRootIds = servicesByCategory[cat.id] ?: emptyList()
 
-            val services: List<ServiceBreakdownItem> = assignedRootIds.mapNotNull { rootId ->
-                val latest = latestByRoot[rootId] ?: return@mapNotNull null
-                val (orderCount, revenue) = assignedTotals[rootId] ?: (0L to 0L)
-                ServiceBreakdownItem(
-                    serviceId = rootId.toString(),
-                    serviceName = latest.name,
-                    isActive = latest.isActive,
-                    totals = BreakdownTotals(orderCount, revenue)
-                )
-            }.sortedByDescending { it.totals.totalRevenueGross }
+            // Catalog services assigned to this category
+            val catalogServices: List<ServiceBreakdownItem> =
+                (servicesByCategory[cat.id] ?: emptyList()).mapNotNull { rootId ->
+                    val latest = latestByRoot[rootId] ?: return@mapNotNull null
+                    val (orderCount, revenue) = assignedTotals[rootId] ?: (0L to 0L)
+                    ServiceBreakdownItem(
+                        serviceId = rootId.toString(),
+                        serviceName = latest.name,
+                        isActive = latest.isActive,
+                        totals = BreakdownTotals(orderCount, revenue)
+                    )
+                }
+
+            // Manual services assigned to this category (zero-filled if no visits in range)
+            val manualServices: List<ServiceBreakdownItem> =
+                allManualAssignments
+                    .filter { it.categoryId == cat.id }
+                    .mapNotNull { assignment ->
+                        val manual = assignedManualById[assignment.manualServiceId]
+                            ?: return@mapNotNull null
+                        val (orderCount, revenue) =
+                            manualTotalsByName[manual.serviceName] ?: (0L to 0L)
+                        ServiceBreakdownItem(
+                            serviceId = manual.id.toString(),
+                            serviceName = manual.serviceName,
+                            isActive = true,
+                            totals = BreakdownTotals(orderCount, revenue)
+                        )
+                    }
+
+            val services = (catalogServices + manualServices)
+                .sortedByDescending { it.totals.totalRevenueGross }
 
             val catTotals = BreakdownTotals(
                 orderCount = services.sumOf { it.totals.orderCount },
@@ -173,29 +217,33 @@ class GetBreakdownStatsHandler(
         }.sortedByDescending { it.totals.totalRevenueGross }
 
         // ── 8. Assemble unassigned services ───────────────────────────────────
-        // a) Catalog services not in any category (with activity in range)
-        val catalogUnassigned: List<ServiceBreakdownItem> = unassignedTotals.mapNotNull { (rootId, totals) ->
-            val latest = latestByRoot[rootId] ?: return@mapNotNull null
-            val (orderCount, revenue) = totals
-            ServiceBreakdownItem(
-                serviceId = rootId.toString(),
-                serviceName = latest.name,
-                isActive = latest.isActive,
-                totals = BreakdownTotals(orderCount, revenue)
-            )
-        }
+        // a) Unassigned catalog services (only those with visits in range)
+        val catalogUnassigned: List<ServiceBreakdownItem> =
+            unassignedTotals.mapNotNull { (rootId, totals) ->
+                val latest = latestByRoot[rootId] ?: return@mapNotNull null
+                val (orderCount, revenue) = totals
+                ServiceBreakdownItem(
+                    serviceId = rootId.toString(),
+                    serviceName = latest.name,
+                    isActive = latest.isActive,
+                    totals = BreakdownTotals(orderCount, revenue)
+                )
+            }
 
-        // b) Manual services (service_id IS NULL in visit_service_items)
-        //    Each distinct service_name is a separate entry; serviceId = null.
-        val manualUnassigned: List<ServiceBreakdownItem> = manualTotals.map { (name, totals) ->
-            val (orderCount, revenue) = totals
-            ServiceBreakdownItem(
-                serviceId = null,
-                serviceName = name,
-                isActive = true,
-                totals = BreakdownTotals(orderCount, revenue)
-            )
-        }
+        // b) Unassigned manual services (only those with visits in range)
+        val manualUnassigned: List<ServiceBreakdownItem> =
+            manualByName.values
+                .filter { it.id !in manualCatByManualId }
+                .mapNotNull { manual ->
+                    val (orderCount, revenue) =
+                        manualTotalsByName[manual.serviceName] ?: return@mapNotNull null
+                    ServiceBreakdownItem(
+                        serviceId = manual.id.toString(),
+                        serviceName = manual.serviceName,
+                        isActive = true,
+                        totals = BreakdownTotals(orderCount, revenue)
+                    )
+                }
 
         val unassignedServices = (catalogUnassigned + manualUnassigned)
             .sortedByDescending { it.totals.totalRevenueGross }
@@ -211,9 +259,6 @@ class GetBreakdownStatsHandler(
         )
     }
 
-    /**
-     * Traverses the replacedBy chain forward from a root to find the latest service version.
-     */
     private fun resolveLatest(
         rootId: UUID,
         replacedBy: Map<UUID, UUID>,

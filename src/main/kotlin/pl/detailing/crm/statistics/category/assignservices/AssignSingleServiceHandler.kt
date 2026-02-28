@@ -13,6 +13,9 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentEntity
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentEntity
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -20,19 +23,17 @@ import java.util.UUID
 class AssignSingleServiceHandler(
     private val serviceCategoryRepository: ServiceCategoryRepository,
     private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val manualServiceRepository: ManualServiceRepository,
+    private val manualServiceCategoryAssignmentRepository: ManualServiceCategoryAssignmentRepository
 ) {
 
     /**
      * Idempotently assigns a single service to a category.
      *
-     * Enforces the one-service-per-category invariant: if the service is already assigned
-     * to a different category, it is moved to the requested category.
-     *
-     * Returns without error if the service is already assigned to this category (idempotent).
-     *
-     * @throws EntityNotFoundException if category or service is not found in the studio
-     * @throws ConflictException if the category is inactive
+     * Accepts both catalog service UUIDs (from the [services] table) and manual
+     * service UUIDs (from [manual_services], issued by the breakdown endpoint).
+     * Enforces the one-service-per-category rule for both types.
      */
     @Transactional
     suspend fun handle(categoryId: ServiceCategoryId, serviceId: ServiceId, studioId: StudioId) =
@@ -44,31 +45,62 @@ class AssignSingleServiceHandler(
                 throw ConflictException("Category ${category.name} is inactive")
             }
 
-            serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
-                ?: throw EntityNotFoundException("Service $serviceId not found")
+            // Determine whether the UUID refers to a catalog service or a manual service.
+            val catalogService = serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
 
-            val rootServiceId = resolveRootServiceId(serviceId.value, studioId.value)
+            if (catalogService != null) {
+                assignCatalogService(serviceId.value, categoryId.value, studioId.value)
+            } else {
+                val manualService = manualServiceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
+                    ?: throw EntityNotFoundException("Service $serviceId not found")
+                assignManualService(manualService.id, categoryId.value, studioId.value)
+            }
+        }
 
-            // Already assigned to this category — idempotent, nothing to do
-            val alreadyInThisCategory = categoryServiceAssignmentRepository
-                .findByCategoryIdAndStudioId(categoryId.value, studioId.value)
-                .any { it.serviceId == rootServiceId }
+    private fun assignCatalogService(serviceId: UUID, categoryId: UUID, studioId: UUID) {
+        val rootServiceId = resolveRootServiceId(serviceId, studioId)
 
-            if (alreadyInThisCategory) return@withContext
+        val alreadyInThisCategory = categoryServiceAssignmentRepository
+            .findByCategoryIdAndStudioId(categoryId, studioId)
+            .any { it.serviceId == rootServiceId }
 
-            // Enforce one-category-per-service: remove from any other category first
-            categoryServiceAssignmentRepository.deleteByServiceIdAndStudioId(rootServiceId, studioId.value)
+        if (alreadyInThisCategory) return
 
-            categoryServiceAssignmentRepository.save(
-                CategoryServiceAssignmentEntity(
-                    id = UUID.randomUUID(),
-                    categoryId = categoryId.value,
-                    serviceId = rootServiceId,
-                    studioId = studioId.value,
-                    assignedAt = Instant.now()
-                )
+        categoryServiceAssignmentRepository.deleteByServiceIdAndStudioId(rootServiceId, studioId)
+        categoryServiceAssignmentRepository.save(
+            CategoryServiceAssignmentEntity(
+                id = UUID.randomUUID(),
+                categoryId = categoryId,
+                serviceId = rootServiceId,
+                studioId = studioId,
+                assignedAt = Instant.now()
+            )
+        )
+    }
+
+    private fun assignManualService(manualServiceId: UUID, categoryId: UUID, studioId: UUID) {
+        val existing = manualServiceCategoryAssignmentRepository
+            .findByManualServiceIdAndStudioId(manualServiceId, studioId)
+
+        if (existing?.categoryId == categoryId) return  // already in this category — idempotent
+
+        // Enforce one-category-per-manual-service: remove from any other category first
+        if (existing != null) {
+            manualServiceCategoryAssignmentRepository.deleteByManualServiceIdAndStudioId(
+                manualServiceId, studioId
             )
         }
+
+        manualServiceCategoryAssignmentRepository.save(
+            ManualServiceCategoryAssignmentEntity(
+                id = UUID.randomUUID(),
+                studioId = studioId,
+                manualServiceId = manualServiceId,
+                categoryId = categoryId,
+                assignedAt = Instant.now()
+            )
+        )
+    }
 
     private fun resolveRootServiceId(serviceId: UUID, studioId: UUID): UUID {
         var currentId = serviceId

@@ -10,6 +10,8 @@ import pl.detailing.crm.shared.ServiceCategoryId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -37,7 +39,9 @@ data class CategoryDetail(
 class GetCategoryHandler(
     private val serviceCategoryRepository: ServiceCategoryRepository,
     private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val manualServiceRepository: ManualServiceRepository,
+    private val manualServiceCategoryAssignmentRepository: ManualServiceCategoryAssignmentRepository
 ) {
     suspend fun handle(categoryId: ServiceCategoryId, studioId: StudioId): CategoryDetail =
         withContext(Dispatchers.IO) {
@@ -46,23 +50,19 @@ class GetCategoryHandler(
                 studioId.value
             ) ?: throw EntityNotFoundException("Category $categoryId not found")
 
+            // ── Catalog services ──────────────────────────────────────────────
             val assignments = categoryServiceAssignmentRepository.findByCategoryIdAndStudioId(
                 categoryId.value,
                 studioId.value
             )
 
-            // Resolve all services in the studio to build a map for "hasNewerVersion" detection.
-            // A service has a newer version if another service has replaces_service_id = this service's id.
             val allStudioServices = serviceRepository.findByStudioId(studioId.value)
             val servicesThatReplaceOthers: Set<UUID> = allStudioServices
                 .mapNotNull { it.replacesServiceId }
                 .toSet()
-
-            // Build a lookup map to avoid repeated DB calls during version traversal
             val allServicesById: Map<UUID, ServiceEntity> = allStudioServices.associateBy { it.id }
 
-            val services: List<CategoryServiceDetail> = assignments.mapNotNull { assignment ->
-                // Resolve root to tip of version chain using the in-memory map (no extra DB calls)
+            val catalogServices: List<CategoryServiceDetail> = assignments.mapNotNull { assignment ->
                 val latestService = resolveLatestServiceFromMap(assignment.serviceId, allServicesById)
                 latestService?.let { svc ->
                     CategoryServiceDetail(
@@ -74,7 +74,29 @@ class GetCategoryHandler(
                         hasNewerVersion = servicesThatReplaceOthers.contains(svc.id)
                     )
                 }
-            }.sortedBy { it.serviceName }
+            }
+
+            // ── Manual services ───────────────────────────────────────────────
+            val manualAssignments = manualServiceCategoryAssignmentRepository
+                .findByCategoryIdAndStudioId(categoryId.value, studioId.value)
+
+            val manualServiceIds = manualAssignments.map { it.manualServiceId }
+            val manualServices: List<CategoryServiceDetail> = if (manualServiceIds.isEmpty()) {
+                emptyList()
+            } else {
+                manualServiceRepository.findAllById(manualServiceIds).map { manual ->
+                    CategoryServiceDetail(
+                        serviceId = manual.id.toString(),
+                        serviceName = manual.serviceName,
+                        basePriceNet = 0,
+                        vatRate = 0,
+                        isActive = true,
+                        hasNewerVersion = false
+                    )
+                }
+            }
+
+            val services = (catalogServices + manualServices).sortedBy { it.serviceName }
 
             CategoryDetail(
                 id = category.id.toString(),
@@ -88,18 +110,10 @@ class GetCategoryHandler(
             )
         }
 
-    /**
-     * Resolves a root service ID to the tip of the version chain using an in-memory map.
-     * Avoids N+1 DB calls — all studio services are loaded once and reused.
-     *
-     * Builds a reverse lookup: for each service, find the one that replaced it.
-     * Traverses forward until no newer version exists.
-     */
     private fun resolveLatestServiceFromMap(
         rootServiceId: UUID,
         allServicesById: Map<UUID, ServiceEntity>
     ): ServiceEntity? {
-        // Build reverse index: id -> the service that replaced it
         val replacedBy: Map<UUID, ServiceEntity> = allServicesById.values
             .filter { it.replacesServiceId != null }
             .associateBy { it.replacesServiceId!! }

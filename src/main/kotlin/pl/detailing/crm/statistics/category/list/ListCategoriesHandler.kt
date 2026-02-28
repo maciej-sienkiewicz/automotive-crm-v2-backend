@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
+import pl.detailing.crm.statistics.category.manual.ManualServiceCategoryAssignmentRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -24,7 +25,8 @@ data class CategoryListItem(
 @Service
 class ListCategoriesHandler(
     private val serviceCategoryRepository: ServiceCategoryRepository,
-    private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository
+    private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
+    private val manualServiceCategoryAssignmentRepository: ManualServiceCategoryAssignmentRepository
 ) {
     suspend fun handle(studioId: StudioId, includeInactive: Boolean = false): List<CategoryListItem> =
         withContext(Dispatchers.IO) {
@@ -34,26 +36,30 @@ class ListCategoriesHandler(
                 serviceCategoryRepository.findActiveByStudioId(studioId.value)
             }
 
-            // Single batch query — avoids N+1 per category
-            val rows = categoryServiceAssignmentRepository.findAllServiceIdsByStudio(studioId.value)
-
-            val serviceCounts: Map<UUID, Long> = rows
-                .groupBy { it.categoryId }
-                .mapValues { (_, v) -> v.size.toLong() }
-
-            val serviceIdsByCategory: Map<UUID, List<String>> = rows
+            // Catalog service assignments (single batch query)
+            val catalogRows = categoryServiceAssignmentRepository.findAllServiceIdsByStudio(studioId.value)
+            val catalogIdsByCategory: Map<UUID, List<String>> = catalogRows
                 .groupBy { it.categoryId }
                 .mapValues { (_, v) -> v.map { it.serviceId.toString() } }
 
+            // Manual service assignments (single batch query)
+            val manualRows = manualServiceCategoryAssignmentRepository.findByStudioId(studioId.value)
+            val manualIdsByCategory: Map<UUID, List<String>> = manualRows
+                .groupBy { it.categoryId }
+                .mapValues { (_, v) -> v.map { it.manualServiceId.toString() } }
+
             categories.map { entity ->
+                val catalogIds = catalogIdsByCategory[entity.id] ?: emptyList()
+                val manualIds = manualIdsByCategory[entity.id] ?: emptyList()
+                val allIds = catalogIds + manualIds
                 CategoryListItem(
                     id = entity.id.toString(),
                     name = entity.name,
                     description = entity.description,
                     color = entity.color,
                     isActive = entity.isActive,
-                    serviceCount = serviceCounts[entity.id] ?: 0L,
-                    serviceIds = serviceIdsByCategory[entity.id] ?: emptyList(),
+                    serviceCount = allIds.size.toLong(),
+                    serviceIds = allIds,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
                 )
