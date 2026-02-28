@@ -296,10 +296,12 @@ class StatsRepository(
     ): Map<UUID, Pair<Long, Long>> {
         val sql = """
             WITH RECURSIVE service_family AS (
-                -- Seed: all root service IDs assigned to any category in this studio
-                SELECT service_id AS root_id, service_id AS member_id
-                FROM category_service_assignments
-                WHERE studio_id = ?
+                -- Seed: root service IDs assigned to ACTIVE categories only
+                SELECT csa.service_id AS root_id, csa.service_id AS member_id
+                FROM category_service_assignments csa
+                INNER JOIN service_categories sc
+                    ON sc.id = csa.category_id AND sc.is_active = true
+                WHERE csa.studio_id = ?
 
                 UNION ALL
 
@@ -357,11 +359,15 @@ class StatsRepository(
     ): Map<UUID, Pair<Long, Long>> {
         val sql = """
             WITH RECURSIVE
-            -- Expand all assigned roots into their full lineages
+            -- Expand all assigned roots into their full lineages.
+            -- Only assignments to ACTIVE categories are considered — services
+            -- belonging to a soft-deleted category are treated as unassigned.
             assigned_family AS (
-                SELECT service_id AS id
-                FROM category_service_assignments
-                WHERE studio_id = ?
+                SELECT csa.service_id AS id
+                FROM category_service_assignments csa
+                INNER JOIN service_categories sc
+                    ON sc.id = csa.category_id AND sc.is_active = true
+                WHERE csa.studio_id = ?
 
                 UNION ALL
 
@@ -370,7 +376,7 @@ class StatsRepository(
                 INNER JOIN assigned_family af ON s.replaces_service_id = af.id
                 WHERE s.studio_id = ?
             ),
-            -- All root services not assigned to any category
+            -- All root services not assigned to any ACTIVE category
             unassigned_roots AS (
                 SELECT s.id AS root_id
                 FROM services s
