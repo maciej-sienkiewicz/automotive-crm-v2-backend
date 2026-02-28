@@ -51,7 +51,7 @@ class StatsRepository(
                 WHERE s.studio_id = ?
             )
             SELECT
-                date_trunc('${granularity.sqlValue}', v.scheduled_date)  AS period,
+                date_trunc('${granularity.sqlValue}', v.actual_completion_date)  AS period,
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             FROM visit_service_items vsi
@@ -59,9 +59,9 @@ class StatsRepository(
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
+            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
             ORDER BY period ASC
         """.trimIndent()
 
@@ -113,7 +113,7 @@ class StatsRepository(
                 WHERE s.studio_id = ?
             )
             SELECT
-                date_trunc('${granularity.sqlValue}', v.scheduled_date)  AS period,
+                date_trunc('${granularity.sqlValue}', v.actual_completion_date)  AS period,
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             FROM visit_service_items vsi
@@ -121,9 +121,9 @@ class StatsRepository(
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
+            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
             ORDER BY period ASC
         """.trimIndent()
 
@@ -156,16 +156,16 @@ class StatsRepository(
     ): List<StatsDataPoint> {
         val sql = """
             SELECT
-                date_trunc('${granularity.sqlValue}', v.scheduled_date)  AS period,
+                date_trunc('${granularity.sqlValue}', v.actual_completion_date)  AS period,
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             FROM visit_service_items vsi
             INNER JOIN visits v ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
+            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
             ORDER BY period ASC
         """.trimIndent()
 
@@ -246,16 +246,16 @@ class StatsRepository(
             ),
             raw_stats AS (
                 SELECT
-                    date_trunc('${granularity.sqlValue}', v.scheduled_date) AS period,
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date) AS period,
                     COUNT(DISTINCT v.id)                                     AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                 AS total_revenue_gross
                 FROM visit_service_items vsi
                 INNER JOIN visits v ON vsi.visit_id = v.id
                 WHERE v.studio_id = ?
                   AND v.status = 'COMPLETED'
-                  AND v.scheduled_date >= ?
-                  AND v.scheduled_date < ?
-                GROUP BY date_trunc('${granularity.sqlValue}', v.scheduled_date)
+                  AND v.actual_completion_date >= ?
+                  AND v.actual_completion_date < ?
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
             )
             SELECT
                 ds.period,
@@ -324,8 +324,8 @@ class StatsRepository(
             INNER JOIN service_family sf ON sf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
             GROUP BY sf.root_id
         """.trimIndent()
 
@@ -409,8 +409,8 @@ class StatsRepository(
             INNER JOIN unassigned_family uf ON uf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
             GROUP BY uf.root_id
         """.trimIndent()
 
@@ -459,8 +459,8 @@ class StatsRepository(
             WHERE v.studio_id = ?
               AND vsi.service_id IS NULL
               AND v.status = 'COMPLETED'
-              AND v.scheduled_date >= ?
-              AND v.scheduled_date < ?
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
             GROUP BY vsi.service_name
         """.trimIndent()
 
