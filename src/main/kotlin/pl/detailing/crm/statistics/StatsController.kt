@@ -241,7 +241,7 @@ class StatsController(
                 granularity = result.granularity.name,
                 startDate = startDate,
                 endDate = endDate,
-                data = result.data.map { it.toResponse() },
+                data = result.data.map { it.toFormattedResponse(gran) },
                 totals = StatsTotals(result.totalOrderCount, result.totalRevenueGross)
             )
         )
@@ -277,7 +277,7 @@ class StatsController(
                 granularity = result.granularity.name,
                 startDate = startDate,
                 endDate = endDate,
-                data = result.data.map { it.toResponse() },
+                data = result.data.map { it.toFormattedResponse(gran) },
                 totals = StatsTotals(result.totalOrderCount, result.totalRevenueGross)
             )
         )
@@ -308,7 +308,7 @@ class StatsController(
                 granularity = result.granularity.name,
                 startDate = startDate,
                 endDate = endDate,
-                data = result.data.map { it.toResponse() },
+                data = result.data.map { it.toFormattedResponse(gran) },
                 totals = StatsTotals(result.totalOrderCount, result.totalRevenueGross),
                 unassignedServiceCount = result.unassignedServiceCount
             )
