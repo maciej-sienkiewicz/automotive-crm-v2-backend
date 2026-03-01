@@ -35,6 +35,7 @@ class DashboardController(
                 readyForPickup = summary.stats.readyForPickup,
                 incomingToday = summary.stats.incomingToday,
                 overdue = summary.stats.overdue,
+                abandonedLast30Days = summary.stats.abandonedLast30Days,
                 inProgressDetails = summary.stats.inProgressDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
@@ -119,6 +120,7 @@ data class OperationalStatsResponse(
     val readyForPickup: Int,
     val incomingToday: Int,
     val overdue: Int,
+    val abandonedLast30Days: Int,
     val inProgressDetails: List<VisitDetailResponse>,
     val readyForPickupDetails: List<VisitDetailResponse>,
     val incomingTodayDetails: List<VisitDetailResponse>

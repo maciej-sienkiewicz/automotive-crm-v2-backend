@@ -26,6 +26,7 @@ data class OperationalStats(
     val readyForPickup: Int,
     val incomingToday: Int,
     val overdue: Int,
+    val abandonedLast30Days: Int,
     val inProgressDetails: List<VisitDetail>,
     val readyForPickupDetails: List<VisitDetail>,
     val incomingTodayDetails: List<VisitDetail>

@@ -123,4 +123,22 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         AND a.startDateTime < :now
     """)
     fun findAbandonedCandidates(@Param("now") now: Instant): List<AppointmentEntity>
+
+    /**
+     * Count appointments marked as ABANDONED within a date range for a specific studio.
+     * Uses updatedAt to reflect when the appointment was actually marked as abandoned.
+     */
+    @Query("""
+        SELECT COUNT(a) FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
+        AND a.status = 'ABANDONED'
+        AND a.updatedAt >= :startDate
+        AND a.updatedAt < :endDate
+    """)
+    fun countAbandonedByStudioIdAndDateRange(
+        @Param("studioId") studioId: UUID,
+        @Param("startDate") startDate: Instant,
+        @Param("endDate") endDate: Instant
+    ): Long
 }

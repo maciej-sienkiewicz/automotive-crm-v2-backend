@@ -92,6 +92,15 @@ class GetDashboardSummaryHandler(
             callLogRepository.findPendingByStudioId(command.studioId.value).take(10)
         }
 
+        val last30DaysStart = now.minus(Duration.ofDays(30))
+        val abandonedLast30DaysDeferred = async(Dispatchers.IO) {
+            appointmentRepository.countAbandonedByStudioIdAndDateRange(
+                command.studioId.value,
+                last30DaysStart,
+                now
+            )
+        }
+
         // Await all results
         val inProgressVisits = inProgressVisitsDeferred.await()
         val readyForPickupVisits = readyForPickupVisitsDeferred.await()
@@ -101,6 +110,7 @@ class GetDashboardSummaryHandler(
         val currentWeekCalls = currentWeekCallsDeferred.await()
         val previousWeekCalls = previousWeekCallsDeferred.await()
         val recentCalls = recentCallsDeferred.await()
+        val abandonedLast30Days = abandonedLast30DaysDeferred.await()
 
         // Build operational stats with details
         val inProgressDetails = buildVisitDetails(inProgressVisits, command.studioId)
@@ -115,6 +125,7 @@ class GetDashboardSummaryHandler(
             readyForPickup = readyForPickupVisits.size,
             incomingToday = incomingTodayAppointments.size,
             overdue = overdueCount,
+            abandonedLast30Days = abandonedLast30Days.toInt(),
             inProgressDetails = inProgressDetails,
             readyForPickupDetails = readyForPickupDetails,
             incomingTodayDetails = incomingTodayDetails
