@@ -26,6 +26,10 @@ class StatsRepository(
 
     /**
      * Returns time-series statistics for all services assigned to a given category.
+     *
+     * Covers both catalog services (resolved via recursive version-chain CTE) and
+     * manual services (visit_service_items.service_id IS NULL) that are assigned
+     * to the category via manual_service_category_assignments.
      */
     fun getCategoryStats(
         studioId: UUID,
@@ -49,19 +53,54 @@ class StatsRepository(
                 FROM services s
                 INNER JOIN service_family sf ON s.replaces_service_id = sf.id
                 WHERE s.studio_id = ?
+            ),
+            catalog_stats AS (
+                SELECT
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date) AS period,
+                    COUNT(DISTINCT v.id)                                             AS order_count,
+                    COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
+                FROM visit_service_items vsi
+                INNER JOIN visits v ON vsi.visit_id = v.id
+                WHERE v.studio_id = ?
+                  AND vsi.service_id IN (SELECT id FROM service_family)
+                  AND v.status = 'COMPLETED'
+                  AND v.actual_completion_date >= ?
+                  AND v.actual_completion_date < ?
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
+            ),
+            manual_stats AS (
+                -- Manual services (service_id IS NULL) assigned to this category
+                SELECT
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date) AS period,
+                    COUNT(DISTINCT v.id)                                             AS order_count,
+                    COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
+                FROM visit_service_items vsi
+                INNER JOIN visits v ON vsi.visit_id = v.id
+                INNER JOIN manual_services ms
+                    ON ms.service_name = vsi.service_name
+                   AND ms.studio_id = ?
+                INNER JOIN manual_service_category_assignments msca
+                    ON msca.manual_service_id = ms.id
+                   AND msca.category_id = ?
+                   AND msca.studio_id = ?
+                WHERE v.studio_id = ?
+                  AND vsi.service_id IS NULL
+                  AND v.status = 'COMPLETED'
+                  AND v.actual_completion_date >= ?
+                  AND v.actual_completion_date < ?
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
+            ),
+            combined AS (
+                SELECT * FROM catalog_stats
+                UNION ALL
+                SELECT * FROM manual_stats
             )
             SELECT
-                date_trunc('${granularity.sqlValue}', v.actual_completion_date)  AS period,
-                COUNT(DISTINCT v.id)                                      AS order_count,
-                COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
-            FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
-            WHERE v.studio_id = ?
-              AND vsi.service_id IN (SELECT id FROM service_family)
-              AND v.status = 'COMPLETED'
-              AND v.actual_completion_date >= ?
-              AND v.actual_completion_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date)
+                period,
+                SUM(order_count)         AS order_count,
+                SUM(total_revenue_gross) AS total_revenue_gross
+            FROM combined
+            GROUP BY period
             ORDER BY period ASC
         """.trimIndent()
 
@@ -74,10 +113,16 @@ class StatsRepository(
                     totalRevenueGross = rs.getLong("total_revenue_gross")
                 )
             },
-            categoryId,
-            studioId,
-            studioId,
-            studioId,
+            categoryId,   // catalog seed: csa.category_id = ?
+            studioId,     // catalog seed: csa.studio_id = ?
+            studioId,     // recursive:    s.studio_id = ?
+            studioId,     // catalog_stats: v.studio_id = ?
+            Timestamp.from(startDate),
+            Timestamp.from(endDate),
+            studioId,     // manual_stats: ms.studio_id = ?
+            categoryId,   // manual_stats: msca.category_id = ?
+            studioId,     // manual_stats: msca.studio_id = ?
+            studioId,     // manual_stats: v.studio_id = ?
             Timestamp.from(startDate),
             Timestamp.from(endDate)
         )
