@@ -132,7 +132,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         SELECT COUNT(a) FROM AppointmentEntity a
         WHERE a.studioId = :studioId
         AND a.deletedAt IS NULL
-        AND a.status = 'ABANDONED'
+        AND a.status IN ('ABANDONED', 'CANCELLED')
         AND a.updatedAt >= :startDate
         AND a.updatedAt < :endDate
     """)
