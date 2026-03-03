@@ -671,3 +671,51 @@ class ValidationException(message: String) : BusinessException(message)
 class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
+
+/**
+ * Type-safe ID wrapper for global Instagram profile entities
+ */
+@JvmInline
+value class InstagramProfileId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = InstagramProfileId(UUID.randomUUID())
+        fun fromString(value: String) = InstagramProfileId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for studio-to-Instagram-profile mapping entities
+ */
+@JvmInline
+value class StudioInstagramProfileId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = StudioInstagramProfileId(UUID.randomUUID())
+        fun fromString(value: String) = StudioInstagramProfileId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for Instagram post snapshot entities
+ */
+@JvmInline
+value class InstagramPostSnapshotId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = InstagramPostSnapshotId(UUID.randomUUID())
+        fun fromString(value: String) = InstagramPostSnapshotId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Moderation status of a studio's Instagram competitor profile subscription
+ */
+enum class InstagramProfileStatus {
+    PENDING_APPROVAL,   // Submitted by user, awaiting admin review
+    ACTIVE,             // Approved by admin – included in weekly sync
+    REJECTED            // Rejected by admin – excluded from sync
+}
