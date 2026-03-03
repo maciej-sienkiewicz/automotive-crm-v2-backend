@@ -10,6 +10,7 @@ import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import pl.detailing.crm.instagram.infrastructure.RapidApiException
 import pl.detailing.crm.instagram.infrastructure.RapidApiInstagramClient
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.*
 
 /**
@@ -18,6 +19,11 @@ import java.util.*
  *
  * Zasada 1-do-N: każdy unikalny username jest odpytywany przez RapidAPI dokładnie raz.
  * Dane są globalne – współdzielone przez wszystkie studia obserwujące dany profil.
+ *
+ * Strategia aktualizacji (okno 3 miesięcy):
+ * - Nowe posty (nieznany postPk) → INSERT
+ * - Istniejące posty w oknie 3 miesięcy od takenAt → UPDATE (like_count, comment_count, view_count, scraped_at)
+ * - Istniejące posty starsze niż 3 miesiące → pomijane (dane historyczne nie są nadpisywane)
  *
  * WAŻNE: działa poza kontekstem Spring Security (wywoływane przez scheduler).
  */
@@ -28,6 +34,11 @@ class InstagramSyncService(
     private val rapidApiClient: RapidApiInstagramClient
 ) {
     private val log = LoggerFactory.getLogger(InstagramSyncService::class.java)
+
+    companion object {
+        /** Posty publikowane w tym oknie mają aktualizowane liczniki przy każdym sync */
+        private const val UPDATE_WINDOW_MONTHS = 3L
+    }
 
     /**
      * Pobiera posty dla wszystkich aktywnych profili (distinct usernames).
@@ -73,14 +84,22 @@ class InstagramSyncService(
 
         try {
             val rawPosts = rapidApiClient.fetchPosts(profile.username)
+            val updateCutoff = scrapedAt.minus(UPDATE_WINDOW_MONTHS * 30, ChronoUnit.DAYS)
 
-            val newPosts = rawPosts.filter { raw ->
-                !postSnapshotRepository.existsByPostPk(raw.pk)
-            }
+            // Podziel posty na nowe i już znane (po postPk)
+            val allPks = rawPosts.map { it.pk }
+            val existingByPk = postSnapshotRepository.findByPostPkIn(allPks).associateBy { it.postPk }
 
-            if (newPosts.isNotEmpty()) {
-                val entities = newPosts.map { raw ->
-                    InstagramPostSnapshotEntity(
+            val toInsert = mutableListOf<InstagramPostSnapshotEntity>()
+            var updatedCount = 0
+
+            rawPosts.forEach { raw ->
+                val takenAt = Instant.ofEpochSecond(raw.takenAt)
+                val existing = existingByPk[raw.pk]
+
+                if (existing == null) {
+                    // Nowy post – wstaw bez względu na wiek
+                    toInsert += InstagramPostSnapshotEntity(
                         id = UUID.randomUUID(),
                         profileId = profile.id,
                         postPk = raw.pk,
@@ -89,21 +108,31 @@ class InstagramSyncService(
                         commentCount = raw.commentCount,
                         viewCount = raw.viewCount,
                         caption = raw.captionText,
-                        takenAt = Instant.ofEpochSecond(raw.takenAt),
+                        takenAt = takenAt,
                         scrapedAt = scrapedAt
                     )
+                } else if (takenAt.isAfter(updateCutoff)) {
+                    // Istniejący post w oknie 3 miesięcy – zaktualizuj liczniki
+                    existing.likeCount = raw.likeCount
+                    existing.commentCount = raw.commentCount
+                    existing.viewCount = raw.viewCount
+                    existing.scrapedAt = scrapedAt
+                    updatedCount++
                 }
-                postSnapshotRepository.saveAll(entities)
-                log.info(
-                    "Instagram sync: @{} – zapisano {} nowych postów (łącznie {})",
-                    profile.username, newPosts.size, rawPosts.size
-                )
-            } else {
-                log.debug(
-                    "Instagram sync: @{} – brak nowych postów (sprawdzono {}).",
-                    profile.username, rawPosts.size
-                )
+                // Istniejące posty starsze niż 3 miesiące – pomijamy (historyczne dane zostają)
             }
+
+            if (toInsert.isNotEmpty()) postSnapshotRepository.saveAll(toInsert)
+            // Zaktualizowane encje są dirty-tracked przez Hibernate – flush w @Transactional
+
+            log.info(
+                "Instagram sync: @{} – nowe={}, zaktualizowane={}, pominięte (>3mies)={} (łącznie z API={})",
+                profile.username,
+                toInsert.size,
+                updatedCount,
+                rawPosts.size - toInsert.size - updatedCount,
+                rawPosts.size
+            )
 
             // Jeśli poprzednio był błąd, wyczyść flagę
             if (profile.apiError) {

@@ -34,15 +34,19 @@ class InstagramPostSnapshotEntity(
     @Column(name = "post_code", nullable = false, length = 30)
     val postCode: String,
 
+    /**
+     * Pola mutable – aktualizowane przy każdym niedzielnym sync,
+     * o ile post mieści się w oknie 3 miesięcy od daty publikacji.
+     */
     @Column(name = "like_count", nullable = false)
-    val likeCount: Int,
+    var likeCount: Int,
 
     @Column(name = "comment_count", nullable = false)
-    val commentCount: Int,
+    var commentCount: Int,
 
     /** view_count może być null dla postów zdjęciowych */
     @Column(name = "view_count", nullable = true)
-    val viewCount: Long?,
+    var viewCount: Long?,
 
     @Column(name = "caption", nullable = true, columnDefinition = "text")
     val caption: String?,
@@ -51,7 +55,7 @@ class InstagramPostSnapshotEntity(
     @Column(name = "taken_at", nullable = false, columnDefinition = "timestamp with time zone")
     val takenAt: Instant,
 
-    /** Czas pobrania danych przez scheduler */
+    /** Czas ostatniego pobrania/aktualizacji przez scheduler */
     @Column(name = "scraped_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val scrapedAt: Instant
+    var scrapedAt: Instant
 )

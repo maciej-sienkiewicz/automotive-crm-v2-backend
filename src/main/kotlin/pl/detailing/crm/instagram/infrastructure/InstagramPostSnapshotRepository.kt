@@ -11,5 +11,7 @@ interface InstagramPostSnapshotRepository : JpaRepository<InstagramPostSnapshotE
 
     fun existsByPostPk(postPk: String): Boolean
 
+    fun findByPostPkIn(postPks: List<String>): List<InstagramPostSnapshotEntity>
+
     fun deleteByProfileId(profileId: UUID)
 }
