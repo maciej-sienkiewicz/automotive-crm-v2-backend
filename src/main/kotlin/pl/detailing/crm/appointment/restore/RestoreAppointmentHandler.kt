@@ -28,7 +28,7 @@ class RestoreAppointmentHandler(
         ) ?: throw EntityNotFoundException("Appointment not found: ${command.appointmentId}")
 
         // 2. Validate current status - can only restore CANCELLED appointments
-        if (appointmentEntity.status != AppointmentStatus.CANCELLED) {
+        if (appointmentEntity.status != AppointmentStatus.CANCELLED || appointmentEntity.status != AppointmentStatus.ABANDONED) {
             throw BadRequestException("Cannot restore appointment that is not in CANCELLED status")
         }
 
