@@ -29,7 +29,7 @@ class RestoreAppointmentHandler(
 
         // 2. Validate current status - can only restore CANCELLED appointments
         if (appointmentEntity.status != AppointmentStatus.CANCELLED || appointmentEntity.status != AppointmentStatus.ABANDONED) {
-            throw BadRequestException("Cannot restore appointment that is not in CANCELLED status")
+            throw BadRequestException("Cannot restore appointment that is not in CANCELLED status. Current status: ${appointmentEntity.status}")
         }
 
         // 3. Change status back to CREATED
