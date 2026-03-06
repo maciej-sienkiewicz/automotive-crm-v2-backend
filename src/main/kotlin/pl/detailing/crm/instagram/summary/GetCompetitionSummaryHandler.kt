@@ -33,7 +33,9 @@ data class InstagramProfileSummaryDto(
     val avgViews: Double?,
     val postsPerWeek: Double,
     val lastPostAt: Instant?,
-    val weeklyStats: List<WeeklyStatDto>
+    val weeklyStats: List<WeeklyStatDto>,
+    /** Średnia (lajki + komentarze) na post – liczona na całej historii, nie tylko w oknie `weeks` */
+    val avgEngagement: Double
 )
 
 data class GetCompetitionSummaryQuery(
@@ -64,9 +66,13 @@ class GetCompetitionSummaryHandler(
         return activeStudioProfiles.mapNotNull { sp ->
             val gp = globalProfiles[sp.profileId] ?: return@mapNotNull null
 
-            val posts = postSnapshotRepository
-                .findByProfileIdOrderByTakenAtDesc(sp.profileId)
-                .filter { it.takenAt >= cutoff }
+            val allPosts = postSnapshotRepository.findByProfileIdOrderByTakenAtDesc(sp.profileId)
+            val posts = allPosts.filter { it.takenAt >= cutoff }
+
+            // avgEngagement na pełnej historii (wszystkie posty, nie tylko okno `weeks`)
+            val avgEngagement = if (allPosts.isNotEmpty())
+                allPosts.sumOf { it.likeCount + it.commentCount }.toDouble() / allPosts.size
+            else 0.0
 
             val weeklyStats = computeWeeklyStats(posts.map { post ->
                 PostData(
@@ -102,7 +108,8 @@ class GetCompetitionSummaryHandler(
                 avgViews = avgViews,
                 postsPerWeek = postsPerWeek,
                 lastPostAt = lastPostAt,
-                weeklyStats = weeklyStats
+                weeklyStats = weeklyStats,
+                avgEngagement = avgEngagement
             )
         }
     }

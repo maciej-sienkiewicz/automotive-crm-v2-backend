@@ -251,7 +251,9 @@ data class InstagramProfileSummaryResponse(
     val avgViews: Double?,
     val postsPerWeek: Double,
     val lastPostAt: Instant?,
-    val weeklyStats: List<WeeklyStatResponse>
+    val weeklyStats: List<WeeklyStatResponse>,
+    /** Średnia (lajki + komentarze) na post – cała historia profilu, nie tylko okno `weeks` */
+    val avgEngagement: Double
 )
 
 private fun InstagramPostDto.toResponse() = InstagramPostResponse(
@@ -286,5 +288,6 @@ private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryRes
     avgViews = avgViews,
     postsPerWeek = postsPerWeek,
     lastPostAt = lastPostAt,
-    weeklyStats = weeklyStats.map { it.toResponse() }
+    weeklyStats = weeklyStats.map { it.toResponse() },
+    avgEngagement = avgEngagement
 )
