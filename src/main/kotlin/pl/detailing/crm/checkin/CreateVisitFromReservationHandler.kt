@@ -31,6 +31,8 @@ import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
+import pl.detailing.crm.checkin.qr.CheckinPhotoService
+import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -48,6 +50,7 @@ class CreateVisitFromReservationHandler(
     private val documentService: DocumentService,
     private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
     private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
+    private val checkinPhotoService: CheckinPhotoService,
     private val auditService: AuditService
 ) {
     @Transactional
@@ -194,6 +197,29 @@ class CreateVisitFromReservationHandler(
                 emptyList()
             }
 
+            // Step 7.6: Finalize QR-uploaded photos (moved from temp/uploads/ to final visit location)
+            val qrPhotos = try {
+                checkinPhotoService.finalizePhotos(
+                    tenantId = command.studioId.value.toString(),
+                    checkinId = command.reservationId.value.toString(),
+                    visitId = visitId
+                ).map { finalized ->
+                    VisitPhoto(
+                        id = VisitPhotoId(finalized.photoId),
+                        fileId = finalized.fileId,
+                        fileName = finalized.fileName,
+                        description = null,
+                        uploadedAt = Instant.now()
+                    )
+                }
+            } catch (e: Exception) {
+                // Do not abort visit creation if QR photo finalization fails
+                println("Warning: Failed to finalize QR photos for checkin ${command.reservationId.value}: ${e.message}")
+                emptyList()
+            }
+
+            val allPhotos = visitPhotos + qrPhotos
+
             var visit = Visit(
                 id = visitId,
                 studioId = command.studioId,
@@ -227,7 +253,7 @@ class CreateVisitFromReservationHandler(
                     .ifBlank { null }, // Also save to technicalNotes for visibility in API response
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
-                photos = visitPhotos,  // Use claimed photos from upload session
+                photos = allPhotos,  // session-based photos + QR-uploaded photos
                 damageMapFileId = null, // Will be set after generating damage map
                 // Audit
                 createdBy = command.userId,

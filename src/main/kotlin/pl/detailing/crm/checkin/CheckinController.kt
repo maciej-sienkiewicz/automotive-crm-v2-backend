@@ -5,12 +5,15 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.checkin.qr.GeneratedUploadToken
+import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.DamagePoint
+import java.time.Instant
 
 @RestController
 @RequestMapping("/api/checkin")
@@ -18,8 +21,8 @@ class CheckinController(
     private val createVisitFromReservationHandler: CreateVisitFromReservationHandler,
     private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,
     private val protocolTemplateRepository: ProtocolTemplateRepository,
-    private val s3StorageService: S3ProtocolStorageService
-    // TODO: Add PhotoUploadSession handlers when implemented
+    private val s3StorageService: S3ProtocolStorageService,
+    private val uploadContextTokenService: UploadContextTokenService
 ) {
 
     /**
@@ -178,6 +181,43 @@ class CheckinController(
                 visitId = result.visitId.value.toString(),
                 protocols = protocolDtos
             ))
+    }
+
+    /**
+     * Generate a temporary QR upload token for an in-progress checkin.
+     *
+     * The token is stored in Redis with a 3-hour TTL.
+     * The mobile device uses this token in the X-Upload-Token header
+     * to upload photos to POST /api/mobile/checkin/photos without a session.
+     *
+     * POST /api/checkin/{appointmentId}/upload-token
+     */
+    @PostMapping("/{appointmentId}/upload-token")
+    fun generateUploadToken(
+        @PathVariable appointmentId: String
+    ): ResponseEntity<UploadTokenResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can generate upload tokens")
+        }
+
+        val generated: GeneratedUploadToken = uploadContextTokenService.generateToken(
+            tenantId = principal.studioId.value.toString(),
+            checkinId = appointmentId,
+            userId = principal.userId.value.toString()
+        )
+
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(
+                UploadTokenResponse(
+                    token = generated.token,
+                    checkinId = appointmentId,
+                    expiresAt = generated.expiresAt,
+                    uploadEndpoint = "/api/mobile/checkin/photos"
+                )
+            )
     }
 }
 
@@ -374,4 +414,11 @@ sealed class VehicleData {
 // Result
 data class ReservationToVisitResult(
     val visitId: VisitId
+)
+
+data class UploadTokenResponse(
+    val token: String,
+    val checkinId: String,
+    val expiresAt: Instant,
+    val uploadEndpoint: String
 )

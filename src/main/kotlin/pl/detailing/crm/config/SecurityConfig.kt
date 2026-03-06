@@ -51,6 +51,9 @@ class SecurityConfig {
                     "/api/v1/vehicle-metadata/**",
                     "/actuator/**"
                 ).permitAll()
+                // Mobile QR upload endpoints — authenticated via X-Upload-Token header (Redis),
+                // no JSESSIONID required (used by phone browsers with no established session)
+                auth.requestMatchers("/api/mobile/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->
