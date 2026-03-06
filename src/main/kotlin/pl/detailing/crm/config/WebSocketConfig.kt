@@ -22,7 +22,8 @@ class WebSocketConfig(
         registry.addEndpoint("/ws-registry")
             .setAllowedOriginPatterns(
                 "https://detailboost.pl/",
-                "http://localhost:*"
+                "http://localhost:*",
+                "http://192.168.*.*:*"
             )
             .withSockJS()
     }
