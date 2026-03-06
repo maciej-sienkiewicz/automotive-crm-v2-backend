@@ -45,12 +45,14 @@ class CheckinPhotoUploadedMessageListener(
             }
             val photoId = payload["photoId"] as? String ?: ""
             val fileName = payload["fileName"] as? String ?: ""
+            val thumbnailUrl = payload["thumbnailUrl"] as? String ?: ""
 
             val wsMessage = CheckinPhotoUploadedWsMessage(
                 type = "CHECKIN_PHOTO_UPLOADED",
                 checkinId = checkinId,
                 photoId = photoId,
                 fileName = fileName,
+                thumbnailUrl = thumbnailUrl,
                 timestamp = Instant.now()
             )
 
@@ -72,5 +74,6 @@ data class CheckinPhotoUploadedWsMessage(
     val checkinId: String,
     val photoId: String,
     val fileName: String,
+    val thumbnailUrl: String,
     val timestamp: Instant
 )

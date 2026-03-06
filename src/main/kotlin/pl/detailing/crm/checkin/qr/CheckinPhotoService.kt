@@ -121,12 +121,15 @@ class CheckinPhotoService(
         s3Client.putObject(putRequest, RequestBody.fromBytes(fileBytes))
         logger.info("Uploaded QR checkin photo: key=$s3Key, size=${fileBytes.size}B")
 
+        val thumbnailUrl = generateDownloadUrl(s3Key)
+
         publishPhotoUploadedEvent(
             tenantId = metadata.tenantId,
             checkinId = metadata.checkinId,
             photoId = photoId.toString(),
             fileName = fileName,
-            s3Key = s3Key
+            s3Key = s3Key,
+            thumbnailUrl = thumbnailUrl
         )
 
         UploadedPhotoResult(
@@ -237,7 +240,8 @@ class CheckinPhotoService(
         checkinId: String,
         photoId: String,
         fileName: String,
-        s3Key: String
+        s3Key: String,
+        thumbnailUrl: String
     ) {
         try {
             val message = objectMapper.writeValueAsString(
@@ -247,6 +251,7 @@ class CheckinPhotoService(
                     "photoId" to photoId,
                     "fileName" to fileName,
                     "s3Key" to s3Key,
+                    "thumbnailUrl" to thumbnailUrl,
                     "uploadedAt" to Instant.now().toString()
                 )
             )
