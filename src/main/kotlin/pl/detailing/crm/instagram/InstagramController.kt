@@ -19,6 +19,10 @@ import pl.detailing.crm.instagram.reject.RejectInstagramProfileCommand
 import pl.detailing.crm.instagram.reject.RejectInstagramProfileHandler
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileCommand
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileHandler
+import pl.detailing.crm.instagram.summary.GetCompetitionSummaryHandler
+import pl.detailing.crm.instagram.summary.GetCompetitionSummaryQuery
+import pl.detailing.crm.instagram.summary.InstagramProfileSummaryDto
+import pl.detailing.crm.instagram.summary.WeeklyStatDto
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -30,7 +34,8 @@ class InstagramController(
     private val rejectHandler: RejectInstagramProfileHandler,
     private val removeHandler: RemoveInstagramProfileHandler,
     private val listHandler: ListInstagramProfilesHandler,
-    private val postsHandler: GetInstagramPostsHandler
+    private val postsHandler: GetInstagramPostsHandler,
+    private val summaryHandler: GetCompetitionSummaryHandler
 ) {
 
     /**
@@ -165,6 +170,29 @@ class InstagramController(
 
         ResponseEntity.ok(posts.map { it.toResponse() })
     }
+
+    /**
+     * Pobierz zagregowane statystyki wszystkich aktywnych profili konkurencji.
+     * Zawiera tygodniowe statystyki (avgLikes, avgComments, postCount) oraz sumaryczne KPI.
+     *
+     * GET /api/v1/instagram/profiles/summary?weeks=N  (domyślnie 52)
+     * Tylko profile o statusie ACTIVE są uwzględniane.
+     */
+    @GetMapping("/summary")
+    fun getCompetitionSummary(
+        @RequestParam(defaultValue = "52") weeks: Int
+    ): ResponseEntity<List<InstagramProfileSummaryResponse>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = summaryHandler.handle(
+            GetCompetitionSummaryQuery(
+                studioId = principal.studioId,
+                weeks = weeks
+            )
+        )
+
+        ResponseEntity.ok(result.map { it.toResponse() })
+    }
 }
 
 // ---- Request / Response DTOs ----
@@ -203,6 +231,29 @@ private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
     addedAt = addedAt
 )
 
+data class WeeklyStatResponse(
+    val weekStart: String,
+    val avgLikes: Double,
+    val avgComments: Double,
+    val postCount: Int
+)
+
+data class InstagramProfileSummaryResponse(
+    val id: String,
+    val profileId: String,
+    val username: String,
+    val status: String,
+    val apiError: Boolean,
+    val addedAt: Instant,
+    val postCount: Int,
+    val avgLikes: Double,
+    val avgComments: Double,
+    val avgViews: Double?,
+    val postsPerWeek: Double,
+    val lastPostAt: Instant?,
+    val weeklyStats: List<WeeklyStatResponse>
+)
+
 private fun InstagramPostDto.toResponse() = InstagramPostResponse(
     id = id,
     postPk = postPk,
@@ -213,4 +264,27 @@ private fun InstagramPostDto.toResponse() = InstagramPostResponse(
     caption = caption,
     takenAt = takenAt,
     scrapedAt = scrapedAt
+)
+
+private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
+    weekStart = weekStart,
+    avgLikes = avgLikes,
+    avgComments = avgComments,
+    postCount = postCount
+)
+
+private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryResponse(
+    id = id,
+    profileId = profileId,
+    username = username,
+    status = status.name,
+    apiError = apiError,
+    addedAt = addedAt,
+    postCount = postCount,
+    avgLikes = avgLikes,
+    avgComments = avgComments,
+    avgViews = avgViews,
+    postsPerWeek = postsPerWeek,
+    lastPostAt = lastPostAt,
+    weeklyStats = weeklyStats.map { it.toResponse() }
 )
