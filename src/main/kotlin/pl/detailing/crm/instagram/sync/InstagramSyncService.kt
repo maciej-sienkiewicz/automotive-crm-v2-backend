@@ -83,7 +83,16 @@ class InstagramSyncService(
         val scrapedAt = Instant.now()
 
         try {
-            val rawPosts = rapidApiClient.fetchPosts(profile.username)
+            // Przy pierwszym sync (brak postów w DB) pobieramy pełną historię 12 miesięcy stronami.
+            // Przy kolejnych syncach wystarczy ostatni batch 12 postów.
+            val isFirstSync = !postSnapshotRepository.existsByProfileId(profile.id)
+            val rawPosts = if (isFirstSync) {
+                log.info("Instagram sync: @{} – pierwszy sync, pobieram pełną historię (12 mies.)", profile.username)
+                rapidApiClient.fetchPostsFullHistory(profile.username)
+            } else {
+                rapidApiClient.fetchPosts(profile.username)
+            }
+
             val updateCutoff = scrapedAt.minus(UPDATE_WINDOW_MONTHS * 30, ChronoUnit.DAYS)
 
             // Podziel posty na nowe i już znane (po postPk)
