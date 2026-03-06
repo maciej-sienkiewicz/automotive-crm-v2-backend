@@ -48,7 +48,7 @@ class GetVehicleGalleryHandler(
         }
 
         // 3. Get all visits for this vehicle
-        val visits = visitRepository.findByVehicleIdAndStudioId(
+        val visits = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(
             vehicleId = command.vehicleId.value,
             studioId = command.studioId.value
         )

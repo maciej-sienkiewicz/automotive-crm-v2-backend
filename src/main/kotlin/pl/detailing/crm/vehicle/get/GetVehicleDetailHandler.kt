@@ -41,7 +41,7 @@ class GetVehicleDetailHandler(
             }
 
             // Calculate statistics from completed visits
-            val visits = visitRepository.findByVehicleIdAndStudioId(vehicleEntity.id, command.studioId.value)
+            val visits = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(vehicleEntity.id, command.studioId.value)
             val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
 
             val totalVisits = completedVisits.size

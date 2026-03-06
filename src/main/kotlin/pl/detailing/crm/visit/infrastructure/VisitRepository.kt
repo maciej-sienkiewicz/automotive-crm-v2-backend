@@ -64,15 +64,6 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<VisitEntity>
 
     /**
-     * Find visits by vehicle with studio isolation
-     */
-    @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId ORDER BY v.scheduledDate DESC")
-    fun findByVehicleIdAndStudioId(
-        @Param("vehicleId") vehicleId: UUID,
-        @Param("studioId") studioId: UUID
-    ): List<VisitEntity>
-
-    /**
      * Find visits by vehicle with studio isolation, excluding DRAFT status
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT ORDER BY v.scheduledDate DESC")
@@ -124,6 +115,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
         WHERE v.studioId = :studioId
         AND (:status IS NULL OR v.status = :status)
+        AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
              LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR

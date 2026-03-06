@@ -39,7 +39,7 @@ class GetVehicleDocumentsHandler(
             }
 
         // Get documents from visits related to this vehicle
-        val visitsForVehicle = visitRepository.findByVehicleIdAndStudioId(vehicleId, studioId)
+        val visitsForVehicle = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(vehicleId, studioId)
         val visitDocuments = visitsForVehicle.flatMap { visit ->
             visitDocumentRepository.findByVisit_IdOrderByUploadedAtDesc(visit.id)
                 .map { entity ->
