@@ -184,6 +184,8 @@ data class InfaktInvoicePayload(
 
 data class InfaktServicePayload(
     val name: String,
+
+    @JsonProperty("quantity")
     val count: Double,
     val unit: String,
 
@@ -191,7 +193,7 @@ data class InfaktServicePayload(
     @JsonProperty("unit_net_price")
     val unitNetPrice: Long,
 
-    /** VAT rate symbol, e.g. "vat23", "vat8", "vat5", "vat0", "zw". */
+    /** VAT rate symbol, e.g. "23", "8", "5", "0", "zw". */
     @JsonProperty("tax_symbol")
     val taxSymbol: String
 )

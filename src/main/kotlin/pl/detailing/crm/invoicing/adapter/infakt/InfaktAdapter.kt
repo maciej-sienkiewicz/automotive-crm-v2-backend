@@ -22,10 +22,10 @@ import pl.detailing.crm.invoicing.domain.*
  *   (others)  → ISSUED
  *
  * VAT rate mapping ([InvoiceItem.vatRate] → inFakt tax_symbol):
- *   23  → "vat23"
- *   8   → "vat8"
- *   5   → "vat5"
- *   0   → "vat0"
+ *   23  → "23"
+ *   8   → "8"
+ *   5   → "5"
+ *   0   → "0"
  *   -1  → "zw"   (VAT exempt)
  *
  * Payment method mapping ([IssueInvoiceRequest.paymentMethod] → inFakt payment_method):
@@ -142,12 +142,12 @@ class InfaktAdapter(
     }
 
     private fun mapVatRate(vatRate: Int): String = when (vatRate) {
-        23   -> "vat23"
-        8    -> "vat8"
-        5    -> "vat5"
-        0    -> "vat0"
+        23   -> "23"
+        8    -> "8"
+        5    -> "5"
+        0    -> "0"
         -1   -> "zw"
-        else -> "vat23"
+        else -> "23"
     }
 
     // ─────────────────────────────────────────────────────────────────────────
