@@ -5,31 +5,33 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 /**
  * Configuration properties for the inFakt adapter.
  *
- * Switch between environments by setting these in application.properties:
+ * Switch between environments in application.properties:
  *
- *   # Sandbox (demo account)
- *   invoicing.infakt.api-base-url=https://api.infakt.pl
+ *   # Sandbox (free test environment):
+ *   invoicing.infakt.api-base-url=https://api.sandbox-infakt.pl/api
  *   invoicing.infakt.portal-base-url=https://sandbox.infakt.pl/app/faktury
  *
- *   # Production
+ *   # Production:
  *   invoicing.infakt.api-base-url=https://api.infakt.pl
  *   invoicing.infakt.portal-base-url=https://app.infakt.pl/app/faktury
  *
- * Note: inFakt uses the same API base URL for both sandbox and production.
- * The sandbox is a separate account (demo account from infakt.pl/demo).
- * The portal URL differs so that links open in the correct environment.
+ * The adapter appends /v3/invoices.json etc. to [apiBaseUrl], so the value
+ * must NOT end with /v3 – include only the root up to (and including) /api
+ * for sandbox, or just the host for production.
  */
 @ConfigurationProperties(prefix = "invoicing.infakt")
 data class InfaktProperties(
     /**
-     * Base URL of the inFakt REST API.
-     * Production and sandbox use the same URL; the account type is determined by the API key.
+     * Root of the inFakt REST API (without the /v3 segment).
+     *   Sandbox:    https://api.sandbox-infakt.pl/api
+     *   Production: https://api.infakt.pl
      */
     val apiBaseUrl: String = "https://api.infakt.pl",
 
     /**
-     * Base URL for links to invoices on the inFakt web portal.
-     * Change to the sandbox portal URL when using a demo account.
+     * Base URL for invoice deep-links on the inFakt web portal.
+     *   Sandbox:    https://sandbox.infakt.pl/app/faktury
+     *   Production: https://app.infakt.pl/app/faktury
      */
     val portalBaseUrl: String = "https://app.infakt.pl/app/faktury"
 )
