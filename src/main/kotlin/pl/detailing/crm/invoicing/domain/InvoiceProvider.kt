@@ -60,6 +60,18 @@ interface InvoiceProvider {
      * @param apiKey The API key / token to verify.
      */
     fun verifyCredentials(apiKey: String): CredentialsVerificationResult
+
+    /**
+     * Fetches all invoices from the provider's API across all pages.
+     *
+     * Used for the initial import of invoices that were created directly in the provider's
+     * system (not through this CRM). Providers that do not support bulk listing may return
+     * an empty list.
+     *
+     * @param apiKey Provider API key / token.
+     * @return All invoices available for the account, as normalized snapshots.
+     */
+    fun listAllInvoices(apiKey: String): List<ExternalInvoiceSnapshot> = emptyList()
 }
 
 data class CredentialsVerificationResult(

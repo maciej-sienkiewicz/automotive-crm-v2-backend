@@ -77,6 +77,21 @@ class InfaktAdapter(
         }
     }
 
+    override fun listAllInvoices(apiKey: String): List<ExternalInvoiceSnapshot> {
+        val result = mutableListOf<ExternalInvoiceSnapshot>()
+        var page = 1
+        while (true) {
+            val response = apiClient.listInvoices(apiKey, page, InfaktApiClient.PAGE_SIZE)
+            val entities = response.entities ?: break
+            if (entities.isEmpty()) break
+            result.addAll(entities.map { mapToSnapshot(it) })
+            val total = response.metaData?.total ?: break
+            if (result.size >= total) break
+            page++
+        }
+        return result
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Mapping: domain request → inFakt request
     // ─────────────────────────────────────────────────────────────────────────

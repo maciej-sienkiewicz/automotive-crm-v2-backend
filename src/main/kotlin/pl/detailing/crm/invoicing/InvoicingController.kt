@@ -11,6 +11,8 @@ import pl.detailing.crm.invoicing.domain.*
 import pl.detailing.crm.invoicing.issue.InvoiceItemCommand
 import pl.detailing.crm.invoicing.issue.IssueInvoiceCommand
 import pl.detailing.crm.invoicing.issue.IssueInvoiceHandler
+import pl.detailing.crm.invoicing.sync.ImportInvoicesCommand
+import pl.detailing.crm.invoicing.sync.ImportInvoicesFromProviderHandler
 import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusCommand
 import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusHandler
 import pl.detailing.crm.invoicing.view.GetExternalInvoiceHandler
@@ -32,6 +34,7 @@ class InvoicingController(
     private val getInvoiceHandler: GetExternalInvoiceHandler,
     private val listInvoicesHandler: ListExternalInvoicesHandler,
     private val syncStatusHandler: SyncInvoiceStatusHandler,
+    private val importInvoicesHandler: ImportInvoicesFromProviderHandler,
     private val providerRegistry: InvoiceProviderRegistry
 ) {
 
@@ -218,6 +221,32 @@ class InvoicingController(
         )
 
         return ResponseEntity.ok(result.toResponse())
+    }
+
+    /**
+     * Import all invoices from the configured provider into the local database.
+     *
+     * Invoices already present locally are updated (status, correction flags).
+     * New invoices are inserted. This endpoint is idempotent and can be called
+     * multiple times safely.
+     *
+     * POST /api/v1/invoicing/invoices/import
+     */
+    @PostMapping("/invoices/import")
+    fun importInvoices(): ResponseEntity<ImportResultResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role)
+
+        val result = importInvoicesHandler.handle(ImportInvoicesCommand(studioId = principal.studioId))
+
+        return ResponseEntity.ok(
+            ImportResultResponse(
+                imported = result.imported,
+                updated  = result.updated,
+                failed   = result.failed,
+                errors   = result.errors
+            )
+        )
     }
 
     @PostMapping("/invoices/{id}/sync")
@@ -427,6 +456,13 @@ data class InvoicePortalUrlResponse(
 
 data class SyncResultResponse(
     val synced: Int,
+    val failed: Int,
+    val errors: List<String>
+)
+
+data class ImportResultResponse(
+    val imported: Int,
+    val updated: Int,
     val failed: Int,
     val errors: List<String>
 )
