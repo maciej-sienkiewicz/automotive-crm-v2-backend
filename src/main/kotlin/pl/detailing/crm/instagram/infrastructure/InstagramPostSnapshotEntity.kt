@@ -57,5 +57,27 @@ class InstagramPostSnapshotEntity(
 
     /** Czas ostatniego pobrania/aktualizacji przez scheduler */
     @Column(name = "scraped_at", nullable = false, columnDefinition = "timestamp with time zone")
-    var scrapedAt: Instant
+    var scrapedAt: Instant,
+
+    /**
+     * Format treści: "feed_item" (zdjęcie), "clips" (Reels/wideo), "carousel_container" (karuzela).
+     * Null dla postów pobranych przed wprowadzeniem tego pola.
+     */
+    @Column(name = "product_type", nullable = true, length = 50)
+    val productType: String?,
+
+    /**
+     * Liczba slajdów karuzeli. Dla typów innych niż carousel_container zawsze 1.
+     * Pozwala ocenić optymalną liczbę slajdów względem zaangażowania.
+     */
+    @Column(name = "carousel_media_count", nullable = false)
+    val carouselMediaCount: Int,
+
+    /**
+     * Hashtagi wyekstrahowane z caption (regex #\w+), zapisane jako przecinkami oddzielone słowa
+     * (bez znaku #), np. "detailing,carcare,polishing".
+     * Null gdy caption jest puste lub nie zawiera hashtagów.
+     */
+    @Column(name = "hashtags", nullable = true, columnDefinition = "text")
+    val hashtags: String?
 )

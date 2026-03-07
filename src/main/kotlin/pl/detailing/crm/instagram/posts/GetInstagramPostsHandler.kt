@@ -18,7 +18,15 @@ data class InstagramPostDto(
     val viewCount: Long?,
     val caption: String?,
     val takenAt: Instant,
-    val scrapedAt: Instant
+    val scrapedAt: Instant,
+    /** "feed_item" | "clips" | "carousel_container" – null dla starych rekordów */
+    val productType: String?,
+    /** Liczba slajdów karuzeli; dla innych typów 1 */
+    val carouselMediaCount: Int,
+    /** Hashtagi wyekstrahowane z caption */
+    val hashtags: List<String>,
+    /** Suma lajków i komentarzy */
+    val engagementScore: Int
 )
 
 data class GetInstagramPostsQuery(
@@ -53,7 +61,11 @@ class GetInstagramPostsHandler(
                 viewCount = p.viewCount,
                 caption = p.caption,
                 takenAt = p.takenAt,
-                scrapedAt = p.scrapedAt
+                scrapedAt = p.scrapedAt,
+                productType = p.productType,
+                carouselMediaCount = p.carouselMediaCount,
+                hashtags = p.hashtags?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
+                engagementScore = p.likeCount + p.commentCount
             )
         }
     }

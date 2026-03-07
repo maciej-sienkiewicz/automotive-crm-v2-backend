@@ -118,7 +118,10 @@ class InstagramSyncService(
                         viewCount = raw.viewCount,
                         caption = raw.captionText,
                         takenAt = takenAt,
-                        scrapedAt = scrapedAt
+                        scrapedAt = scrapedAt,
+                        productType = raw.productType,
+                        carouselMediaCount = raw.carouselMediaCount,
+                        hashtags = extractHashtags(raw.captionText)
                     )
                 } else if (takenAt.isAfter(updateCutoff)) {
                     // Istniejący post w oknie 3 miesięcy – zaktualizuj liczniki
@@ -160,5 +163,13 @@ class InstagramSyncService(
             profile.updatedAt = scrapedAt
             profileRepository.save(profile)
         }
+    }
+
+    /** Wyciąga hashtagi z tekstu caption (regex #\w+). Zwraca przecinkami oddzielone słowa bez '#',
+     *  lub null gdy brak hashtagów. */
+    private fun extractHashtags(caption: String?): String? {
+        if (caption.isNullOrBlank()) return null
+        val tags = Regex("#(\\w+)").findAll(caption).map { it.groupValues[1] }.toList()
+        return if (tags.isEmpty()) null else tags.joinToString(",")
     }
 }

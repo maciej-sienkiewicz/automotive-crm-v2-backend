@@ -41,7 +41,11 @@ data class RapidApiNode(
     @JsonProperty("caption") val caption: RapidApiCaption? = null,
     @JsonProperty("taken_at") val takenAt: Long? = null,
     /** Niepusta lista = post przypięty (może mieć starą datę, mimo że pojawia się na górze) */
-    @JsonProperty("timeline_pinned_user_ids") val timelinePinnedUserIds: List<String> = emptyList()
+    @JsonProperty("timeline_pinned_user_ids") val timelinePinnedUserIds: List<String> = emptyList(),
+    /** Typ formatu: "feed_item" (zdjęcie), "clips" (Reels), "carousel_container" (karuzela) */
+    @JsonProperty("product_type") val productType: String? = null,
+    /** Liczba slajdów – obecne tylko dla carousel_container */
+    @JsonProperty("carousel_media_count") val carouselMediaCount: Int? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -58,7 +62,11 @@ data class RawInstagramPost(
     val captionText: String?,
     val takenAt: Long,
     /** true = post przypięty przez autora (timeline_pinned_user_ids niepusta) */
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    /** "feed_item" | "clips" | "carousel_container" – null jeśli API nie zwróciło */
+    val productType: String? = null,
+    /** Liczba slajdów karuzeli; dla innych typów zawsze 1 */
+    val carouselMediaCount: Int = 1
 )
 
 /**
@@ -179,6 +187,7 @@ class RapidApiInstagramClient(
             val code = node.code ?: return@mapNotNull null
             val takenAt = node.takenAt ?: return@mapNotNull null
 
+            val isCarousel = node.productType == "carousel_container"
             RawInstagramPost(
                 pk = pk,
                 code = code,
@@ -187,7 +196,9 @@ class RapidApiInstagramClient(
                 viewCount = node.viewCount,
                 captionText = node.caption?.text,
                 takenAt = takenAt,
-                isPinned = node.timelinePinnedUserIds.isNotEmpty()
+                isPinned = node.timelinePinnedUserIds.isNotEmpty(),
+                productType = node.productType,
+                carouselMediaCount = if (isCarousel) node.carouselMediaCount ?: 1 else 1
             )
         }
 

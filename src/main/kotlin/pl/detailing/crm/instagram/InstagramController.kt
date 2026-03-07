@@ -219,7 +219,15 @@ data class InstagramPostResponse(
     val viewCount: Long?,
     val caption: String?,
     val takenAt: Instant,
-    val scrapedAt: Instant
+    val scrapedAt: Instant,
+    /** "feed_item" | "clips" | "carousel_container" – null dla starych rekordów */
+    val productType: String?,
+    /** Liczba slajdów karuzeli; dla innych typów 1 */
+    val carouselMediaCount: Int,
+    /** Hashtagi wyekstrahowane z caption */
+    val hashtags: List<String>,
+    /** Suma lajków i komentarzy */
+    val engagementScore: Int
 )
 
 private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
@@ -265,7 +273,11 @@ private fun InstagramPostDto.toResponse() = InstagramPostResponse(
     viewCount = viewCount,
     caption = caption,
     takenAt = takenAt,
-    scrapedAt = scrapedAt
+    scrapedAt = scrapedAt,
+    productType = productType,
+    carouselMediaCount = carouselMediaCount,
+    hashtags = hashtags,
+    engagementScore = engagementScore
 )
 
 private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
