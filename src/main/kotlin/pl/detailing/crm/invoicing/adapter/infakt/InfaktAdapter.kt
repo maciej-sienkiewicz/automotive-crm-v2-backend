@@ -34,14 +34,11 @@ import pl.detailing.crm.invoicing.domain.*
  */
 @Component
 class InfaktAdapter(
-    private val apiClient: InfaktApiClient
+    private val apiClient: InfaktApiClient,
+    private val properties: InfaktProperties
 ) : InvoiceProvider {
 
     override val type: InvoiceProviderType = InvoiceProviderType.INFAKT
-
-    companion object {
-        const val PORTAL_BASE_URL = "https://app.infakt.pl/app/faktury"
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // InvoiceProvider implementation
@@ -63,7 +60,7 @@ class InfaktAdapter(
     }
 
     override fun getInvoicePortalUrl(externalId: String): String =
-        "$PORTAL_BASE_URL/$externalId"
+        "${properties.portalBaseUrl}/$externalId"
 
     override fun verifyCredentials(apiKey: String): CredentialsVerificationResult {
         return when (apiClient.ping(apiKey)) {

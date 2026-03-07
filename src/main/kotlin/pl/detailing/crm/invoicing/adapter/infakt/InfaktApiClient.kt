@@ -16,23 +16,24 @@ import pl.detailing.crm.invoicing.domain.InvoicingProviderApiException
  * Low-level HTTP client for the inFakt REST API v3.
  *
  * Authentication: X-inFakt-ApiKey header on every request.
- * Base URL: https://api.infakt.pl
+ * Base URL is configurable via [InfaktProperties.apiBaseUrl] so the same code
+ * can be used against sandbox (demo account) and production.
  *
  * All methods throw [InvoicingProviderApiException] on non-2xx responses,
  * with error messages extracted from the inFakt error response body.
  */
 @Component
 class InfaktApiClient(
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    properties: InfaktProperties
 ) {
     companion object {
-        const val BASE_URL = "https://api.infakt.pl"
         const val API_KEY_HEADER = "X-inFakt-ApiKey"
         const val PAGE_SIZE = 100
     }
 
     private val restClient: RestClient = RestClient.builder()
-        .baseUrl(BASE_URL)
+        .baseUrl(properties.apiBaseUrl)
         .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
         .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
         .build()
