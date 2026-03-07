@@ -2,10 +2,12 @@ package pl.detailing.crm.invoicing.sync
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.invoicing.InvoiceProviderRegistry
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
 import pl.detailing.crm.invoicing.domain.ExternalInvoiceSnapshot
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
 import pl.detailing.crm.invoicing.domain.InvoicingCredentialsNotFoundException
 import pl.detailing.crm.invoicing.infrastructure.ExternalInvoiceEntity
 import pl.detailing.crm.invoicing.infrastructure.ExternalInvoiceRepository
@@ -38,17 +40,31 @@ class ImportInvoicesFromProviderHandler(
 ) {
     private val log = LoggerFactory.getLogger(ImportInvoicesFromProviderHandler::class.java)
 
+    /**
+     * Triggered automatically after credentials are saved.
+     * Runs in a NEW transaction so it is independent from the caller's transaction
+     * (credentials may not be committed yet when this is called).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun handleWithCredentials(studioId: StudioId, provider: InvoiceProviderType, apiKey: String): ImportResult {
+        log.info("[Import] handleWithCredentials: provider={}, studio={}", provider, studioId.value)
+        return doImport(studioId, provider, apiKey)
+    }
+
     @Transactional
     fun handle(command: ImportInvoicesCommand): ImportResult {
         val credentials = credentialsRepository.findByStudioId(command.studioId.value)
             ?: throw InvoicingCredentialsNotFoundException()
+        return doImport(command.studioId, credentials.provider, credentials.apiKey)
+    }
 
-        val provider = providerRegistry.getProvider(credentials.provider)
-        log.info("[Import] Fetching all invoices from provider={} for studio={}", credentials.provider, command.studioId.value)
+    private fun doImport(studioId: StudioId, provider: InvoiceProviderType, apiKey: String): ImportResult {
+        val adapter = providerRegistry.getProvider(provider)
+        log.info("[Import] Fetching all invoices from provider={} for studio={}", provider, studioId.value)
         val snapshots = try {
-            provider.listAllInvoices(credentials.apiKey)
+            adapter.listAllInvoices(apiKey)
         } catch (ex: Exception) {
-            log.error("[Import] listAllInvoices FAILED for provider={}", credentials.provider, ex)
+            log.error("[Import] listAllInvoices FAILED for provider={}", provider, ex)
             throw ex
         }
         log.info("[Import] Fetched {} invoices from provider", snapshots.size)
@@ -61,7 +77,7 @@ class ImportInvoicesFromProviderHandler(
 
         for (snapshot in snapshots) {
             try {
-                upsert(command.studioId, credentials.provider, snapshot, now)
+                upsert(studioId, provider, snapshot, now)
                     .also { wasNew -> if (wasNew) imported++ else updated++ }
             } catch (ex: Exception) {
                 failed++
@@ -73,7 +89,7 @@ class ImportInvoicesFromProviderHandler(
 
         log.info(
             "Import faktur dla studia {}: zaimportowano={}, zaktualizowano={}, błędy={}",
-            command.studioId.value, imported, updated, failed
+            studioId.value, imported, updated, failed
         )
 
         return ImportResult(imported = imported, updated = updated, failed = failed, errors = errors)
@@ -82,7 +98,7 @@ class ImportInvoicesFromProviderHandler(
     /** @return true if a new record was created, false if an existing one was updated. */
     private fun upsert(
         studioId: StudioId,
-        provider: pl.detailing.crm.invoicing.domain.InvoiceProviderType,
+        provider: InvoiceProviderType,
         snapshot: ExternalInvoiceSnapshot,
         now: Instant
     ): Boolean {

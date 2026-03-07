@@ -83,6 +83,13 @@ class InvoicingController(
             )
         )
 
+        try {
+            importInvoicesHandler.handleWithCredentials(principal.studioId, provider, apiKey)
+        } catch (ex: Exception) {
+            // Import failure must not block the credential save — the user can trigger it manually later.
+            // The error is visible in logs.
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED).body(entity.toResponse())
     }
 
