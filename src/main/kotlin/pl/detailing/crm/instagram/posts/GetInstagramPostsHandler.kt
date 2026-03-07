@@ -63,7 +63,7 @@ class GetInstagramPostsHandler(
                 takenAt = p.takenAt,
                 scrapedAt = p.scrapedAt,
                 productType = p.productType,
-                carouselMediaCount = p.carouselMediaCount,
+                carouselMediaCount = p.carouselMediaCount ?: 0,
                 hashtags = p.hashtags?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
                 engagementScore = p.likeCount + p.commentCount
             )

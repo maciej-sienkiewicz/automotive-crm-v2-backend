@@ -159,6 +159,10 @@ class RapidApiInstagramClient(
     // ── prywatne ──────────────────────────────────────────────────────────────
 
     private fun fetchPage(username: String, afterCursor: String?): Pair<List<RawInstagramPost>, String?> {
+        if(!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)){
+            return emptyList<RawInstagramPost>() to null
+        }
+
         val url = buildUrl(username, afterCursor)
 
         val request = HttpRequest.newBuilder()

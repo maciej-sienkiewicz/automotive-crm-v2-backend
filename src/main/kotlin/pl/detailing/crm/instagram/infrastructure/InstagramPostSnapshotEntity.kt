@@ -70,8 +70,8 @@ class InstagramPostSnapshotEntity(
      * Liczba slajdów karuzeli. Dla typów innych niż carousel_container zawsze 1.
      * Pozwala ocenić optymalną liczbę slajdów względem zaangażowania.
      */
-    @Column(name = "carousel_media_count", nullable = false)
-    val carouselMediaCount: Int,
+    @Column(name = "carousel_media_count", nullable = true)
+    val carouselMediaCount: Int?,
 
     /**
      * Hashtagi wyekstrahowane z caption (regex #\w+), zapisane jako przecinkami oddzielone słowa
