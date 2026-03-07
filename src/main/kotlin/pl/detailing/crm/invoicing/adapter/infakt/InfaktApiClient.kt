@@ -1,0 +1,132 @@
+package pl.detailing.crm.invoicing.adapter.infakt
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.RestClient
+import pl.detailing.crm.invoicing.adapter.infakt.dto.*
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
+import pl.detailing.crm.invoicing.domain.InvoicingProviderApiException
+
+/**
+ * Low-level HTTP client for the inFakt REST API v3.
+ *
+ * Authentication: X-inFakt-ApiKey header on every request.
+ * Base URL: https://api.infakt.pl
+ *
+ * All methods throw [InvoicingProviderApiException] on non-2xx responses,
+ * with error messages extracted from the inFakt error response body.
+ */
+@Component
+class InfaktApiClient(
+    private val objectMapper: ObjectMapper
+) {
+    companion object {
+        const val BASE_URL = "https://api.infakt.pl"
+        const val API_KEY_HEADER = "X-inFakt-ApiKey"
+        const val PAGE_SIZE = 100
+    }
+
+    private val restClient: RestClient = RestClient.builder()
+        .baseUrl(BASE_URL)
+        .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+        .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+        .build()
+
+    /**
+     * POST /v3/invoices.json – issue a new invoice.
+     */
+    fun createInvoice(apiKey: String, request: InfaktCreateInvoiceRequest): InfaktInvoiceDto {
+        return executeWithErrorHandling(apiKey) {
+            restClient.post()
+                .uri("/v3/invoices.json")
+                .header(API_KEY_HEADER, apiKey)
+                .body(request)
+                .retrieve()
+                .body(InfaktInvoiceDto::class.java)
+                ?: throw InvoicingProviderApiException("Pusta odpowiedź z inFakt API przy tworzeniu faktury", 500)
+        }
+    }
+
+    /**
+     * GET /v3/invoices/{id}.json – fetch a single invoice by ID.
+     */
+    fun getInvoice(apiKey: String, invoiceId: String): InfaktInvoiceDto {
+        return executeWithErrorHandling(apiKey) {
+            restClient.get()
+                .uri("/v3/invoices/{id}.json", invoiceId)
+                .header(API_KEY_HEADER, apiKey)
+                .retrieve()
+                .body(InfaktInvoiceDto::class.java)
+                ?: throw InvoicingProviderApiException("Pusta odpowiedź z inFakt API przy pobieraniu faktury $invoiceId", 500)
+        }
+    }
+
+    /**
+     * GET /v3/invoices.json – paginated list of invoices.
+     *
+     * @param page 1-based page number.
+     */
+    fun listInvoices(apiKey: String, page: Int = 1, perPage: Int = PAGE_SIZE): InfaktInvoiceListResponse {
+        return executeWithErrorHandling(apiKey) {
+            restClient.get()
+                .uri { builder ->
+                    builder.path("/v3/invoices.json")
+                        .queryParam("page", page)
+                        .queryParam("per_page", perPage)
+                        .build()
+                }
+                .header(API_KEY_HEADER, apiKey)
+                .retrieve()
+                .body(InfaktInvoiceListResponse::class.java)
+                ?: InfaktInvoiceListResponse()
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun <T> executeWithErrorHandling(apiKey: String, block: () -> T): T {
+        return try {
+            block()
+        } catch (ex: HttpClientErrorException) {
+            val errors = parseErrorResponse(ex.responseBodyAsString)
+            when (ex.statusCode) {
+                HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN ->
+                    throw InvoicingProviderApiException.unauthorized(InvoiceProviderType.INFAKT)
+                HttpStatus.NOT_FOUND ->
+                    throw InvoicingProviderApiException("Zasób nie został znaleziony w inFakt API", 404)
+                HttpStatus.UNPROCESSABLE_ENTITY, HttpStatus.BAD_REQUEST ->
+                    throw InvoicingProviderApiException.validationFailed(InvoiceProviderType.INFAKT, errors)
+                else ->
+                    throw InvoicingProviderApiException(
+                        "Błąd wywołania inFakt API (HTTP ${ex.statusCode.value()}): ${errors.joinToString("; ")}",
+                        ex.statusCode.value(),
+                        errors
+                    )
+            }
+        } catch (ex: HttpServerErrorException) {
+            throw InvoicingProviderApiException.serverError(InvoiceProviderType.INFAKT, ex.statusCode.value())
+        } catch (ex: InvoicingProviderApiException) {
+            throw ex
+        } catch (ex: Exception) {
+            throw InvoicingProviderApiException(
+                "Nieoczekiwany błąd podczas komunikacji z inFakt: ${ex.message}",
+                500
+            )
+        }
+    }
+
+    private fun parseErrorResponse(body: String): List<String> {
+        return try {
+            objectMapper.readValue(body, InfaktErrorResponse::class.java).toErrorMessages()
+        } catch (_: Exception) {
+            if (body.isNotBlank()) listOf(body.take(300)) else listOf("Nieznany błąd API")
+        }
+    }
+}

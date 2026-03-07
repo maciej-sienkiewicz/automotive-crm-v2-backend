@@ -719,3 +719,29 @@ enum class InstagramProfileStatus {
     ACTIVE,             // Approved by admin – included in weekly sync
     REJECTED            // Rejected by admin – excluded from sync
 }
+
+/**
+ * Type-safe ID wrapper for ExternalInvoice entities (issued via external providers).
+ */
+@JvmInline
+value class ExternalInvoiceId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ExternalInvoiceId(UUID.randomUUID())
+        fun fromString(value: String) = ExternalInvoiceId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for InvoicingCredentials entities.
+ */
+@JvmInline
+value class InvoicingCredentialsId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = InvoicingCredentialsId(UUID.randomUUID())
+        fun fromString(value: String) = InvoicingCredentialsId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}

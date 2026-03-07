@@ -1,0 +1,116 @@
+package pl.detailing.crm.invoicing.domain
+
+import java.time.LocalDate
+
+/**
+ * Strategy/Adapter interface for external invoice providers.
+ *
+ * Each supported invoicing system (inFakt, wFirma, iFirma, Fakturownia)
+ * implements this interface. The concrete adapter is resolved at runtime
+ * via [pl.detailing.crm.invoicing.InvoiceProviderRegistry] based on the
+ * studio's configured [InvoiceProviderType].
+ *
+ * All methods throw [pl.detailing.crm.invoicing.domain.InvoicingException]
+ * subclasses on failure; callers must NOT catch generic exceptions.
+ */
+interface InvoiceProvider {
+
+    /** Identifies which provider this adapter handles. */
+    val type: InvoiceProviderType
+
+    /**
+     * Issue a new invoice via the provider's API.
+     *
+     * @param apiKey Provider API key / token for the studio.
+     * @param request Normalized invoice data.
+     * @return Snapshot of the freshly created invoice as returned by the provider.
+     */
+    fun issueInvoice(apiKey: String, request: IssueInvoiceRequest): ExternalInvoiceSnapshot
+
+    /**
+     * Fetch current state of a single invoice from the provider's API.
+     *
+     * @param apiKey Provider API key / token.
+     * @param externalId Provider's own invoice identifier.
+     * @return Current snapshot including status and correction info.
+     */
+    fun getInvoice(apiKey: String, externalId: String): ExternalInvoiceSnapshot
+
+    /**
+     * Synchronize status and correction flag for an already-tracked invoice.
+     * Lighter-weight than [getInvoice] – used by the background sync job.
+     *
+     * @return Updated snapshot (may be the same as [getInvoice]).
+     */
+    fun syncInvoiceStatus(apiKey: String, externalId: String): ExternalInvoiceSnapshot
+
+    /**
+     * Returns the direct URL where the user can view this invoice on the provider's portal.
+     * This is constructed locally (no HTTP call required).
+     */
+    fun getInvoicePortalUrl(externalId: String): String
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request / snapshot types shared across all providers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalized request for issuing a new invoice.
+ * The adapter maps these fields to provider-specific request format.
+ */
+data class IssueInvoiceRequest(
+    val buyerName: String,
+    val buyerNip: String?,
+    val buyerEmail: String?,
+    val buyerStreet: String?,
+    val buyerCity: String?,
+    val buyerPostCode: String?,
+
+    val items: List<InvoiceItem>,
+
+    /** CASH | CARD | TRANSFER */
+    val paymentMethod: String,
+    val issueDate: LocalDate,
+
+    /** Required when paymentMethod == TRANSFER. */
+    val dueDate: LocalDate?,
+    val currency: String = "PLN",
+    val notes: String?
+)
+
+data class InvoiceItem(
+    val name: String,
+    val quantity: Double,
+
+    /** Unit label, e.g. "szt.", "godz.", "usł." */
+    val unit: String,
+
+    /** Net unit price in grosz (1/100 PLN). */
+    val unitNetPriceInCents: Long,
+
+    /** VAT rate in percent (23, 8, 5, 0) or -1 for VAT_ZW. */
+    val vatRate: Int
+)
+
+/**
+ * Provider-agnostic snapshot of an invoice as fetched from the external API.
+ * Used both as the return type of [InvoiceProvider.issueInvoice] and
+ * [InvoiceProvider.getInvoice].
+ */
+data class ExternalInvoiceSnapshot(
+    val externalId: String,
+    val externalNumber: String?,
+    val status: ExternalInvoiceStatus,
+    val isCorrection: Boolean,
+    val hasCorrection: Boolean,
+    val correctionExternalId: String?,
+    val grossAmountInCents: Long,
+    val netAmountInCents: Long,
+    val vatAmountInCents: Long,
+    val currency: String,
+    val issueDate: LocalDate,
+    val dueDate: LocalDate?,
+    val buyerName: String?,
+    val buyerNip: String?
+)
