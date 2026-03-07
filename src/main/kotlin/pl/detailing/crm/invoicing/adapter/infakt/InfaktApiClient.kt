@@ -1,6 +1,7 @@
 package pl.detailing.crm.invoicing.adapter.infakt
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -29,6 +30,7 @@ class InfaktApiClient(
         const val BASE_URL = "https://api.sandbox-infakt.pl/api"
         const val API_KEY_HEADER = "X-inFakt-ApiKey"
         const val PAGE_SIZE = 100
+        private val log = LoggerFactory.getLogger(InfaktApiClient::class.java)
     }
 
     private val restClient: RestClient = RestClient.builder()
@@ -73,8 +75,10 @@ class InfaktApiClient(
      */
     fun listInvoices(apiKey: String, page: Int = 1, perPage: Int = PAGE_SIZE): InfaktInvoiceListResponse {
         val offset = (page - 1) * perPage
+        log.info("[InFakt] listInvoices: offset={}, limit={}", offset, perPage)
+
         return executeWithErrorHandling(apiKey) {
-            restClient.get()
+            val rawBody = restClient.get()
                 .uri { builder ->
                     builder.path("/v3/invoices.json")
                         .queryParam("offset", offset)
@@ -83,8 +87,24 @@ class InfaktApiClient(
                 }
                 .header(API_KEY_HEADER, apiKey)
                 .retrieve()
-                .body(InfaktInvoiceListResponse::class.java)
-                ?: InfaktInvoiceListResponse()
+                .body(String::class.java)
+                ?: ""
+
+            log.info("[InFakt] listInvoices raw response (first 500 chars): {}", rawBody.take(500))
+
+            try {
+                val parsed = objectMapper.readValue(rawBody, InfaktInvoiceListResponse::class.java)
+                log.info(
+                    "[InFakt] listInvoices parsed: entities={}, metainfo.total_count={}, metainfo.count={}",
+                    parsed.entities?.size,
+                    parsed.metaData?.total,
+                    parsed.metaData?.count
+                )
+                parsed
+            } catch (ex: Exception) {
+                log.error("[InFakt] listInvoices deserialization FAILED. Body: {}", rawBody, ex)
+                throw ex
+            }
         }
     }
 
@@ -149,6 +169,7 @@ class InfaktApiClient(
         } catch (ex: InvoicingProviderApiException) {
             throw ex
         } catch (ex: Exception) {
+            log.error("[InFakt] Unexpected error communicating with inFakt API", ex)
             throw InvoicingProviderApiException(
                 "Nieoczekiwany błąd podczas komunikacji z inFakt: ${ex.message}",
                 500

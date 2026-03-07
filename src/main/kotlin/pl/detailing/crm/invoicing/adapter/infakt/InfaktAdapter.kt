@@ -1,5 +1,6 @@
 package pl.detailing.crm.invoicing.adapter.infakt
 
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import pl.detailing.crm.invoicing.adapter.infakt.dto.InfaktCreateInvoiceRequest
 import pl.detailing.crm.invoicing.adapter.infakt.dto.InfaktInvoiceDto
@@ -41,6 +42,7 @@ class InfaktAdapter(
 
     companion object {
         const val PORTAL_BASE_URL = "https://app.infakt.pl/app/faktury"
+        private val log = LoggerFactory.getLogger(InfaktAdapter::class.java)
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -78,17 +80,24 @@ class InfaktAdapter(
     }
 
     override fun listAllInvoices(apiKey: String): List<ExternalInvoiceSnapshot> {
+        log.info("[InFakt] listAllInvoices: starting full import")
         val result = mutableListOf<ExternalInvoiceSnapshot>()
         var page = 1
         while (true) {
+            log.info("[InFakt] listAllInvoices: fetching page {}", page)
             val response = apiClient.listInvoices(apiKey, page, InfaktApiClient.PAGE_SIZE)
-            val entities = response.entities ?: break
-            if (entities.isEmpty()) break
+            val entities = response.entities
+            log.info(
+                "[InFakt] listAllInvoices: page {} → entities={}, total={}",
+                page, entities?.size, response.metaData?.total
+            )
+            if (entities.isNullOrEmpty()) break
             result.addAll(entities.map { mapToSnapshot(it) })
             val total = response.metaData?.total ?: break
             if (result.size >= total) break
             page++
         }
+        log.info("[InFakt] listAllInvoices: done, total fetched={}", result.size)
         return result
     }
 

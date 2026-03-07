@@ -44,7 +44,14 @@ class ImportInvoicesFromProviderHandler(
             ?: throw InvoicingCredentialsNotFoundException()
 
         val provider = providerRegistry.getProvider(credentials.provider)
-        val snapshots = provider.listAllInvoices(credentials.apiKey)
+        log.info("[Import] Fetching all invoices from provider={} for studio={}", credentials.provider, command.studioId.value)
+        val snapshots = try {
+            provider.listAllInvoices(credentials.apiKey)
+        } catch (ex: Exception) {
+            log.error("[Import] listAllInvoices FAILED for provider={}", credentials.provider, ex)
+            throw ex
+        }
+        log.info("[Import] Fetched {} invoices from provider", snapshots.size)
 
         var imported = 0
         var updated = 0
