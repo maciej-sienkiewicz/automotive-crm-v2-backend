@@ -42,7 +42,7 @@ data class InfaktInvoiceDto(
     val netPrice: Long?,
 
     /** VAT price in grosz. */
-    @JsonProperty("vat_price")
+    @JsonProperty("tax_price")
     val vatPrice: Long?,
 
     val currency: String?,
@@ -93,6 +93,8 @@ data class InfaktInvoiceDto(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class InfaktServiceDto(
     val name: String?,
+
+    @JsonProperty("quantity")
     val count: Double?,
     val unit: String?,
 
@@ -111,14 +113,17 @@ data class InfaktServiceDto(
 data class InfaktInvoiceListResponse(
     val entities: List<InfaktInvoiceDto>? = null,
 
-    @JsonProperty("meta_data")
+    @JsonProperty("metainfo")
     val metaData: InfaktMetaData? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class InfaktMetaData(
+    @JsonProperty("total_count")
     val total: Int?,
-    val count: Int?
+    val count: Int?,
+    val next: String? = null,
+    val previous: String? = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

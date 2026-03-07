@@ -69,15 +69,16 @@ class InfaktApiClient(
     /**
      * GET /v3/invoices.json – paginated list of invoices.
      *
-     * @param page 1-based page number.
+     * @param page 1-based page number (converted to offset internally).
      */
     fun listInvoices(apiKey: String, page: Int = 1, perPage: Int = PAGE_SIZE): InfaktInvoiceListResponse {
+        val offset = (page - 1) * perPage
         return executeWithErrorHandling(apiKey) {
             restClient.get()
                 .uri { builder ->
                     builder.path("/v3/invoices.json")
-                        .queryParam("page", page)
-                        .queryParam("per_page", perPage)
+                        .queryParam("offset", offset)
+                        .queryParam("limit", perPage)
                         .build()
                 }
                 .header(API_KEY_HEADER, apiKey)
