@@ -84,7 +84,7 @@ class VisitTransitionController(
     @PostMapping("/{visitId}/complete")
     fun completeVisit(
         @PathVariable visitId: String,
-        @RequestBody(required = false) request: CompleteVisitRequest?
+        @RequestBody request: CompleteVisitRequest
     ): ResponseEntity<CompleteVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -92,24 +92,20 @@ class VisitTransitionController(
             throw ForbiddenException("Only OWNER and MANAGER can complete visit")
         }
 
-        val paymentMethod = request?.paymentMethod
-            ?.let { parsePaymentMethod(it) }
-            ?: PaymentMethod.CASH
-
-        val documentType = request?.documentType
+        val paymentMethod = parsePaymentMethod(request.payment.method)
+        val documentType  = request.payment.invoiceType
             ?.let { parseDocumentType(it) }
             ?: DocumentType.RECEIPT
 
         val command = CompleteVisitCommand(
-            studioId         = principal.studioId,
-            userId           = principal.userId,
-            visitId          = VisitId.fromString(visitId),
-            userName         = principal.fullName,
-            paymentMethod    = paymentMethod,
-            documentType     = documentType,
-            dueDate          = request?.dueDate,
-            counterpartyName = request?.counterpartyName,
-            counterpartyNip  = request?.counterpartyNip
+            studioId          = principal.studioId,
+            userId            = principal.userId,
+            visitId           = VisitId.fromString(visitId),
+            userName          = principal.fullName,
+            signatureObtained = request.signatureObtained,
+            paymentMethod     = paymentMethod,
+            documentType      = documentType,
+            dueDate           = request.payment.dueDate
         )
 
         val result = completeVisitHandler.handle(command)
@@ -235,39 +231,39 @@ data class RejectVisitRequest(
 )
 
 /**
- * Optional request body for `POST /api/visits/{visitId}/complete`.
+ * Request body for `POST /api/visits/{visitId}/complete`.
  *
- * All fields are optional.  Omitting the body entirely defaults to:
- * - paymentMethod = "CASH"
- * - documentType  = "RECEIPT"
- * - no counterparty data, no dueDate
- *
- * Example – invoice paid by bank transfer (due in 14 days):
+ * Example – invoice paid by bank transfer:
  * ```json
  * {
- *   "paymentMethod": "TRANSFER",
- *   "documentType": "INVOICE",
- *   "dueDate": "2024-08-14",
- *   "counterpartyName": "Firma ABC Sp. z o.o.",
- *   "counterpartyNip": "1234567890"
+ *   "signatureObtained": true,
+ *   "payment": {
+ *     "method": "TRANSFER",
+ *     "invoiceType": "INVOICE",
+ *     "dueDate": "2024-08-14",
+ *     "amount": 172200
+ *   }
  * }
  * ```
+ * Buyer data (NIP, address, e-mail) are resolved automatically from the Customer record.
  */
 data class CompleteVisitRequest(
-    /** CASH | CARD | TRANSFER  (default: CASH) */
-    val paymentMethod: String? = null,
+    val signatureObtained: Boolean = false,
+    val payment: PaymentRequest
+)
 
-    /** RECEIPT | INVOICE | OTHER  (default: RECEIPT) */
-    val documentType: String? = null,
+data class PaymentRequest(
+    /** CASH | CARD | TRANSFER */
+    val method: String,
 
-    /** Required when paymentMethod == TRANSFER. */
+    /** RECEIPT | INVOICE (default: RECEIPT when absent) */
+    val invoiceType: String? = null,
+
+    /** Required when method == TRANSFER. */
     val dueDate: LocalDate? = null,
 
-    /** Buyer name to appear on the document. */
-    val counterpartyName: String? = null,
-
-    /** Buyer NIP (Polish tax ID) to appear on the document. */
-    val counterpartyNip: String? = null
+    /** Gross amount in grosz sent by the frontend (informational). */
+    val amount: Long? = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

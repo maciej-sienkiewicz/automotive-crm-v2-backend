@@ -20,7 +20,6 @@ import pl.detailing.crm.invoicing.issue.IssueInvoiceCommand
 import pl.detailing.crm.invoicing.issue.IssueInvoiceHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
-import pl.detailing.crm.visit.domain.VisitServiceStatus
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.LocalDate
@@ -120,7 +119,8 @@ class CompleteVisitHandler(
             return
         }
 
-        val buyerName = command.counterpartyName?.takeIf { it.isNotBlank() }
+        // Prefer company data when available, fall back to personal name
+        val buyerName = customer?.companyName?.takeIf { it.isNotBlank() }
             ?: listOfNotNull(customer?.firstName, customer?.lastName)
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
@@ -130,6 +130,12 @@ class CompleteVisitHandler(
             log.warn("[Invoice] Visit {} – no buyer name available, skipping external invoice", command.visitId)
             return
         }
+
+        // Prefer company address, fall back to home address
+        val buyerStreet   = customer?.companyAddressStreet   ?: customer?.homeAddressStreet
+        val buyerCity     = customer?.companyAddressCity     ?: customer?.homeAddressCity
+        val buyerPostCode = customer?.companyAddressPostalCode ?: customer?.homeAddressPostalCode
+        val buyerNip      = customer?.companyNip
 
         val vehicleLabel = listOfNotNull(
             visit.brandSnapshot,
@@ -154,11 +160,11 @@ class CompleteVisitHandler(
             IssueInvoiceCommand(
                 studioId      = command.studioId,
                 buyerName     = buyerName,
-                buyerNip      = command.counterpartyNip,
-                buyerEmail    = null,
-                buyerStreet   = null,
-                buyerCity     = null,
-                buyerPostCode = null,
+                buyerNip      = buyerNip,
+                buyerEmail    = customer?.email,
+                buyerStreet   = buyerStreet,
+                buyerCity     = buyerCity,
+                buyerPostCode = buyerPostCode,
                 items         = invoiceItems,
                 paymentMethod = command.paymentMethod.name,
                 issueDate     = LocalDate.now(),
@@ -207,6 +213,12 @@ class CompleteVisitHandler(
             visit.licensePlateSnapshot?.let { "($it)" }
         ).joinToString(" ")
 
+        val counterpartyName = customer?.companyName?.takeIf { it.isNotBlank() }
+            ?: listOfNotNull(customer?.firstName, customer?.lastName)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+                .takeIf { it.isNotBlank() }
+
         return createFinancialDocumentHandler.handle(
             CreateFinancialDocumentCommand(
                 studioId          = command.studioId,
@@ -227,10 +239,9 @@ class CompleteVisitHandler(
                 currency          = "PLN",
                 issueDate         = LocalDate.now(),
                 dueDate           = command.dueDate,
-                // Used as the cash operation comment for CASH payments
                 description       = "Wizyta #${visit.visitNumber} – $vehicleLabel",
-                counterpartyName  = command.counterpartyName,
-                counterpartyNip   = command.counterpartyNip
+                counterpartyName  = counterpartyName,
+                counterpartyNip   = customer?.companyNip
             )
         )
     }
@@ -246,14 +257,17 @@ class CompleteVisitHandler(
  * - [paymentMethod] CARD     → document status = PAID, cash register unaffected
  * - [paymentMethod] TRANSFER → document status = PENDING; [dueDate] is required
  *
- * All fields have sensible defaults so existing callers that don't supply them
- * continue to work (CASH receipt with no counterparty data).
+ * Buyer / counterparty data (name, NIP, address, e-mail) are resolved automatically
+ * from the Customer entity — they are no longer passed via the command.
  */
 data class CompleteVisitCommand(
     val studioId: StudioId,
     val userId: UserId,
     val visitId: VisitId,
     val userName: String? = null,
+
+    /** Whether the customer's signature was obtained at handover. */
+    val signatureObtained: Boolean = false,
 
     /** Payment method for the automatically issued financial document. Default: CASH. */
     val paymentMethod: PaymentMethod = PaymentMethod.CASH,
@@ -262,13 +276,7 @@ data class CompleteVisitCommand(
     val documentType: DocumentType = DocumentType.RECEIPT,
 
     /** Payment due date – mandatory when [paymentMethod] == [PaymentMethod.TRANSFER]. */
-    val dueDate: LocalDate? = null,
-
-    /** Name of the buyer to appear on the document (optional). */
-    val counterpartyName: String? = null,
-
-    /** NIP of the buyer to appear on the document (optional). */
-    val counterpartyNip: String? = null
+    val dueDate: LocalDate? = null
 )
 
 data class CompleteVisitResult(
