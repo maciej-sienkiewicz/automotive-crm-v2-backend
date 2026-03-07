@@ -26,7 +26,7 @@ class InfaktApiClient(
     private val objectMapper: ObjectMapper
 ) {
     companion object {
-        const val BASE_URL = "https://api.infakt.pl"
+        const val BASE_URL = "https://api.sandbox-infakt.pl/api"
         const val API_KEY_HEADER = "X-inFakt-ApiKey"
         const val PAGE_SIZE = 100
     }
