@@ -26,6 +26,10 @@ import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.invoicing.InvoiceProviderRegistry
+import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
+import pl.detailing.crm.invoicing.domain.ExternalInvoice
+import pl.detailing.crm.invoicing.infrastructure.ExternalInvoiceRepository
 import pl.detailing.crm.finance.reporting.FinanceReportQuery
 import pl.detailing.crm.finance.reporting.FinanceReportingHandler
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -45,6 +49,9 @@ class FinanceController(
     private val listDocumentsHandler: ListFinancialDocumentsHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
     private val documentRepository: FinancialDocumentRepository,
+    private val invoiceRepository: ExternalInvoiceRepository,
+    private val invoicingCredentialsRepository: InvoicingCredentialsRepository,
+    private val invoiceProviderRegistry: InvoiceProviderRegistry,
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
     private val reportingHandler: FinanceReportingHandler
@@ -103,8 +110,16 @@ class FinanceController(
     }
 
     /**
-     * List financial documents with optional filters.
-     * GET /api/v1/finance/documents?documentType=INVOICE&direction=INCOME&status=PENDING&page=1&size=20
+     * List financial documents and invoices.
+     *
+     * Returns two lists:
+     * - [documents] – receipts and other internal financial documents (excluding invoices)
+     * - [invoices]  – VAT invoices from the external provider (including SYNC_FAILED ones)
+     *
+     * GET /api/v1/finance/documents?documentType=RECEIPT&direction=INCOME&status=PENDING&page=1&size=20
+     *
+     * The [documentType] filter applies only to the [documents] list.
+     * The [page] and [size] params apply to both lists independently.
      */
     @GetMapping("/documents")
     fun listDocuments(
@@ -118,8 +133,9 @@ class FinanceController(
         @RequestParam(defaultValue = "20") size: Int
     ): ResponseEntity<FinancialDocumentListResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val pageSize  = size.coerceIn(1, 100)
 
-        val result = listDocumentsHandler.handle(
+        val docResult = listDocumentsHandler.handle(
             ListFinancialDocumentsCommand(
                 studioId     = principal.studioId,
                 documentType = documentType?.let { parseEnum<DocumentType>(it, "documentType") },
@@ -129,16 +145,37 @@ class FinanceController(
                 dateFrom     = dateFrom,
                 dateTo       = dateTo,
                 page         = maxOf(1, page),
-                pageSize     = size.coerceIn(1, 100)
+                pageSize     = pageSize
             )
         )
 
+        // Invoices are stored in the invoicing module and listed separately.
+        // No pagination filter applied here – all invoices are returned for the studio.
+        val invoicePageable = org.springframework.data.domain.PageRequest.of(maxOf(0, page - 1), pageSize)
+        val invoicePage = invoiceRepository.findByStudioIdOrderByIssueDateDescCreatedAtDesc(
+            principal.studioId.value, invoicePageable
+        )
+
+        val credentials = invoicingCredentialsRepository.findByStudioId(principal.studioId.value)
+        val provider = credentials?.let {
+            runCatching { invoiceProviderRegistry.getProvider(it.provider) }.getOrNull()
+        }
+
+        val invoiceResponses = invoicePage.content.map { entity ->
+            val portalUrl = if (provider != null && entity.externalId != null) {
+                provider.getInvoicePortalUrl(entity.externalId!!)
+            } else null
+            entity.toDomain(portalUrl).toInvoiceResponse()
+        }
+
         return ResponseEntity.ok(
             FinancialDocumentListResponse(
-                documents = result.documents.map { it.toResponse() },
-                total     = result.total,
-                page      = result.page,
-                pageSize  = result.pageSize
+                documents    = docResult.documents.map { it.toResponse() },
+                invoices     = invoiceResponses,
+                total        = docResult.total,
+                invoiceTotal = invoicePage.totalElements,
+                page         = docResult.page,
+                pageSize     = docResult.pageSize
             )
         )
     }
@@ -468,9 +505,38 @@ data class FinancialDocumentResponse(
     val updatedAt: Instant
 )
 
+data class InvoiceResponse(
+    val id: String,
+    val provider: String?,
+    val providerLabel: String?,
+    val externalId: String?,
+    val externalNumber: String?,
+    val status: String,
+    val statusLabel: String,
+    val providerSyncStatus: String,
+    val providerSyncStatusLabel: String,
+    val providerSyncError: String?,
+    val grossAmount: Long,
+    val netAmount: Long,
+    val vatAmount: Long,
+    val currency: String,
+    val issueDate: String,
+    val dueDate: String?,
+    val buyerName: String?,
+    val buyerNip: String?,
+    val description: String?,
+    val visitId: String?,
+    val externalUrl: String?,
+    val syncedAt: Instant?,
+    val createdAt: Instant
+)
+
 data class FinancialDocumentListResponse(
     val documents: List<FinancialDocumentResponse>,
+    /** VAT invoices issued via external provider (single source of truth for invoices). */
+    val invoices: List<InvoiceResponse>,
     val total: Long,
+    val invoiceTotal: Long,
     val page: Int,
     val pageSize: Int
 )
@@ -587,4 +653,30 @@ private fun CashOperation.toResponse() = CashOperationResponse(
     financialDocumentId = financialDocumentId?.toString(),
     createdBy           = createdBy.toString(),
     createdAt           = createdAt
+)
+
+private fun ExternalInvoice.toInvoiceResponse() = InvoiceResponse(
+    id                      = id.toString(),
+    provider                = provider?.name,
+    providerLabel           = provider?.displayName,
+    externalId              = externalId,
+    externalNumber          = externalNumber,
+    status                  = status.name,
+    statusLabel             = status.displayName,
+    providerSyncStatus      = providerSyncStatus.name,
+    providerSyncStatusLabel = providerSyncStatus.displayName,
+    providerSyncError       = providerSyncError,
+    grossAmount             = grossAmount,
+    netAmount               = netAmount,
+    vatAmount               = vatAmount,
+    currency                = currency,
+    issueDate               = issueDate.toString(),
+    dueDate                 = dueDate?.toString(),
+    buyerName               = buyerName,
+    buyerNip                = buyerNip,
+    description             = description,
+    visitId                 = visitId?.toString(),
+    externalUrl             = externalUrl,
+    syncedAt                = syncedAt,
+    createdAt               = createdAt
 )

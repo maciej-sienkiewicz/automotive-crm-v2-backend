@@ -87,28 +87,31 @@ class IssueInvoiceHandler(
 
         val snapshot = provider.issueInvoice(credentials.apiKey, request)
 
+        val now = Instant.now()
         val entity = ExternalInvoiceEntity(
-            id                   = UUID.randomUUID(),
-            studioId             = command.studioId.value,
-            provider             = credentials.provider,
-            externalId           = snapshot.externalId,
-            externalNumber       = snapshot.externalNumber,
-            status               = snapshot.status,
-            isCorrection         = snapshot.isCorrection,
-            hasCorrection        = snapshot.hasCorrection,
-            correctionExternalId = snapshot.correctionExternalId,
-            grossAmount          = snapshot.grossAmountInCents,
-            netAmount            = snapshot.netAmountInCents,
-            vatAmount            = snapshot.vatAmountInCents,
-            currency             = snapshot.currency,
-            issueDate            = snapshot.issueDate,
-            dueDate              = snapshot.dueDate,
-            buyerName            = snapshot.buyerName,
-            buyerNip             = snapshot.buyerNip,
-            description          = command.notes,
-            syncedAt             = Instant.now(),
-            createdAt            = Instant.now(),
-            updatedAt            = Instant.now()
+            id                      = UUID.randomUUID(),
+            studioId                = command.studioId.value,
+            provider                = credentials.provider,
+            externalId              = snapshot.externalId,
+            externalNumber          = snapshot.externalNumber,
+            status                  = snapshot.status,
+            isCorrection            = snapshot.isCorrection,
+            hasCorrection           = snapshot.hasCorrection,
+            correctionExternalId    = snapshot.correctionExternalId,
+            grossAmount             = snapshot.grossAmountInCents,
+            netAmount               = snapshot.netAmountInCents,
+            vatAmount               = snapshot.vatAmountInCents,
+            currency                = snapshot.currency,
+            issueDate               = snapshot.issueDate,
+            dueDate                 = snapshot.dueDate,
+            buyerName               = snapshot.buyerName,
+            buyerNip                = snapshot.buyerNip,
+            description             = command.notes,
+            providerSyncStatus      = InvoiceProviderSyncStatus.SYNCED,
+            providerSyncAttemptedAt = now,
+            syncedAt                = now,
+            createdAt               = now,
+            updatedAt               = now
         )
 
         val saved = invoiceRepository.save(entity)

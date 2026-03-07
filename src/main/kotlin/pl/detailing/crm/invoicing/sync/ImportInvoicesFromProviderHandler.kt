@@ -118,24 +118,26 @@ class ImportInvoicesFromProviderHandler(
 
         invoiceRepository.save(
             ExternalInvoiceEntity(
-                studioId             = studioId.value,
-                provider             = provider,
-                externalId           = snapshot.externalId,
-                externalNumber       = snapshot.externalNumber,
-                status               = snapshot.status,
-                isCorrection         = snapshot.isCorrection,
-                hasCorrection        = snapshot.hasCorrection,
-                correctionExternalId = snapshot.correctionExternalId,
-                grossAmount          = snapshot.grossAmountInCents,
-                netAmount            = snapshot.netAmountInCents,
-                vatAmount            = snapshot.vatAmountInCents,
-                currency             = snapshot.currency,
-                issueDate            = snapshot.issueDate,
-                dueDate              = snapshot.dueDate,
-                buyerName            = snapshot.buyerName,
-                buyerNip             = snapshot.buyerNip,
-                description          = null,
-                syncedAt             = now
+                studioId                = studioId.value,
+                provider                = provider,
+                externalId              = snapshot.externalId,
+                externalNumber          = snapshot.externalNumber,
+                status                  = snapshot.status,
+                isCorrection            = snapshot.isCorrection,
+                hasCorrection           = snapshot.hasCorrection,
+                correctionExternalId    = snapshot.correctionExternalId,
+                grossAmount             = snapshot.grossAmountInCents,
+                netAmount               = snapshot.netAmountInCents,
+                vatAmount               = snapshot.vatAmountInCents,
+                currency                = snapshot.currency,
+                issueDate               = snapshot.issueDate,
+                dueDate                 = snapshot.dueDate,
+                buyerName               = snapshot.buyerName,
+                buyerNip                = snapshot.buyerNip,
+                description             = null,
+                providerSyncStatus      = pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus.SYNCED,
+                providerSyncAttemptedAt = now,
+                syncedAt                = now
             )
         )
         return true

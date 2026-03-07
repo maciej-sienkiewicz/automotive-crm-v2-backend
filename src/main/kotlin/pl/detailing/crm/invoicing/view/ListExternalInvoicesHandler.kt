@@ -1,12 +1,10 @@
 package pl.detailing.crm.invoicing.view
 
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import pl.detailing.crm.invoicing.InvoiceProviderRegistry
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
 import pl.detailing.crm.invoicing.domain.ExternalInvoice
-import pl.detailing.crm.invoicing.domain.InvoicingCredentialsNotFoundException
 import pl.detailing.crm.invoicing.infrastructure.ExternalInvoiceRepository
 import pl.detailing.crm.shared.StudioId
 
@@ -24,8 +22,12 @@ data class ExternalInvoiceListResult(
 )
 
 /**
- * Lists invoices from the local cache (no API call to provider).
- * Use [pl.detailing.crm.invoicing.sync.SyncInvoiceStatusHandler] to refresh statuses.
+ * Lists invoices from the local store (no provider API call).
+ *
+ * Returns all invoices for the studio regardless of sync status –
+ * including SYNC_FAILED invoices that have not yet been confirmed by the provider.
+ *
+ * Portal URLs are computed only when credentials are available and the invoice has an externalId.
  */
 @Service
 class ListExternalInvoicesHandler(
@@ -35,25 +37,23 @@ class ListExternalInvoicesHandler(
 ) {
 
     fun handle(query: ListExternalInvoicesQuery): ExternalInvoiceListResult {
-        val credentials = credentialsRepository.findByStudioId(query.studioId.value)
-            ?: throw InvoicingCredentialsNotFoundException()
+        val pageable = PageRequest.of(query.page - 1, query.pageSize)
 
-        val provider = providerRegistry.getProvider(credentials.provider)
-
-        val pageable = PageRequest.of(
-            query.page - 1,
-            query.pageSize,
-            Sort.by(Sort.Direction.DESC, "issueDate", "createdAt")
-        )
-
-        val page = invoiceRepository.findByStudioIdAndProvider(
+        val page = invoiceRepository.findByStudioIdOrderByIssueDateDescCreatedAtDesc(
             query.studioId.value,
-            credentials.provider,
             pageable
         )
 
+        val credentials = credentialsRepository.findByStudioId(query.studioId.value)
+        val provider = credentials?.let {
+            runCatching { providerRegistry.getProvider(it.provider) }.getOrNull()
+        }
+
         val invoices = page.content.map { entity ->
-            entity.toDomain(provider.getInvoicePortalUrl(entity.externalId))
+            val portalUrl = if (provider != null && entity.externalId != null) {
+                provider.getInvoicePortalUrl(entity.externalId!!)
+            } else null
+            entity.toDomain(portalUrl)
         }
 
         return ExternalInvoiceListResult(

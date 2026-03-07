@@ -4,22 +4,26 @@ import pl.detailing.crm.shared.ExternalInvoiceId
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.time.LocalDate
+import java.util.UUID
 
 /**
- * Normalized representation of an invoice issued via an external provider.
+ * Normalized representation of an invoice.
+ *
+ * Invoices are created locally when a visit is completed, then synchronised with the
+ * configured external provider. An invoice without an [externalId] has not yet been
+ * sent to the provider (see [providerSyncStatus]).
  *
  * All monetary values are stored in grosz (1/100 PLN).
- * [externalId] is the provider's own identifier for this invoice.
- * [externalUrl] is a direct link to the invoice on the provider's portal.
- * [hasCorrection] indicates whether a credit note / correction has been issued for this invoice.
  */
 data class ExternalInvoice(
     val id: ExternalInvoiceId,
     val studioId: StudioId,
-    val provider: InvoiceProviderType,
 
-    /** Provider's own identifier (UUID or numeric ID depending on provider). */
-    val externalId: String,
+    /** Provider this invoice belongs to. Null when the sync has not yet succeeded. */
+    val provider: InvoiceProviderType?,
+
+    /** Provider's own identifier. Null until successfully sent to the provider. */
+    val externalId: String?,
 
     /** Human-readable invoice number assigned by the provider (e.g. "FV/2024/01/001"). */
     val externalNumber: String?,
@@ -54,11 +58,24 @@ data class ExternalInvoice(
     val buyerNip: String?,
     val description: String?,
 
-    /** Direct URL to this invoice on the provider's web portal. */
-    val externalUrl: String,
+    /** Optional link to the visit this invoice was issued for. */
+    val visitId: UUID?,
 
-    /** Last time data was pulled from provider's API. */
-    val syncedAt: Instant,
+    /** Synchronization state with the external provider. */
+    val providerSyncStatus: InvoiceProviderSyncStatus,
+
+    /** Human-readable error from the last failed provider sync attempt. */
+    val providerSyncError: String?,
+
+    /** Timestamp of the last provider sync attempt. */
+    val providerSyncAttemptedAt: Instant?,
+
+    /** Direct URL to this invoice on the provider's web portal. Null if not yet synced. */
+    val externalUrl: String?,
+
+    /** Last time data was pulled from provider's API. Null for not-yet-synced invoices. */
+    val syncedAt: Instant?,
+
     val createdAt: Instant,
     val updatedAt: Instant
 )

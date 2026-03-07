@@ -13,6 +13,7 @@ import pl.detailing.crm.invoicing.issue.IssueInvoiceCommand
 import pl.detailing.crm.invoicing.issue.IssueInvoiceHandler
 import pl.detailing.crm.invoicing.sync.ImportInvoicesCommand
 import pl.detailing.crm.invoicing.sync.ImportInvoicesFromProviderHandler
+import pl.detailing.crm.invoicing.sync.RetrySyncInvoiceHandler
 import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusCommand
 import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusHandler
 import pl.detailing.crm.invoicing.view.GetExternalInvoiceHandler
@@ -35,6 +36,7 @@ class InvoicingController(
     private val listInvoicesHandler: ListExternalInvoicesHandler,
     private val syncStatusHandler: SyncInvoiceStatusHandler,
     private val importInvoicesHandler: ImportInvoicesFromProviderHandler,
+    private val retrySyncHandler: RetrySyncInvoiceHandler,
     private val providerRegistry: InvoiceProviderRegistry
 ) {
 
@@ -273,11 +275,26 @@ class InvoicingController(
     }
 
     /**
+     * Retry sending a SYNC_FAILED invoice to the external provider.
+     *
+     * Re-reads the original visit data (line items, buyer info) and re-calls the provider adapter.
+     * On success: the local record is updated with the provider's externalId and status SYNCED.
+     * On failure: the error is updated and the invoice remains SYNC_FAILED for another retry.
+     *
+     * POST /api/v1/invoicing/invoices/{id}/retry-sync
+     */
+    @PostMapping("/invoices/{id}/retry-sync")
+    fun retrySyncInvoice(@PathVariable id: UUID): ResponseEntity<ExternalInvoiceResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role)
+
+        val invoice = retrySyncHandler.handle(studioId = principal.studioId, invoiceId = id)
+        return ResponseEntity.ok(invoice.toResponse())
+    }
+
+    /**
      * Get a direct URL to view the invoice on the provider's portal.
      * GET /api/v1/invoicing/invoices/{id}/portal-url
-     *
-     * This redirects the user to the provider's web interface where they can
-     * view, download, or manage the invoice.
      */
     @GetMapping("/invoices/{id}/portal-url")
     fun getPortalUrl(@PathVariable id: UUID): ResponseEntity<InvoicePortalUrlResponse> {
@@ -287,7 +304,10 @@ class InvoicingController(
             GetExternalInvoiceQuery(studioId = principal.studioId, invoiceId = id)
         )
 
-        return ResponseEntity.ok(InvoicePortalUrlResponse(url = invoice.externalUrl))
+        val url = invoice.externalUrl
+            ?: return ResponseEntity.notFound().build()
+
+        return ResponseEntity.ok(InvoicePortalUrlResponse(url = url))
     }
 
     /**
@@ -410,12 +430,24 @@ data class InvoicingCredentialsResponse(
 
 data class ExternalInvoiceResponse(
     val id: String,
-    val provider: String,
-    val providerLabel: String,
-    val externalId: String,
+
+    /** Provider type name (e.g. "INFAKT"). Null for locally-created invoices not yet synced. */
+    val provider: String?,
+    val providerLabel: String?,
+
+    /** Provider's own identifier. Null until invoice is successfully sent to provider. */
+    val externalId: String?,
     val externalNumber: String?,
+
     val status: String,
     val statusLabel: String,
+
+    /** SYNCED or SYNC_FAILED. */
+    val providerSyncStatus: String,
+    val providerSyncStatusLabel: String,
+
+    /** Human-readable error from the last failed sync attempt. Null when SYNCED. */
+    val providerSyncError: String?,
 
     /** True if this invoice is a correction (credit note) for another invoice. */
     val isCorrection: Boolean,
@@ -442,10 +474,13 @@ data class ExternalInvoiceResponse(
     val buyerNip: String?,
     val description: String?,
 
-    /** Direct URL to view this invoice on the provider's portal. */
-    val externalUrl: String,
+    /** UUID of the visit this invoice was issued for, if any. */
+    val visitId: String?,
 
-    val syncedAt: Instant,
+    /** Direct URL to view this invoice on the provider's portal. Null if not yet synced. */
+    val externalUrl: String?,
+
+    val syncedAt: Instant?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -486,27 +521,31 @@ data class InvoiceProviderInfoResponse(
 // ─────────────────────────────────────────────────────────────────────────────
 
 private fun ExternalInvoice.toResponse() = ExternalInvoiceResponse(
-    id                   = id.toString(),
-    provider             = provider.name,
-    providerLabel        = provider.displayName,
-    externalId           = externalId,
-    externalNumber       = externalNumber,
-    status               = status.name,
-    statusLabel          = status.displayName,
-    isCorrection         = isCorrection,
-    hasCorrection        = hasCorrection,
-    correctionExternalId = correctionExternalId,
-    grossAmount          = grossAmount,
-    netAmount            = netAmount,
-    vatAmount            = vatAmount,
-    currency             = currency,
-    issueDate            = issueDate.toString(),
-    dueDate              = dueDate?.toString(),
-    buyerName            = buyerName,
-    buyerNip             = buyerNip,
-    description          = description,
-    externalUrl          = externalUrl,
-    syncedAt             = syncedAt,
-    createdAt            = createdAt,
-    updatedAt            = updatedAt
+    id                       = id.toString(),
+    provider                 = provider?.name,
+    providerLabel            = provider?.displayName,
+    externalId               = externalId,
+    externalNumber           = externalNumber,
+    status                   = status.name,
+    statusLabel              = status.displayName,
+    providerSyncStatus       = providerSyncStatus.name,
+    providerSyncStatusLabel  = providerSyncStatus.displayName,
+    providerSyncError        = providerSyncError,
+    isCorrection             = isCorrection,
+    hasCorrection            = hasCorrection,
+    correctionExternalId     = correctionExternalId,
+    grossAmount              = grossAmount,
+    netAmount                = netAmount,
+    vatAmount                = vatAmount,
+    currency                 = currency,
+    issueDate                = issueDate.toString(),
+    dueDate                  = dueDate?.toString(),
+    buyerName                = buyerName,
+    buyerNip                 = buyerNip,
+    description              = description,
+    visitId                  = visitId?.toString(),
+    externalUrl              = externalUrl,
+    syncedAt                 = syncedAt,
+    createdAt                = createdAt,
+    updatedAt                = updatedAt
 )

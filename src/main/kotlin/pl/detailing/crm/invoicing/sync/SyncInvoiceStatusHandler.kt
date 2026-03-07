@@ -63,8 +63,13 @@ class SyncInvoiceStatusHandler(
         val errors = mutableListOf<String>()
 
         for (entity in entitiesToSync) {
+            val externalId = entity.externalId
+            if (externalId == null) {
+                // Invoice was never confirmed by provider – skip status sync
+                continue
+            }
             try {
-                val snapshot = provider.syncInvoiceStatus(credentials.apiKey, entity.externalId)
+                val snapshot = provider.syncInvoiceStatus(credentials.apiKey, externalId)
 
                 entity.status               = snapshot.status
                 entity.hasCorrection        = snapshot.hasCorrection
@@ -76,7 +81,7 @@ class SyncInvoiceStatusHandler(
                 synced++
             } catch (ex: Exception) {
                 failed++
-                val msg = "Błąd synchronizacji faktury ${entity.externalId}: ${ex.message}"
+                val msg = "Błąd synchronizacji faktury ${externalId}: ${ex.message}"
                 errors += msg
                 log.warn(msg, ex)
             }
