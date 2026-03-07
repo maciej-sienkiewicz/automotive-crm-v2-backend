@@ -41,7 +41,11 @@ class InvoicingController(
 
     /**
      * Configure the invoicing provider and API key for the current studio.
-     * Replaces any previously configured provider.
+     *
+     * Verifies the API key against the provider's API before saving.
+     * Returns 422 if the key is rejected by the provider – credentials are NOT saved in that case.
+     * Replaces any previously configured provider on success.
+     *
      * POST /api/v1/invoicing/credentials
      */
     @PostMapping("/credentials")
@@ -55,14 +59,24 @@ class InvoicingController(
         }
 
         val provider = parseProvider(request.provider)
+        val adapter  = providerRegistry.getProvider(provider)
+        val apiKey   = request.apiKey.trim()
+
+        val verification = adapter.verifyCredentials(apiKey)
+        if (!verification.valid) {
+            throw InvoicingValidationException(
+                verification.errorMessage
+                    ?: "Podany klucz API jest nieprawidłowy. Sprawdź konfigurację w panelu dostawcy."
+            )
+        }
 
         credentialsRepository.deleteByStudioId(principal.studioId.value)
 
         val entity = credentialsRepository.save(
             InvoicingCredentialsEntity(
-                studioId  = principal.studioId.value,
-                provider  = provider,
-                apiKey    = request.apiKey.trim()
+                studioId = principal.studioId.value,
+                provider = provider,
+                apiKey   = apiKey
             )
         )
 
@@ -275,11 +289,12 @@ class InvoicingController(
     }
 
     private fun InvoicingCredentialsEntity.toResponse() = InvoicingCredentialsResponse(
-        provider        = provider.name,
-        providerLabel   = provider.displayName,
-        apiKeyMasked    = maskApiKey(apiKey),
-        createdAt       = createdAt,
-        updatedAt       = updatedAt
+        provider      = provider.name,
+        providerLabel = provider.displayName,
+        apiKeyMasked  = maskApiKey(apiKey),
+        verified      = true,   // saved credentials were always verified at the time of saving
+        createdAt     = createdAt,
+        updatedAt     = updatedAt
     )
 
     private fun maskApiKey(key: String): String =
@@ -347,6 +362,12 @@ data class InvoicingCredentialsResponse(
     val provider: String,
     val providerLabel: String,
     val apiKeyMasked: String,
+    /**
+     * Always true when returned from POST /credentials (key was verified against provider's API
+     * before being saved). Always true when returned from GET /credentials (saved keys are assumed
+     * verified at the time of saving; re-validation happens implicitly on next API call).
+     */
+    val verified: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
 )

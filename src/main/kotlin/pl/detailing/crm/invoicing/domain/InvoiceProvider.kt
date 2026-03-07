@@ -49,6 +49,28 @@ interface InvoiceProvider {
      * This is constructed locally (no HTTP call required).
      */
     fun getInvoicePortalUrl(externalId: String): String
+
+    /**
+     * Verifies that the provided API key is valid by making a lightweight call to the provider's API.
+     *
+     * Used during credentials setup to give immediate feedback before saving.
+     * Must NOT throw – returns a [CredentialsVerificationResult] with [CredentialsVerificationResult.valid]
+     * set to false and an error message on failure.
+     *
+     * @param apiKey The API key / token to verify.
+     */
+    fun verifyCredentials(apiKey: String): CredentialsVerificationResult
+}
+
+data class CredentialsVerificationResult(
+    val valid: Boolean,
+    /** Human-readable reason shown to the user when [valid] is false. */
+    val errorMessage: String? = null
+) {
+    companion object {
+        val OK = CredentialsVerificationResult(valid = true)
+        fun failed(reason: String) = CredentialsVerificationResult(valid = false, errorMessage = reason)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

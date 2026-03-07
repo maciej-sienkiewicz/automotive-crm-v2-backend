@@ -87,6 +87,39 @@ class InfaktApiClient(
         }
     }
 
+    /**
+     * GET /v3/invoices.json?per_page=1 – lightweight verification call.
+     *
+     * Returns HTTP 200 for a valid key, HTTP 401 for an invalid key.
+     * Does NOT throw – returns null on network/server error so the caller can
+     * decide how to handle connectivity issues separately from auth failures.
+     *
+     * @return true = key is valid, false = key is invalid (401/403), null = couldn't connect
+     */
+    fun ping(apiKey: String): Boolean? {
+        return try {
+            restClient.get()
+                .uri { builder ->
+                    builder.path("/v3/invoices.json")
+                        .queryParam("per_page", 1)
+                        .build()
+                }
+                .header(API_KEY_HEADER, apiKey)
+                .retrieve()
+                .toBodilessEntity()
+            true
+        } catch (ex: HttpClientErrorException) {
+            when (ex.statusCode) {
+                HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> false
+                else -> null
+            }
+        } catch (_: HttpServerErrorException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────

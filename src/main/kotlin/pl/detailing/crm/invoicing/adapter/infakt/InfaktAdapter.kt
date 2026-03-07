@@ -65,6 +65,18 @@ class InfaktAdapter(
     override fun getInvoicePortalUrl(externalId: String): String =
         "$PORTAL_BASE_URL/$externalId"
 
+    override fun verifyCredentials(apiKey: String): CredentialsVerificationResult {
+        return when (apiClient.ping(apiKey)) {
+            true  -> CredentialsVerificationResult.OK
+            false -> CredentialsVerificationResult.failed(
+                "Nieprawidłowy klucz API inFakt. Sprawdź klucz w panelu inFakt: Ustawienia → API."
+            )
+            null  -> CredentialsVerificationResult.failed(
+                "Nie udało się połączyć z serwerem inFakt. Sprawdź połączenie internetowe i spróbuj ponownie."
+            )
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Mapping: domain request → inFakt request
     // ─────────────────────────────────────────────────────────────────────────
