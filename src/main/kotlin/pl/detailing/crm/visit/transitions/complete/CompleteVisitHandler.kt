@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
@@ -12,8 +13,14 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
+import pl.detailing.crm.invoicing.domain.InvoicingCredentialsNotFoundException
+import pl.detailing.crm.invoicing.issue.InvoiceItemCommand
+import pl.detailing.crm.invoicing.issue.IssueInvoiceCommand
+import pl.detailing.crm.invoicing.issue.IssueInvoiceHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
+import pl.detailing.crm.visit.domain.VisitServiceStatus
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.LocalDate
@@ -23,14 +30,23 @@ class CompleteVisitHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val auditService: AuditService,
-    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler
+    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
+    private val issueInvoiceHandler: IssueInvoiceHandler,
+    private val credentialsRepository: InvoicingCredentialsRepository
 ) {
 
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
     @Transactional
     suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult {
-        // Step 1: Load visit
+        // Step 1: If the user wants an external invoice, verify credentials up-front
+        // so we fail fast before changing any state.
+        if (command.documentType == DocumentType.INVOICE) {
+            credentialsRepository.findByStudioId(command.studioId.value)
+                ?: throw InvoicingCredentialsNotFoundException()
+        }
+
+        // Step 2: Load visit
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
@@ -40,14 +56,14 @@ class CompleteVisitHandler(
 
         val visit = visitEntity.toDomain()
 
-        // Step 2: Perform state transition (domain logic with validation)
+        // Step 3: Perform state transition (domain logic with validation)
         val updatedVisit = visit.complete(command.userId)
 
-        // Step 3: Persist changes
+        // Step 4: Persist changes
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
 
-        // Step 4: Audit logging
+        // Step 5: Audit logging
         auditService.log(LogAuditCommand(
             studioId = command.studioId,
             userId = command.userId,
@@ -59,13 +75,19 @@ class CompleteVisitHandler(
             changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
         ))
 
-        // Step 5: Resolve customer name to denormalise into the financial document
+        // Step 6: Resolve customer name to denormalise into the financial document
         val customer = customerRepository.findByIdAndStudioId(
             visit.customerId.value, command.studioId.value
         )
 
-        // Step 6: Issue financial document atomically in the same transaction
+        // Step 7: Issue internal financial document atomically in the same transaction
         val financialDocument = issueFinancialDocument(command, updatedVisit, customer)
+
+        // Step 8: If documentType == INVOICE, also issue the invoice through the external provider.
+        // Runs in the same transaction — if the provider call fails the whole completion rolls back.
+        if (command.documentType == DocumentType.INVOICE) {
+            issueExternalInvoice(command, updatedVisit, customer)
+        }
 
         return CompleteVisitResult(
             visitId = updatedVisit.id,
@@ -74,6 +96,79 @@ class CompleteVisitHandler(
             financialDocumentId = financialDocument?.id,
             financialDocumentNumber = financialDocument?.documentNumber
         )
+    }
+
+    /**
+     * Issues an invoice through the studio's configured external provider (e.g. InFakt).
+     *
+     * Each CONFIRMED / APPROVED service item becomes one invoice line.
+     * [buyerName] falls back to the customer's full name when [CompleteVisitCommand.counterpartyName] is absent.
+     *
+     * Runs in the same transaction as visit completion, so a provider failure rolls back
+     * the whole operation — no half-completed state is left behind.
+     */
+    private fun issueExternalInvoice(
+        command: CompleteVisitCommand,
+        visit: Visit,
+        customer: CustomerEntity?
+    ) {
+        val billedItems = visit.serviceItems.filter {
+            it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED
+        }
+        if (billedItems.isEmpty()) {
+            log.info("[Invoice] Visit {} has no billable items – skipping external invoice", command.visitId)
+            return
+        }
+
+        val buyerName = command.counterpartyName?.takeIf { it.isNotBlank() }
+            ?: listOfNotNull(customer?.firstName, customer?.lastName)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+                .takeIf { it.isNotBlank() }
+
+        if (buyerName == null) {
+            log.warn("[Invoice] Visit {} – no buyer name available, skipping external invoice", command.visitId)
+            return
+        }
+
+        val vehicleLabel = listOfNotNull(
+            visit.brandSnapshot,
+            visit.modelSnapshot,
+            visit.licensePlateSnapshot?.let { "($it)" }
+        ).joinToString(" ")
+
+        val invoiceItems = billedItems.map { item ->
+            InvoiceItemCommand(
+                name                = item.serviceName,
+                quantity            = 1.0,
+                unit                = "usł.",
+                unitNetPriceInCents = item.finalPriceNet.amountInCents,
+                vatRate             = item.vatRate.rate
+            )
+        }
+
+        log.info("[Invoice] Issuing external invoice for visit {}: items={}, buyer={}",
+            command.visitId, invoiceItems.size, buyerName)
+
+        issueInvoiceHandler.handle(
+            IssueInvoiceCommand(
+                studioId      = command.studioId,
+                buyerName     = buyerName,
+                buyerNip      = command.counterpartyNip,
+                buyerEmail    = null,
+                buyerStreet   = null,
+                buyerCity     = null,
+                buyerPostCode = null,
+                items         = invoiceItems,
+                paymentMethod = command.paymentMethod.name,
+                issueDate     = LocalDate.now(),
+                dueDate       = command.dueDate,
+                currency      = "PLN",
+                notes         = "Wizyta #${visit.visitNumber} – $vehicleLabel"
+            )
+        )
+
+        log.info("[Invoice] External invoice issued successfully for visit {}", command.visitId)
     }
 
     /**
