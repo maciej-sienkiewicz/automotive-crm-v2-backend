@@ -68,7 +68,7 @@ class InfaktAdapter(
         // For TRANSFER payments we must additionally download the invoice PDF, which automatically
         // changes the status to "printed" (Wydrukowano) per inFakt API documentation.
         val (desiredStatus, _) = mapPaymentMethodToInfaktStatus(request.paymentMethod, request.issueDate)
-        if (desiredStatus == "printed") {
+        if (desiredStatus == "paid") {
             log.info("[InFakt] issueInvoice: fetching PDF to trigger 'printed' status for invoice {}", created.id)
             apiClient.downloadPdfToMarkAsPrinted(apiKey, created.id)
             val updated = apiClient.getInvoice(apiKey, created.id)

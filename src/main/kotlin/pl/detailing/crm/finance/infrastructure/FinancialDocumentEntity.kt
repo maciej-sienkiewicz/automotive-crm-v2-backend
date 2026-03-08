@@ -155,7 +155,7 @@ class FinancialDocumentEntity(
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", length = 20)
-    val provider: InvoiceProviderType? = null,
+    var provider: InvoiceProviderType? = null,
 
     /**
      * Provider's own invoice identifier. Null until the invoice has been successfully

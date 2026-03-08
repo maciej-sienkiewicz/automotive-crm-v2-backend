@@ -9,6 +9,7 @@ import pl.detailing.crm.finance.document.ImportProviderInvoicesHandler
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsEntity
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
 import pl.detailing.crm.invoicing.domain.InvoiceProviderType
+import pl.detailing.crm.invoicing.domain.InvoicingValidationException
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.shared.ValidationException

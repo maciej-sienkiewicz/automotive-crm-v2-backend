@@ -306,7 +306,7 @@ class FinanceController(
         )
         val documentNumber = "FAK/$year/${(count + 1).toString().padStart(4, '0')}"
 
-        val entity = pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity(
+        var entity = pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity(
             id                = UUID.randomUUID(),
             studioId          = principal.studioId.value,
             source            = DocumentSource.MANUAL,
