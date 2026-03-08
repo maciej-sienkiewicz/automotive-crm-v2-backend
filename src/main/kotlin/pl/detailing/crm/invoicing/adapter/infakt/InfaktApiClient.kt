@@ -129,6 +129,29 @@ class InfaktApiClient(
     }
 
     /**
+     * GET /v3/invoices/{id}/pdf.json – downloads the invoice PDF to trigger a status change to "printed".
+     *
+     * Per inFakt API docs: downloading the invoice as PDF changes its status to "Wydrukowano" (printed).
+     * The response body (PDF bytes) is discarded; the call is made solely for the side effect.
+     *
+     * Required permission: api:invoices:read
+     */
+    fun downloadPdfToMarkAsPrinted(apiKey: String, invoiceId: String) {
+        executeWithErrorHandling(apiKey) {
+            restClient.get()
+                .uri { builder ->
+                    builder.path("/v3/invoices/{id}/pdf.json")
+                        .queryParam("document_type", "original")
+                        .build(invoiceId)
+                }
+                .header(API_KEY_HEADER, apiKey)
+                .headers { it.set(HttpHeaders.ACCEPT, MediaType.ALL_VALUE) }
+                .retrieve()
+                .toBodilessEntity()
+        }
+    }
+
+    /**
      * GET /v3/invoices.json?per_page=1 – lightweight verification call.
      *
      * Returns HTTP 200 for a valid key, HTTP 401 for an invalid key.

@@ -62,8 +62,20 @@ class InfaktAdapter(
 
     override fun issueInvoice(apiKey: String, request: IssueInvoiceRequest): ExternalInvoiceSnapshot {
         val payload = mapToInfaktRequest(request)
-        val response = apiClient.createInvoice(apiKey, payload)
-        return mapToSnapshot(response)
+        val created = apiClient.createInvoice(apiKey, payload)
+
+        // inFakt API ignores the 'status' field on creation – invoice always starts as "draft".
+        // For TRANSFER payments we must additionally download the invoice PDF, which automatically
+        // changes the status to "printed" (Wydrukowano) per inFakt API documentation.
+        val (desiredStatus, _) = mapPaymentMethodToInfaktStatus(request.paymentMethod, request.issueDate)
+        if (desiredStatus == "printed") {
+            log.info("[InFakt] issueInvoice: fetching PDF to trigger 'printed' status for invoice {}", created.id)
+            apiClient.downloadPdfToMarkAsPrinted(apiKey, created.id)
+            val updated = apiClient.getInvoice(apiKey, created.id)
+            return mapToSnapshot(updated)
+        }
+
+        return mapToSnapshot(created)
     }
 
     override fun getInvoice(apiKey: String, externalId: String): ExternalInvoiceSnapshot {
