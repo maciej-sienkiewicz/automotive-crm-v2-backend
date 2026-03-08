@@ -1,5 +1,6 @@
 package pl.detailing.crm.finance
 
+import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
@@ -12,8 +13,13 @@ import pl.detailing.crm.finance.cash.GetCashRegisterHandler
 import pl.detailing.crm.finance.cash.GetCashRegisterQuery
 import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
+import pl.detailing.crm.finance.document.ImportProviderInvoicesCommand
+import pl.detailing.crm.finance.document.ImportProviderInvoicesHandler
 import pl.detailing.crm.finance.document.ListFinancialDocumentsCommand
 import pl.detailing.crm.finance.document.ListFinancialDocumentsHandler
+import pl.detailing.crm.finance.document.RetryProviderSyncHandler
+import pl.detailing.crm.finance.document.SyncInvoiceStatusesCommand
+import pl.detailing.crm.finance.document.SyncInvoiceStatusesHandler
 import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
 import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
 import pl.detailing.crm.finance.domain.CashOperation
@@ -26,12 +32,15 @@ import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
-import pl.detailing.crm.invoicing.InvoiceProviderRegistry
-import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
-import pl.detailing.crm.invoicing.domain.ExternalInvoice
-import pl.detailing.crm.invoicing.infrastructure.ExternalInvoiceRepository
 import pl.detailing.crm.finance.reporting.FinanceReportQuery
 import pl.detailing.crm.finance.reporting.FinanceReportingHandler
+import pl.detailing.crm.invoicing.InvoicingFacade
+import pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus
+import pl.detailing.crm.invoicing.domain.InvoiceItem
+import pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
+import pl.detailing.crm.invoicing.domain.IssueInvoiceRequest
+import pl.detailing.crm.invoicing.domain.InvoicingException
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.ForbiddenException
@@ -49,9 +58,10 @@ class FinanceController(
     private val listDocumentsHandler: ListFinancialDocumentsHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
     private val documentRepository: FinancialDocumentRepository,
-    private val invoiceRepository: ExternalInvoiceRepository,
-    private val invoicingCredentialsRepository: InvoicingCredentialsRepository,
-    private val invoiceProviderRegistry: InvoiceProviderRegistry,
+    private val syncInvoiceStatusesHandler: SyncInvoiceStatusesHandler,
+    private val importProviderInvoicesHandler: ImportProviderInvoicesHandler,
+    private val retryProviderSyncHandler: RetryProviderSyncHandler,
+    private val invoicingFacade: InvoicingFacade,
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
     private val reportingHandler: FinanceReportingHandler
@@ -62,12 +72,9 @@ class FinanceController(
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Issue a new financial document.
+     * Issue a new financial document (receipt, other; NOT a VAT invoice via provider).
+     * For VAT invoices with itemized services, use POST /api/v1/finance/invoices.
      * POST /api/v1/finance/documents
-     *
-     * For CASH payments the cash-register balance is updated atomically.
-     * For CARD payments the document is immediately PAID with no cash effect.
-     * For TRANSFER payments the document starts as PENDING; [dueDate] is required.
      */
     @PostMapping("/documents")
     fun createDocument(
@@ -76,8 +83,8 @@ class FinanceController(
         val principal = SecurityContextHelper.getCurrentUser()
         requireManagerOrOwner(principal.role, "wystawiać dokumenty finansowe")
 
-        val documentType = parseEnum<DocumentType>(request.documentType, "documentType")
-        val direction    = parseEnum<DocumentDirection>(request.direction, "direction")
+        val documentType  = parseEnum<DocumentType>(request.documentType, "documentType")
+        val direction     = parseEnum<DocumentDirection>(request.direction, "direction")
         val paymentMethod = parseEnum<PaymentMethod>(request.paymentMethod, "paymentMethod")
 
         val result = createDocumentHandler.handle(
@@ -106,20 +113,12 @@ class FinanceController(
             )
         )
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse())
+        return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse(externalUrl = null))
     }
 
     /**
-     * List financial documents and invoices.
-     *
-     * Returns two lists:
-     * - [documents] – receipts and other internal financial documents (excluding invoices)
-     * - [invoices]  – VAT invoices from the external provider (including SYNC_FAILED ones)
-     *
-     * GET /api/v1/finance/documents?documentType=RECEIPT&direction=INCOME&status=PENDING&page=1&size=20
-     *
-     * The [documentType] filter applies only to the [documents] list.
-     * The [page] and [size] params apply to both lists independently.
+     * List all financial documents (including VAT invoices).
+     * GET /api/v1/finance/documents?documentType=INVOICE&direction=INCOME&status=PENDING&page=1&size=20
      */
     @GetMapping("/documents")
     fun listDocuments(
@@ -135,7 +134,7 @@ class FinanceController(
         val principal = SecurityContextHelper.getCurrentUser()
         val pageSize  = size.coerceIn(1, 100)
 
-        val docResult = listDocumentsHandler.handle(
+        val result = listDocumentsHandler.handle(
             ListFinancialDocumentsCommand(
                 studioId     = principal.studioId,
                 documentType = documentType?.let { parseEnum<DocumentType>(it, "documentType") },
@@ -149,33 +148,21 @@ class FinanceController(
             )
         )
 
-        // Invoices are stored in the invoicing module and listed separately.
-        // No pagination filter applied here – all invoices are returned for the studio.
-        val invoicePageable = org.springframework.data.domain.PageRequest.of(maxOf(0, page - 1), pageSize)
-        val invoicePage = invoiceRepository.findByStudioIdOrderByIssueDateDescCreatedAtDesc(
-            principal.studioId.value, invoicePageable
-        )
+        val credentials = invoicingFacade.findCredentials(principal.studioId)
 
-        val credentials = invoicingCredentialsRepository.findByStudioId(principal.studioId.value)
-        val provider = credentials?.let {
-            runCatching { invoiceProviderRegistry.getProvider(it.provider) }.getOrNull()
-        }
-
-        val invoiceResponses = invoicePage.content.map { entity ->
-            val portalUrl = if (provider != null && entity.externalId != null) {
-                provider.getInvoicePortalUrl(entity.externalId!!)
+        val documents = result.documents.map { doc ->
+            val url = if (credentials != null && doc.provider != null && doc.externalId != null) {
+                runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
             } else null
-            entity.toDomain(portalUrl).toInvoiceResponse()
+            doc.toResponse(externalUrl = url)
         }
 
         return ResponseEntity.ok(
             FinancialDocumentListResponse(
-                documents    = docResult.documents.map { it.toResponse() },
-                invoices     = invoiceResponses,
-                total        = docResult.total,
-                invoiceTotal = invoicePage.totalElements,
-                page         = docResult.page,
-                pageSize     = docResult.pageSize
+                documents = documents,
+                total     = result.total,
+                page      = result.page,
+                pageSize  = result.pageSize
             )
         )
     }
@@ -191,14 +178,17 @@ class FinanceController(
         val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
             ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
 
-        return ResponseEntity.ok(entity.toDomain().toResponse())
+        val doc = entity.toDomain()
+        val url = if (doc.provider != null && doc.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(doc.toResponse(externalUrl = url))
     }
 
     /**
      * Update the payment status of a document.
      * PATCH /api/v1/finance/documents/{id}/status
-     *
-     * Allowed transitions: PENDING → PAID, PENDING → OVERDUE, OVERDUE → PAID.
      */
     @PatchMapping("/documents/{id}/status")
     fun updateStatus(
@@ -220,15 +210,16 @@ class FinanceController(
             )
         )
 
-        return ResponseEntity.ok(result.toResponse())
+        val url = if (result.provider != null && result.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(result.provider, result.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(result.toResponse(externalUrl = url))
     }
 
     /**
      * Soft-delete a document.
      * DELETE /api/v1/finance/documents/{id}
-     *
-     * The document is retained in the database for compliance purposes.
-     * Only OWNER can delete financial documents.
      */
     @DeleteMapping("/documents/{id}")
     @Transactional
@@ -250,28 +241,238 @@ class FinanceController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Cash Register
+    // VAT Invoice operations (provider integration)
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Get the current cash-register state.
-     * GET /api/v1/finance/cash
+     * Issue a new VAT invoice with itemized services via the configured provider.
+     * The invoice is persisted as a FinancialDocument (type=INVOICE) and also
+     * sent to the external provider (e.g. inFakt) for formal issuance.
+     *
+     * POST /api/v1/finance/invoices
      */
-    @GetMapping("/cash")
-    fun getCashRegister(): ResponseEntity<CashRegisterResponse> {
+    @PostMapping("/invoices")
+    fun issueInvoice(
+        @RequestBody request: IssueInvoiceDocumentRequest
+    ): ResponseEntity<FinancialDocumentResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "wystawiać faktury")
 
-        val cashRegister = getCashRegisterHandler.getCashRegister(
-            GetCashRegisterQuery(principal.studioId)
+        if (request.items.isEmpty()) {
+            throw ValidationException("Faktura musi zawierać co najmniej jedną pozycję")
+        }
+        val paymentMethod = parseEnum<PaymentMethod>(request.paymentMethod, "paymentMethod")
+
+        val credentials = invoicingFacade.findCredentials(principal.studioId)
+
+        val providerRequest = IssueInvoiceRequest(
+            buyerName     = request.buyerName,
+            buyerNip      = request.buyerNip,
+            buyerEmail    = request.buyerEmail,
+            buyerStreet   = request.buyerStreet,
+            buyerCity     = request.buyerCity,
+            buyerPostCode = request.buyerPostCode,
+            items         = request.items.map {
+                InvoiceItem(
+                    name                = it.name,
+                    quantity            = it.quantity,
+                    unit                = it.unit,
+                    unitNetPriceInCents = it.unitNetPriceInCents,
+                    vatRate             = it.vatRate
+                )
+            },
+            paymentMethod = request.paymentMethod,
+            issueDate     = request.issueDate,
+            dueDate       = request.dueDate,
+            currency      = request.currency ?: "PLN",
+            notes         = request.notes
         )
 
-        return ResponseEntity.ok(cashRegister.toResponse())
+        val totalGross = request.items.sumOf { item ->
+            val net = item.unitNetPriceInCents * item.quantity
+            val vat = if (item.vatRate > 0) net * item.vatRate / 100 else 0.0
+            (net + vat).toLong()
+        }
+        val totalNet = request.items.sumOf { (it.unitNetPriceInCents * it.quantity).toLong() }
+        val totalVat = totalGross - totalNet
+
+        val paymentStatus = paymentMethod.defaultStatus()
+        val now = Instant.now()
+        val year = request.issueDate.year
+        val yearStart = LocalDate.of(year, 1, 1)
+        val yearEnd   = LocalDate.of(year + 1, 1, 1)
+        val count = documentRepository.countByStudioTypeAndYear(
+            principal.studioId.value, DocumentType.INVOICE, yearStart, yearEnd
+        )
+        val documentNumber = "FAK/$year/${(count + 1).toString().padStart(4, '0')}"
+
+        val entity = pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity(
+            id                = UUID.randomUUID(),
+            studioId          = principal.studioId.value,
+            source            = DocumentSource.MANUAL,
+            visitId           = null,
+            vehicleBrand      = null,
+            vehicleModel      = null,
+            customerFirstName = null,
+            customerLastName  = null,
+            documentNumber    = documentNumber,
+            documentType      = DocumentType.INVOICE,
+            direction         = DocumentDirection.INCOME,
+            status            = paymentStatus,
+            paymentMethod     = paymentMethod,
+            totalNet          = totalNet,
+            totalVat          = totalVat,
+            totalGross        = totalGross,
+            currency          = request.currency ?: "PLN",
+            issueDate         = request.issueDate,
+            dueDate           = request.dueDate,
+            paidAt            = if (paymentStatus == DocumentStatus.PAID) now else null,
+            description       = request.notes,
+            counterpartyName  = request.buyerName,
+            counterpartyNip   = request.buyerNip,
+            ksefInvoiceId     = null,
+            ksefNumber        = null,
+            createdBy         = principal.userId.value,
+            updatedBy         = principal.userId.value,
+            createdAt         = now,
+            updatedAt         = now
+        )
+
+        var externalUrl: String? = null
+        if (credentials != null) {
+            entity.providerSyncAttemptedAt = now
+            try {
+                val (providerType, snapshot) = invoicingFacade.issueInvoice(principal.studioId, providerRequest)
+                entity.provider             = providerType
+                entity.externalId           = snapshot.externalId
+                entity.externalNumber       = snapshot.externalNumber
+                entity.externalStatus       = snapshot.status
+                entity.providerSyncStatus   = InvoiceProviderSyncStatus.SYNCED
+                entity.syncedAt             = now
+                externalUrl = runCatching { invoicingFacade.getPortalUrl(providerType, snapshot.externalId) }.getOrNull()
+            } catch (ex: InvoicingException) {
+                entity.provider           = credentials.first
+                entity.providerSyncStatus = InvoiceProviderSyncStatus.SYNC_FAILED
+                entity.providerSyncError  = ex.message?.take(2000)
+            }
+        }
+
+        val saved = documentRepository.save(entity)
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved.toDomain().toResponse(externalUrl))
     }
 
     /**
-     * Paginated history of all cash operations.
-     * GET /api/v1/finance/cash/history?page=1&size=30
+     * Synchronize status of all active invoices from the provider.
+     * POST /api/v1/finance/invoices/sync
      */
+    @PostMapping("/invoices/sync")
+    fun syncAllInvoices(): ResponseEntity<SyncInvoicesResultResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "synchronizować faktury")
+
+        val result = syncInvoiceStatusesHandler.handle(
+            SyncInvoiceStatusesCommand(studioId = principal.studioId)
+        )
+
+        return ResponseEntity.ok(SyncInvoicesResultResponse(result.synced, result.failed, result.errors))
+    }
+
+    /**
+     * Synchronize status of a single invoice from the provider.
+     * POST /api/v1/finance/invoices/{id}/sync
+     */
+    @PostMapping("/invoices/{id}/sync")
+    fun syncSingleInvoice(@PathVariable id: UUID): ResponseEntity<FinancialDocumentResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "synchronizować faktury")
+
+        syncInvoiceStatusesHandler.handle(
+            SyncInvoiceStatusesCommand(studioId = principal.studioId, documentId = id)
+        )
+
+        val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
+            ?: throw EntityNotFoundException("Faktura o ID $id nie istnieje")
+        val doc = entity.toDomain()
+        val url = if (doc.provider != null && doc.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(doc.toResponse(externalUrl = url))
+    }
+
+    /**
+     * Import all invoices from the configured provider into the local database.
+     * POST /api/v1/finance/invoices/import
+     */
+    @PostMapping("/invoices/import")
+    fun importInvoices(): ResponseEntity<ImportInvoicesResultResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "importować faktury")
+
+        val result = importProviderInvoicesHandler.handle(
+            ImportProviderInvoicesCommand(studioId = principal.studioId)
+        )
+
+        return ResponseEntity.ok(
+            ImportInvoicesResultResponse(
+                imported = result.imported,
+                updated  = result.updated,
+                merged   = result.merged,
+                failed   = result.failed,
+                errors   = result.errors
+            )
+        )
+    }
+
+    /**
+     * Retry sending a SYNC_FAILED invoice to the external provider.
+     * POST /api/v1/finance/invoices/{id}/retry-sync
+     */
+    @PostMapping("/invoices/{id}/retry-sync")
+    fun retrySyncInvoice(@PathVariable id: UUID): ResponseEntity<FinancialDocumentResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "ponownie synchronizować faktury")
+
+        val doc = retryProviderSyncHandler.handle(studioId = principal.studioId, documentId = id)
+        val url = if (doc.provider != null && doc.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(doc.toResponse(externalUrl = url))
+    }
+
+    /**
+     * Get a direct URL to view the invoice on the provider's portal.
+     * GET /api/v1/finance/invoices/{id}/portal-url
+     */
+    @GetMapping("/invoices/{id}/portal-url")
+    fun getPortalUrl(@PathVariable id: UUID): ResponseEntity<InvoicePortalUrlResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
+            ?: throw EntityNotFoundException("Faktura o ID $id nie istnieje")
+
+        val provider   = entity.provider   ?: return ResponseEntity.notFound().build()
+        val externalId = entity.externalId ?: return ResponseEntity.notFound().build()
+
+        val url = runCatching { invoicingFacade.getPortalUrl(provider, externalId) }.getOrNull()
+            ?: return ResponseEntity.notFound().build()
+
+        return ResponseEntity.ok(InvoicePortalUrlResponse(url))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Cash Register
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @GetMapping("/cash")
+    fun getCashRegister(): ResponseEntity<CashRegisterResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            getCashRegisterHandler.getCashRegister(GetCashRegisterQuery(principal.studioId)).toResponse()
+        )
+    }
+
     @GetMapping("/cash/history")
     fun getCashHistory(
         @RequestParam(defaultValue = "1") page: Int,
@@ -297,44 +498,28 @@ class FinanceController(
         )
     }
 
-    /**
-     * Perform a manual cash-register adjustment.
-     * POST /api/v1/finance/cash/adjust
-     *
-     * Use for: start-of-day float, withdrawals, deposits, discrepancy corrections.
-     * A non-blank [comment] is mandatory for full auditability.
-     */
     @PostMapping("/cash/adjust")
-    fun adjustCash(
-        @RequestBody request: CashAdjustRequest
-    ): ResponseEntity<CashRegisterResponse> {
+    fun adjustCash(@RequestBody request: CashAdjustRequest): ResponseEntity<CashRegisterResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         requireManagerOrOwner(principal.role, "korygować stan kasy")
 
-        val result = adjustCashHandler.handle(
-            AdjustCashBalanceCommand(
-                studioId        = principal.studioId,
-                userId          = principal.userId,
-                userDisplayName = principal.fullName,
-                amount          = request.amount,
-                comment         = request.comment
-            )
+        return ResponseEntity.ok(
+            adjustCashHandler.handle(
+                AdjustCashBalanceCommand(
+                    studioId        = principal.studioId,
+                    userId          = principal.userId,
+                    userDisplayName = principal.fullName,
+                    amount          = request.amount,
+                    comment         = request.comment
+                )
+            ).toResponse()
         )
-
-        return ResponseEntity.ok(result.toResponse())
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Reporting
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * High-level financial summary.
-     * GET /api/v1/finance/summary?dateFrom=2024-01-01&dateTo=2024-12-31
-     *
-     * All monetary values in the response are in grosz (1/100 PLN).
-     * Both date params are optional; omit for all-time totals.
-     */
     @GetMapping("/summary")
     fun getSummary(
         @RequestParam(required = false) dateFrom: LocalDate?,
@@ -356,15 +541,15 @@ class FinanceController(
 
         return ResponseEntity.ok(
             FinanceSummaryResponse(
-                dateFrom             = result.dateFrom?.toString(),
-                dateTo               = result.dateTo?.toString(),
-                totalRevenue         = result.totalRevenue.amountInCents,
-                totalCosts           = result.totalCosts.amountInCents,
-                profit               = result.profit.amountInCents,
-                pendingReceivables   = result.pendingReceivables.amountInCents,
-                pendingPayables      = result.pendingPayables.amountInCents,
-                overdueReceivables   = result.overdueReceivables,
-                overduePayables      = result.overduePayables
+                dateFrom           = result.dateFrom?.toString(),
+                dateTo             = result.dateTo?.toString(),
+                totalRevenue       = result.totalRevenue.amountInCents,
+                totalCosts         = result.totalCosts.amountInCents,
+                profit             = result.profit.amountInCents,
+                pendingReceivables = result.pendingReceivables.amountInCents,
+                pendingPayables    = result.pendingPayables.amountInCents,
+                overdueReceivables = result.overdueReceivables,
+                overduePayables    = result.overduePayables
             )
         )
     }
@@ -394,63 +579,50 @@ class FinanceController(
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class CreateDocumentRequest(
-    /** RECEIPT | INVOICE | OTHER */
     val documentType: String,
-
-    /** INCOME | EXPENSE */
     val direction: String,
-
-    /** CASH | CARD | TRANSFER */
     val paymentMethod: String,
-
-    /** Net amount in grosz (1/100 PLN). */
     val totalNet: Long,
-
-    /** VAT amount in grosz. Must satisfy: totalNet + totalVat == totalGross. */
     val totalVat: Long,
-
-    /** Gross amount in grosz. */
     val totalGross: Long,
-
-    /** ISO-4217 currency code, defaults to "PLN". */
     val currency: String? = "PLN",
-
     val issueDate: LocalDate,
-
-    /** Required when paymentMethod == TRANSFER. */
     val dueDate: LocalDate?,
-
     val description: String?,
     val counterpartyName: String?,
     val counterpartyNip: String?,
-
-    /** Optional: UUID of the visit this document relates to. */
     val visitId: UUID? = null,
-
-    // ── Optional vehicle / customer context ───────────────────────────────
     val vehicleBrand: String? = null,
     val vehicleModel: String? = null,
     val customerFirstName: String? = null,
     val customerLastName: String? = null
 )
 
-data class UpdateStatusRequest(
-    /** PAID | PENDING | OVERDUE */
-    val status: String
+data class UpdateStatusRequest(val status: String)
+
+data class CashAdjustRequest(val amount: Long, val comment: String)
+
+data class IssueInvoiceDocumentRequest(
+    val buyerName: String,
+    val buyerNip: String?,
+    val buyerEmail: String?,
+    val buyerStreet: String?,
+    val buyerCity: String?,
+    val buyerPostCode: String?,
+    val items: List<InvoiceItemRequest>,
+    val paymentMethod: String,
+    val issueDate: LocalDate,
+    val dueDate: LocalDate?,
+    val currency: String? = "PLN",
+    val notes: String?
 )
 
-/**
- * Manual cash-register adjustment request.
- *
- * [amount] in grosz, signed:
- *   positive = deposit / opening float
- *   negative = withdrawal / bank transfer out
- *
- * [comment] is mandatory (e.g. "Otwarcie kasy – stan początkowy 500 PLN").
- */
-data class CashAdjustRequest(
-    val amount: Long,
-    val comment: String
+data class InvoiceItemRequest(
+    val name: String,
+    val quantity: Double,
+    val unit: String,
+    val unitNetPriceInCents: Long,
+    val vatRate: Int
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,11 +632,8 @@ data class CashAdjustRequest(
 data class FinancialDocumentResponse(
     val id: String,
     val documentNumber: String,
-
-    /** How this document entered the system: VISIT | KSEF | MANUAL. */
     val source: String,
     val sourceLabel: String,
-
     val documentType: String,
     val documentTypeLabel: String,
     val direction: String,
@@ -473,30 +642,39 @@ data class FinancialDocumentResponse(
     val statusLabel: String,
     val paymentMethod: String,
     val paymentMethodLabel: String,
-
-    /** All monetary values in grosz (1/100 PLN). */
     val totalNet: Long,
     val totalVat: Long,
     val totalGross: Long,
     val currency: String,
-
     val issueDate: String,
     val dueDate: String?,
     val paidAt: Instant?,
-
     val description: String?,
     val counterpartyName: String?,
     val counterpartyNip: String?,
-
     val visitId: String?,
-
-    // ── Denormalised vehicle / customer context ───────────────────────────
     val vehicleBrand: String?,
     val vehicleModel: String?,
     val customerFirstName: String?,
     val customerLastName: String?,
 
-    // ── KSeF placeholders ─────────────────────────────────────────────────
+    // ── External provider fields (null for non-invoice/non-synced documents) ─
+    val provider: String?,
+    val providerLabel: String?,
+    val externalId: String?,
+    val externalNumber: String?,
+    val externalStatus: String?,
+    val externalStatusLabel: String?,
+    val isCorrection: Boolean,
+    val hasCorrection: Boolean,
+    val correctionExternalId: String?,
+    val providerSyncStatus: String?,
+    val providerSyncStatusLabel: String?,
+    val providerSyncError: String?,
+    val syncedAt: Instant?,
+    val externalUrl: String?,
+
+    // ── KSeF placeholders ──────────────────────────────────────────────────
     val ksefInvoiceId: String?,
     val ksefNumber: String?,
 
@@ -505,45 +683,15 @@ data class FinancialDocumentResponse(
     val updatedAt: Instant
 )
 
-data class InvoiceResponse(
-    val id: String,
-    val provider: String?,
-    val providerLabel: String?,
-    val externalId: String?,
-    val externalNumber: String?,
-    val status: String,
-    val statusLabel: String,
-    val providerSyncStatus: String,
-    val providerSyncStatusLabel: String,
-    val providerSyncError: String?,
-    val grossAmount: Long,
-    val netAmount: Long,
-    val vatAmount: Long,
-    val currency: String,
-    val issueDate: String,
-    val dueDate: String?,
-    val buyerName: String?,
-    val buyerNip: String?,
-    val description: String?,
-    val visitId: String?,
-    val externalUrl: String?,
-    val syncedAt: Instant?,
-    val createdAt: Instant
-)
-
 data class FinancialDocumentListResponse(
     val documents: List<FinancialDocumentResponse>,
-    /** VAT invoices issued via external provider (single source of truth for invoices). */
-    val invoices: List<InvoiceResponse>,
     val total: Long,
-    val invoiceTotal: Long,
     val page: Int,
     val pageSize: Int
 )
 
 data class CashRegisterResponse(
     val id: String,
-    /** Current balance in grosz (1/100 PLN). */
     val balance: Long,
     val currency: String,
     val updatedAt: Instant
@@ -551,7 +699,6 @@ data class CashRegisterResponse(
 
 data class CashOperationResponse(
     val id: String,
-    /** Signed amount in grosz. Positive = in, negative = out. */
     val amount: Long,
     val balanceBefore: Long,
     val balanceAfter: Long,
@@ -573,66 +720,82 @@ data class CashHistoryResponse(
 data class FinanceSummaryResponse(
     val dateFrom: String?,
     val dateTo: String?,
-
-    /** Total settled revenue in grosz (INCOME + PAID). */
     val totalRevenue: Long,
-
-    /** Total settled costs in grosz (EXPENSE + PAID). */
     val totalCosts: Long,
-
-    /** Revenue − Costs (always ≥ 0 in this response; check overduePayables for full picture). */
     val profit: Long,
-
-    /** Sum of INCOME PENDING documents – money owed to us. */
     val pendingReceivables: Long,
-
-    /** Sum of EXPENSE PENDING documents – money we owe. */
     val pendingPayables: Long,
-
-    /** Count of INCOME OVERDUE documents. */
     val overdueReceivables: Long,
-
-    /** Count of EXPENSE OVERDUE documents. */
     val overduePayables: Long
 )
 
+data class SyncInvoicesResultResponse(
+    val synced: Int,
+    val failed: Int,
+    val errors: List<String>
+)
+
+data class ImportInvoicesResultResponse(
+    val imported: Int,
+    val updated: Int,
+    val merged: Int,
+    val failed: Int,
+    val errors: List<String>
+)
+
+data class InvoicePortalUrlResponse(val url: String)
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Domain → Response mapping extensions
+// Domain → Response mapping
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
-    id                 = id.toString(),
-    documentNumber     = documentNumber,
-    source             = source.name,
-    sourceLabel        = source.displayName,
-    documentType       = documentType.name,
-    documentTypeLabel  = documentType.displayName,
-    direction          = direction.name,
-    directionLabel     = direction.displayName,
-    status             = status.name,
-    statusLabel        = status.displayName,
-    paymentMethod      = paymentMethod.name,
-    paymentMethodLabel = paymentMethod.displayName,
-    totalNet           = totalNet.amountInCents,
-    totalVat           = totalVat.amountInCents,
-    totalGross         = totalGross.amountInCents,
-    currency           = currency,
-    issueDate          = issueDate.toString(),
-    dueDate            = dueDate?.toString(),
-    paidAt             = paidAt,
-    description        = description,
-    counterpartyName   = counterpartyName,
-    counterpartyNip    = counterpartyNip,
-    visitId            = visitId?.toString(),
-    vehicleBrand       = vehicleBrand,
-    vehicleModel       = vehicleModel,
-    customerFirstName  = customerFirstName,
-    customerLastName   = customerLastName,
-    ksefInvoiceId      = ksefInvoiceId?.toString(),
-    ksefNumber         = ksefNumber,
-    createdBy          = createdBy.toString(),
-    createdAt          = createdAt,
-    updatedAt          = updatedAt
+private fun FinancialDocument.toResponse(externalUrl: String?) = FinancialDocumentResponse(
+    id                      = id.toString(),
+    documentNumber          = documentNumber,
+    source                  = source.name,
+    sourceLabel             = source.displayName,
+    documentType            = documentType.name,
+    documentTypeLabel       = documentType.displayName,
+    direction               = direction.name,
+    directionLabel          = direction.displayName,
+    status                  = status.name,
+    statusLabel             = status.displayName,
+    paymentMethod           = paymentMethod.name,
+    paymentMethodLabel      = paymentMethod.displayName,
+    totalNet                = totalNet.amountInCents,
+    totalVat                = totalVat.amountInCents,
+    totalGross              = totalGross.amountInCents,
+    currency                = currency,
+    issueDate               = issueDate.toString(),
+    dueDate                 = dueDate?.toString(),
+    paidAt                  = paidAt,
+    description             = description,
+    counterpartyName        = counterpartyName,
+    counterpartyNip         = counterpartyNip,
+    visitId                 = visitId?.toString(),
+    vehicleBrand            = vehicleBrand,
+    vehicleModel            = vehicleModel,
+    customerFirstName       = customerFirstName,
+    customerLastName        = customerLastName,
+    provider                = provider?.name,
+    providerLabel           = provider?.displayName,
+    externalId              = externalId,
+    externalNumber          = externalNumber,
+    externalStatus          = externalStatus?.name,
+    externalStatusLabel     = externalStatus?.displayName,
+    isCorrection            = isCorrection,
+    hasCorrection           = hasCorrection,
+    correctionExternalId    = correctionExternalId,
+    providerSyncStatus      = providerSyncStatus?.name,
+    providerSyncStatusLabel = providerSyncStatus?.displayName,
+    providerSyncError       = providerSyncError,
+    syncedAt                = syncedAt,
+    externalUrl             = externalUrl,
+    ksefInvoiceId           = ksefInvoiceId?.toString(),
+    ksefNumber              = ksefNumber,
+    createdBy               = createdBy.toString(),
+    createdAt               = createdAt,
+    updatedAt               = updatedAt
 )
 
 private fun CashRegister.toResponse() = CashRegisterResponse(
@@ -653,30 +816,4 @@ private fun CashOperation.toResponse() = CashOperationResponse(
     financialDocumentId = financialDocumentId?.toString(),
     createdBy           = createdBy.toString(),
     createdAt           = createdAt
-)
-
-private fun ExternalInvoice.toInvoiceResponse() = InvoiceResponse(
-    id                      = id.toString(),
-    provider                = provider?.name,
-    providerLabel           = provider?.displayName,
-    externalId              = externalId,
-    externalNumber          = externalNumber,
-    status                  = status.name,
-    statusLabel             = status.displayName,
-    providerSyncStatus      = providerSyncStatus.name,
-    providerSyncStatusLabel = providerSyncStatus.displayName,
-    providerSyncError       = providerSyncError,
-    grossAmount             = grossAmount,
-    netAmount               = netAmount,
-    vatAmount               = vatAmount,
-    currency                = currency,
-    issueDate               = issueDate.toString(),
-    dueDate                 = dueDate?.toString(),
-    buyerName               = buyerName,
-    buyerNip                = buyerNip,
-    description             = description,
-    visitId                 = visitId?.toString(),
-    externalUrl             = externalUrl,
-    syncedAt                = syncedAt,
-    createdAt               = createdAt
 )

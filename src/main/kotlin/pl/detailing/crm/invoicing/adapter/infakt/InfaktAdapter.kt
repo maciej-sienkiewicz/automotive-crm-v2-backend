@@ -179,7 +179,8 @@ class InfaktAdapter(
             issueDate            = issueDate,
             dueDate              = dueDate,
             buyerName            = dto.buyerDisplayName(),
-            buyerNip             = dto.clientNip?.takeIf { it.isNotBlank() }
+            buyerNip             = dto.clientNip?.takeIf { it.isNotBlank() },
+            notes                = dto.notes?.takeIf { it.isNotBlank() }
         )
     }
 

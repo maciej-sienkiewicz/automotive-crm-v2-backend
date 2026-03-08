@@ -5,38 +5,20 @@ import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.finance.document.ImportProviderInvoicesHandler
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsEntity
 import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
-import pl.detailing.crm.invoicing.domain.*
-import pl.detailing.crm.invoicing.issue.InvoiceItemCommand
-import pl.detailing.crm.invoicing.issue.IssueInvoiceCommand
-import pl.detailing.crm.invoicing.issue.IssueInvoiceHandler
-import pl.detailing.crm.invoicing.sync.ImportInvoicesCommand
-import pl.detailing.crm.invoicing.sync.ImportInvoicesFromProviderHandler
-import pl.detailing.crm.invoicing.sync.RetrySyncInvoiceHandler
-import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusCommand
-import pl.detailing.crm.invoicing.sync.SyncInvoiceStatusHandler
-import pl.detailing.crm.invoicing.view.GetExternalInvoiceHandler
-import pl.detailing.crm.invoicing.view.GetExternalInvoiceQuery
-import pl.detailing.crm.invoicing.view.ListExternalInvoicesHandler
-import pl.detailing.crm.invoicing.view.ListExternalInvoicesQuery
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
-import java.time.LocalDate
-import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/invoicing")
 class InvoicingController(
     private val credentialsRepository: InvoicingCredentialsRepository,
-    private val issueInvoiceHandler: IssueInvoiceHandler,
-    private val getInvoiceHandler: GetExternalInvoiceHandler,
-    private val listInvoicesHandler: ListExternalInvoicesHandler,
-    private val syncStatusHandler: SyncInvoiceStatusHandler,
-    private val importInvoicesHandler: ImportInvoicesFromProviderHandler,
-    private val retrySyncHandler: RetrySyncInvoiceHandler,
+    private val importProviderInvoicesHandler: ImportProviderInvoicesHandler,
     private val providerRegistry: InvoiceProviderRegistry
 ) {
 
@@ -50,6 +32,7 @@ class InvoicingController(
      * Verifies the API key against the provider's API before saving.
      * Returns 422 if the key is rejected by the provider – credentials are NOT saved in that case.
      * Replaces any previously configured provider on success.
+     * After saving, triggers an asynchronous import of all existing provider invoices.
      *
      * POST /api/v1/invoicing/credentials
      */
@@ -86,10 +69,9 @@ class InvoicingController(
         )
 
         try {
-            importInvoicesHandler.handleWithCredentials(principal.studioId, provider, apiKey)
+            importProviderInvoicesHandler.handleWithCredentials(principal.studioId, provider, apiKey)
         } catch (ex: Exception) {
             // Import failure must not block the credential save — the user can trigger it manually later.
-            // The error is visible in logs.
         }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(entity.toResponse())
@@ -128,188 +110,6 @@ class InvoicingController(
         return ResponseEntity.noContent().build()
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Invoice operations
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Issue a new invoice via the configured provider.
-     * POST /api/v1/invoicing/invoices
-     */
-    @PostMapping("/invoices")
-    fun issueInvoice(
-        @RequestBody request: IssueInvoiceRequest
-    ): ResponseEntity<ExternalInvoiceResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
-
-        val command = IssueInvoiceCommand(
-            studioId      = principal.studioId,
-            buyerName     = request.buyerName,
-            buyerNip      = request.buyerNip,
-            buyerEmail    = request.buyerEmail,
-            buyerStreet   = request.buyerStreet,
-            buyerCity     = request.buyerCity,
-            buyerPostCode = request.buyerPostCode,
-            items         = request.items.map { item ->
-                InvoiceItemCommand(
-                    name                = item.name,
-                    quantity            = item.quantity,
-                    unit                = item.unit,
-                    unitNetPriceInCents = item.unitNetPriceInCents,
-                    vatRate             = item.vatRate
-                )
-            },
-            paymentMethod = request.paymentMethod,
-            issueDate     = request.issueDate,
-            dueDate       = request.dueDate,
-            currency      = request.currency ?: "PLN",
-            notes         = request.notes
-        )
-
-        val invoice = issueInvoiceHandler.handle(command)
-        return ResponseEntity.status(HttpStatus.CREATED).body(invoice.toResponse())
-    }
-
-    /**
-     * List invoices from the local cache (no provider API call).
-     * GET /api/v1/invoicing/invoices?page=1&size=20
-     */
-    @GetMapping("/invoices")
-    fun listInvoices(
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
-    ): ResponseEntity<ExternalInvoiceListResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = listInvoicesHandler.handle(
-            ListExternalInvoicesQuery(
-                studioId = principal.studioId,
-                page     = maxOf(1, page),
-                pageSize = size.coerceIn(1, 100)
-            )
-        )
-
-        return ResponseEntity.ok(
-            ExternalInvoiceListResponse(
-                invoices = result.invoices.map { it.toResponse() },
-                total    = result.total,
-                page     = result.page,
-                pageSize = result.pageSize
-            )
-        )
-    }
-
-    /**
-     * Get a single invoice with refreshed status from the provider.
-     * GET /api/v1/invoicing/invoices/{id}
-     */
-    @GetMapping("/invoices/{id}")
-    fun getInvoice(@PathVariable id: UUID): ResponseEntity<ExternalInvoiceResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val invoice = getInvoiceHandler.handle(
-            GetExternalInvoiceQuery(studioId = principal.studioId, invoiceId = id)
-        )
-
-        return ResponseEntity.ok(invoice.toResponse())
-    }
-
-    /**
-     * Synchronize status of a single invoice (or all active invoices) from the provider.
-     * POST /api/v1/invoicing/invoices/sync           → sync all active
-     * POST /api/v1/invoicing/invoices/{id}/sync      → sync single invoice
-     */
-    @PostMapping("/invoices/sync")
-    fun syncAllInvoices(): ResponseEntity<SyncResultResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
-
-        val result = syncStatusHandler.handle(
-            SyncInvoiceStatusCommand(studioId = principal.studioId, invoiceId = null)
-        )
-
-        return ResponseEntity.ok(result.toResponse())
-    }
-
-    /**
-     * Import all invoices from the configured provider into the local database.
-     *
-     * Invoices already present locally are updated (status, correction flags).
-     * New invoices are inserted. This endpoint is idempotent and can be called
-     * multiple times safely.
-     *
-     * POST /api/v1/invoicing/invoices/import
-     */
-    @PostMapping("/invoices/import")
-    fun importInvoices(): ResponseEntity<ImportResultResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
-
-        val result = importInvoicesHandler.handle(ImportInvoicesCommand(studioId = principal.studioId))
-
-        return ResponseEntity.ok(
-            ImportResultResponse(
-                imported = result.imported,
-                updated  = result.updated,
-                failed   = result.failed,
-                errors   = result.errors
-            )
-        )
-    }
-
-    @PostMapping("/invoices/{id}/sync")
-    fun syncSingleInvoice(@PathVariable id: UUID): ResponseEntity<ExternalInvoiceResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
-
-        syncStatusHandler.handle(
-            SyncInvoiceStatusCommand(studioId = principal.studioId, invoiceId = id)
-        )
-
-        val invoice = getInvoiceHandler.handle(
-            GetExternalInvoiceQuery(studioId = principal.studioId, invoiceId = id)
-        )
-
-        return ResponseEntity.ok(invoice.toResponse())
-    }
-
-    /**
-     * Retry sending a SYNC_FAILED invoice to the external provider.
-     *
-     * Re-reads the original visit data (line items, buyer info) and re-calls the provider adapter.
-     * On success: the local record is updated with the provider's externalId and status SYNCED.
-     * On failure: the error is updated and the invoice remains SYNC_FAILED for another retry.
-     *
-     * POST /api/v1/invoicing/invoices/{id}/retry-sync
-     */
-    @PostMapping("/invoices/{id}/retry-sync")
-    fun retrySyncInvoice(@PathVariable id: UUID): ResponseEntity<ExternalInvoiceResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
-
-        val invoice = retrySyncHandler.handle(studioId = principal.studioId, invoiceId = id)
-        return ResponseEntity.ok(invoice.toResponse())
-    }
-
-    /**
-     * Get a direct URL to view the invoice on the provider's portal.
-     * GET /api/v1/invoicing/invoices/{id}/portal-url
-     */
-    @GetMapping("/invoices/{id}/portal-url")
-    fun getPortalUrl(@PathVariable id: UUID): ResponseEntity<InvoicePortalUrlResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val invoice = getInvoiceHandler.handle(
-            GetExternalInvoiceQuery(studioId = principal.studioId, invoiceId = id)
-        )
-
-        val url = invoice.externalUrl
-            ?: return ResponseEntity.notFound().build()
-
-        return ResponseEntity.ok(InvoicePortalUrlResponse(url = url))
-    }
-
     /**
      * Returns a list of all supported invoicing providers.
      * GET /api/v1/invoicing/providers
@@ -330,12 +130,6 @@ class InvoicingController(
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun requireManagerOrOwner(role: UserRole) {
-        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel lub manager może zarządzać fakturami")
-        }
-    }
-
     private fun parseProvider(value: String): InvoiceProviderType {
         return runCatching { InvoiceProviderType.valueOf(value.uppercase()) }.getOrElse {
             throw ValidationException(
@@ -348,19 +142,13 @@ class InvoicingController(
         provider      = provider.name,
         providerLabel = provider.displayName,
         apiKeyMasked  = maskApiKey(apiKey),
-        verified      = true,   // saved credentials were always verified at the time of saving
+        verified      = true,
         createdAt     = createdAt,
         updatedAt     = updatedAt
     )
 
     private fun maskApiKey(key: String): String =
         if (key.length <= 8) "****" else key.take(4) + "****" + key.takeLast(4)
-
-    private fun pl.detailing.crm.invoicing.sync.SyncResult.toResponse() = SyncResultResponse(
-        synced = synced,
-        failed = failed,
-        errors = errors
-    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,43 +161,6 @@ data class SaveInvoicingCredentialsRequest(
     val apiKey: String
 )
 
-data class IssueInvoiceRequest(
-    val buyerName: String,
-    val buyerNip: String?,
-    val buyerEmail: String?,
-    val buyerStreet: String?,
-    val buyerCity: String?,
-    val buyerPostCode: String?,
-    val items: List<InvoiceItemRequest>,
-
-    /** CASH | CARD | TRANSFER */
-    val paymentMethod: String,
-
-    val issueDate: LocalDate,
-
-    /** Required when paymentMethod == TRANSFER. */
-    val dueDate: LocalDate?,
-
-    /** ISO-4217 currency code, defaults to PLN. */
-    val currency: String? = "PLN",
-
-    val notes: String?
-)
-
-data class InvoiceItemRequest(
-    val name: String,
-    val quantity: Double,
-
-    /** Unit label, e.g. "szt.", "godz.", "usł." */
-    val unit: String,
-
-    /** Net unit price in grosz (1/100 PLN). */
-    val unitNetPriceInCents: Long,
-
-    /** VAT rate in percent: 23, 8, 5, 0 or -1 for VAT_ZW (exempt). */
-    val vatRate: Int
-)
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Response DTOs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -418,95 +169,9 @@ data class InvoicingCredentialsResponse(
     val provider: String,
     val providerLabel: String,
     val apiKeyMasked: String,
-    /**
-     * Always true when returned from POST /credentials (key was verified against provider's API
-     * before being saved). Always true when returned from GET /credentials (saved keys are assumed
-     * verified at the time of saving; re-validation happens implicitly on next API call).
-     */
     val verified: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
-)
-
-data class ExternalInvoiceResponse(
-    val id: String,
-
-    /** Provider type name (e.g. "INFAKT"). Null for locally-created invoices not yet synced. */
-    val provider: String?,
-    val providerLabel: String?,
-
-    /** Provider's own identifier. Null until invoice is successfully sent to provider. */
-    val externalId: String?,
-    val externalNumber: String?,
-
-    val status: String,
-    val statusLabel: String,
-
-    /** SYNCED or SYNC_FAILED. */
-    val providerSyncStatus: String,
-    val providerSyncStatusLabel: String,
-
-    /** Human-readable error from the last failed sync attempt. Null when SYNCED. */
-    val providerSyncError: String?,
-
-    /** True if this invoice is a correction (credit note) for another invoice. */
-    val isCorrection: Boolean,
-
-    /** True if a correction has been issued for this invoice. */
-    val hasCorrection: Boolean,
-
-    /** Provider ID of the correction invoice issued for this invoice. */
-    val correctionExternalId: String?,
-
-    /** Gross amount in grosz (1/100 PLN). */
-    val grossAmount: Long,
-
-    /** Net amount in grosz. */
-    val netAmount: Long,
-
-    /** VAT amount in grosz. */
-    val vatAmount: Long,
-
-    val currency: String,
-    val issueDate: String,
-    val dueDate: String?,
-    val buyerName: String?,
-    val buyerNip: String?,
-    val description: String?,
-
-    /** UUID of the visit this invoice was issued for, if any. */
-    val visitId: String?,
-
-    /** Direct URL to view this invoice on the provider's portal. Null if not yet synced. */
-    val externalUrl: String?,
-
-    val syncedAt: Instant?,
-    val createdAt: Instant,
-    val updatedAt: Instant
-)
-
-data class ExternalInvoiceListResponse(
-    val invoices: List<ExternalInvoiceResponse>,
-    val total: Long,
-    val page: Int,
-    val pageSize: Int
-)
-
-data class InvoicePortalUrlResponse(
-    val url: String
-)
-
-data class SyncResultResponse(
-    val synced: Int,
-    val failed: Int,
-    val errors: List<String>
-)
-
-data class ImportResultResponse(
-    val imported: Int,
-    val updated: Int,
-    val failed: Int,
-    val errors: List<String>
 )
 
 data class InvoiceProviderInfoResponse(
@@ -514,38 +179,4 @@ data class InvoiceProviderInfoResponse(
     val displayName: String,
     /** True if an adapter has been implemented for this provider. */
     val supported: Boolean
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Domain → Response mapping
-// ─────────────────────────────────────────────────────────────────────────────
-
-private fun ExternalInvoice.toResponse() = ExternalInvoiceResponse(
-    id                       = id.toString(),
-    provider                 = provider?.name,
-    providerLabel            = provider?.displayName,
-    externalId               = externalId,
-    externalNumber           = externalNumber,
-    status                   = status.name,
-    statusLabel              = status.displayName,
-    providerSyncStatus       = providerSyncStatus.name,
-    providerSyncStatusLabel  = providerSyncStatus.displayName,
-    providerSyncError        = providerSyncError,
-    isCorrection             = isCorrection,
-    hasCorrection            = hasCorrection,
-    correctionExternalId     = correctionExternalId,
-    grossAmount              = grossAmount,
-    netAmount                = netAmount,
-    vatAmount                = vatAmount,
-    currency                 = currency,
-    issueDate                = issueDate.toString(),
-    dueDate                  = dueDate?.toString(),
-    buyerName                = buyerName,
-    buyerNip                 = buyerNip,
-    description              = description,
-    visitId                  = visitId?.toString(),
-    externalUrl              = externalUrl,
-    syncedAt                 = syncedAt,
-    createdAt                = createdAt,
-    updatedAt                = updatedAt
 )

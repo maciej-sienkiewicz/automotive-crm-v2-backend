@@ -1,5 +1,8 @@
 package pl.detailing.crm.finance.domain
 
+import pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.StudioId
@@ -72,14 +75,17 @@ enum class PaymentMethod(val displayName: String) {
 /**
  * Origin of the document – how it entered the system.
  *
- * VISIT  – auto-created when a visit is completed ([CompleteVisitHandler]).
- * KSEF   – imported from the Polish e-invoicing system (KSeF sync).
- * MANUAL – entered manually by a studio user via the finance API.
+ * VISIT    – auto-created when a visit is completed ([CompleteVisitHandler]).
+ * KSEF     – imported from the Polish e-invoicing system (KSeF sync).
+ * MANUAL   – entered manually by a studio user via the finance API.
+ * PROVIDER – imported automatically from the external invoicing provider
+ *            (e.g. invoice added by accounting directly in inFakt).
  */
 enum class DocumentSource(val displayName: String) {
     VISIT("Wizyta"),
     KSEF("KSeF"),
-    MANUAL("Ręcznie")
+    MANUAL("Ręcznie"),
+    PROVIDER("Dostawca")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,6 +157,45 @@ data class FinancialDocument(
 
     /** NIP (Polish tax ID) of the counterparty. */
     val counterpartyNip: String?,
+
+    // ── External provider integration ──────────────────────────────────────
+    /** External invoicing provider (e.g. INFAKT). Null for non-provider documents. */
+    val provider: InvoiceProviderType? = null,
+
+    /** Provider's own invoice identifier. Null until successfully sent to provider. */
+    val externalId: String? = null,
+
+    /** Human-readable invoice number assigned by the provider (e.g. "FV/2024/01/001"). */
+    val externalNumber: String? = null,
+
+    /** Status as reported by the external provider. Null for non-provider documents. */
+    val externalStatus: ExternalInvoiceStatus? = null,
+
+    /** True if this invoice is a correction (credit note) for another invoice. */
+    val isCorrection: Boolean = false,
+
+    /** True if a correction invoice has been issued for this document. */
+    val hasCorrection: Boolean = false,
+
+    /** Provider ID of the correction invoice, if one was issued for this document. */
+    val correctionExternalId: String? = null,
+
+    /**
+     * Synchronization state with the external provider.
+     * SYNCED      – provider confirmed the invoice; [externalId] is set.
+     * SYNC_FAILED – provider call failed; can be retried via POST /finance/invoices/{id}/retry-sync.
+     * Null for documents not linked to any provider.
+     */
+    val providerSyncStatus: InvoiceProviderSyncStatus? = null,
+
+    /** Human-readable error from the last failed provider sync attempt. */
+    val providerSyncError: String? = null,
+
+    /** Timestamp of the last provider sync attempt (success or failure). */
+    val providerSyncAttemptedAt: Instant? = null,
+
+    /** Last time data was pulled from provider's API. Null for not-yet-synced invoices. */
+    val syncedAt: Instant? = null,
 
     // ── KSeF integration placeholders ──────────────────────────────────────
     /** Future: link to the ksef_invoices table once KSeF integration is enabled. */

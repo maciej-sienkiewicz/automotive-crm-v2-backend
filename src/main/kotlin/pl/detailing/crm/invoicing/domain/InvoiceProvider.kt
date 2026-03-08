@@ -146,5 +146,11 @@ data class ExternalInvoiceSnapshot(
     val issueDate: LocalDate,
     val dueDate: LocalDate?,
     val buyerName: String?,
-    val buyerNip: String?
+    val buyerNip: String?,
+    /**
+     * Free-text notes / description attached to the invoice by the issuer.
+     * Used by [pl.detailing.crm.finance.document.ImportProviderInvoicesHandler] to detect
+     * CRM-originated invoices via the embedded [crm:visitId:UUID] tag.
+     */
+    val notes: String? = null
 )

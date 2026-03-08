@@ -9,6 +9,8 @@ import org.springframework.stereotype.Repository
 import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
+import pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
 import java.time.LocalDate
 import java.util.UUID
 
@@ -134,4 +136,57 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.deletedAt IS NULL
     """)
     fun markOverdueBatch(studioId: UUID, today: LocalDate, newStatus: DocumentStatus): Int
+
+    // ── Provider integration queries ──────────────────────────────────────────
+
+    /** Looks up a document by its external provider ID. Used to prevent import duplicates. */
+    fun findByStudioIdAndProviderAndExternalId(
+        studioId: UUID,
+        provider: InvoiceProviderType,
+        externalId: String
+    ): FinancialDocumentEntity?
+
+    /**
+     * Finds all active (non-terminal) INVOICE documents for background status sync.
+     * Skips PAID/CANCELLED external statuses since they no longer change.
+     */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.studioId = :studioId
+          AND d.provider = :provider
+          AND d.externalId IS NOT NULL
+          AND d.externalStatus NOT IN (
+              pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus.PAID,
+              pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus.CANCELLED
+          )
+          AND d.deletedAt IS NULL
+        ORDER BY d.issueDate DESC
+    """)
+    fun findActiveInvoicesForSync(
+        studioId: UUID,
+        provider: InvoiceProviderType
+    ): List<FinancialDocumentEntity>
+
+    /** Finds SYNC_FAILED invoice documents for a specific visit. Used for deduplication on import. */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.studioId          = :studioId
+          AND d.visitId           = :visitId
+          AND d.providerSyncStatus = pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus.SYNC_FAILED
+          AND d.deletedAt IS NULL
+    """)
+    fun findSyncFailedByStudioIdAndVisitId(
+        studioId: UUID,
+        visitId: UUID
+    ): List<FinancialDocumentEntity>
+
+    /** All invoices ordered newest-first (for paginated listing). */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.studioId = :studioId
+          AND d.documentType = pl.detailing.crm.finance.domain.DocumentType.INVOICE
+          AND d.deletedAt IS NULL
+        ORDER BY d.issueDate DESC, d.createdAt DESC
+    """)
+    fun findInvoicesByStudioId(studioId: UUID, pageable: Pageable): Page<FinancialDocumentEntity>
 }

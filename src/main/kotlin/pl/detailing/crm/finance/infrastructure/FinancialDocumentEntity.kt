@@ -7,6 +7,9 @@ import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderSyncStatus
+import pl.detailing.crm.invoicing.domain.InvoiceProviderType
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.StudioId
@@ -30,15 +33,24 @@ import java.util.UUID
 @Entity
 @Table(
     name = "financial_documents",
+    uniqueConstraints = [
+        UniqueConstraint(
+            name = "uq_fin_docs_studio_provider_external_id",
+            columnNames = ["studio_id", "provider", "external_id"]
+        )
+    ],
     indexes = [
-        Index(name = "idx_fin_docs_studio_id",     columnList = "studio_id"),
-        Index(name = "idx_fin_docs_studio_status",  columnList = "studio_id, status"),
-        Index(name = "idx_fin_docs_studio_type",    columnList = "studio_id, document_type"),
-        Index(name = "idx_fin_docs_studio_dir",     columnList = "studio_id, direction"),
-        Index(name = "idx_fin_docs_studio_source",  columnList = "studio_id, source"),
-        Index(name = "idx_fin_docs_visit_id",       columnList = "visit_id"),
-        Index(name = "idx_fin_docs_issue_date",     columnList = "studio_id, issue_date"),
-        Index(name = "idx_fin_docs_due_date",       columnList = "studio_id, due_date")
+        Index(name = "idx_fin_docs_studio_id",       columnList = "studio_id"),
+        Index(name = "idx_fin_docs_studio_status",   columnList = "studio_id, status"),
+        Index(name = "idx_fin_docs_studio_type",     columnList = "studio_id, document_type"),
+        Index(name = "idx_fin_docs_studio_dir",      columnList = "studio_id, direction"),
+        Index(name = "idx_fin_docs_studio_source",   columnList = "studio_id, source"),
+        Index(name = "idx_fin_docs_visit_id",        columnList = "visit_id"),
+        Index(name = "idx_fin_docs_issue_date",      columnList = "studio_id, issue_date"),
+        Index(name = "idx_fin_docs_due_date",        columnList = "studio_id, due_date"),
+        Index(name = "idx_fin_docs_provider",        columnList = "studio_id, provider"),
+        Index(name = "idx_fin_docs_external_id",     columnList = "external_id"),
+        Index(name = "idx_fin_docs_sync_status",     columnList = "studio_id, provider_sync_status")
     ]
 )
 class FinancialDocumentEntity(
@@ -136,6 +148,65 @@ class FinancialDocumentEntity(
     @Column(name = "counterparty_nip", length = 20)
     val counterpartyNip: String?,
 
+    // ── External provider integration ──────────────────────────────────────
+    /**
+     * External invoicing provider (e.g. INFAKT). Null for non-provider documents.
+     * Part of the deduplication constraint: (studio_id, provider, external_id) must be unique.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider", length = 20)
+    val provider: InvoiceProviderType? = null,
+
+    /**
+     * Provider's own invoice identifier. Null until the invoice has been successfully
+     * sent to the provider (or when the provider call failed – see [providerSyncStatus]).
+     */
+    @Column(name = "external_id", length = 100)
+    var externalId: String? = null,
+
+    /** Human-readable invoice number assigned by the provider (e.g. "FV/2024/01/001"). */
+    @Column(name = "external_number", length = 100)
+    var externalNumber: String? = null,
+
+    /** Status as reported by the external provider. Updated during sync. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "external_status", length = 30)
+    var externalStatus: ExternalInvoiceStatus? = null,
+
+    /** True if this invoice is a correction (credit note) for another invoice. */
+    @Column(name = "is_correction", nullable = false)
+    val isCorrection: Boolean = false,
+
+    /** True if a correction invoice has been issued for this document. Updated during sync. */
+    @Column(name = "has_correction", nullable = false)
+    var hasCorrection: Boolean = false,
+
+    /** Provider ID of the correction invoice, if one was issued for this document. */
+    @Column(name = "correction_external_id", length = 100)
+    var correctionExternalId: String? = null,
+
+    /**
+     * Synchronization state with the external provider.
+     * SYNCED      – provider confirmed the invoice; [externalId] is set.
+     * SYNC_FAILED – provider call failed; can be retried via POST /finance/invoices/{id}/retry-sync.
+     * Null for documents not linked to any provider.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider_sync_status", length = 20)
+    var providerSyncStatus: InvoiceProviderSyncStatus? = null,
+
+    /** Human-readable error from the last failed provider sync attempt. */
+    @Column(name = "provider_sync_error", columnDefinition = "TEXT")
+    var providerSyncError: String? = null,
+
+    /** Timestamp of the last provider sync attempt (success or failure). */
+    @Column(name = "provider_sync_attempted_at")
+    var providerSyncAttemptedAt: Instant? = null,
+
+    /** Last time data was successfully pulled from provider's API. */
+    @Column(name = "synced_at")
+    var syncedAt: Instant? = null,
+
     // ── KSeF placeholders ─────────────────────────────────────────────────
     @Column(name = "ksef_invoice_id", columnDefinition = "uuid")
     val ksefInvoiceId: UUID?,
@@ -161,68 +232,45 @@ class FinancialDocumentEntity(
 
 ) {
     fun toDomain(): FinancialDocument = FinancialDocument(
-        id                = FinancialDocumentId(id),
-        studioId          = StudioId(studioId),
-        source            = source,
-        visitId           = visitId?.let { VisitId(it) },
-        vehicleBrand      = vehicleBrand,
-        vehicleModel      = vehicleModel,
-        customerFirstName = customerFirstName,
-        customerLastName  = customerLastName,
-        documentNumber    = documentNumber,
-        documentType      = documentType,
-        direction         = direction,
-        status            = status,
-        paymentMethod     = paymentMethod,
-        totalNet          = Money(totalNet),
-        totalVat          = Money(totalVat),
-        totalGross        = Money(totalGross),
-        currency          = currency,
-        issueDate         = issueDate,
-        dueDate           = dueDate,
-        paidAt            = paidAt,
-        description       = description,
-        counterpartyName  = counterpartyName,
-        counterpartyNip   = counterpartyNip,
-        ksefInvoiceId     = ksefInvoiceId,
-        ksefNumber        = ksefNumber,
-        createdBy         = UserId(createdBy),
-        updatedBy         = UserId(updatedBy),
-        createdAt         = createdAt,
-        updatedAt         = updatedAt
+        id                      = FinancialDocumentId(id),
+        studioId                = StudioId(studioId),
+        source                  = source,
+        visitId                 = visitId?.let { VisitId(it) },
+        vehicleBrand            = vehicleBrand,
+        vehicleModel            = vehicleModel,
+        customerFirstName       = customerFirstName,
+        customerLastName        = customerLastName,
+        documentNumber          = documentNumber,
+        documentType            = documentType,
+        direction               = direction,
+        status                  = status,
+        paymentMethod           = paymentMethod,
+        totalNet                = Money(totalNet),
+        totalVat                = Money(totalVat),
+        totalGross              = Money(totalGross),
+        currency                = currency,
+        issueDate               = issueDate,
+        dueDate                 = dueDate,
+        paidAt                  = paidAt,
+        description             = description,
+        counterpartyName        = counterpartyName,
+        counterpartyNip         = counterpartyNip,
+        provider                = provider,
+        externalId              = externalId,
+        externalNumber          = externalNumber,
+        externalStatus          = externalStatus,
+        isCorrection            = isCorrection,
+        hasCorrection           = hasCorrection,
+        correctionExternalId    = correctionExternalId,
+        providerSyncStatus      = providerSyncStatus,
+        providerSyncError       = providerSyncError,
+        providerSyncAttemptedAt = providerSyncAttemptedAt,
+        syncedAt                = syncedAt,
+        ksefInvoiceId           = ksefInvoiceId,
+        ksefNumber              = ksefNumber,
+        createdBy               = UserId(createdBy),
+        updatedBy               = UserId(updatedBy),
+        createdAt               = createdAt,
+        updatedAt               = updatedAt
     )
-
-    companion object {
-        fun fromDomain(doc: FinancialDocument): FinancialDocumentEntity = FinancialDocumentEntity(
-            id                = doc.id.value,
-            studioId          = doc.studioId.value,
-            source            = doc.source,
-            visitId           = doc.visitId?.value,
-            vehicleBrand      = doc.vehicleBrand,
-            vehicleModel      = doc.vehicleModel,
-            customerFirstName = doc.customerFirstName,
-            customerLastName  = doc.customerLastName,
-            documentNumber    = doc.documentNumber,
-            documentType      = doc.documentType,
-            direction         = doc.direction,
-            status            = doc.status,
-            paymentMethod     = doc.paymentMethod,
-            totalNet          = doc.totalNet.amountInCents,
-            totalVat          = doc.totalVat.amountInCents,
-            totalGross        = doc.totalGross.amountInCents,
-            currency          = doc.currency,
-            issueDate         = doc.issueDate,
-            dueDate           = doc.dueDate,
-            paidAt            = doc.paidAt,
-            description       = doc.description,
-            counterpartyName  = doc.counterpartyName,
-            counterpartyNip   = doc.counterpartyNip,
-            ksefInvoiceId     = doc.ksefInvoiceId,
-            ksefNumber        = doc.ksefNumber,
-            createdBy         = doc.createdBy.value,
-            updatedBy         = doc.updatedBy.value,
-            createdAt         = doc.createdAt,
-            updatedAt         = doc.updatedAt
-        )
-    }
 }

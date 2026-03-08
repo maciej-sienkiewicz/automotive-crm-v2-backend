@@ -13,10 +13,9 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.invoicing.credentials.InvoicingCredentialsRepository
-import pl.detailing.crm.invoicing.issue.InvoiceItemCommand
-import pl.detailing.crm.invoicing.issue.IssueVisitInvoiceCommand
-import pl.detailing.crm.invoicing.issue.IssueVisitInvoiceHandler
+import pl.detailing.crm.finance.document.InvoiceItemCommand
+import pl.detailing.crm.finance.document.IssueVisitInvoiceCommand
+import pl.detailing.crm.finance.document.IssueVisitInvoiceHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -29,8 +28,7 @@ class CompleteVisitHandler(
     private val customerRepository: CustomerRepository,
     private val auditService: AuditService,
     private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
-    private val issueVisitInvoiceHandler: IssueVisitInvoiceHandler,
-    private val credentialsRepository: InvoicingCredentialsRepository
+    private val issueVisitInvoiceHandler: IssueVisitInvoiceHandler
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -79,16 +77,6 @@ class CompleteVisitHandler(
         visit: Visit,
         customer: CustomerEntity?
     ): CompleteVisitResult {
-        val credentials = credentialsRepository.findByStudioId(command.studioId.value)
-
-        if (credentials == null) {
-            log.info(
-                "[Invoice] No provider configured for studio {} – completing visit {} without invoice",
-                command.studioId, command.visitId
-            )
-            return buildResult(visit)
-        }
-
         val billedItems = visit.serviceItems.filter {
             it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED
         }
@@ -109,12 +97,17 @@ class CompleteVisitHandler(
                 studioId           = command.studioId,
                 userId             = command.userId,
                 visitId            = visit.id,
+                visitNumber        = visit.visitNumber.toString(),
                 buyerName          = buyerName,
                 buyerNip           = customer?.companyNip,
                 buyerEmail         = customer?.email,
                 buyerStreet        = customer?.companyAddressStreet ?: customer?.homeAddressStreet,
                 buyerCity          = customer?.companyAddressCity ?: customer?.homeAddressCity,
                 buyerPostCode      = customer?.companyAddressPostalCode ?: customer?.homeAddressPostalCode,
+                vehicleBrand       = visit.brandSnapshot,
+                vehicleModel       = visit.modelSnapshot,
+                customerFirstName  = customer?.firstName,
+                customerLastName   = customer?.lastName,
                 items              = billedItems.map { item ->
                     InvoiceItemCommand(
                         name                = item.serviceName,
@@ -124,7 +117,7 @@ class CompleteVisitHandler(
                         vatRate             = item.vatRate.rate
                     )
                 },
-                paymentMethod      = command.paymentMethod.name,
+                paymentMethod      = command.paymentMethod,
                 issueDate          = LocalDate.now(),
                 dueDate            = command.dueDate,
                 currency           = "PLN",
