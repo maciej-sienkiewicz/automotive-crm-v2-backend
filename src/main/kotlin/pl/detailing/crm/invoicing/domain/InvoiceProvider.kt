@@ -72,6 +72,19 @@ interface InvoiceProvider {
      * @return All invoices available for the account, as normalized snapshots.
      */
     fun listAllInvoices(apiKey: String): List<ExternalInvoiceSnapshot> = emptyList()
+
+    /**
+     * Marks an existing invoice as paid on the provider's side.
+     *
+     * Called when the CRM user manually changes a document status to PAID (e.g. after
+     * confirming receipt of a bank transfer). Providers that do not support this operation
+     * may leave this as a no-op.
+     *
+     * @param apiKey   Provider API key / token.
+     * @param externalId Provider's own invoice identifier.
+     * @param paidDate Optional payment date (YYYY-MM-DD). If null, the provider uses today's date.
+     */
+    fun markAsPaid(apiKey: String, externalId: String, paidDate: String?) { /* no-op by default */ }
 }
 
 data class CredentialsVerificationResult(

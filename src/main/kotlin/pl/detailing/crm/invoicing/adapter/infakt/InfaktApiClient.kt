@@ -109,6 +109,26 @@ class InfaktApiClient(
     }
 
     /**
+     * POST /v3/async/invoices/{id}/paid.json – mark invoice as paid (async operation).
+     *
+     * inFakt processes this asynchronously; HTTP 201 means the request was accepted,
+     * not that the invoice is already paid. The status will update on the next sync.
+     *
+     * @param paidDate Optional payment date (YYYY-MM-DD). Must not be before the invoice issue date.
+     */
+    fun markInvoiceAsPaid(apiKey: String, invoiceId: String, paidDate: String?) {
+        executeWithErrorHandling(apiKey) {
+            val body: Map<String, String> = if (paidDate != null) mapOf("paid_date" to paidDate) else emptyMap()
+            restClient.post()
+                .uri("/v3/async/invoices/{id}/paid.json", invoiceId)
+                .header(API_KEY_HEADER, apiKey)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity()
+        }
+    }
+
+    /**
      * GET /v3/invoices.json?per_page=1 – lightweight verification call.
      *
      * Returns HTTP 200 for a valid key, HTTP 401 for an invalid key.

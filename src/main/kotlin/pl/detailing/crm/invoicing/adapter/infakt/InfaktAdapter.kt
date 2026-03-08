@@ -7,19 +7,30 @@ import pl.detailing.crm.invoicing.adapter.infakt.dto.InfaktInvoiceDto
 import pl.detailing.crm.invoicing.adapter.infakt.dto.InfaktInvoicePayload
 import pl.detailing.crm.invoicing.adapter.infakt.dto.InfaktServicePayload
 import pl.detailing.crm.invoicing.domain.*
+import java.time.LocalDate
 
 /**
  * Adapter for the inFakt invoicing platform (https://www.infakt.pl/).
  *
  * Maps between our normalized domain model and inFakt's REST API v3.
  *
+ * Status mapping on invoice creation ([IssueInvoiceRequest.paymentMethod] → inFakt status):
+ *   CASH | CARD → "paid"    (invoice marked as paid immediately, paid_date = issue date)
+ *   TRANSFER    → "printed" (invoice marked as printed, included in accounting; awaits payment)
+ *
  * Status mapping (inFakt → [ExternalInvoiceStatus]):
  *   draft     → DRAFT
  *   sent      → SENT
+ *   printed   → ISSUED
  *   paid      → PAID
  *   overdue   → OVERDUE
  *   cancelled → CANCELLED
  *   (others)  → ISSUED
+ *
+ * CRM DocumentStatus mapping (derived from ExternalInvoiceStatus):
+ *   PAID    → PAID    (opłacona)
+ *   OVERDUE → OVERDUE (przeterminowana – artificial, based on due date)
+ *   (others)→ PENDING (oczekująca)
  *
  * VAT rate mapping ([InvoiceItem.vatRate] → inFakt tax_symbol):
  *   23  → "23"
@@ -79,6 +90,11 @@ class InfaktAdapter(
         }
     }
 
+    override fun markAsPaid(apiKey: String, externalId: String, paidDate: String?) {
+        log.info("[InFakt] markAsPaid: externalId={}, paidDate={}", externalId, paidDate)
+        apiClient.markInvoiceAsPaid(apiKey, externalId, paidDate)
+    }
+
     override fun listAllInvoices(apiKey: String): List<ExternalInvoiceSnapshot> {
         log.info("[InFakt] listAllInvoices: starting full import")
         val result = mutableListOf<ExternalInvoiceSnapshot>()
@@ -105,11 +121,14 @@ class InfaktAdapter(
     // Mapping: domain request → inFakt request
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun mapToInfaktRequest(request: IssueInvoiceRequest): InfaktCreateInvoiceRequest =
-        InfaktCreateInvoiceRequest(
+    private fun mapToInfaktRequest(request: IssueInvoiceRequest): InfaktCreateInvoiceRequest {
+        val (invoiceStatus, paidDate) = mapPaymentMethodToInfaktStatus(request.paymentMethod, request.issueDate)
+        return InfaktCreateInvoiceRequest(
             invoice = InfaktInvoicePayload(
                 kind              = "vat",
                 paymentMethod     = mapPaymentMethod(request.paymentMethod),
+                status            = invoiceStatus,
+                paidDate          = paidDate,
                 saleDate          = request.issueDate.toString(),
                 invoiceDate       = request.issueDate.toString(),
                 paymentDate       = request.dueDate?.toString(),
@@ -124,6 +143,18 @@ class InfaktAdapter(
                 notes             = request.notes?.trim()?.takeIf { it.isNotBlank() }
             )
         )
+    }
+
+    /**
+     * Maps the CRM payment method to the inFakt initial invoice status and paid_date.
+     * - CASH / CARD → "paid" + issue date (invoice settled immediately)
+     * - TRANSFER    → "printed" (included in accounting, awaits bank payment)
+     */
+    private fun mapPaymentMethodToInfaktStatus(method: String, issueDate: LocalDate): Pair<String, String?> =
+        when (method.uppercase()) {
+            "CASH", "CARD" -> "paid" to issueDate.toString()
+            else           -> "printed" to null
+        }
 
     private fun mapItem(item: InvoiceItem): InfaktServicePayload =
         InfaktServicePayload(
@@ -187,6 +218,7 @@ class InfaktAdapter(
     private fun mapStatus(infaktStatus: String?): ExternalInvoiceStatus = when (infaktStatus?.lowercase()) {
         "draft"     -> ExternalInvoiceStatus.DRAFT
         "sent"      -> ExternalInvoiceStatus.SENT
+        "printed"   -> ExternalInvoiceStatus.ISSUED
         "paid"      -> ExternalInvoiceStatus.PAID
         "overdue"   -> ExternalInvoiceStatus.OVERDUE
         "cancelled" -> ExternalInvoiceStatus.CANCELLED

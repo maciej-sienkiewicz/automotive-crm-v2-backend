@@ -71,6 +71,22 @@ class InvoicingFacade(
         providerRegistry.getProvider(provider).getInvoicePortalUrl(externalId)
 
     /**
+     * Marks an invoice as paid on the provider's side.
+     *
+     * Called when the CRM user changes a document's status to PAID (e.g. after confirming
+     * receipt of a bank transfer for a previously PENDING invoice).
+     *
+     * @param paidDate Optional payment date (YYYY-MM-DD). Passed to the provider as-is.
+     * @throws InvoicingCredentialsNotFoundException if no provider is configured.
+     */
+    fun markInvoiceAsPaid(studioId: StudioId, provider: InvoiceProviderType, externalId: String, paidDate: String?) {
+        val credentials = credentialsRepository.findByStudioId(studioId.value)
+            ?: throw InvoicingCredentialsNotFoundException()
+        val adapter = providerRegistry.getProvider(provider)
+        adapter.markAsPaid(credentials.apiKey, externalId, paidDate)
+    }
+
+    /**
      * Returns (providerType, apiKey) for the studio, or null if not configured.
      */
     fun findCredentials(studioId: StudioId): Pair<InvoiceProviderType, String>? {

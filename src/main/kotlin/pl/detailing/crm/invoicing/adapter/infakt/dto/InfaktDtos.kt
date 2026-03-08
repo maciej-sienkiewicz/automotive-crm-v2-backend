@@ -145,6 +145,19 @@ data class InfaktInvoicePayload(
     @JsonProperty("payment_method")
     val paymentMethod: String,
 
+    /**
+     * Initial invoice status. "paid" marks as paid immediately, "printed" marks as printed
+     * (included in accounting). Omit (null) for draft.
+     */
+    val status: String? = null,
+
+    /**
+     * Date of payment. Required when status="paid". Format: YYYY-MM-DD.
+     * Must not be earlier than the invoice issue date.
+     */
+    @JsonProperty("paid_date")
+    val paidDate: String? = null,
+
     /** Date of sale / service provision. Format: YYYY-MM-DD. */
     @JsonProperty("sale_date")
     val saleDate: String,
