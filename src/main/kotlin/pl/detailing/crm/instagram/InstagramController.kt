@@ -23,6 +23,7 @@ import pl.detailing.crm.instagram.summary.GetCompetitionSummaryHandler
 import pl.detailing.crm.instagram.summary.GetCompetitionSummaryQuery
 import pl.detailing.crm.instagram.summary.InstagramProfileSummaryDto
 import pl.detailing.crm.instagram.summary.WeeklyStatDto
+import pl.detailing.crm.instagram.sync.InstagramSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -35,7 +36,8 @@ class InstagramController(
     private val removeHandler: RemoveInstagramProfileHandler,
     private val listHandler: ListInstagramProfilesHandler,
     private val postsHandler: GetInstagramPostsHandler,
-    private val summaryHandler: GetCompetitionSummaryHandler
+    private val summaryHandler: GetCompetitionSummaryHandler,
+    private val sync: InstagramSyncService,
 ) {
 
     /**
@@ -48,6 +50,7 @@ class InstagramController(
     fun addProfile(
         @RequestBody request: AddInstagramProfileRequest
     ): ResponseEntity<InstagramProfileResponse> = runBlocking {
+        sync.syncAllActiveProfiles()
         val principal = SecurityContextHelper.getCurrentUser()
 
         val command = AddInstagramProfileCommand(
