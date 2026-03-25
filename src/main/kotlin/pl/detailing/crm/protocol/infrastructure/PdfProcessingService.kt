@@ -203,7 +203,8 @@ class PdfProcessingService(
                     // embedSubset=false: embed the full font so ALL Unicode glyphs (incl. Polish) are available.
                     // With subsetting (default), PDFBox only embeds glyphs known at font-load time, which may
                     // exclude Polish characters if the subsetting happens before setValue() calls.
-                    val font = PDType0Font.load(document, file, false)
+                    // Note: PDType0Font.load has no (Document, File, Boolean) overload — use FileInputStream.
+                    val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
                     val da = "/${fontKey.name} 0 Tf 0 g"
