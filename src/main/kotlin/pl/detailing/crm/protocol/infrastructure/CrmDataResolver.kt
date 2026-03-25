@@ -88,7 +88,7 @@ class CrmDataResolver(
                 }
 
                 // Visit context
-                put(CrmDataKey.VISIT_MILEAGE, visit.mileageAtArrival?.toString() ?: "")
+                put(CrmDataKey.VISIT_MILEAGE, if((visit.mileageAtArrival ?: 0) > 0) visit.mileageAtArrival.toString() else "")
                 put(CrmDataKey.VISIT_NUMBER, visit.visitNumber)
                 put(CrmDataKey.VISIT_DATE, formatDate(visit.scheduledDate))
                 put(CrmDataKey.VISIT_COMPLETED_DATE, visit.pickupDate?.let { formatDate(it) } ?: "")
