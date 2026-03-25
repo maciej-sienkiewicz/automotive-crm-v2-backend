@@ -228,7 +228,7 @@ class CreateVisitFromReservationHandler(
                 vehicleId = vehicleId,
                 appointmentId = appointment.id,
                 appointmentColorId = command.appointmentColorId,
-                title = appointment.appointmentTitle,
+                title = command.title ?: appointment.appointmentTitle,
                 // Immutable vehicle snapshots
                 brandSnapshot = vehicle.brand,
                 modelSnapshot = vehicle.model,

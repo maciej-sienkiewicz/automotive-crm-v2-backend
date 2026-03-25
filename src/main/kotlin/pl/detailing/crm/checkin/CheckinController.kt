@@ -62,6 +62,7 @@ class CheckinController(
             userId = principal.userId,
             userName = principal.name,
             reservationId = AppointmentId.fromString(request.reservationId),
+            title = request.title,
             customer = request.customer?.let { customerReq ->
                 when (customerReq.mode) {
                     IdentityMode.EXISTING -> CustomerData.Existing(
@@ -224,6 +225,7 @@ class CheckinController(
 // Request/Response DTOs
 data class ReservationToVisitRequest(
     val reservationId: String,
+    val title: String?,
     val customer: CustomerRequest?,
     val customerAlias: String?,
     val vehicle: VehicleRequest,
@@ -358,6 +360,7 @@ data class ReservationToVisitCommand(
     val userId: UserId,
     val userName: String,
     val reservationId: AppointmentId,
+    val title: String?,
     val customer: CustomerData?,
     val customerAlias: String?,
     val vehicle: VehicleData,
