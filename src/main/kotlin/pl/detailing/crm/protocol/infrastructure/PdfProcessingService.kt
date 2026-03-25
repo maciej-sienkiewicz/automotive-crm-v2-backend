@@ -185,6 +185,11 @@ class PdfProcessingService(
             "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
         )
 
+        logger.info("PDF font setup: scanning ${systemFontPaths.size} system paths...")
+        systemFontPaths.forEach { path ->
+            logger.info("PDF font setup: checking $path — exists=${java.io.File(path).exists()}")
+        }
+
         for (path in systemFontPaths) {
             val file = java.io.File(path)
             if (file.exists()) {
@@ -193,10 +198,10 @@ class PdfProcessingService(
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
                     acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
-                    logger.info("PDF form: using Unicode font from system path: $path")
+                    logger.info("PDF font setup: SUCCESS — loaded system font '$path', registered as '${fontKey.name}'")
                     return
                 } catch (e: Exception) {
-                    logger.warn("Failed to load system font from $path: ${e.message}")
+                    logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
                 }
             }
         }
@@ -205,23 +210,25 @@ class PdfProcessingService(
             "/fonts/LiberationSans-Regular.ttf",
             "/fonts/DejaVuSans.ttf"
         )
+        logger.info("PDF font setup: no system font found, trying classpath fonts: $classpathFonts")
         for (classpathFont in classpathFonts) {
-            javaClass.getResourceAsStream(classpathFont)?.use { stream ->
+            val stream = javaClass.getResourceAsStream(classpathFont)
+            logger.info("PDF font setup: classpath '$classpathFont' — found=${stream != null}")
+            stream?.use {
                 try {
-                    val font = PDType0Font.load(document, stream, false)
+                    val font = PDType0Font.load(document, it, false)
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
                     acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
-                    logger.info("PDF form: using Unicode font from classpath: $classpathFont")
+                    logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont', registered as '${fontKey.name}'")
                     return
                 } catch (e: Exception) {
-                    logger.warn("Failed to load classpath font $classpathFont: ${e.message}")
+                    logger.warn("PDF font setup: failed to load classpath font '$classpathFont': ${e.message}")
                 }
             }
         }
 
-        // Fallback: let the PDF viewer render fields (Polish may still be garbled in flattened PDFs)
-        logger.warn("PDF form: no Unicode font found — falling back to needAppearances=true. Polish characters may not render in flattened PDFs.")
+        logger.warn("PDF font setup: FALLBACK — no Unicode font found. Using Helvetica + needAppearances=true. Polish characters WILL be garbled in flattened PDFs.")
         acroForm.needAppearances = true
         acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
     }
