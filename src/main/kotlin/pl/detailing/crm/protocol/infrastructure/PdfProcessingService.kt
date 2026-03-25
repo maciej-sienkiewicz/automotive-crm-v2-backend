@@ -4,6 +4,7 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
+import org.apache.pdfbox.pdmodel.PDResources
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm
@@ -115,8 +116,8 @@ class PdfProcessingService(
                     throw IllegalArgumentException("PDF does not contain an AcroForm")
                 }
 
-                // Set default appearance for UTF-8 support
-                acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
+                // Set up Unicode font to support Polish characters
+                setupUnicodeFontForForm(document, acroForm)
 
                 // Fill each field
                 fieldMappings.forEach { (fieldName, value) ->
@@ -166,6 +167,63 @@ class PdfProcessingService(
                 }
             }
         }
+    }
+
+    /**
+     * Load and register a Unicode-capable font (supporting Polish characters) as the default
+     * appearance font for the AcroForm. Tries common system font paths on Linux, then
+     * falls back to a classpath-bundled font, and finally to needAppearances=true.
+     */
+    private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm) {
+        val systemFontPaths = listOf(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
+        )
+
+        for (path in systemFontPaths) {
+            val file = java.io.File(path)
+            if (file.exists()) {
+                try {
+                    val font = PDType0Font.load(document, file)
+                    val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
+                    val fontKey = resources.add(font)
+                    acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
+                    logger.info("PDF form: using Unicode font from system path: $path")
+                    return
+                } catch (e: Exception) {
+                    logger.warn("Failed to load system font from $path: ${e.message}")
+                }
+            }
+        }
+
+        val classpathFonts = listOf(
+            "/fonts/LiberationSans-Regular.ttf",
+            "/fonts/DejaVuSans.ttf"
+        )
+        for (classpathFont in classpathFonts) {
+            javaClass.getResourceAsStream(classpathFont)?.use { stream ->
+                try {
+                    val font = PDType0Font.load(document, stream, false)
+                    val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
+                    val fontKey = resources.add(font)
+                    acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
+                    logger.info("PDF form: using Unicode font from classpath: $classpathFont")
+                    return
+                } catch (e: Exception) {
+                    logger.warn("Failed to load classpath font $classpathFont: ${e.message}")
+                }
+            }
+        }
+
+        // Fallback: let the PDF viewer render fields (Polish may still be garbled in flattened PDFs)
+        logger.warn("PDF form: no Unicode font found — falling back to needAppearances=true. Polish characters may not render in flattened PDFs.")
+        acroForm.needAppearances = true
+        acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
     }
 
     /**
