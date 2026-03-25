@@ -18,6 +18,8 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache ttf-dejavu && rm -rf /var/cache/apk/*
+
 RUN addgroup -S spring && adduser -S spring -G spring
 
 USER spring:spring

@@ -176,11 +176,16 @@ class PdfProcessingService(
      */
     private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm) {
         val systemFontPaths = listOf(
+            // Alpine Linux (ttf-dejavu)
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
+            // Debian/Ubuntu (fonts-dejavu-core)
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
             "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            // Debian/Ubuntu (fonts-liberation)
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+            // Other
             "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
             "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
         )
