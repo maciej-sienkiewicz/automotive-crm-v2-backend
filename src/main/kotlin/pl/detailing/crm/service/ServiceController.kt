@@ -11,6 +11,8 @@ import pl.detailing.crm.service.create.CreateServiceHandler
 import pl.detailing.crm.service.create.CreateServiceRequest
 import pl.detailing.crm.service.list.ListServicesHandler
 import pl.detailing.crm.service.list.ServiceListItem
+import pl.detailing.crm.service.archive.ArchiveServiceCommand
+import pl.detailing.crm.service.archive.ArchiveServiceHandler
 import pl.detailing.crm.service.update.UpdateServiceCommand
 import pl.detailing.crm.service.update.UpdateServiceHandler
 import pl.detailing.crm.service.update.UpdateServiceRequest
@@ -21,6 +23,7 @@ import pl.detailing.crm.shared.*
 class ServiceController(
     private val createServiceHandler: CreateServiceHandler,
     private val updateServiceHandler: UpdateServiceHandler,
+    private val archiveServiceHandler: ArchiveServiceHandler,
     private val listServicesHandler: ListServicesHandler
 ) {
 
@@ -108,6 +111,27 @@ class ServiceController(
                 updatedAt = Instant.now(),
                 replacesServiceId = null
             ))
+    }
+
+    @PatchMapping("/{serviceId}/archive")
+    fun archiveService(
+        @PathVariable serviceId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can archive services")
+        }
+
+        archiveServiceHandler.handle(
+            ArchiveServiceCommand(
+                studioId = principal.studioId,
+                serviceId = ServiceId.fromString(serviceId),
+                userId = principal.userId
+            )
+        )
+
+        ResponseEntity.noContent().build()
     }
 
     @PostMapping("/update")
