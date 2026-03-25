@@ -1,6 +1,7 @@
 package pl.detailing.crm.protocol.infrastructure
 
 import org.apache.pdfbox.Loader
+import org.apache.pdfbox.cos.COSName
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
@@ -199,16 +200,30 @@ class PdfProcessingService(
             val file = java.io.File(path)
             if (file.exists()) {
                 try {
-                    val font = PDType0Font.load(document, file)
+                    // embedSubset=false: embed the full font so ALL Unicode glyphs (incl. Polish) are available.
+                    // With subsetting (default), PDFBox only embeds glyphs known at font-load time, which may
+                    // exclude Polish characters if the subsetting happens before setValue() calls.
+                    val font = PDType0Font.load(document, file, false)
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
                     val da = "/${fontKey.name} 0 Tf 0 g"
                     acroForm.defaultAppearance = da
-                    // Override DA on every individual field — field-level /DA takes priority
-                    // over the AcroForm-level one, so we must replace each one explicitly
+                    // Override DA on every individual field AND its widget annotations.
+                    // Widget-level /DA takes priority over field-level /DA in the PDF spec,
+                    // so we must update both to prevent the original non-embedded font from being used.
                     for (field in acroForm.fieldTree) {
                         if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
                             field.defaultAppearance = da
+                            for (widget in field.widgets) {
+                                val widgetCos = widget.cosObject
+                                // Update widget-level /DA if it exists
+                                if (widgetCos.containsKey(COSName.DA)) {
+                                    widgetCos.setString(COSName.DA, da)
+                                }
+                                // Remove stale appearance streams so PDFBox regenerates them
+                                // with the new embedded font when setValue() is called
+                                widgetCos.removeItem(COSName.AP)
+                            }
                         }
                     }
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path', registered as '${fontKey.name}'")
@@ -237,6 +252,13 @@ class PdfProcessingService(
                     for (field in acroForm.fieldTree) {
                         if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
                             field.defaultAppearance = da
+                            for (widget in field.widgets) {
+                                val widgetCos = widget.cosObject
+                                if (widgetCos.containsKey(COSName.DA)) {
+                                    widgetCos.setString(COSName.DA, da)
+                                }
+                                widgetCos.removeItem(COSName.AP)
+                            }
                         }
                     }
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont', registered as '${fontKey.name}'")
