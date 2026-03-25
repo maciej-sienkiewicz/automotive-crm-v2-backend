@@ -202,7 +202,15 @@ class PdfProcessingService(
                     val font = PDType0Font.load(document, file)
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
-                    acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
+                    val da = "/${fontKey.name} 0 Tf 0 g"
+                    acroForm.defaultAppearance = da
+                    // Override DA on every individual field — field-level /DA takes priority
+                    // over the AcroForm-level one, so we must replace each one explicitly
+                    for (field in acroForm.fieldTree) {
+                        if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
+                            field.defaultAppearance = da
+                        }
+                    }
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path', registered as '${fontKey.name}'")
                     return
                 } catch (e: Exception) {
@@ -224,7 +232,13 @@ class PdfProcessingService(
                     val font = PDType0Font.load(document, it, false)
                     val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
                     val fontKey = resources.add(font)
-                    acroForm.defaultAppearance = "/${fontKey.name} 0 Tf 0 g"
+                    val da = "/${fontKey.name} 0 Tf 0 g"
+                    acroForm.defaultAppearance = da
+                    for (field in acroForm.fieldTree) {
+                        if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
+                            field.defaultAppearance = da
+                        }
+                    }
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont', registered as '${fontKey.name}'")
                     return
                 } catch (e: Exception) {
