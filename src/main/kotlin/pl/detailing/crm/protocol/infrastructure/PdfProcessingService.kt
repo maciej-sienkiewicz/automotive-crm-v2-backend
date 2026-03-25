@@ -201,33 +201,10 @@ class PdfProcessingService(
             if (file.exists()) {
                 try {
                     // embedSubset=false: embed the full font so ALL Unicode glyphs (incl. Polish) are available.
-                    // With subsetting (default), PDFBox only embeds glyphs known at font-load time, which may
-                    // exclude Polish characters if the subsetting happens before setValue() calls.
                     // Note: PDType0Font.load has no (Document, File, Boolean) overload — use FileInputStream.
                     val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
-                    val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
-                    val fontKey = resources.add(font)
-                    val da = "/${fontKey.name} 0 Tf 0 g"
-                    acroForm.defaultAppearance = da
-                    // Override DA on every individual field AND its widget annotations.
-                    // Widget-level /DA takes priority over field-level /DA in the PDF spec,
-                    // so we must update both to prevent the original non-embedded font from being used.
-                    for (field in acroForm.fieldTree) {
-                        if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
-                            field.defaultAppearance = da
-                            for (widget in field.widgets) {
-                                val widgetCos = widget.cosObject
-                                // Update widget-level /DA if it exists
-                                if (widgetCos.containsKey(COSName.DA)) {
-                                    widgetCos.setString(COSName.DA, da)
-                                }
-                                // Remove stale appearance streams so PDFBox regenerates them
-                                // with the new embedded font when setValue() is called
-                                widgetCos.removeItem(COSName.AP)
-                            }
-                        }
-                    }
-                    logger.info("PDF font setup: SUCCESS — loaded system font '$path', registered as '${fontKey.name}'")
+                    applyFontToAcroForm(document, acroForm, font)
+                    logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
                     return
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
@@ -246,23 +223,8 @@ class PdfProcessingService(
             stream?.use {
                 try {
                     val font = PDType0Font.load(document, it, false)
-                    val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
-                    val fontKey = resources.add(font)
-                    val da = "/${fontKey.name} 0 Tf 0 g"
-                    acroForm.defaultAppearance = da
-                    for (field in acroForm.fieldTree) {
-                        if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
-                            field.defaultAppearance = da
-                            for (widget in field.widgets) {
-                                val widgetCos = widget.cosObject
-                                if (widgetCos.containsKey(COSName.DA)) {
-                                    widgetCos.setString(COSName.DA, da)
-                                }
-                                widgetCos.removeItem(COSName.AP)
-                            }
-                        }
-                    }
-                    logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont', registered as '${fontKey.name}'")
+                    applyFontToAcroForm(document, acroForm, font)
+                    logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont'")
                     return
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load classpath font '$classpathFont': ${e.message}")
@@ -273,6 +235,58 @@ class PdfProcessingService(
         logger.warn("PDF font setup: FALLBACK — no Unicode font found. Using Helvetica + needAppearances=true. Polish characters WILL be garbled in flattened PDFs.")
         acroForm.needAppearances = true
         acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
+    }
+
+    /**
+     * Register [font] in the AcroForm's default resources and update every variable-text field
+     * and its widget annotations to use it — preserving each widget's original font size so the
+     * layout doesn't change.
+     *
+     * PDF spec priority for Default Appearance: widget /DA > field /DA > AcroForm /DA.
+     * We must update all three levels, otherwise the original (non-embedded) font reference
+     * wins and Polish characters are garbled.
+     */
+    private fun applyFontToAcroForm(document: PDDocument, acroForm: PDAcroForm, font: PDType0Font) {
+        val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
+        val fontKey = resources.add(font)
+        val fontRef = "/${fontKey.name}"
+
+        // AcroForm-level fallback DA (size 0 = auto, only used when no field/widget DA present)
+        acroForm.defaultAppearance = "$fontRef 0 Tf 0 g"
+
+        for (field in acroForm.fieldTree) {
+            if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
+                // Preserve the original font size declared in the field's /DA
+                val fieldSize = parseFontSize(field.defaultAppearance)
+                field.defaultAppearance = "$fontRef $fieldSize Tf 0 g"
+
+                for (widget in field.widgets) {
+                    val widgetCos = widget.cosObject
+                    // Widget-level /DA takes priority — update it if present,
+                    // preserving the widget's own declared size (may differ per widget).
+                    if (widgetCos.containsKey(COSName.DA)) {
+                        val widgetSize = parseFontSize(widgetCos.getString(COSName.DA))
+                        widgetCos.setString(COSName.DA, "$fontRef $widgetSize Tf 0 g")
+                    }
+                    // Remove stale appearance streams so PDFBox regenerates them
+                    // with the new embedded font when setValue() is called.
+                    widgetCos.removeItem(COSName.AP)
+                }
+            }
+        }
+
+        logger.info("PDF font setup: registered font as '${fontKey.name}'")
+    }
+
+    /**
+     * Extract the font size from a PDF Default Appearance string like "/Helv 10 Tf 0 g".
+     * Returns "0" (auto-size) when the string is absent or unparseable.
+     */
+    private fun parseFontSize(da: String?): String {
+        if (da.isNullOrBlank()) return "0"
+        // DA format: /FontName <size> Tf [color operators]
+        val match = Regex("""/\S+\s+([\d.]+)\s+Tf""").find(da)
+        return match?.groupValues?.get(1) ?: "0"
     }
 
     /**
