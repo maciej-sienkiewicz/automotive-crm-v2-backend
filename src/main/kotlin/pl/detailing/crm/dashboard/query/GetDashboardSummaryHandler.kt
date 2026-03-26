@@ -101,6 +101,14 @@ class GetDashboardSummaryHandler(
             )
         }
 
+        val abandonedLast30DaysAppointmentsDeferred = async(Dispatchers.IO) {
+            appointmentRepository.findAbandonedByStudioIdAndDateRange(
+                command.studioId.value,
+                last30DaysStart,
+                now
+            )
+        }
+
         // Await all results
         val inProgressVisits = inProgressVisitsDeferred.await()
         val readyForPickupVisits = readyForPickupVisitsDeferred.await()
@@ -111,6 +119,7 @@ class GetDashboardSummaryHandler(
         val previousWeekCalls = previousWeekCallsDeferred.await()
         val recentCalls = recentCallsDeferred.await()
         val abandonedLast30Days = abandonedLast30DaysDeferred.await()
+        val abandonedLast30DaysAppointments = abandonedLast30DaysAppointmentsDeferred.await()
 
         // Build operational stats with details
         val inProgressDetails = buildVisitDetails(inProgressVisits, command.studioId)
@@ -119,6 +128,7 @@ class GetDashboardSummaryHandler(
         }
         val readyForPickupDetails = buildVisitDetails(readyForPickupVisits, command.studioId)
         val incomingTodayDetails = buildAppointmentDetails(incomingTodayAppointments, command.studioId)
+        val abandonedDetails = buildAppointmentDetails(abandonedLast30DaysAppointments, command.studioId)
 
         val stats = OperationalStats(
             inProgress = inProgressVisits.size,
@@ -128,7 +138,8 @@ class GetDashboardSummaryHandler(
             abandonedLast30Days = abandonedLast30Days.toInt(),
             inProgressDetails = inProgressDetails,
             readyForPickupDetails = readyForPickupDetails,
-            incomingTodayDetails = incomingTodayDetails
+            incomingTodayDetails = incomingTodayDetails,
+            abandonedDetails = abandonedDetails
         )
 
         // Calculate revenue metric

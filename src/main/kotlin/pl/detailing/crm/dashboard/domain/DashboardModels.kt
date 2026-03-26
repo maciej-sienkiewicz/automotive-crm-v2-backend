@@ -29,7 +29,8 @@ data class OperationalStats(
     val abandonedLast30Days: Int,
     val inProgressDetails: List<VisitDetail>,
     val readyForPickupDetails: List<VisitDetail>,
-    val incomingTodayDetails: List<VisitDetail>
+    val incomingTodayDetails: List<VisitDetail>,
+    val abandonedDetails: List<VisitDetail>
 )
 
 /**

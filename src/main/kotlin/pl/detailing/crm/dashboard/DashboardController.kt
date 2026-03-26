@@ -71,6 +71,18 @@ class DashboardController(
                         phoneNumber = detail.phoneNumber,
                         estimatedCompletionDate = detail.estimatedCompletionDate?.toString()
                     )
+                },
+                abandonedDetails = summary.stats.abandonedDetails.map { detail ->
+                    VisitDetailResponse(
+                        id = detail.id.toString(),
+                        brand = detail.brand,
+                        model = detail.model,
+                        amount = detail.amount.amountInCents / 100.0,
+                        customerFirstName = detail.customerFirstName,
+                        customerLastName = detail.customerLastName,
+                        phoneNumber = detail.phoneNumber,
+                        estimatedCompletionDate = detail.estimatedCompletionDate?.toString()
+                    )
                 }
             ),
             revenue = BusinessMetricResponse(
@@ -123,7 +135,8 @@ data class OperationalStatsResponse(
     val abandonedLast30Days: Int,
     val inProgressDetails: List<VisitDetailResponse>,
     val readyForPickupDetails: List<VisitDetailResponse>,
-    val incomingTodayDetails: List<VisitDetailResponse>
+    val incomingTodayDetails: List<VisitDetailResponse>,
+    val abandonedDetails: List<VisitDetailResponse>
 )
 
 data class BusinessMetricResponse(

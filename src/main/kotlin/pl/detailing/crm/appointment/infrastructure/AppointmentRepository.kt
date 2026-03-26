@@ -141,4 +141,23 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("startDate") startDate: Instant,
         @Param("endDate") endDate: Instant
     ): Long
+
+    /**
+     * Find appointments marked as ABANDONED within a date range for a specific studio.
+     * Uses updatedAt to reflect when the appointment was actually marked as abandoned.
+     */
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
+        AND a.status IN ('ABANDONED', 'CANCELLED')
+        AND a.updatedAt >= :startDate
+        AND a.updatedAt < :endDate
+        ORDER BY a.updatedAt DESC
+    """)
+    fun findAbandonedByStudioIdAndDateRange(
+        @Param("studioId") studioId: UUID,
+        @Param("startDate") startDate: Instant,
+        @Param("endDate") endDate: Instant
+    ): List<AppointmentEntity>
 }
