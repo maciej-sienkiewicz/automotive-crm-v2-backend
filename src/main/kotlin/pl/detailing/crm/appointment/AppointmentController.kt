@@ -133,17 +133,17 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val updateData = request.customer.updateData!!
+                    val patch = request.customer.patch!!
                     CustomerIdentity.Update(
                         customerId = CustomerId.fromString(request.customer.id!!),
-                        firstName = updateData.firstName,
-                        lastName = updateData.lastName,
-                        phone = updateData.phone,
-                        email = updateData.email,
-                        companyName = updateData.company?.name,
-                        companyNip = updateData.company?.nip,
-                        companyRegon = updateData.company?.regon,
-                        companyAddress = updateData.company?.address
+                        firstName = patch.firstName,
+                        lastName = patch.lastName,
+                        phone = patch.phone,
+                        email = patch.email,
+                        companyName = patch.company?.name,
+                        companyNip = patch.company?.nip,
+                        companyRegon = patch.company?.regon,
+                        companyAddress = patch.company?.address
                     )
                 }
             },
@@ -245,17 +245,17 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val updateData = request.customer.updateData!!
+                    val patch = request.customer.patch!!
                     CustomerIdentity.Update(
                         customerId = CustomerId.fromString(request.customer.id!!),
-                        firstName = updateData.firstName,
-                        lastName = updateData.lastName,
-                        phone = updateData.phone,
-                        email = updateData.email,
-                        companyName = updateData.company?.name,
-                        companyNip = updateData.company?.nip,
-                        companyRegon = updateData.company?.regon,
-                        companyAddress = updateData.company?.address
+                        firstName = patch.firstName,
+                        lastName = patch.lastName,
+                        phone = patch.phone,
+                        email = patch.email,
+                        companyName = patch.company?.name,
+                        companyNip = patch.company?.nip,
+                        companyRegon = patch.company?.regon,
+                        companyAddress = patch.company?.address
                     )
                 }
             },

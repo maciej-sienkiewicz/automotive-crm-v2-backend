@@ -20,7 +20,7 @@ data class CustomerIdentityRequest(
     val mode: CustomerMode,
     val id: String?,
     val newData: NewCustomerDataRequest?,
-    val updateData: NewCustomerDataRequest? // Reusing the same structure as NewCustomerDataRequest
+    val patch: NewCustomerDataRequest?
 )
 
 enum class CustomerMode {
