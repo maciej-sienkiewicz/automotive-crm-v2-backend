@@ -133,9 +133,11 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val patch = request.customer.patch!!
+                    val patch = request.customer.patch
+                        ?: throw BadRequestException("customer.patch is required for UPDATE mode")
                     CustomerIdentity.Update(
-                        customerId = CustomerId.fromString(request.customer.id!!),
+                        customerId = CustomerId.fromString(request.customer.id
+                            ?: throw BadRequestException("customer.id is required for UPDATE mode")),
                         firstName = patch.firstName,
                         lastName = patch.lastName,
                         phone = patch.phone,
@@ -245,9 +247,11 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val patch = request.customer.patch!!
+                    val patch = request.customer.patch
+                        ?: throw BadRequestException("customer.patch is required for UPDATE mode")
                     CustomerIdentity.Update(
-                        customerId = CustomerId.fromString(request.customer.id!!),
+                        customerId = CustomerId.fromString(request.customer.id
+                            ?: throw BadRequestException("customer.id is required for UPDATE mode")),
                         firstName = patch.firstName,
                         lastName = patch.lastName,
                         phone = patch.phone,

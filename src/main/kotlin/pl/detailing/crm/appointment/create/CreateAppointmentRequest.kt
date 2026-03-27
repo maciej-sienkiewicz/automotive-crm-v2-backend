@@ -1,5 +1,6 @@
 package pl.detailing.crm.appointment.create
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import java.time.Instant
 import pl.detailing.crm.appointment.domain.AdjustmentType
 
@@ -19,8 +20,8 @@ data class CreateAppointmentRequest(
 data class CustomerIdentityRequest(
     val mode: CustomerMode,
     val id: String?,
-    val newData: NewCustomerDataRequest?,
-    val patch: NewCustomerDataRequest?
+    @JsonProperty("newData") val newData: NewCustomerDataRequest?,
+    @JsonProperty("patch") val patch: NewCustomerDataRequest?
 )
 
 enum class CustomerMode {
