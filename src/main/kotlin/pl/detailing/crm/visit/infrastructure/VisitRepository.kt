@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
-import java.time.LocalDate
+import java.time.Instant
 import java.util.*
 
 @Repository
@@ -106,8 +106,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<String>
 
     /**
-     * Find visits with filtering and pagination (database-side)
-     * Joins with Customer and Vehicle tables for filtering
+     * Find visits with filtering and pagination (database-side), without date filter.
      */
     @Query("""
         SELECT DISTINCT v FROM VisitEntity v
@@ -127,26 +126,26 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
              LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
-        AND (:scheduledDate IS NULL OR CAST(v.scheduledDate AS date) = :scheduledDate)
         ORDER BY v.scheduledDate DESC
     """)
     fun findVisitsWithFilters(
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
-        @Param("scheduledDate") scheduledDate: LocalDate?,
         pageable: Pageable
     ): Page<VisitEntity>
 
     /**
-     * Count visits matching filters (for pagination metadata)
+     * Find visits with filtering, pagination and timezone-aware date filter.
+     * startOfDay/endOfDay are UTC Instants representing midnight in the target timezone.
      */
     @Query("""
-        SELECT COUNT(DISTINCT v.id) FROM VisitEntity v
+        SELECT DISTINCT v FROM VisitEntity v
         LEFT JOIN CustomerEntity c ON v.customerId = c.id
         LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
         WHERE v.studioId = :studioId
         AND (:status IS NULL OR v.status = :status)
+        AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
              LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -158,14 +157,18 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
              LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
-        AND (:scheduledDate IS NULL OR CAST(v.scheduledDate AS date) = :scheduledDate)
+        AND v.scheduledDate >= :startOfDay
+        AND v.scheduledDate < :endOfDay
+        ORDER BY v.scheduledDate DESC
     """)
-    fun countVisitsWithFilters(
+    fun findVisitsWithFiltersAndScheduledDate(
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
-        @Param("scheduledDate") scheduledDate: LocalDate?
-    ): Long
+        @Param("startOfDay") startOfDay: Instant,
+        @Param("endOfDay") endOfDay: Instant,
+        pageable: Pageable
+    ): Page<VisitEntity>
 
     /**
      * Calculate total revenue for visits within a date range

@@ -14,6 +14,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 
 @Service
@@ -33,14 +34,28 @@ class ListAppointmentsHandler(
             )
 
             // Execute query with filters and pagination at database level
-            val page = appointmentRepository.findAppointmentsWithFilters(
-                studioId = command.studioId.value,
-                customerId = command.customerId,
-                status = command.status,
-                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
-                scheduledDate = command.scheduledDate,
-                pageable = pageRequest
-            )
+            val warsawZone = ZoneId.of("Europe/Warsaw")
+            val page = if (command.scheduledDate != null) {
+                val startOfDay = command.scheduledDate.atStartOfDay(warsawZone).toInstant()
+                val endOfDay = command.scheduledDate.plusDays(1).atStartOfDay(warsawZone).toInstant()
+                appointmentRepository.findAppointmentsWithFiltersAndScheduledDate(
+                    studioId = command.studioId.value,
+                    customerId = command.customerId,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    startOfDay = startOfDay,
+                    endOfDay = endOfDay,
+                    pageable = pageRequest
+                )
+            } else {
+                appointmentRepository.findAppointmentsWithFilters(
+                    studioId = command.studioId.value,
+                    customerId = command.customerId,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    pageable = pageRequest
+                )
+            }
 
             val appointments = page.content
 
