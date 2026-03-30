@@ -23,8 +23,11 @@ class GetDashboardSummaryHandler(
     suspend fun handle(command: GetDashboardSummaryCommand): DashboardSummary = coroutineScope {
         // Calculate date ranges for week-over-week comparison
         val now = Instant.now()
-        val today = LocalDate.now()
-        val currentWeekStart = now.atZone( ZoneId.of("Europe/Warsaw"))
+        val warsawZone = ZoneId.of("Europe/Warsaw")
+        val today = LocalDate.now(warsawZone)
+        val todayStart = today.atStartOfDay(warsawZone).toInstant()
+        val todayEnd = today.plusDays(1).atStartOfDay(warsawZone).toInstant()
+        val currentWeekStart = now.atZone(warsawZone)
             .with(DayOfWeek.MONDAY)
             .toLocalDate()
             .atStartOfDay(ZoneId.systemDefault())
@@ -49,10 +52,11 @@ class GetDashboardSummaryHandler(
         }
 
         val incomingTodayAppointmentsDeferred = async(Dispatchers.IO) {
-            appointmentRepository.findByStudioIdAndStatusAndDate(
+            appointmentRepository.findByStudioIdAndStatusAndDateRange(
                 command.studioId.value,
                 AppointmentStatus.CREATED,
-                today
+                todayStart,
+                todayEnd
             )
         }
 

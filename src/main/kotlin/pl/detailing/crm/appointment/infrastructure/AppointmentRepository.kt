@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.time.Instant
-import java.time.LocalDate
 import java.util.UUID
 
 @Repository
@@ -94,20 +93,23 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
     ): Page<AppointmentEntity>
 
     /**
-     * Find appointments by studio, status and scheduled date
+     * Find appointments by studio, status and scheduled date range (timezone-aware).
+     * startOfDay and endOfDay should be the UTC Instants corresponding to midnight in the target timezone.
      */
     @Query("""
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
         AND a.deletedAt IS NULL
         AND a.status = :status
-        AND CAST(a.startDateTime AS date) = :date
+        AND a.startDateTime >= :startOfDay
+        AND a.startDateTime < :endOfDay
         ORDER BY a.startDateTime ASC
     """)
-    fun findByStudioIdAndStatusAndDate(
+    fun findByStudioIdAndStatusAndDateRange(
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus,
-        @Param("date") date: LocalDate
+        @Param("startOfDay") startOfDay: Instant,
+        @Param("endOfDay") endOfDay: Instant
     ): List<AppointmentEntity>
 
     /**
