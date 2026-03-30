@@ -60,8 +60,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
     ): List<AppointmentEntity>
 
     /**
-     * Find appointments with filtering and pagination (database-side)
-     * Joins with Customer and Vehicle tables for filtering
+     * Find appointments with filtering and pagination (database-side), without date filter.
      */
     @Query("""
         SELECT DISTINCT a FROM AppointmentEntity a
@@ -80,7 +79,6 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
              LOWER(v.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(a.appointmentTitle) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
-        AND (:scheduledDate IS NULL OR CAST(a.startDateTime AS date) = :scheduledDate)
         ORDER BY a.startDateTime DESC
     """)
     fun findAppointmentsWithFilters(
@@ -88,7 +86,41 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("customerId") customerId: UUID?,
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
         @Param("searchTerm") searchTerm: String?,
-        @Param("scheduledDate") scheduledDate: LocalDate?,
+        pageable: Pageable
+    ): Page<AppointmentEntity>
+
+    /**
+     * Find appointments with filtering, pagination and timezone-aware date filter.
+     * startOfDay/endOfDay are UTC Instants representing midnight in the target timezone.
+     */
+    @Query("""
+        SELECT DISTINCT a FROM AppointmentEntity a
+        LEFT JOIN CustomerEntity c ON a.customerId = c.id
+        LEFT JOIN VehicleEntity v ON a.vehicleId = v.id
+        WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
+        AND (:customerId IS NULL OR a.customerId = :customerId)
+        AND (:status IS NULL OR a.status = :status)
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(a.appointmentTitle) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        AND a.startDateTime >= :startOfDay
+        AND a.startDateTime < :endOfDay
+        ORDER BY a.startDateTime DESC
+    """)
+    fun findAppointmentsWithFiltersAndScheduledDate(
+        @Param("studioId") studioId: UUID,
+        @Param("customerId") customerId: UUID?,
+        @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        @Param("startOfDay") startOfDay: Instant,
+        @Param("endOfDay") endOfDay: Instant,
         pageable: Pageable
     ): Page<AppointmentEntity>
 

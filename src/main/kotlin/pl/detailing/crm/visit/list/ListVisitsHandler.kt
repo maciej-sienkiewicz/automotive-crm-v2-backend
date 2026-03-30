@@ -12,6 +12,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 @Service
 class ListVisitsHandler(
@@ -30,13 +31,26 @@ class ListVisitsHandler(
         )
 
         // Execute query with filters and pagination at database level
-        val page = visitRepository.findVisitsWithFilters(
-            studioId = command.studioId.value,
-            status = command.status,
-            searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
-            scheduledDate = command.scheduledDate,
-            pageable = pageRequest
-        )
+        val warsawZone = ZoneId.of("Europe/Warsaw")
+        val page = if (command.scheduledDate != null) {
+            val startOfDay = command.scheduledDate.atStartOfDay(warsawZone).toInstant()
+            val endOfDay = command.scheduledDate.plusDays(1).atStartOfDay(warsawZone).toInstant()
+            visitRepository.findVisitsWithFiltersAndScheduledDate(
+                studioId = command.studioId.value,
+                status = command.status,
+                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                startOfDay = startOfDay,
+                endOfDay = endOfDay,
+                pageable = pageRequest
+            )
+        } else {
+            visitRepository.findVisitsWithFilters(
+                studioId = command.studioId.value,
+                status = command.status,
+                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                pageable = pageRequest
+            )
+        }
 
         val visits = page.content
 
