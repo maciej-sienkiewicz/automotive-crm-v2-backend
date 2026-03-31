@@ -188,6 +188,7 @@ class FinanceController(
         @RequestParam(required = false) visitId: UUID?,
         @RequestParam(required = false) dateFrom: LocalDate?,
         @RequestParam(required = false) dateTo: LocalDate?,
+        @RequestParam(required = false) includeDeleted: Boolean = false,
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): ResponseEntity<FinancialDocumentListResponse> {
@@ -203,6 +204,7 @@ class FinanceController(
                 visitId      = visitId?.let { VisitId(it) },
                 dateFrom     = dateFrom,
                 dateTo       = dateTo,
+                includeDeleted = includeDeleted,
                 page         = maxOf(1, page),
                 pageSize     = pageSize
             )
@@ -786,7 +788,8 @@ data class FinancialDocumentResponse(
 
     val createdBy: String,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val deletedAt: Instant?
 )
 
 data class FinancialDocumentListResponse(
@@ -901,7 +904,8 @@ private fun FinancialDocument.toResponse(externalUrl: String?) = FinancialDocume
     ksefNumber              = ksefNumber,
     createdBy               = createdBy.toString(),
     createdAt               = createdAt,
-    updatedAt               = updatedAt
+    updatedAt               = updatedAt,
+    deletedAt               = deletedAt,
 )
 
 private fun CashRegister.toResponse() = CashRegisterResponse(

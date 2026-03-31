@@ -22,6 +22,7 @@ data class ListFinancialDocumentsCommand(
     val visitId: VisitId? = null,
     val dateFrom: LocalDate? = null,
     val dateTo: LocalDate? = null,
+    val includeDeleted: Boolean,
 
     // Pagination – 1-based page index
     val page: Int = 1,
@@ -54,6 +55,7 @@ class ListFinancialDocumentsHandler(
             visitId      = command.visitId?.value,
             dateFrom     = command.dateFrom,
             dateTo       = command.dateTo,
+            includeDeleted = command.includeDeleted,
             pageable     = pageable
         )
 

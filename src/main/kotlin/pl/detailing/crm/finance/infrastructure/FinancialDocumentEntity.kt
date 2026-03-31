@@ -271,6 +271,7 @@ class FinancialDocumentEntity(
         createdBy               = UserId(createdBy),
         updatedBy               = UserId(updatedBy),
         createdAt               = createdAt,
-        updatedAt               = updatedAt
+        updatedAt               = updatedAt,
+        deletedAt               = deletedAt
     )
 }

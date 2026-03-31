@@ -67,7 +67,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     @Query("""
         SELECT d FROM FinancialDocumentEntity d
         WHERE d.studioId = :studioId
-          AND d.deletedAt IS NULL
+          AND (:includeDeleted = true OR d.deletedAt IS NULL)
           AND (:documentType IS NULL OR d.documentType = :documentType)
           AND (:direction    IS NULL OR d.direction    = :direction)
           AND (:status       IS NULL OR d.status       = :status)
@@ -83,6 +83,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
         visitId: UUID?,
         dateFrom: LocalDate?,
         dateTo: LocalDate?,
+        includeDeleted: Boolean,
         pageable: Pageable
     ): Page<FinancialDocumentEntity>
 

@@ -207,7 +207,8 @@ data class FinancialDocument(
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val deletedAt: Instant? = null
 ) {
     init {
         require(totalNet.amountInCents + totalVat.amountInCents == totalGross.amountInCents) {
