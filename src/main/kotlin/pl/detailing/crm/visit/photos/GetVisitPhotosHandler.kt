@@ -2,12 +2,15 @@ package pl.detailing.crm.visit.photos
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.phototags.PhotoSource
+import pl.detailing.crm.phototags.PhotoTagRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Handler for getting visit photos with presigned download URLs
@@ -15,7 +18,8 @@ import java.time.Instant
 @Service
 class GetVisitPhotosHandler(
     private val visitRepository: VisitRepository,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val photoTagRepository: PhotoTagRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -29,7 +33,13 @@ class GetVisitPhotosHandler(
         // 2. Convert to domain model (photos already loaded)
         val visit = visitEntity.toDomain()
 
-        // 3. Get photos and generate presigned URLs
+        // 3. Batch-load tags for all photos in a single query
+        val photoIds = visit.photos.map { it.id.value }
+        val tagsByPhotoId = if (photoIds.isEmpty()) emptyMap()
+        else photoTagRepository.findByPhotoIdsAndType(photoIds, PhotoSource.VISIT_PHOTO)
+            .groupBy({ it.photoId }, { it.tagName })
+
+        // 4. Get photos and generate presigned URLs
         val photoResponses = visit.photos.map { photo ->
             VisitPhotoInfo(
                 id = photo.id.value.toString(),
@@ -37,7 +47,8 @@ class GetVisitPhotosHandler(
                 description = photo.description,
                 uploadedAt = photo.uploadedAt,
                 thumbnailUrl = photoSessionService.generateDownloadUrl(photo.fileId),
-                fullSizeUrl = photoSessionService.generateDownloadUrl(photo.fileId)
+                fullSizeUrl = photoSessionService.generateDownloadUrl(photo.fileId),
+                tags = tagsByPhotoId[photo.id.value] ?: emptyList()
             )
         }
 
@@ -69,5 +80,6 @@ data class VisitPhotoInfo(
     val description: String?,
     val uploadedAt: Instant,
     val thumbnailUrl: String,
-    val fullSizeUrl: String
+    val fullSizeUrl: String,
+    val tags: List<String>
 )

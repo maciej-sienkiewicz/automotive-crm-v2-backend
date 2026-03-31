@@ -65,6 +65,16 @@ interface PhotoTagRepository : JpaRepository<PhotoTagEntity, UUID> {
         @Param("photoType") photoType: PhotoSource
     ): List<String>
 
+    /**
+     * Batch-load tags for multiple photos of the same type in a single query.
+     * Returns entities so callers can group by photoId.
+     */
+    @Query("SELECT t FROM PhotoTagEntity t WHERE t.photoId IN :photoIds AND t.photoType = :photoType")
+    fun findByPhotoIdsAndType(
+        @Param("photoIds") photoIds: List<UUID>,
+        @Param("photoType") photoType: PhotoSource
+    ): List<PhotoTagEntity>
+
     @Modifying
     @Transactional
     @Query("DELETE FROM PhotoTagEntity t WHERE t.photoId = :photoId AND t.photoType = :photoType")

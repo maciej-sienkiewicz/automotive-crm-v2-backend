@@ -141,7 +141,8 @@ class VisitController(
                     description = photo.description,
                     uploadedAt = photo.uploadedAt,
                     thumbnailUrl = photo.thumbnailUrl,
-                    fullSizeUrl = photo.fullSizeUrl
+                    fullSizeUrl = photo.fullSizeUrl,
+                    tags = photo.tags
                 )
             }
         ))
@@ -587,7 +588,8 @@ data class VisitPhotoResponse(
     val description: String?,
     val uploadedAt: Instant,
     val thumbnailUrl: String,
-    val fullSizeUrl: String
+    val fullSizeUrl: String,
+    val tags: List<String>
 )
 
 /**
