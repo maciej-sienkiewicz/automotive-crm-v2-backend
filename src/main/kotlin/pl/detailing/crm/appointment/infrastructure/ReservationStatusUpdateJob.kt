@@ -16,11 +16,11 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Scheduled job that marks appointments as ABANDONED every day at 6 AM.
+ * Scheduled job that marks appointments as ABANDONED every 15 minutes.
  *
  * An appointment is considered abandoned when:
  * - Its status is CREATED (not yet converted to a visit, cancelled, or already abandoned)
- * - Its start date has already passed
+ * - Its scheduled date is yesterday or earlier (compared in Europe/Warsaw timezone)
  *
  * This prevents stale CREATED appointments from cluttering the calendar.
  */
@@ -40,15 +40,20 @@ class ReservationStatusUpdateJob(
 
     /**
      * Marks overdue CREATED appointments as ABANDONED.
-     * Runs every day at 06:00.
+     * Runs every 15 minutes.
+     * An appointment is considered abandoned when its scheduled date (in Europe/Warsaw timezone)
+     * is yesterday or earlier and its status is still CREATED.
      */
-    @Scheduled(cron = "0 0 6 * * *")
+    @Scheduled(cron = "0 */15 * * * *")
     @Transactional
     fun markAbandonedReservations() {
         val now = Instant.now()
-        logger.info("Starting daily reservation status update at $now")
+        logger.info("Starting reservation status update at $now")
 
-        val candidates = appointmentRepository.findAbandonedCandidates(now)
+        val warsawZone = java.time.ZoneId.of("Europe/Warsaw")
+        val startOfToday = java.time.LocalDate.now(warsawZone).atStartOfDay(warsawZone).toInstant()
+
+        val candidates = appointmentRepository.findAbandonedCandidates(startOfToday)
 
         if (candidates.isEmpty()) {
             logger.info("No appointments to mark as abandoned")
@@ -96,7 +101,7 @@ class ReservationStatusUpdateJob(
         }
 
         logger.info(
-            "Daily reservation status update completed: marked $updatedCount appointment(s) as ABANDONED" +
+            "Reservation status update completed: marked $updatedCount appointment(s) as ABANDONED" +
                 if (failedCount > 0) ", failed: $failedCount" else ""
         )
     }
