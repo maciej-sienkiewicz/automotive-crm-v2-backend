@@ -93,7 +93,7 @@ class FinancialDocumentEntity(
     val customerLastName: String?,
 
     @Column(name = "document_number", nullable = false, length = 50)
-    val documentNumber: String,
+    var documentNumber: String,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "document_type", nullable = false, length = 20)

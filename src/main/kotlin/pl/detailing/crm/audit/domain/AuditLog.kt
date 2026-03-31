@@ -97,6 +97,7 @@ enum class AuditAction {
     // Finance
     DOCUMENT_ISSUED,
     DOCUMENT_STATUS_CHANGED,
+    DOCUMENT_NUMBER_UPDATED,
     DOCUMENT_DELETED,
     CASH_ADJUSTED
 }

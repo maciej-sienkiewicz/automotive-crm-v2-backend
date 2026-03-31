@@ -5,6 +5,11 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.finance.cash.AdjustCashBalanceCommand
 import pl.detailing.crm.finance.cash.AdjustCashBalanceHandler
@@ -64,7 +69,8 @@ class FinanceController(
     private val invoicingFacade: InvoicingFacade,
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
-    private val reportingHandler: FinanceReportingHandler
+    private val reportingHandler: FinanceReportingHandler,
+    private val auditService: AuditService
 ) {
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -114,6 +120,60 @@ class FinanceController(
         )
 
         return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse(externalUrl = null))
+    }
+
+    /**
+     * Update the document number of an existing financial document.
+     *
+     * This supports scenario #2: user creates an invoice manually in an external system,
+     * then annotates the local CRM document with the number assigned by that system.
+     * PATCH /api/v1/finance/documents/{id}
+     */
+    @PatchMapping("/documents/{id}")
+    @Transactional
+    fun updateDocumentNumber(
+        @PathVariable id: UUID,
+        @RequestBody request: UpdateDocumentNumberRequest
+    ): ResponseEntity<FinancialDocumentResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireManagerOrOwner(principal.role, "edytować numer dokumentu")
+
+        val trimmed = request.documentNumber.trim()
+        if (trimmed.isBlank()) {
+            throw ValidationException("Numer dokumentu nie może być pusty")
+        }
+        if (trimmed.length > 100) {
+            throw ValidationException("Numer dokumentu nie może przekraczać 100 znaków")
+        }
+
+        val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
+            ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
+
+        val oldNumber = entity.documentNumber
+        entity.documentNumber = trimmed
+        entity.updatedBy = principal.userId.value
+        entity.updatedAt = Instant.now()
+        val saved = documentRepository.save(entity)
+
+        auditService.logSync(
+            LogAuditCommand(
+                studioId          = principal.studioId,
+                userId            = principal.userId,
+                userDisplayName   = principal.fullName,
+                module            = AuditModule.FINANCE,
+                entityId          = id.toString(),
+                entityDisplayName = trimmed,
+                action            = AuditAction.DOCUMENT_NUMBER_UPDATED,
+                changes           = listOf(FieldChange("documentNumber", oldNumber, trimmed))
+            )
+        )
+
+        val doc = saved.toDomain()
+        val url = if (doc.provider != null && doc.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(doc.toResponse(externalUrl = url))
     }
 
     /**
@@ -597,6 +657,8 @@ data class CreateDocumentRequest(
     val customerFirstName: String? = null,
     val customerLastName: String? = null
 )
+
+data class UpdateDocumentNumberRequest(val documentNumber: String)
 
 data class UpdateStatusRequest(val status: String)
 
