@@ -25,6 +25,16 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     """)
     fun findByIdAndStudioId(id: UUID, studioId: UUID): FinancialDocumentEntity?
 
+    /**
+     * Finds a document regardless of its soft-delete state.
+     * Used exclusively by the restore endpoint to locate deleted documents.
+     */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.id = :id AND d.studioId = :studioId
+    """)
+    fun findByIdAndStudioIdIncludingDeleted(id: UUID, studioId: UUID): FinancialDocumentEntity?
+
     // ── Document-number generation ────────────────────────────────────────────
 
     /**

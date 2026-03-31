@@ -300,6 +300,50 @@ class FinanceController(
         return ResponseEntity.noContent().build()
     }
 
+    /**
+     * Restore a previously soft-deleted document.
+     * POST /api/v1/finance/documents/{id}/restore
+     */
+    @PostMapping("/documents/{id}/restore")
+    @Transactional
+    fun restoreDocument(@PathVariable id: UUID): ResponseEntity<FinancialDocumentResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER) {
+            throw ForbiddenException("Tylko właściciel może przywracać dokumenty finansowe")
+        }
+
+        val entity = documentRepository.findByIdAndStudioIdIncludingDeleted(id, principal.studioId.value)
+            ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
+
+        if (entity.deletedAt == null) {
+            throw ValidationException("Dokument $id nie jest usunięty i nie wymaga przywrócenia")
+        }
+
+        entity.deletedAt = null
+        entity.updatedBy = principal.userId.value
+        entity.updatedAt = Instant.now()
+        val saved = documentRepository.save(entity)
+
+        auditService.logSync(
+            LogAuditCommand(
+                studioId          = principal.studioId,
+                userId            = principal.userId,
+                userDisplayName   = principal.fullName,
+                module            = AuditModule.FINANCE,
+                entityId          = id.toString(),
+                entityDisplayName = entity.documentNumber,
+                action            = AuditAction.DOCUMENT_RESTORED
+            )
+        )
+
+        val doc = saved.toDomain()
+        val url = if (doc.provider != null && doc.externalId != null) {
+            runCatching { invoicingFacade.getPortalUrl(doc.provider, doc.externalId) }.getOrNull()
+        } else null
+
+        return ResponseEntity.ok(doc.toResponse(externalUrl = url))
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // VAT Invoice operations (provider integration)
     // ─────────────────────────────────────────────────────────────────────────

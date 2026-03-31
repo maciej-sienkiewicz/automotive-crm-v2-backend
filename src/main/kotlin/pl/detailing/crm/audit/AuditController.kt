@@ -224,6 +224,7 @@ class AuditController(
         AuditAction.DOCUMENT_STATUS_CHANGED -> "Zmiana statusu dokumentu"
         AuditAction.DOCUMENT_NUMBER_UPDATED -> "Aktualizacja numeru dokumentu"
         AuditAction.DOCUMENT_DELETED -> "Usunięcie dokumentu"
+        AuditAction.DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
         AuditAction.CASH_ADJUSTED -> "Dostosowanie kasy"
         AuditAction.APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
     }
