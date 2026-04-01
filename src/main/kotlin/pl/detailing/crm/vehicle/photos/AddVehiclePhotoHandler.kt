@@ -45,7 +45,9 @@ class AddVehiclePhotoHandler(
             fileId = fileId,
             fileName = command.fileName,
             description = command.description,
-            uploadedAt = Instant.now()
+            uploadedAt = Instant.now(),
+            uploadedBy = command.userId?.value,
+            uploadedByName = command.userName
         )
 
         // 5. Add photo to vehicle

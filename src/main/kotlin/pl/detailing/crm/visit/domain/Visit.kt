@@ -534,7 +534,9 @@ data class VisitPhoto(
     val fileId: String,
     val fileName: String,
     val description: String?,
-    val uploadedAt: Instant
+    val uploadedAt: Instant,
+    val uploadedBy: java.util.UUID? = null,
+    val uploadedByName: String? = null
 )
 
 /**

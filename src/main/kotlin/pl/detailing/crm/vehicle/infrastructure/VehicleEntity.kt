@@ -131,14 +131,22 @@ class VehiclePhotoEntity(
     val description: String?,
 
     @Column(name = "uploaded_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val uploadedAt: Instant
+    val uploadedAt: Instant,
+
+    @Column(name = "uploaded_by", nullable = true, columnDefinition = "uuid")
+    val uploadedBy: UUID? = null,
+
+    @Column(name = "uploaded_by_name", nullable = true, length = 200)
+    val uploadedByName: String? = null
 ) {
     fun toDomain(): VehiclePhoto = VehiclePhoto(
         id = VehiclePhotoId(id),
         fileId = fileId,
         fileName = fileName,
         description = description,
-        uploadedAt = uploadedAt
+        uploadedAt = uploadedAt,
+        uploadedBy = uploadedBy,
+        uploadedByName = uploadedByName
     )
 }
 

@@ -171,6 +171,18 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Page<VisitEntity>
 
     /**
+     * Find all non-draft visits for a studio that have at least one photo, eagerly fetching photos.
+     * Used by the gallery endpoint to aggregate all visit photos.
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        JOIN FETCH v.photos
+        WHERE v.studioId = :studioId
+        AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT
+    """)
+    fun findByStudioIdWithPhotos(@Param("studioId") studioId: UUID): List<VisitEntity>
+
+    /**
      * Calculate total revenue for visits within a date range
      * Uses service items' finalPriceGross for historical accuracy
      */

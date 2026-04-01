@@ -117,4 +117,11 @@ interface PhotoTagRepository : JpaRepository<PhotoTagEntity, UUID> {
         @Param("photoType") photoType: PhotoSource,
         @Param("tags") tags: List<String>
     ): List<UUID>
+
+    /**
+     * Return all distinct tag names used across a studio, sorted alphabetically.
+     * Used by the gallery endpoint to populate the tag filter suggestions.
+     */
+    @Query("SELECT DISTINCT t.tagName FROM PhotoTagEntity t WHERE t.studioId = :studioId ORDER BY t.tagName")
+    fun findDistinctTagNamesByStudio(@Param("studioId") studioId: UUID): List<String>
 }

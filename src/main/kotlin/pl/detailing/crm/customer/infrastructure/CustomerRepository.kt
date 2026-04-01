@@ -55,13 +55,23 @@ interface CustomerRepository : JpaRepository<CustomerEntity, UUID> {
     ): CustomerEntity?
 
     @Query("""
-        SELECT c FROM CustomerEntity c 
-        WHERE c.studioId = :studioId 
-        AND c.phone = :phone 
+        SELECT c FROM CustomerEntity c
+        WHERE c.studioId = :studioId
+        AND c.phone = :phone
         AND c.isActive = true
     """)
     fun findActiveByStudioIdAndPhone(
         @Param("studioId") studioId: UUID,
         @Param("phone") phone: String
     ): CustomerEntity?
+
+    /**
+     * Batch-load customers by IDs within a studio.
+     * Used by the gallery endpoint to resolve customer names for photos.
+     */
+    @Query("SELECT c FROM CustomerEntity c WHERE c.id IN :ids AND c.studioId = :studioId")
+    fun findByIdsAndStudioId(
+        @Param("ids") ids: List<UUID>,
+        @Param("studioId") studioId: UUID
+    ): List<CustomerEntity>
 }

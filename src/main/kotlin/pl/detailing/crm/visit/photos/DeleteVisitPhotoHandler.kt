@@ -54,7 +54,9 @@ class DeleteVisitPhotoHandler(
                 fileId = photo.fileId,
                 fileName = photo.fileName,
                 description = photo.description,
-                uploadedAt = photo.uploadedAt
+                uploadedAt = photo.uploadedAt,
+                uploadedBy = photo.uploadedBy,
+                uploadedByName = photo.uploadedByName
             )
         })
 

@@ -47,7 +47,9 @@ class AddVisitPhotoHandler(
             fileId = fileId,
             fileName = command.fileName,
             description = command.description,
-            uploadedAt = Instant.now()
+            uploadedAt = Instant.now(),
+            uploadedBy = command.userId.value,
+            uploadedByName = command.userName
         )
 
         // 6. Add photo to visit
@@ -62,7 +64,9 @@ class AddVisitPhotoHandler(
                 fileId = photo.fileId,
                 fileName = photo.fileName,
                 description = photo.description,
-                uploadedAt = photo.uploadedAt
+                uploadedAt = photo.uploadedAt,
+                uploadedBy = photo.uploadedBy,
+                uploadedByName = photo.uploadedByName
             )
         })
 

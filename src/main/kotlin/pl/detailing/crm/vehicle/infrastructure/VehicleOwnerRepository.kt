@@ -23,12 +23,23 @@ interface VehicleOwnerRepository : JpaRepository<VehicleOwnerEntity, VehicleOwne
     fun findPrimaryOwnerByVehicleId(@Param("vehicleId") vehicleId: UUID): VehicleOwnerEntity?
 
     @Query("""
-        SELECT COUNT(vo) > 0 FROM VehicleOwnerEntity vo 
-        WHERE vo.id.vehicleId = :vehicleId 
+        SELECT COUNT(vo) > 0 FROM VehicleOwnerEntity vo
+        WHERE vo.id.vehicleId = :vehicleId
         AND vo.id.customerId = :customerId
     """)
     fun existsByVehicleIdAndCustomerId(
         @Param("vehicleId") vehicleId: UUID,
         @Param("customerId") customerId: UUID
     ): Boolean
+
+    /**
+     * Batch-load primary owners for a set of vehicle IDs.
+     * Used by the gallery endpoint to resolve customer info for vehicle photos.
+     */
+    @Query("""
+        SELECT vo FROM VehicleOwnerEntity vo
+        WHERE vo.id.vehicleId IN :vehicleIds
+        AND vo.ownershipRole = 'PRIMARY'
+    """)
+    fun findPrimaryOwnersByVehicleIds(@Param("vehicleIds") vehicleIds: List<UUID>): List<VehicleOwnerEntity>
 }

@@ -30,6 +30,13 @@ interface VehicleRepository : JpaRepository<VehicleEntity, UUID> {
     @Query("SELECT v FROM VehicleEntity v WHERE v.studioId = :studioId AND v.status = 'ACTIVE'")
     fun findActiveByStudioId(@Param("studioId") studioId: UUID): List<VehicleEntity>
 
+    /**
+     * Find all vehicles for a studio that have at least one photo, eagerly fetching photos.
+     * Used by the gallery endpoint to aggregate all vehicle photos.
+     */
+    @Query("SELECT DISTINCT v FROM VehicleEntity v JOIN FETCH v.photos WHERE v.studioId = :studioId")
+    fun findByStudioIdWithPhotos(@Param("studioId") studioId: UUID): List<VehicleEntity>
+
     @Query("""
         SELECT COUNT(v) > 0 FROM VehicleEntity v
         WHERE v.studioId = :studioId
