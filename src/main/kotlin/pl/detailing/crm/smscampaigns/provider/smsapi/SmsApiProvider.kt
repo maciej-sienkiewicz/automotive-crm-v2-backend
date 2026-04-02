@@ -2,20 +2,21 @@ package pl.detailing.crm.smscampaigns.provider.smsapi
 
 import org.slf4j.LoggerFactory
 import pl.smsapi.OAuthClient
-import pl.smsapi.api.SmsApi
+import pl.smsapi.api.SmsFactory
 import pl.smsapi.exception.SmsapiException
+import pl.smsapi.proxy.ProxyNative
 import pl.detailing.crm.smscampaigns.provider.SmsDeliveryResult
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 
 /**
- * [SmsProvider] implementation backed by the official SMSAPI Java SDK.
+ * [SmsProvider] implementation backed by the official SMSAPI Java SDK (smsapi-lib:3.0.1).
  *
  * Responsibilities (SRP):
  *  - Translate the provider-agnostic [send] call into SMSAPI SDK calls.
  *  - Map SDK responses and exceptions to [SmsDeliveryResult].
  *  - Log every dispatch attempt for operational visibility.
  *
- * The [SmsApi] client is created lazily so that a missing/empty [oauthToken]
+ * [SmsFactory] is created lazily so that a missing/empty [oauthToken]
  * in development (where [enabled] = false) does not cause a startup failure.
  */
 class SmsApiProvider(
@@ -24,8 +25,11 @@ class SmsApiProvider(
 
     private val logger = LoggerFactory.getLogger(SmsApiProvider::class.java)
 
-    private val api: SmsApi by lazy {
-        SmsApi(OAuthClient(properties.oauthToken))
+    private val smsFactory: SmsFactory by lazy {
+        SmsFactory(
+            OAuthClient(properties.oauthToken),
+            ProxyNative(properties.apiUrl)
+        )
     }
 
     override fun send(phoneNumber: String, message: String): SmsDeliveryResult {
@@ -38,20 +42,18 @@ class SmsApiProvider(
         val normalizedNumber = phoneNumber.removePrefix("+")
 
         return try {
-            val action = api.actionSend()
-                .setTo(normalizedNumber)
-                .setMessage(message)
-                .apply { if (properties.senderName.isNotBlank()) setSender(properties.senderName) }
+            val action = smsFactory.actionSend(normalizedNumber, message)
+                .apply { if (properties.senderName.isNotBlank()) setFrom(properties.senderName) }
 
-            val response = api.execute(action)
-            val firstResult = response.list.firstOrNull()
+            val response = action.execute()
+            val firstMessage = response.list.firstOrNull()
 
-            if (firstResult != null) {
+            if (firstMessage != null) {
                 logger.info(
-                    "SMS dispatched via SMSAPI | to={} smsId={} status={}",
-                    phoneNumber, firstResult.smsId, firstResult.status
+                    "SMS dispatched via SMSAPI | to={} shipmentId={} status={}",
+                    phoneNumber, firstMessage.id, firstMessage.status
                 )
-                SmsDeliveryResult.success(firstResult.smsId ?: "")
+                SmsDeliveryResult.success(firstMessage.id ?: "")
             } else {
                 logger.warn("SMSAPI returned empty result list for number={}", phoneNumber)
                 SmsDeliveryResult.failure("Empty result list returned by SMSAPI")

@@ -14,6 +14,13 @@ data class SmsApiProperties(
     val oauthToken: String = "",
     /** Sender name / alphanumeric ID registered in the SMSAPI panel. Empty = default sender. */
     val senderName: String = "",
+    /**
+     * SMSAPI gateway URL.
+     * PL: https://api.smsapi.pl/
+     * COM: https://api.smsapi.com/
+     * SE/BG: https://smsapi.io/
+     */
+    val apiUrl: String = "https://api.smsapi.pl/",
     /** When false the provider logs the message but does NOT call the SMSAPI endpoint. */
     val enabled: Boolean = false
 )
