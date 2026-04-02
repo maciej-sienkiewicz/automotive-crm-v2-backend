@@ -1,19 +1,27 @@
 package pl.detailing.crm.visit.services
 
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
-import pl.detailing.crm.visit.domain.VisitServiceItem
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.smscampaigns.consent.SmsConsentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
-import java.util.*
+import java.util.UUID
 
 @Service
 class SaveVisitServicesHandler(
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val customerRepository: CustomerRepository,
+    private val smsConsentService: SmsConsentService
 ) {
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(SaveVisitServicesHandler::class.java)
+    }
 
     @Transactional
     suspend fun handle(visitId: VisitId, studioId: StudioId, userId: UserId, payload: ServicesChangesPayload, userName: String? = null) {
@@ -95,5 +103,44 @@ class SaveVisitServicesHandler(
             action = AuditAction.SERVICES_UPDATED,
             changes = changes
         ))
+
+        if (payload.notifyCustomer) {
+            sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit)
+        }
+    }
+
+    /**
+     * Calculates the proposed total gross price (if all pending changes were approved)
+     * and dispatches a consent SMS to the customer.
+     *
+     * "Proposed total" includes:
+     *  - All currently CONFIRMED items (not being changed)
+     *  - PENDING ADD / EDIT items at their new price
+     * It excludes PENDING DELETE items (they would be removed on approval).
+     */
+    private fun sendConsentSms(
+        customerId: java.util.UUID,
+        studioId: StudioId,
+        visitId: VisitId,
+        updatedVisit: pl.detailing.crm.visit.domain.Visit
+    ) {
+        val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
+
+        val phone = customer?.phone
+        if (phone.isNullOrBlank()) {
+            logger.warn("notifyCustomer=true but customer {} has no phone – SMS skipped", customerId)
+            return
+        }
+
+        val proposedTotalGross = updatedVisit.serviceItems
+            .filter { it.pendingOperation != PendingOperation.DELETE }
+            .sumOf { it.finalPriceGross.amountInCents }
+
+        smsConsentService.sendConsentRequest(
+            visitId = visitId,
+            studioId = studioId,
+            customerPhone = phone,
+            proposedTotalGrossCents = proposedTotalGross
+        )
     }
 }
