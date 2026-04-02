@@ -38,6 +38,11 @@ class SmsApiProvider(
             return SmsDeliveryResult.success("mock-disabled")
         }
 
+        if (properties.whitelist.isNotEmpty() && phoneNumber !in properties.whitelist) {
+            logger.warn("[SMS WHITELIST] Blocked send to {} — number not on whitelist", phoneNumber)
+            return SmsDeliveryResult.failure("Number not on whitelist")
+        }
+
         // SMSAPI expects numbers without the leading '+', e.g. "48100200300"
         val normalizedNumber = phoneNumber.removePrefix("+")
 

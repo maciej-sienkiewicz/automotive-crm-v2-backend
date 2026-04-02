@@ -22,5 +22,13 @@ data class SmsApiProperties(
      */
     val apiUrl: String = "https://api.smsapi.pl/",
     /** When false the provider logs the message but does NOT call the SMSAPI endpoint. */
-    val enabled: Boolean = false
+    val enabled: Boolean = false,
+    /**
+     * Phone number whitelist for the testing phase.
+     * When non-empty, SMS is only sent to numbers on this list — all others are silently blocked.
+     * Empty list = whitelist disabled (all numbers allowed).
+     * Format: E.164, e.g. +48888915358
+     * Example property: smsapi.whitelist=+48888915358,+48123456789
+     */
+    val whitelist: List<String> = emptyList()
 )
