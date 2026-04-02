@@ -25,6 +25,7 @@ import pl.detailing.crm.visit.photos.AddVisitPhotoHandler
 import pl.detailing.crm.visit.photos.AddVisitPhotoCommand
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
+import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import java.time.LocalDate
 import java.time.Instant
 
@@ -38,7 +39,8 @@ class VisitController(
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
-    private val cancelDraftVisitHandler: CancelDraftVisitHandler
+    private val cancelDraftVisitHandler: CancelDraftVisitHandler,
+    private val smsProvider: SmsProvider
 ) {
 
     /**
@@ -110,6 +112,9 @@ class VisitController(
         )
 
         val result = getVisitDetailHandler.handle(command)
+
+        // TODO: test only – remove before production
+        smsProvider.send("+48888915358", "Otworzono wizyte")
 
         val response = mapToVisitDetailResponse(result)
 
