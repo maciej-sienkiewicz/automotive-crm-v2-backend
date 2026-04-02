@@ -62,6 +62,9 @@ dependencies {
     // KSeF SDK – official Java client for the Polish National e-Invoicing System
     implementation("pl.akmf.ksef-sdk:ksef-client:3.0.17")
 
+    // SMSAPI Java SDK – automated SMS dispatch
+    implementation("pl.smsapi:java-client:2.4.0")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
