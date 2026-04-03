@@ -147,6 +147,18 @@ class S3ProtocolStorageService(
     }
 
     /**
+     * Download the raw bytes of a file stored in S3.
+     * Used by the email module to attach protocol PDFs to outgoing messages.
+     */
+    fun downloadBytes(s3Key: String): ByteArray {
+        val getObjectRequest = GetObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .build()
+        return s3Client.getObject(getObjectRequest).readAllBytes()
+    }
+
+    /**
      * Delete a file from S3.
      * Used when cancelling draft visits to clean up generated protocols.
      */

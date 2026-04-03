@@ -65,6 +65,9 @@ dependencies {
     // SMSAPI Java SDK – automated SMS dispatch
     implementation("pl.smsapi:smsapi-lib:3.0.1")
 
+    // JavaMail – transactional email dispatch (welcome emails, protocol attachments)
+    implementation("com.sun.mail:jakarta.mail:2.0.1")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")

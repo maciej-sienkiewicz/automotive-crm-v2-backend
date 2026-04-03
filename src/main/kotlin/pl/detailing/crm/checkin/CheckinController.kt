@@ -1,12 +1,15 @@
 package pl.detailing.crm.checkin
 
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
+import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
+import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailHandler
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
@@ -22,8 +25,11 @@ class CheckinController(
     private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,
     private val protocolTemplateRepository: ProtocolTemplateRepository,
     private val s3StorageService: S3ProtocolStorageService,
-    private val uploadContextTokenService: UploadContextTokenService
+    private val uploadContextTokenService: UploadContextTokenService,
+    private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler
 ) {
+
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
      * Convert appointment/reservation to visit (check-in)
@@ -153,6 +159,21 @@ class CheckinController(
                 stage = ProtocolStage.CHECK_IN
             )
         )
+
+        // Send welcome email with protocol attachment (fire-and-forget; never aborts check-in)
+        try {
+            sendVisitWelcomeEmailHandler.handle(
+                SendVisitWelcomeEmailCommand(
+                    visitId = result.visitId,
+                    studioId = principal.studioId
+                )
+            )
+        } catch (ex: Exception) {
+            logger.warn(
+                "Failed to send welcome email for visit {}: {}",
+                result.visitId, ex.message
+            )
+        }
 
         // Convert protocols to DTOs
         val protocolDtos = protocolsResult.protocols.map { protocol ->
