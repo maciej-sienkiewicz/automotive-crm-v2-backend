@@ -33,6 +33,25 @@ class PdfProcessingService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
+     * Flatten all AcroForm fields in a PDF and return the resulting bytes.
+     *
+     * Merges interactive form widget appearances into the static page content stream,
+     * producing a read-only "snapshot" PDF that renders identically in every viewer.
+     * Used when attaching protocols to outgoing emails (the attachment must be static).
+     */
+    fun flattenPdfBytes(pdfBytes: ByteArray): ByteArray {
+        return ByteArrayInputStream(pdfBytes).use { inputStream ->
+            Loader.loadPDF(inputStream.readBytes()).use { document ->
+                document.documentCatalog.acroForm?.flatten()
+                ByteArrayOutputStream().use { outputStream ->
+                    document.save(outputStream)
+                    outputStream.toByteArray()
+                }
+            }
+        }
+    }
+
+    /**
      * Fill a PDF form with data and upload to S3.
      *
      * @param templateS3Key S3 key of the template PDF

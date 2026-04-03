@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailProvider
+import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.ProtocolStage
@@ -31,6 +32,7 @@ class SendVisitWelcomeEmailHandler(
     private val customerRepository: CustomerRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
     private val s3StorageService: S3ProtocolStorageService,
+    private val pdfProcessingService: PdfProcessingService,
     private val emailProvider: EmailProvider
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -74,16 +76,21 @@ class SendVisitWelcomeEmailHandler(
         val attachments = protocols.mapIndexedNotNull { index, protocol ->
             val s3Key = protocol.filledPdfS3Key ?: return@mapIndexedNotNull null
             try {
-                val bytes = s3StorageService.downloadBytes(s3Key)
+                val rawBytes = s3StorageService.downloadBytes(s3Key)
+                // Flatten the form before attaching — merges AcroForm widget appearances
+                // into the static page content stream so every PDF viewer renders the
+                // values exactly once (non-flattened forms can appear doubled in some
+                // email clients that render both the page content and widget /AP streams).
+                val flatBytes = pdfProcessingService.flattenPdfBytes(rawBytes)
                 val suffix = if (protocols.size > 1) "_${index + 1}" else ""
                 EmailAttachment(
                     fileName = "protokol_przyjecia_${visitEntity.visitNumber}$suffix.pdf",
-                    content = bytes,
+                    content = flatBytes,
                     contentType = "application/pdf"
                 )
             } catch (ex: Exception) {
                 logger.warn(
-                    "SendVisitWelcomeEmail: failed to download protocol PDF [s3Key={}]: {}",
+                    "SendVisitWelcomeEmail: failed to prepare protocol PDF attachment [s3Key={}]: {}",
                     s3Key, ex.message
                 )
                 null
