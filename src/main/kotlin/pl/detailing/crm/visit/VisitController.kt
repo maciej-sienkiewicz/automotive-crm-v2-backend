@@ -113,8 +113,6 @@ class VisitController(
 
         val result = getVisitDetailHandler.handle(command)
 
-        // TODO: test only – remove before production
-        smsProvider.send("+48888915358", "Otworzono wizyte")
 
         val response = mapToVisitDetailResponse(result)
 
