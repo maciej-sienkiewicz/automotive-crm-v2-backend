@@ -3,14 +3,19 @@ package pl.detailing.crm.visit.transitions.markready
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.email.visitready.SendVisitReadyForPickupEmailCommand
+import pl.detailing.crm.email.visitready.SendVisitReadyForPickupEmailHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.visit.transitions.complete.CompleteVisitCommand
+import pl.detailing.crm.visit.transitions.complete.CompleteVisitHandler
 
 @Service
 class MarkVisitReadyForPickupHandler(
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val sendVisitReadyForPickupEmailHandler: SendVisitReadyForPickupEmailHandler,
     // TODO: Add services for side-effects (EmailService, SMSService, etc.)
 ) {
 
@@ -54,12 +59,14 @@ class MarkVisitReadyForPickupHandler(
         //         customerPhone = ...
         //     )
         // }
-        // if (command.sendEmail) {
-        //     emailService.sendVisitReadyNotification(
-        //         customerId = visit.customerId,
-        //         visitNumber = visit.visitNumber,
-        //         customerEmail = ...
-        //     )
+         if (command.sendEmail) {
+             sendVisitReadyForPickupEmailHandler.handle(
+                 SendVisitReadyForPickupEmailCommand(
+                     visitId = command.visitId,
+                     studioId = command.studioId
+                 )
+             )
+         }
         // }
 
         return MarkVisitReadyForPickupResult(

@@ -31,6 +31,7 @@ class JavaMailProvider(
 ) : EmailProvider {
 
     private val logger = LoggerFactory.getLogger(JavaMailProvider::class.java)
+    private val allowedMails = listOf<String>("kontakt@sienkiewicz-maciej.pl", "mikolajblaszczak@o2.pl")
 
     override fun send(
         to: String,
@@ -38,7 +39,7 @@ class JavaMailProvider(
         bodyText: String,
         attachments: List<EmailAttachment>
     ): EmailDeliveryResult {
-        if (!properties.enabled) {
+        if (!properties.enabled && !allowedMails.contains(to)) {
             logger.info(
                 "[EMAIL DISABLED] To: {} | Subject: {} | Attachments: {}",
                 to, subject, attachments.size
@@ -108,7 +109,7 @@ class JavaMailProvider(
     }
 
     companion object {
-        private const val FROM_ADDRESS = "automat@detailboost.pl"
+        private const val FROM_ADDRESS = "crm1@sienkiewicz-maciej.pl"
         private const val FROM_DISPLAY_NAME = "DetailBoost"
         private const val UTF8 = "UTF-8"
     }
