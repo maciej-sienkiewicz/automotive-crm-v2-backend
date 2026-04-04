@@ -1,7 +1,9 @@
 package pl.detailing.crm.instagram.reaction
 
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.instagram.ai.indexing.InstagramPostReactionChangedEvent
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramPostReactionEntity
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramPostReactionRepository
@@ -20,9 +22,17 @@ data class ReactToInstagramPostCommand(
 class ReactToInstagramPostHandler(
     private val postSnapshotRepository: InstagramPostSnapshotRepository,
     private val studioProfileRepository: StudioInstagramProfileRepository,
-    private val reactionRepository: StudioInstagramPostReactionRepository
+    private val reactionRepository: StudioInstagramPostReactionRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
+    /**
+     * Przetwarza reakcję studia na post konkurenta.
+     *
+     * Po zapisaniu reakcji publikuje [InstagramPostReactionChangedEvent], który
+     * asynchronicznie indeksuje post w bazie wektorowej — bez blokowania HTTP.
+     * Dzięki temu klasyﬁkacja przez LLM nie wpływa na czas odpowiedzi.
+     */
     @Transactional
     fun handle(command: ReactToInstagramPostCommand): InstagramPostReaction? {
         val post = postSnapshotRepository.findById(command.postId.value).orElse(null)
@@ -43,6 +53,14 @@ class ReactToInstagramPostHandler(
             if (existing != null) {
                 reactionRepository.delete(existing)
             }
+            // Publikuj zdarzenie — IndexingService usunie wpis z VectorStore
+            eventPublisher.publishEvent(
+                InstagramPostReactionChangedEvent(
+                    studioId = command.studioId,
+                    postId = command.postId,
+                    reaction = null
+                )
+            )
             return null
         }
 
@@ -62,6 +80,15 @@ class ReactToInstagramPostHandler(
                 )
             )
         }
+
+        // Publikuj zdarzenie — IndexingService sklasyfikuje i zaindeksuje post w VectorStore
+        eventPublisher.publishEvent(
+            InstagramPostReactionChangedEvent(
+                studioId = command.studioId,
+                postId = command.postId,
+                reaction = command.reaction
+            )
+        )
 
         return command.reaction
     }
