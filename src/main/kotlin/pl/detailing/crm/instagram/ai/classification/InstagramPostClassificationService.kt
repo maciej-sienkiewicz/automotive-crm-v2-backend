@@ -1,12 +1,15 @@
 package pl.detailing.crm.instagram.ai.classification
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.ai.chat.client.ChatClient
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import pl.detailing.crm.instagram.ai.infrastructure.OpenAiClient
 import pl.detailing.crm.instagram.ai.model.InstagramPostClassification
 
 /**
- * Klasyfikuje posty Instagramowe za pomocą LLM (OpenAI JSON mode).
+ * Klasyfikuje posty Instagramowe za pomocą LLM (OpenAI Structured Outputs).
  *
  * Wyciąga z treści posta:
  *  - [InstagramPostClassification.postTone]       – styl narracyjny (premium/technical/emotional/casual)
@@ -19,7 +22,7 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostClassification
  */
 @Service
 class InstagramPostClassificationService(
-    private val openAiClient: OpenAiClient
+    @Qualifier("instagramChatClient") private val chatClient: ChatClient
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostClassificationService::class.java)
 
@@ -29,15 +32,16 @@ class InstagramPostClassificationService(
 
     /**
      * Klasyfikuje podany tekst posta i zwraca strukturę z metadanymi.
+     * Używa `entity()` (OpenAI Structured Outputs) – gwarantuje poprawny JSON.
      *
-     * @throws InstagramPostClassificationException gdy LLM zwróci pustą lub nieparsowalnną odpowiedź
+     * @throws InstagramPostClassificationException gdy LLM zwróci pustą odpowiedź
      */
     suspend fun classify(postContent: String): InstagramPostClassification {
         logger.info("Classifying Instagram post ({} chars): '{}'", postContent.length, postContent.take(80))
 
         val systemMessage = """
             |Jesteś ekspertem od analizy postów na Instagram z branży car detailing.
-            |Przeanalizuj podany post i wyodrębnij metadane.
+            |Przeanalizuj podany post i wyodrębnij z niego metadane.
             |
             |Dostępne wartości:
             |  postTone: premium, technical, emotional, casual
@@ -61,25 +65,19 @@ class InstagramPostClassificationService(
             |  embeddingText: skondensowany opis semantyczny (max 10-15 słów kluczowych)
             |    zawierający markę, usługę, kluczowe cechy i ton.
             |    Przykład: "Mercedes-AMG GT BRABUS folia PPF ochrona lakieru realizacja premium"
-            |
-            |Zwróć odpowiedź WYŁĄCZNIE jako JSON (bez żadnego dodatkowego tekstu):
-            |{
-            |  "postTone": "...",
-            |  "serviceType": "...",
-            |  "carBrand": "...",
-            |  "embeddingText": "..."
-            |}
         """.trimMargin()
 
         val userMessage = "Sklasyfikuj poniższy post Instagramowy:\n\n\"$postContent\""
 
-        val result = try {
-            openAiClient.chatStructured(systemMessage, userMessage, InstagramPostClassification::class.java)
-        } catch (e: Exception) {
-            throw InstagramPostClassificationException(
-                "Błąd klasyfikacji posta (${postContent.take(40)}...): ${e.message}", e
-            )
-        }
+        val result = withContext(Dispatchers.IO) {
+            chatClient.prompt()
+                .system(systemMessage)
+                .user(userMessage)
+                .call()
+                .entity(InstagramPostClassification::class.java)
+        } ?: throw InstagramPostClassificationException(
+            "LLM zwrócił pustą odpowiedź przy klasyfikacji posta (${postContent.take(40)}...)"
+        )
 
         logger.info(
             "Post classified: tone={}, service={}, brand={}, embedding='{}'",

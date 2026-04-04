@@ -5,9 +5,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.ai.vectorstore.SearchRequest
+import org.springframework.ai.vectorstore.VectorStore
+import org.springframework.ai.vectorstore.filter.Filter
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder
 import org.springframework.stereotype.Service
-import pl.detailing.crm.instagram.ai.infrastructure.InstagramPostVectorStore
-import pl.detailing.crm.instagram.ai.infrastructure.OpenAiClient
 import pl.detailing.crm.instagram.ai.model.FallbackInfo
 import pl.detailing.crm.instagram.ai.model.InstagramInspirationContext
 import pl.detailing.crm.shared.InstagramPostReaction
@@ -23,16 +25,14 @@ import pl.detailing.crm.shared.StudioId
  *   Level 4 – tylko studio:  LIKED + studio (bez ton/długość)
  *   Level 5 – brak przykładów (LLM generuje bez few-shot)
  *
- * Przykłady negatywne (DISLIKED) są zawsze per-studio, bez filtrów ton/długość —
- * dzięki temu system uczy się unikać stylu odrzuconego przez konkretne studio.
+ * Przykłady negatywne (DISLIKED) są zawsze per-studio, bez filtrów ton/długość.
  *
- * Zapytanie do pgvector jest embeddingiem [topic] (wektorem semantycznym tematu),
- * co pozwala znaleźć posty tematycznie podobne do generowanego.
+ * Klucze metadanych w VectorStore: feedback_status, studio_id, post_tone,
+ *   post_length, service_type, car_brand, full_content, source_post_id.
  */
 @Service
 class InstagramInspirationService(
-    private val vectorStore: InstagramPostVectorStore,
-    private val openAiClient: OpenAiClient
+    private val vectorStore: VectorStore
 ) {
     private val logger = LoggerFactory.getLogger(InstagramInspirationService::class.java)
 
@@ -51,9 +51,7 @@ class InstagramInspirationService(
     /**
      * Zbiera kontekst inspiracji dla danego studia.
      *
-     * Embedding [topic] jest obliczany raz i używany równolegle dla obu zapytań.
-     *
-     * @param topic       Temat generowanego posta (użyty jako wektor zapytania)
+     * @param topic       Temat generowanego posta (wektor zapytania)
      * @param studioId    Identyfikator studia (filtrowanie per-tenant)
      * @param postTone    Preferowany ton posta (opcjonalny)
      * @param postLength  Preferowana długość posta (opcjonalny)
@@ -73,25 +71,21 @@ class InstagramInspirationService(
             topic, studioId, postTone, postLength, serviceType
         )
 
-        // Embedding tematu — obliczany raz, używany przez oba zapytania
-        val queryEmbedding = withContext(Dispatchers.IO) { openAiClient.embedding(topic) }
-
         // Przykłady negatywne: per-studio, bez filtrów ton/długość
-        val dislikedDeferred = async(Dispatchers.IO) {
-            vectorStore.similaritySearch(
-                queryEmbedding = queryEmbedding,
-                topK = DISLIKED_TOP_K,
-                metadataFilter = buildFilter(
-                    feedbackStatus = InstagramPostReaction.DISLIKED.name,
-                    studioId = studioId,
-                    tone = null, length = null, service = null
+        val dislikedDeferred = async {
+            withContext(Dispatchers.IO) {
+                similaritySearch(
+                    topic, DISLIKED_TOP_K,
+                    buildFilter(InstagramPostReaction.DISLIKED.name, studioId, null, null, null)
                 )
-            )
+            }
         }
 
         // Przykłady pozytywne: warstwowe fallbacki
-        val likedDeferred = async(Dispatchers.IO) {
-            resolvePositiveExamples(queryEmbedding, studioId, postTone, postLength, serviceType)
+        val likedDeferred = async {
+            withContext(Dispatchers.IO) {
+                resolvePositiveExamples(topic, studioId, postTone, postLength, serviceType)
+            }
         }
 
         val (positives, fallbackInfo) = likedDeferred.await()
@@ -115,7 +109,7 @@ class InstagramInspirationService(
     // ── Warstwowe fallbacki dla pozytywnych przykładów ────────────────────────
 
     private fun resolvePositiveExamples(
-        queryEmbedding: FloatArray,
+        topic: String,
         studioId: StudioId,
         tone: String?,
         length: String?,
@@ -126,7 +120,7 @@ class InstagramInspirationService(
 
         // Level 1: LIKED + studio + ton + długość + usługa (ideał)
         if (hasToneOrLength && service != null) {
-            val results = search(queryEmbedding, LIKED_TOP_K,
+            val results = similaritySearch(topic, LIKED_TOP_K,
                 buildFilter(InstagramPostReaction.LIKED.name, studioId, tone, length, service))
             if (results.size >= MIN_RESULTS_THRESHOLD) {
                 logger.debug("Level 1 (ideal): {} results", results.size)
@@ -137,7 +131,7 @@ class InstagramInspirationService(
 
         // Level 2: LIKED + studio + ton + długość (bez usługi)
         if (hasToneOrLength) {
-            val results = search(queryEmbedding, LIKED_TOP_K,
+            val results = similaritySearch(topic, LIKED_TOP_K,
                 buildFilter(InstagramPostReaction.LIKED.name, studioId, tone, length, null))
             if (results.size >= MIN_RESULTS_THRESHOLD) {
                 logger.debug("Level 2 (relax service): {} results", results.size)
@@ -148,7 +142,7 @@ class InstagramInspirationService(
 
         // Level 3: LIKED + ton + długość globalnie (bez filtra studia)
         if (hasToneOrLength) {
-            val results = search(queryEmbedding, LIKED_TOP_K,
+            val results = similaritySearch(topic, LIKED_TOP_K,
                 buildFilter(InstagramPostReaction.LIKED.name, null, tone, length, null))
             if (results.size >= MIN_RESULTS_THRESHOLD) {
                 logger.debug("Level 3 (global tone): {} results", results.size)
@@ -158,7 +152,7 @@ class InstagramInspirationService(
         }
 
         // Level 4: LIKED + studio (ogólne preferencje)
-        val results = search(queryEmbedding, LIKED_TOP_K,
+        val results = similaritySearch(topic, LIKED_TOP_K,
             buildFilter(InstagramPostReaction.LIKED.name, studioId, null, null, null))
         if (results.isNotEmpty()) {
             logger.debug("Level 4 (studio only): {} results", results.size)
@@ -178,17 +172,38 @@ class InstagramInspirationService(
         tone: String?,
         length: String?,
         service: String?
-    ): Map<String, String?> = buildMap {
-        put(META_FEEDBACK_STATUS, feedbackStatus)
-        put(META_STUDIO_ID, studioId?.value?.toString())
-        put(META_POST_TONE, tone)
-        put(META_POST_LENGTH, length)
-        put(META_SERVICE_TYPE, service)
+    ): Filter.Expression {
+        val b = FilterExpressionBuilder()
+
+        var expr = b.eq(META_FEEDBACK_STATUS, feedbackStatus)
+
+        if (studioId != null) expr = b.and(expr, b.eq(META_STUDIO_ID, studioId.value.toString()))
+        if (tone != null)     expr = b.and(expr, b.eq(META_POST_TONE, tone))
+        if (length != null)   expr = b.and(expr, b.eq(META_POST_LENGTH, length))
+        if (service != null)  expr = b.and(expr, b.eq(META_SERVICE_TYPE, service))
+
+        return expr.build()
     }
 
-    private fun search(
-        queryEmbedding: FloatArray,
+    private fun similaritySearch(
+        query: String,
         topK: Int,
-        filter: Map<String, String?>
-    ): List<String> = vectorStore.similaritySearch(queryEmbedding, topK, filter)
+        filter: Filter.Expression
+    ): List<String> {
+        val request = SearchRequest.builder()
+            .query(query)
+            .topK(topK)
+            .filterExpression(filter)
+            .build()
+
+        val results = vectorStore.similaritySearch(request) ?: emptyList()
+
+        results.forEachIndexed { i, doc ->
+            logger.debug("  [{}] text='{}', metadata={}", i, doc.text?.take(80), doc.metadata)
+        }
+
+        // Zwraca full_content z metadanych — pełna treść posta (lepszy wzorzec dla few-shot)
+        return results.mapNotNull { it.metadata["full_content"] as? String }
+            .also { logger.debug("Search returned {} results", it.size) }
+    }
 }
