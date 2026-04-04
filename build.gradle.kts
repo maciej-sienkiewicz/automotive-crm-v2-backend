@@ -39,8 +39,8 @@ dependencyManagement {
 
 dependencies {
     // Spring AI – OpenAI chat + pgvector vector store (Spring AI 1.0.0 / Spring Boot 3.2.x)
-    implementation("org.springframework.ai:spring-ai-openai-spring-boot-starter")
-    implementation("org.springframework.ai:spring-ai-pgvector-store-spring-boot-starter")
+    implementation("org.springframework.ai:spring-ai-starter-model-openai")
+    implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
