@@ -4,44 +4,44 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import org.springframework.ai.document.Document
-import org.springframework.ai.vectorstore.VectorStore
 import org.springframework.context.event.EventListener
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.ai.classification.InstagramPostClassificationService
+import pl.detailing.crm.instagram.ai.infrastructure.InstagramPostVectorStore
+import pl.detailing.crm.instagram.ai.infrastructure.OpenAiClient
 import pl.detailing.crm.instagram.ai.inspiration.InstagramInspirationService
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.shared.InstagramPostSnapshotId
 import pl.detailing.crm.shared.StudioId
+import java.util.UUID
 
 /**
- * Serwis odpowiedzialny za indeksowanie postów Instagramowych w bazie wektorowej (pgvector).
+ * Serwis indeksujący posty Instagramowe w bazie wektorowej (pgvector).
  *
  * Reaguje asynchronicznie na zdarzenia [InstagramPostReactionChangedEvent]:
- *   - LIKED/DISLIKED → klasyfikuje post LLM-em, indeksuje z metadanymi w VectorStore
+ *   - LIKED/DISLIKED → klasyfikuje post LLM-em, oblicza embedding, zapisuje w VectorStore
  *   - null (usunięcie reakcji) → usuwa wpis z VectorStore
  *
- * Metadane dokumentu w VectorStore:
+ * Metadane dokumentu zapisywane w tabeli `instagram_post_vectors`:
  *   - feedback_status:  "LIKED" | "DISLIKED"
  *   - studio_id:        UUID studia (string)
  *   - post_tone:        premium | technical | emotional | casual
  *   - post_length:      short | full
  *   - service_type:     ppf | ceramic | detailing | interior | wrap | polish | other
  *   - car_brand:        marka auta lub "universal"
- *   - full_content:     pełna treść posta (do wyświetlania w promptach few-shot)
+ *   - full_content:     pełna treść posta (zwracana w wynikach few-shot)
  *   - source_post_id:   UUID snapshotu posta (do deduplikacji)
  *
- * Tekst embeddingu: skondensowany opis semantyczny z klasyfikatora LLM
- * (nie pełna treść) — poprawia jakość wyszukiwania podobieństwa.
+ * Tekst embeddingu: skondensowany opis semantyczny (embeddingText z klasyfikatora).
+ * Wynik wyszukiwania: full_content (pełna treść) — lepszy wzorzec stylistyczny dla LLM.
  */
 @Service
 class InstagramPostIndexingService(
     private val postSnapshotRepository: InstagramPostSnapshotRepository,
     private val classificationService: InstagramPostClassificationService,
-    private val vectorStore: VectorStore,
-    private val jdbcTemplate: JdbcTemplate
+    private val openAiClient: OpenAiClient,
+    private val vectorStore: InstagramPostVectorStore
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostIndexingService::class.java)
     private val ioScope = CoroutineScope(Dispatchers.IO)
@@ -49,14 +49,15 @@ class InstagramPostIndexingService(
     /**
      * Nasłuchuje zdarzeń zmiany reakcji i asynchronicznie aktualizuje VectorStore.
      *
-     * Adnotacja @Async zapewnia, że metoda nie blokuje wątku HTTP —
-     * indeksowanie odbywa się w tle bez wpływu na czas odpowiedzi endpointu.
+     * @Async zapewnia, że indeksowanie nie blokuje wątku HTTP —
+     * klasyfikacja LLM + obliczenie embeddingu trwa kilka sekund
+     * i nie może opóźniać odpowiedzi na żądanie reakcji.
      */
     @Async
     @EventListener
     fun onReactionChanged(event: InstagramPostReactionChangedEvent) {
         logger.info(
-            "Reaction changed event: studioId={}, postId={}, reaction={}",
+            "Reaction changed: studioId={}, postId={}, reaction={}",
             event.studioId, event.postId, event.reaction
         )
 
@@ -76,7 +77,7 @@ class InstagramPostIndexingService(
         }
     }
 
-    // ── Indeksowanie ─────────────────────────────────────────────────────────────
+    // ── Indeksowanie ──────────────────────────────────────────────────────────
 
     private suspend fun indexPost(
         studioId: StudioId,
@@ -95,63 +96,51 @@ class InstagramPostIndexingService(
             return
         }
 
-        // Klasyfikacja przez LLM
+        // 1. Klasyfikacja przez LLM
         val classification = classificationService.classify(caption)
         val postLength = classificationService.determinePostLength(caption)
 
-        // Usuń poprzedni wpis (jeśli istnieje) przed dodaniem nowego
+        // 2. Oblicz embedding skondensowanego tekstu
+        val embedding = openAiClient.embedding(classification.embeddingText)
+
+        // 3. Zapisz w VectorStore (upsert: usuwamy stary wpis przed nowym)
         removeVectorEntry(studioId, postId)
 
-        val document = Document.builder()
-            .text(classification.embeddingText)
-            .metadata(
-                mapOf(
-                    InstagramInspirationService.META_FEEDBACK_STATUS to feedbackStatus,
-                    InstagramInspirationService.META_STUDIO_ID to studioId.value.toString(),
-                    InstagramInspirationService.META_POST_TONE to classification.postTone,
-                    InstagramInspirationService.META_POST_LENGTH to postLength,
-                    InstagramInspirationService.META_SERVICE_TYPE to classification.serviceType,
-                    "car_brand" to classification.carBrand,
-                    "full_content" to caption,
-                    "source_post_id" to postId.value.toString()
-                )
-            )
-            .build()
-
-        vectorStore.add(listOf(document))
+        vectorStore.add(
+            id = UUID.randomUUID(),
+            embeddingText = classification.embeddingText,
+            embedding = embedding,
+            metadata = buildMap {
+                put(InstagramInspirationService.META_FEEDBACK_STATUS, feedbackStatus)
+                put(InstagramInspirationService.META_STUDIO_ID, studioId.value.toString())
+                put(InstagramInspirationService.META_POST_TONE, classification.postTone)
+                put(InstagramInspirationService.META_POST_LENGTH, postLength)
+                put(InstagramInspirationService.META_SERVICE_TYPE, classification.serviceType)
+                put("car_brand", classification.carBrand)
+                put("full_content", caption)
+                put("source_post_id", postId.value.toString())
+            }
+        )
 
         logger.info(
-            "Indexed post in VectorStore: studioId={}, postId={}, status={}, tone={}, length={}, service={}, brand='{}'",
+            "Indexed post: studioId={}, postId={}, status={}, tone={}, length={}, service={}, brand='{}'",
             studioId, postId, feedbackStatus,
             classification.postTone, postLength,
             classification.serviceType, classification.carBrand
         )
     }
 
-    // ── Usuwanie wpisów ──────────────────────────────────────────────────────────
+    // ── Usuwanie ──────────────────────────────────────────────────────────────
 
     private fun removeVectorEntry(studioId: StudioId, postId: InstagramPostSnapshotId) {
-        try {
-            val deleted = jdbcTemplate.update(
-                """
-                DELETE FROM instagram_post_vectors
-                WHERE metadata->>'source_post_id' = ?
-                  AND metadata->>'studio_id'      = ?
-                """.trimIndent(),
-                postId.value.toString(),
-                studioId.value.toString()
+        val deleted = vectorStore.delete(
+            mapOf(
+                "source_post_id" to postId.value.toString(),
+                "studio_id" to studioId.value.toString()
             )
-            if (deleted > 0) {
-                logger.debug(
-                    "Removed {} vector entries: studioId={}, postId={}",
-                    deleted, studioId, postId
-                )
-            }
-        } catch (e: Exception) {
-            logger.warn(
-                "Could not remove vector entry for studioId={}, postId={}: {}",
-                studioId, postId, e.message
-            )
+        )
+        if (deleted > 0) {
+            logger.debug("Removed {} vector entries: studioId={}, postId={}", deleted, studioId, postId)
         }
     }
 }

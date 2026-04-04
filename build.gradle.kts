@@ -17,7 +17,6 @@ java {
 
 repositories {
     mavenCentral()
-    maven { url = uri("https://repo.spring.io/milestone") }
     // KSeF SDK – GitHub Packages (requires a PAT with read:packages scope).
     // Set credentials via env vars: GITHUB_ACTOR + GITHUB_TOKEN
     // OR in ~/.gradle/gradle.properties:  gpr.user=<login>  gpr.key=<PAT>
@@ -30,17 +29,7 @@ repositories {
     }
 }
 
-dependencyManagement {
-    imports {
-        mavenBom("org.springframework.ai:spring-ai-bom:1.0.0")
-    }
-}
-
 dependencies {
-    // Spring AI – OpenAI chat client + pgvector vector store
-    implementation("org.springframework.ai:spring-ai-openai-spring-boot-starter")
-    implementation("org.springframework.ai:spring-ai-pgvector-store-spring-boot-starter")
-
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     implementation("org.springframework.boot:spring-boot-starter-validation")

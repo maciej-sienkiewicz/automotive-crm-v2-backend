@@ -3,9 +3,8 @@ package pl.detailing.crm.instagram.ai.generation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.ai.chat.client.ChatClient
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import pl.detailing.crm.instagram.ai.infrastructure.OpenAiClient
 import pl.detailing.crm.instagram.ai.model.DebugInstagramPostResult
 import pl.detailing.crm.instagram.ai.model.InstagramInspirationContext
 import pl.detailing.crm.instagram.ai.model.InstagramPostResult
@@ -13,8 +12,7 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostResult
 /**
  * Warstwa Generowania – konstruuje prompt few-shot i wywołuje LLM (OpenAI).
  *
- * Używa `ChatClient.entity()` (OpenAI Structured Outputs) — gwarantuje poprawny JSON
- * zgodny ze schematem [InstagramPostResult] bez potrzeby ręcznego parsowania.
+ * Używa trybu JSON (`response_format: json_object`) i parsuje odpowiedź do [InstagramPostResult].
  *
  * Sekcje promptu systemowego (w kolejności):
  *   1. POSITIVE_EXAMPLES – posty polubione przez studio (wzorzec do naśladowania)
@@ -22,18 +20,18 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostResult
  *   3. TON               – instrukcja tonu (adaptowana do poziomu fallbacku)
  *   4. DŁUGOŚĆ           – instrukcja długości (jeśli podana)
  *   5. REGUŁY STYLISTYCZNE – nadrzędne reguły (np. "Nie używaj emoji")
- *   6. INSTRUKCJE        – finalne wskazówki dla modelu
+ *   6. INSTRUKCJE        – finalne wskazówki + format JSON
  */
 @Service
 class InstagramPostGeneratorService(
-    @Qualifier("instagramChatClient") private val chatClient: ChatClient
+    private val openAiClient: OpenAiClient
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostGeneratorService::class.java)
 
     /**
      * Generuje post Instagramowy na podstawie tematu i kontekstu inspiracji.
      *
-     * @throws InstagramPostGenerationException gdy LLM zwróci pustą odpowiedź
+     * @throws InstagramPostGenerationException gdy LLM zwróci pustą lub nieparsowalnną odpowiedź
      */
     suspend fun generate(
         topic: String,
@@ -44,15 +42,11 @@ class InstagramPostGeneratorService(
         val userMessage = buildUserMessage(topic, additionalContext)
         logRequest(topic, inspirationContext)
 
-        val result = withContext(Dispatchers.IO) {
-            chatClient.prompt()
-                .system(systemMessage)
-                .user(userMessage)
-                .call()
-                .entity(InstagramPostResult::class.java)
-        } ?: throw InstagramPostGenerationException(
-            "LLM zwrócił pustą odpowiedź dla tematu: '$topic'"
-        )
+        val result = try {
+            openAiClient.chatStructured(systemMessage, userMessage, InstagramPostResult::class.java)
+        } catch (e: Exception) {
+            throw InstagramPostGenerationException("Błąd generowania posta dla tematu '$topic': ${e.message}", e)
+        }
 
         logger.info("Post generated: content='{}'", result.content.take(80))
         return result
@@ -70,15 +64,11 @@ class InstagramPostGeneratorService(
         val userMessage = buildUserMessage(topic, additionalContext)
         logRequest(topic, inspirationContext)
 
-        val result = withContext(Dispatchers.IO) {
-            chatClient.prompt()
-                .system(systemMessage)
-                .user(userMessage)
-                .call()
-                .entity(InstagramPostResult::class.java)
-        } ?: throw InstagramPostGenerationException(
-            "LLM zwrócił pustą odpowiedź dla tematu: '$topic'"
-        )
+        val result = try {
+            openAiClient.chatStructured(systemMessage, userMessage, InstagramPostResult::class.java)
+        } catch (e: Exception) {
+            throw InstagramPostGenerationException("Błąd generowania posta dla tematu '$topic': ${e.message}", e)
+        }
 
         logger.info("Post generated (debug): content='{}'", result.content.take(80))
 
@@ -90,7 +80,7 @@ class InstagramPostGeneratorService(
         )
     }
 
-    // ── Budowanie promptów ──────────────────────────────────────────────────────
+    // ── Budowanie promptów ────────────────────────────────────────────────────
 
     private fun buildSystemMessage(context: InstagramInspirationContext): String {
         val positiveSection = if (context.positiveExamples.isNotEmpty()) {
@@ -133,8 +123,10 @@ class InstagramPostGeneratorService(
             |4. content: pełny tekst posta gotowy do wklejenia na Instagram — jeden spójny blok tekstu
             |   zawierający hook (pierwsza linijka), treść główną i CTA na końcu.
             |   Formatuj tak jak prawdziwe posty: nowe linie, emoji (jeśli pasuje do tonu), hashtagi.
-            |5. REGUŁY STYLISTYCZNE (jeśli podane) mają NAJWYŻSZY priorytet — nawet jeśli
-            |   przykłady POSITIVE używają emoji, a reguła mówi "nie używaj emoji" — ZASTOSUJ REGUŁĘ.
+            |5. REGUŁY STYLISTYCZNE (jeśli podane) mają NAJWYŻSZY priorytet.
+            |
+            |Zwróć odpowiedź WYŁĄCZNIE jako JSON (bez żadnego dodatkowego tekstu):
+            |{"content": "pełny tekst posta..."}
         """.trimMargin()
     }
 
@@ -144,21 +136,17 @@ class InstagramPostGeneratorService(
 
         return when {
             fallbackLevel <= 2 ->
-                // Przykłady pasują tonem — wystarczy potwierdzenie
                 "=== TON ===\nŻądany ton: $tone. Przykłady POSITIVE już reprezentują ten ton — wzoruj się na nich.\n"
 
             fallbackLevel == 3 ->
-                // Przykłady globalne, ale w dobrym tonie
                 "=== TON ===\nŻądany ton: $tone. Przykłady POSITIVE pochodzą z innych studiów, ale są w tym samym tonie — użyj ich jako wzorca stylu.\n"
 
             else ->
-                // Brak przykładów w żądanym tonie — LLM sam musi trafić w ton
                 """
                 |=== TON ===
                 |Żądany ton: $tone.
                 |UWAGA: Przykłady POSITIVE są w INNYM tonie niż żądany. Traktuj je jako kontekst tematyczny
                 |(branża, usługa, CTA), ale DOSTOSUJ CAŁKOWICIE styl do tonu: $tone.
-                |
                 |Opis tonów:
                 |  - premium:   elegancki, luksusowy, spokojny, bez wykrzykników, bez emoji-spamu
                 |  - technical: merytoryczny, specyfikacje, liczby, fakty, profesjonalny
@@ -168,13 +156,12 @@ class InstagramPostGeneratorService(
         }
     }
 
-    private fun buildLengthSection(context: InstagramInspirationContext): String {
-        return when (context.requestedLength) {
+    private fun buildLengthSection(context: InstagramInspirationContext): String =
+        when (context.requestedLength) {
             "short" -> "=== DŁUGOŚĆ ===\nPost powinien być KRÓTKI: hook (1 linijka) + 1-2 zdania treści + CTA. Max 3-4 linijki łącznie.\n"
             "full" -> "=== DŁUGOŚĆ ===\nPost powinien być PEŁNY: hook (1 linijka) + 3-5 zdań treści z detalami + CTA. 6-10 linijek łącznie.\n"
             else -> ""
         }
-    }
 
     private fun buildStyleNotesSection(styleNotes: List<String>): String {
         if (styleNotes.isEmpty()) return ""
@@ -190,13 +177,8 @@ class InstagramPostGeneratorService(
     }
 
     private fun buildUserMessage(topic: String, additionalContext: String?): String {
-        val contextPart = if (!additionalContext.isNullOrBlank()) {
-            "\nDodatkowy kontekst: $additionalContext"
-        } else ""
-        return """
-            |Stwórz nowy, unikalny post na Instagram dla tematu: "$topic"
-            |$contextPart
-        """.trimMargin()
+        val contextPart = if (!additionalContext.isNullOrBlank()) "\nDodatkowy kontekst: $additionalContext" else ""
+        return "Stwórz nowy, unikalny post na Instagram dla tematu: \"$topic\"$contextPart"
     }
 
     private fun logRequest(topic: String, ctx: InstagramInspirationContext) {
