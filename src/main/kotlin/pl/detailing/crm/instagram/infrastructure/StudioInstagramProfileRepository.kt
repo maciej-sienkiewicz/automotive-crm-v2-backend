@@ -22,4 +22,6 @@ interface StudioInstagramProfileRepository : JpaRepository<StudioInstagramProfil
     fun countByProfileIdAndStatus(profileId: UUID, status: InstagramProfileStatus): Long
 
     fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<StudioInstagramProfileEntity>
+
+    fun existsByStudioIdAndProfileIdAndStatus(studioId: UUID, profileId: UUID, status: InstagramProfileStatus): Boolean
 }

@@ -745,3 +745,24 @@ value class InvoicingCredentialsId(val value: UUID) : Serializable {
 
     override fun toString(): String = value.toString()
 }
+
+/**
+ * Studio's reaction to an Instagram post (per-studio, mutable)
+ */
+enum class InstagramPostReaction {
+    LIKED,
+    DISLIKED
+}
+
+/**
+ * Type-safe ID wrapper for StudioInstagramPostReaction entities
+ */
+@JvmInline
+value class StudioInstagramPostReactionId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = StudioInstagramPostReactionId(UUID.randomUUID())
+        fun fromString(value: String) = StudioInstagramPostReactionId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
