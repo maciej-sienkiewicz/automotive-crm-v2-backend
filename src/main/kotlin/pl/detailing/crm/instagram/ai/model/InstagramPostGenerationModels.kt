@@ -34,12 +34,10 @@ data class InstagramAbTestRequest(
 
 /**
  * Wynik generowania posta Instagram przez LLM.
- * Struktura odpowiada formatowi posta na Instagramie.
+ * Pojedyncze pole [content] zawiera gotowy tekst posta — ready to copy-paste na Instagram.
  */
 data class InstagramPostResult(
-    val headline: String,
-    val description: String,
-    val punchline: String
+    val content: String
 )
 
 /**
@@ -48,7 +46,6 @@ data class InstagramPostResult(
 data class DebugInstagramPostResult(
     val systemMessage: String,
     val userMessage: String,
-    val rawLlmResponse: String,
     val parsed: InstagramPostResult,
     val inspirationContext: InstagramInspirationContext
 )
@@ -67,7 +64,6 @@ data class InstagramAbTestResult(
 
 data class InstagramAbTestVariant(
     val label: String,
-    val systemMessageExcerpt: String,
     val result: InstagramPostResult
 )
 

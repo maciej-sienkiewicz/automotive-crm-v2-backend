@@ -54,7 +54,7 @@ class InstagramPostGeneratorService(
             "LLM zwrócił pustą odpowiedź dla tematu: '$topic'"
         )
 
-        logger.info("Post generated: headline='{}'", result.headline)
+        logger.info("Post generated: content='{}'", result.content.take(80))
         return result
     }
 
@@ -80,12 +80,11 @@ class InstagramPostGeneratorService(
             "LLM zwrócił pustą odpowiedź dla tematu: '$topic'"
         )
 
-        logger.info("Post generated (debug): headline='{}'", result.headline)
+        logger.info("Post generated (debug): content='{}'", result.content.take(80))
 
         return DebugInstagramPostResult(
             systemMessage = systemMessage,
             userMessage = userMessage,
-            rawLlmResponse = "(structured output — JSON gwarantowany przez OpenAI Structured Outputs)",
             parsed = result,
             inspirationContext = inspirationContext
         )
@@ -131,10 +130,10 @@ class InstagramPostGeneratorService(
             |1. Analizuj strukturę, ton i długość postów z sekcji POSITIVE_EXAMPLES — to styl studia.
             |2. Całkowicie unikaj stylu z sekcji NEGATIVE_EXAMPLES (ton, słownictwo, interpunkcja).
             |3. Stwórz nowy, unikalny post dopasowany do tematu podanego przez użytkownika.
-            |4. headline: chwytliwy nagłówek posta (1 linijka, max 10 słów).
-            |5. description: główna treść posta (z uwzględnieniem instrukacji tonu i długości).
-            |6. punchline: krótkie, silne CTA kończące post (1-2 linijki).
-            |7. REGUŁY STYLISTYCZNE (jeśli podane) mają NAJWYŻSZY priorytet — nawet jeśli
+            |4. content: pełny tekst posta gotowy do wklejenia na Instagram — jeden spójny blok tekstu
+            |   zawierający hook (pierwsza linijka), treść główną i CTA na końcu.
+            |   Formatuj tak jak prawdziwe posty: nowe linie, emoji (jeśli pasuje do tonu), hashtagi.
+            |5. REGUŁY STYLISTYCZNE (jeśli podane) mają NAJWYŻSZY priorytet — nawet jeśli
             |   przykłady POSITIVE używają emoji, a reguła mówi "nie używaj emoji" — ZASTOSUJ REGUŁĘ.
         """.trimMargin()
     }
@@ -171,8 +170,8 @@ class InstagramPostGeneratorService(
 
     private fun buildLengthSection(context: InstagramInspirationContext): String {
         return when (context.requestedLength) {
-            "short" -> "=== DŁUGOŚĆ ===\nPost powinien być KRÓTKI: headline + 1-2 zdania opisu + CTA. Max 3-4 linijki łącznie.\n"
-            "full" -> "=== DŁUGOŚĆ ===\nPost powinien być PEŁNY: headline + 3-5 zdań opisu z detalami + CTA. 6-10 linijek łącznie.\n"
+            "short" -> "=== DŁUGOŚĆ ===\nPost powinien być KRÓTKI: hook (1 linijka) + 1-2 zdania treści + CTA. Max 3-4 linijki łącznie.\n"
+            "full" -> "=== DŁUGOŚĆ ===\nPost powinien być PEŁNY: hook (1 linijka) + 3-5 zdań treści z detalami + CTA. 6-10 linijek łącznie.\n"
             else -> ""
         }
     }

@@ -155,18 +155,16 @@ class InstagramPostGenerationController(
             negativeExamplesUsed = fullContext.negativeExamples,
             variantA = InstagramAbTestVariant(
                 label = "Z NEGATYWNYMI przykładami (${fullContext.negativeExamples.size} szt.)",
-                systemMessageExcerpt = variantADebug.systemMessage,
                 result = variantADebug.parsed
             ),
             variantB = InstagramAbTestVariant(
                 label = "BEZ negatywnych przykładów (baseline)",
-                systemMessageExcerpt = variantBDebug.systemMessage,
                 result = variantBDebug.parsed
             ),
             verdict = "Wariant A powinien UNIKAĆ stylu z sekcji NEGATIVE_EXAMPLES " +
                 "(np. wykrzykniki, ALL CAPS, agresywne CTA). " +
                 "Wariant B nie ma takich ograniczeń. " +
-                "Porównaj headline/description/punchline — różnice wskazują skuteczność negatywnych przykładów."
+                "Porównaj content obu wariantów — różnice wskazują skuteczność negatywnych przykładów."
         )
 
         logger.info(
@@ -266,16 +264,13 @@ class InstagramPostGenerationController(
         positives: List<String>,
         negatives: List<String>,
         result: InstagramPostResult
-    ): NegativeImpactVariant {
-        val fullText = "${result.headline} ${result.description} ${result.punchline}"
-        return NegativeImpactVariant(
-            label = label,
-            positiveExamples = positives,
-            negativeExamples = negatives,
-            result = result,
-            metrics = computeStyleMetrics(fullText)
-        )
-    }
+    ): NegativeImpactVariant = NegativeImpactVariant(
+        label = label,
+        positiveExamples = positives,
+        negativeExamples = negatives,
+        result = result,
+        metrics = computeStyleMetrics(result.content)
+    )
 
     private fun computeStyleMetrics(text: String): StyleMetrics {
         val words = text.split("\\s+".toRegex())
@@ -302,9 +297,9 @@ class InstagramPostGenerationController(
     }
 
     private fun buildConclusion(a: InstagramPostResult, b: InstagramPostResult, c: InstagramPostResult): String {
-        val metricsA = computeStyleMetrics("${a.headline} ${a.description} ${a.punchline}")
-        val metricsB = computeStyleMetrics("${b.headline} ${b.description} ${b.punchline}")
-        val metricsC = computeStyleMetrics("${c.headline} ${c.description} ${c.punchline}")
+        val metricsA = computeStyleMetrics(a.content)
+        val metricsB = computeStyleMetrics(b.content)
+        val metricsC = computeStyleMetrics(c.content)
 
         return buildString {
             appendLine("=== AUTOMATYCZNA ANALIZA STYLU ===")
