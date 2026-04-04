@@ -9,6 +9,7 @@ import pl.detailing.crm.smscampaigns.consent.SmsConsentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.VisitServiceItem
 import java.util.UUID
 
 @Service

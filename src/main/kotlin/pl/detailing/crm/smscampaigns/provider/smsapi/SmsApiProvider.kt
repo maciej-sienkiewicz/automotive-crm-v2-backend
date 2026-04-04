@@ -48,7 +48,7 @@ class SmsApiProvider(
 
         return try {
             val action = smsFactory.actionSend(normalizedNumber, message)
-                .apply { if (properties.senderName.isNotBlank()) setSender(properties.senderName) }
+                .apply { if (properties.senderName.isNotBlank()) setSender("2WAY") }
 
             val response = action.execute()
             val firstMessage = response.list.firstOrNull()

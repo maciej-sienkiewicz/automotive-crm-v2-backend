@@ -55,6 +55,7 @@ class SmsConsentService(
      * The SMS dispatch itself is a side-effect that happens before the DB commit;
      * callers should ensure the visit save completes before this is invoked.
      */
+    @Transactional
     fun sendConsentRequest(
         visitId: VisitId,
         studioId: StudioId,
