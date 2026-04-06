@@ -4,7 +4,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.shared.CommunicationChannel
+import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
@@ -18,6 +24,7 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsLogStatus
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -42,7 +49,9 @@ class SmsAutomationScheduler(
     private val appointmentQueryService: SmsAppointmentQueryService,
     private val smsLogRepository: SmsLogJpaRepository,
     private val smsProvider: SmsProvider,
-    private val templateProcessor: SmsTemplateProcessor
+    private val templateProcessor: SmsTemplateProcessor,
+    private val visitRepository: VisitRepository,
+    private val communicationLogService: CommunicationLogService
 ) {
 
     companion object {
@@ -170,6 +179,33 @@ class SmsAutomationScheduler(
                 externalMessageId = result.externalMessageId,
                 errorMessage = result.errorMessage,
                 sentAt = Instant.now()
+            )
+        )
+
+        // Resolve visitId if the appointment has already been converted to a visit.
+        // For PRE_VISIT triggers this is often null (visit not created yet).
+        val visitId = visitRepository.findByAppointmentIdAndStudioId(
+            appointment.appointmentId,
+            studioId.value
+        )?.let { VisitId(it.id) }
+
+        val messageType = when (triggerType) {
+            SmsTriggerType.PRE_VISIT -> CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT
+            SmsTriggerType.POST_VISIT -> CommunicationMessageType.SMS_AUTOMATION_POST_VISIT
+        }
+
+        communicationLogService.record(
+            RecordCommunicationCommand(
+                studioId = studioId,
+                customerId = CustomerId(appointment.customerId),
+                visitId = visitId,
+                channel = CommunicationChannel.SMS,
+                messageType = messageType,
+                recipientAddress = phoneNumber,
+                subject = null,
+                bodyContent = message,
+                success = result.success,
+                errorMessage = result.errorMessage
             )
         )
 

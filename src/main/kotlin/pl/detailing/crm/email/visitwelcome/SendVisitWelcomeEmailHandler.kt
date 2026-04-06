@@ -4,12 +4,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailProvider
 import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
+import pl.detailing.crm.shared.CommunicationChannel
+import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
@@ -25,6 +30,9 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
  * If the customer has no email address the handler exits silently.
  * Any failure (S3 download error, SMTP error) is caught and logged —
  * it never aborts the check-in workflow.
+ *
+ * Every dispatch attempt (success or failure) is persisted to [CommunicationLogService]
+ * so operators can audit the full communication history for a visit and customer.
  */
 @Service
 class SendVisitWelcomeEmailHandler(
@@ -33,7 +41,8 @@ class SendVisitWelcomeEmailHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val pdfProcessingService: PdfProcessingService,
-    private val emailProvider: EmailProvider
+    private val emailProvider: EmailProvider,
+    private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -110,6 +119,21 @@ class SendVisitWelcomeEmailHandler(
             subject = subject,
             bodyText = body,
             attachments = attachments
+        )
+
+        communicationLogService.record(
+            RecordCommunicationCommand(
+                studioId = command.studioId,
+                customerId = CustomerId(visitEntity.customerId),
+                visitId = command.visitId,
+                channel = CommunicationChannel.EMAIL,
+                messageType = CommunicationMessageType.VISIT_WELCOME_EMAIL,
+                recipientAddress = recipientEmail,
+                subject = subject,
+                bodyContent = body,
+                success = result.success,
+                errorMessage = result.errorMessage
+            )
         )
 
         if (result.success) {

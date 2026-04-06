@@ -3,6 +3,11 @@ package pl.detailing.crm.smscampaigns.consent
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.shared.CommunicationChannel
+import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
@@ -32,7 +37,8 @@ import java.util.UUID
 class SmsConsentService(
     private val smsProvider: SmsProvider,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val communicationLogService: CommunicationLogService
 ) {
 
     companion object {
@@ -86,6 +92,25 @@ class SmsConsentService(
                 respondedAt = null
             )
         )
+
+        // Look up customerId from the visit to persist a complete communication log entry.
+        val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
+        if (customerId != null) {
+            communicationLogService.record(
+                RecordCommunicationCommand(
+                    studioId = studioId,
+                    customerId = CustomerId(customerId),
+                    visitId = visitId,
+                    channel = CommunicationChannel.SMS,
+                    messageType = CommunicationMessageType.SMS_CONSENT_REQUEST,
+                    recipientAddress = normalizedPhone,
+                    subject = null,
+                    bodyContent = message,
+                    success = result.success,
+                    errorMessage = result.errorMessage
+                )
+            )
+        }
 
         if (result.success) {
             logger.info(

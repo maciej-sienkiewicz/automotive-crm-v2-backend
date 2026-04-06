@@ -11,9 +11,13 @@ import java.util.UUID
 /**
  * Read-only projection used by [pl.detailing.crm.smscampaigns.automation.SmsAutomationScheduler].
  * Contains only the fields required to render the SMS template and log the result.
+ *
+ * [customerId] is included so the scheduler can persist a [pl.detailing.crm.communication.infrastructure.CommunicationLogEntity]
+ * linked to the customer even when no visit has been created yet (PRE_VISIT trigger).
  */
 data class SmsAppointmentView(
     val appointmentId: UUID,
+    val customerId: UUID,
     val appointmentStart: Instant,
     val appointmentEnd: Instant,
     val customerFirstName: String?,
@@ -73,6 +77,7 @@ class SmsAppointmentQueryService {
         val jpql = """
             SELECT
                 a.id,
+                a.customerId,
                 a.startDateTime,
                 a.endDateTime,
                 c.firstName,
@@ -100,11 +105,12 @@ class SmsAppointmentQueryService {
             val cols = row as Array<Any?>
             SmsAppointmentView(
                 appointmentId = cols[0] as UUID,
-                appointmentStart = cols[1] as Instant,
-                appointmentEnd = cols[2] as Instant,
-                customerFirstName = cols[3] as String?,
-                customerPhone = cols[4] as String?,
-                studioName = cols[5] as String
+                customerId = cols[1] as UUID,
+                appointmentStart = cols[2] as Instant,
+                appointmentEnd = cols[3] as Instant,
+                customerFirstName = cols[4] as String?,
+                customerPhone = cols[5] as String?,
+                studioName = cols[6] as String
             )
         }
     }

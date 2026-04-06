@@ -4,8 +4,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.email.provider.EmailProvider
+import pl.detailing.crm.shared.CommunicationChannel
+import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -14,7 +19,8 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 class SendVisitReadyForPickupEmailHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val emailProvider: EmailProvider
+    private val emailProvider: EmailProvider,
+    private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -58,11 +64,28 @@ class SendVisitReadyForPickupEmailHandler(
             warrantyInfo = command.warrantyInfo
         )
 
+        val subject = "Twój pojazd jest gotowy do odbioru! – $vehicleName"
+
         val result = emailProvider.send(
             to = recipientEmail,
-            subject = "Twój pojazd jest gotowy do odbioru! – $vehicleName",
+            subject = subject,
             bodyText = body,
             attachments = emptyList()
+        )
+
+        communicationLogService.record(
+            RecordCommunicationCommand(
+                studioId = command.studioId,
+                customerId = CustomerId(visitEntity.customerId),
+                visitId = command.visitId,
+                channel = CommunicationChannel.EMAIL,
+                messageType = CommunicationMessageType.VISIT_READY_FOR_PICKUP_EMAIL,
+                recipientAddress = recipientEmail,
+                subject = subject,
+                bodyContent = body,
+                success = result.success,
+                errorMessage = result.errorMessage
+            )
         )
 
         if (result.success) {

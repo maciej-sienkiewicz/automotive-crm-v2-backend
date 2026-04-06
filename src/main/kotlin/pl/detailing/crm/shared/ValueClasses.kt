@@ -747,6 +747,51 @@ value class InvoicingCredentialsId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for CommunicationLog entities
+ */
+@JvmInline
+value class CommunicationLogId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CommunicationLogId(UUID.randomUUID())
+        fun fromString(value: String) = CommunicationLogId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Channel used to deliver the communication
+ */
+enum class CommunicationChannel {
+    EMAIL,
+    SMS
+}
+
+/**
+ * Type of automated or triggered communication message
+ */
+enum class CommunicationMessageType(val label: String) {
+    // Email types
+    VISIT_WELCOME_EMAIL("E-mail potwierdzenia przyjęcia"),
+    VISIT_READY_FOR_PICKUP_EMAIL("E-mail gotowości do odbioru"),
+
+    // SMS automation types
+    SMS_AUTOMATION_PRE_VISIT("SMS przypomnienie przed wizytą"),
+    SMS_AUTOMATION_POST_VISIT("SMS po wizycie"),
+
+    // SMS consent types
+    SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług")
+}
+
+/**
+ * Delivery status of a communication log entry
+ */
+enum class CommunicationStatus {
+    SENT,
+    FAILED
+}
+
+/**
  * Studio's reaction to an Instagram post (per-studio, mutable)
  */
 enum class InstagramPostReaction {
