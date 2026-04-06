@@ -40,7 +40,7 @@ class SmsApiProvider(
 
         if (properties.whitelist.isNotEmpty() && phoneNumber !in properties.whitelist) {
             logger.warn("[SMS WHITELIST] Blocked send to {} — number not on whitelist", phoneNumber)
-            return SmsDeliveryResult.failure("Number not on whitelist")
+            return SmsDeliveryResult.failure("Numer został celowo zablokowany. Faza testowa.")
         }
 
         // SMSAPI expects numbers without the leading '+', e.g. "48100200300"

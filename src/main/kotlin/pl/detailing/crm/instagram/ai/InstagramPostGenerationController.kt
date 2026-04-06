@@ -69,7 +69,7 @@ class InstagramPostGenerationController(
             inspirationContext = inspirationContext
         )
 
-        logger.info("Post generated: studioId={}, headline='{}'", principal.studioId, result.headline)
+        logger.info("Post generated: studioId={}, headline='{}'", principal.studioId, result.content)
         ResponseEntity.ok(result)
     }
 
@@ -169,7 +169,7 @@ class InstagramPostGenerationController(
 
         logger.info(
             "A/B test done: A='{}'  B='{}'",
-            variantADebug.parsed.headline, variantBDebug.parsed.headline
+            variantADebug.parsed.content, variantBDebug.parsed.content
         )
         ResponseEntity.ok(result)
     }

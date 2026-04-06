@@ -39,12 +39,12 @@ class JavaMailProvider(
         bodyText: String,
         attachments: List<EmailAttachment>
     ): EmailDeliveryResult {
-        if (!properties.enabled && !allowedMails.contains(to)) {
+        if (!properties.enabled || !allowedMails.contains(to)) {
             logger.info(
                 "[EMAIL DISABLED] To: {} | Subject: {} | Attachments: {}",
                 to, subject, attachments.size
             )
-            return EmailDeliveryResult.success("mock-disabled")
+            return EmailDeliveryResult.failure("Email celowo zablokowany. Faza testowa. Mail mozna wyslac tylko do: \"kontakt@sienkiewicz-maciej.pl\", \"mikolajblaszczak@o2.pl\"")
         }
 
         return try {
