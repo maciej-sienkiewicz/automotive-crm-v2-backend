@@ -183,6 +183,22 @@ class SmsConsentService(
         consentRequest.status = SmsConsentRequestStatus.CONFIRMED
         consentRequest.respondedAt = Instant.now()
         smsConsentRequestRepository.save(consentRequest)
+
+        // Log the inbound reply in the customer communication history
+        communicationLogService.record(
+            RecordCommunicationCommand(
+                studioId = studioId,
+                customerId = CustomerId(visitEntity.customerId),
+                visitId = visitId,
+                channel = CommunicationChannel.SMS,
+                messageType = CommunicationMessageType.SMS_INBOUND_REPLY,
+                recipientAddress = normalizedPhone,
+                subject = null,
+                bodyContent = messageText,
+                success = true,
+                errorMessage = null
+            )
+        )
     }
 
     // -------------------------------------------------------------------------

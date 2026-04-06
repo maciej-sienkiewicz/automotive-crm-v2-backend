@@ -780,7 +780,8 @@ enum class CommunicationMessageType(val label: String) {
     SMS_AUTOMATION_POST_VISIT("SMS po wizycie"),
 
     // SMS consent types
-    SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług")
+    SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług"),
+    SMS_INBOUND_REPLY("SMS odpowiedź klienta")
 }
 
 /**
