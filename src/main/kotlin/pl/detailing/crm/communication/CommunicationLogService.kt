@@ -29,7 +29,9 @@ data class RecordCommunicationCommand(
     val subject: String?,
     val bodyContent: String,
     val success: Boolean,
-    val errorMessage: String?
+    val errorMessage: String?,
+    /** When set, overrides the [success]-based status mapping. */
+    val status: CommunicationStatus? = null
 )
 
 /**
@@ -62,7 +64,7 @@ class CommunicationLogService(
                     recipientAddress = command.recipientAddress,
                     subject = command.subject,
                     bodyContent = command.bodyContent,
-                    status = if (command.success) CommunicationStatus.SENT else CommunicationStatus.FAILED,
+                    status = command.status ?: if (command.success) CommunicationStatus.SENT else CommunicationStatus.FAILED,
                     errorMessage = command.errorMessage,
                     sentAt = Instant.now()
                 )

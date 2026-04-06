@@ -789,6 +789,7 @@ enum class CommunicationMessageType(val label: String) {
  */
 enum class CommunicationStatus {
     SENT,
+    RECEIVED,
     FAILED
 }
 

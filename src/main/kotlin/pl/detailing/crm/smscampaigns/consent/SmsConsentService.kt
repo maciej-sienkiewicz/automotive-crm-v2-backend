@@ -7,6 +7,7 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -196,7 +197,8 @@ class SmsConsentService(
                 subject = null,
                 bodyContent = messageText,
                 success = true,
-                errorMessage = null
+                errorMessage = null,
+                status = CommunicationStatus.RECEIVED
             )
         )
     }
