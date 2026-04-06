@@ -19,6 +19,8 @@ services:
       S3_SECRET_KEY: ${ENV_S3_SECRET_KEY}
       GITHUB_ACTOR: ${ENV_GITHUB_ACTOR}
       GITHUB_TOKEN: ${ENV_GITHUB_TOKEN}
+      OPENAI_API_KEY: ${ENV_OPENAI_API_KEY}
+      SMSAPI_OAUTH_TOKEN: ${ENV_SMSAPI_OAUTH_TOKEN}
     depends_on:
       - redis
     networks:
