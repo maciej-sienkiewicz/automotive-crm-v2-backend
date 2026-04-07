@@ -4,9 +4,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.appointment.domain.Appointment
 import pl.detailing.crm.appointment.domain.AppointmentLineItem
+import pl.detailing.crm.appointment.domain.AppointmentSchedule
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.domain.AdjustmentType
+import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.domain.CompanyData
@@ -335,6 +338,249 @@ class CreateVisitFromReservationHandler(
             // Step 11: Return result
             ReservationToVisitResult(visitId = visitId)
         }
+
+    @Transactional
+    suspend fun handleWalkIn(command: WalkInVisitCommand): ReservationToVisitResult =
+        withContext(Dispatchers.IO) {
+            // Step 1: Handle customer
+            val customerId = when (val customerData = command.customer) {
+                null -> throw ValidationException("Customer data required for check-in")
+                is CustomerData.New -> createCustomer(customerData, command.studioId, command.userId)
+                is CustomerData.Existing -> customerData.id
+                is CustomerData.Update -> {
+                    updateCustomerIfNeeded(customerData.id, customerData, command.studioId, command.userId)
+                    customerData.id
+                }
+            }
+
+            // Step 2: Handle vehicle
+            val vehicleId = when (val vehicleData = command.vehicle) {
+                is VehicleData.New -> createVehicle(vehicleData, customerId, command.studioId, command.userId)
+                is VehicleData.Existing -> vehicleData.id
+                is VehicleData.Update -> {
+                    updateVehicleIfNeeded(vehicleData.id, vehicleData, command.studioId, command.userId)
+                    vehicleData.id
+                }
+            }
+
+            // Step 3: Create walk-in appointment (shadow appointment without prior reservation)
+            val appointment = createWalkInAppointment(command, customerId, vehicleId)
+
+            // Step 4: Load vehicle for snapshots
+            val vehicle = vehicleRepository.findByIdAndStudioId(
+                vehicleId.value,
+                command.studioId.value
+            )?.toDomain() ?: throw EntityNotFoundException("Vehicle not found")
+
+            // Step 5: Generate visit number
+            val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
+
+            // Step 6: Map services to visit service items
+            val serviceItems = command.services.map { serviceReq ->
+                val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
+                val adjustmentValue = when (adjustmentType) {
+                    AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
+                    else -> serviceReq.adjustment.value.toLong()
+                }
+                val lineItem = AppointmentLineItem.create(
+                    serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
+                    serviceName = serviceReq.serviceName,
+                    basePriceNet = Money.fromCents(serviceReq.basePriceNet),
+                    vatRate = VatRate.fromInt(serviceReq.vatRate),
+                    adjustmentType = adjustmentType,
+                    adjustmentValue = adjustmentValue,
+                    customNote = serviceReq.note
+                )
+                VisitServiceItem(
+                    id = VisitServiceItemId.random(),
+                    serviceId = lineItem.serviceId,
+                    serviceName = lineItem.serviceName,
+                    basePriceNet = lineItem.basePriceNet,
+                    vatRate = lineItem.vatRate,
+                    adjustmentType = lineItem.adjustmentType,
+                    adjustmentValue = lineItem.adjustmentValue,
+                    finalPriceNet = lineItem.finalPriceNet,
+                    finalPriceGross = lineItem.finalPriceGross,
+                    status = VisitServiceStatus.CONFIRMED,
+                    pendingOperation = null,
+                    confirmedSnapshot = null,
+                    customNote = lineItem.customNote,
+                    createdAt = Instant.now(),
+                    confirmedAt = Instant.now(),
+                    pendingAt = null
+                )
+            }
+
+            // Step 7: Process session-based photos
+            val visitId = VisitId.random()
+            val visitPhotos = if (command.photoIds.isNotEmpty()) {
+                val photoUUIDs = command.photoIds.mapNotNull {
+                    try { java.util.UUID.fromString(it) } catch (e: Exception) { null }
+                }
+                if (photoUUIDs.isNotEmpty()) {
+                    photoSessionService.claimPhotosForVisit(
+                        photoIds = photoUUIDs,
+                        visitId = visitId,
+                        studioId = command.studioId
+                    ).map { claimed ->
+                        pl.detailing.crm.visit.domain.VisitPhoto(
+                            id = VisitPhotoId(claimed.id),
+                            fileId = claimed.fileId,
+                            fileName = claimed.fileName,
+                            description = null,
+                            uploadedAt = Instant.now()
+                        )
+                    }
+                } else emptyList()
+            } else emptyList()
+
+            // Step 8: Create Visit domain object
+            var visit = Visit(
+                id = visitId,
+                studioId = command.studioId,
+                visitNumber = visitNumber,
+                customerId = customerId,
+                vehicleId = vehicleId,
+                appointmentId = appointment.id,
+                appointmentColorId = command.appointmentColorId,
+                title = command.title,
+                brandSnapshot = vehicle.brand,
+                modelSnapshot = vehicle.model,
+                licensePlateSnapshot = vehicle.licensePlate,
+                vinSnapshot = null,
+                yearOfProductionSnapshot = vehicle.yearOfProduction,
+                colorSnapshot = vehicle.color,
+                status = VisitStatus.DRAFT,
+                scheduledDate = command.startDateTime,
+                estimatedCompletionDate = command.endDateTime,
+                actualCompletionDate = null,
+                pickupDate = null,
+                mileageAtArrival = command.technicalState.mileage,
+                keysHandedOver = command.technicalState.deposit.keys,
+                documentsHandedOver = command.technicalState.deposit.registrationDocument,
+                inspectionNotes = command.technicalState.inspectionNotes.ifBlank { null },
+                technicalNotes = command.technicalState.inspectionNotes.ifBlank { null },
+                vehicleHandoff = command.vehicleHandoff,
+                serviceItems = serviceItems,
+                photos = visitPhotos,
+                damageMapFileId = null,
+                createdBy = command.userId,
+                updatedBy = command.userId,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now()
+            )
+
+            // Step 9: Generate damage map if damage points are provided
+            if (command.damagePoints.isNotEmpty()) {
+                try {
+                    val damageMapBytes = damageMarkingService.generateDamageMap(command.damagePoints)
+                    if (damageMapBytes != null) {
+                        val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
+                            studioId = command.studioId.value,
+                            visitId = visitId.value,
+                            imageBytes = damageMapBytes
+                        )
+                        visit = visit.withDamageMap(damageMapFileId, command.userId)
+                    }
+                } catch (e: Exception) {
+                    println("Warning: Failed to generate damage map for walk-in: ${e.message}")
+                }
+            }
+
+            // Step 10: Persist visit
+            val visitEntity = VisitEntity.fromDomain(visit)
+            visitRepository.save(visitEntity)
+
+            // Step 10.1: Audit log
+            val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
+                (vehicle.licensePlate?.let { " ($it)" } ?: "")
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.VEHICLE,
+                entityId = vehicleId.value.toString(),
+                entityDisplayName = vehicleDisplayName,
+                action = AuditAction.VISIT_ADDED,
+                metadata = mapOf(
+                    "visitId" to visitId.value.toString(),
+                    "visitNumber" to visit.visitNumber,
+                    "appointmentId" to appointment.id.value.toString(),
+                    "walkIn" to "true"
+                )
+            ))
+
+            // Step 10.2: Register damage map document if generated
+            if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {
+                try {
+                    documentService.registerDocument(
+                        visitId = visitId.value,
+                        customerId = customerId.value,
+                        documentType = DocumentType.DAMAGE_MAP,
+                        name = "Damage Map - ${visit.visitNumber}",
+                        s3Key = visit.damageMapFileId!!,
+                        fileName = "damage-map.jpg",
+                        createdBy = command.userId.value,
+                        createdByName = command.userName,
+                        category = "damage"
+                    )
+                } catch (e: Exception) {
+                    println("Warning: Failed to register damage map document for walk-in: ${e.message}")
+                }
+            }
+
+            ReservationToVisitResult(visitId = visitId)
+        }
+
+    private fun createWalkInAppointment(
+        command: WalkInVisitCommand,
+        customerId: CustomerId,
+        vehicleId: VehicleId
+    ): Appointment {
+        val lineItems = command.services.map { serviceReq ->
+            val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
+            val adjustmentValue = when (adjustmentType) {
+                AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
+                else -> serviceReq.adjustment.value.toLong()
+            }
+            AppointmentLineItem.create(
+                serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
+                serviceName = serviceReq.serviceName,
+                basePriceNet = Money.fromCents(serviceReq.basePriceNet),
+                vatRate = VatRate.fromInt(serviceReq.vatRate),
+                adjustmentType = adjustmentType,
+                adjustmentValue = adjustmentValue,
+                customNote = serviceReq.note
+            )
+        }
+
+        val colorId = command.appointmentColorId
+            ?: throw ValidationException("appointmentColorId jest wymagany dla wizyty walk-in")
+
+        val appointment = Appointment(
+            id = AppointmentId.random(),
+            studioId = command.studioId,
+            customerId = customerId,
+            vehicleId = vehicleId,
+            appointmentTitle = command.title,
+            appointmentColorId = colorId,
+            lineItems = lineItems,
+            schedule = AppointmentSchedule(
+                isAllDay = false,
+                startDateTime = command.startDateTime,
+                endDateTime = command.endDateTime
+            ),
+            status = AppointmentStatus.CREATED,
+            note = null,
+            createdBy = command.userId,
+            updatedBy = command.userId,
+            createdAt = Instant.now(),
+            updatedAt = Instant.now()
+        )
+
+        appointmentRepository.save(AppointmentEntity.fromDomain(appointment))
+        return appointment
+    }
 
     private fun createCustomer(
         customerData: CustomerData,

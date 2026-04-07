@@ -206,6 +206,175 @@ class CheckinController(
     }
 
     /**
+     * Create a visit directly for a walk-in customer (without prior reservation)
+     * POST /api/checkin/walk-in
+     */
+    @PostMapping("/walk-in")
+    fun createWalkInVisit(
+        @RequestBody request: WalkInVisitRequest
+    ): ResponseEntity<ReservationToVisitResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can perform vehicle check-in")
+        }
+
+        val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
+            val contactPerson = handoffReq.contactPerson?.let { contactReq ->
+                pl.detailing.crm.visit.domain.ContactPerson(
+                    firstName = contactReq.firstName,
+                    lastName = contactReq.lastName,
+                    phone = contactReq.phone,
+                    email = contactReq.email
+                )
+            }
+            pl.detailing.crm.visit.domain.VehicleHandoff(
+                isHandedOffByOtherPerson = contactPerson != null || handoffReq.isHandedOffByOtherPerson,
+                contactPerson = contactPerson
+            )
+        }
+
+        val command = WalkInVisitCommand(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.name,
+            startDateTime = request.startDateTime,
+            endDateTime = request.endDateTime,
+            title = request.title,
+            customer = request.customer?.let { customerReq ->
+                when (customerReq.mode) {
+                    IdentityMode.EXISTING -> CustomerData.Existing(
+                        id = CustomerId.fromString(customerReq.id!!)
+                    )
+                    IdentityMode.NEW -> {
+                        val newData = customerReq.newData!!
+                        if (newData.firstName.isNullOrBlank() || newData.lastName.isNullOrBlank()) {
+                            throw ValidationException("Imię i nazwisko są wymagane podczas przyjmowania pojazdu.")
+                        }
+                        CustomerData.New(
+                            firstName = newData.firstName,
+                            lastName = newData.lastName,
+                            phone = newData.phone,
+                            email = newData.email,
+                            homeAddress = newData.homeAddress,
+                            company = newData.company
+                        )
+                    }
+                    IdentityMode.UPDATE -> {
+                        val updateData = customerReq.updateData!!
+                        if (updateData.firstName.isNullOrBlank() || updateData.lastName.isNullOrBlank()) {
+                            throw ValidationException("Imię i nazwisko są wymagane podczas przyjmowania pojazdu.")
+                        }
+                        CustomerData.Update(
+                            id = CustomerId.fromString(customerReq.id!!),
+                            firstName = updateData.firstName,
+                            lastName = updateData.lastName,
+                            phone = updateData.phone,
+                            email = updateData.email,
+                            homeAddress = updateData.homeAddress,
+                            company = updateData.company
+                        )
+                    }
+                }
+            },
+            customerAlias = request.customerAlias,
+            vehicle = when (request.vehicle.mode) {
+                IdentityMode.EXISTING -> VehicleData.Existing(
+                    id = VehicleId.fromString(request.vehicle.id!!)
+                )
+                IdentityMode.NEW -> {
+                    val newData = request.vehicle.newData!!
+                    VehicleData.New(
+                        brand = newData.brand,
+                        model = newData.model,
+                        yearOfProduction = newData.yearOfProduction,
+                        licensePlate = newData.licensePlate,
+                        color = newData.color,
+                        paintType = newData.paintType
+                    )
+                }
+                IdentityMode.UPDATE -> {
+                    val updateData = request.vehicle.updateData!!
+                    VehicleData.Update(
+                        id = VehicleId.fromString(request.vehicle.id!!),
+                        brand = updateData.brand,
+                        model = updateData.model,
+                        yearOfProduction = updateData.yearOfProduction,
+                        licensePlate = updateData.licensePlate,
+                        color = updateData.color,
+                        paintType = updateData.paintType
+                    )
+                }
+            },
+            technicalState = request.technicalState,
+            vehicleHandoff = vehicleHandoff,
+            photoIds = request.photoIds,
+            damagePoints = request.damagePoints?.map { damagePointReq ->
+                DamagePoint(
+                    id = damagePointReq.id,
+                    x = damagePointReq.x,
+                    y = damagePointReq.y,
+                    note = damagePointReq.note
+                )
+            } ?: emptyList(),
+            services = request.services,
+            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) }
+        )
+
+        val result = createVisitFromReservationHandler.handleWalkIn(command)
+
+        val protocolsResult = generateVisitProtocolsHandler.handle(
+            GenerateVisitProtocolsCommand(
+                visitId = result.visitId,
+                studioId = principal.studioId,
+                stage = ProtocolStage.CHECK_IN
+            )
+        )
+
+        try {
+            sendVisitWelcomeEmailHandler.handle(
+                SendVisitWelcomeEmailCommand(
+                    visitId = result.visitId,
+                    studioId = principal.studioId
+                )
+            )
+        } catch (ex: Exception) {
+            logger.warn(
+                "Failed to send welcome email for walk-in visit {}: {}",
+                result.visitId, ex.message
+            )
+        }
+
+        val protocolDtos = protocolsResult.protocols.map { protocol ->
+            val template = protocolTemplateRepository.findByIdAndStudioId(
+                protocol.templateId.value,
+                principal.studioId.value
+            )?.toDomain()
+
+            val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
+                s3StorageService.generateDownloadUrl(s3Key)
+            }
+
+            VisitProtocolDto(
+                id = protocol.id.toString(),
+                templateId = protocol.templateId.toString(),
+                templateName = template?.name ?: "Unknown Template",
+                stage = protocol.stage.name,
+                isMandatory = protocol.isMandatory,
+                status = protocol.status.name,
+                filledPdfUrl = filledPdfUrl
+            )
+        }
+
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ReservationToVisitResponse(
+                visitId = result.visitId.value.toString(),
+                protocols = protocolDtos
+            ))
+    }
+
+    /**
      * Generate a temporary QR upload token for an in-progress checkin.
      *
      * The token is stored in Redis with a 3-hour TTL.
@@ -445,4 +614,38 @@ data class UploadTokenResponse(
     val checkinId: String,
     val expiresAt: Instant,
     val uploadEndpoint: String
+)
+
+// Walk-in request/command DTOs
+data class WalkInVisitRequest(
+    val startDateTime: Instant,
+    val endDateTime: Instant,
+    val title: String? = null,
+    val customer: CustomerRequest?,
+    val customerAlias: String? = null,
+    val vehicle: VehicleRequest,
+    val technicalState: TechnicalStateRequest,
+    val vehicleHandoff: VehicleHandoffRequest? = null,
+    val photoIds: List<String>,
+    val damagePoints: List<DamagePointRequest>?,
+    val services: List<ServiceLineItemRequest>,
+    val appointmentColorId: String?
+)
+
+data class WalkInVisitCommand(
+    val studioId: StudioId,
+    val userId: UserId,
+    val userName: String,
+    val startDateTime: Instant,
+    val endDateTime: Instant,
+    val title: String?,
+    val customer: CustomerData?,
+    val customerAlias: String?,
+    val vehicle: VehicleData,
+    val technicalState: TechnicalStateRequest,
+    val vehicleHandoff: pl.detailing.crm.visit.domain.VehicleHandoff?,
+    val photoIds: List<String>,
+    val damagePoints: List<DamagePoint>,
+    val services: List<ServiceLineItemRequest>,
+    val appointmentColorId: AppointmentColorId?
 )
