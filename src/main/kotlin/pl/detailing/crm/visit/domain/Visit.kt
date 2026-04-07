@@ -61,22 +61,48 @@ data class Visit(
     val updatedAt: Instant
 ) {
     /**
-     * Calculate total net amount for CONFIRMED and APPROVED services only
-     * PENDING and REJECTED services are excluded from billing
+     * Calculate total net amount reflecting the current confirmed state:
+     * - CONFIRMED (no pending change): use finalPriceNet
+     * - PENDING/EDIT: use confirmedSnapshot.finalPriceNet (previous confirmed price; new price not yet approved)
+     * - PENDING/DELETE: use finalPriceNet (deletion not yet approved; service is still active)
+     * - PENDING/ADD: excluded (new service not yet approved)
+     * - REJECTED: excluded
      */
     fun calculateTotalNet(): Money {
-        return serviceItems
-            .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
-            .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceNet) }
+        return serviceItems.fold(Money.ZERO) { acc, item ->
+            val contribution = effectiveNetAmount(item)
+            if (contribution != null) acc.plus(contribution) else acc
+        }
     }
 
     /**
-     * Calculate total gross amount for CONFIRMED and APPROVED services only
+     * Calculate total gross amount reflecting the current confirmed state (same rules as calculateTotalNet).
      */
     fun calculateTotalGross(): Money {
-        return serviceItems
-            .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
-            .fold(Money.ZERO) { acc, item -> acc.plus(item.finalPriceGross) }
+        return serviceItems.fold(Money.ZERO) { acc, item ->
+            val contribution = effectiveGrossAmount(item)
+            if (contribution != null) acc.plus(contribution) else acc
+        }
+    }
+
+    private fun effectiveNetAmount(item: VisitServiceItem): Money? = when {
+        item.status == VisitServiceStatus.CONFIRMED -> item.finalPriceNet
+        item.status == VisitServiceStatus.APPROVED -> item.finalPriceNet
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
+            item.confirmedSnapshot?.finalPriceNet
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
+            item.finalPriceNet
+        else -> null  // PENDING/ADD or REJECTED — excluded
+    }
+
+    private fun effectiveGrossAmount(item: VisitServiceItem): Money? = when {
+        item.status == VisitServiceStatus.CONFIRMED -> item.finalPriceGross
+        item.status == VisitServiceStatus.APPROVED -> item.finalPriceGross
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
+            item.confirmedSnapshot?.finalPriceGross
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
+            item.finalPriceGross
+        else -> null  // PENDING/ADD or REJECTED — excluded
     }
 
     /**
@@ -482,7 +508,12 @@ data class VisitServiceItem(
  */
 object PriceCalculator {
     /**
-     * Price calculation engine - applies adjustment based on type
+     * Price calculation engine - applies adjustment based on type.
+     *
+     * All monetary values (basePriceNet, adjustmentValue for non-PERCENT types) are in grosz (integer cents).
+     * For PERCENT: adjustmentValue is stored as basis points (v * 100), where negative = discount, positive = markup.
+     *
+     * Throws ValidationException if the resulting F_net < 0 (guardrail: invalid discount).
      */
     fun calculateFinalNet(
         basePriceNet: Money,
@@ -490,39 +521,40 @@ object PriceCalculator {
         adjustmentType: AdjustmentType,
         adjustmentValue: Long
     ): Money {
-        return when (adjustmentType) {
+        val calculatedNet = when (adjustmentType) {
             AdjustmentType.PERCENT -> {
                 // adjustmentValue is in basis points (hundredths of percent)
-                // e.g., -4919 for -49.19% discount, +2050 for +20.50% markup
-                val multiplier = 1.0 + (adjustmentValue.toDouble() / 10000.0)
-                val calculatedNet = (basePriceNet.amountInCents * multiplier).toLong()
-                Money(calculatedNet.coerceAtLeast(0))
+                // Negative = discount (e.g. -1050 bp = -10.5%), positive = markup (e.g. +500 bp = +5%)
+                val pctAmount = Math.round(basePriceNet.amountInCents * Math.abs(adjustmentValue).toDouble() / 10000.0)
+                if (adjustmentValue < 0) basePriceNet.amountInCents - pctAmount
+                else basePriceNet.amountInCents + pctAmount
             }
             AdjustmentType.FIXED_NET -> {
-                // adjustmentValue is fixed amount in cents to add/subtract from net
-                val calculatedNet = basePriceNet.amountInCents + adjustmentValue
-                Money(calculatedNet.coerceAtLeast(0))
+                // adjustmentValue is a discount amount in grosz (v ≥ 0); F_net = B_net - v
+                basePriceNet.amountInCents - adjustmentValue
             }
             AdjustmentType.FIXED_GROSS -> {
-                // adjustmentValue is fixed amount to add/subtract from gross, recalculate net
+                // F_gross = B_gross - v; F_net = round(F_gross * 100 / (100 + r))
                 val baseGross = vatRate.calculateGrossAmount(basePriceNet)
-                val newGross = (baseGross.amountInCents + adjustmentValue).coerceAtLeast(0)
-                // Calculate net from gross: net = gross / (1 + vatRate/100)
-                val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
-                val calculatedNet = (newGross / vatMultiplier).toLong()
-                Money(calculatedNet.coerceAtLeast(0))
+                val fGross = baseGross.amountInCents - adjustmentValue
+                Math.round(fGross * 100.0 / (100 + vatRate.rate))
             }
             AdjustmentType.SET_NET -> {
-                // adjustmentValue is the final net price
-                Money(adjustmentValue.coerceAtLeast(0))
+                // adjustmentValue is the target net price in grosz
+                adjustmentValue
             }
             AdjustmentType.SET_GROSS -> {
-                // adjustmentValue is the final gross price, calculate net from it
-                val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
-                val calculatedNet = (adjustmentValue / vatMultiplier).toLong()
-                Money(calculatedNet.coerceAtLeast(0))
+                // F_net = round(F_gross * 100 / (100 + r))
+                Math.round(adjustmentValue * 100.0 / (100 + vatRate.rate))
             }
         }
+
+        if (calculatedNet < 0) {
+            throw pl.detailing.crm.shared.ValidationException(
+                "Cena po adiustacji nie może być ujemna. Sprawdź wartość rabatu."
+            )
+        }
+        return Money(calculatedNet)
     }
 }
 

@@ -212,10 +212,10 @@ class VisitController(
     fun saveServicesChanges(
         @PathVariable visitId: String,
         @RequestBody payload: ServicesChangesPayload
-    ): ResponseEntity<Unit> = runBlocking {
+    ): ResponseEntity<MoneyAmountResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        saveVisitServicesHandler.handle(
+        val totalCost = saveVisitServicesHandler.handle(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
             userId = principal.userId,
@@ -223,7 +223,7 @@ class VisitController(
             userName = principal.fullName
         )
 
-        ResponseEntity.noContent().build()
+        ResponseEntity.ok(totalCost)
     }
 
     /**
@@ -412,11 +412,11 @@ class VisitController(
      */
     private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse {
         // Convert adjustment value based on type:
-        // - For PERCENT: convert from basis points back to percentage (divide by 100)
-        // - For others: keep as-is (in cents)
-        val adjustmentValue = when (serviceItem.adjustmentType) {
-            AdjustmentType.PERCENT -> serviceItem.adjustmentValue / 100.0 // Convert from basis points to percentage
-            else -> serviceItem.adjustmentValue.toDouble() // Keep in cents
+        // - For PERCENT: convert from basis points back to signed percentage (divide by 100), returned as Double
+        // - For monetary types (FIXED_NET, FIXED_GROSS, SET_NET, SET_GROSS): return as Long (integer grosz)
+        val adjustmentValue: Number = when (serviceItem.adjustmentType) {
+            AdjustmentType.PERCENT -> serviceItem.adjustmentValue / 100.0 // basis points → signed percent
+            else -> serviceItem.adjustmentValue // Long — serializes as integer JSON
         }
 
         return ServiceLineItemResponse(

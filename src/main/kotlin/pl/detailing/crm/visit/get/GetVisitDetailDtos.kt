@@ -106,7 +106,7 @@ data class ServiceLineItemResponse(
  */
 data class AdjustmentResponse(
     val type: String,
-    val value: Double  // Double to support decimal percentages like -49.19
+    val value: Number  // Long (integer grosz) for monetary types; Double for PERCENT (e.g. -10.5)
 )
 
 /**

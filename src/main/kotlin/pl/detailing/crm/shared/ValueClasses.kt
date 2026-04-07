@@ -582,7 +582,7 @@ enum class VatRate(val rate: Int) {
 
     fun calculateVatAmount(netAmount: Money): Money {
         if (this == VAT_ZW) return Money.ZERO
-        return Money((netAmount.amountInCents * rate) / 100)
+        return Money(Math.round(netAmount.amountInCents * rate.toDouble() / 100))
     }
 
     fun calculateGrossAmount(netAmount: Money): Money {

@@ -10,6 +10,7 @@ import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.VisitServiceItem
+import pl.detailing.crm.visit.get.MoneyAmountResponse
 import java.util.UUID
 
 @Service
@@ -25,7 +26,7 @@ class SaveVisitServicesHandler(
     }
 
     @Transactional
-    suspend fun handle(visitId: VisitId, studioId: StudioId, userId: UserId, payload: ServicesChangesPayload, userName: String? = null) {
+    suspend fun handle(visitId: VisitId, studioId: StudioId, userId: UserId, payload: ServicesChangesPayload, userName: String? = null): MoneyAmountResponse {
         val visitEntity = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: throw EntityNotFoundException("Visit $visitId not found in studio $studioId")
 
@@ -108,6 +109,12 @@ class SaveVisitServicesHandler(
         if (payload.notifyCustomer) {
             sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit)
         }
+
+        return MoneyAmountResponse(
+            netAmount = updatedVisit.calculateTotalNet().amountInCents,
+            grossAmount = updatedVisit.calculateTotalGross().amountInCents,
+            currency = "PLN"
+        )
     }
 
     /**

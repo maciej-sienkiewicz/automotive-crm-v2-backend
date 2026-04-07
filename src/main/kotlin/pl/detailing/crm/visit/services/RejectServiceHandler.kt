@@ -6,6 +6,7 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.get.MoneyAmountResponse
 
 /**
  * Handler for rejecting pending service changes
@@ -23,7 +24,7 @@ class RejectServiceHandler(
         studioId: StudioId,
         userId: UserId,
         userName: String? = null
-    ) {
+    ): MoneyAmountResponse {
         val visitEntity = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: throw EntityNotFoundException("Visit $visitId not found in studio $studioId")
 
@@ -59,5 +60,11 @@ class RejectServiceHandler(
                 }
             }
         ))
+
+        return MoneyAmountResponse(
+            netAmount = updatedVisit.calculateTotalNet().amountInCents,
+            grossAmount = updatedVisit.calculateTotalGross().amountInCents,
+            currency = "PLN"
+        )
     }
 }

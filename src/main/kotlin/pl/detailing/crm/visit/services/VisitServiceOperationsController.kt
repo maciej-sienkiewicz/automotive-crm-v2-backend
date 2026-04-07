@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.get.MoneyAmountResponse
 
 /**
  * Controller for visit service operations (approve/reject changes)
@@ -24,18 +25,18 @@ class VisitServiceOperationsController(
     fun approveService(
         @PathVariable visitId: String,
         @PathVariable serviceItemId: String
-    ): ResponseEntity<Unit> = runBlocking {
+    ): ResponseEntity<MoneyAmountResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        
-        approveServiceHandler.handle(
+
+        val totalCost = approveServiceHandler.handle(
             visitId = VisitId.fromString(visitId),
             serviceItemId = VisitServiceItemId.fromString(serviceItemId),
             studioId = principal.studioId,
             userId = principal.userId,
             userName = principal.fullName
         )
-        
-        ResponseEntity.ok().build()
+
+        ResponseEntity.ok(totalCost)
     }
 
     /**
@@ -46,17 +47,17 @@ class VisitServiceOperationsController(
     fun rejectService(
         @PathVariable visitId: String,
         @PathVariable serviceItemId: String
-    ): ResponseEntity<Unit> = runBlocking {
+    ): ResponseEntity<MoneyAmountResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        
-        rejectServiceHandler.handle(
+
+        val totalCost = rejectServiceHandler.handle(
             visitId = VisitId.fromString(visitId),
             serviceItemId = VisitServiceItemId.fromString(serviceItemId),
             studioId = principal.studioId,
             userId = principal.userId,
             userName = principal.fullName
         )
-        
-        ResponseEntity.ok().build()
+
+        ResponseEntity.ok(totalCost)
     }
 }

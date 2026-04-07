@@ -17,20 +17,13 @@ enum class AdjustmentType {
         /**
          * Converts PERCENT adjustment value from API input to internal basis points representation.
          *
-         * Input value semantics:
-         * - 0..100 → discount (e.g. 5 = 5% rabatu → -500 bp, 95 = 95% rabatu → -9500 bp)
-         * - >100   → markup  (e.g. 120 = +20% → +2000 bp)
-         * - <0     → niedozwolone (throws ValidationException)
+         * Input value semantics (signed convention per spec):
+         * - Negative → discount  (e.g. -10.5 = 10.5% discount → -1050 bp)
+         * - Positive → markup    (e.g.  +5.0 = 5% markup      → +500 bp)
+         * - Zero     → no change (0 bp)
          */
         fun convertPercentValueToBasisPoints(value: Double): Long {
-            if (value < 0.0) throw pl.detailing.crm.shared.ValidationException(
-                "Wartość procentowa nie może być ujemna. Podaj wartość z zakresu 0–100 dla rabatu lub powyżej 100 dla narzutu."
-            )
-            return if (value <= 100.0) {
-                -(value * 100).toLong()   // discount: e.g. 5 → -500 bp
-            } else {
-                ((value - 100.0) * 100).toLong()  // markup: e.g. 120 → 2000 bp
-            }
+            return Math.round(value * 100)
         }
     }
 }
