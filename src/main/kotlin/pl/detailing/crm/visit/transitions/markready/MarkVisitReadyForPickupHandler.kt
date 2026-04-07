@@ -6,17 +6,17 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.email.visitready.SendVisitReadyForPickupEmailCommand
 import pl.detailing.crm.email.visitready.SendVisitReadyForPickupEmailHandler
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.smscampaigns.visitready.SendVisitReadyForPickupSmsCommand
+import pl.detailing.crm.smscampaigns.visitready.SendVisitReadyForPickupSmsHandler
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
-import pl.detailing.crm.visit.transitions.complete.CompleteVisitCommand
-import pl.detailing.crm.visit.transitions.complete.CompleteVisitHandler
 
 @Service
 class MarkVisitReadyForPickupHandler(
     private val visitRepository: VisitRepository,
     private val auditService: AuditService,
     private val sendVisitReadyForPickupEmailHandler: SendVisitReadyForPickupEmailHandler,
-    // TODO: Add services for side-effects (EmailService, SMSService, etc.)
+    private val sendVisitReadyForPickupSmsHandler: SendVisitReadyForPickupSmsHandler,
 ) {
 
     @Transactional
@@ -50,24 +50,24 @@ class MarkVisitReadyForPickupHandler(
             changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
         ))
 
-        // Step 5: Side-effects (to be implemented)
-        // TODO: Send notification to customer based on preferences
-        // if (command.sendSms) {
-        //     smsService.sendVisitReadyNotification(
-        //         customerId = visit.customerId,
-        //         visitNumber = visit.visitNumber,
-        //         customerPhone = ...
-        //     )
-        // }
-         if (command.sendEmail) {
-             sendVisitReadyForPickupEmailHandler.handle(
-                 SendVisitReadyForPickupEmailCommand(
-                     visitId = command.visitId,
-                     studioId = command.studioId
-                 )
-             )
-         }
-        // }
+        // Step 5: Side-effects
+        if (command.sendEmail) {
+            sendVisitReadyForPickupEmailHandler.handle(
+                SendVisitReadyForPickupEmailCommand(
+                    visitId = command.visitId,
+                    studioId = command.studioId
+                )
+            )
+        }
+
+        if (command.sendSms) {
+            sendVisitReadyForPickupSmsHandler.handle(
+                SendVisitReadyForPickupSmsCommand(
+                    visitId = command.visitId,
+                    studioId = command.studioId
+                )
+            )
+        }
 
         return MarkVisitReadyForPickupResult(
             visitId = updatedVisit.id,

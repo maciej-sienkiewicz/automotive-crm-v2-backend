@@ -775,6 +775,9 @@ enum class CommunicationMessageType(val label: String) {
     VISIT_WELCOME_EMAIL("E-mail potwierdzenia przyjęcia"),
     VISIT_READY_FOR_PICKUP_EMAIL("E-mail gotowości do odbioru"),
 
+    // SMS manual types
+    VISIT_READY_FOR_PICKUP_SMS("SMS gotowości do odbioru"),
+
     // SMS automation types
     SMS_AUTOMATION_PRE_VISIT("SMS przypomnienie przed wizytą"),
     SMS_AUTOMATION_POST_VISIT("SMS po wizycie"),
