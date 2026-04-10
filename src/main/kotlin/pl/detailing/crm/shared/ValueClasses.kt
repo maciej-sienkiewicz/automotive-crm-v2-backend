@@ -816,3 +816,162 @@ value class StudioInstagramPostReactionId(val value: UUID) : Serializable {
 
     override fun toString(): String = value.toString()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Employee module – ID value classes
+// ─────────────────────────────────────────────────────────────────────────────
+
+@JvmInline
+value class EmployeeId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = EmployeeId(UUID.randomUUID())
+        fun fromString(value: String) = EmployeeId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class EmploymentContractId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = EmploymentContractId(UUID.randomUUID())
+        fun fromString(value: String) = EmploymentContractId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class CompensationConfigId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CompensationConfigId(UUID.randomUUID())
+        fun fromString(value: String) = CompensationConfigId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class CompensationComponentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = CompensationComponentId(UUID.randomUUID())
+        fun fromString(value: String) = CompensationComponentId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class PayrollEntryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = PayrollEntryId(UUID.randomUUID())
+        fun fromString(value: String) = PayrollEntryId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class WorkTimeEntryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = WorkTimeEntryId(UUID.randomUUID())
+        fun fromString(value: String) = WorkTimeEntryId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class LeaveRequestId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = LeaveRequestId(UUID.randomUUID())
+        fun fromString(value: String) = LeaveRequestId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class LeaveBalanceId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = LeaveBalanceId(UUID.randomUUID())
+        fun fromString(value: String) = LeaveBalanceId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Employee module – enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Lifecycle status of an employee profile */
+enum class EmployeeStatus {
+    ACTIVE,
+    ON_LEAVE,
+    TERMINATED
+}
+
+/** Legal form of the employment relationship */
+enum class ContractType {
+    EMPLOYMENT,  // Umowa o pracę (UoP)
+    MANDATE,     // Umowa zlecenie (UZ)
+    B2B          // Działalność gospodarcza / B2B
+}
+
+/** How a compensation component is calculated */
+enum class ComponentType {
+    PERCENTAGE_OF_REVENUE,
+    FIXED_AMOUNT,
+    PER_HOUR_BONUS,
+    PERCENTAGE_OF_BASE,
+    CUSTOM
+}
+
+/** Base used when calculating percentage-based components */
+enum class CalculationBase {
+    GROSS_REVENUE,
+    NET_REVENUE,
+    PERSONAL_REVENUE,
+    BASE_SALARY
+}
+
+/** How often a compensation component is paid out */
+enum class PaymentFrequency {
+    MONTHLY,
+    QUARTERLY,
+    ONE_TIME
+}
+
+/** Lifecycle status of a payroll entry */
+enum class PayrollStatus {
+    DRAFT,
+    CONFIRMED,
+    PAID
+}
+
+/** Classification of a work-time entry */
+enum class WorkTimeEntryType {
+    REGULAR,
+    OVERTIME,
+    HOLIDAY_WORK,
+    NIGHT_SHIFT
+}
+
+/** Approval status of a work-time entry */
+enum class WorkTimeStatus {
+    PENDING,
+    APPROVED,
+    REJECTED
+}
+
+/** Type of absence / leave */
+enum class LeaveType {
+    VACATION,
+    SICK_LEAVE,
+    UNPAID_LEAVE,
+    MATERNITY,
+    CHILD_CARE,
+    ON_DEMAND,
+    OTHER
+}
+
+/** Approval status of a leave request */
+enum class LeaveStatus {
+    PENDING,
+    APPROVED,
+    REJECTED,
+    CANCELLED
+}
