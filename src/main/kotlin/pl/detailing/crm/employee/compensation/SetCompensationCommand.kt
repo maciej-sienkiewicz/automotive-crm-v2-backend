@@ -11,7 +11,12 @@ data class SetCompensationCommand(
     val employeeId: EmployeeId,
     val contractId: EmploymentContractId,
     val effectiveFrom: LocalDate,
-    val baseSalaryGross: Money?,
+    val employmentMode: EmploymentMode,
+    /** Required when employmentMode = SALARY */
+    val etatFraction: EtatFraction?,
+    /** Monthly gross salary entered by admin – required when employmentMode = SALARY */
+    val monthlySalaryGross: Money?,
+    /** Hourly gross rate entered by admin – required when employmentMode = HOURLY */
     val hourlyRateGross: Money?,
     val components: List<CompensationComponent>
 )

@@ -51,25 +51,52 @@ class GeneratePayrollHandler(
 
         val totalHoursWorked = workTimeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
-        val baseSalaryGross = compensationConfig.baseSalaryGross ?: Money.ZERO
-        val hourlyRateGross = compensationConfig.hourlyRateGross
-
         // Calculate component breakdown
         val breakdowns = mutableListOf<PayrollComponentBreakdown>()
 
-        // Hourly rate component
-        if (hourlyRateGross != null && totalHoursWorked > BigDecimal.ZERO) {
-            val hourlyAmount = Money.fromCents(
-                (hourlyRateGross.amountInCents.toBigDecimal() * totalHoursWorked)
-                    .setScale(0, RoundingMode.HALF_UP).toLong()
-            )
-            breakdowns.add(
-                PayrollComponentBreakdown(
-                    componentName = "Stawka godzinowa",
-                    calculatedAmount = hourlyAmount,
-                    calculationDetails = "${hourlyRateGross.amountInCents / 100.0} PLN/h × ${totalHoursWorked.toPlainString()} h = ${hourlyAmount.amountInCents / 100.0} PLN"
-                )
-            )
+        val baseSalaryGross: Money
+        when (compensationConfig.employmentMode) {
+            EmploymentMode.SALARY -> {
+                // Fixed monthly salary – does not depend on hours logged
+                baseSalaryGross = compensationConfig.monthlySalaryGross ?: Money.ZERO
+
+                // Overtime: hours beyond the standard monthly norm are paid at hourly rate × 1.5
+                val standardHours = compensationConfig.etatFraction?.standardMonthlyHours
+                    ?: EtatFraction.FULL.standardMonthlyHours
+                val hourlyRate = compensationConfig.hourlyRateGross
+                if (hourlyRate != null && totalHoursWorked > standardHours) {
+                    val overtimeHours = totalHoursWorked - standardHours
+                    val overtimeAmount = Money.fromCents(
+                        (hourlyRate.amountInCents.toBigDecimal() * overtimeHours * BigDecimal("1.5"))
+                            .setScale(0, RoundingMode.HALF_UP).toLong()
+                    )
+                    breakdowns.add(
+                        PayrollComponentBreakdown(
+                            componentName = "Nadgodziny",
+                            calculatedAmount = overtimeAmount,
+                            calculationDetails = "${hourlyRate.amountInCents / 100.0} PLN/h × ${overtimeHours.toPlainString()} h × 1.5 = ${overtimeAmount.amountInCents / 100.0} PLN"
+                        )
+                    )
+                }
+            }
+            EmploymentMode.HOURLY -> {
+                // Godzinówka – pay is entirely based on approved hours
+                baseSalaryGross = Money.ZERO
+                val hourlyRate = compensationConfig.hourlyRateGross
+                if (hourlyRate != null && totalHoursWorked > BigDecimal.ZERO) {
+                    val hourlyAmount = Money.fromCents(
+                        (hourlyRate.amountInCents.toBigDecimal() * totalHoursWorked)
+                            .setScale(0, RoundingMode.HALF_UP).toLong()
+                    )
+                    breakdowns.add(
+                        PayrollComponentBreakdown(
+                            componentName = "Wynagrodzenie godzinowe",
+                            calculatedAmount = hourlyAmount,
+                            calculationDetails = "${hourlyRate.amountInCents / 100.0} PLN/h × ${totalHoursWorked.toPlainString()} h = ${hourlyAmount.amountInCents / 100.0} PLN"
+                        )
+                    )
+                }
+            }
         }
 
         // Custom compensation components

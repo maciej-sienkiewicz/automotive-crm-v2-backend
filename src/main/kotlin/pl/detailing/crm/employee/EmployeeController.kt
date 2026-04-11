@@ -308,7 +308,9 @@ class EmployeeController(
             employeeId = EmployeeId.fromString(employeeId),
             contractId = EmploymentContractId.fromString(request.contractId),
             effectiveFrom = request.effectiveFrom,
-            baseSalaryGross = request.baseSalaryGrossCents?.let { Money.fromCents(it) },
+            employmentMode = request.employmentMode,
+            etatFraction = request.etatFraction,
+            monthlySalaryGross = request.monthlySalaryGrossCents?.let { Money.fromCents(it) },
             hourlyRateGross = request.hourlyRateGrossCents?.let { Money.fromCents(it) },
             components = components
         ))
@@ -605,7 +607,13 @@ data class EndContractRequest(val terminationDate: LocalDate, val terminationRea
 data class SetCompensationRequest(
     val contractId: String,
     val effectiveFrom: LocalDate,
-    val baseSalaryGrossCents: Long?,
+    /** SALARY (etat) or HOURLY (godzinówka) */
+    val employmentMode: EmploymentMode,
+    /** Required when employmentMode = SALARY: FULL / HALF / QUARTER */
+    val etatFraction: EtatFraction?,
+    /** Required when employmentMode = SALARY: monthly gross salary in cents */
+    val monthlySalaryGrossCents: Long?,
+    /** Required when employmentMode = HOURLY: hourly gross rate in cents */
     val hourlyRateGrossCents: Long?,
     val components: List<CompensationComponentRequest>
 )
@@ -732,7 +740,14 @@ data class CompensationResponse(
     val contractId: String,
     val effectiveFrom: String,
     val effectiveTo: String?,
-    val baseSalaryGrossCents: Long?,
+    val employmentMode: String,
+    /** FULL / HALF / QUARTER – present only for SALARY mode */
+    val etatFraction: String?,
+    /** Standard monthly hours for the etat fraction (SALARY only) */
+    val standardMonthlyHours: Double?,
+    /** Fixed monthly gross salary in cents (SALARY only) */
+    val monthlySalaryGrossCents: Long?,
+    /** Derived hourly rate for SALARY mode or entered rate for HOURLY mode */
     val hourlyRateGrossCents: Long?,
     val components: List<CompensationComponentResponse>,
     val createdAt: Instant
@@ -889,7 +904,10 @@ private fun CompensationConfig.toResponse() = CompensationResponse(
     contractId = contractId.toString(),
     effectiveFrom = effectiveFrom.toString(),
     effectiveTo = effectiveTo?.toString(),
-    baseSalaryGrossCents = baseSalaryGross?.amountInCents,
+    employmentMode = employmentMode.name,
+    etatFraction = etatFraction?.name,
+    standardMonthlyHours = etatFraction?.standardMonthlyHours?.toDouble(),
+    monthlySalaryGrossCents = monthlySalaryGross?.amountInCents,
     hourlyRateGrossCents = hourlyRateGross?.amountInCents,
     components = components.map {
         CompensationComponentResponse(

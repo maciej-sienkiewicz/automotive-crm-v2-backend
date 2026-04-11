@@ -36,9 +36,19 @@ class CompensationConfigEntity(
     @Column(name = "effective_to")
     var effectiveTo: LocalDate?,
 
-    @Column(name = "base_salary_gross")
-    var baseSalaryGross: Long?,
+    /** SALARY or HOURLY */
+    @Column(name = "employment_mode", nullable = false, length = 20)
+    var employmentMode: String,
 
+    /** FULL / HALF / QUARTER – only set for SALARY mode */
+    @Column(name = "etat_fraction", length = 20)
+    var etatFraction: String?,
+
+    /** Fixed monthly gross salary in cents – only set for SALARY mode */
+    @Column(name = "monthly_salary_gross")
+    var monthlySalaryGross: Long?,
+
+    /** Hourly gross rate in cents – auto-derived for SALARY, entered for HOURLY */
     @Column(name = "hourly_rate_gross")
     var hourlyRateGross: Long?,
 
@@ -59,7 +69,9 @@ class CompensationConfigEntity(
         contractId = EmploymentContractId(contractId),
         effectiveFrom = effectiveFrom,
         effectiveTo = effectiveTo,
-        baseSalaryGross = baseSalaryGross?.let { Money.fromCents(it) },
+        employmentMode = EmploymentMode.valueOf(employmentMode),
+        etatFraction = etatFraction?.let { EtatFraction.valueOf(it) },
+        monthlySalaryGross = monthlySalaryGross?.let { Money.fromCents(it) },
         hourlyRateGross = hourlyRateGross?.let { Money.fromCents(it) },
         components = components.map { it.toDomain() },
         createdAt = createdAt,
@@ -75,7 +87,9 @@ class CompensationConfigEntity(
                 contractId = config.contractId.value,
                 effectiveFrom = config.effectiveFrom,
                 effectiveTo = config.effectiveTo,
-                baseSalaryGross = config.baseSalaryGross?.amountInCents,
+                employmentMode = config.employmentMode.name,
+                etatFraction = config.etatFraction?.name,
+                monthlySalaryGross = config.monthlySalaryGross?.amountInCents,
                 hourlyRateGross = config.hourlyRateGross?.amountInCents,
                 createdAt = config.createdAt,
                 updatedAt = config.updatedAt

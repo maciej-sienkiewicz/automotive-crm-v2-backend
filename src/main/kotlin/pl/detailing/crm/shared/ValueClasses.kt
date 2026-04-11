@@ -904,6 +904,22 @@ enum class EmployeeStatus {
     TERMINATED
 }
 
+/** Compensation mode – how the employee's pay is calculated */
+enum class EmploymentMode {
+    SALARY,  // Etat – fixed monthly salary; hourly rate is derived automatically
+    HOURLY   // Godzinówka – pay is based on approved logged hours
+}
+
+/**
+ * Fraction of a full-time etat.
+ * [standardMonthlyHours] is used to derive the hourly rate from the monthly salary.
+ */
+enum class EtatFraction(val standardMonthlyHours: java.math.BigDecimal) {
+    FULL(java.math.BigDecimal("168")),    // Pełen etat  (40 h/tydzień × ~4,2)
+    HALF(java.math.BigDecimal("84")),     // Pół etatu
+    QUARTER(java.math.BigDecimal("42"))   // Ćwierć etatu
+}
+
 /** Legal form of the employment relationship */
 enum class ContractType {
     EMPLOYMENT,  // Umowa o pracę (UoP)
