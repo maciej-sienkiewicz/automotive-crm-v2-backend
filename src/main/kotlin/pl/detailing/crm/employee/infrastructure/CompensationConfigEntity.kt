@@ -36,11 +36,29 @@ class CompensationConfigEntity(
     @Column(name = "effective_to")
     var effectiveTo: LocalDate?,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "employment_mode", nullable = false, length = 20)
+    var employmentMode: EmploymentMode,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "etat_fraction", length = 20)
+    var etatFraction: EtatFraction?,
+
+    /** Monthly gross salary in cents – for UOP / UZ SALARY contracts */
+    @Column(name = "monthly_salary_gross")
+    var monthlySalaryGross: Long?,
+
+    /** Base salary in cents used for bonus component calculations */
     @Column(name = "base_salary_gross")
     var baseSalaryGross: Long?,
 
+    /** Gross hourly rate in cents – for UZ HOURLY contracts */
     @Column(name = "hourly_rate_gross")
     var hourlyRateGross: Long?,
+
+    /** Net hourly rate in cents – for B2B contracts */
+    @Column(name = "hourly_rate_net")
+    var hourlyRateNet: Long?,
 
     @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "compensation_config_id")
@@ -59,8 +77,12 @@ class CompensationConfigEntity(
         contractId = EmploymentContractId(contractId),
         effectiveFrom = effectiveFrom,
         effectiveTo = effectiveTo,
+        employmentMode = employmentMode,
+        etatFraction = etatFraction,
+        monthlySalaryGross = monthlySalaryGross?.let { Money.fromCents(it) },
         baseSalaryGross = baseSalaryGross?.let { Money.fromCents(it) },
         hourlyRateGross = hourlyRateGross?.let { Money.fromCents(it) },
+        hourlyRateNet = hourlyRateNet?.let { Money.fromCents(it) },
         components = components.map { it.toDomain() },
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -75,8 +97,12 @@ class CompensationConfigEntity(
                 contractId = config.contractId.value,
                 effectiveFrom = config.effectiveFrom,
                 effectiveTo = config.effectiveTo,
+                employmentMode = config.employmentMode,
+                etatFraction = config.etatFraction,
+                monthlySalaryGross = config.monthlySalaryGross?.amountInCents,
                 baseSalaryGross = config.baseSalaryGross?.amountInCents,
                 hourlyRateGross = config.hourlyRateGross?.amountInCents,
+                hourlyRateNet = config.hourlyRateNet?.amountInCents,
                 createdAt = config.createdAt,
                 updatedAt = config.updatedAt
             )

@@ -8,11 +8,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.employee.compensation.GetCompensationHandler
 import pl.detailing.crm.employee.compensation.SetCompensationCommand
 import pl.detailing.crm.employee.compensation.SetCompensationHandler
-import pl.detailing.crm.employee.contract.CreateContractCommand
-import pl.detailing.crm.employee.contract.CreateContractHandler
-import pl.detailing.crm.employee.contract.EndContractCommand
-import pl.detailing.crm.employee.contract.EndContractHandler
-import pl.detailing.crm.employee.contract.ListContractsHandler
+import pl.detailing.crm.employee.contract.*
 import pl.detailing.crm.employee.create.CreateEmployeeCommand
 import pl.detailing.crm.employee.create.CreateEmployeeHandler
 import pl.detailing.crm.employee.create.CreateEmployeeRequest
@@ -45,6 +41,8 @@ class EmployeeController(
     private val createContractHandler: CreateContractHandler,
     private val endContractHandler: EndContractHandler,
     private val listContractsHandler: ListContractsHandler,
+    private val createAmendmentHandler: CreateAmendmentHandler,
+    private val listAmendmentsHandler: ListAmendmentsHandler,
     private val setCompensationHandler: SetCompensationHandler,
     private val getCompensationHandler: GetCompensationHandler,
     private val logWorkTimeHandler: LogWorkTimeHandler,
@@ -223,9 +221,8 @@ class EmployeeController(
             contractType = request.contractType,
             startDate = request.startDate,
             endDate = request.endDate,
-            workingHoursPerWeek = request.workingHoursPerWeek,
-            trialPeriodEndDate = request.trialPeriodEndDate,
-            documentFileId = request.documentFileId
+            documentFileId = request.documentFileId,
+            initialCompensation = request.initialCompensation.toDomain()
         ))
         ResponseEntity.status(HttpStatus.CREATED).body(mapOf("contractId" to contractId.toString()))
     }
@@ -251,6 +248,42 @@ class EmployeeController(
             terminationReason = request.terminationReason
         ))
         ResponseEntity.noContent().build()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Contract Amendments
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @GetMapping("/{employeeId}/contracts/{contractId}/amendments")
+    fun listAmendments(
+        @PathVariable employeeId: String,
+        @PathVariable contractId: String
+    ): ResponseEntity<List<AmendmentResponse>> = runBlocking {
+        val amendments = listAmendmentsHandler.handle(EmploymentContractId.fromString(contractId))
+        ResponseEntity.ok(amendments.map { it.toResponse() })
+    }
+
+    @PostMapping("/{employeeId}/contracts/{contractId}/amendments")
+    fun createAmendment(
+        @PathVariable employeeId: String,
+        @PathVariable contractId: String,
+        @RequestBody request: CreateAmendmentRequest
+    ): ResponseEntity<Map<String, String>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can create amendments")
+        }
+
+        val amendmentId = createAmendmentHandler.handle(CreateAmendmentCommand(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            employeeId = EmployeeId.fromString(employeeId),
+            contractId = EmploymentContractId.fromString(contractId),
+            effectiveFrom = request.effectiveFrom,
+            compensation = request.compensation.toDomain()
+        ))
+        ResponseEntity.status(HttpStatus.CREATED).body(mapOf("amendmentId" to amendmentId.toString()))
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -308,8 +341,12 @@ class EmployeeController(
             employeeId = EmployeeId.fromString(employeeId),
             contractId = EmploymentContractId.fromString(request.contractId),
             effectiveFrom = request.effectiveFrom,
+            employmentMode = request.employmentMode,
+            etatFraction = request.etatFraction,
+            monthlySalaryGross = request.monthlySalaryGrossCents?.let { Money.fromCents(it) },
             baseSalaryGross = request.baseSalaryGrossCents?.let { Money.fromCents(it) },
             hourlyRateGross = request.hourlyRateGrossCents?.let { Money.fromCents(it) },
+            hourlyRateNet = request.hourlyRateNetCents?.let { Money.fromCents(it) },
             components = components
         ))
         ResponseEntity.status(HttpStatus.CREATED).body(mapOf("configId" to configId.toString()))
@@ -591,22 +628,64 @@ class EmployeeController(
 
 data class TerminateEmployeeRequest(val terminationDate: LocalDate, val reason: String?)
 
+/**
+ * Compensation block inside contract-creation and amendment requests.
+ * Mirrors the frontend discriminated union InitialCompensation.
+ */
+data class InitialCompensationRequest(
+    val employmentMode: EmploymentMode,
+    /** Required when employmentMode = SALARY */
+    val etatFraction: EtatFraction? = null,
+    val monthlySalaryGrossCents: Long? = null,
+    /** Required when employmentMode = HOURLY and rateType = GROSS (UZ) */
+    val rateType: String? = null,
+    val hourlyRateGrossCents: Long? = null,
+    /** Required when employmentMode = HOURLY and rateType = NET (B2B) */
+    val hourlyRateNetCents: Long? = null
+) {
+    fun toDomain(): InitialCompensationData = when (employmentMode) {
+        EmploymentMode.SALARY -> {
+            val etat = etatFraction ?: throw ValidationException("etatFraction is required for SALARY mode")
+            val salary = monthlySalaryGrossCents ?: throw ValidationException("monthlySalaryGrossCents is required for SALARY mode")
+            InitialCompensationData.Salary(etat, salary)
+        }
+        EmploymentMode.HOURLY -> when (rateType?.uppercase()) {
+            "NET" -> {
+                val rate = hourlyRateNetCents ?: throw ValidationException("hourlyRateNetCents is required for HOURLY/NET mode")
+                InitialCompensationData.HourlyNet(rate)
+            }
+            else -> {
+                val rate = hourlyRateGrossCents ?: throw ValidationException("hourlyRateGrossCents is required for HOURLY/GROSS mode")
+                InitialCompensationData.HourlyGross(rate)
+            }
+        }
+    }
+}
+
 data class CreateContractRequest(
     val contractType: ContractType,
     val startDate: LocalDate,
     val endDate: LocalDate?,
-    val workingHoursPerWeek: BigDecimal,
-    val trialPeriodEndDate: LocalDate?,
-    val documentFileId: String?
+    val documentFileId: String?,
+    val initialCompensation: InitialCompensationRequest
 )
 
 data class EndContractRequest(val terminationDate: LocalDate, val terminationReason: String?)
 
+data class CreateAmendmentRequest(
+    val effectiveFrom: LocalDate,
+    val compensation: InitialCompensationRequest
+)
+
 data class SetCompensationRequest(
     val contractId: String,
     val effectiveFrom: LocalDate,
+    val employmentMode: EmploymentMode,
+    val etatFraction: EtatFraction?,
+    val monthlySalaryGrossCents: Long?,
     val baseSalaryGrossCents: Long?,
     val hourlyRateGrossCents: Long?,
+    val hourlyRateNetCents: Long?,
     val components: List<CompensationComponentRequest>
 )
 
@@ -716,14 +795,26 @@ data class EmployeeDetailResponse(
 data class ContractResponse(
     val id: String,
     val contractType: String,
+    val etatFraction: String?,
     val startDate: String,
     val endDate: String?,
-    val workingHoursPerWeek: BigDecimal,
-    val trialPeriodEndDate: String?,
     val terminationDate: String?,
     val terminationReason: String?,
     val isActive: Boolean,
     val documentFileId: String?,
+    val createdAt: Instant
+)
+
+data class AmendmentResponse(
+    val id: String,
+    val contractId: String,
+    val effectiveFrom: String,
+    val effectiveTo: String?,
+    val employmentMode: String,
+    val etatFraction: String?,
+    val monthlySalaryGrossCents: Long?,
+    val hourlyRateGrossCents: Long?,
+    val hourlyRateNetCents: Long?,
     val createdAt: Instant
 )
 
@@ -732,8 +823,13 @@ data class CompensationResponse(
     val contractId: String,
     val effectiveFrom: String,
     val effectiveTo: String?,
+    val employmentMode: String,
+    val etatFraction: String?,
+    val standardMonthlyHours: Int?,
+    val monthlySalaryGrossCents: Long?,
     val baseSalaryGrossCents: Long?,
     val hourlyRateGrossCents: Long?,
+    val hourlyRateNetCents: Long?,
     val components: List<CompensationComponentResponse>,
     val createdAt: Instant
 )
@@ -873,10 +969,9 @@ private fun Employee.toDetailResponse() = EmployeeDetailResponse(
 private fun EmploymentContract.toResponse() = ContractResponse(
     id = id.toString(),
     contractType = contractType.name,
+    etatFraction = null, // etat lives on CompensationConfig; included here for convenience if needed
     startDate = startDate.toString(),
     endDate = endDate?.toString(),
-    workingHoursPerWeek = workingHoursPerWeek,
-    trialPeriodEndDate = trialPeriodEndDate?.toString(),
     terminationDate = terminationDate?.toString(),
     terminationReason = terminationReason,
     isActive = isActive,
@@ -884,13 +979,38 @@ private fun EmploymentContract.toResponse() = ContractResponse(
     createdAt = createdAt
 )
 
+private fun ContractAmendment.toResponse() = AmendmentResponse(
+    id = id.toString(),
+    contractId = contractId.toString(),
+    effectiveFrom = effectiveFrom.toString(),
+    effectiveTo = effectiveTo?.toString(),
+    employmentMode = employmentMode.name,
+    etatFraction = etatFraction?.name,
+    monthlySalaryGrossCents = monthlySalaryGross?.amountInCents,
+    hourlyRateGrossCents = hourlyRateGross?.amountInCents,
+    hourlyRateNetCents = hourlyRateNet?.amountInCents,
+    createdAt = createdAt
+)
+
+/** Standard monthly hours derived from etat fraction */
+private fun EtatFraction.toMonthlyHours(): Int = when (this) {
+    EtatFraction.FULL -> 168
+    EtatFraction.HALF -> 84
+    EtatFraction.QUARTER -> 42
+}
+
 private fun CompensationConfig.toResponse() = CompensationResponse(
     id = id.toString(),
     contractId = contractId.toString(),
     effectiveFrom = effectiveFrom.toString(),
     effectiveTo = effectiveTo?.toString(),
+    employmentMode = employmentMode.name,
+    etatFraction = etatFraction?.name,
+    standardMonthlyHours = etatFraction?.toMonthlyHours(),
+    monthlySalaryGrossCents = monthlySalaryGross?.amountInCents,
     baseSalaryGrossCents = baseSalaryGross?.amountInCents,
     hourlyRateGrossCents = hourlyRateGross?.amountInCents,
+    hourlyRateNetCents = hourlyRateNet?.amountInCents,
     components = components.map {
         CompensationComponentResponse(
             id = it.id.toString(),

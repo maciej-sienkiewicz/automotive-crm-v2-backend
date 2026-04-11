@@ -44,9 +44,10 @@ class LogWorkTimeHandler(
             .divide(BigDecimal(60), 2, RoundingMode.HALF_UP)
 
         val overtimeMultiplier = when (command.entryType) {
-            WorkTimeEntryType.OVERTIME -> BigDecimal("1.5")
+            WorkTimeEntryType.OVERTIME_150 -> BigDecimal("1.5")
+            WorkTimeEntryType.OVERTIME_200 -> BigDecimal("2.0")
             WorkTimeEntryType.HOLIDAY_WORK -> BigDecimal("2.0")
-            WorkTimeEntryType.NIGHT_SHIFT -> BigDecimal("1.2")
+            WorkTimeEntryType.NIGHT_WORK -> BigDecimal("1.2")
             else -> BigDecimal.ONE
         }
 

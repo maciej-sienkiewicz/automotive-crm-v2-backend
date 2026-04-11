@@ -36,7 +36,7 @@ class ReviewLeaveHandler(
         leaveRequestRepository.save(entity)
 
         // Update leave balance
-        if (entity.leaveType == LeaveType.VACATION) {
+        if (entity.leaveType == LeaveType.ANNUAL) {
             val year = entity.startDate.year
             val balance = leaveBalanceRepository.findByEmployeeIdAndYear(
                 entity.employeeId, command.studioId.value, year

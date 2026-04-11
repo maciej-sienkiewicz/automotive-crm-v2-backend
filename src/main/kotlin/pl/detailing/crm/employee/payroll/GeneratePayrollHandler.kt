@@ -51,39 +51,44 @@ class GeneratePayrollHandler(
 
         val totalHoursWorked = workTimeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
-        val baseSalaryGross = compensationConfig.baseSalaryGross ?: Money.ZERO
-        val hourlyRateGross = compensationConfig.hourlyRateGross
+        // Determine the base pay from the compensation config
+        val config = compensationConfig.toDomain()
+        val baseSalaryGross = config.baseSalaryGross ?: config.monthlySalaryGross ?: Money.ZERO
+        val hourlyRateGross = config.hourlyRateGross
+        val hourlyRateNet = config.hourlyRateNet
 
         // Calculate component breakdown
         val breakdowns = mutableListOf<PayrollComponentBreakdown>()
 
-        // Hourly rate component
-        if (hourlyRateGross != null && totalHoursWorked > BigDecimal.ZERO) {
+        // Hourly base pay – prefer gross for UZ, net for B2B
+        val effectiveHourlyRate = hourlyRateGross ?: hourlyRateNet
+        if (effectiveHourlyRate != null && totalHoursWorked > BigDecimal.ZERO) {
             val hourlyAmount = Money.fromCents(
-                (hourlyRateGross.amountInCents.toBigDecimal() * totalHoursWorked)
+                (effectiveHourlyRate.amountInCents.toBigDecimal() * totalHoursWorked)
                     .setScale(0, RoundingMode.HALF_UP).toLong()
             )
+            val rateLabel = if (hourlyRateNet != null) "netto" else "brutto"
             breakdowns.add(
                 PayrollComponentBreakdown(
                     componentName = "Stawka godzinowa",
                     calculatedAmount = hourlyAmount,
-                    calculationDetails = "${hourlyRateGross.amountInCents / 100.0} PLN/h × ${totalHoursWorked.toPlainString()} h = ${hourlyAmount.amountInCents / 100.0} PLN"
+                    calculationDetails = "${effectiveHourlyRate.amountInCents / 100.0} PLN/h ($rateLabel) × ${totalHoursWorked.toPlainString()} h = ${hourlyAmount.amountInCents / 100.0} PLN"
                 )
             )
         }
 
         // Custom compensation components
-        for (component in compensationConfig.components.filter { it.isActive }) {
+        for (component in compensationConfig.components.map { it.toDomain() }.filter { it.isActive }) {
             val calculated = when (component.type) {
-                ComponentType.FIXED_AMOUNT -> Money.fromCents(component.value.toLong() * 100)
-                ComponentType.PERCENTAGE_OF_BASE -> {
-                    val base = baseSalaryGross.amountInCents.toBigDecimal()
-                    val amount = (base * component.value / BigDecimal("100"))
+                ComponentType.FIXED -> Money.fromCents(component.value.toLong() * 100)
+                ComponentType.HOURLY -> {
+                    val amount = (totalHoursWorked * component.value * BigDecimal("100"))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
                     Money.fromCents(amount)
                 }
-                ComponentType.PER_HOUR_BONUS -> {
-                    val amount = (totalHoursWorked * component.value * BigDecimal("100"))
+                ComponentType.BONUS -> {
+                    val base = baseSalaryGross.amountInCents.toBigDecimal()
+                    val amount = (base * component.value / BigDecimal("100"))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
                     Money.fromCents(amount)
                 }

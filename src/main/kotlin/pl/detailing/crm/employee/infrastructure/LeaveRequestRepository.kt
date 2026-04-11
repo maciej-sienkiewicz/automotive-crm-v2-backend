@@ -49,7 +49,7 @@ interface LeaveRequestRepository : JpaRepository<LeaveRequestEntity, UUID> {
     @Query("""
         SELECT SUM(l.businessDaysCount) FROM LeaveRequestEntity l
         WHERE l.employeeId = :employeeId AND l.studioId = :studioId
-        AND l.leaveType = 'VACATION'
+        AND l.leaveType = 'ANNUAL'
         AND l.status = 'APPROVED'
         AND YEAR(l.startDate) = :year
     """)

@@ -5,7 +5,10 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.employee.domain.CompensationConfig
 import pl.detailing.crm.employee.domain.EmploymentContract
+import pl.detailing.crm.employee.infrastructure.CompensationConfigEntity
+import pl.detailing.crm.employee.infrastructure.CompensationConfigRepository
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.infrastructure.EmploymentContractEntity
 import pl.detailing.crm.employee.infrastructure.EmploymentContractRepository
@@ -16,6 +19,7 @@ import java.time.Instant
 class CreateContractHandler(
     private val employeeRepository: EmployeeRepository,
     private val contractRepository: EmploymentContractRepository,
+    private val compensationConfigRepository: CompensationConfigRepository,
     private val auditService: AuditService
 ) {
     @Transactional
@@ -44,8 +48,6 @@ class CreateContractHandler(
             contractType = command.contractType,
             startDate = command.startDate,
             endDate = command.endDate,
-            workingHoursPerWeek = command.workingHoursPerWeek,
-            trialPeriodEndDate = command.trialPeriodEndDate,
             terminationDate = null,
             terminationReason = null,
             isActive = true,
@@ -53,8 +55,47 @@ class CreateContractHandler(
             createdAt = Instant.now(),
             updatedAt = Instant.now()
         )
-
         contractRepository.save(EmploymentContractEntity.fromDomain(contract))
+
+        // Close any current compensation config
+        val currentConfig = compensationConfigRepository.findCurrentByEmployeeIdAndStudioId(
+            command.employeeId.value, command.studioId.value
+        )
+        if (currentConfig != null) {
+            currentConfig.effectiveTo = command.startDate.minusDays(1)
+            currentConfig.updatedAt = Instant.now()
+            compensationConfigRepository.save(currentConfig)
+        }
+
+        // Create initial compensation config from the embedded compensation data
+        val comp = command.initialCompensation
+        val (mode, etat, monthly, rateGross, rateNet) = when (comp) {
+            is InitialCompensationData.Salary ->
+                CompFields(EmploymentMode.SALARY, comp.etatFraction, Money.fromCents(comp.monthlySalaryGrossCents), null, null)
+            is InitialCompensationData.HourlyGross ->
+                CompFields(EmploymentMode.HOURLY, null, null, Money.fromCents(comp.hourlyRateGrossCents), null)
+            is InitialCompensationData.HourlyNet ->
+                CompFields(EmploymentMode.HOURLY, null, null, null, Money.fromCents(comp.hourlyRateNetCents))
+        }
+
+        val config = CompensationConfig(
+            id = CompensationConfigId.random(),
+            studioId = command.studioId,
+            employeeId = command.employeeId,
+            contractId = contract.id,
+            effectiveFrom = command.startDate,
+            effectiveTo = null,
+            employmentMode = mode,
+            etatFraction = etat,
+            monthlySalaryGross = monthly,
+            baseSalaryGross = null,
+            hourlyRateGross = rateGross,
+            hourlyRateNet = rateNet,
+            components = emptyList(),
+            createdAt = Instant.now(),
+            updatedAt = Instant.now()
+        )
+        compensationConfigRepository.save(CompensationConfigEntity.fromDomain(config))
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,
@@ -67,10 +108,18 @@ class CreateContractHandler(
             changes = listOf(
                 FieldChange("contractType", null, command.contractType.name),
                 FieldChange("startDate", null, command.startDate.toString()),
-                FieldChange("workingHoursPerWeek", null, command.workingHoursPerWeek.toPlainString())
+                FieldChange("employmentMode", null, mode.name)
             )
         ))
 
         contract.id
     }
+
+    private data class CompFields(
+        val mode: EmploymentMode,
+        val etat: EtatFraction?,
+        val monthly: Money?,
+        val rateGross: Money?,
+        val rateNet: Money?
+    )
 }

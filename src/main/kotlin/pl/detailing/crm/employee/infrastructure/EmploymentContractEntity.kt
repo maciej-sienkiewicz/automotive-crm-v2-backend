@@ -3,7 +3,6 @@ package pl.detailing.crm.employee.infrastructure
 import jakarta.persistence.*
 import pl.detailing.crm.employee.domain.EmploymentContract
 import pl.detailing.crm.shared.*
-import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -38,12 +37,6 @@ class EmploymentContractEntity(
     @Column(name = "end_date")
     var endDate: LocalDate?,
 
-    @Column(name = "working_hours_per_week", nullable = false, precision = 5, scale = 2)
-    var workingHoursPerWeek: BigDecimal,
-
-    @Column(name = "trial_period_end_date")
-    var trialPeriodEndDate: LocalDate?,
-
     @Column(name = "termination_date")
     var terminationDate: LocalDate?,
 
@@ -69,8 +62,6 @@ class EmploymentContractEntity(
         contractType = contractType,
         startDate = startDate,
         endDate = endDate,
-        workingHoursPerWeek = workingHoursPerWeek,
-        trialPeriodEndDate = trialPeriodEndDate,
         terminationDate = terminationDate,
         terminationReason = terminationReason,
         isActive = isActive,
@@ -87,8 +78,6 @@ class EmploymentContractEntity(
             contractType = contract.contractType,
             startDate = contract.startDate,
             endDate = contract.endDate,
-            workingHoursPerWeek = contract.workingHoursPerWeek,
-            trialPeriodEndDate = contract.trialPeriodEndDate,
             terminationDate = contract.terminationDate,
             terminationReason = contract.terminationReason,
             isActive = contract.isActive,

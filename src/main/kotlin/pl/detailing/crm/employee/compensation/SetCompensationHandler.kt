@@ -44,8 +44,12 @@ class SetCompensationHandler(
             contractId = command.contractId,
             effectiveFrom = command.effectiveFrom,
             effectiveTo = null,
+            employmentMode = command.employmentMode,
+            etatFraction = command.etatFraction,
+            monthlySalaryGross = command.monthlySalaryGross,
             baseSalaryGross = command.baseSalaryGross,
             hourlyRateGross = command.hourlyRateGross,
+            hourlyRateNet = command.hourlyRateNet,
             components = command.components,
             createdAt = Instant.now(),
             updatedAt = Instant.now()
@@ -63,8 +67,10 @@ class SetCompensationHandler(
             action = AuditAction.COMPENSATION_SET,
             changes = listOf(
                 FieldChange("effectiveFrom", null, command.effectiveFrom.toString()),
-                FieldChange("baseSalaryGross", null, command.baseSalaryGross?.amountInCents?.toString()),
+                FieldChange("employmentMode", null, command.employmentMode.name),
+                FieldChange("monthlySalaryGross", null, command.monthlySalaryGross?.amountInCents?.toString()),
                 FieldChange("hourlyRateGross", null, command.hourlyRateGross?.amountInCents?.toString()),
+                FieldChange("hourlyRateNet", null, command.hourlyRateNet?.amountInCents?.toString()),
                 FieldChange("componentsCount", null, command.components.size.toString())
             )
         ))

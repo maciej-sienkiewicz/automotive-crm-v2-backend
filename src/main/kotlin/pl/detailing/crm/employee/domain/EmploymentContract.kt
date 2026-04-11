@@ -1,7 +1,6 @@
 package pl.detailing.crm.employee.domain
 
 import pl.detailing.crm.shared.*
-import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 
@@ -12,8 +11,6 @@ data class EmploymentContract(
     val contractType: ContractType,
     val startDate: LocalDate,
     val endDate: LocalDate?,
-    val workingHoursPerWeek: BigDecimal,
-    val trialPeriodEndDate: LocalDate?,
     val terminationDate: LocalDate?,
     val terminationReason: String?,
     val isActive: Boolean,

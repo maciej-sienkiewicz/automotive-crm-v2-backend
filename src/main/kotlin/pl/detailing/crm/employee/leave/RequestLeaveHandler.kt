@@ -45,8 +45,8 @@ class RequestLeaveHandler(
 
         val businessDays = countBusinessDays(command.startDate, command.endDate)
 
-        // Update leave balance pending days for VACATION type
-        if (command.leaveType == LeaveType.VACATION) {
+        // Update leave balance pending days for ANNUAL leave type
+        if (command.leaveType == LeaveType.ANNUAL) {
             val year = command.startDate.year
             val balance = leaveBalanceRepository.findByEmployeeIdAndYear(
                 command.employeeId.value, command.studioId.value, year

@@ -893,6 +893,15 @@ value class LeaveBalanceId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+@JvmInline
+value class ContractAmendmentId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = ContractAmendmentId(UUID.randomUUID())
+        fun fromString(value: String) = ContractAmendmentId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee module – enums
 // ─────────────────────────────────────────────────────────────────────────────
@@ -906,32 +915,44 @@ enum class EmployeeStatus {
 
 /** Legal form of the employment relationship */
 enum class ContractType {
-    EMPLOYMENT,  // Umowa o pracę (UoP)
-    MANDATE,     // Umowa zlecenie (UZ)
-    B2B          // Działalność gospodarcza / B2B
+    UOP,  // Umowa o pracę
+    UZ,   // Umowa zlecenie
+    B2B   // Działalność gospodarcza / B2B
+}
+
+/** Employment mode – determines how base pay is calculated */
+enum class EmploymentMode {
+    SALARY,  // Fixed monthly salary (UOP / UZ salary-based)
+    HOURLY   // Hourly rate (UZ hourly or B2B)
+}
+
+/** Fraction of full-time equivalent for UOP contracts */
+enum class EtatFraction {
+    FULL,    // Pełny etat – 168 h/month
+    HALF,    // Pół etatu – 84 h/month
+    QUARTER  // Ćwierć etatu – 42 h/month
 }
 
 /** How a compensation component is calculated */
 enum class ComponentType {
+    FIXED,
     PERCENTAGE_OF_REVENUE,
-    FIXED_AMOUNT,
-    PER_HOUR_BONUS,
-    PERCENTAGE_OF_BASE,
-    CUSTOM
+    HOURLY,
+    BONUS
 }
 
 /** Base used when calculating percentage-based components */
 enum class CalculationBase {
     GROSS_REVENUE,
     NET_REVENUE,
-    PERSONAL_REVENUE,
-    BASE_SALARY
+    HOURS_WORKED
 }
 
 /** How often a compensation component is paid out */
 enum class PaymentFrequency {
     MONTHLY,
     QUARTERLY,
+    ANNUALLY,
     ONE_TIME
 }
 
@@ -945,9 +966,10 @@ enum class PayrollStatus {
 /** Classification of a work-time entry */
 enum class WorkTimeEntryType {
     REGULAR,
-    OVERTIME,
+    OVERTIME_150,
+    OVERTIME_200,
     HOLIDAY_WORK,
-    NIGHT_SHIFT
+    NIGHT_WORK
 }
 
 /** Approval status of a work-time entry */
@@ -959,13 +981,12 @@ enum class WorkTimeStatus {
 
 /** Type of absence / leave */
 enum class LeaveType {
-    VACATION,
-    SICK_LEAVE,
-    UNPAID_LEAVE,
-    MATERNITY,
-    CHILD_CARE,
-    ON_DEMAND,
-    OTHER
+    ANNUAL,
+    SICK,
+    UNPAID,
+    SPECIAL,
+    PARENTAL,
+    CARE
 }
 
 /** Approval status of a leave request */
