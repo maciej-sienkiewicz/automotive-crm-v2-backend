@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.employee.domain.BonusEntryStatus
 import pl.detailing.crm.employee.domain.PayrollComponentBreakdown
 import pl.detailing.crm.employee.domain.PayrollEntry
 import pl.detailing.crm.employee.infrastructure.*
@@ -19,6 +20,7 @@ class GeneratePayrollHandler(
     private val contractRepository: EmploymentContractRepository,
     private val compensationConfigRepository: CompensationConfigRepository,
     private val workTimeRepository: WorkTimeEntryRepository,
+    private val bonusRepository: BonusEntryRepository,
     private val payrollRepository: PayrollEntryRepository,
     private val auditService: AuditService
 ) {
@@ -42,7 +44,7 @@ class GeneratePayrollHandler(
             command.employeeId.value, command.studioId.value
         ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}'")
 
-        // Get approved work time entries for the period
+        // Approved work time entries for the period
         val from = command.period.atDay(1)
         val to = command.period.atEndOfMonth()
         val workTimeEntries = workTimeRepository.findByEmployeeIdAndDateRange(
@@ -51,16 +53,26 @@ class GeneratePayrollHandler(
 
         val totalHoursWorked = workTimeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
-        // Determine the base pay from the compensation config
+        // Pending bonus entries for the period
+        val pendingBonuses = bonusRepository.findByEmployeeIdAndStudioIdAndPeriodOrderByCreatedAtAsc(
+            command.employeeId.value, command.studioId.value, command.period.toString()
+        ).filter { it.status == BonusEntryStatus.PENDING }
+
+        // Resolve base pay
         val config = compensationConfig.toDomain()
         val baseSalaryGross = config.baseSalaryGross ?: config.monthlySalaryGross ?: Money.ZERO
         val hourlyRateGross = config.hourlyRateGross
         val hourlyRateNet = config.hourlyRateNet
 
-        // Calculate component breakdown
+        // Revenue inputs (for PERCENTAGE_OF_REVENUE components)
+        val revenueGross = command.revenueGrossCents?.let { Money.fromCents(it) }
+        val revenueNet = command.revenueNetCents?.let { Money.fromCents(it) }
+
         val breakdowns = mutableListOf<PayrollComponentBreakdown>()
 
-        // Hourly base pay – prefer gross for UZ, net for B2B
+        // ── Base pay ──────────────────────────────────────────────────────────
+
+        // Hourly base pay for UZ / B2B
         val effectiveHourlyRate = hourlyRateGross ?: hourlyRateNet
         if (effectiveHourlyRate != null && totalHoursWorked > BigDecimal.ZERO) {
             val hourlyAmount = Money.fromCents(
@@ -77,40 +89,109 @@ class GeneratePayrollHandler(
             )
         }
 
-        // Custom compensation components
+        // ── Recurring compensation components ─────────────────────────────────
+
         for (component in compensationConfig.components.map { it.toDomain() }.filter { it.isActive }) {
-            val calculated = when (component.type) {
-                ComponentType.FIXED -> Money.fromCents(component.value.toLong() * 100)
-                ComponentType.HOURLY -> {
-                    val amount = (totalHoursWorked * component.value * BigDecimal("100"))
+            val calculated: Money = when (component.type) {
+                ComponentType.FIXED ->
+                    // value is stored as full PLN, convert to grosz
+                    Money.fromCents(component.value.movePointRight(2).toLong())
+
+                ComponentType.PERCENTAGE_OF_REVENUE -> {
+                    val base: Money? = when (component.calculationBase) {
+                        CalculationBase.GROSS_REVENUE -> revenueGross
+                        CalculationBase.NET_REVENUE -> revenueNet
+                        else -> null
+                    }
+                    if (base == null) {
+                        // Revenue not provided – skip, log in details
+                        breakdowns.add(
+                            PayrollComponentBreakdown(
+                                componentName = component.name,
+                                calculatedAmount = Money.ZERO,
+                                calculationDetails = "POMINIĘTO – brak danych o przychodzie (${component.calculationBase?.name}). Podaj przychód przy generowaniu listy płac."
+                            )
+                        )
+                        continue
+                    }
+                    val amount = (base.amountInCents.toBigDecimal() * component.value / BigDecimal("100"))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
                     Money.fromCents(amount)
                 }
+
+                ComponentType.HOURLY -> {
+                    // component.value is the bonus rate per hour (in PLN)
+                    val amount = (totalHoursWorked * component.value.movePointRight(2))
+                        .setScale(0, RoundingMode.HALF_UP).toLong()
+                    Money.fromCents(amount)
+                }
+
                 ComponentType.BONUS -> {
+                    // component.value is a percentage of base salary
                     val base = baseSalaryGross.amountInCents.toBigDecimal()
                     val amount = (base * component.value / BigDecimal("100"))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
                     Money.fromCents(amount)
                 }
-                else -> Money.ZERO
             }
 
-            if (calculated.amountInCents > 0) {
+            val details = when (component.type) {
+                ComponentType.FIXED ->
+                    "Stały dodatek: ${component.value.toPlainString()} PLN"
+                ComponentType.PERCENTAGE_OF_REVENUE -> {
+                    val baseAmount = when (component.calculationBase) {
+                        CalculationBase.GROSS_REVENUE -> revenueGross
+                        CalculationBase.NET_REVENUE -> revenueNet
+                        else -> null
+                    }
+                    "${component.value.toPlainString()}% × ${baseAmount?.amountInCents?.div(100.0)} PLN (${component.calculationBase?.name}) = ${calculated.amountInCents / 100.0} PLN"
+                }
+                ComponentType.HOURLY ->
+                    "${component.value.toPlainString()} PLN/h × ${totalHoursWorked.toPlainString()} h = ${calculated.amountInCents / 100.0} PLN"
+                ComponentType.BONUS ->
+                    "${component.value.toPlainString()}% × ${baseSalaryGross.amountInCents / 100.0} PLN (podstawa) = ${calculated.amountInCents / 100.0} PLN"
+            }
+
+            if (calculated.amountInCents != 0L) {
                 breakdowns.add(
                     PayrollComponentBreakdown(
                         componentName = component.name,
                         calculatedAmount = calculated,
-                        calculationDetails = "Typ: ${component.type.name}, wartość: ${component.value.toPlainString()}"
+                        calculationDetails = details
                     )
                 )
             }
         }
 
+        // ── Ad-hoc bonus entries ──────────────────────────────────────────────
+
+        val payrollId = PayrollEntryId.random()
+
+        for (bonusEntity in pendingBonuses) {
+            breakdowns.add(
+                PayrollComponentBreakdown(
+                    componentName = bonusEntity.name,
+                    calculatedAmount = Money.fromCents(bonusEntity.amountCents),
+                    calculationDetails = if (bonusEntity.amountCents >= 0)
+                        "Jednorazowy bonus/dodatek: ${bonusEntity.amountCents / 100.0} PLN"
+                    else
+                        "Jednorazowe potrącenie: ${bonusEntity.amountCents / 100.0} PLN"
+                )
+            )
+            // Mark bonus as included
+            bonusEntity.status = BonusEntryStatus.INCLUDED_IN_PAYROLL
+            bonusEntity.payrollEntryId = payrollId.value
+            bonusEntity.updatedAt = Instant.now()
+            bonusRepository.save(bonusEntity)
+        }
+
+        // ── Totals ────────────────────────────────────────────────────────────
+
         val componentTotal = breakdowns.fold(Money.ZERO) { acc, b -> acc.plus(b.calculatedAmount) }
         val totalGross = baseSalaryGross.plus(componentTotal)
 
         val payrollEntry = PayrollEntry(
-            id = PayrollEntryId.random(),
+            id = payrollId,
             studioId = command.studioId,
             employeeId = command.employeeId,
             contractId = EmploymentContractId(contract.id),
@@ -142,7 +223,10 @@ class GeneratePayrollHandler(
             changes = listOf(
                 FieldChange("period", null, command.period.toString()),
                 FieldChange("totalGross", null, totalGross.amountInCents.toString()),
-                FieldChange("totalHours", null, totalHoursWorked.toPlainString())
+                FieldChange("totalHours", null, totalHoursWorked.toPlainString()),
+                FieldChange("bonusEntriesIncluded", null, pendingBonuses.size.toString()),
+                FieldChange("revenueGrossCents", null, command.revenueGrossCents?.toString()),
+                FieldChange("revenueNetCents", null, command.revenueNetCents?.toString())
             )
         ))
 

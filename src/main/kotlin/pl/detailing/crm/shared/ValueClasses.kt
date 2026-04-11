@@ -902,6 +902,15 @@ value class ContractAmendmentId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+@JvmInline
+value class BonusEntryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = BonusEntryId(UUID.randomUUID())
+        fun fromString(value: String) = BonusEntryId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee module – enums
 // ─────────────────────────────────────────────────────────────────────────────

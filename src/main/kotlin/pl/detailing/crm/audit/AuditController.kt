@@ -227,6 +227,8 @@ class AuditController(
         AuditAction.DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
         AuditAction.CASH_ADJUSTED -> "Dostosowanie kasy"
         AuditAction.APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
+        AuditAction.BONUS_ADDED -> "Dodanie bonusu/dodatku"
+        AuditAction.BONUS_DELETED -> "Usunięcie bonusu/dodatku"
     }
 }
 
