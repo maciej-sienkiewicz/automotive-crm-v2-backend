@@ -28,23 +28,26 @@ class SetCompensationHandler(
             throw ValidationException("Cannot set compensation for a terminated employee")
         }
 
-        // Validate mode-specific requirements
-        val (monthlySalaryGross, hourlyRateGross) = when (command.employmentMode) {
+        // Validate mode-specific requirements and derive values
+        var monthlySalaryGross: Money? = null
+        var hourlyRateGross: Money = Money.ZERO
+
+        when (command.employmentMode) {
             EmploymentMode.SALARY -> {
                 val fraction = command.etatFraction
                     ?: throw ValidationException("etatFraction is required when employmentMode = SALARY")
                 val salary = command.monthlySalaryGross
                     ?: throw ValidationException("monthlySalaryGross is required when employmentMode = SALARY")
+                monthlySalaryGross = salary
                 // Derive hourly rate: monthlySalary / standardMonthlyHours
                 val derivedRateCents = salary.amountInCents.toBigDecimal()
                     .divide(fraction.standardMonthlyHours, 0, RoundingMode.HALF_UP)
                     .toLong()
-                Pair(salary, Money.fromCents(derivedRateCents))
+                hourlyRateGross = Money.fromCents(derivedRateCents)
             }
             EmploymentMode.HOURLY -> {
-                val rate = command.hourlyRateGross
+                hourlyRateGross = command.hourlyRateGross
                     ?: throw ValidationException("hourlyRateGross is required when employmentMode = HOURLY")
-                Pair(null, rate)
             }
         }
 

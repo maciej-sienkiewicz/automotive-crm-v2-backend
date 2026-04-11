@@ -40,7 +40,7 @@ class GeneratePayrollHandler(
 
         val compensationConfig = compensationConfigRepository.findCurrentByEmployeeIdAndStudioId(
             command.employeeId.value, command.studioId.value
-        ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}'")
+        )?.toDomain() ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}'")
 
         // Get approved work time entries for the period
         val from = command.period.atDay(1)
@@ -54,7 +54,7 @@ class GeneratePayrollHandler(
         // Calculate component breakdown
         val breakdowns = mutableListOf<PayrollComponentBreakdown>()
 
-        val baseSalaryGross: Money
+        var baseSalaryGross: Money = Money.ZERO
         when (compensationConfig.employmentMode) {
             EmploymentMode.SALARY -> {
                 // Fixed monthly salary – does not depend on hours logged
