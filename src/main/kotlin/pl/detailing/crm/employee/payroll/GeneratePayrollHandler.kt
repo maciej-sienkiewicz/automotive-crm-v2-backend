@@ -51,8 +51,8 @@ class GeneratePayrollHandler(
 
         val totalHoursWorked = workTimeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
-        val baseSalaryGross = compensationConfig.baseSalaryGross ?: Money.ZERO
-        val hourlyRateGross = compensationConfig.hourlyRateGross
+        val baseSalaryGross = compensationConfig.baseSalaryGross?.let { Money.fromCents(it) } ?: Money.ZERO
+        val hourlyRateGross = compensationConfig.hourlyRateGross?.let { Money.fromCents(it) }
 
         // Calculate component breakdown
         val breakdowns = mutableListOf<PayrollComponentBreakdown>()
