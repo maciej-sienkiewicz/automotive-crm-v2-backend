@@ -22,4 +22,10 @@ class GetCompensationHandler(
             compensationConfigRepository.findByEmployeeIdAndStudioId(employeeId.value, studioId.value)
                 .map { it.toDomain() }
         }
+
+    suspend fun handleByContractId(contractId: EmploymentContractId, studioId: StudioId): CompensationConfig? =
+        withContext(Dispatchers.IO) {
+            compensationConfigRepository.findActiveByContractId(contractId.value, studioId.value)
+                ?.toDomain()
+        }
 }

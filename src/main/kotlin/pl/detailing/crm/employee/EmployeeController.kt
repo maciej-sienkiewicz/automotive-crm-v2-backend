@@ -202,7 +202,10 @@ class EmployeeController(
     fun listContracts(@PathVariable employeeId: String): ResponseEntity<List<ContractResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val contracts = listContractsHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
-        ResponseEntity.ok(contracts.map { it.toResponse() })
+        ResponseEntity.ok(contracts.map { contract ->
+            val salaryBasis = getCompensationHandler.handleByContractId(contract.id, principal.studioId)
+            contract.toResponse(salaryBasis)
+        })
     }
 
     @PostMapping("/{employeeId}/contracts")
@@ -713,6 +716,13 @@ data class EmployeeDetailResponse(
     val updatedAt: Instant
 )
 
+data class SalaryBasisResponse(
+    val baseSalaryGrossCents: Long?,
+    val hourlyRateGrossCents: Long?,
+    val effectiveFrom: String,
+    val effectiveTo: String?
+)
+
 data class ContractResponse(
     val id: String,
     val contractType: String,
@@ -724,7 +734,8 @@ data class ContractResponse(
     val terminationReason: String?,
     val isActive: Boolean,
     val documentFileId: String?,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val salaryBasis: SalaryBasisResponse?
 )
 
 data class CompensationResponse(
@@ -870,7 +881,7 @@ private fun Employee.toDetailResponse() = EmployeeDetailResponse(
     updatedAt = updatedAt
 )
 
-private fun EmploymentContract.toResponse() = ContractResponse(
+private fun EmploymentContract.toResponse(compensation: CompensationConfig? = null) = ContractResponse(
     id = id.toString(),
     contractType = contractType.name,
     startDate = startDate.toString(),
@@ -881,7 +892,15 @@ private fun EmploymentContract.toResponse() = ContractResponse(
     terminationReason = terminationReason,
     isActive = isActive,
     documentFileId = documentFileId,
-    createdAt = createdAt
+    createdAt = createdAt,
+    salaryBasis = compensation?.let {
+        SalaryBasisResponse(
+            baseSalaryGrossCents = it.baseSalaryGross?.amountInCents,
+            hourlyRateGrossCents = it.hourlyRateGross?.amountInCents,
+            effectiveFrom = it.effectiveFrom.toString(),
+            effectiveTo = it.effectiveTo?.toString()
+        )
+    }
 )
 
 private fun CompensationConfig.toResponse() = CompensationResponse(
