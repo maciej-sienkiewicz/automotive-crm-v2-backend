@@ -886,6 +886,7 @@ data class EmployeeDetailResponse(
 )
 
 data class SalaryBasisResponse(
+    val monthlySalaryGrossCents: Long?,
     val baseSalaryGrossCents: Long?,
     val hourlyRateGrossCents: Long?,
     val effectiveFrom: String,
@@ -1093,6 +1094,7 @@ private fun EmploymentContract.toResponse(compensation: CompensationConfig? = nu
     createdAt = createdAt,
     salaryBasis = compensation?.let {
         SalaryBasisResponse(
+            monthlySalaryGrossCents = it.monthlySalaryGross?.amountInCents,
             baseSalaryGrossCents = it.baseSalaryGross?.amountInCents,
             hourlyRateGrossCents = it.hourlyRateGross?.amountInCents,
             effectiveFrom = it.effectiveFrom.toString(),
