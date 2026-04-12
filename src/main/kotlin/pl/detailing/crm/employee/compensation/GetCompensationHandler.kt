@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.employee.domain.CompensationConfig
 import pl.detailing.crm.employee.infrastructure.CompensationConfigRepository
 import pl.detailing.crm.shared.*
+import java.time.LocalDate
 
 @Service
 class GetCompensationHandler(
@@ -23,9 +24,9 @@ class GetCompensationHandler(
                 .map { it.toDomain() }
         }
 
-    suspend fun handleByContractId(contractId: EmploymentContractId, studioId: StudioId): CompensationConfig? =
+    suspend fun handleByContractId(contractId: EmploymentContractId, studioId: StudioId, asOf: LocalDate = LocalDate.now()): CompensationConfig? =
         withContext(Dispatchers.IO) {
-            compensationConfigRepository.findActiveByContractId(contractId.value, studioId.value)
+            compensationConfigRepository.findForDateByContractId(contractId.value, studioId.value, asOf)
                 ?.toDomain()
         }
 }

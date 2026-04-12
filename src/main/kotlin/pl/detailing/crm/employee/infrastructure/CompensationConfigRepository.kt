@@ -47,6 +47,19 @@ interface CompensationConfigRepository : JpaRepository<CompensationConfigEntity,
 
     @Query("""
         SELECT c FROM CompensationConfigEntity c
+        WHERE c.contractId = :contractId AND c.studioId = :studioId
+        AND c.effectiveFrom <= :date
+        AND (c.effectiveTo IS NULL OR c.effectiveTo >= :date)
+        ORDER BY c.effectiveFrom DESC
+    """)
+    fun findForDateByContractId(
+        @Param("contractId") contractId: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("date") date: LocalDate
+    ): CompensationConfigEntity?
+
+    @Query("""
+        SELECT c FROM CompensationConfigEntity c
         WHERE c.employeeId = :employeeId AND c.studioId = :studioId
         AND c.effectiveFrom <= :date
         AND (c.effectiveTo IS NULL OR c.effectiveTo >= :date)
