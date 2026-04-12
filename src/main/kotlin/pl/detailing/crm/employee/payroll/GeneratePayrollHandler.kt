@@ -40,9 +40,9 @@ class GeneratePayrollHandler(
             command.employeeId.value, command.studioId.value
         ) ?: throw EntityNotFoundException("No active contract found for employee '${command.employeeId}'")
 
-        val compensationConfig = compensationConfigRepository.findCurrentByEmployeeIdAndStudioId(
-            command.employeeId.value, command.studioId.value
-        ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}'")
+        val compensationConfig = compensationConfigRepository.findForDate(
+            command.employeeId.value, command.studioId.value, command.period.atDay(1)
+        ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}' in period ${command.period}")
 
         // Approved work time entries for the period
         val from = command.period.atDay(1)

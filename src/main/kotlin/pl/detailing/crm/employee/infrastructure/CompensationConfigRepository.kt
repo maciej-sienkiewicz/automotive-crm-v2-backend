@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.LocalDate
 import java.util.UUID
 
 @Repository
@@ -42,5 +43,18 @@ interface CompensationConfigRepository : JpaRepository<CompensationConfigEntity,
     fun findActiveByContractId(
         @Param("contractId") contractId: UUID,
         @Param("studioId") studioId: UUID
+    ): CompensationConfigEntity?
+
+    @Query("""
+        SELECT c FROM CompensationConfigEntity c
+        WHERE c.employeeId = :employeeId AND c.studioId = :studioId
+        AND c.effectiveFrom <= :date
+        AND (c.effectiveTo IS NULL OR c.effectiveTo >= :date)
+        ORDER BY c.effectiveFrom DESC
+    """)
+    fun findForDate(
+        @Param("employeeId") employeeId: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("date") date: LocalDate
     ): CompensationConfigEntity?
 }
