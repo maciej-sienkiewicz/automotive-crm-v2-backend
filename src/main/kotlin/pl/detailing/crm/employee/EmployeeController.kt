@@ -465,7 +465,8 @@ class EmployeeController(
             overtimeHours = summary.overtimeHours,
             approvedHours = summary.approvedHours,
             pendingHours = summary.pendingHours,
-            entriesCount = summary.entriesCount
+            entriesCount = summary.entriesCount,
+            hoursPerType = summary.hoursPerType
         ))
     }
 
@@ -1038,7 +1039,9 @@ data class WorkTimeSummaryResponse(
     val overtimeHours: BigDecimal,
     val approvedHours: BigDecimal,
     val pendingHours: BigDecimal,
-    val entriesCount: Int
+    val entriesCount: Int,
+    /** Approved hours per WorkTimeEntryType (e.g. "REGULAR" → 160.0, "OVERTIME_150" → 4.0). */
+    val hoursPerType: Map<String, BigDecimal>
 )
 
 data class WorkTimePeriodSummaryResponse(
@@ -1083,6 +1086,7 @@ data class PayrollEntryResponse(
     val period: String,
     val baseSalaryGrossCents: Long,
     val totalHoursWorked: BigDecimal,
+    val regularHoursWorked: BigDecimal,
     val componentBreakdown: List<PayrollBreakdownResponse>,
     val totalGrossCents: Long,
     val totalNetCents: Long?,
@@ -1279,6 +1283,7 @@ private fun PayrollEntry.toResponse() = PayrollEntryResponse(
     period = period.toString(),
     baseSalaryGrossCents = baseSalaryGross.amountInCents,
     totalHoursWorked = totalHoursWorked,
+    regularHoursWorked = regularHoursWorked,
     componentBreakdown = componentBreakdown.map {
         PayrollBreakdownResponse(
             componentName = it.componentName,

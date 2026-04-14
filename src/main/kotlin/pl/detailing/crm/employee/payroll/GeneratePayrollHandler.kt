@@ -44,13 +44,18 @@ class GeneratePayrollHandler(
             command.employeeId.value, command.studioId.value, command.period.atDay(1)
         ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}' in period ${command.period}")
 
-        // Approved work time entries for the period
+        // Approved work time entries for the period, grouped by entry type
         val from = command.period.atDay(1)
         val to = command.period.atEndOfMonth()
         val workTimeEntries = workTimeRepository.findByEmployeeIdAndDateRange(
             command.employeeId.value, command.studioId.value, from, to
         ).filter { it.status == WorkTimeStatus.APPROVED }.map { it.toDomain() }
 
+        val byType: Map<WorkTimeEntryType, List<pl.detailing.crm.employee.domain.WorkTimeEntry>> =
+            workTimeEntries.groupBy { it.entryType }
+
+        val regularHours = byType[WorkTimeEntryType.REGULAR]
+            ?.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours } ?: BigDecimal.ZERO
         val totalHoursWorked = workTimeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
         // Pending bonus entries for the period
@@ -58,7 +63,7 @@ class GeneratePayrollHandler(
             command.employeeId.value, command.studioId.value, command.period.toString()
         ).filter { it.status == BonusEntryStatus.PENDING }
 
-        // Resolve base pay
+        // Resolve compensation config
         val config = compensationConfig.toDomain()
         val baseSalaryGross = config.baseSalaryGross ?: config.monthlySalaryGross ?: Money.ZERO
         val hourlyRateGross = config.hourlyRateGross
@@ -72,21 +77,66 @@ class GeneratePayrollHandler(
 
         // ── Base pay ──────────────────────────────────────────────────────────
 
-        // Hourly base pay for UZ / B2B
         val effectiveHourlyRate = hourlyRateGross ?: hourlyRateNet
-        if (effectiveHourlyRate != null && totalHoursWorked > BigDecimal.ZERO) {
-            val hourlyAmount = Money.fromCents(
-                (effectiveHourlyRate.amountInCents.toBigDecimal() * totalHoursWorked)
-                    .setScale(0, RoundingMode.HALF_UP).toLong()
-            )
+        if (effectiveHourlyRate != null) {
+            // HOURLY mode (UZ / B2B): each work-time entry type is billed at its own multiplier
             val rateLabel = if (hourlyRateNet != null) "netto" else "brutto"
-            breakdowns.add(
-                PayrollComponentBreakdown(
-                    componentName = "Stawka godzinowa",
-                    calculatedAmount = hourlyAmount,
-                    calculationDetails = "${effectiveHourlyRate.amountInCents / 100.0} PLN/h ($rateLabel) × ${totalHoursWorked.toPlainString()} h = ${hourlyAmount.amountInCents / 100.0} PLN"
+
+            for (type in WorkTimeEntryType.entries.sortedBy { it.ordinal }) {
+                val entries = byType[type] ?: continue
+                val hours = entries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
+                if (hours <= BigDecimal.ZERO) continue
+
+                // Use the multiplier stored on the first entry (consistent across same-type entries)
+                val multiplier = entries.first().overtimeMultiplier
+                val amount = Money.fromCents(
+                    (effectiveHourlyRate.amountInCents.toBigDecimal() * hours * multiplier)
+                        .setScale(0, RoundingMode.HALF_UP).toLong()
                 )
-            )
+                val multiplierSuffix = if (multiplier.compareTo(BigDecimal.ONE) == 0) ""
+                                       else " × ${multiplier.stripTrailingZeros().toPlainString()}"
+                breakdowns.add(
+                    PayrollComponentBreakdown(
+                        componentName = entryTypeLabel(type),
+                        calculatedAmount = amount,
+                        calculationDetails = "${effectiveHourlyRate.amountInCents / 100.0} PLN/h" +
+                            " ($rateLabel)$multiplierSuffix × ${hours.toPlainString()} h" +
+                            " = ${amount.amountInCents / 100.0} PLN"
+                    )
+                )
+            }
+        } else if (config.monthlySalaryGross != null) {
+            // SALARY mode (UOP): fixed monthly salary + overtime premium for non-REGULAR entries
+            val standardHours = config.etatFraction.standardMonthlyHours()
+            val baseHourlyRate = config.monthlySalaryGross!!.amountInCents.toBigDecimal()
+                .divide(standardHours.toBigDecimal(), 4, RoundingMode.HALF_UP)
+
+            for (type in WorkTimeEntryType.entries.filter { it != WorkTimeEntryType.REGULAR }
+                         .sortedBy { it.ordinal }) {
+                val entries = byType[type] ?: continue
+                val hours = entries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
+                if (hours <= BigDecimal.ZERO) continue
+
+                val multiplier = entries.first().overtimeMultiplier
+                val premiumMultiplier = multiplier.subtract(BigDecimal.ONE) // e.g. 0.5 for OVERTIME_150
+                if (premiumMultiplier <= BigDecimal.ZERO) continue
+
+                val premiumAmount = (baseHourlyRate * hours * premiumMultiplier)
+                    .setScale(0, RoundingMode.HALF_UP).toLong()
+                if (premiumAmount <= 0L) continue
+
+                val amount = Money.fromCents(premiumAmount)
+                breakdowns.add(
+                    PayrollComponentBreakdown(
+                        componentName = "${entryTypeLabel(type)} – dodatek",
+                        calculatedAmount = amount,
+                        calculationDetails = "${baseHourlyRate.setScale(2, RoundingMode.HALF_UP)} PLN/h" +
+                            " × ${hours.toPlainString()} h" +
+                            " × ${premiumMultiplier.stripTrailingZeros().toPlainString()}" +
+                            " = ${amount.amountInCents / 100.0} PLN"
+                    )
+                )
+            }
         }
 
         // ── Recurring compensation components ─────────────────────────────────
@@ -94,7 +144,6 @@ class GeneratePayrollHandler(
         for (component in compensationConfig.components.map { it.toDomain() }.filter { it.isActive }) {
             val calculated: Money = when (component.type) {
                 ComponentType.FIXED ->
-                    // value is stored as full PLN, convert to grosz
                     Money.fromCents(component.value.movePointRight(2).toLong())
 
                 ComponentType.PERCENTAGE_OF_REVENUE -> {
@@ -104,7 +153,6 @@ class GeneratePayrollHandler(
                         else -> null
                     }
                     if (base == null) {
-                        // Revenue not provided – skip, log in details
                         breakdowns.add(
                             PayrollComponentBreakdown(
                                 componentName = component.name,
@@ -120,14 +168,13 @@ class GeneratePayrollHandler(
                 }
 
                 ComponentType.HOURLY -> {
-                    // component.value is the bonus rate per hour (in PLN)
-                    val amount = (totalHoursWorked * component.value.movePointRight(2))
+                    // Bonus rate per regular hour — benefit-type hours are already compensated via multipliers
+                    val amount = (regularHours * component.value.movePointRight(2))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
                     Money.fromCents(amount)
                 }
 
                 ComponentType.BONUS -> {
-                    // component.value is a percentage of base salary
                     val base = baseSalaryGross.amountInCents.toBigDecimal()
                     val amount = (base * component.value / BigDecimal("100"))
                         .setScale(0, RoundingMode.HALF_UP).toLong()
@@ -144,12 +191,15 @@ class GeneratePayrollHandler(
                         CalculationBase.NET_REVENUE -> revenueNet
                         else -> null
                     }
-                    "${component.value.toPlainString()}% × ${baseAmount?.amountInCents?.div(100.0)} PLN (${component.calculationBase?.name}) = ${calculated.amountInCents / 100.0} PLN"
+                    "${component.value.toPlainString()}% × ${baseAmount?.amountInCents?.div(100.0)} PLN" +
+                        " (${component.calculationBase?.name}) = ${calculated.amountInCents / 100.0} PLN"
                 }
                 ComponentType.HOURLY ->
-                    "${component.value.toPlainString()} PLN/h × ${totalHoursWorked.toPlainString()} h = ${calculated.amountInCents / 100.0} PLN"
+                    "${component.value.toPlainString()} PLN/h × ${regularHours.toPlainString()} h (regularne)" +
+                        " = ${calculated.amountInCents / 100.0} PLN"
                 ComponentType.BONUS ->
-                    "${component.value.toPlainString()}% × ${baseSalaryGross.amountInCents / 100.0} PLN (podstawa) = ${calculated.amountInCents / 100.0} PLN"
+                    "${component.value.toPlainString()}% × ${baseSalaryGross.amountInCents / 100.0} PLN" +
+                        " (podstawa) = ${calculated.amountInCents / 100.0} PLN"
             }
 
             if (calculated.amountInCents != 0L) {
@@ -178,7 +228,6 @@ class GeneratePayrollHandler(
                         "Jednorazowe potrącenie: ${bonusEntity.amountCents / 100.0} PLN"
                 )
             )
-            // Mark bonus as included
             bonusEntity.status = BonusEntryStatus.INCLUDED_IN_PAYROLL
             bonusEntity.payrollEntryId = payrollId.value
             bonusEntity.updatedAt = Instant.now()
@@ -198,6 +247,7 @@ class GeneratePayrollHandler(
             period = command.period,
             baseSalaryGross = baseSalaryGross,
             totalHoursWorked = totalHoursWorked,
+            regularHoursWorked = regularHours,
             componentBreakdown = breakdowns,
             totalGross = totalGross,
             totalNet = null,
@@ -212,24 +262,46 @@ class GeneratePayrollHandler(
 
         payrollRepository.save(PayrollEntryEntity.fromDomain(payrollEntry))
 
-        auditService.log(LogAuditCommand(
-            studioId = command.studioId,
-            userId = command.userId,
-            userDisplayName = command.userName ?: "",
-            module = AuditModule.EMPLOYEE,
-            entityId = command.employeeId.value.toString(),
-            entityDisplayName = "${employeeEntity.firstName} ${employeeEntity.lastName}",
-            action = AuditAction.PAYROLL_GENERATED,
-            changes = listOf(
-                FieldChange("period", null, command.period.toString()),
-                FieldChange("totalGross", null, totalGross.amountInCents.toString()),
-                FieldChange("totalHours", null, totalHoursWorked.toPlainString()),
-                FieldChange("bonusEntriesIncluded", null, pendingBonuses.size.toString()),
-                FieldChange("revenueGrossCents", null, command.revenueGrossCents?.toString()),
-                FieldChange("revenueNetCents", null, command.revenueNetCents?.toString())
+        auditService.log(
+            LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName ?: "",
+                module = AuditModule.EMPLOYEE,
+                entityId = command.employeeId.value.toString(),
+                entityDisplayName = "${employeeEntity.firstName} ${employeeEntity.lastName}",
+                action = AuditAction.PAYROLL_GENERATED,
+                changes = listOf(
+                    FieldChange("period", null, command.period.toString()),
+                    FieldChange("totalGross", null, totalGross.amountInCents.toString()),
+                    FieldChange("totalHours", null, totalHoursWorked.toPlainString()),
+                    FieldChange("regularHours", null, regularHours.toPlainString()),
+                    FieldChange("bonusEntriesIncluded", null, pendingBonuses.size.toString()),
+                    FieldChange("revenueGrossCents", null, command.revenueGrossCents?.toString()),
+                    FieldChange("revenueNetCents", null, command.revenueNetCents?.toString())
+                )
             )
-        ))
+        )
 
         payrollEntry.id
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun entryTypeLabel(type: WorkTimeEntryType): String = when (type) {
+        WorkTimeEntryType.REGULAR      -> "Praca regularna"
+        WorkTimeEntryType.OVERTIME_150 -> "Nadgodziny 150%"
+        WorkTimeEntryType.OVERTIME_200 -> "Nadgodziny 200%"
+        WorkTimeEntryType.NIGHT_WORK   -> "Praca nocna"
+        WorkTimeEntryType.HOLIDAY_WORK -> "Praca w święto"
+        WorkTimeEntryType.ON_CALL      -> "Dyżur"
+    }
+
+    /** Standard monthly hours based on employment fraction (used for SALARY overtime premium). */
+    private fun EtatFraction?.standardMonthlyHours(): Int = when (this) {
+        EtatFraction.FULL    -> 168
+        EtatFraction.HALF    -> 84
+        EtatFraction.QUARTER -> 42
+        null                 -> 168
     }
 }

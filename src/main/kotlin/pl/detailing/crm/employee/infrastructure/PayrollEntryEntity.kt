@@ -45,6 +45,10 @@ class PayrollEntryEntity(
     @Column(name = "total_hours_worked", nullable = false, precision = 8, scale = 2)
     var totalHoursWorked: BigDecimal,
 
+    /** REGULAR-type hours only — nullable for backward compatibility with existing rows. */
+    @Column(name = "regular_hours_worked", precision = 8, scale = 2)
+    var regularHoursWorked: BigDecimal?,
+
     @Column(name = "component_breakdown_json", columnDefinition = "text")
     var componentBreakdownJson: String = "[]",
 
@@ -84,6 +88,7 @@ class PayrollEntryEntity(
         period = YearMonth.parse(period),
         baseSalaryGross = Money.fromCents(baseSalaryGross),
         totalHoursWorked = totalHoursWorked,
+        regularHoursWorked = regularHoursWorked ?: totalHoursWorked,
         componentBreakdown = mapper.readValue<List<BreakdownJson>>(componentBreakdownJson).map { it.toDomain() },
         totalGross = Money.fromCents(totalGross),
         totalNet = totalNet?.let { Money.fromCents(it) },
@@ -107,6 +112,7 @@ class PayrollEntryEntity(
             period = entry.period.toString(),
             baseSalaryGross = entry.baseSalaryGross.amountInCents,
             totalHoursWorked = entry.totalHoursWorked,
+            regularHoursWorked = entry.regularHoursWorked,
             componentBreakdownJson = mapper.writeValueAsString(
                 entry.componentBreakdown.map { BreakdownJson.fromDomain(it) }
             ),

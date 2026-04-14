@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.employee.infrastructure.WorkTimeEntryRepository
 import pl.detailing.crm.shared.*
 import java.math.BigDecimal
-import java.time.LocalDate
 import java.time.YearMonth
 
 data class WorkTimeSummary(
@@ -17,7 +16,9 @@ data class WorkTimeSummary(
     val overtimeHours: BigDecimal,
     val approvedHours: BigDecimal,
     val pendingHours: BigDecimal,
-    val entriesCount: Int
+    val entriesCount: Int,
+    /** Approved hours broken down by WorkTimeEntryType name. Only types with hours > 0 are included. */
+    val hoursPerType: Map<String, BigDecimal>
 )
 
 @Service
@@ -44,6 +45,13 @@ class WorkTimeSummaryHandler(
                 .filter { it.entryType != WorkTimeEntryType.REGULAR }
                 .fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
 
+            val hoursPerType: Map<String, BigDecimal> = approvedEntries
+                .groupBy { it.entryType.name }
+                .mapValues { (_, typeEntries) ->
+                    typeEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours }
+                }
+                .filter { (_, hours) -> hours > BigDecimal.ZERO }
+
             WorkTimeSummary(
                 employeeId = employeeId,
                 period = period,
@@ -52,7 +60,8 @@ class WorkTimeSummaryHandler(
                 overtimeHours = overtimeHours,
                 approvedHours = approvedEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours },
                 pendingHours = pendingEntries.fold(BigDecimal.ZERO) { acc, e -> acc + e.effectiveHours },
-                entriesCount = entries.size
+                entriesCount = entries.size,
+                hoursPerType = hoursPerType
             )
         }
 }

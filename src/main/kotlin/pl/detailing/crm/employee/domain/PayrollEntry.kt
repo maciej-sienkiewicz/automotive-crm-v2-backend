@@ -13,6 +13,8 @@ data class PayrollEntry(
     val period: YearMonth,
     val baseSalaryGross: Money,
     val totalHoursWorked: BigDecimal,
+    /** Hours logged as REGULAR (non-benefit) entries — used for HOURLY component calculations. */
+    val regularHoursWorked: BigDecimal,
     val componentBreakdown: List<PayrollComponentBreakdown>,
     val totalGross: Money,
     val totalNet: Money?,
