@@ -671,6 +671,7 @@ class ValidationException(message: String) : BusinessException(message)
 class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
+class UnprocessableEntityException(message: String) : BusinessException(message)
 
 /**
  * Type-safe ID wrapper for global Instagram profile entities
@@ -978,7 +979,8 @@ enum class WorkTimeEntryType {
     OVERTIME_150,
     OVERTIME_200,
     HOLIDAY_WORK,
-    NIGHT_WORK
+    NIGHT_WORK,
+    ON_CALL
 }
 
 /** Approval status of a work-time entry */
@@ -986,6 +988,13 @@ enum class WorkTimeStatus {
     PENDING,
     APPROVED,
     REJECTED
+}
+
+/** Lifecycle status of a monthly timesheet (period-level) */
+enum class TimesheetStatus {
+    DRAFT,
+    SUBMITTED,
+    APPROVED
 }
 
 /** Type of absence / leave */

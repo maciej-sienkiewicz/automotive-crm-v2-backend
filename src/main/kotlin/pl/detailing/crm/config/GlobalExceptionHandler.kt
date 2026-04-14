@@ -80,6 +80,17 @@ class GlobalExceptionHandler {
             ))
     }
 
+    @ExceptionHandler(UnprocessableEntityException::class)
+    fun handleUnprocessableEntity(ex: UnprocessableEntityException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .body(ErrorResponse(
+                error = "Unprocessable Entity",
+                message = ex.message ?: "Unprocessable entity",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Invoicing exceptions
     // ─────────────────────────────────────────────────────────────────────────

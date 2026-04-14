@@ -49,6 +49,9 @@ class EmployeeController(
     private val approveWorkTimeHandler: ApproveWorkTimeHandler,
     private val listWorkTimeHandler: ListWorkTimeHandler,
     private val workTimeSummaryHandler: WorkTimeSummaryHandler,
+    private val getWorkTimePeriodsHandler: GetWorkTimePeriodsHandler,
+    private val saveWorkTimePeriodHandler: SaveWorkTimePeriodHandler,
+    private val deleteWorkTimeEntryHandler: DeleteWorkTimeEntryHandler,
     private val requestLeaveHandler: RequestLeaveHandler,
     private val reviewLeaveHandler: ReviewLeaveHandler,
     private val listLeavesHandler: ListLeavesHandler,
@@ -362,6 +365,23 @@ class EmployeeController(
     // Work Time
     // ─────────────────────────────────────────────────────────────────────────
 
+    @GetMapping("/{employeeId}/worktime/periods")
+    fun listWorkTimePeriods(
+        @PathVariable employeeId: String
+    ): ResponseEntity<List<WorkTimePeriodSummaryResponse>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val periods = getWorkTimePeriodsHandler.handle(
+            EmployeeId.fromString(employeeId), principal.studioId
+        )
+        ResponseEntity.ok(periods.map {
+            WorkTimePeriodSummaryResponse(
+                period = it.period,
+                totalHours = it.totalHours,
+                status = it.status.name
+            )
+        })
+    }
+
     @GetMapping("/{employeeId}/worktime")
     fun listWorkTime(
         @PathVariable employeeId: String,
@@ -373,6 +393,52 @@ class EmployeeController(
             EmployeeId.fromString(employeeId), principal.studioId, from, to
         )
         ResponseEntity.ok(entries.map { it.toResponse() })
+    }
+
+    @PutMapping("/{employeeId}/worktime/periods/{period}")
+    fun saveWorkTimePeriod(
+        @PathVariable employeeId: String,
+        @PathVariable period: String,
+        @RequestBody request: SaveWorkTimePeriodRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        saveWorkTimePeriodHandler.handle(
+            SaveWorkTimePeriodCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                employeeId = EmployeeId.fromString(employeeId),
+                period = YearMonth.parse(period),
+                regularEntries = request.regular.map {
+                    SaveWorkTimePeriodCommand.RegularEntry(it.date, it.hours)
+                },
+                benefitEntries = request.benefits.map {
+                    val benefitType = try {
+                        WorkTimeEntryType.valueOf(it.benefitType)
+                    } catch (e: IllegalArgumentException) {
+                        throw ValidationException("Unknown benefitType '${it.benefitType}'")
+                    }
+                    SaveWorkTimePeriodCommand.BenefitEntry(it.date, benefitType, it.hours)
+                }
+            )
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/{employeeId}/worktime/{entryId}")
+    fun deleteWorkTimeEntry(
+        @PathVariable employeeId: String,
+        @PathVariable entryId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        deleteWorkTimeEntryHandler.handle(
+            employeeId = EmployeeId.fromString(employeeId),
+            entryId = WorkTimeEntryId.fromString(entryId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+        ResponseEntity.noContent().build()
     }
 
     @GetMapping("/worktime/pending")
@@ -782,6 +848,14 @@ data class LogWorkTimeRequest(
 
 data class ApproveWorkTimeRequest(val approve: Boolean, val rejectionReason: String?)
 
+data class SaveWorkTimePeriodRequest(
+    val regular: List<RegularEntryRequest>,
+    val benefits: List<BenefitEntryRequest>
+) {
+    data class RegularEntryRequest(val date: LocalDate, val hours: BigDecimal)
+    data class BenefitEntryRequest(val date: LocalDate, val benefitType: String, val hours: BigDecimal)
+}
+
 data class RequestLeaveRequest(
     val leaveType: LeaveType,
     val startDate: LocalDate,
@@ -949,19 +1023,11 @@ data class CompensationComponentResponse(
 
 data class WorkTimeEntryResponse(
     val id: String,
-    val employeeId: String,
     val date: String,
-    val startTime: String,
-    val endTime: String,
-    val breakMinutes: Int,
     val effectiveHours: BigDecimal,
     val entryType: String,
-    val overtimeMultiplier: BigDecimal,
     val status: String,
-    val notes: String?,
-    val approvedBy: String?,
-    val approvedAt: Instant?,
-    val createdAt: Instant
+    val notes: String?
 )
 
 data class WorkTimeSummaryResponse(
@@ -973,6 +1039,12 @@ data class WorkTimeSummaryResponse(
     val approvedHours: BigDecimal,
     val pendingHours: BigDecimal,
     val entriesCount: Int
+)
+
+data class WorkTimePeriodSummaryResponse(
+    val period: String,
+    val totalHours: BigDecimal,
+    val status: String
 )
 
 data class LeaveRequestResponse(
@@ -1152,19 +1224,11 @@ private fun CompensationConfig.toResponse() = CompensationResponse(
 
 private fun WorkTimeEntry.toResponse() = WorkTimeEntryResponse(
     id = id.toString(),
-    employeeId = employeeId.toString(),
     date = date.toString(),
-    startTime = startTime.toString(),
-    endTime = endTime.toString(),
-    breakMinutes = breakMinutes,
     effectiveHours = effectiveHours,
     entryType = entryType.name,
-    overtimeMultiplier = overtimeMultiplier,
     status = status.name,
-    notes = notes,
-    approvedBy = approvedBy?.toString(),
-    approvedAt = approvedAt,
-    createdAt = createdAt
+    notes = notes
 )
 
 private fun LeaveRequest.toResponse() = LeaveRequestResponse(

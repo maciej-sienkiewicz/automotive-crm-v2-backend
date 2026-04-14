@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import pl.detailing.crm.shared.WorkTimeStatus
 import java.time.LocalDate
 import java.util.UUID
 
@@ -37,6 +38,21 @@ interface WorkTimeEntryRepository : JpaRepository<WorkTimeEntryEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("from") from: LocalDate,
         @Param("to") to: LocalDate
+    ): List<WorkTimeEntryEntity>
+
+    @Query("""
+        SELECT w FROM WorkTimeEntryEntity w
+        WHERE w.employeeId = :employeeId AND w.studioId = :studioId
+        AND w.date >= :from AND w.date <= :to
+        AND w.status = :status
+        ORDER BY w.date ASC
+    """)
+    fun findByEmployeeIdAndDateRangeAndStatus(
+        @Param("employeeId") employeeId: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate,
+        @Param("status") status: WorkTimeStatus
     ): List<WorkTimeEntryEntity>
 
     @Query("""
