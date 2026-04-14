@@ -52,6 +52,7 @@ class EmployeeController(
     private val getWorkTimePeriodsHandler: GetWorkTimePeriodsHandler,
     private val saveWorkTimePeriodHandler: SaveWorkTimePeriodHandler,
     private val deleteWorkTimeEntryHandler: DeleteWorkTimeEntryHandler,
+    private val approvePeriodWorkTimeHandler: ApprovePeriodWorkTimeHandler,
     private val requestLeaveHandler: RequestLeaveHandler,
     private val reviewLeaveHandler: ReviewLeaveHandler,
     private val listLeavesHandler: ListLeavesHandler,
@@ -423,6 +424,29 @@ class EmployeeController(
             )
         )
         ResponseEntity.noContent().build()
+    }
+
+    @PostMapping("/{employeeId}/worktime/periods/{period}/approve")
+    fun approvePeriodWorkTime(
+        @PathVariable employeeId: String,
+        @PathVariable period: String
+    ): ResponseEntity<ApprovePeriodResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can approve work time periods")
+        }
+        val result = approvePeriodWorkTimeHandler.handle(
+            employeeId = EmployeeId.fromString(employeeId),
+            period = YearMonth.parse(period),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+        ResponseEntity.ok(ApprovePeriodResponse(
+            period = period,
+            approvedCount = result.approvedCount,
+            skippedCount = result.skippedCount
+        ))
     }
 
     @DeleteMapping("/{employeeId}/worktime/{entryId}")
@@ -1048,6 +1072,12 @@ data class WorkTimePeriodSummaryResponse(
     val period: String,
     val totalHours: BigDecimal,
     val status: String
+)
+
+data class ApprovePeriodResponse(
+    val period: String,
+    val approvedCount: Int,
+    val skippedCount: Int
 )
 
 data class LeaveRequestResponse(
