@@ -4,7 +4,9 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditAction.*
 import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditModule.*
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.entity.GetEntityAuditLogsCommand
 import pl.detailing.crm.audit.entity.GetEntityAuditLogsHandler
@@ -161,74 +163,91 @@ class AuditController(
     }
 
     private fun moduleDisplayName(module: AuditModule): String = when (module) {
-        AuditModule.CUSTOMER -> "Klienci"
-        AuditModule.VEHICLE -> "Pojazdy"
-        AuditModule.VISIT -> "Wizyty"
-        AuditModule.APPOINTMENT -> "Rezerwacje"
-        AuditModule.SERVICE -> "Uslugi"
-        AuditModule.LEAD -> "Leady"
-        AuditModule.PROTOCOL -> "Protokoly"
-        AuditModule.CONSENT -> "Zgody"
-        AuditModule.INBOUND_CALL -> "Polaczenia przychodzace"
-        AuditModule.APPOINTMENT_COLOR -> "Kolory rezerwacji"
-        AuditModule.STUDIO -> "Studio"
-        AuditModule.USER -> "Uzytkownicy"
-        AuditModule.CASH_REGISTER -> "Kasa"
-        AuditModule.FINANCE -> "Finanse"
+        CUSTOMER -> "Klienci"
+        VEHICLE -> "Pojazdy"
+        VISIT -> "Wizyty"
+        APPOINTMENT -> "Rezerwacje"
+        SERVICE -> "Uslugi"
+        LEAD -> "Leady"
+        PROTOCOL -> "Protokoly"
+        CONSENT -> "Zgody"
+        INBOUND_CALL -> "Polaczenia przychodzace"
+        APPOINTMENT_COLOR -> "Kolory rezerwacji"
+        STUDIO -> "Studio"
+        USER -> "Uzytkownicy"
+        CASH_REGISTER -> "Kasa"
+        FINANCE -> "Finanse"
+        EMPLOYEE -> TODO()
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
-        AuditAction.CREATE -> "Utworzenie"
-        AuditAction.UPDATE -> "Aktualizacja"
-        AuditAction.DELETE -> "Usuniecie"
-        AuditAction.STATUS_CHANGE -> "Zmiana statusu"
-        AuditAction.PHOTO_ADDED -> "Dodanie zdjecia"
-        AuditAction.PHOTO_DELETED -> "Usuniecie zdjecia"
-        AuditAction.DOCUMENT_ADDED -> "Dodanie dokumentu"
-        AuditAction.DOCUMENT_DELETED -> "Usuniecie dokumentu"
-        AuditAction.COMMENT_ADDED -> "Dodanie komentarza"
-        AuditAction.COMMENT_UPDATED -> "Edycja komentarza"
-        AuditAction.COMMENT_DELETED -> "Usuniecie komentarza"
-        AuditAction.NOTE_ADDED -> "Dodanie notatki"
-        AuditAction.NOTE_UPDATED -> "Edycja notatki"
-        AuditAction.NOTE_DELETED -> "Usuniecie notatki"
-        AuditAction.SERVICE_ADDED -> "Dodanie uslugi"
-        AuditAction.SERVICE_UPDATED -> "Aktualizacja uslugi"
-        AuditAction.SERVICE_REMOVED -> "Usuniecie uslugi"
-        AuditAction.SERVICES_UPDATED -> "Aktualizacja listy uslug"
-        AuditAction.VISIT_CONFIRMED -> "Potwierdzenie wizyty"
-        AuditAction.VISIT_CANCELLED -> "Anulowanie wizyty"
-        AuditAction.VISIT_COMPLETED -> "Zakonczenie wizyty"
-        AuditAction.VISIT_REJECTED -> "Odrzucenie wizyty"
-        AuditAction.VISIT_MARKED_READY -> "Oznaczenie jako gotowe"
-        AuditAction.VISIT_ARCHIVED -> "Archiwizacja wizyty"
-        AuditAction.APPOINTMENT_CANCELLED -> "Anulowanie rezerwacji"
-        AuditAction.APPOINTMENT_CONVERTED -> "Konwersja rezerwacji"
-        AuditAction.PROTOCOL_GENERATED -> "Wygenerowanie protokolu"
-        AuditAction.PROTOCOL_SIGNED -> "Podpisanie protokolu"
-        AuditAction.CONSENT_GRANTED -> "Udzielenie zgody"
-        AuditAction.CONSENT_REVOKED -> "Cofniecie zgody"
-        AuditAction.LEAD_CONVERTED -> "Konwersja leada"
-        AuditAction.LEAD_ABANDONED -> "Porzucenie leada"
-        AuditAction.CALL_ACCEPTED -> "Przyjecie polaczenia"
-        AuditAction.CALL_REJECTED -> "Odrzucenie polaczenia"
-        AuditAction.OWNER_ADDED -> "Dodanie wlasciciela"
-        AuditAction.OWNER_REMOVED -> "Usuniecie wlasciciela"
-        AuditAction.APPOINTMENT_ADDED -> "Dodanie rezerwacji"
-        AuditAction.VISIT_ADDED -> "Dodanie wizyty"
-        AuditAction.COMPANY_UPDATED -> "Aktualizacja danych firmy"
-        AuditAction.COMPANY_DELETED -> "Usuniecie danych firmy"
-        AuditAction.APPOINTMENT_DELETED -> "Usunięcie rezerwacji"
-        AuditAction.APPOINTMENT_RESTORED -> "Przywrócenie rezerwacji"
-        AuditAction.DOCUMENT_ISSUED -> "Wydanie dokumentu"
-        AuditAction.DOCUMENT_STATUS_CHANGED -> "Zmiana statusu dokumentu"
-        AuditAction.DOCUMENT_NUMBER_UPDATED -> "Aktualizacja numeru dokumentu"
-        AuditAction.DOCUMENT_DELETED -> "Usunięcie dokumentu"
-        AuditAction.DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
-        AuditAction.CASH_ADJUSTED -> "Dostosowanie kasy"
-        AuditAction.APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
-        AuditAction.BONUS_ADDED -> "Dodanie bonusu/dodatku"
-        AuditAction.BONUS_DELETED -> "Usunięcie bonusu/dodatku"
+        CREATE -> "Utworzenie"
+        UPDATE -> "Aktualizacja"
+        DELETE -> "Usuniecie"
+        STATUS_CHANGE -> "Zmiana statusu"
+        PHOTO_ADDED -> "Dodanie zdjecia"
+        PHOTO_DELETED -> "Usuniecie zdjecia"
+        DOCUMENT_ADDED -> "Dodanie dokumentu"
+        DOCUMENT_DELETED -> "Usuniecie dokumentu"
+        COMMENT_ADDED -> "Dodanie komentarza"
+        COMMENT_UPDATED -> "Edycja komentarza"
+        COMMENT_DELETED -> "Usuniecie komentarza"
+        NOTE_ADDED -> "Dodanie notatki"
+        NOTE_UPDATED -> "Edycja notatki"
+        NOTE_DELETED -> "Usuniecie notatki"
+        SERVICE_ADDED -> "Dodanie uslugi"
+        SERVICE_UPDATED -> "Aktualizacja uslugi"
+        SERVICE_REMOVED -> "Usuniecie uslugi"
+        SERVICES_UPDATED -> "Aktualizacja listy uslug"
+        VISIT_CONFIRMED -> "Potwierdzenie wizyty"
+        VISIT_CANCELLED -> "Anulowanie wizyty"
+        VISIT_COMPLETED -> "Zakonczenie wizyty"
+        VISIT_REJECTED -> "Odrzucenie wizyty"
+        VISIT_MARKED_READY -> "Oznaczenie jako gotowe"
+        VISIT_ARCHIVED -> "Archiwizacja wizyty"
+        APPOINTMENT_CANCELLED -> "Anulowanie rezerwacji"
+        APPOINTMENT_CONVERTED -> "Konwersja rezerwacji"
+        PROTOCOL_GENERATED -> "Wygenerowanie protokolu"
+        PROTOCOL_SIGNED -> "Podpisanie protokolu"
+        CONSENT_GRANTED -> "Udzielenie zgody"
+        CONSENT_REVOKED -> "Cofniecie zgody"
+        LEAD_CONVERTED -> "Konwersja leada"
+        LEAD_ABANDONED -> "Porzucenie leada"
+        CALL_ACCEPTED -> "Przyjecie polaczenia"
+        CALL_REJECTED -> "Odrzucenie polaczenia"
+        OWNER_ADDED -> "Dodanie wlasciciela"
+        OWNER_REMOVED -> "Usuniecie wlasciciela"
+        APPOINTMENT_ADDED -> "Dodanie rezerwacji"
+        VISIT_ADDED -> "Dodanie wizyty"
+        COMPANY_UPDATED -> "Aktualizacja danych firmy"
+        COMPANY_DELETED -> "Usuniecie danych firmy"
+        APPOINTMENT_DELETED -> "Usunięcie rezerwacji"
+        APPOINTMENT_RESTORED -> "Przywrócenie rezerwacji"
+        DOCUMENT_ISSUED -> "Wydanie dokumentu"
+        DOCUMENT_STATUS_CHANGED -> "Zmiana statusu dokumentu"
+        DOCUMENT_NUMBER_UPDATED -> "Aktualizacja numeru dokumentu"
+        DOCUMENT_DELETED -> "Usunięcie dokumentu"
+        DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
+        CASH_ADJUSTED -> "Dostosowanie kasy"
+        APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
+        EMPLOYEE_TERMINATED -> TODO()
+        CONTRACT_CREATED -> TODO()
+        CONTRACT_ENDED -> TODO()
+        COMPENSATION_SET -> TODO()
+        WORK_TIME_LOGGED -> TODO()
+        WORK_TIME_APPROVED -> TODO()
+        WORK_TIME_REJECTED -> TODO()
+        LEAVE_REQUESTED -> TODO()
+        LEAVE_APPROVED -> TODO()
+        LEAVE_REJECTED -> TODO()
+        LEAVE_CANCELLED -> TODO()
+        PAYROLL_GENERATED -> TODO()
+        PAYROLL_CONFIRMED -> TODO()
+        PAYROLL_PAID -> TODO()
+        BONUS_ADDED -> "Dodanie bonusu/dodatku"
+        BONUS_DELETED -> "Usunięcie bonusu/dodatku"
+        WORK_TIME_PERIOD_SAVED -> TODO()
+        WORK_TIME_ENTRY_DELETED -> TODO()
     }
 }
 
