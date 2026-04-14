@@ -239,6 +239,11 @@ class GeneratePayrollHandler(
         val componentTotal = breakdowns.fold(Money.ZERO) { acc, b -> acc.plus(b.calculatedAmount) }
         val totalGross = baseSalaryGross.plus(componentTotal)
 
+        // For B2B contracts the hourly rate is net — the invoice amount IS the net amount.
+        // Set totalNet immediately so the payslip shows the correct netto value without
+        // requiring a manual confirmation step to enter the same number again.
+        val totalNet: Money? = if (hourlyRateNet != null) totalGross else null
+
         val payrollEntry = PayrollEntry(
             id = payrollId,
             studioId = command.studioId,
@@ -250,7 +255,7 @@ class GeneratePayrollHandler(
             regularHoursWorked = regularHours,
             componentBreakdown = breakdowns,
             totalGross = totalGross,
-            totalNet = null,
+            totalNet = totalNet,
             employerCostTotal = null,
             status = PayrollStatus.DRAFT,
             notes = command.notes,
