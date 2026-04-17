@@ -782,6 +782,7 @@ enum class CommunicationMessageType(val label: String) {
     // SMS automation types
     SMS_AUTOMATION_PRE_VISIT("SMS przypomnienie przed wizytą"),
     SMS_AUTOMATION_POST_VISIT("SMS po wizycie"),
+    SMS_AUTOMATION_DELAYED_REMINDER("SMS przypomnienie po usłudze"),
 
     // SMS consent types
     SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług"),

@@ -258,6 +258,7 @@ class CreateVisitFromReservationHandler(
                 serviceItems = serviceItems,
                 photos = allPhotos,  // session-based photos + QR-uploaded photos
                 damageMapFileId = null, // Will be set after generating damage map
+                smsReminderSuppressed = false,
                 // Audit
                 createdBy = command.userId,
                 updatedBy = command.userId,
@@ -464,6 +465,7 @@ class CreateVisitFromReservationHandler(
                 serviceItems = serviceItems,
                 photos = visitPhotos,
                 damageMapFileId = null,
+                smsReminderSuppressed = false,
                 createdBy = command.userId,
                 updatedBy = command.userId,
                 createdAt = Instant.now(),

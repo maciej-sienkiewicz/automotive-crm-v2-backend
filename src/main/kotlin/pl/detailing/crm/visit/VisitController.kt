@@ -364,6 +364,7 @@ class VisitController(
                 )
             },
             technicalNotes = visit.technicalNotes,
+            smsReminderSuppressed = visit.smsReminderSuppressed,
             createdAt = visit.createdAt,
             updatedAt = visit.updatedAt
         )

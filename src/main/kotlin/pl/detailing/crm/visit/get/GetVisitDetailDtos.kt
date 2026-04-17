@@ -38,6 +38,7 @@ data class VisitResponse(
     val documentsHandedOver: Boolean,
     val vehicleHandoff: VehicleHandoffResponse?,
     val technicalNotes: String?,
+    val smsReminderSuppressed: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
 )

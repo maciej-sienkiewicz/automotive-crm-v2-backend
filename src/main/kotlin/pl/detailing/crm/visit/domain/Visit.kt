@@ -54,6 +54,9 @@ data class Visit(
     // Damage map (S3 file ID for the generated damage map image)
     val damageMapFileId: String?,
 
+    // SMS delayed reminder — true means the post-service reminder is suppressed for this visit
+    val smsReminderSuppressed: Boolean,
+
     // Audit fields
     val createdBy: UserId,
     val updatedBy: UserId,

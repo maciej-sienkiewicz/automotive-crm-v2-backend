@@ -135,6 +135,11 @@ class VisitEntity(
     @Column(name = "damage_map_file_id", length = 500)
     var damageMapFileId: String?,
 
+    // When true, the delayed post-service SMS reminder is suppressed for this visit.
+    // Default false (reminder is sent unless explicitly disabled).
+    @Column(name = "sms_reminder_suppressed", nullable = false)
+    var smsReminderSuppressed: Boolean = false,
+
     // Audit fields
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
@@ -194,6 +199,7 @@ class VisitEntity(
         serviceItems = serviceItems.map { it.toDomain() },
         photos = photos.map { it.toDomain() },
         damageMapFileId = damageMapFileId,
+        smsReminderSuppressed = smsReminderSuppressed,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -233,6 +239,7 @@ class VisitEntity(
                 contactPersonPhone = visit.vehicleHandoff?.contactPerson?.phone,
                 contactPersonEmail = visit.vehicleHandoff?.contactPerson?.email,
                 damageMapFileId = visit.damageMapFileId,
+                smsReminderSuppressed = visit.smsReminderSuppressed,
                 createdBy = visit.createdBy.value,
                 updatedBy = visit.updatedBy.value,
                 createdAt = visit.createdAt,

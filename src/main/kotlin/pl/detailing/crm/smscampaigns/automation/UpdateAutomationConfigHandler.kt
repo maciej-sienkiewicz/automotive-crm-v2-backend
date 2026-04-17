@@ -10,7 +10,8 @@ import pl.detailing.crm.smscampaigns.domain.SmsAutomationRule
 data class UpdateAutomationConfigCommand(
     val studioId: StudioId,
     val preVisit: UpdateAutomationRuleCommand,
-    val postVisit: UpdateAutomationRuleCommand
+    val postVisit: UpdateAutomationRuleCommand,
+    val delayedReminder: UpdateAutomationRuleCommand
 )
 
 data class UpdateAutomationRuleCommand(
@@ -40,6 +41,11 @@ class UpdateAutomationConfigHandler(
                 enabled = command.postVisit.enabled,
                 offsetMinutes = command.postVisit.offsetMinutes,
                 messageTemplate = command.postVisit.messageTemplate
+            ),
+            delayedReminder = SmsAutomationRule(
+                enabled = command.delayedReminder.enabled,
+                offsetMinutes = command.delayedReminder.offsetMinutes,
+                messageTemplate = command.delayedReminder.messageTemplate
             )
         )
         return configRepository.save(config)

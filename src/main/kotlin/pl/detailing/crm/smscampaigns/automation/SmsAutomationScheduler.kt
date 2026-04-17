@@ -21,6 +21,8 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsAppointmentView
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogEntity
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogStatus
+import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitQueryService
+import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitView
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
@@ -47,6 +49,7 @@ import java.util.UUID
 class SmsAutomationScheduler(
     private val configRepository: SmsAutomationConfigRepository,
     private val appointmentQueryService: SmsAppointmentQueryService,
+    private val visitQueryService: SmsVisitQueryService,
     private val smsLogRepository: SmsLogJpaRepository,
     private val smsProvider: SmsProvider,
     private val templateProcessor: SmsTemplateProcessor,
@@ -104,6 +107,16 @@ class SmsAutomationScheduler(
                 windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
                 windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS),
                 useStartTime = false
+            )
+        }
+
+        if (config.delayedReminder.enabled) {
+            val targetPickupTime = now.minusSeconds(config.delayedReminder.offsetMinutes * 60L)
+            processDelayedReminders(
+                studioId = config.studioId,
+                rule = config.delayedReminder,
+                windowStart = targetPickupTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
+                windowEnd = targetPickupTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
             )
         }
     }
@@ -218,6 +231,101 @@ class SmsAutomationScheduler(
             logger.warn(
                 "SMS failed | trigger={} appointment={} phone={} error={}",
                 triggerType, appointment.appointmentId, phoneNumber, result.errorMessage
+            )
+        }
+    }
+
+    private fun processDelayedReminders(
+        studioId: StudioId,
+        rule: SmsAutomationRule,
+        windowStart: Instant,
+        windowEnd: Instant
+    ) {
+        val visits = visitQueryService.findByStudioIdAndPickupDateBetween(studioId, windowStart, windowEnd)
+
+        if (visits.isEmpty()) return
+
+        logger.debug(
+            "SMS delayed-reminder: {} candidate(s) for studio={}",
+            visits.size, studioId
+        )
+
+        visits.forEach { visit ->
+            dispatchDelayedReminderSms(visit, rule, studioId)
+        }
+    }
+
+    private fun dispatchDelayedReminderSms(
+        visit: SmsVisitView,
+        rule: SmsAutomationRule,
+        studioId: StudioId
+    ) {
+        val rawPhone = visit.customerPhone ?: run {
+            logger.debug(
+                "Skipping DELAYED_REMINDER SMS for visit={}: customer has no phone",
+                visit.visitId
+            )
+            return
+        }
+
+        if (smsLogRepository.existsByAppointmentIdAndTriggerType(visit.appointmentId, SmsTriggerType.DELAYED_REMINDER)) {
+            logger.debug(
+                "Skipping DELAYED_REMINDER SMS for visit={}: already sent",
+                visit.visitId
+            )
+            return
+        }
+
+        val phoneNumber = normalizePolishPhone(rawPhone)
+        val message = templateProcessor.process(
+            template = rule.messageTemplate,
+            context = SmsTemplateContext(
+                firstName = visit.customerFirstName ?: "",
+                appointmentStart = visit.pickupDate,
+                studioName = visit.studioName
+            )
+        )
+
+        val result = smsProvider.send(phoneNumber, message)
+
+        smsLogRepository.save(
+            SmsLogEntity(
+                id = UUID.randomUUID(),
+                studioId = studioId.value,
+                appointmentId = visit.appointmentId,
+                triggerType = SmsTriggerType.DELAYED_REMINDER,
+                phoneNumber = phoneNumber,
+                status = if (result.success) SmsLogStatus.SENT else SmsLogStatus.FAILED,
+                externalMessageId = result.externalMessageId,
+                errorMessage = result.errorMessage,
+                sentAt = Instant.now()
+            )
+        )
+
+        communicationLogService.record(
+            RecordCommunicationCommand(
+                studioId = studioId,
+                customerId = CustomerId(visit.customerId),
+                visitId = VisitId(visit.visitId),
+                channel = CommunicationChannel.SMS,
+                messageType = CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER,
+                recipientAddress = phoneNumber,
+                subject = null,
+                bodyContent = message,
+                success = result.success,
+                errorMessage = result.errorMessage
+            )
+        )
+
+        if (result.success) {
+            logger.info(
+                "SMS sent | trigger=DELAYED_REMINDER visit={} phone={} externalId={}",
+                visit.visitId, phoneNumber, result.externalMessageId
+            )
+        } else {
+            logger.warn(
+                "SMS failed | trigger=DELAYED_REMINDER visit={} phone={} error={}",
+                visit.visitId, phoneNumber, result.errorMessage
             )
         }
     }

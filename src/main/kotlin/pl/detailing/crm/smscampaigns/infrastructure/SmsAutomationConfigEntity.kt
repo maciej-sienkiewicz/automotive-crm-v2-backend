@@ -47,6 +47,19 @@ class SmsAutomationConfigEntity(
     @Column(name = "post_visit_message_template", nullable = false, columnDefinition = "TEXT")
     var postVisitMessageTemplate: String,
 
+    // ── DELAYED REMINDER RULE ───────────────────────────────────────────────────
+    // Fires [offsetMinutes] after visit.pickupDate (when customer collected the car).
+    // Enabled by default; can be suppressed per-visit via Visit.smsReminderSuppressed.
+
+    @Column(name = "delayed_reminder_enabled", nullable = false)
+    var delayedReminderEnabled: Boolean,
+
+    @Column(name = "delayed_reminder_offset_minutes", nullable = false)
+    var delayedReminderOffsetMinutes: Int,
+
+    @Column(name = "delayed_reminder_message_template", nullable = false, columnDefinition = "TEXT")
+    var delayedReminderMessageTemplate: String,
+
     // ── AUDIT ───────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
@@ -66,6 +79,11 @@ class SmsAutomationConfigEntity(
             enabled = postVisitEnabled,
             offsetMinutes = postVisitOffsetMinutes,
             messageTemplate = postVisitMessageTemplate
+        ),
+        delayedReminder = SmsAutomationRule(
+            enabled = delayedReminderEnabled,
+            offsetMinutes = delayedReminderOffsetMinutes,
+            messageTemplate = delayedReminderMessageTemplate
         )
     )
 
@@ -80,6 +98,9 @@ class SmsAutomationConfigEntity(
                 postVisitEnabled = config.postVisit.enabled,
                 postVisitOffsetMinutes = config.postVisit.offsetMinutes,
                 postVisitMessageTemplate = config.postVisit.messageTemplate,
+                delayedReminderEnabled = config.delayedReminder.enabled,
+                delayedReminderOffsetMinutes = config.delayedReminder.offsetMinutes,
+                delayedReminderMessageTemplate = config.delayedReminder.messageTemplate,
                 updatedAt = Instant.now()
             )
     }

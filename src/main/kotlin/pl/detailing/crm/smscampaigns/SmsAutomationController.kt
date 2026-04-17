@@ -21,7 +21,8 @@ data class SmsAutomationRuleDto(
 
 data class SmsAutomationConfigDto(
     val preVisit: SmsAutomationRuleDto,
-    val postVisit: SmsAutomationRuleDto
+    val postVisit: SmsAutomationRuleDto,
+    val delayedReminder: SmsAutomationRuleDto
 )
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -55,6 +56,11 @@ class SmsAutomationController(
                     enabled = config.postVisit.enabled,
                     offsetMinutes = config.postVisit.offsetMinutes,
                     messageTemplate = config.postVisit.messageTemplate
+                ),
+                delayedReminder = SmsAutomationRuleDto(
+                    enabled = config.delayedReminder.enabled,
+                    offsetMinutes = config.delayedReminder.offsetMinutes,
+                    messageTemplate = config.delayedReminder.messageTemplate
                 )
             )
         )
@@ -81,6 +87,11 @@ class SmsAutomationController(
                 enabled = request.postVisit.enabled,
                 offsetMinutes = request.postVisit.offsetMinutes,
                 messageTemplate = request.postVisit.messageTemplate
+            ),
+            delayedReminder = UpdateAutomationRuleCommand(
+                enabled = request.delayedReminder.enabled,
+                offsetMinutes = request.delayedReminder.offsetMinutes,
+                messageTemplate = request.delayedReminder.messageTemplate
             )
         )
 
@@ -97,6 +108,11 @@ class SmsAutomationController(
                     enabled = updated.postVisit.enabled,
                     offsetMinutes = updated.postVisit.offsetMinutes,
                     messageTemplate = updated.postVisit.messageTemplate
+                ),
+                delayedReminder = SmsAutomationRuleDto(
+                    enabled = updated.delayedReminder.enabled,
+                    offsetMinutes = updated.delayedReminder.offsetMinutes,
+                    messageTemplate = updated.delayedReminder.messageTemplate
                 )
             )
         )

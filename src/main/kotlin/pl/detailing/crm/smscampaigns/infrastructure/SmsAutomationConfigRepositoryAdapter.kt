@@ -27,6 +27,9 @@ class SmsAutomationConfigRepositoryAdapter(
             existing.postVisitEnabled = config.postVisit.enabled
             existing.postVisitOffsetMinutes = config.postVisit.offsetMinutes
             existing.postVisitMessageTemplate = config.postVisit.messageTemplate
+            existing.delayedReminderEnabled = config.delayedReminder.enabled
+            existing.delayedReminderOffsetMinutes = config.delayedReminder.offsetMinutes
+            existing.delayedReminderMessageTemplate = config.delayedReminder.messageTemplate
             existing.updatedAt = java.time.Instant.now()
             existing
         } else {
