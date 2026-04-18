@@ -10,6 +10,13 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
+
+data class CustomerListQuery(
+    val vehicleBrand: String? = null,
+    val vehicleModel: String? = null,
+    val serviceIds: List<UUID>? = null
+)
 
 @Service
 class ListCustomersHandler(
@@ -17,12 +24,11 @@ class ListCustomersHandler(
     private val visitRepository: VisitRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository
 ) {
-    suspend fun handle(studioId: StudioId): List<CustomerListItem> =
+    suspend fun handle(studioId: StudioId, query: CustomerListQuery = CustomerListQuery()): List<CustomerListItem> =
         withContext(Dispatchers.IO) {
-            val customers = customerRepository.findActiveByStudioId(studioId.value)
+            val customerEntities = resolveCustomerEntities(studioId, query)
 
-            customers.map { entity ->
-                // Calculate visit statistics
+            customerEntities.map { entity ->
                 val visits = visitRepository.findByCustomerIdAndStudioId(entity.id, studioId.value)
                 val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
 
@@ -39,7 +45,6 @@ class ListCustomersHandler(
                     }
                 }
 
-                // Calculate vehicle count
                 val vehicleOwners = vehicleOwnerRepository.findByCustomerId(entity.id)
                 val vehicleCount = vehicleOwners.size
 
@@ -74,6 +79,39 @@ class ListCustomersHandler(
                     updatedAt = entity.updatedAt
                 )
             }
+        }
+
+    private fun resolveCustomerEntities(studioId: StudioId, query: CustomerListQuery) =
+        with(query) {
+            val hasVehicleFilter = !vehicleBrand.isNullOrBlank() || !vehicleModel.isNullOrBlank()
+            val hasServiceFilter = !serviceIds.isNullOrEmpty()
+
+            if (!hasVehicleFilter && !hasServiceFilter) {
+                return@with customerRepository.findActiveByStudioId(studioId.value)
+            }
+
+            var allowedIds: Set<UUID>? = null
+
+            if (hasVehicleFilter) {
+                val ids = vehicleOwnerRepository.findCustomerIdsByVehicleFilter(
+                    studioId = studioId.value,
+                    brand = vehicleBrand?.takeIf { it.isNotBlank() },
+                    model = vehicleModel?.takeIf { it.isNotBlank() }
+                ).toSet()
+                allowedIds = allowedIds?.intersect(ids) ?: ids
+            }
+
+            if (hasServiceFilter) {
+                val ids = visitRepository.findCustomerIdsByServiceIds(
+                    studioId = studioId.value,
+                    serviceIds = serviceIds!!
+                ).toSet()
+                allowedIds = allowedIds?.intersect(ids) ?: ids
+            }
+
+            val ids = allowedIds ?: emptySet()
+            if (ids.isEmpty()) emptyList()
+            else customerRepository.findActiveByStudioIdAndIds(studioId.value, ids.toList())
         }
 }
 

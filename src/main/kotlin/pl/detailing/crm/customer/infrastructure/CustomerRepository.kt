@@ -74,4 +74,10 @@ interface CustomerRepository : JpaRepository<CustomerEntity, UUID> {
         @Param("ids") ids: List<UUID>,
         @Param("studioId") studioId: UUID
     ): List<CustomerEntity>
+
+    @Query("SELECT c FROM CustomerEntity c WHERE c.id IN :ids AND c.studioId = :studioId AND c.isActive = true")
+    fun findActiveByStudioIdAndIds(
+        @Param("studioId") studioId: UUID,
+        @Param("ids") ids: List<UUID>
+    ): List<CustomerEntity>
 }

@@ -182,6 +182,17 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     """)
     fun findByStudioIdWithPhotos(@Param("studioId") studioId: UUID): List<VisitEntity>
 
+    @Query("""
+        SELECT DISTINCT v.customerId FROM VisitEntity v
+        JOIN v.serviceItems si
+        WHERE v.studioId = :studioId
+        AND si.serviceId IN :serviceIds
+    """)
+    fun findCustomerIdsByServiceIds(
+        @Param("studioId") studioId: UUID,
+        @Param("serviceIds") serviceIds: List<UUID>
+    ): List<UUID>
+
     /**
      * Calculate total revenue for visits within a date range
      * Uses service items' finalPriceGross for historical accuracy
