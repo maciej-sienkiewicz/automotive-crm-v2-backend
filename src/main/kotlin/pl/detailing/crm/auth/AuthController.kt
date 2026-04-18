@@ -39,9 +39,12 @@ class AuthController(
                     userId = result.userId.toString(),
                     studioId = result.studioId.toString(),
                     email = result.email,
+                    phoneNumber = result.phoneNumber,
                     role = "OWNER",
                     subscriptionStatus = pl.detailing.crm.shared.SubscriptionStatus.TRIALING,
-                    trialDaysRemaining = 14
+                    trialDaysRemaining = 14,
+                    firstName = result.firstName,
+                    lastName = result.lastName
                 )
             ))
     }
@@ -92,9 +95,12 @@ class AuthController(
                     userId = principal.userId.toString(),
                     studioId = principal.studioId.toString(),
                     email = principal.email,
+                    phoneNumber = principal.phoneNumber,
                     role = principal.role.name,
                     subscriptionStatus = subscriptionInfo.status,
-                    trialDaysRemaining = subscriptionInfo.daysRemaining
+                    trialDaysRemaining = subscriptionInfo.daysRemaining,
+                    firstName = principal.fullName.split(" ").first(),
+                    lastName = principal.fullName.split(" ").last()
                 )
             ))
         } catch (e: Exception) {

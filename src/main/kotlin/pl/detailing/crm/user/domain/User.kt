@@ -17,6 +17,7 @@ data class User(
     val id: UserId,
     val studioId: StudioId,
     val email: String,
+    val phoneNumber: String,
     val passwordHash: String,
     val firstName: String,
     val lastName: String,

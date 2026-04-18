@@ -11,8 +11,11 @@ data class UnifiedAuthResponse(
 
 data class UserData(
     val userId: String,
+    val firstName: String,
+    val lastName: String,
     val studioId: String,
     val email: String,
+    val phoneNumber: String,
     val role: String,
     val subscriptionStatus: SubscriptionStatus,
     val trialDaysRemaining: Long?

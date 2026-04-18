@@ -205,6 +205,7 @@ class SmsAutomationScheduler(
         val messageType = when (triggerType) {
             SmsTriggerType.PRE_VISIT -> CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT
             SmsTriggerType.POST_VISIT -> CommunicationMessageType.SMS_AUTOMATION_POST_VISIT
+            SmsTriggerType.DELAYED_REMINDER -> CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER
         }
 
         communicationLogService.record(

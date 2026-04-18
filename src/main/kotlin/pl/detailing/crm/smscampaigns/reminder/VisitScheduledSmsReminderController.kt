@@ -26,6 +26,10 @@ data class UpdateSmsReminderRequest(
     val scheduledFor: Instant
 )
 
+data class GenerateSmsRequest(
+    val scheduledFor: Instant
+)
+
 // ── Response DTOs ─────────────────────────────────────────────────────────────
 
 data class GeneratedSmsContentResponse(
@@ -52,7 +56,7 @@ data class SmsReminderResponse(
 /**
  * Manages per-visit scheduled SMS reminders.
  *
- * POST   /api/visits/{visitId}/sms-reminder/generate  → draft SMS content via LLM
+ * POST   /api/visits/{visitId}/sms-reminder//  → draft SMS content via LLM
  * POST   /api/visits/{visitId}/sms-reminder           → schedule reminder
  * GET    /api/visits/{visitId}/sms-reminder           → list all reminders for visit
  * PUT    /api/visits/{visitId}/sms-reminder/{id}      → update content / scheduled time
@@ -75,7 +79,8 @@ class VisitScheduledSmsReminderController(
      */
     @PostMapping("/generate")
     fun generateContent(
-        @PathVariable visitId: UUID
+        @PathVariable visitId: UUID,
+        @RequestBody request: GenerateSmsRequest
     ): ResponseEntity<GeneratedSmsContentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -86,7 +91,9 @@ class VisitScheduledSmsReminderController(
             GenerateSmsContentCommand(
                 studioId = principal.studioId,
                 visitId = VisitId(visitId),
-                studioName = studioName
+                studioName = studioName,
+                scheduledFor = request.scheduledFor,
+                phoneNumber = principal.phoneNumber
             )
         )
 

@@ -12,7 +12,8 @@ data class UserPrincipal(
     val studioId: StudioId,
     val role: UserRole,
     val email: String,
-    val fullName: String
+    val fullName: String,
+    val phoneNumber: String,
 ) : Authentication, Serializable {
 
     override fun getName(): String = fullName

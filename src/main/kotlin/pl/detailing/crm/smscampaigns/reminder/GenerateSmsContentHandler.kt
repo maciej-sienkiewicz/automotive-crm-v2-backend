@@ -16,7 +16,9 @@ import java.util.UUID
 data class GenerateSmsContentCommand(
     val studioId: StudioId,
     val visitId: VisitId,
-    val studioName: String
+    val studioName: String,
+    val scheduledFor: Instant,
+    val phoneNumber: String,
 )
 
 data class GenerateSmsContentResult(
@@ -50,9 +52,7 @@ class GenerateSmsContentHandler(
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Klient nie znaleziony: ${visitEntity.customerId}")
 
-        val daysSinceService = visitEntity.pickupDate
-            ?.let { Duration.between(it, Instant.now()).toDays().toInt().coerceAtLeast(0) }
-            ?: 0
+        val daysSinceService = Duration.between(command.scheduledFor, Instant.now()).toDays().toInt()
 
         val services = visitEntity.serviceItems.map { it.serviceName }
 
@@ -63,7 +63,8 @@ class GenerateSmsContentHandler(
             licensePlate = visitEntity.licensePlateSnapshot,
             services = services.ifEmpty { listOf("detailing") },
             studioName = command.studioName,
-            daysSinceService = daysSinceService
+            daysSinceService = daysSinceService,
+            phoneNumber = command.phoneNumber,
         )
 
         val content = generator.generate(context)

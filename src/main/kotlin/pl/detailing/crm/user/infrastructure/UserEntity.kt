@@ -29,6 +29,9 @@ class UserEntity(
     @Column(name = "email", nullable = false, length = 255)
     var email: String,
 
+    @Column(name = "phone_number", nullable = false, length = 255)
+    var phoneNumber: String,
+
     @Column(name = "password_hash", nullable = false, length = 255)
     var passwordHash: String,
 
@@ -56,6 +59,7 @@ class UserEntity(
         firstName = firstName,
         lastName = lastName,
         role = role,
+        phoneNumber = phoneNumber,
         isActive = isActive,
         createdAt = createdAt
     )
@@ -65,6 +69,7 @@ class UserEntity(
             id = user.id.value,
             studioId = user.studioId.value,
             email = user.email,
+            phoneNumber = user.phoneNumber,
             passwordHash = user.passwordHash,
             firstName = user.firstName,
             lastName = user.lastName,

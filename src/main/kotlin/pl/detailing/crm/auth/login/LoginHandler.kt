@@ -43,6 +43,7 @@ class LoginHandler(
                 studioId = user.studioId,
                 role = user.role,
                 email = user.email,
+                phoneNumber = user.phoneNumber,
                 fullName = "${user.firstName} ${user.lastName}"
             )
 
@@ -54,9 +55,12 @@ class LoginHandler(
                     userId = user.id.toString(),
                     studioId = user.studioId.toString(),
                     email = user.email,
+                    phoneNumber = user.phoneNumber,
                     role = user.role.name,
                     subscriptionStatus = subscriptionInfo.status,
-                    trialDaysRemaining = subscriptionInfo.daysRemaining
+                    trialDaysRemaining = subscriptionInfo.daysRemaining,
+                    firstName = user.firstName,
+                    lastName = user.lastName
                 )
             )
 

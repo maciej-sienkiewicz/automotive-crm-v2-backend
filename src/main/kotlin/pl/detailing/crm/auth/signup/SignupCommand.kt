@@ -8,6 +8,7 @@ data class SignupCommand(
     val lastName: String,
     val studioName: String,
     val email: String,
+    val phoneNumber: String,
     val passwordHash: String
 )
 
@@ -15,6 +16,7 @@ data class SignupResult(
     val userId: UserId,
     val studioId: StudioId,
     val email: String,
+    val phoneNumber: String,
     val firstName: String,
     val lastName: String,
     val trialEndsAt: String

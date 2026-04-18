@@ -34,6 +34,7 @@ class SignupHandler(
             lastName = request.lastName.trim(),
             studioName = studioName,
             email = request.email.lowercase().trim(),
+            phoneNumber = "+48888915358",
             passwordHash = passwordEncoder.encode(request.password)
         )
 
@@ -43,6 +44,7 @@ class SignupHandler(
             id = UserId.random(),
             studioId = studio.id,
             email = command.email,
+            phoneNumber = command.phoneNumber,
             passwordHash = command.passwordHash,
             firstName = command.firstName,
             lastName = command.lastName,
@@ -62,6 +64,7 @@ class SignupHandler(
             userId = user.id,
             studioId = studio.id,
             email = user.email,
+            phoneNumber = user.phoneNumber,
             firstName = command.firstName,
             lastName = command.lastName,
             trialEndsAt = trialEndsAtFormatted
