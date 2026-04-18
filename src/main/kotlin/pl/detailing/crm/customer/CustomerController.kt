@@ -14,6 +14,7 @@ import pl.detailing.crm.customer.domain.HomeAddress
 import pl.detailing.crm.customer.get.GetCustomerByIdCommand
 import pl.detailing.crm.customer.get.GetCustomerByIdHandler
 import pl.detailing.crm.customer.list.CustomerListItem
+import pl.detailing.crm.customer.list.CustomerListQuery
 import pl.detailing.crm.customer.list.ListCustomersHandler
 import pl.detailing.crm.customer.notes.CustomerNoteItem
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
@@ -23,6 +24,7 @@ import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
 import java.time.Instant
 import java.util.UUID
+import java.time.temporal.ChronoUnit
 
 @RestController
 @RequestMapping("/api/v1/customers")
@@ -44,11 +46,27 @@ class CustomerController(
         @RequestParam(required = false, defaultValue = "1") page: Int,
         @RequestParam(required = false, defaultValue = "10") limit: Int,
         @RequestParam(required = false) sortBy: String?,
-        @RequestParam(required = false, defaultValue = "asc") sortDirection: String
+        @RequestParam(required = false, defaultValue = "asc") sortDirection: String,
+        @RequestParam(required = false) customerType: String?,
+        @RequestParam(required = false) services: List<String>?,
+        @RequestParam(required = false) lastVisitWithinDays: Int?,
+        @RequestParam(required = false) notVisitedSinceDays: Int?,
+        @RequestParam(required = false) vehicleBrand: String?,
+        @RequestParam(required = false) vehicleModel: String?
     ): ResponseEntity<CustomerListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        var customers = listCustomersHandler.handle(principal.studioId)
+        val serviceIds = services
+            ?.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() }
+
+        val query = CustomerListQuery(
+            vehicleBrand = vehicleBrand?.takeIf { it.isNotBlank() },
+            vehicleModel = vehicleModel?.takeIf { it.isNotBlank() },
+            serviceIds = serviceIds
+        )
+
+        var customers = listCustomersHandler.handle(principal.studioId, query)
 
         if (search.isNotBlank()) {
             customers = customers.filter {
@@ -59,6 +77,22 @@ class CustomerController(
                 (it.company?.name?.contains(search, ignoreCase = true) ?: false) ||
                 (it.company?.nip?.contains(search, ignoreCase = true) ?: false)
             }
+        }
+
+        if (!customerType.isNullOrBlank() && customerType != "all") {
+            customers = customers.filter {
+                if (customerType == "business") it.company != null else it.company == null
+            }
+        }
+
+        if (lastVisitWithinDays != null) {
+            val cutoff = Instant.now().minus(lastVisitWithinDays.toLong(), ChronoUnit.DAYS)
+            customers = customers.filter { it.lastVisitDate != null && it.lastVisitDate.isAfter(cutoff) }
+        }
+
+        if (notVisitedSinceDays != null) {
+            val cutoff = Instant.now().minus(notVisitedSinceDays.toLong(), ChronoUnit.DAYS)
+            customers = customers.filter { it.lastVisitDate == null || it.lastVisitDate.isBefore(cutoff) }
         }
 
         customers = when (sortBy) {

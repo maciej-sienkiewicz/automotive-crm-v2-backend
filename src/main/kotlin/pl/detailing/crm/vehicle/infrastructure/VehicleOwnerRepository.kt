@@ -42,4 +42,17 @@ interface VehicleOwnerRepository : JpaRepository<VehicleOwnerEntity, VehicleOwne
         AND vo.ownershipRole = 'PRIMARY'
     """)
     fun findPrimaryOwnersByVehicleIds(@Param("vehicleIds") vehicleIds: List<UUID>): List<VehicleOwnerEntity>
+
+    @Query("""
+        SELECT DISTINCT vo.id.customerId FROM VehicleOwnerEntity vo
+        JOIN VehicleEntity v ON vo.id.vehicleId = v.id
+        WHERE v.studioId = :studioId
+        AND (:brand IS NULL OR LOWER(v.brand) LIKE LOWER(CONCAT('%', :brand, '%')))
+        AND (:model IS NULL OR LOWER(v.model) LIKE LOWER(CONCAT('%', :model, '%')))
+    """)
+    fun findCustomerIdsByVehicleFilter(
+        @Param("studioId") studioId: UUID,
+        @Param("brand") brand: String?,
+        @Param("model") model: String?
+    ): List<UUID>
 }
