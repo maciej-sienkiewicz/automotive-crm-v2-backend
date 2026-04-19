@@ -198,13 +198,13 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
      * Uses COALESCE so multi-day visits (with estimatedCompletionDate) are included
      * when they overlap the range, and single-date visits are included when their
      * scheduledDate falls within the range.
-     * Both serviceItems and photos are fetched eagerly to avoid lazy-loading
-     * exceptions when toDomain() is called outside a Hibernate session.
+     * Only serviceItems are JOIN FETCHed (needed for total calculation); photos are
+     * intentionally omitted — the calendar response does not include them, and
+     * fetching two bag collections simultaneously causes MultipleBagFetchException.
      */
     @Query("""
         SELECT DISTINCT v FROM VisitEntity v
         LEFT JOIN FETCH v.serviceItems
-        LEFT JOIN FETCH v.photos
         WHERE v.studioId = :studioId
         AND v.status IN :statuses
         AND v.scheduledDate < :endDate

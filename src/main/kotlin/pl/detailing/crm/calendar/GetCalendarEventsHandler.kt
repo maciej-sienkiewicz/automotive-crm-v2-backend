@@ -7,10 +7,11 @@ import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
-import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.shared.VisitStatus
+import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.visit.infrastructure.VisitServiceItemEntity
 import java.time.Instant
 
 data class GetCalendarEventsQuery(
@@ -124,9 +125,7 @@ class GetCalendarEventsHandler(
             val customer = customers[visit.customerId]
             val vehicle = vehicles[visit.vehicleId]
             val color = visit.appointmentColorId?.let { colors[it] }
-            val domain = visit.toDomain()
-            val totalNet = domain.calculateTotalNet()
-            val totalGross = domain.calculateTotalGross()
+            val (totalNet, totalGross) = calculateVisitTotals(visit.serviceItems)
 
             VisitCalendarItem(
                 id = visit.id.toString(),
@@ -156,12 +155,39 @@ class GetCalendarEventsHandler(
                         hexColor = it.hexColor
                     )
                 },
-                totalNet = totalNet.amountInCents,
-                totalGross = totalGross.amountInCents,
+                totalNet = totalNet,
+                totalGross = totalGross,
                 technicalNotes = visit.technicalNotes
             )
         }
 
         CalendarEventsResult(appointments = appointmentItems, visits = visitItems)
+    }
+
+    private fun calculateVisitTotals(entities: List<VisitServiceItemEntity>): Pair<Long, Long> {
+        val items = entities.map { it.toDomain() }
+        val net = items.fold(Money.ZERO) { acc, item -> acc.plus(effectiveNet(item) ?: Money.ZERO) }
+        val gross = items.fold(Money.ZERO) { acc, item -> acc.plus(effectiveGross(item) ?: Money.ZERO) }
+        return Pair(net.amountInCents, gross.amountInCents)
+    }
+
+    private fun effectiveNet(item: VisitServiceItem): Money? = when {
+        item.status == VisitServiceStatus.CONFIRMED || item.status == VisitServiceStatus.APPROVED ->
+            item.finalPriceNet
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
+            item.confirmedSnapshot?.finalPriceNet
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
+            item.finalPriceNet
+        else -> null
+    }
+
+    private fun effectiveGross(item: VisitServiceItem): Money? = when {
+        item.status == VisitServiceStatus.CONFIRMED || item.status == VisitServiceStatus.APPROVED ->
+            item.finalPriceGross
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
+            item.confirmedSnapshot?.finalPriceGross
+        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
+            item.finalPriceGross
+        else -> null
     }
 }
