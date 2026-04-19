@@ -19,7 +19,7 @@ class NewCustomerUniquenessValidator {
 
                 if (identity.phone != null && context.customerPhoneExists) {
                     throw ValidationException(
-                        "Customer with phone '${identity.phone}' already exists in this studio"
+                        "W Twojej bazie istnieje już klient z tym numerem telefonu. Ze względu na potencjalne komplikacje z liczeniem statytyk, przypiasanie dwóch klientów do jednego numeru jest niedozwolone."
                     )
                 }
             }
@@ -30,7 +30,7 @@ class NewCustomerUniquenessValidator {
                 -> {
                 if (identity.email != null && context.customerEmailExists) {
                     throw ValidationException(
-                        "Customer with email '${identity.email}' already exists in this studio"
+                        "W Twojej bazie istnieje już klient z tym adresem email.  Ze względu na potencjalne komplikacje z liczeniem statytyk, przypiasanie dwóch klientów do jednego adresu email jest niedozwolone."
                     )
                 }
             }
