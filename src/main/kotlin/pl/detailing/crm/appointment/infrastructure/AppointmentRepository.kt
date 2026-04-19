@@ -195,4 +195,24 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("startDate") startDate: Instant,
         @Param("endDate") endDate: Instant
     ): List<AppointmentEntity>
+
+    /**
+     * Find appointments for the unified calendar view using intersection predicate.
+     * Returns appointments whose time window overlaps with [startDate, endDate].
+     */
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
+        AND a.status IN :statuses
+        AND a.startDateTime < :endDate
+        AND a.endDateTime > :startDate
+        ORDER BY a.startDateTime ASC
+    """)
+    fun findForCalendar(
+        @Param("studioId") studioId: UUID,
+        @Param("statuses") statuses: List<pl.detailing.crm.appointment.domain.AppointmentStatus>,
+        @Param("startDate") startDate: Instant,
+        @Param("endDate") endDate: Instant
+    ): List<AppointmentEntity>
 }

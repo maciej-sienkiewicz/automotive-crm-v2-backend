@@ -194,6 +194,29 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<UUID>
 
     /**
+     * Find visits for the unified calendar view.
+     * Uses COALESCE so multi-day visits (with estimatedCompletionDate) are included
+     * when they overlap the range, and single-date visits are included when their
+     * scheduledDate falls within the range.
+     * Service items are eagerly fetched to avoid lazy-loading outside a transaction.
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        LEFT JOIN FETCH v.serviceItems
+        WHERE v.studioId = :studioId
+        AND v.status IN :statuses
+        AND v.scheduledDate < :endDate
+        AND COALESCE(v.estimatedCompletionDate, v.scheduledDate) >= :startDate
+        ORDER BY v.scheduledDate ASC
+    """)
+    fun findForCalendar(
+        @Param("studioId") studioId: UUID,
+        @Param("statuses") statuses: List<pl.detailing.crm.shared.VisitStatus>,
+        @Param("startDate") startDate: Instant,
+        @Param("endDate") endDate: Instant
+    ): List<VisitEntity>
+
+    /**
      * Calculate total revenue for visits within a date range
      * Uses service items' finalPriceGross for historical accuracy
      */
