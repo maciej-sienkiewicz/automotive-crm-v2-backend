@@ -15,6 +15,8 @@ import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
 import pl.detailing.crm.appointment.list.ListAppointmentsCommand
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
+import pl.detailing.crm.appointment.title.UpdateAppointmentTitleHandler
+import pl.detailing.crm.appointment.title.UpdateAppointmentTitleCommand
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import java.time.LocalDate
@@ -29,7 +31,8 @@ class AppointmentController(
     private val restoreAppointmentHandler: RestoreAppointmentHandler,
     private val deleteAppointmentHandler: DeleteAppointmentHandler,
     private val listAppointmentsHandler: ListAppointmentsHandler,
-    private val getAppointmentHandler: GetAppointmentHandler
+    private val getAppointmentHandler: GetAppointmentHandler,
+    private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler
 ) {
 
     @GetMapping
@@ -392,7 +395,31 @@ class AppointmentController(
 
         ResponseEntity.noContent().build()
     }
+
+    @PatchMapping("/{id}/title")
+    fun updateAppointmentTitle(
+        @PathVariable id: String,
+        @RequestBody request: UpdateAppointmentTitleRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = UpdateAppointmentTitleCommand(
+            appointmentId = AppointmentId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            title = request.title
+        )
+
+        updateAppointmentTitleHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
 }
+
+data class UpdateAppointmentTitleRequest(
+    val title: String?
+)
 
 data class UpdateAppointmentStatusRequest(
     val status: String
