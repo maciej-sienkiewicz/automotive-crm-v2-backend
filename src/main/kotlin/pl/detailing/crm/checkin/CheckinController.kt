@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
@@ -26,7 +27,8 @@ class CheckinController(
     private val protocolTemplateRepository: ProtocolTemplateRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val uploadContextTokenService: UploadContextTokenService,
-    private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler
+    private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
+    private val checkinDamagePointsService: CheckinDamagePointsService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -410,6 +412,45 @@ class CheckinController(
                 )
             )
     }
+
+    /**
+     * Retrieve damage points saved via the mobile check-in flow.
+     *
+     * GET /api/checkin/{appointmentId}/mobile-damage-points
+     *
+     * Used by the desktop check-in wizard to pre-populate the damage documentation
+     * section with points marked by a staff member at the vehicle.
+     * Returns 404 if no mobile session or damage points exist for this appointment.
+     */
+    @GetMapping("/{appointmentId}/mobile-damage-points")
+    fun getMobileDamagePoints(
+        @PathVariable appointmentId: String
+    ): ResponseEntity<MobileDamagePointsDesktopResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val tenantId = principal.studioId.value.toString()
+        uploadContextTokenService.getTokenForCheckin(tenantId, appointmentId)
+            ?: throw EntityNotFoundException("Brak aktywnej sesji mobilnej dla appointmentId=$appointmentId")
+
+        val result = checkinDamagePointsService.getDamagePoints(
+            tenantId = tenantId,
+            checkinId = appointmentId
+        )
+
+        if (result.savedAt == null) {
+            throw EntityNotFoundException("Brak zapisanych punktów uszkodzeń dla appointmentId=$appointmentId")
+        }
+
+        return ResponseEntity.ok(
+            MobileDamagePointsDesktopResponse(
+                checkinId = appointmentId,
+                damagePoints = result.damagePoints.map {
+                    MobileDamagePointDesktopDto(id = it.id, x = it.x, y = it.y, note = it.note)
+                },
+                savedAt = result.savedAt
+            )
+        )
+    }
 }
 
 // Request/Response DTOs
@@ -648,4 +689,18 @@ data class WalkInVisitCommand(
     val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: AppointmentColorId?
+)
+
+// DTOs for mobile-damage-points desktop endpoint
+data class MobileDamagePointDesktopDto(
+    val id: Int,
+    val x: Double,
+    val y: Double,
+    val note: String?
+)
+
+data class MobileDamagePointsDesktopResponse(
+    val checkinId: String,
+    val damagePoints: List<MobileDamagePointDesktopDto>,
+    val savedAt: Instant
 )

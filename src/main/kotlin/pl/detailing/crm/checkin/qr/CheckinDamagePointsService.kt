@@ -1,0 +1,99 @@
+package pl.detailing.crm.checkin.qr
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.stereotype.Service
+import java.time.Duration
+import java.time.Instant
+
+/**
+ * Stores and retrieves mobile damage points in Redis for the duration of a check-in session.
+ *
+ * After saving, publishes to [REDIS_DAMAGE_UPDATED_CHANNEL] so that
+ * [CheckinDamageUpdatedMessageListener] can bridge the event to WebSocket subscribers.
+ *
+ * Redis key: checkin:damage-points:{tenantId}:{checkinId}  (TTL matches upload token)
+ */
+@Service
+class CheckinDamagePointsService(
+    private val redisTemplate: StringRedisTemplate,
+    private val objectMapper: ObjectMapper,
+    @Value("\${checkin.upload-token-ttl-hours:3}") private val ttlHours: Long
+) {
+    companion object {
+        private val logger = LoggerFactory.getLogger(CheckinDamagePointsService::class.java)
+        private const val DAMAGE_POINTS_KEY_PREFIX = "checkin:damage-points:"
+        const val REDIS_DAMAGE_UPDATED_CHANNEL = "checkin:damage-updated"
+    }
+
+    fun saveDamagePoints(
+        tenantId: String,
+        checkinId: String,
+        damagePoints: List<DamagePointData>
+    ): DamagePointsResult {
+        val savedAt = Instant.now()
+        val stored = StoredDamagePoints(
+            checkinId = checkinId,
+            tenantId = tenantId,
+            damagePoints = damagePoints,
+            savedAt = savedAt
+        )
+        val json = objectMapper.writeValueAsString(stored)
+        redisTemplate.opsForValue().set(
+            "$DAMAGE_POINTS_KEY_PREFIX$tenantId:$checkinId",
+            json,
+            Duration.ofHours(ttlHours)
+        )
+
+        val pubSubPayload = objectMapper.writeValueAsString(
+            mapOf(
+                "tenantId" to tenantId,
+                "checkinId" to checkinId,
+                "damagePoints" to damagePoints,
+                "updatedAt" to savedAt.toString()
+            )
+        )
+        redisTemplate.convertAndSend(REDIS_DAMAGE_UPDATED_CHANNEL, pubSubPayload)
+
+        logger.info("Saved ${damagePoints.size} damage points for checkin=$checkinId tenant=$tenantId")
+        return DamagePointsResult(checkinId = checkinId, damagePoints = damagePoints, savedAt = savedAt)
+    }
+
+    fun getDamagePoints(tenantId: String, checkinId: String): DamagePointsResult {
+        val json = redisTemplate.opsForValue().get("$DAMAGE_POINTS_KEY_PREFIX$tenantId:$checkinId")
+            ?: return DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), savedAt = null)
+        return try {
+            val stored = objectMapper.readValue(json, StoredDamagePoints::class.java)
+            DamagePointsResult(
+                checkinId = stored.checkinId,
+                damagePoints = stored.damagePoints,
+                savedAt = stored.savedAt
+            )
+        } catch (e: Exception) {
+            logger.warn("Failed to deserialize damage points for checkin=$checkinId: ${e.message}")
+            DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), savedAt = null)
+        }
+    }
+}
+
+data class DamagePointData(
+    val id: Int = 0,
+    val x: Double = 0.0,
+    val y: Double = 0.0,
+    val note: String? = null
+)
+
+data class StoredDamagePoints(
+    val checkinId: String = "",
+    val tenantId: String = "",
+    val damagePoints: List<DamagePointData> = emptyList(),
+    val savedAt: Instant = Instant.now()
+)
+
+data class DamagePointsResult(
+    val checkinId: String,
+    val damagePoints: List<DamagePointData>,
+    val savedAt: Instant?
+)
