@@ -85,7 +85,8 @@ class AddVisitPhotoHandler(
         ))
 
         // 9. Generate presigned upload URL
-        val uploadUrl = photoSessionService.generateSimpleUploadUrl(fileId, "image/jpeg")
+        val contentType = PhotoSessionService.contentTypeFromFileName(command.fileName)
+        val uploadUrl = photoSessionService.generateSimpleUploadUrl(fileId, contentType)
 
         return AddVisitPhotoResult(
             photoId = photoId.value.toString(),

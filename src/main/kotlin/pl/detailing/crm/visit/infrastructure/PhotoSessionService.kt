@@ -56,6 +56,14 @@ class PhotoSessionService(
         )
 
         private const val MAX_FILE_SIZE = 10L * 1024 * 1024 // 10MB
+
+        fun contentTypeFromFileName(fileName: String): String =
+            when (fileName.substringAfterLast('.', "").lowercase()) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                else -> "image/jpeg"
+            }
     }
 
     /**
