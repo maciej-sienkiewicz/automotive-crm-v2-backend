@@ -133,19 +133,19 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val patch = request.customer.patch
-                        ?: throw BadRequestException("customer.patch is required for UPDATE mode")
+                    val updateData = request.customer.updateData
+                        ?: throw BadRequestException("customer.updateData is required for UPDATE mode")
                     CustomerIdentity.Update(
                         customerId = CustomerId.fromString(request.customer.id
                             ?: throw BadRequestException("customer.id is required for UPDATE mode")),
-                        firstName = patch.firstName,
-                        lastName = patch.lastName,
-                        phone = patch.phone,
-                        email = patch.email,
-                        companyName = patch.company?.name,
-                        companyNip = patch.company?.nip,
-                        companyRegon = patch.company?.regon,
-                        companyAddress = patch.company?.address
+                        firstName = updateData.firstName,
+                        lastName = updateData.lastName,
+                        phone = updateData.phone,
+                        email = updateData.email,
+                        companyName = updateData.company?.name,
+                        companyNip = updateData.company?.nip,
+                        companyRegon = updateData.company?.regon,
+                        companyAddress = updateData.company?.address
                     )
                 }
             },
@@ -247,19 +247,19 @@ class AppointmentController(
                     )
                 }
                 CustomerMode.UPDATE -> {
-                    val patch = request.customer.patch
-                        ?: throw BadRequestException("customer.patch is required for UPDATE mode")
+                    val updateData = request.customer.updateData
+                        ?: throw BadRequestException("customer.updateData is required for UPDATE mode")
                     CustomerIdentity.Update(
                         customerId = CustomerId.fromString(request.customer.id
                             ?: throw BadRequestException("customer.id is required for UPDATE mode")),
-                        firstName = patch.firstName,
-                        lastName = patch.lastName,
-                        phone = patch.phone,
-                        email = patch.email,
-                        companyName = patch.company?.name,
-                        companyNip = patch.company?.nip,
-                        companyRegon = patch.company?.regon,
-                        companyAddress = patch.company?.address
+                        firstName = updateData.firstName,
+                        lastName = updateData.lastName,
+                        phone = updateData.phone,
+                        email = updateData.email,
+                        companyName = updateData.company?.name,
+                        companyNip = updateData.company?.nip,
+                        companyRegon = updateData.company?.regon,
+                        companyAddress = updateData.company?.address
                     )
                 }
             },

@@ -21,7 +21,7 @@ data class CustomerIdentityRequest(
     val mode: CustomerMode,
     val id: String?,
     @JsonProperty("newData") val newData: NewCustomerDataRequest?,
-    @JsonProperty("patch") val patch: NewCustomerDataRequest?
+    @JsonProperty("updateData") val updateData: NewCustomerDataRequest?
 )
 
 enum class CustomerMode {
