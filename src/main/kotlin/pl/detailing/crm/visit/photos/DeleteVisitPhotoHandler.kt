@@ -26,26 +26,23 @@ class DeleteVisitPhotoHandler(
 
     @Transactional
     suspend fun handle(command: DeleteVisitPhotoCommand): Unit = withContext(Dispatchers.IO) {
-        // 1. Find visit with studio isolation
-        val visitEntity = visitRepository.findByIdAndStudioId(
+        // 1. Find visit with studio isolation, eagerly loading photos
+        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(
             id = command.visitId.value,
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
 
-        // 2. Force load photos
-        visitEntity.photos.size
-
-        // 3. Convert to domain
+        // 2. Convert to domain
         val visit = visitEntity.toDomain()
 
-        // 4. Find the photo to delete
+        // 3. Find the photo to delete
         val photoToDelete = visit.photos.find { it.id.value == command.photoId.value }
             ?: throw EntityNotFoundException("Photo not found: ${command.photoId}")
 
-        // 5. Remove photo from list
+        // 4. Remove photo from list
         val updatedPhotos = visit.photos.filter { it.id.value != command.photoId.value }
 
-        // 6. Update visit entity
+        // 5. Update visit entity
         visitEntity.photos.clear()
         visitEntity.photos.addAll(updatedPhotos.map { photo ->
             pl.detailing.crm.visit.infrastructure.VisitPhotoEntity(
@@ -62,7 +59,7 @@ class DeleteVisitPhotoHandler(
 
         visitRepository.save(visitEntity)
 
-        // 7. Delete file from S3
+        // 6. Delete file from S3
         try {
             val deleteObjectRequest = DeleteObjectRequest.builder()
                 .bucket(bucketName)
@@ -76,7 +73,7 @@ class DeleteVisitPhotoHandler(
             println("Warning: Could not delete photo from S3: ${photoToDelete.fileId}")
         }
 
-        // 8. Audit logging
+        // 7. Audit logging
         auditService.log(LogAuditCommand(
             studioId = command.studioId,
             userId = command.userId,
