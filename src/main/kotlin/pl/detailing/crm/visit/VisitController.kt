@@ -25,6 +25,8 @@ import pl.detailing.crm.visit.photos.AddVisitPhotoHandler
 import pl.detailing.crm.visit.photos.AddVisitPhotoCommand
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
+import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
+import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import java.time.LocalDate
 import java.time.Instant
@@ -40,6 +42,7 @@ class VisitController(
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
+    private val updateVisitTitleHandler: UpdateVisitTitleHandler,
     private val smsProvider: SmsProvider
 ) {
 
@@ -260,6 +263,30 @@ class VisitController(
             visitId = result.visitId.value.toString(),
             message = "Visit confirmed successfully"
         ))
+    }
+
+    /**
+     * Update visit title regardless of status
+     * PATCH /api/visits/{visitId}/title
+     */
+    @PatchMapping("/{visitId}/title")
+    fun updateVisitTitle(
+        @PathVariable visitId: String,
+        @RequestBody request: UpdateVisitTitleRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = UpdateVisitTitleCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            title = request.title
+        )
+
+        updateVisitTitleHandler.handle(command)
+
+        ResponseEntity.noContent().build()
     }
 
     /**
@@ -594,6 +621,10 @@ data class VisitPhotoResponse(
     val thumbnailUrl: String,
     val fullSizeUrl: String,
     val tags: List<String>
+)
+
+data class UpdateVisitTitleRequest(
+    val title: String?
 )
 
 /**
