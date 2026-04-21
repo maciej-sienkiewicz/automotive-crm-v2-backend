@@ -8,16 +8,20 @@ import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 
 /**
- * Nasłuchuje na zatwierdzenie profilu i natychmiast pobiera jego posty z API.
+ * Nasłuchuje na zatwierdzenie profilu i natychmiast:
+ * 1. Pobiera posty (pełna historia 12 miesięcy).
+ * 2. Pobiera instagramUserId przez /user/details i zapisuje do DB.
+ * 3. Pobiera aktualnie aktywne stories.
  *
  * Używa @TransactionalEventListener(AFTER_COMMIT) + @Async, żeby:
- * 1. Sync startuje dopiero po commicie transakcji zatwierdzenia (profil widoczny w DB).
- * 2. Wykonuje się w osobnym wątku – HTTP approval wraca od razu, bez czekania na API.
+ * - Sync startuje dopiero po commicie transakcji zatwierdzenia (profil widoczny w DB).
+ * - Wykonuje się w osobnym wątku – HTTP approval wraca od razu, bez czekania na API.
  */
 @Component
 class InstagramApprovalSyncListener(
     private val profileRepository: InstagramProfileRepository,
-    private val syncService: InstagramSyncService
+    private val syncService: InstagramSyncService,
+    private val storySyncService: InstagramStorySyncService
 ) {
     private val log = LoggerFactory.getLogger(InstagramApprovalSyncListener::class.java)
 
@@ -25,7 +29,7 @@ class InstagramApprovalSyncListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun onProfileApproved(event: InstagramProfileApprovedEvent) {
         log.info(
-            "Instagram sync: natychmiastowe pobieranie postów dla @{} po zatwierdzeniu",
+            "Instagram sync: natychmiastowe pobieranie danych dla @{} po zatwierdzeniu",
             event.username
         )
 
@@ -35,12 +39,24 @@ class InstagramApprovalSyncListener(
             return
         }
 
+        // 1. Posty (pełna historia 12 miesięcy przy pierwszym sync)
         try {
             syncService.syncProfile(profile)
-            log.info("Instagram sync: zakończono natychmiastowy sync dla @{}", event.username)
+            log.info("Instagram sync: zakończono sync postów dla @{}", event.username)
         } catch (e: Exception) {
             log.error(
-                "Instagram sync: błąd natychmiastowego sync dla @{}: {}",
+                "Instagram sync: błąd sync postów dla @{}: {}",
+                event.username, e.message, e
+            )
+        }
+
+        // 2. userId + stories (niezależnie od wyniku sync postów)
+        try {
+            storySyncService.syncProfileInitial(profile)
+            log.info("Instagram sync: zakończono sync stories dla @{}", event.username)
+        } catch (e: Exception) {
+            log.error(
+                "Instagram sync: błąd sync stories dla @{}: {}",
                 event.username, e.message, e
             )
         }

@@ -26,6 +26,14 @@ class InstagramProfileEntity(
     val username: String,
 
     /**
+     * Natywne ID konta Instagram (pole "id" z /user/details).
+     * Wymagane do pobierania stories (/user/stories?user_id=...).
+     * Null przed pierwszym zatwierdzeniem profilu.
+     */
+    @Column(name = "instagram_user_id", nullable = true, length = 30)
+    var instagramUserId: String? = null,
+
+    /**
      * Flaga ustawiana przez scheduler gdy RapidAPI zwraca błąd dla tego profilu
      * (np. konto usunięte). Administrator może zareagować.
      */

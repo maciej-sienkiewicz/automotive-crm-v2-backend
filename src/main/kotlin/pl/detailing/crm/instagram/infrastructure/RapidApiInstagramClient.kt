@@ -84,6 +84,33 @@ data class RawInstagramPost(
     val imageUrl: String? = null
 )
 
+// ── User details ─────────────────────────────────────────────────────────────
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiUserDetailsResponse(
+    @JsonProperty("user") val user: RapidApiUserDetails? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiUserDetails(
+    @JsonProperty("id") val id: String? = null
+)
+
+// ── Stories ───────────────────────────────────────────────────────────────────
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiStoryItem(
+    @JsonProperty("id") val id: String? = null,
+    @JsonProperty("taken_at") val takenAt: Long? = null,
+    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null
+)
+
+data class RawInstagramStory(
+    val storyId: String,
+    val imageUrl: String?,
+    val takenAt: Long
+)
+
 /**
  * Klient HTTP do pobierania postów z RapidAPI (ig-scraper5).
  *
@@ -169,6 +196,88 @@ class RapidApiInstagramClient(
         )
 
         return result
+    }
+
+    /**
+     * Pobiera natywne ID konta Instagram na podstawie username.
+     * Wynik zapisywany do InstagramProfileEntity.instagramUserId.
+     *
+     * @return Instagram user ID (ciąg cyfr) lub null gdy API nie zwróciło danych
+     * @throws RapidApiException gdy API zwraca błąd HTTP
+     */
+    fun fetchUserDetails(username: String): String? {
+        if (!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)) {
+            return null
+        }
+
+        val url = "https://$apiHost/user/details?username=${URLEncoder.encode(username, StandardCharsets.UTF_8)}"
+
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(timeoutSeconds))
+            .GET()
+            .header("x-rapidapi-host", apiHost)
+            .header("x-rapidapi-key", apiKey)
+            .build()
+
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() != 200) {
+            throw RapidApiException(
+                username = username,
+                statusCode = response.statusCode(),
+                message = "RapidAPI /user/details zwrócił status ${response.statusCode()} dla @$username"
+            )
+        }
+
+        val parsed = objectMapper.readValue(response.body(), RapidApiUserDetailsResponse::class.java)
+        return parsed.user?.id?.also {
+            log.debug("Instagram user details: @{} → instagramUserId={}", username, it)
+        }
+    }
+
+    /**
+     * Pobiera aktywne stories dla podanego Instagram user ID.
+     * Nie wymaga username – używa numerycznego ID konta.
+     *
+     * @return lista surowych stories lub pusta lista gdy brak aktywnych stories
+     * @throws RapidApiException gdy API zwraca błąd HTTP
+     */
+    fun fetchStories(instagramUserId: String): List<RawInstagramStory> {
+        val url = "https://$apiHost/user/stories?user_id=${URLEncoder.encode(instagramUserId, StandardCharsets.UTF_8)}"
+
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(timeoutSeconds))
+            .GET()
+            .header("x-rapidapi-host", apiHost)
+            .header("x-rapidapi-key", apiKey)
+            .build()
+
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() != 200) {
+            throw RapidApiException(
+                username = instagramUserId,
+                statusCode = response.statusCode(),
+                message = "RapidAPI /user/stories zwrócił status ${response.statusCode()} dla userId=$instagramUserId"
+            )
+        }
+
+        val items = objectMapper.readValue(
+            response.body(),
+            objectMapper.typeFactory.constructCollectionType(List::class.java, RapidApiStoryItem::class.java)
+        ) as List<RapidApiStoryItem>
+
+        return items.mapNotNull { item ->
+            val id = item.id ?: return@mapNotNull null
+            val takenAt = item.takenAt ?: return@mapNotNull null
+            RawInstagramStory(
+                storyId = id,
+                imageUrl = item.imageVersions2?.candidates?.firstOrNull()?.url,
+                takenAt = takenAt
+            )
+        }
     }
 
     // ── prywatne ──────────────────────────────────────────────────────────────
