@@ -56,6 +56,7 @@ class InstagramStoriesController(
             InstagramStoryResponse(
                 storyId = dto.storyId,
                 imageUrl = dto.imageUrl,
+                videoUrl = dto.videoUrl,
                 takenAt = dto.takenAt,
                 profileId = dto.profileId,
                 username = dto.username
@@ -67,6 +68,7 @@ class InstagramStoriesController(
 data class InstagramStoryResponse(
     val storyId: String,
     val imageUrl: String?,
+    val videoUrl: String?,
     val takenAt: Instant,
     val profileId: String,
     val username: String

@@ -46,7 +46,7 @@ data class RapidApiNode(
     @JsonProperty("product_type") val productType: String? = null,
     /** Liczba slajdów – obecne tylko dla carousel_container */
     @JsonProperty("carousel_media_count") val carouselMediaCount: Int? = null,
-    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null
+    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -57,6 +57,11 @@ data class RapidApiCaption(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiImageVersions2(
     @JsonProperty("candidates") val candidates: List<RapidApiImageCandidate> = emptyList()
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiVideoVersion(
+    @JsonProperty("url") val url: String
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -102,12 +107,15 @@ data class RapidApiUserDetails(
 data class RapidApiStoryItem(
     @JsonProperty("id") val id: String? = null,
     @JsonProperty("taken_at") val takenAt: Long? = null,
-    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null
+    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null,
+    @JsonProperty("video_versions") val videoVersions: List<RapidApiVideoVersion>? = emptyList(),
+    @JsonProperty("media_type") val mediaType: String
 )
 
 data class RawInstagramStory(
     val storyId: String,
     val imageUrl: String?,
+    val videoUrl: String?,
     val takenAt: Long
 )
 
@@ -272,10 +280,13 @@ class RapidApiInstagramClient(
         return items.mapNotNull { item ->
             val id = item.id ?: return@mapNotNull null
             val takenAt = item.takenAt ?: return@mapNotNull null
+            val isImage = item.mediaType == "1"
+            val isVideo = item.mediaType == "2"
             RawInstagramStory(
                 storyId = id,
-                imageUrl = item.imageVersions2?.candidates?.firstOrNull()?.url,
-                takenAt = takenAt
+                imageUrl = if(isImage) item.imageVersions2?.candidates?.firstOrNull()?.url else null,
+                videoUrl = if(isVideo) item.videoVersions?.first()?.url else null,
+                takenAt = takenAt,
             )
         }
     }

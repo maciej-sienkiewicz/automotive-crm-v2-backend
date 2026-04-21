@@ -16,6 +16,7 @@ import java.util.*
 data class InstagramStoryDto(
     val storyId: String,
     val imageUrl: String?,
+    val videoUrl: String?,
     val takenAt: Instant,
     val profileId: String,
     val username: String
@@ -82,6 +83,7 @@ class GetInstagramStoriesHandler(
                 InstagramStoryDto(
                     storyId = story.storyId,
                     imageUrl = story.imageUrl,
+                    videoUrl = story.videoUrl,
                     takenAt = story.takenAt,
                     profileId = story.profileId.toString(),
                     username = profile.username

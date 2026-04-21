@@ -146,6 +146,7 @@ class InstagramStorySyncService(
                     profileId = profileId,
                     storyId = raw.storyId,
                     imageUrl = raw.imageUrl,
+                    videoUrl = raw.videoUrl,
                     takenAt = Instant.ofEpochSecond(raw.takenAt),
                     scrapedAt = scrapedAt
                 )

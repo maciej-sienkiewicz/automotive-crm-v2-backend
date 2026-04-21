@@ -36,6 +36,9 @@ class InstagramStorySnapshotEntity(
     @Column(name = "image_url", nullable = true, columnDefinition = "text")
     val imageUrl: String?,
 
+    @Column(name = "video_url", nullable = true, columnDefinition = "text")
+    val videoUrl: String?,
+
     /** Czas publikacji story (Unix timestamp z API → Instant) */
     @Column(name = "taken_at", nullable = false, columnDefinition = "timestamp with time zone")
     val takenAt: Instant,
