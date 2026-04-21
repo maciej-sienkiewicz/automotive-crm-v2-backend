@@ -121,14 +121,16 @@ class InstagramSyncService(
                         scrapedAt = scrapedAt,
                         productType = raw.productType,
                         carouselMediaCount = raw.carouselMediaCount,
-                        hashtags = extractHashtags(raw.captionText)
+                        hashtags = extractHashtags(raw.captionText),
+                        imageUrl = raw.imageUrl
                     )
                 } else if (takenAt.isAfter(updateCutoff)) {
-                    // Istniejący post w oknie 3 miesięcy – zaktualizuj liczniki
+                    // Istniejący post w oknie 3 miesięcy – zaktualizuj liczniki i URL zdjęcia
                     existing.likeCount = raw.likeCount
                     existing.commentCount = raw.commentCount
                     existing.viewCount = raw.viewCount
                     existing.scrapedAt = scrapedAt
+                    existing.imageUrl = raw.imageUrl
                     updatedCount++
                 }
                 // Istniejące posty starsze niż 3 miesiące – pomijamy (historyczne dane zostają)

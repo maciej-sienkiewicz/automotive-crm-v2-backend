@@ -79,5 +79,13 @@ class InstagramPostSnapshotEntity(
      * Null gdy caption jest puste lub nie zawiera hashtagów.
      */
     @Column(name = "hashtags", nullable = true, columnDefinition = "text")
-    val hashtags: String?
+    val hashtags: String?,
+
+    /**
+     * URL zdjęcia posta – pierwszy kandydat z image_versions2.candidates (najwyższa rozdzielczość).
+     * Aktualizowany przy każdym sync, ponieważ CDN-owe tokeny wygasają.
+     * Null dla postów pobranych przed wprowadzeniem tego pola.
+     */
+    @Column(name = "image_url", nullable = true, columnDefinition = "text")
+    var imageUrl: String?
 )

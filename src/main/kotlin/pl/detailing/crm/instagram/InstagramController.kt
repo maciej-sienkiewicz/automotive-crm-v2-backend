@@ -230,7 +230,9 @@ data class InstagramPostResponse(
     /** Hashtagi wyekstrahowane z caption */
     val hashtags: List<String>,
     /** Suma lajków i komentarzy */
-    val engagementScore: Int
+    val engagementScore: Int,
+    /** URL zdjęcia z image_versions2 (pierwszy kandydat); null dla starych rekordów */
+    val imageUrl: String?
 )
 
 private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
@@ -280,7 +282,8 @@ private fun InstagramPostDto.toResponse() = InstagramPostResponse(
     productType = productType,
     carouselMediaCount = carouselMediaCount,
     hashtags = hashtags,
-    engagementScore = engagementScore
+    engagementScore = engagementScore,
+    imageUrl = imageUrl
 )
 
 private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(

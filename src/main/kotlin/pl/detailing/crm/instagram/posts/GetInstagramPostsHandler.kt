@@ -26,7 +26,9 @@ data class InstagramPostDto(
     /** Hashtagi wyekstrahowane z caption */
     val hashtags: List<String>,
     /** Suma lajków i komentarzy */
-    val engagementScore: Int
+    val engagementScore: Int,
+    /** URL zdjęcia z image_versions2 (pierwszy kandydat); null dla starych rekordów */
+    val imageUrl: String?
 )
 
 data class GetInstagramPostsQuery(
@@ -65,7 +67,8 @@ class GetInstagramPostsHandler(
                 productType = p.productType,
                 carouselMediaCount = p.carouselMediaCount ?: 0,
                 hashtags = p.hashtags?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
-                engagementScore = p.likeCount + p.commentCount
+                engagementScore = p.likeCount + p.commentCount,
+                imageUrl = p.imageUrl
             )
         }
     }

@@ -45,12 +45,25 @@ data class RapidApiNode(
     /** Typ formatu: "feed_item" (zdjęcie), "clips" (Reels), "carousel_container" (karuzela) */
     @JsonProperty("product_type") val productType: String? = null,
     /** Liczba slajdów – obecne tylko dla carousel_container */
-    @JsonProperty("carousel_media_count") val carouselMediaCount: Int? = null
+    @JsonProperty("carousel_media_count") val carouselMediaCount: Int? = null,
+    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiCaption(
     @JsonProperty("text") val text: String? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiImageVersions2(
+    @JsonProperty("candidates") val candidates: List<RapidApiImageCandidate> = emptyList()
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiImageCandidate(
+    @JsonProperty("url") val url: String? = null,
+    @JsonProperty("width") val width: Int? = null,
+    @JsonProperty("height") val height: Int? = null
 )
 
 data class RawInstagramPost(
@@ -66,7 +79,9 @@ data class RawInstagramPost(
     /** "feed_item" | "clips" | "carousel_container" – null jeśli API nie zwróciło */
     val productType: String? = null,
     /** Liczba slajdów karuzeli; dla innych typów zawsze 1 */
-    val carouselMediaCount: Int = 1
+    val carouselMediaCount: Int = 1,
+    /** URL pierwszego kandydata z image_versions2 (najwyższa rozdzielczość) */
+    val imageUrl: String? = null
 )
 
 /**
@@ -202,7 +217,8 @@ class RapidApiInstagramClient(
                 takenAt = takenAt,
                 isPinned = node.timelinePinnedUserIds.isNotEmpty(),
                 productType = node.productType,
-                carouselMediaCount = if (isCarousel) node.carouselMediaCount ?: 1 else 1
+                carouselMediaCount = if (isCarousel) node.carouselMediaCount ?: 1 else 1,
+                imageUrl = node.imageVersions2?.candidates?.firstOrNull()?.url
             )
         }
 
