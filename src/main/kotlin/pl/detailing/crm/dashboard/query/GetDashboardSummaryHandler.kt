@@ -191,6 +191,7 @@ class GetDashboardSummaryHandler(
 
             VisitDetail(
                 id = VisitId(visit.id),
+                name = visit.title ?: "Brak nazwy wizyty.",
                 brand = visit.brandSnapshot,
                 model = visit.modelSnapshot,
                 amount = Money.fromCents(totalAmount),
@@ -217,6 +218,7 @@ class GetDashboardSummaryHandler(
 
             VisitDetail(
                 id = VisitId(appointment.id), // Use appointment ID as temporary visit ID
+                name = appointment.appointmentTitle ?: "${vehicle?.brand} + ${vehicle?.model}",
                 brand = vehicle?.brand ?: "Unknown",
                 model = vehicle?.model ?: "Unknown",
                 amount = Money.fromCents(totalAmount),

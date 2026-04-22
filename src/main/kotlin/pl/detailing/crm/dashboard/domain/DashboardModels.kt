@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.VisitId
  */
 data class VisitDetail(
     val id: VisitId,
+    val name: String,
     val brand: String,
     val model: String,
     val amount: Money,

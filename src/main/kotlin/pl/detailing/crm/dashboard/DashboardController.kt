@@ -39,6 +39,7 @@ class DashboardController(
                 inProgressDetails = summary.stats.inProgressDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
+                        name = detail.name,
                         brand = detail.brand,
                         model = detail.model,
                         amount = detail.amount.amountInCents / 100.0,
@@ -51,6 +52,7 @@ class DashboardController(
                 readyForPickupDetails = summary.stats.readyForPickupDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
+                        name = detail.name,
                         brand = detail.brand,
                         model = detail.model,
                         amount = detail.amount.amountInCents / 100.0,
@@ -63,6 +65,7 @@ class DashboardController(
                 incomingTodayDetails = summary.stats.incomingTodayDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
+                        name = detail.name,
                         brand = detail.brand,
                         model = detail.model,
                         amount = detail.amount.amountInCents / 100.0,
@@ -75,6 +78,7 @@ class DashboardController(
                 abandonedDetails = summary.stats.abandonedDetails.map { detail ->
                     VisitDetailResponse(
                         id = detail.id.toString(),
+                        name = detail.name,
                         brand = detail.brand,
                         model = detail.model,
                         amount = detail.amount.amountInCents / 100.0,
@@ -118,6 +122,7 @@ class DashboardController(
  */
 data class VisitDetailResponse(
     val id: String,
+    val name: String,
     val brand: String,
     val model: String,
     val amount: Double,
