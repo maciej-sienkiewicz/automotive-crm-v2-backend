@@ -28,10 +28,10 @@ class VehicleEntity(
     @Column(name = "license_plate", nullable = true, length = 20)
     var licensePlate: String?,
 
-    @Column(name = "brand", nullable = false, length = 100)
+    @Column(name = "brand", nullable = false, length = 100, columnDefinition = "varchar(100)")
     var brand: String,
 
-    @Column(name = "model", nullable = false, length = 100)
+    @Column(name = "model", nullable = false, length = 100, columnDefinition = "varchar(100)")
     var model: String,
 
     @Column(name = "year_of_production", nullable = true)
