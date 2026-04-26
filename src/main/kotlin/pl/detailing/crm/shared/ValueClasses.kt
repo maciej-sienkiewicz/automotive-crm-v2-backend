@@ -661,6 +661,19 @@ value class ServiceCategoryId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for Task entities
+ */
+@JvmInline
+value class TaskId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = TaskId(UUID.randomUUID())
+        fun fromString(value: String) = TaskId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Base exception for business logic violations
  */
 sealed class BusinessException(message: String) : RuntimeException(message)
