@@ -178,6 +178,7 @@ class AuditController(
         CASH_REGISTER -> "Kasa"
         FINANCE -> "Finanse"
         EMPLOYEE -> TODO()
+        AuditModule.TASK -> TODO()
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
