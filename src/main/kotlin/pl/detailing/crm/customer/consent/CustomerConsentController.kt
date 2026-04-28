@@ -12,6 +12,7 @@ import pl.detailing.crm.customer.consent.sign.SignConsentCommand
 import pl.detailing.crm.customer.consent.sign.SignConsentHandler
 import pl.detailing.crm.shared.ConsentTemplateId
 import pl.detailing.crm.shared.CustomerId
+import java.time.Instant
 import java.util.*
 
 /**
@@ -51,11 +52,16 @@ class CustomerConsentController(
     /**
      * Record a customer's acceptance of a specific consent template.
      * Creates an immutable audit record of the signature.
+     *
+     * Optionally accepts a request body. If requestAttachmentUpload is true,
+     * the response will include a presigned S3 URL so the admin can upload
+     * a scanned copy of the signed paper document.
      */
     @PostMapping("/{templateId}/sign")
     fun signConsent(
         @PathVariable customerId: UUID,
-        @PathVariable templateId: UUID
+        @PathVariable templateId: UUID,
+        @RequestBody(required = false) request: SignConsentRequest?
     ): ResponseEntity<SignConsentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -63,7 +69,8 @@ class CustomerConsentController(
             studioId = principal.studioId,
             customerId = CustomerId(customerId),
             templateId = ConsentTemplateId(templateId),
-            witnessedBy = principal.userId
+            witnessedBy = principal.userId,
+            requestAttachmentUpload = request?.requestAttachmentUpload ?: false
         )
 
         val result = signConsentHandler.handle(command)
@@ -71,13 +78,19 @@ class CustomerConsentController(
         ResponseEntity.status(HttpStatus.CREATED).body(
             SignConsentResponse(
                 consentId = result.consentId.value,
-                signedAt = result.signedAt
+                signedAt = result.signedAt,
+                attachmentUploadUrl = result.attachmentUploadUrl,
+                attachmentS3Key = result.attachmentS3Key
             )
         )
     }
 }
 
-// Response DTOs
+// Request / Response DTOs
+
+data class SignConsentRequest(
+    val requestAttachmentUpload: Boolean = false
+)
 
 data class ConsentStatusResponse(
     val consents: List<ConsentStatusItemResponse>
@@ -113,11 +126,13 @@ data class ConsentStatusItemResponse(
     val currentVersion: Int,
     val signedTemplateId: UUID?,
     val signedVersion: Int?,
-    val signedAt: java.time.Instant?,
+    val signedAt: Instant?,
     val downloadUrl: String?
 )
 
 data class SignConsentResponse(
     val consentId: UUID,
-    val signedAt: java.time.Instant
+    val signedAt: Instant,
+    val attachmentUploadUrl: String? = null,
+    val attachmentS3Key: String? = null
 )

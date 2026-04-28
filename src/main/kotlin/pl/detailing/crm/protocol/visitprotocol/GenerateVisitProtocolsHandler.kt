@@ -90,6 +90,7 @@ class GenerateVisitProtocolsHandler(
                     version = nextVersion,
                     isMandatory = rule.isMandatory,
                     status = VisitProtocolStatus.PENDING,
+                    consentDefinitionId = rule.consentDefinitionId,
                     filledPdfS3Key = null,
                     signedPdfS3Key = null,
                     signedAt = null,

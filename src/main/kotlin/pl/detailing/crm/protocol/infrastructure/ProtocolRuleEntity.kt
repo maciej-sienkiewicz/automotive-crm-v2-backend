@@ -50,6 +50,9 @@ class ProtocolRuleEntity(
     @Column(name = "service_id", columnDefinition = "uuid")
     val serviceIds: MutableSet<UUID> = mutableSetOf(),
 
+    @Column(name = "consent_definition_id", nullable = true, columnDefinition = "uuid")
+    val consentDefinitionId: UUID? = null,
+
     @Column(name = "is_mandatory", nullable = false)
     var isMandatory: Boolean = true,
 
@@ -75,6 +78,7 @@ class ProtocolRuleEntity(
         triggerType = triggerType,
         stage = stage,
         serviceIds = serviceIds.map { ServiceId(it) }.toSet(),
+        consentDefinitionId = consentDefinitionId?.let { ConsentDefinitionId(it) },
         isMandatory = isMandatory,
         displayOrder = displayOrder,
         createdBy = UserId(createdBy),
@@ -92,6 +96,7 @@ class ProtocolRuleEntity(
                 triggerType = rule.triggerType,
                 stage = rule.stage,
                 serviceIds = rule.serviceIds.map { it.value }.toMutableSet(),
+                consentDefinitionId = rule.consentDefinitionId?.value,
                 isMandatory = rule.isMandatory,
                 displayOrder = rule.displayOrder,
                 createdBy = rule.createdBy.value,

@@ -3,6 +3,8 @@ package pl.detailing.crm.protocol.infrastructure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
+import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
 import pl.detailing.crm.protocol.domain.ProtocolRule
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -13,12 +15,15 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
  * The resolver applies business rules to determine the documentation requirements:
  * 1. GLOBAL_ALWAYS rules: Protocols required for all visits at a specific stage
  * 2. SERVICE_SPECIFIC rules: Protocols required only if visit includes specific services
- * 3. Deduplication: If multiple services trigger the same protocol, it appears only once
+ * 3. CUSTOMER_CONSENT_REQUIRED rules: Protocols required only if customer lacks valid consent
+ * 4. Deduplication: If multiple services trigger the same protocol, it appears only once
  */
 @Service
 class ProtocolResolver(
     private val protocolRuleRepository: ProtocolRuleRepository,
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val consentTemplateRepository: ConsentTemplateRepository,
+    private val customerConsentRepository: CustomerConsentRepository
 ) {
 
     /**
@@ -34,7 +39,7 @@ class ProtocolResolver(
         studioId: StudioId,
         stage: ProtocolStage
     ): List<ProtocolRule> = withContext(Dispatchers.IO) {
-        // Fetch the visit to get service IDs (with photos eagerly loaded to avoid LazyInitializationException)
+        // Fetch the visit to get service IDs and customer ID
         val visit = visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
             ?: throw IllegalArgumentException("Visit not found: $visitId")
 
@@ -67,12 +72,60 @@ class ProtocolResolver(
             emptyList()
         }
 
+        // Fetch CUSTOMER_CONSENT_REQUIRED rules and filter by customer consent status
+        val consentRequiredRules = protocolRuleRepository.findAllByStudioIdAndStageAndTriggerType(
+            studioId.value,
+            stage,
+            ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED
+        ).map { it.toDomain() }.filter { rule ->
+            val defId = rule.consentDefinitionId ?: return@filter false
+            !customerHasValidConsent(visit.customerId, defId.value, studioId.value)
+        }
+
         // Combine and deduplicate by template ID
-        val allRules = (globalRules + serviceSpecificRules)
+        val allRules = (globalRules + serviceSpecificRules + consentRequiredRules)
             .distinctBy { it.templateId }
             .sortedBy { it.displayOrder }
 
         allRules
+    }
+
+    /**
+     * Returns true if the customer has valid consent for the given definition.
+     *
+     * Valid means:
+     * - Signed the current active template, OR
+     * - Signed an older template and the current active template does not require re-sign (OUTDATED but acceptable)
+     */
+    private fun customerHasValidConsent(
+        customerId: java.util.UUID,
+        consentDefinitionId: java.util.UUID,
+        studioId: java.util.UUID
+    ): Boolean {
+        val activeTemplate = consentTemplateRepository.findActiveByDefinitionIdAndStudioId(
+            consentDefinitionId, studioId
+        ) ?: return false
+
+        // Check if customer signed the current active template
+        val signedActiveTemplate = customerConsentRepository.findLatestByCustomerAndTemplate(
+            customerId, activeTemplate.id, studioId
+        )
+        if (signedActiveTemplate != null) return true
+
+        // OUTDATED: customer signed an older version and re-sign is not required
+        if (!activeTemplate.requiresResign) {
+            val allTemplatesForDefinition = consentTemplateRepository
+                .findAllByDefinitionIdAndStudioId(consentDefinitionId, studioId)
+                .map { it.id }
+
+            val hasOlderConsent = customerConsentRepository
+                .findAllByCustomerIdAndStudioId(customerId, studioId)
+                .any { it.templateId in allTemplatesForDefinition }
+
+            if (hasOlderConsent) return true
+        }
+
+        return false
     }
 
     /**

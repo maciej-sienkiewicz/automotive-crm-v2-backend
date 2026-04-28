@@ -498,8 +498,9 @@ enum class ProtocolStage {
  * Protocol rule trigger type
  */
 enum class ProtocolTriggerType {
-    GLOBAL_ALWAYS,      // Required for every visit at specified stage
-    SERVICE_SPECIFIC    // Required only if visit includes specific service
+    GLOBAL_ALWAYS,               // Required for every visit at specified stage
+    SERVICE_SPECIFIC,            // Required only if visit includes specific service
+    CUSTOMER_CONSENT_REQUIRED    // Required only if customer lacks valid consent for linked definition
 }
 
 /**

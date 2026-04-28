@@ -43,7 +43,10 @@ class CustomerConsentEntity(
     val signedAt: Instant = Instant.now(),
 
     @Column(name = "witnessed_by", nullable = false, columnDefinition = "uuid")
-    val witnessedBy: UUID
+    val witnessedBy: UUID,
+
+    @Column(name = "attachment_s3_key", length = 500, nullable = true)
+    val attachmentS3Key: String? = null
 ) {
     fun toDomain(): CustomerConsent = CustomerConsent(
         id = CustomerConsentId(id),
@@ -51,7 +54,8 @@ class CustomerConsentEntity(
         customerId = CustomerId(customerId),
         templateId = ConsentTemplateId(templateId),
         signedAt = signedAt,
-        witnessedBy = UserId(witnessedBy)
+        witnessedBy = UserId(witnessedBy),
+        attachmentS3Key = attachmentS3Key
     )
 
     companion object {
@@ -62,7 +66,8 @@ class CustomerConsentEntity(
                 customerId = consent.customerId.value,
                 templateId = consent.templateId.value,
                 signedAt = consent.signedAt,
-                witnessedBy = consent.witnessedBy.value
+                witnessedBy = consent.witnessedBy.value,
+                attachmentS3Key = consent.attachmentS3Key
             )
     }
 }

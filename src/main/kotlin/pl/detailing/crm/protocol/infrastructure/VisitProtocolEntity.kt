@@ -41,6 +41,9 @@ class VisitProtocolEntity(
     @Column(name = "version", nullable = false)
     val version: Int = 1,
 
+    @Column(name = "consent_definition_id", nullable = true, columnDefinition = "uuid")
+    val consentDefinitionId: UUID? = null,
+
     @Column(name = "is_mandatory", nullable = false)
     val isMandatory: Boolean,
 
@@ -81,6 +84,7 @@ class VisitProtocolEntity(
         version = version,
         isMandatory = isMandatory,
         status = status,
+        consentDefinitionId = consentDefinitionId?.let { ConsentDefinitionId(it) },
         filledPdfS3Key = filledPdfS3Key,
         signedPdfS3Key = signedPdfS3Key,
         signedAt = signedAt,
@@ -102,6 +106,7 @@ class VisitProtocolEntity(
                 version = visitProtocol.version,
                 isMandatory = visitProtocol.isMandatory,
                 status = visitProtocol.status,
+                consentDefinitionId = visitProtocol.consentDefinitionId?.value,
                 filledPdfS3Key = visitProtocol.filledPdfS3Key,
                 signedPdfS3Key = visitProtocol.signedPdfS3Key,
                 signedAt = visitProtocol.signedAt,

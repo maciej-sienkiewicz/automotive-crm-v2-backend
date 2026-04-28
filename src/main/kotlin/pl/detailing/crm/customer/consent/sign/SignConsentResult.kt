@@ -8,5 +8,7 @@ import java.time.Instant
  */
 data class SignConsentResult(
     val consentId: CustomerConsentId,
-    val signedAt: Instant
+    val signedAt: Instant,
+    val attachmentUploadUrl: String? = null,
+    val attachmentS3Key: String? = null
 )

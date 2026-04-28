@@ -19,14 +19,15 @@ data class VisitProtocol(
     val visitId: VisitId,
     val templateId: ProtocolTemplateId,
     val stage: ProtocolStage,
-    val version: Int,                   // Version number for protocol regeneration (1, 2, 3...)
+    val version: Int,                          // Version number for protocol regeneration (1, 2, 3...)
     val isMandatory: Boolean,
     val status: VisitProtocolStatus,
-    val filledPdfS3Key: String?,        // S3 key for the filled PDF (before signature)
-    val signedPdfS3Key: String?,        // S3 key for the signed and flattened PDF
+    val consentDefinitionId: ConsentDefinitionId?, // Set when created from CUSTOMER_CONSENT_REQUIRED rule
+    val filledPdfS3Key: String?,               // S3 key for the filled PDF (before signature)
+    val signedPdfS3Key: String?,               // S3 key for the signed and flattened PDF
     val signedAt: Instant?,
-    val signedBy: String?,              // Name of the person who signed
-    val signatureImageS3Key: String?,   // S3 key for the signature image
+    val signedBy: String?,                     // Name of the person who signed
+    val signatureImageS3Key: String?,          // S3 key for the signature image
     val notes: String?,
     val createdAt: Instant,
     val updatedAt: Instant

@@ -22,6 +22,7 @@ data class CreateProtocolRuleRequest(
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
     val serviceIds: List<String>?,
+    val consentDefinitionId: String?,   // Required when triggerType is CUSTOMER_CONSENT_REQUIRED
     val isMandatory: Boolean,
     val displayOrder: Int?
 )
@@ -71,6 +72,7 @@ data class ProtocolRuleResponse(
     val stage: String,
     val serviceIds: List<String>,
     val serviceNames: List<String>,
+    val consentDefinitionId: String?,
     val isMandatory: Boolean,
     val displayOrder: Int,
     val createdAt: String,
@@ -83,6 +85,7 @@ data class VisitProtocolResponse(
     val protocolTemplateId: String,
     val protocolTemplate: ProtocolTemplateResponse?,
     val stage: String,
+    val consentDefinitionId: String?,
     val isMandatory: Boolean,
     val isSigned: Boolean,
     val signedAt: String?,

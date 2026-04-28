@@ -17,5 +17,6 @@ data class SignConsentCommand(
     val studioId: StudioId,
     val customerId: CustomerId,
     val templateId: ConsentTemplateId,
-    val witnessedBy: UserId
+    val witnessedBy: UserId,
+    val requestAttachmentUpload: Boolean = false
 )

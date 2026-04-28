@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.protocol.domain.ProtocolRule
 import pl.detailing.crm.protocol.infrastructure.ProtocolRuleEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolRuleRepository
@@ -14,7 +15,8 @@ import java.time.Instant
 @Service
 class CreateProtocolRuleHandler(
     private val protocolRuleRepository: ProtocolRuleRepository,
-    private val protocolTemplateRepository: ProtocolTemplateRepository
+    private val protocolTemplateRepository: ProtocolTemplateRepository,
+    private val consentDefinitionRepository: ConsentDefinitionRepository
 ) {
 
     @Transactional
@@ -26,12 +28,30 @@ class CreateProtocolRuleHandler(
                 command.studioId.value
             ) ?: throw ValidationException("Protocol template not found")
 
-            // Validate service-specific rules
-            if (command.triggerType == ProtocolTriggerType.SERVICE_SPECIFIC && command.serviceIds.isEmpty()) {
-                throw ValidationException("At least one Service ID is required for SERVICE_SPECIFIC rules")
-            }
-            if (command.triggerType == ProtocolTriggerType.GLOBAL_ALWAYS && command.serviceIds.isNotEmpty()) {
-                throw ValidationException("Service IDs must be empty for GLOBAL_ALWAYS rules")
+            // Validate trigger-type-specific constraints
+            when (command.triggerType) {
+                ProtocolTriggerType.SERVICE_SPECIFIC -> {
+                    if (command.serviceIds.isEmpty()) {
+                        throw ValidationException("At least one Service ID is required for SERVICE_SPECIFIC rules")
+                    }
+                }
+                ProtocolTriggerType.GLOBAL_ALWAYS -> {
+                    if (command.serviceIds.isNotEmpty()) {
+                        throw ValidationException("Service IDs must be empty for GLOBAL_ALWAYS rules")
+                    }
+                }
+                ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED -> {
+                    if (command.consentDefinitionId == null) {
+                        throw ValidationException("Consent definition ID is required for CUSTOMER_CONSENT_REQUIRED rules")
+                    }
+                    if (command.serviceIds.isNotEmpty()) {
+                        throw ValidationException("Service IDs must be empty for CUSTOMER_CONSENT_REQUIRED rules")
+                    }
+                    consentDefinitionRepository.findByIdAndStudioId(
+                        command.consentDefinitionId.value,
+                        command.studioId.value
+                    ) ?: throw ValidationException("Consent definition not found")
+                }
             }
 
             val rule = ProtocolRule(
@@ -41,6 +61,7 @@ class CreateProtocolRuleHandler(
                 triggerType = command.triggerType,
                 stage = command.stage,
                 serviceIds = command.serviceIds,
+                consentDefinitionId = command.consentDefinitionId,
                 isMandatory = command.isMandatory,
                 displayOrder = command.displayOrder,
                 createdBy = command.userId,
@@ -63,6 +84,7 @@ data class CreateProtocolRuleCommand(
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
     val serviceIds: Set<ServiceId>,
+    val consentDefinitionId: ConsentDefinitionId?,
     val isMandatory: Boolean,
     val displayOrder: Int
 )

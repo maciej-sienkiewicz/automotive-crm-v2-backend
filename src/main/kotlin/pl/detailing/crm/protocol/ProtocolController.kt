@@ -171,6 +171,7 @@ class ProtocolController(
             triggerType = request.triggerType,
             stage = request.stage,
             serviceIds = request.serviceIds?.map { ServiceId.fromString(it) }?.toSet() ?: emptySet(),
+            consentDefinitionId = request.consentDefinitionId?.let { ConsentDefinitionId.fromString(it) },
             isMandatory = request.isMandatory,
             displayOrder = request.displayOrder ?: 0
         )
@@ -267,6 +268,7 @@ class ProtocolController(
             visitId = VisitId.fromString(visitId),
             protocolId = VisitProtocolId.fromString(protocolId),
             studioId = principal.studioId,
+            witnessedBy = principal.userId,
             signatureUrl = request.signatureUrl,
             signedBy = request.signedBy,
             notes = request.notes
@@ -317,6 +319,7 @@ class ProtocolController(
             stage = rule.stage.name,
             serviceIds = rule.serviceIds.map { it.toString() },
             serviceNames = serviceNames,
+            consentDefinitionId = rule.consentDefinitionId?.value?.toString(),
             isMandatory = rule.isMandatory,
             displayOrder = rule.displayOrder,
             createdAt = rule.createdAt.toString(),
@@ -347,6 +350,7 @@ class ProtocolController(
             protocolTemplateId = protocol.templateId.toString(),
             protocolTemplate = template?.let { toProtocolTemplateResponse(it, studioId) },
             stage = protocol.stage.name,
+            consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
             isMandatory = protocol.isMandatory,
             isSigned = protocol.status == VisitProtocolStatus.SIGNED,
             signedAt = protocol.signedAt?.toString(),

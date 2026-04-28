@@ -193,6 +193,7 @@ class CheckinController(
                 templateId = protocol.templateId.toString(),
                 templateName = template?.name ?: "Unknown Template",
                 stage = protocol.stage.name,
+                consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
                 status = protocol.status.name,
                 filledPdfUrl = filledPdfUrl
@@ -362,6 +363,7 @@ class CheckinController(
                 templateId = protocol.templateId.toString(),
                 templateName = template?.name ?: "Unknown Template",
                 stage = protocol.stage.name,
+                consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
                 status = protocol.status.name,
                 filledPdfUrl = filledPdfUrl
@@ -580,6 +582,7 @@ data class VisitProtocolDto(
     val templateId: String,
     val templateName: String,
     val stage: String,
+    val consentDefinitionId: String?,
     val isMandatory: Boolean,
     val status: String,
     val filledPdfUrl: String?

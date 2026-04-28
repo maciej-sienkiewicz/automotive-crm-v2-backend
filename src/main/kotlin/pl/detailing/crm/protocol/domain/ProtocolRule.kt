@@ -9,6 +9,7 @@ import java.time.Instant
  * Rules can be:
  * - GLOBAL_ALWAYS: Required for all visits at a specific stage
  * - SERVICE_SPECIFIC: Required only if visit includes one or more specific services
+ * - CUSTOMER_CONSENT_REQUIRED: Required only if customer lacks valid consent for the linked definition
  */
 data class ProtocolRule(
     val id: ProtocolRuleId,
@@ -16,9 +17,10 @@ data class ProtocolRule(
     val templateId: ProtocolTemplateId,
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
-    val serviceIds: Set<ServiceId>,     // Required when triggerType is SERVICE_SPECIFIC (can be multiple services)
-    val isMandatory: Boolean,           // If true, visit cannot proceed without this protocol
-    val displayOrder: Int,              // Order in which protocols appear in the UI
+    val serviceIds: Set<ServiceId>,              // Required when triggerType is SERVICE_SPECIFIC
+    val consentDefinitionId: ConsentDefinitionId?, // Required when triggerType is CUSTOMER_CONSENT_REQUIRED
+    val isMandatory: Boolean,                    // If true, visit cannot proceed without this protocol
+    val displayOrder: Int,                       // Order in which protocols appear in the UI
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
@@ -30,6 +32,13 @@ data class ProtocolRule(
         }
         if (triggerType == ProtocolTriggerType.GLOBAL_ALWAYS) {
             require(serviceIds.isEmpty()) { "Service IDs must be empty for GLOBAL_ALWAYS rules" }
+        }
+        if (triggerType == ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED) {
+            requireNotNull(consentDefinitionId) { "Consent definition ID is required for CUSTOMER_CONSENT_REQUIRED rules" }
+            require(serviceIds.isEmpty()) { "Service IDs must be empty for CUSTOMER_CONSENT_REQUIRED rules" }
+        }
+        if (triggerType != ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED) {
+            require(consentDefinitionId == null) { "Consent definition ID must be null for non-CUSTOMER_CONSENT_REQUIRED rules" }
         }
         require(displayOrder >= 0) { "Display order must be non-negative" }
     }

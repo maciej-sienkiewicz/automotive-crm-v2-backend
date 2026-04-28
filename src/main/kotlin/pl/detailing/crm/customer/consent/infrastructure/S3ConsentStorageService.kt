@@ -92,4 +92,38 @@ class S3ConsentStorageService(
     ): String {
         return "$studioId/consents/templates/${definitionSlug}_v${version}.pdf"
     }
+
+    /**
+     * Generate a presigned URL for uploading a manual consent attachment (scanned document).
+     *
+     * @param studioId The studio/tenant ID
+     * @param consentId The customer consent record ID
+     * @return Presigned upload URL valid for 15 minutes
+     */
+    fun generateAttachmentUploadUrl(studioId: UUID, consentId: UUID): String {
+        val s3Key = buildAttachmentS3Key(studioId, consentId)
+
+        val putObjectRequest = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .contentType("application/pdf")
+            .build()
+
+        val presignRequest = PutObjectPresignRequest.builder()
+            .signatureDuration(UPLOAD_URL_DURATION)
+            .putObjectRequest(putObjectRequest)
+            .build()
+
+        val presignedRequest = s3Presigner.presignPutObject(presignRequest)
+        return presignedRequest.url().toString()
+    }
+
+    /**
+     * Build the S3 object key for a manual consent attachment.
+     *
+     * Pattern: {studioId}/consents/attachments/{consentId}.pdf
+     */
+    fun buildAttachmentS3Key(studioId: UUID, consentId: UUID): String {
+        return "$studioId/consents/attachments/$consentId.pdf"
+    }
 }
