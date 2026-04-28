@@ -75,7 +75,7 @@ class CompanyController(
 
     @PutMapping
     fun updateCompanySettings(
-        @RequestBody request: UpdateCompanySettingsRequest
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateCompanySettingsRequest
     ): ResponseEntity<CompanySettingsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
