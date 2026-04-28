@@ -54,7 +54,9 @@ class CustomerController(
         @RequestParam(required = false) vehicleBrand: String?,
         @RequestParam(required = false) vehicleModel: String?,
         @RequestParam(required = false) minRevenue: Double?,
-        @RequestParam(required = false) maxRevenue: Double?
+        @RequestParam(required = false) maxRevenue: Double?,
+        @RequestParam(required = false) minVisits: Int?,
+        @RequestParam(required = false) maxVisits: Int?
     ): ResponseEntity<CustomerListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -103,6 +105,14 @@ class CustomerController(
 
         if (maxRevenue != null) {
             customers = customers.filter { it.totalRevenue.grossAmount.toDouble() <= maxRevenue }
+        }
+
+        if (minVisits != null) {
+            customers = customers.filter { it.totalVisits >= minVisits }
+        }
+
+        if (maxVisits != null) {
+            customers = customers.filter { it.totalVisits <= maxVisits }
         }
 
         customers = when (sortBy) {
