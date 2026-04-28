@@ -52,7 +52,9 @@ class CustomerController(
         @RequestParam(required = false) lastVisitWithinDays: Int?,
         @RequestParam(required = false) notVisitedSinceDays: Int?,
         @RequestParam(required = false) vehicleBrand: String?,
-        @RequestParam(required = false) vehicleModel: String?
+        @RequestParam(required = false) vehicleModel: String?,
+        @RequestParam(required = false) minRevenue: Double?,
+        @RequestParam(required = false) maxRevenue: Double?
     ): ResponseEntity<CustomerListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -95,6 +97,14 @@ class CustomerController(
             customers = customers.filter { it.lastVisitDate == null || it.lastVisitDate.isBefore(cutoff) }
         }
 
+        if (minRevenue != null) {
+            customers = customers.filter { it.totalRevenue.grossAmount.toDouble() >= minRevenue }
+        }
+
+        if (maxRevenue != null) {
+            customers = customers.filter { it.totalRevenue.grossAmount.toDouble() <= maxRevenue }
+        }
+
         customers = when (sortBy) {
             "lastName" -> if (sortDirection == "asc") {
                 customers.sortedBy { it.lastName ?: "" }
@@ -129,9 +139,11 @@ class CustomerController(
             else -> customers.sortedBy { it.lastName ?: "" }
         }
 
-        // Secondary sort: within each group sort by last visit date descending (nulls last).
-        // Kotlin's sort is stable, so the tertiary sort order from sortBy param is preserved.
-        customers = customers.sortedWith(compareByDescending(nullsLast()) { it.lastVisitDate })
+        // When sorting by revenue explicitly, skip the default lastVisitDate secondary sort
+        // so the user's chosen order is preserved as the primary criterion.
+        if (sortBy != "totalRevenue") {
+            customers = customers.sortedWith(compareByDescending(nullsLast()) { it.lastVisitDate })
+        }
 
         // Primary sort: customers with both firstName and lastName filled in come first.
         // Kotlin's sort is stable, so the secondary sort order is preserved within each group.
