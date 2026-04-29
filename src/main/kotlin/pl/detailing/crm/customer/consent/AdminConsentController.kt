@@ -10,12 +10,15 @@ import pl.detailing.crm.customer.consent.definition.CreateConsentDefinitionHandl
 import pl.detailing.crm.customer.consent.getdefinitions.GetAllDefinitionsCommand
 import pl.detailing.crm.customer.consent.getdefinitions.GetAllDefinitionsHandler
 import pl.detailing.crm.customer.consent.getdefinitions.DefinitionWithTemplates
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.consent.template.UploadTemplateCommand
 import pl.detailing.crm.customer.consent.template.UploadTemplateHandler
 import pl.detailing.crm.shared.ConsentDefinitionId
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserRole
+import java.time.Instant
 import java.util.*
 
 /**
@@ -33,7 +36,8 @@ import java.util.*
 class AdminConsentController(
     private val createConsentDefinitionHandler: CreateConsentDefinitionHandler,
     private val uploadTemplateHandler: UploadTemplateHandler,
-    private val getAllDefinitionsHandler: GetAllDefinitionsHandler
+    private val getAllDefinitionsHandler: GetAllDefinitionsHandler,
+    private val consentDefinitionRepository: ConsentDefinitionRepository
 ) {
 
     /**
@@ -144,6 +148,34 @@ class AdminConsentController(
                 s3Key = result.s3Key
             )
         )
+    }
+
+    /**
+     * Deactivate a consent definition.
+     *
+     * Sets isActive = false so it no longer appears in GET /definitions
+     * and is no longer evaluated for new customers.
+     * Existing CustomerConsent records are preserved (audit trail).
+     */
+    @DeleteMapping("/definitions/{id}")
+    fun deactivateDefinition(
+        @PathVariable id: UUID
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can deactivate consent definitions")
+        }
+
+        val entity = consentDefinitionRepository.findByIdAndStudioId(id, principal.studioId.value)
+            ?: throw NotFoundException("Consent definition not found")
+
+        entity.isActive = false
+        entity.updatedBy = principal.userId.value
+        entity.updatedAt = Instant.now()
+        consentDefinitionRepository.save(entity)
+
+        ResponseEntity.noContent().build()
     }
 }
 
