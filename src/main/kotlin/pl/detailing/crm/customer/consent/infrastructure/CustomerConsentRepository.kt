@@ -15,6 +15,12 @@ import java.util.*
 @Repository
 interface CustomerConsentRepository : JpaRepository<CustomerConsentEntity, UUID> {
 
+    @Query("SELECT cc FROM CustomerConsentEntity cc WHERE cc.id = :id AND cc.studioId = :studioId")
+    fun findByIdAndStudioId(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): CustomerConsentEntity?
+
     @Query("""
         SELECT cc FROM CustomerConsentEntity cc
         WHERE cc.customerId = :customerId
@@ -38,17 +44,4 @@ interface CustomerConsentRepository : JpaRepository<CustomerConsentEntity, UUID>
         @Param("templateId") templateId: UUID,
         @Param("studioId") studioId: UUID
     ): CustomerConsentEntity?
-
-    @Query("""
-        SELECT CASE WHEN COUNT(cc) > 0 THEN true ELSE false END
-        FROM CustomerConsentEntity cc
-        WHERE cc.customerId = :customerId
-        AND cc.templateId = :templateId
-        AND cc.studioId = :studioId
-    """)
-    fun existsByCustomerAndTemplate(
-        @Param("customerId") customerId: UUID,
-        @Param("templateId") templateId: UUID,
-        @Param("studioId") studioId: UUID
-    ): Boolean
 }
