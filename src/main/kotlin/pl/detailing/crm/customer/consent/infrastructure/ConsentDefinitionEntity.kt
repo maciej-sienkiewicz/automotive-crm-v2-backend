@@ -3,21 +3,19 @@ package pl.detailing.crm.customer.consent.infrastructure
 import jakarta.persistence.*
 import pl.detailing.crm.customer.consent.domain.ConsentDefinition
 import pl.detailing.crm.shared.ConsentDefinitionId
+import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.time.Instant
 import java.util.*
 
-/**
- * JPA entity for ConsentDefinition.
- * Represents a type of consent document (e.g., "RODO", "Marketing").
- */
 @Entity
 @Table(
     name = "consent_definitions",
     indexes = [
         Index(name = "idx_consent_defs_studio_slug", columnList = "studio_id, slug", unique = true),
-        Index(name = "idx_consent_defs_studio_active", columnList = "studio_id, is_active")
+        Index(name = "idx_consent_defs_studio_active", columnList = "studio_id, is_active"),
+        Index(name = "idx_consent_defs_studio_stage", columnList = "studio_id, stage, is_active")
     ]
 )
 class ConsentDefinitionEntity(
@@ -36,6 +34,16 @@ class ConsentDefinitionEntity(
 
     @Column(name = "description", columnDefinition = "TEXT")
     var description: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stage", nullable = false, length = 20)
+    var stage: ProtocolStage,
+
+    @Column(name = "is_mandatory", nullable = false)
+    var isMandatory: Boolean = false,
+
+    @Column(name = "display_order", nullable = false)
+    var displayOrder: Int = 0,
 
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
@@ -58,6 +66,9 @@ class ConsentDefinitionEntity(
         slug = slug,
         name = name,
         description = description,
+        stage = stage,
+        isMandatory = isMandatory,
+        displayOrder = displayOrder,
         isActive = isActive,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
@@ -73,6 +84,9 @@ class ConsentDefinitionEntity(
                 slug = definition.slug,
                 name = definition.name,
                 description = definition.description,
+                stage = definition.stage,
+                isMandatory = definition.isMandatory,
+                displayOrder = definition.displayOrder,
                 isActive = definition.isActive,
                 createdBy = definition.createdBy.value,
                 updatedBy = definition.updatedBy.value,

@@ -3,9 +3,6 @@ package pl.detailing.crm.protocol
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
-/**
- * Request DTOs
- */
 data class CreateProtocolTemplateRequest(
     val name: String,
     val description: String?
@@ -22,22 +19,8 @@ data class CreateProtocolRuleRequest(
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
     val serviceIds: List<String>?,
-    val consentDefinitionId: String?,   // Required when triggerType is CUSTOMER_CONSENT_REQUIRED
     val isMandatory: Boolean,
     val displayOrder: Int?
-)
-
-data class UpdateProtocolRuleRequest(
-    val protocolTemplateId: String?,
-    val triggerType: ProtocolTriggerType?,
-    val stage: ProtocolStage?,
-    val serviceIds: List<String>?,
-    val isMandatory: Boolean?,
-    val displayOrder: Int?
-)
-
-data class ReorderProtocolRulesRequest(
-    val ruleIds: List<String>
 )
 
 data class SignProtocolRequest(
@@ -51,9 +34,8 @@ data class CreateProtocolFieldMappingRequest(
     val crmDataKey: CrmDataKey
 )
 
-/**
- * Response DTOs
- */
+// ─── Response DTOs ────────────────────────────────────────────────────────────
+
 data class ProtocolTemplateResponse(
     val id: String,
     val name: String,
@@ -72,7 +54,6 @@ data class ProtocolRuleResponse(
     val stage: String,
     val serviceIds: List<String>,
     val serviceNames: List<String>,
-    val consentDefinitionId: String?,
     val isMandatory: Boolean,
     val displayOrder: Int,
     val createdAt: String,
@@ -82,8 +63,11 @@ data class ProtocolRuleResponse(
 data class VisitProtocolResponse(
     val id: String,
     val visitId: String,
-    val protocolTemplateId: String,
+    /** Null for consent protocols. */
+    val protocolTemplateId: String?,
     val protocolTemplate: ProtocolTemplateResponse?,
+    /** Null for visit-document protocols. */
+    val consentTemplateId: String?,
     val stage: String,
     val consentDefinitionId: String?,
     val isMandatory: Boolean,

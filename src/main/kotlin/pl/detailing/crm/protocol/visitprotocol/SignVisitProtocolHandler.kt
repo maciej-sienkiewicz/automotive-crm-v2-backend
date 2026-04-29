@@ -19,14 +19,11 @@ import pl.detailing.crm.shared.*
 import java.time.Instant
 
 /**
- * Handler for signing a visit protocol.
+ * Signs a visit protocol.
  *
- * This applies a signature image to the protocol PDF, flattens it to make it immutable,
- * and marks the protocol as SIGNED.
- *
- * If the protocol has a consentDefinitionId (i.e. it is a CUSTOMER_CONSENT_REQUIRED protocol),
- * a CustomerConsent record is automatically created upon signing so that future check-ins
- * will not regenerate this consent document for the same customer.
+ * For visit-document protocols: applies the signature image to the filled PDF and flattens it.
+ * For consent protocols: the consent PDF is served as-is; signing only attaches the signature
+ * image and creates an immutable CustomerConsent record so future visits won't re-show this consent.
  */
 @Service
 class SignVisitProtocolHandler(
@@ -42,55 +39,37 @@ class SignVisitProtocolHandler(
     @Transactional
     suspend fun handle(command: SignVisitProtocolCommand): SignVisitProtocolResult =
         withContext(Dispatchers.IO) {
-            // Find the protocol
             val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
-                command.visitId.value,
-                command.protocolId.value,
-                command.studioId.value
+                command.visitId.value, command.protocolId.value, command.studioId.value
             ) ?: throw NotFoundException("Protocol not found")
 
             val protocol = protocolEntity.toDomain()
 
-            // Validate protocol can be signed
             if (protocol.status != VisitProtocolStatus.READY_FOR_SIGNATURE) {
                 throw ValidationException("Protocol must be in READY_FOR_SIGNATURE status to be signed")
             }
-
             if (protocol.isImmutable()) {
                 throw ValidationException("Protocol is already signed and cannot be modified")
             }
-
             requireNotNull(protocol.filledPdfS3Key) { "Filled PDF S3 key is missing" }
 
-            // Get visit to retrieve visit number and customer ID
             val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
                 ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
             val visitNumber = visitEntity.visitNumber
 
-            // Build S3 keys with visit number and version
             val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
-                command.studioId.value,
-                command.visitId.value,
-                visitNumber,
-                protocol.version
+                command.studioId.value, command.visitId.value, visitNumber, protocol.version
             )
-
-            // The signature image URL from the frontend is assumed to be already uploaded to S3
-            // Extract the S3 key from the URL or assume it's already in the expected location
             val signatureImageS3Key = s3StorageService.buildSignatureImageS3Key(
-                command.studioId.value,
-                command.visitId.value,
-                command.protocolId.value
+                command.studioId.value, command.visitId.value, command.protocolId.value
             )
 
-            // Sign and flatten the PDF
             pdfProcessingService.signAndFlattenPdf(
                 pdfS3Key = protocol.filledPdfS3Key,
                 signatureImageS3Key = signatureImageS3Key,
                 outputS3Key = signedPdfS3Key
             )
 
-            // Update protocol
             val signedProtocol = protocol.sign(
                 signedPdfS3Key = signedPdfS3Key,
                 signedBy = command.signedBy,
@@ -98,13 +77,12 @@ class SignVisitProtocolHandler(
                 notes = command.notes
             )
 
-            val updatedEntity = VisitProtocolEntity.fromDomain(signedProtocol)
-            visitProtocolRepository.save(updatedEntity)
+            visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
 
-            // If this is a consent protocol, auto-create a CustomerConsent record
+            // For consent protocols: record the customer's consent so future visits skip this consent
             val consentDefinitionId = protocol.consentDefinitionId
             if (consentDefinitionId != null) {
-                createCustomerConsent(
+                recordCustomerConsent(
                     consentDefinitionId = consentDefinitionId,
                     studioId = command.studioId,
                     customerId = CustomerId(visitEntity.customerId),
@@ -115,7 +93,7 @@ class SignVisitProtocolHandler(
             SignVisitProtocolResult(signedProtocol)
         }
 
-    private fun createCustomerConsent(
+    private fun recordCustomerConsent(
         consentDefinitionId: ConsentDefinitionId,
         studioId: StudioId,
         customerId: CustomerId,
@@ -126,7 +104,7 @@ class SignVisitProtocolHandler(
         )
         if (activeTemplate == null) {
             logger.warn(
-                "No active consent template found for definition {} in studio {}; consent record not created",
+                "No active consent template for definition {} in studio {} — consent record not created",
                 consentDefinitionId.value, studioId.value
             )
             return

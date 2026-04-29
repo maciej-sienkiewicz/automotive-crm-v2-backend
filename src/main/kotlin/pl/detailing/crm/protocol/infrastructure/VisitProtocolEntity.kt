@@ -6,16 +6,13 @@ import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.util.*
 
-/**
- * JPA entity for VisitProtocol.
- * Represents an instance of a protocol for a specific visit.
- */
 @Entity
 @Table(
     name = "visit_protocols",
     indexes = [
         Index(name = "idx_visit_protocols_visit", columnList = "studio_id, visit_id"),
         Index(name = "idx_visit_protocols_template", columnList = "template_id"),
+        Index(name = "idx_visit_protocols_consent_template", columnList = "consent_template_id"),
         Index(name = "idx_visit_protocols_status", columnList = "visit_id, status"),
         Index(name = "idx_visit_protocols_stage", columnList = "visit_id, stage")
     ]
@@ -31,8 +28,13 @@ class VisitProtocolEntity(
     @Column(name = "visit_id", nullable = false, columnDefinition = "uuid")
     val visitId: UUID,
 
-    @Column(name = "template_id", nullable = false, columnDefinition = "uuid")
-    val templateId: UUID,
+    /** Null for consent protocols — use consentTemplateId instead. */
+    @Column(name = "template_id", nullable = true, columnDefinition = "uuid")
+    val templateId: UUID?,
+
+    /** Null for visit-document protocols — use templateId instead. */
+    @Column(name = "consent_template_id", nullable = true, columnDefinition = "uuid")
+    val consentTemplateId: UUID?,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "stage", nullable = false, length = 50)
@@ -79,7 +81,8 @@ class VisitProtocolEntity(
         id = VisitProtocolId(id),
         studioId = StudioId(studioId),
         visitId = VisitId(visitId),
-        templateId = ProtocolTemplateId(templateId),
+        templateId = templateId?.let { ProtocolTemplateId(it) },
+        consentTemplateId = consentTemplateId?.let { ConsentTemplateId(it) },
         stage = stage,
         version = version,
         isMandatory = isMandatory,
@@ -96,25 +99,26 @@ class VisitProtocolEntity(
     )
 
     companion object {
-        fun fromDomain(visitProtocol: VisitProtocol): VisitProtocolEntity =
+        fun fromDomain(p: VisitProtocol): VisitProtocolEntity =
             VisitProtocolEntity(
-                id = visitProtocol.id.value,
-                studioId = visitProtocol.studioId.value,
-                visitId = visitProtocol.visitId.value,
-                templateId = visitProtocol.templateId.value,
-                stage = visitProtocol.stage,
-                version = visitProtocol.version,
-                isMandatory = visitProtocol.isMandatory,
-                status = visitProtocol.status,
-                consentDefinitionId = visitProtocol.consentDefinitionId?.value,
-                filledPdfS3Key = visitProtocol.filledPdfS3Key,
-                signedPdfS3Key = visitProtocol.signedPdfS3Key,
-                signedAt = visitProtocol.signedAt,
-                signedBy = visitProtocol.signedBy,
-                signatureImageS3Key = visitProtocol.signatureImageS3Key,
-                notes = visitProtocol.notes,
-                createdAt = visitProtocol.createdAt,
-                updatedAt = visitProtocol.updatedAt
+                id = p.id.value,
+                studioId = p.studioId.value,
+                visitId = p.visitId.value,
+                templateId = p.templateId?.value,
+                consentTemplateId = p.consentTemplateId?.value,
+                stage = p.stage,
+                version = p.version,
+                isMandatory = p.isMandatory,
+                status = p.status,
+                consentDefinitionId = p.consentDefinitionId?.value,
+                filledPdfS3Key = p.filledPdfS3Key,
+                signedPdfS3Key = p.signedPdfS3Key,
+                signedAt = p.signedAt,
+                signedBy = p.signedBy,
+                signatureImageS3Key = p.signatureImageS3Key,
+                notes = p.notes,
+                createdAt = p.createdAt,
+                updatedAt = p.updatedAt
             )
     }
 }

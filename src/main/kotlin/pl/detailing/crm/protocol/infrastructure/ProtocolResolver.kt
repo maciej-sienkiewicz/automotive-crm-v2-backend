@@ -3,49 +3,40 @@ package pl.detailing.crm.protocol.infrastructure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
-import pl.detailing.crm.protocol.domain.ProtocolRule
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 /**
- * Service for resolving which protocols are required for a visit.
+ * Resolves which documents must be presented during a visit stage (CHECK_IN / CHECK_OUT).
  *
- * The resolver applies business rules to determine the documentation requirements:
- * 1. GLOBAL_ALWAYS rules: Protocols required for all visits at a specific stage
- * 2. SERVICE_SPECIFIC rules: Protocols required only if visit includes specific services
- * 3. CUSTOMER_CONSENT_REQUIRED rules: Protocols required only if customer lacks valid consent
- * 4. Deduplication: If multiple services trigger the same protocol, it appears only once
+ * Two sources of required documents:
+ *  1. ProtocolRules (GLOBAL_ALWAYS, SERVICE_SPECIFIC) — visit-specific PDFs auto-filled with CRM data.
+ *  2. Active ConsentDefinitions matching the stage — shown only when the customer lacks a valid consent.
+ *
+ * Results are deduplicated and sorted by displayOrder.
  */
 @Service
 class ProtocolResolver(
     private val protocolRuleRepository: ProtocolRuleRepository,
     private val visitRepository: VisitRepository,
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val customerConsentRepository: CustomerConsentRepository
 ) {
 
-    /**
-     * Resolve required protocols for a visit at a specific stage.
-     *
-     * @param visitId The visit ID
-     * @param studioId The studio ID (for multi-tenancy)
-     * @param stage The protocol stage (CHECK_IN or CHECK_OUT)
-     * @return List of unique protocol rules required for this visit, sorted by display order
-     */
     suspend fun resolveRequiredProtocols(
         visitId: VisitId,
         studioId: StudioId,
         stage: ProtocolStage
-    ): List<ProtocolRule> = withContext(Dispatchers.IO) {
-        // Fetch the visit to get service IDs and customer ID
+    ): List<ResolvedProtocol> = withContext(Dispatchers.IO) {
         val visit = visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
             ?: throw IllegalArgumentException("Visit not found: $visitId")
 
         val visitDomain = visit.toDomain()
 
-        // Extract unique service IDs from the visit
         val serviceIds = visitDomain.serviceItems
             .filter {
                 it.status == VisitServiceStatus.CONFIRMED ||
@@ -54,49 +45,67 @@ class ProtocolResolver(
             .mapNotNull { it.serviceId?.value }
             .distinct()
 
-        // Fetch GLOBAL_ALWAYS rules for this stage
-        val globalRules = protocolRuleRepository.findAllByStudioIdAndStageAndTriggerType(
-            studioId.value,
-            stage,
-            ProtocolTriggerType.GLOBAL_ALWAYS
-        ).map { it.toDomain() }
+        // --- Visit-document protocols (GLOBAL_ALWAYS + SERVICE_SPECIFIC) ---
 
-        // Fetch SERVICE_SPECIFIC rules for this stage and the visit's services
+        val globalRules = protocolRuleRepository.findAllByStudioIdAndStageAndTriggerType(
+            studioId.value, stage, ProtocolTriggerType.GLOBAL_ALWAYS
+        ).map { rule ->
+            ResolvedProtocol.fromVisitDocument(
+                templateId = ProtocolTemplateId(rule.templateId),
+                isMandatory = rule.isMandatory,
+                displayOrder = rule.displayOrder
+            )
+        }
+
         val serviceSpecificRules = if (serviceIds.isNotEmpty()) {
             protocolRuleRepository.findAllByStudioIdAndStageAndServiceIdIn(
-                studioId.value,
-                stage,
-                serviceIds
-            ).map { it.toDomain() }
+                studioId.value, stage, serviceIds
+            ).map { rule ->
+                ResolvedProtocol.fromVisitDocument(
+                    templateId = ProtocolTemplateId(rule.templateId),
+                    isMandatory = rule.isMandatory,
+                    displayOrder = rule.displayOrder
+                )
+            }
         } else {
             emptyList()
         }
 
-        // Fetch CUSTOMER_CONSENT_REQUIRED rules and filter by customer consent status
-        val consentRequiredRules = protocolRuleRepository.findAllByStudioIdAndStageAndTriggerType(
-            studioId.value,
-            stage,
-            ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED
-        ).map { it.toDomain() }.filter { rule ->
-            val defId = rule.consentDefinitionId ?: return@filter false
-            !customerHasValidConsent(visit.customerId, defId.value, studioId.value)
-        }
+        // --- Consent protocols ---
 
-        // Combine and deduplicate by template ID
-        val allRules = (globalRules + serviceSpecificRules + consentRequiredRules)
+        val consentProtocols = consentDefinitionRepository
+            .findActiveByStudioIdAndStage(studioId.value, stage)
+            .mapNotNull { definitionEntity ->
+                val definitionId = ConsentDefinitionId(definitionEntity.id)
+
+                // Skip if customer already has a valid or acceptable consent
+                if (customerHasValidConsent(visit.customerId, definitionEntity.id, studioId.value)) {
+                    return@mapNotNull null
+                }
+
+                val activeTemplate = consentTemplateRepository.findActiveByDefinitionIdAndStudioId(
+                    definitionEntity.id, studioId.value
+                ) ?: return@mapNotNull null  // No template uploaded yet — skip silently
+
+                ResolvedProtocol.fromConsent(
+                    consentDefinitionId = definitionId,
+                    consentTemplateId = ConsentTemplateId(activeTemplate.id),
+                    isMandatory = definitionEntity.isMandatory,
+                    displayOrder = definitionEntity.displayOrder
+                )
+            }
+
+        // Combine, deduplicate by templateId (for visit docs) or consentDefinitionId (for consents),
+        // then sort by displayOrder
+        val visitDocsByTemplate = (globalRules + serviceSpecificRules)
             .distinctBy { it.templateId }
-            .sortedBy { it.displayOrder }
 
-        allRules
+        val consentsByDefinition = consentProtocols
+            .distinctBy { it.consentDefinitionId }
+
+        (visitDocsByTemplate + consentsByDefinition).sortedBy { it.displayOrder }
     }
 
-    /**
-     * Returns true if the customer has valid consent for the given definition.
-     *
-     * Valid means:
-     * - Signed the current active template, OR
-     * - Signed an older template and the current active template does not require re-sign (OUTDATED but acceptable)
-     */
     private fun customerHasValidConsent(
         customerId: java.util.UUID,
         consentDefinitionId: java.util.UUID,
@@ -106,21 +115,19 @@ class ProtocolResolver(
             consentDefinitionId, studioId
         ) ?: return false
 
-        // Check if customer signed the current active template
         val signedActiveTemplate = customerConsentRepository.findLatestByCustomerAndTemplate(
             customerId, activeTemplate.id, studioId
         )
         if (signedActiveTemplate != null && signedActiveTemplate.revokedAt == null) return true
 
-        // OUTDATED: customer signed an older version and re-sign is not required
         if (!activeTemplate.requiresResign) {
-            val allTemplatesForDefinition = consentTemplateRepository
+            val allTemplateIds = consentTemplateRepository
                 .findAllByDefinitionIdAndStudioId(consentDefinitionId, studioId)
                 .map { it.id }
 
             val hasOlderConsent = customerConsentRepository
                 .findAllByCustomerIdAndStudioId(customerId, studioId)
-                .any { it.templateId in allTemplatesForDefinition && it.revokedAt == null }
+                .any { it.templateId in allTemplateIds && it.revokedAt == null }
 
             if (hasOlderConsent) return true
         }
@@ -128,25 +135,25 @@ class ProtocolResolver(
         return false
     }
 
-    /**
-     * Check if any mandatory protocols are missing for a visit at a specific stage.
-     *
-     * @return true if all mandatory protocols are present and signed, false otherwise
-     */
     suspend fun areMandatoryProtocolsSatisfied(
         visitId: VisitId,
         studioId: StudioId,
         stage: ProtocolStage,
         existingProtocols: List<VisitProtocolEntity>
     ): Boolean = withContext(Dispatchers.IO) {
-        val requiredRules = resolveRequiredProtocols(visitId, studioId, stage)
-        val mandatoryRules = requiredRules.filter { it.isMandatory }
+        val required = resolveRequiredProtocols(visitId, studioId, stage)
+        val mandatory = required.filter { it.isMandatory }
 
-        // Check if all mandatory protocols are present and signed
-        mandatoryRules.all { rule ->
+        mandatory.all { resolved ->
             existingProtocols.any { protocol ->
-                protocol.templateId == rule.templateId.value &&
-                protocol.status == VisitProtocolStatus.SIGNED
+                val matchesDoc = resolved.templateId != null &&
+                    protocol.templateId == resolved.templateId.value
+
+                val matchesConsent = resolved.consentDefinitionId != null &&
+                    protocol.consentDefinitionId == resolved.consentDefinitionId.value
+
+                (matchesDoc || matchesConsent) &&
+                    protocol.status == VisitProtocolStatus.SIGNED
             }
         }
     }

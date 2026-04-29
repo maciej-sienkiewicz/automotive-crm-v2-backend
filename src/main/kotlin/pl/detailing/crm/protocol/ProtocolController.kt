@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -40,6 +41,7 @@ class ProtocolController(
     private val protocolTemplateRepository: ProtocolTemplateRepository,
     private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
+    private val consentTemplateRepository: ConsentTemplateRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val serviceRepository: ServiceRepository
 ) {
@@ -50,19 +52,13 @@ class ProtocolController(
     fun getProtocolTemplates(): ResponseEntity<List<ProtocolTemplateResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getProtocolTemplatesHandler.handle(principal.studioId)
-
-        val responses = result.templates.map { template ->
-            toProtocolTemplateResponse(template, principal.studioId)
-        }
-
-        ResponseEntity.ok(responses)
+        ResponseEntity.ok(result.templates.map { toProtocolTemplateResponse(it, principal.studioId) })
     }
 
     @GetMapping("/protocol-templates/{id}")
     fun getProtocolTemplate(@PathVariable id: String): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getProtocolTemplatesHandler.handleGetById(principal.studioId, id)
-
         ResponseEntity.ok(toProtocolTemplateResponse(result.template, principal.studioId, result.downloadUrl))
     }
 
@@ -71,22 +67,18 @@ class ProtocolController(
         @RequestBody request: CreateProtocolTemplateRequest
     ): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can create protocol templates")
         }
-
-        val command = CreateProtocolTemplateCommand(
-            studioId = principal.studioId,
-            userId = principal.userId,
-            name = request.name,
-            description = request.description
+        val result = createProtocolTemplateHandler.handle(
+            CreateProtocolTemplateCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                name = request.name,
+                description = request.description
+            )
         )
-
-        val result = createProtocolTemplateHandler.handle(command)
-
-        ResponseEntity
-            .status(HttpStatus.CREATED)
+        ResponseEntity.status(HttpStatus.CREATED)
             .body(toProtocolTemplateResponse(result.template, principal.studioId, result.uploadUrl))
     }
 
@@ -96,14 +88,11 @@ class ProtocolController(
         @RequestBody request: UpdateProtocolTemplateRequest
     ): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can update protocol templates")
         }
-
         val template = protocolTemplateRepository.findByIdAndStudioId(
-            UUID.fromString(id),
-            principal.studioId.value
+            UUID.fromString(id), principal.studioId.value
         )?.toDomain() ?: throw NotFoundException("Protocol template not found")
 
         var updated = template
@@ -113,26 +102,22 @@ class ProtocolController(
             updated = if (it) updated.activate(principal.userId) else updated.deactivate(principal.userId)
         }
 
-        protocolTemplateRepository.save(pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity.fromDomain(updated))
-
+        protocolTemplateRepository.save(
+            pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity.fromDomain(updated)
+        )
         ResponseEntity.ok(toProtocolTemplateResponse(updated, principal.studioId))
     }
 
     @DeleteMapping("/protocol-templates/{id}")
     fun deleteProtocolTemplate(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can delete protocol templates")
         }
-
         val template = protocolTemplateRepository.findByIdAndStudioId(
-            UUID.fromString(id),
-            principal.studioId.value
+            UUID.fromString(id), principal.studioId.value
         ) ?: throw NotFoundException("Protocol template not found")
-
         protocolTemplateRepository.delete(template)
-
         ResponseEntity.noContent().build()
     }
 
@@ -143,15 +128,9 @@ class ProtocolController(
         @RequestParam(required = false) stage: String?
     ): ResponseEntity<List<ProtocolRuleResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         val protocolStage = stage?.let { ProtocolStage.valueOf(it) }
         val result = getProtocolRulesHandler.handle(principal.studioId, protocolStage)
-
-        val responses = result.rules.map { rule ->
-            toProtocolRuleResponse(rule, principal.studioId)
-        }
-
-        ResponseEntity.ok(responses)
+        ResponseEntity.ok(result.rules.map { toProtocolRuleResponse(it, principal.studioId) })
     }
 
     @PostMapping("/protocol-rules")
@@ -159,45 +138,35 @@ class ProtocolController(
         @RequestBody request: CreateProtocolRuleRequest
     ): ResponseEntity<ProtocolRuleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can create protocol rules")
         }
-
-        val command = CreateProtocolRuleCommand(
-            studioId = principal.studioId,
-            userId = principal.userId,
-            templateId = ProtocolTemplateId.fromString(request.protocolTemplateId),
-            triggerType = request.triggerType,
-            stage = request.stage,
-            serviceIds = request.serviceIds?.map { ServiceId.fromString(it) }?.toSet() ?: emptySet(),
-            consentDefinitionId = request.consentDefinitionId?.let { ConsentDefinitionId.fromString(it) },
-            isMandatory = request.isMandatory,
-            displayOrder = request.displayOrder ?: 0
+        val result = createProtocolRuleHandler.handle(
+            CreateProtocolRuleCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                templateId = ProtocolTemplateId.fromString(request.protocolTemplateId),
+                triggerType = request.triggerType,
+                stage = request.stage,
+                serviceIds = request.serviceIds?.map { ServiceId.fromString(it) }?.toSet() ?: emptySet(),
+                consentDefinitionId = null,
+                isMandatory = request.isMandatory,
+                displayOrder = request.displayOrder ?: 0
+            )
         )
-
-        val result = createProtocolRuleHandler.handle(command)
-
-        ResponseEntity
-            .status(HttpStatus.CREATED)
+        ResponseEntity.status(HttpStatus.CREATED)
             .body(toProtocolRuleResponse(result.rule, principal.studioId))
     }
 
     @DeleteMapping("/protocol-rules/{id}")
     fun deleteProtocolRule(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can delete protocol rules")
         }
-
         deleteProtocolRuleHandler.handle(
-            DeleteProtocolRuleCommand(
-                ruleId = ProtocolRuleId.fromString(id),
-                studioId = principal.studioId
-            )
+            DeleteProtocolRuleCommand(ruleId = ProtocolRuleId.fromString(id), studioId = principal.studioId)
         )
-
         ResponseEntity.noContent().build()
     }
 
@@ -205,13 +174,9 @@ class ProtocolController(
 
     @GetMapping("/protocol-crm-data-keys")
     fun getCrmDataKeys(): ResponseEntity<List<CrmDataKeyInfo>> {
-        val keys = CrmDataKey.entries.map { key ->
-            CrmDataKeyInfo(
-                key = key.name,
-                description = key.description
-            )
-        }
-        return ResponseEntity.ok(keys)
+        return ResponseEntity.ok(
+            CrmDataKey.entries.map { CrmDataKeyInfo(key = it.name, description = it.description) }
+        )
     }
 
     // ==================== Visit Protocols ====================
@@ -219,17 +184,8 @@ class ProtocolController(
     @GetMapping("/visits/{visitId}/protocols")
     fun getVisitProtocols(@PathVariable visitId: String): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = getVisitProtocolsHandler.handle(
-            VisitId.fromString(visitId),
-            principal.studioId
-        )
-
-        val responses = result.protocols.map { protocol ->
-            toVisitProtocolResponse(protocol, principal.studioId)
-        }
-
-        ResponseEntity.ok(responses)
+        val result = getVisitProtocolsHandler.handle(VisitId.fromString(visitId), principal.studioId)
+        ResponseEntity.ok(result.protocols.map { toVisitProtocolResponse(it, principal.studioId) })
     }
 
     @PostMapping("/visits/{visitId}/protocols/generate")
@@ -238,22 +194,15 @@ class ProtocolController(
         @RequestParam(required = false, defaultValue = "CHECK_IN") stage: String
     ): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = GenerateVisitProtocolsCommand(
-            visitId = VisitId.fromString(visitId),
-            studioId = principal.studioId,
-            stage = ProtocolStage.valueOf(stage)
+        val result = generateVisitProtocolsHandler.handle(
+            GenerateVisitProtocolsCommand(
+                visitId = VisitId.fromString(visitId),
+                studioId = principal.studioId,
+                stage = ProtocolStage.valueOf(stage)
+            )
         )
-
-        val result = generateVisitProtocolsHandler.handle(command)
-
-        val responses = result.protocols.map { protocol ->
-            toVisitProtocolResponse(protocol, principal.studioId)
-        }
-
-        ResponseEntity
-            .status(HttpStatus.CREATED)
-            .body(responses)
+        ResponseEntity.status(HttpStatus.CREATED)
+            .body(result.protocols.map { toVisitProtocolResponse(it, principal.studioId) })
     }
 
     @PostMapping("/visits/{visitId}/protocols/{protocolId}/sign")
@@ -263,23 +212,21 @@ class ProtocolController(
         @RequestBody request: SignProtocolRequest
     ): ResponseEntity<VisitProtocolResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = SignVisitProtocolCommand(
-            visitId = VisitId.fromString(visitId),
-            protocolId = VisitProtocolId.fromString(protocolId),
-            studioId = principal.studioId,
-            witnessedBy = principal.userId,
-            signatureUrl = request.signatureUrl,
-            signedBy = request.signedBy,
-            notes = request.notes
+        val result = signVisitProtocolHandler.handle(
+            SignVisitProtocolCommand(
+                visitId = VisitId.fromString(visitId),
+                protocolId = VisitProtocolId.fromString(protocolId),
+                studioId = principal.studioId,
+                witnessedBy = principal.userId,
+                signatureUrl = request.signatureUrl,
+                signedBy = request.signedBy,
+                notes = request.notes
+            )
         )
-
-        val result = signVisitProtocolHandler.handle(command)
-
         ResponseEntity.ok(toVisitProtocolResponse(result.protocol, principal.studioId))
     }
 
-    // ==================== Helper Methods ====================
+    // ==================== Helpers ====================
 
     private suspend fun toProtocolTemplateResponse(
         template: pl.detailing.crm.protocol.domain.ProtocolTemplate,
@@ -303,8 +250,7 @@ class ProtocolController(
         studioId: StudioId
     ): ProtocolRuleResponse {
         val template = protocolTemplateRepository.findByIdAndStudioId(
-            rule.templateId.value,
-            studioId.value
+            rule.templateId.value, studioId.value
         )?.toDomain()
 
         val serviceNames = rule.serviceIds.mapNotNull { serviceId ->
@@ -319,7 +265,6 @@ class ProtocolController(
             stage = rule.stage.name,
             serviceIds = rule.serviceIds.map { it.toString() },
             serviceNames = serviceNames,
-            consentDefinitionId = rule.consentDefinitionId?.value?.toString(),
             isMandatory = rule.isMandatory,
             displayOrder = rule.displayOrder,
             createdAt = rule.createdAt.toString(),
@@ -331,24 +276,22 @@ class ProtocolController(
         protocol: pl.detailing.crm.protocol.domain.VisitProtocol,
         studioId: StudioId
     ): VisitProtocolResponse {
-        val template = protocolTemplateRepository.findByIdAndStudioId(
-            protocol.templateId.value,
-            studioId.value
-        )?.toDomain()
-
-        val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
-            s3StorageService.generateDownloadUrl(s3Key)
+        val protocolTemplate = protocol.templateId?.let { templateId ->
+            protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)?.toDomain()
+                ?.let { toProtocolTemplateResponse(it, studioId) }
         }
 
-        val signatureUrl = protocol.signedPdfS3Key?.let { s3Key ->
-            s3StorageService.generateDownloadUrl(s3Key)
-        }
+        // For consent protocols, generate a download URL from the consent template S3 key
+        val pdfS3Key = protocol.filledPdfS3Key
+        val filledPdfUrl = pdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
+        val signatureUrl = protocol.signedPdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
 
         return VisitProtocolResponse(
             id = protocol.id.toString(),
             visitId = protocol.visitId.toString(),
-            protocolTemplateId = protocol.templateId.toString(),
-            protocolTemplate = template?.let { toProtocolTemplateResponse(it, studioId) },
+            protocolTemplateId = protocol.templateId?.toString(),
+            protocolTemplate = protocolTemplate,
+            consentTemplateId = protocol.consentTemplateId?.toString(),
             stage = protocol.stage.name,
             consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
             isMandatory = protocol.isMandatory,

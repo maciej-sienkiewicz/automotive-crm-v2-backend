@@ -19,17 +19,14 @@ class GetConsentStatusHandler(
         withContext(Dispatchers.IO) {
             val context = contextBuilder.build(command)
 
-            // Active template per definition (for current-version checks)
             val activeTemplateByDefinition: Map<ConsentDefinitionId, ConsentTemplate> = context.allTemplates
                 .filter { it.isActive }
                 .associateBy { it.definitionId }
 
-            // All templates grouped by definition (for OUTDATED checks across versions)
             val allTemplateIdsByDefinition: Map<ConsentDefinitionId, List<ConsentTemplateId>> = context.allTemplates
                 .groupBy { it.definitionId }
                 .mapValues { (_, templates) -> templates.map { it.id } }
 
-            // Non-revoked customer consents
             val validConsents = context.customerConsents.filter { it.revokedAt == null }
 
             fun latestConsentForDefinition(definitionId: ConsentDefinitionId) =
@@ -39,7 +36,6 @@ class GetConsentStatusHandler(
 
             fun templateById(id: ConsentTemplateId) = context.allTemplates.find { it.id == id }
 
-            // --- Active definitions ---
             val activeStatuses = context.allDefinitions.filter { it.isActive }.mapNotNull { definition ->
                 val activeTemplate = activeTemplateByDefinition[definition.id] ?: return@mapNotNull null
                 val latestConsent = latestConsentForDefinition(definition.id)
@@ -58,6 +54,9 @@ class GetConsentStatusHandler(
                     definitionSlug = definition.slug,
                     definitionName = definition.name,
                     isDefinitionActive = true,
+                    stage = definition.stage,
+                    isMandatory = definition.isMandatory,
+                    displayOrder = definition.displayOrder,
                     status = status,
                     currentTemplateId = activeTemplate.id,
                     currentVersion = activeTemplate.version,
@@ -69,11 +68,8 @@ class GetConsentStatusHandler(
                 )
             }
 
-            // --- Inactive definitions (only those the customer actually signed) ---
             val inactiveStatuses = context.allDefinitions.filter { !it.isActive }.mapNotNull { definition ->
-                val latestConsent = latestConsentForDefinition(definition.id)
-                    ?: return@mapNotNull null  // customer never signed → don't show
-
+                val latestConsent = latestConsentForDefinition(definition.id) ?: return@mapNotNull null
                 val signedTemplate = templateById(latestConsent.templateId)
 
                 ConsentStatusItem(
@@ -81,6 +77,9 @@ class GetConsentStatusHandler(
                     definitionSlug = definition.slug,
                     definitionName = definition.name,
                     isDefinitionActive = false,
+                    stage = null,
+                    isMandatory = false,
+                    displayOrder = 0,
                     status = ConsentStatus.VALID,
                     currentTemplateId = null,
                     currentVersion = null,

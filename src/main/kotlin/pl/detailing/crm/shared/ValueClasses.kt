@@ -495,12 +495,12 @@ enum class ProtocolStage {
 }
 
 /**
- * Protocol rule trigger type
+ * Protocol rule trigger type (applies to visit-document protocols only).
+ * Consent-based display is managed directly on ConsentDefinition.
  */
 enum class ProtocolTriggerType {
-    GLOBAL_ALWAYS,               // Required for every visit at specified stage
-    SERVICE_SPECIFIC,            // Required only if visit includes specific service
-    CUSTOMER_CONSENT_REQUIRED    // Required only if customer lacks valid consent for linked definition
+    GLOBAL_ALWAYS,      // Required for every visit at the specified stage
+    SERVICE_SPECIFIC    // Required only if the visit includes one of the linked services
 }
 
 /**

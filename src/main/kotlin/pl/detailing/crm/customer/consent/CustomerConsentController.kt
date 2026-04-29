@@ -15,15 +15,14 @@ import pl.detailing.crm.customer.consent.sign.SignConsentHandler
 import pl.detailing.crm.shared.ConsentTemplateId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.CustomerConsentId
+import pl.detailing.crm.shared.ProtocolStage
 import java.time.Instant
 import java.util.*
 
 /**
- * REST API controller for customer consent operations.
+ * Customer-facing consent endpoints.
  *
- * Endpoints:
- * - GET /api/v1/customers/{customerId}/consents/status - Get consent status for a customer
- * - POST /api/v1/customers/{customerId}/consents/{templateId}/sign - Record a consent signature
+ * Base URL: /api/v1/customers/{customerId}/consents
  */
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/consents")
@@ -34,32 +33,30 @@ class CustomerConsentController(
 ) {
 
     /**
-     * Get consent status for a specific customer.
-     * Returns all active consent definitions and their current status for the customer.
+     * Get all consent statuses for a customer.
+     *
+     * Returns every active consent definition with its current status:
+     * - VALID: customer signed the active version
+     * - OUTDATED: customer signed an older version, re-sign not required
+     * - REQUIRED: never signed, or active version requires re-sign
+     *
+     * Inactive definitions are included only if the customer has previously signed them.
      */
-    @GetMapping("/status")
+    @GetMapping
     fun getConsentStatus(
         @PathVariable customerId: UUID
     ): ResponseEntity<ConsentStatusResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = GetConsentStatusCommand(
-            studioId = principal.studioId,
-            customerId = CustomerId(customerId)
+        val result = getConsentStatusHandler.handle(
+            GetConsentStatusCommand(studioId = principal.studioId, customerId = CustomerId(customerId))
         )
-
-        val result = getConsentStatusHandler.handle(command)
-
         ResponseEntity.ok(ConsentStatusResponse.fromResult(result))
     }
 
     /**
-     * Record a customer's acceptance of a specific consent template.
-     * Creates an immutable audit record of the signature.
-     *
-     * Optionally accepts a request body. If requestAttachmentUpload is true,
-     * the response will include a presigned S3 URL so the admin can upload
-     * a scanned copy of the signed paper document.
+     * Record a customer signature on a specific consent template version.
+     * Creates an immutable audit record. Optionally returns a presigned S3 URL
+     * to upload a scanned paper copy.
      */
     @PostMapping("/{templateId}/sign")
     fun signConsent(
@@ -68,17 +65,15 @@ class CustomerConsentController(
         @RequestBody(required = false) request: SignConsentRequest?
     ): ResponseEntity<SignConsentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = SignConsentCommand(
-            studioId = principal.studioId,
-            customerId = CustomerId(customerId),
-            templateId = ConsentTemplateId(templateId),
-            witnessedBy = principal.userId,
-            requestAttachmentUpload = request?.requestAttachmentUpload ?: false
+        val result = signConsentHandler.handle(
+            SignConsentCommand(
+                studioId = principal.studioId,
+                customerId = CustomerId(customerId),
+                templateId = ConsentTemplateId(templateId),
+                witnessedBy = principal.userId,
+                requestAttachmentUpload = request?.requestAttachmentUpload ?: false
+            )
         )
-
-        val result = signConsentHandler.handle(command)
-
         ResponseEntity.status(HttpStatus.CREATED).body(
             SignConsentResponse(
                 consentId = result.consentId.value,
@@ -91,8 +86,7 @@ class CustomerConsentController(
 
     /**
      * Revoke a previously recorded consent.
-     * The consent record is preserved for audit purposes but marked as revoked.
-     * After revocation the customer's consent status returns to REQUIRED.
+     * The record is preserved for audit purposes; the customer's status returns to REQUIRED.
      */
     @DeleteMapping("/{consentId}")
     fun revokeConsent(
@@ -100,19 +94,14 @@ class CustomerConsentController(
         @PathVariable consentId: UUID
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         revokeConsentHandler.handle(
-            RevokeConsentCommand(
-                studioId = principal.studioId,
-                consentId = CustomerConsentId(consentId)
-            )
+            RevokeConsentCommand(studioId = principal.studioId, consentId = CustomerConsentId(consentId))
         )
-
         ResponseEntity.noContent().build()
     }
 }
 
-// Request / Response DTOs
+// ─── DTOs ────────────────────────────────────────────────────────────────────
 
 data class SignConsentRequest(
     val requestAttachmentUpload: Boolean = false
@@ -122,14 +111,17 @@ data class ConsentStatusResponse(
     val consents: List<ConsentStatusItemResponse>
 ) {
     companion object {
-        fun fromResult(result: GetConsentStatusResult): ConsentStatusResponse {
-            return ConsentStatusResponse(
+        fun fromResult(result: GetConsentStatusResult): ConsentStatusResponse =
+            ConsentStatusResponse(
                 consents = result.consents.map { item ->
                     ConsentStatusItemResponse(
                         definitionId = item.definitionId.value,
                         definitionSlug = item.definitionSlug,
                         definitionName = item.definitionName,
                         isDefinitionActive = item.isDefinitionActive,
+                        stage = item.stage,
+                        isMandatory = item.isMandatory,
+                        displayOrder = item.displayOrder,
                         status = item.status.name,
                         currentTemplateId = item.currentTemplateId?.value,
                         currentVersion = item.currentVersion,
@@ -141,7 +133,6 @@ data class ConsentStatusResponse(
                     )
                 }
             )
-        }
     }
 }
 
@@ -150,14 +141,17 @@ data class ConsentStatusItemResponse(
     val definitionSlug: String,
     val definitionName: String,
     val isDefinitionActive: Boolean,
-    val status: String,              // VALID | OUTDATED | REQUIRED
-    val currentTemplateId: UUID?,    // null when definition is inactive
-    val currentVersion: Int?,        // null when definition is inactive
+    val stage: ProtocolStage?,         // null when definition is inactive
+    val isMandatory: Boolean,
+    val displayOrder: Int,
+    val status: String,                // VALID | OUTDATED | REQUIRED
+    val currentTemplateId: UUID?,
+    val currentVersion: Int?,
     val signedTemplateId: UUID?,
     val signedVersion: Int?,
     val signedAt: Instant?,
     val downloadUrl: String?,
-    val consentId: UUID?             // ID of the latest consent (for revocation)
+    val consentId: UUID?
 )
 
 data class SignConsentResponse(

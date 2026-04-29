@@ -4,12 +4,12 @@ import pl.detailing.crm.shared.*
 import java.time.Instant
 
 /**
- * Protocol rule defines when a protocol template should be required for a visit.
+ * A protocol rule defines when a visit-document protocol template is required.
  *
- * Rules can be:
- * - GLOBAL_ALWAYS: Required for all visits at a specific stage
- * - SERVICE_SPECIFIC: Required only if visit includes one or more specific services
- * - CUSTOMER_CONSENT_REQUIRED: Required only if customer lacks valid consent for the linked definition
+ * - GLOBAL_ALWAYS: shown for every visit at the given stage
+ * - SERVICE_SPECIFIC: shown only if the visit includes one of the linked services
+ *
+ * Consent-based display is managed separately on ConsentDefinition.
  */
 data class ProtocolRule(
     val id: ProtocolRuleId,
@@ -17,10 +17,9 @@ data class ProtocolRule(
     val templateId: ProtocolTemplateId,
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
-    val serviceIds: Set<ServiceId>,              // Required when triggerType is SERVICE_SPECIFIC
-    val consentDefinitionId: ConsentDefinitionId?, // Required when triggerType is CUSTOMER_CONSENT_REQUIRED
-    val isMandatory: Boolean,                    // If true, visit cannot proceed without this protocol
-    val displayOrder: Int,                       // Order in which protocols appear in the UI
+    val serviceIds: Set<ServiceId>,
+    val isMandatory: Boolean,
+    val displayOrder: Int,
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
@@ -28,35 +27,11 @@ data class ProtocolRule(
 ) {
     init {
         if (triggerType == ProtocolTriggerType.SERVICE_SPECIFIC) {
-            require(serviceIds.isNotEmpty()) { "At least one Service ID is required for SERVICE_SPECIFIC rules" }
+            require(serviceIds.isNotEmpty()) { "At least one serviceId is required for SERVICE_SPECIFIC rules" }
         }
         if (triggerType == ProtocolTriggerType.GLOBAL_ALWAYS) {
-            require(serviceIds.isEmpty()) { "Service IDs must be empty for GLOBAL_ALWAYS rules" }
+            require(serviceIds.isEmpty()) { "serviceIds must be empty for GLOBAL_ALWAYS rules" }
         }
-        if (triggerType == ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED) {
-            requireNotNull(consentDefinitionId) { "Consent definition ID is required for CUSTOMER_CONSENT_REQUIRED rules" }
-            require(serviceIds.isEmpty()) { "Service IDs must be empty for CUSTOMER_CONSENT_REQUIRED rules" }
-        }
-        if (triggerType != ProtocolTriggerType.CUSTOMER_CONSENT_REQUIRED) {
-            require(consentDefinitionId == null) { "Consent definition ID must be null for non-CUSTOMER_CONSENT_REQUIRED rules" }
-        }
-        require(displayOrder >= 0) { "Display order must be non-negative" }
-    }
-
-    fun updateOrder(newOrder: Int, updatedBy: UserId): ProtocolRule {
-        require(newOrder >= 0) { "Display order must be non-negative" }
-        return copy(
-            displayOrder = newOrder,
-            updatedBy = updatedBy,
-            updatedAt = Instant.now()
-        )
-    }
-
-    fun toggleMandatory(updatedBy: UserId): ProtocolRule {
-        return copy(
-            isMandatory = !isMandatory,
-            updatedBy = updatedBy,
-            updatedAt = Instant.now()
-        )
+        require(displayOrder >= 0) { "displayOrder must be non-negative" }
     }
 }
