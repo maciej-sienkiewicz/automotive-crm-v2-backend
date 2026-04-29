@@ -30,6 +30,10 @@ class SmsAutomationConfigRepositoryAdapter(
             existing.delayedReminderEnabled = config.delayedReminder.enabled
             existing.delayedReminderOffsetMinutes = config.delayedReminder.offsetMinutes
             existing.delayedReminderMessageTemplate = config.delayedReminder.messageTemplate
+            existing.bookingConfirmationEnabled = config.bookingConfirmation.enabled
+            existing.bookingConfirmationMessageTemplate = config.bookingConfirmation.messageTemplate
+            existing.rescheduleConfirmationEnabled = config.rescheduleConfirmation.enabled
+            existing.rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate
             existing.updatedAt = java.time.Instant.now()
             existing
         } else {

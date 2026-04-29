@@ -10,6 +10,8 @@ import pl.detailing.crm.smscampaigns.automation.GetAutomationConfigHandler
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationConfigCommand
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationConfigHandler
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationRuleCommand
+import pl.detailing.crm.smscampaigns.automation.UpdateNotificationRuleCommand
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 
 // ── Request / Response DTOs ──────────────────────────────────────────────────
 
@@ -19,10 +21,27 @@ data class SmsAutomationRuleDto(
     val messageTemplate: String
 )
 
+data class SmsNotificationRuleDto(
+    val enabled: Boolean,
+    val messageTemplate: String
+)
+
 data class SmsAutomationConfigDto(
     val preVisit: SmsAutomationRuleDto,
     val postVisit: SmsAutomationRuleDto,
-    val delayedReminder: SmsAutomationRuleDto
+    val delayedReminder: SmsAutomationRuleDto,
+    val bookingConfirmation: SmsNotificationRuleDto,
+    val rescheduleConfirmation: SmsNotificationRuleDto
+)
+
+// ── Mapping ──────────────────────────────────────────────────────────────────
+
+private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
+    preVisit = SmsAutomationRuleDto(preVisit.enabled, preVisit.offsetMinutes, preVisit.messageTemplate),
+    postVisit = SmsAutomationRuleDto(postVisit.enabled, postVisit.offsetMinutes, postVisit.messageTemplate),
+    delayedReminder = SmsAutomationRuleDto(delayedReminder.enabled, delayedReminder.offsetMinutes, delayedReminder.messageTemplate),
+    bookingConfirmation = SmsNotificationRuleDto(bookingConfirmation.enabled, bookingConfirmation.messageTemplate),
+    rescheduleConfirmation = SmsNotificationRuleDto(rescheduleConfirmation.enabled, rescheduleConfirmation.messageTemplate)
 )
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -45,25 +64,7 @@ class SmsAutomationController(
         val principal = SecurityContextHelper.getCurrentUser()
         val config = getConfigHandler.handle(principal.studioId)
 
-        ResponseEntity.ok(
-            SmsAutomationConfigDto(
-                preVisit = SmsAutomationRuleDto(
-                    enabled = config.preVisit.enabled,
-                    offsetMinutes = config.preVisit.offsetMinutes,
-                    messageTemplate = config.preVisit.messageTemplate
-                ),
-                postVisit = SmsAutomationRuleDto(
-                    enabled = config.postVisit.enabled,
-                    offsetMinutes = config.postVisit.offsetMinutes,
-                    messageTemplate = config.postVisit.messageTemplate
-                ),
-                delayedReminder = SmsAutomationRuleDto(
-                    enabled = config.delayedReminder.enabled,
-                    offsetMinutes = config.delayedReminder.offsetMinutes,
-                    messageTemplate = config.delayedReminder.messageTemplate
-                )
-            )
-        )
+        ResponseEntity.ok(config.toDto())
     }
 
     @PutMapping
@@ -92,29 +93,19 @@ class SmsAutomationController(
                 enabled = request.delayedReminder.enabled,
                 offsetMinutes = request.delayedReminder.offsetMinutes,
                 messageTemplate = request.delayedReminder.messageTemplate
+            ),
+            bookingConfirmation = UpdateNotificationRuleCommand(
+                enabled = request.bookingConfirmation.enabled,
+                messageTemplate = request.bookingConfirmation.messageTemplate
+            ),
+            rescheduleConfirmation = UpdateNotificationRuleCommand(
+                enabled = request.rescheduleConfirmation.enabled,
+                messageTemplate = request.rescheduleConfirmation.messageTemplate
             )
         )
 
         val updated = updateConfigHandler.handle(command)
 
-        ResponseEntity.ok(
-            SmsAutomationConfigDto(
-                preVisit = SmsAutomationRuleDto(
-                    enabled = updated.preVisit.enabled,
-                    offsetMinutes = updated.preVisit.offsetMinutes,
-                    messageTemplate = updated.preVisit.messageTemplate
-                ),
-                postVisit = SmsAutomationRuleDto(
-                    enabled = updated.postVisit.enabled,
-                    offsetMinutes = updated.postVisit.offsetMinutes,
-                    messageTemplate = updated.postVisit.messageTemplate
-                ),
-                delayedReminder = SmsAutomationRuleDto(
-                    enabled = updated.delayedReminder.enabled,
-                    offsetMinutes = updated.delayedReminder.offsetMinutes,
-                    messageTemplate = updated.delayedReminder.messageTemplate
-                )
-            )
-        )
+        ResponseEntity.ok(updated.toDto())
     }
 }

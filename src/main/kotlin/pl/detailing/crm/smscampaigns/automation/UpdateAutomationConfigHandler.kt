@@ -6,17 +6,25 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationRule
+import pl.detailing.crm.smscampaigns.domain.SmsNotificationRule
 
 data class UpdateAutomationConfigCommand(
     val studioId: StudioId,
     val preVisit: UpdateAutomationRuleCommand,
     val postVisit: UpdateAutomationRuleCommand,
-    val delayedReminder: UpdateAutomationRuleCommand
+    val delayedReminder: UpdateAutomationRuleCommand,
+    val bookingConfirmation: UpdateNotificationRuleCommand,
+    val rescheduleConfirmation: UpdateNotificationRuleCommand
 )
 
 data class UpdateAutomationRuleCommand(
     val enabled: Boolean,
     val offsetMinutes: Int,
+    val messageTemplate: String
+)
+
+data class UpdateNotificationRuleCommand(
+    val enabled: Boolean,
     val messageTemplate: String
 )
 
@@ -46,6 +54,14 @@ class UpdateAutomationConfigHandler(
                 enabled = command.delayedReminder.enabled,
                 offsetMinutes = command.delayedReminder.offsetMinutes,
                 messageTemplate = command.delayedReminder.messageTemplate
+            ),
+            bookingConfirmation = SmsNotificationRule(
+                enabled = command.bookingConfirmation.enabled,
+                messageTemplate = command.bookingConfirmation.messageTemplate
+            ),
+            rescheduleConfirmation = SmsNotificationRule(
+                enabled = command.rescheduleConfirmation.enabled,
+                messageTemplate = command.rescheduleConfirmation.messageTemplate
             )
         )
         return configRepository.save(config)

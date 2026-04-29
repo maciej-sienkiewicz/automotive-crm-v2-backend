@@ -14,7 +14,11 @@ interface SmsAutomationConfigJpaRepository : JpaRepository<SmsAutomationConfigEn
 
     @Query("""
         SELECT e FROM SmsAutomationConfigEntity e
-        WHERE e.preVisitEnabled = true OR e.postVisitEnabled = true OR e.delayedReminderEnabled = true
+        WHERE e.preVisitEnabled = true
+           OR e.postVisitEnabled = true
+           OR e.delayedReminderEnabled = true
+           OR e.bookingConfirmationEnabled = true
+           OR e.rescheduleConfirmationEnabled = true
     """)
     fun findAllWithAnyRuleEnabled(): List<SmsAutomationConfigEntity>
 }

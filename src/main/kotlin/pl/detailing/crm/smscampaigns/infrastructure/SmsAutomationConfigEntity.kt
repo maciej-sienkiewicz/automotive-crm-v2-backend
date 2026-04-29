@@ -4,6 +4,7 @@ import jakarta.persistence.*
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationRule
+import pl.detailing.crm.smscampaigns.domain.SmsNotificationRule
 import java.time.Instant
 import java.util.UUID
 
@@ -60,6 +61,24 @@ class SmsAutomationConfigEntity(
     @Column(name = "delayed_reminder_message_template", nullable = false, columnDefinition = "TEXT")
     var delayedReminderMessageTemplate: String,
 
+    // ── BOOKING CONFIRMATION RULE ───────────────────────────────────────────────
+    // Fired immediately when a new appointment is created.
+
+    @Column(name = "booking_confirmation_enabled", nullable = false)
+    var bookingConfirmationEnabled: Boolean,
+
+    @Column(name = "booking_confirmation_message_template", nullable = false, columnDefinition = "TEXT")
+    var bookingConfirmationMessageTemplate: String,
+
+    // ── RESCHEDULE CONFIRMATION RULE ────────────────────────────────────────────
+    // Fired immediately when an existing appointment is rescheduled.
+
+    @Column(name = "reschedule_confirmation_enabled", nullable = false)
+    var rescheduleConfirmationEnabled: Boolean,
+
+    @Column(name = "reschedule_confirmation_message_template", nullable = false, columnDefinition = "TEXT")
+    var rescheduleConfirmationMessageTemplate: String,
+
     // ── AUDIT ───────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
@@ -84,6 +103,14 @@ class SmsAutomationConfigEntity(
             enabled = delayedReminderEnabled,
             offsetMinutes = delayedReminderOffsetMinutes,
             messageTemplate = delayedReminderMessageTemplate
+        ),
+        bookingConfirmation = SmsNotificationRule(
+            enabled = bookingConfirmationEnabled,
+            messageTemplate = bookingConfirmationMessageTemplate
+        ),
+        rescheduleConfirmation = SmsNotificationRule(
+            enabled = rescheduleConfirmationEnabled,
+            messageTemplate = rescheduleConfirmationMessageTemplate
         )
     )
 
@@ -101,6 +128,10 @@ class SmsAutomationConfigEntity(
                 delayedReminderEnabled = config.delayedReminder.enabled,
                 delayedReminderOffsetMinutes = config.delayedReminder.offsetMinutes,
                 delayedReminderMessageTemplate = config.delayedReminder.messageTemplate,
+                bookingConfirmationEnabled = config.bookingConfirmation.enabled,
+                bookingConfirmationMessageTemplate = config.bookingConfirmation.messageTemplate,
+                rescheduleConfirmationEnabled = config.rescheduleConfirmation.enabled,
+                rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate,
                 updatedAt = Instant.now()
             )
     }

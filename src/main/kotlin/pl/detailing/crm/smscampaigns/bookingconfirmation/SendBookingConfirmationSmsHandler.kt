@@ -14,26 +14,32 @@ import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
+import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 
 @Service
 class SendBookingConfirmationSmsHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
     private val smsProvider: SmsProvider,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val configRepository: SmsAutomationConfigRepository,
+    private val templateProcessor: SmsTemplateProcessor
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    private val warsawZone = ZoneId.of("Europe/Warsaw")
-    private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.forLanguageTag("pl"))
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.forLanguageTag("pl"))
-
     suspend fun handle(command: SendBookingConfirmationSmsCommand): Unit = withContext(Dispatchers.IO) {
+        val config = configRepository.findByStudioId(command.studioId)
+            ?: SmsAutomationConfig.defaultFor(command.studioId)
+
+        if (!config.bookingConfirmation.enabled) {
+            logger.debug("SendBookingConfirmationSms: rule disabled [studioId={}]", command.studioId)
+            return@withContext
+        }
+
         val appointment = appointmentRepository.findByIdAndStudioId(
             command.appointmentId.value,
             command.studioId.value
@@ -68,8 +74,14 @@ class SendBookingConfirmationSmsHandler(
         }
 
         val phoneNumber = normalizePolishPhone(rawPhone)
-        val firstName = customer.firstName ?: "Kliencie"
-        val message = buildMessage(firstName, appointment.startDateTime, command.studioName)
+        val message = templateProcessor.process(
+            config.bookingConfirmation.messageTemplate,
+            SmsTemplateContext(
+                firstName = customer.firstName ?: "Kliencie",
+                appointmentStart = appointment.startDateTime,
+                studioName = command.studioName
+            )
+        )
 
         val result = smsProvider.send(phoneNumber, message)
 
@@ -99,13 +111,6 @@ class SendBookingConfirmationSmsHandler(
                 phoneNumber, command.appointmentId, result.errorMessage
             )
         }
-    }
-
-    private fun buildMessage(firstName: String, appointmentStart: Instant, studioName: String): String {
-        val zonedDateTime = appointmentStart.atZone(warsawZone)
-        val date = dateFormatter.format(zonedDateTime)
-        val time = timeFormatter.format(zonedDateTime)
-        return "Drogi/a $firstName, potwierdzamy rezerwację w $studioName na $date o godz. $time. Czekamy na Ciebie!"
     }
 }
 
