@@ -8,10 +8,6 @@ import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionReposit
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
 
-/**
- * Builds validation context for consent status checking.
- * Fetches all necessary data in parallel for optimal performance.
- */
 @Component
 class ConsentStatusValidationContextBuilder(
     private val consentDefinitionRepository: ConsentDefinitionRepository,
@@ -21,14 +17,13 @@ class ConsentStatusValidationContextBuilder(
 
     suspend fun build(command: GetConsentStatusCommand): ConsentStatusValidationContext =
         withContext(Dispatchers.IO) {
-            // Parallel async queries for all required data
-            val activeDefinitionsDeferred = async {
-                consentDefinitionRepository.findActiveByStudioId(command.studioId.value)
+            val allDefinitionsDeferred = async {
+                consentDefinitionRepository.findAllByStudioId(command.studioId.value)
                     .map { it.toDomain() }
             }
 
-            val activeTemplatesDeferred = async {
-                consentTemplateRepository.findAllActiveByStudioId(command.studioId.value)
+            val allTemplatesDeferred = async {
+                consentTemplateRepository.findAllByStudioId(command.studioId.value)
                     .map { it.toDomain() }
             }
 
@@ -42,8 +37,8 @@ class ConsentStatusValidationContextBuilder(
             ConsentStatusValidationContext(
                 studioId = command.studioId,
                 customerId = command.customerId,
-                activeDefinitions = activeDefinitionsDeferred.await(),
-                activeTemplates = activeTemplatesDeferred.await(),
+                allDefinitions = allDefinitionsDeferred.await(),
+                allTemplates = allTemplatesDeferred.await(),
                 customerConsents = customerConsentsDeferred.await()
             )
         }

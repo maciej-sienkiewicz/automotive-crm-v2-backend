@@ -129,8 +129,9 @@ data class ConsentStatusResponse(
                         definitionId = item.definitionId.value,
                         definitionSlug = item.definitionSlug,
                         definitionName = item.definitionName,
+                        isDefinitionActive = item.isDefinitionActive,
                         status = item.status.name,
-                        currentTemplateId = item.currentTemplateId.value,
+                        currentTemplateId = item.currentTemplateId?.value,
                         currentVersion = item.currentVersion,
                         signedTemplateId = item.signedTemplateId?.value,
                         signedVersion = item.signedVersion,
@@ -148,14 +149,15 @@ data class ConsentStatusItemResponse(
     val definitionId: UUID,
     val definitionSlug: String,
     val definitionName: String,
-    val status: String,           // VALID | OUTDATED | REQUIRED
-    val currentTemplateId: UUID,
-    val currentVersion: Int,
+    val isDefinitionActive: Boolean,
+    val status: String,              // VALID | OUTDATED | REQUIRED
+    val currentTemplateId: UUID?,    // null when definition is inactive
+    val currentVersion: Int?,        // null when definition is inactive
     val signedTemplateId: UUID?,
     val signedVersion: Int?,
     val signedAt: Instant?,
     val downloadUrl: String?,
-    val consentId: UUID?          // ID ostatniej zgody (do wycofania)
+    val consentId: UUID?             // ID of the latest consent (for revocation)
 )
 
 data class SignConsentResponse(

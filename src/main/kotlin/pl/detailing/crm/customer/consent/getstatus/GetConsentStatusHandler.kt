@@ -3,19 +3,12 @@ package pl.detailing.crm.customer.consent.getstatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.customer.consent.domain.ConsentTemplate
 import pl.detailing.crm.customer.consent.infrastructure.S3ConsentStorageService
+import pl.detailing.crm.shared.ConsentDefinitionId
 import pl.detailing.crm.shared.ConsentStatus
-import pl.detailing.crm.shared.CustomerConsentId
+import pl.detailing.crm.shared.ConsentTemplateId
 
-/**
- * Handler for getting consent status for a customer.
- *
- * Business Logic:
- * - For each active consent definition, determine the customer's status:
- *   - VALID: Customer signed the current active version
- *   - OUTDATED: Customer signed an older version, and the new version doesn't require re-sign
- *   - REQUIRED: Customer never signed OR the new version requires re-sign
- */
 @Service
 class GetConsentStatusHandler(
     private val contextBuilder: ConsentStatusValidationContextBuilder,
@@ -24,75 +17,81 @@ class GetConsentStatusHandler(
 
     suspend fun handle(command: GetConsentStatusCommand): GetConsentStatusResult =
         withContext(Dispatchers.IO) {
-            // Step 1: Build context with all necessary data
             val context = contextBuilder.build(command)
 
-            // Step 2: Create a map of definition -> active template for quick lookup
-            val templatesByDefinition = context.activeTemplates
+            // Active template per definition (for current-version checks)
+            val activeTemplateByDefinition: Map<ConsentDefinitionId, ConsentTemplate> = context.allTemplates
+                .filter { it.isActive }
                 .associateBy { it.definitionId }
 
-            // Step 3: Create a map of template -> customer consent for quick lookup
-            val consentsByTemplate = context.customerConsents
-                .groupBy { it.templateId }
-                .mapValues { it.value.maxByOrNull { consent -> consent.signedAt } }
+            // All templates grouped by definition (for OUTDATED checks across versions)
+            val allTemplateIdsByDefinition: Map<ConsentDefinitionId, List<ConsentTemplateId>> = context.allTemplates
+                .groupBy { it.definitionId }
+                .mapValues { (_, templates) -> templates.map { it.id } }
 
-            // Step 4: Process each active definition
-            val consentStatuses = context.activeDefinitions.mapNotNull { definition ->
-                val activeTemplate = templatesByDefinition[definition.id] ?: return@mapNotNull null
+            // Non-revoked customer consents
+            val validConsents = context.customerConsents.filter { it.revokedAt == null }
 
-                // Find all consents for this definition's templates
-                val allTemplatesForDefinition = context.activeTemplates
-                    .filter { it.definitionId == definition.id }
-                    .map { it.id }
+            fun latestConsentForDefinition(definitionId: ConsentDefinitionId) =
+                (allTemplateIdsByDefinition[definitionId] ?: emptyList()).let { templateIds ->
+                    validConsents.filter { it.templateId in templateIds }.maxByOrNull { it.signedAt }
+                }
 
-                val customerConsentsForDefinition = context.customerConsents
-                    .filter { it.templateId in allTemplatesForDefinition && it.revokedAt == null }
+            fun templateById(id: ConsentTemplateId) = context.allTemplates.find { it.id == id }
 
-                // Find the most recent non-revoked consent for this definition (across all versions)
-                val latestConsent = customerConsentsForDefinition
-                    .maxByOrNull { it.signedAt }
+            // --- Active definitions ---
+            val activeStatuses = context.allDefinitions.filter { it.isActive }.mapNotNull { definition ->
+                val activeTemplate = activeTemplateByDefinition[definition.id] ?: return@mapNotNull null
+                val latestConsent = latestConsentForDefinition(definition.id)
 
-                // Determine status
                 val status = when {
-                    // Customer signed the current active version
                     latestConsent?.templateId == activeTemplate.id -> ConsentStatus.VALID
-
-                    // Customer signed an older version
-                    latestConsent != null -> {
-                        if (activeTemplate.requiresResign) {
-                            ConsentStatus.REQUIRED
-                        } else {
-                            ConsentStatus.OUTDATED
-                        }
-                    }
-
-                    // Customer never signed this consent
+                    latestConsent != null ->
+                        if (activeTemplate.requiresResign) ConsentStatus.REQUIRED else ConsentStatus.OUTDATED
                     else -> ConsentStatus.REQUIRED
                 }
 
-                // Find the signed template version (if any)
-                val signedTemplate = latestConsent?.let { consent ->
-                    context.activeTemplates.find { it.id == consent.templateId }
-                }
-
-                // Generate download URL for the current active template
-                val downloadUrl = s3StorageService.generateDownloadUrl(activeTemplate.s3Key)
+                val signedTemplate = latestConsent?.let { templateById(it.templateId) }
 
                 ConsentStatusItem(
                     definitionId = definition.id,
                     definitionSlug = definition.slug,
                     definitionName = definition.name,
+                    isDefinitionActive = true,
                     status = status,
                     currentTemplateId = activeTemplate.id,
                     currentVersion = activeTemplate.version,
                     signedTemplateId = latestConsent?.templateId,
                     signedVersion = signedTemplate?.version,
                     signedAt = latestConsent?.signedAt,
-                    downloadUrl = downloadUrl,
+                    downloadUrl = s3StorageService.generateDownloadUrl(activeTemplate.s3Key),
                     consentId = latestConsent?.id
                 )
             }
 
-            GetConsentStatusResult(consents = consentStatuses)
+            // --- Inactive definitions (only those the customer actually signed) ---
+            val inactiveStatuses = context.allDefinitions.filter { !it.isActive }.mapNotNull { definition ->
+                val latestConsent = latestConsentForDefinition(definition.id)
+                    ?: return@mapNotNull null  // customer never signed → don't show
+
+                val signedTemplate = templateById(latestConsent.templateId)
+
+                ConsentStatusItem(
+                    definitionId = definition.id,
+                    definitionSlug = definition.slug,
+                    definitionName = definition.name,
+                    isDefinitionActive = false,
+                    status = ConsentStatus.VALID,
+                    currentTemplateId = null,
+                    currentVersion = null,
+                    signedTemplateId = latestConsent.templateId,
+                    signedVersion = signedTemplate?.version,
+                    signedAt = latestConsent.signedAt,
+                    downloadUrl = null,
+                    consentId = latestConsent.id
+                )
+            }
+
+            GetConsentStatusResult(consents = activeStatuses + inactiveStatuses)
         }
 }

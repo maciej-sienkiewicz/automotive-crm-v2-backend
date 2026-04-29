@@ -39,6 +39,9 @@ interface ConsentTemplateRepository : JpaRepository<ConsentTemplateEntity, UUID>
     """)
     fun findAllActiveByStudioId(@Param("studioId") studioId: UUID): List<ConsentTemplateEntity>
 
+    @Query("SELECT ct FROM ConsentTemplateEntity ct WHERE ct.studioId = :studioId")
+    fun findAllByStudioId(@Param("studioId") studioId: UUID): List<ConsentTemplateEntity>
+
     @Query("""
         SELECT ct FROM ConsentTemplateEntity ct
         WHERE ct.definitionId = :definitionId
