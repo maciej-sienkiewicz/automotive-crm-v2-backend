@@ -800,7 +800,11 @@ enum class CommunicationMessageType(val label: String) {
 
     // SMS consent types
     SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług"),
-    SMS_INBOUND_REPLY("SMS odpowiedź klienta")
+    SMS_INBOUND_REPLY("SMS odpowiedź klienta"),
+
+    // SMS confirmation types
+    SMS_APPOINTMENT_RESCHEDULE_CONFIRMATION("SMS potwierdzenie zmiany terminu"),
+    SMS_BOOKING_CONFIRMATION("SMS potwierdzenie rezerwacji")
 }
 
 /**
