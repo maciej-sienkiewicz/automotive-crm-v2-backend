@@ -179,10 +179,9 @@ class CheckinController(
 
         // Convert protocols to DTOs
         val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val template = protocolTemplateRepository.findByIdAndStudioId(
-                protocol.templateId.value,
-                principal.studioId.value
-            )?.toDomain()
+            val template = protocol.templateId?.let { templateId ->
+                protocolTemplateRepository.findByIdAndStudioId(templateId.value, principal.studioId.value)?.toDomain()
+            }
 
             val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
                 s3StorageService.generateDownloadUrl(s3Key)
@@ -190,8 +189,8 @@ class CheckinController(
 
             VisitProtocolDto(
                 id = protocol.id.toString(),
-                templateId = protocol.templateId.toString(),
-                templateName = template?.name ?: "Unknown Template",
+                templateId = protocol.templateId?.toString(),
+                templateName = template?.name ?: "Consent",
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
@@ -349,10 +348,9 @@ class CheckinController(
         }
 
         val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val template = protocolTemplateRepository.findByIdAndStudioId(
-                protocol.templateId.value,
-                principal.studioId.value
-            )?.toDomain()
+            val template = protocol.templateId?.let { templateId ->
+                protocolTemplateRepository.findByIdAndStudioId(templateId.value, principal.studioId.value)?.toDomain()
+            }
 
             val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
                 s3StorageService.generateDownloadUrl(s3Key)
@@ -360,8 +358,8 @@ class CheckinController(
 
             VisitProtocolDto(
                 id = protocol.id.toString(),
-                templateId = protocol.templateId.toString(),
-                templateName = template?.name ?: "Unknown Template",
+                templateId = protocol.templateId?.toString(),
+                templateName = template?.name ?: "Consent",
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
@@ -579,7 +577,7 @@ data class ReservationToVisitResponse(
 
 data class VisitProtocolDto(
     val id: String,
-    val templateId: String,
+    val templateId: String?,     // null for consent protocols
     val templateName: String,
     val stage: String,
     val consentDefinitionId: String?,
