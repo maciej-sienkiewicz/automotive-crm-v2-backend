@@ -27,10 +27,4 @@ interface ConsentDefinitionRepository : JpaRepository<ConsentDefinitionEntity, U
         @Param("slug") slug: String,
         @Param("studioId") studioId: UUID
     ): ConsentDefinitionEntity?
-
-    @Query("SELECT CASE WHEN COUNT(cd) > 0 THEN true ELSE false END FROM ConsentDefinitionEntity cd WHERE cd.slug = :slug AND cd.studioId = :studioId")
-    fun existsBySlugAndStudioId(
-        @Param("slug") slug: String,
-        @Param("studioId") studioId: UUID
-    ): Boolean
 }
