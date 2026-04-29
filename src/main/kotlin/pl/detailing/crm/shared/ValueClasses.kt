@@ -434,6 +434,11 @@ enum class ConsentStatus {
     REQUIRED    // Customer never signed OR new version requires re-sign
 }
 
+enum class MarketingChannel {
+    EMAIL,
+    SMS
+}
+
 /**
  * Type-safe ID wrapper for ProtocolTemplate entities
  */

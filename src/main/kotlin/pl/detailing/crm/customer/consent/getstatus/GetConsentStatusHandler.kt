@@ -51,11 +51,10 @@ class GetConsentStatusHandler(
 
                 ConsentStatusItem(
                     definitionId = definition.id,
-                    definitionSlug = definition.slug,
                     definitionName = definition.name,
                     isDefinitionActive = true,
                     stage = definition.stage,
-                    isMandatory = definition.isMandatory,
+                    marketingChannels = definition.marketingChannels,
                     displayOrder = definition.displayOrder,
                     status = status,
                     currentTemplateId = activeTemplate.id,
@@ -74,11 +73,10 @@ class GetConsentStatusHandler(
 
                 ConsentStatusItem(
                     definitionId = definition.id,
-                    definitionSlug = definition.slug,
                     definitionName = definition.name,
                     isDefinitionActive = false,
                     stage = null,
-                    isMandatory = false,
+                    marketingChannels = definition.marketingChannels,
                     displayOrder = 0,
                     status = ConsentStatus.VALID,
                     currentTemplateId = null,

@@ -3,6 +3,7 @@ package pl.detailing.crm.customer.consent.infrastructure
 import jakarta.persistence.*
 import pl.detailing.crm.customer.consent.domain.ConsentDefinition
 import pl.detailing.crm.shared.ConsentDefinitionId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -13,7 +14,6 @@ import java.util.*
 @Table(
     name = "consent_definitions",
     indexes = [
-        Index(name = "idx_consent_defs_studio_slug", columnList = "studio_id, slug", unique = true),
         Index(name = "idx_consent_defs_studio_active", columnList = "studio_id, is_active"),
         Index(name = "idx_consent_defs_studio_stage", columnList = "studio_id, stage, is_active")
     ]
@@ -26,9 +26,6 @@ class ConsentDefinitionEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "slug", nullable = false, length = 100)
-    var slug: String,
-
     @Column(name = "name", nullable = false, length = 200)
     var name: String,
 
@@ -39,8 +36,14 @@ class ConsentDefinitionEntity(
     @Column(name = "stage", nullable = false, length = 20)
     var stage: ProtocolStage,
 
-    @Column(name = "is_mandatory", nullable = false)
-    var isMandatory: Boolean = false,
+    @ElementCollection(fetch = FetchType.EAGER, targetClass = MarketingChannel::class)
+    @CollectionTable(
+        name = "consent_definition_marketing_channels",
+        joinColumns = [JoinColumn(name = "definition_id")]
+    )
+    @Column(name = "channel")
+    @Enumerated(EnumType.STRING)
+    var marketingChannels: MutableSet<MarketingChannel> = mutableSetOf(),
 
     @Column(name = "display_order", nullable = false)
     var displayOrder: Int = 0,
@@ -63,11 +66,10 @@ class ConsentDefinitionEntity(
     fun toDomain(): ConsentDefinition = ConsentDefinition(
         id = ConsentDefinitionId(id),
         studioId = StudioId(studioId),
-        slug = slug,
         name = name,
         description = description,
         stage = stage,
-        isMandatory = isMandatory,
+        marketingChannels = marketingChannels.toSet(),
         displayOrder = displayOrder,
         isActive = isActive,
         createdBy = UserId(createdBy),
@@ -77,15 +79,13 @@ class ConsentDefinitionEntity(
     )
 
     companion object {
-        fun fromDomain(definition: ConsentDefinition): ConsentDefinitionEntity =
-            ConsentDefinitionEntity(
+        fun fromDomain(definition: ConsentDefinition): ConsentDefinitionEntity {
+            val entity = ConsentDefinitionEntity(
                 id = definition.id.value,
                 studioId = definition.studioId.value,
-                slug = definition.slug,
                 name = definition.name,
                 description = definition.description,
                 stage = definition.stage,
-                isMandatory = definition.isMandatory,
                 displayOrder = definition.displayOrder,
                 isActive = definition.isActive,
                 createdBy = definition.createdBy.value,
@@ -93,5 +93,8 @@ class ConsentDefinitionEntity(
                 createdAt = definition.createdAt,
                 updatedAt = definition.updatedAt
             )
+            entity.marketingChannels = definition.marketingChannels.toMutableSet()
+            return entity
+        }
     }
 }
