@@ -103,7 +103,7 @@ class GenerateVisitProtocolsHandler(
 
     /**
      * Consent protocols don't need PDF auto-fill — the consent template PDF is served directly.
-     * The status jumps straight to READY_FOR_SIGNATURE.
+     * Status jumps straight to READY_FOR_SIGNATURE.
      */
     private fun serveConsentPdf(visitProtocol: VisitProtocol, studioId: StudioId): VisitProtocol {
         val consentTemplateId = visitProtocol.consentTemplateId ?: return visitProtocol
@@ -111,7 +111,7 @@ class GenerateVisitProtocolsHandler(
         val templateEntity = consentTemplateRepository.findByIdAndStudioId(
             consentTemplateId.value, studioId.value
         ) ?: run {
-            logger.warn("Consent template ${consentTemplateId.value} not found — skipping serve")
+            logger.warn("Consent template ${consentTemplateId.value} not found — skipping")
             return visitProtocol
         }
 
@@ -120,7 +120,11 @@ class GenerateVisitProtocolsHandler(
         return updated
     }
 
-    private suspend fun fillProtocolPdf(visitProtocol: VisitProtocol, studioId: StudioId, visitNumber: String): VisitProtocol {
+    private suspend fun fillProtocolPdf(
+        visitProtocol: VisitProtocol,
+        studioId: StudioId,
+        visitNumber: String
+    ): VisitProtocol {
         val templateId = visitProtocol.templateId ?: return visitProtocol
 
         return try {
@@ -144,20 +148,22 @@ class GenerateVisitProtocolsHandler(
             visitProtocolRepository.save(VisitProtocolEntity.fromDomain(updated))
 
             try {
-                val template = protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)
-                documentService.registerDocument(
-                    visitId = visitProtocol.visitId.value,
-                    customerId = visitRepository.findById(visitProtocol.visitId.value).orElse(null)?.customerId
-                        ?: return@try,
-                    documentType = DocumentType.PROTOCOL,
-                    name = "PPP_${visitNumber}_${visitProtocol.version}",
-                    s3Key = filledPdfS3Key,
-                    fileName = "PPP_${visitNumber}_${visitProtocol.version}.pdf",
-                    createdBy = visitRepository.findById(visitProtocol.visitId.value).orElse(null)?.createdBy
-                        ?: return@try,
-                    createdByName = "System",
-                    category = "protocol"
-                )
+                val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
+                if (visitEntity != null) {
+                    documentService.registerDocument(
+                        visitId = visitProtocol.visitId.value,
+                        customerId = visitEntity.customerId,
+                        documentType = DocumentType.PROTOCOL,
+                        name = "PPP_${visitNumber}_${visitProtocol.version}",
+                        s3Key = filledPdfS3Key,
+                        fileName = "PPP_${visitNumber}_${visitProtocol.version}.pdf",
+                        createdBy = visitEntity.createdBy,
+                        createdByName = "System",
+                        category = "protocol"
+                    )
+                } else {
+                    logger.warn("Could not register protocol as document — visit not found: ${visitProtocol.visitId}")
+                }
             } catch (e: Exception) {
                 logger.error("Failed to register protocol as document: ${e.message}", e)
             }

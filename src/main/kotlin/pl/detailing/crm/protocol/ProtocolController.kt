@@ -228,7 +228,7 @@ class ProtocolController(
 
     // ==================== Helpers ====================
 
-    private suspend fun toProtocolTemplateResponse(
+    private fun toProtocolTemplateResponse(
         template: pl.detailing.crm.protocol.domain.ProtocolTemplate,
         studioId: StudioId,
         templateUrl: String? = null
@@ -245,7 +245,7 @@ class ProtocolController(
         )
     }
 
-    private suspend fun toProtocolRuleResponse(
+    private fun toProtocolRuleResponse(
         rule: pl.detailing.crm.protocol.domain.ProtocolRule,
         studioId: StudioId
     ): ProtocolRuleResponse {
@@ -272,7 +272,7 @@ class ProtocolController(
         )
     }
 
-    private suspend fun toVisitProtocolResponse(
+    private fun toVisitProtocolResponse(
         protocol: pl.detailing.crm.protocol.domain.VisitProtocol,
         studioId: StudioId
     ): VisitProtocolResponse {
