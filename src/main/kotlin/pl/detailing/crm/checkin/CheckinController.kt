@@ -11,6 +11,7 @@ import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
 import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailHandler
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
@@ -25,6 +26,7 @@ class CheckinController(
     private val createVisitFromReservationHandler: CreateVisitFromReservationHandler,
     private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,
     private val protocolTemplateRepository: ProtocolTemplateRepository,
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val uploadContextTokenService: UploadContextTokenService,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
@@ -179,8 +181,13 @@ class CheckinController(
 
         // Convert protocols to DTOs
         val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val template = protocol.templateId?.let { templateId ->
-                protocolTemplateRepository.findByIdAndStudioId(templateId.value, principal.studioId.value)?.toDomain()
+            val templateName = if (protocol.templateId != null) {
+                protocolTemplateRepository.findByIdAndStudioId(protocol.templateId.value, principal.studioId.value)
+                    ?.toDomain()?.name ?: "Unknown"
+            } else {
+                protocol.consentDefinitionId?.let { defId ->
+                    consentDefinitionRepository.findByIdAndStudioId(defId.value, principal.studioId.value)?.name
+                } ?: "Consent"
             }
 
             val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
@@ -190,7 +197,7 @@ class CheckinController(
             VisitProtocolDto(
                 id = protocol.id.toString(),
                 templateId = protocol.templateId?.toString(),
-                templateName = template?.name ?: "Consent",
+                templateName = templateName,
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
@@ -348,8 +355,13 @@ class CheckinController(
         }
 
         val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val template = protocol.templateId?.let { templateId ->
-                protocolTemplateRepository.findByIdAndStudioId(templateId.value, principal.studioId.value)?.toDomain()
+            val templateName = if (protocol.templateId != null) {
+                protocolTemplateRepository.findByIdAndStudioId(protocol.templateId.value, principal.studioId.value)
+                    ?.toDomain()?.name ?: "Unknown"
+            } else {
+                protocol.consentDefinitionId?.let { defId ->
+                    consentDefinitionRepository.findByIdAndStudioId(defId.value, principal.studioId.value)?.name
+                } ?: "Consent"
             }
 
             val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
@@ -359,7 +371,7 @@ class CheckinController(
             VisitProtocolDto(
                 id = protocol.id.toString(),
                 templateId = protocol.templateId?.toString(),
-                templateName = template?.name ?: "Consent",
+                templateName = templateName,
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
                 isMandatory = protocol.isMandatory,
