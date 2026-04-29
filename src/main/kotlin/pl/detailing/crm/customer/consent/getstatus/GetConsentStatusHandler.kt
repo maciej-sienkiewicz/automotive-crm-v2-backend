@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.consent.infrastructure.S3ConsentStorageService
 import pl.detailing.crm.shared.ConsentStatus
+import pl.detailing.crm.shared.CustomerConsentId
 
 /**
  * Handler for getting consent status for a customer.
@@ -45,9 +46,9 @@ class GetConsentStatusHandler(
                     .map { it.id }
 
                 val customerConsentsForDefinition = context.customerConsents
-                    .filter { it.templateId in allTemplatesForDefinition }
+                    .filter { it.templateId in allTemplatesForDefinition && it.revokedAt == null }
 
-                // Find the most recent consent for this definition (across all versions)
+                // Find the most recent non-revoked consent for this definition (across all versions)
                 val latestConsent = customerConsentsForDefinition
                     .maxByOrNull { it.signedAt }
 
@@ -87,7 +88,8 @@ class GetConsentStatusHandler(
                     signedTemplateId = latestConsent?.templateId,
                     signedVersion = signedTemplate?.version,
                     signedAt = latestConsent?.signedAt,
-                    downloadUrl = downloadUrl
+                    downloadUrl = downloadUrl,
+                    consentId = latestConsent?.id
                 )
             }
 

@@ -8,10 +8,13 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.customer.consent.getstatus.GetConsentStatusCommand
 import pl.detailing.crm.customer.consent.getstatus.GetConsentStatusHandler
 import pl.detailing.crm.customer.consent.getstatus.GetConsentStatusResult
+import pl.detailing.crm.customer.consent.revoke.RevokeConsentCommand
+import pl.detailing.crm.customer.consent.revoke.RevokeConsentHandler
 import pl.detailing.crm.customer.consent.sign.SignConsentCommand
 import pl.detailing.crm.customer.consent.sign.SignConsentHandler
 import pl.detailing.crm.shared.ConsentTemplateId
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.CustomerConsentId
 import java.time.Instant
 import java.util.*
 
@@ -26,7 +29,8 @@ import java.util.*
 @RequestMapping("/api/v1/customers/{customerId}/consents")
 class CustomerConsentController(
     private val getConsentStatusHandler: GetConsentStatusHandler,
-    private val signConsentHandler: SignConsentHandler
+    private val signConsentHandler: SignConsentHandler,
+    private val revokeConsentHandler: RevokeConsentHandler
 ) {
 
     /**
@@ -84,6 +88,28 @@ class CustomerConsentController(
             )
         )
     }
+
+    /**
+     * Revoke a previously recorded consent.
+     * The consent record is preserved for audit purposes but marked as revoked.
+     * After revocation the customer's consent status returns to REQUIRED.
+     */
+    @DeleteMapping("/{consentId}")
+    fun revokeConsent(
+        @PathVariable customerId: UUID,
+        @PathVariable consentId: UUID
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        revokeConsentHandler.handle(
+            RevokeConsentCommand(
+                studioId = principal.studioId,
+                consentId = CustomerConsentId(consentId)
+            )
+        )
+
+        ResponseEntity.noContent().build()
+    }
 }
 
 // Request / Response DTOs
@@ -109,7 +135,8 @@ data class ConsentStatusResponse(
                         signedTemplateId = item.signedTemplateId?.value,
                         signedVersion = item.signedVersion,
                         signedAt = item.signedAt,
-                        downloadUrl = item.downloadUrl
+                        downloadUrl = item.downloadUrl,
+                        consentId = item.consentId?.value
                     )
                 }
             )
@@ -121,13 +148,14 @@ data class ConsentStatusItemResponse(
     val definitionId: UUID,
     val definitionSlug: String,
     val definitionName: String,
-    val status: String,
+    val status: String,           // VALID | OUTDATED | REQUIRED
     val currentTemplateId: UUID,
     val currentVersion: Int,
     val signedTemplateId: UUID?,
     val signedVersion: Int?,
     val signedAt: Instant?,
-    val downloadUrl: String?
+    val downloadUrl: String?,
+    val consentId: UUID?          // ID ostatniej zgody (do wycofania)
 )
 
 data class SignConsentResponse(

@@ -3,6 +3,7 @@ package pl.detailing.crm.customer.consent.getstatus
 import pl.detailing.crm.shared.ConsentDefinitionId
 import pl.detailing.crm.shared.ConsentStatus
 import pl.detailing.crm.shared.ConsentTemplateId
+import pl.detailing.crm.shared.CustomerConsentId
 import java.time.Instant
 
 /**
@@ -26,5 +27,6 @@ data class ConsentStatusItem(
     val signedTemplateId: ConsentTemplateId?,
     val signedVersion: Int?,
     val signedAt: Instant?,
-    val downloadUrl: String?  // Presigned URL for viewing the current template
+    val downloadUrl: String?,
+    val consentId: CustomerConsentId?  // ID of the latest non-revoked consent, for revocation
 )

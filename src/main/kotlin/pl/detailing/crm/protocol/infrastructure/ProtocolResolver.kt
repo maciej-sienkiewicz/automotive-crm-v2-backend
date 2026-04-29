@@ -110,7 +110,7 @@ class ProtocolResolver(
         val signedActiveTemplate = customerConsentRepository.findLatestByCustomerAndTemplate(
             customerId, activeTemplate.id, studioId
         )
-        if (signedActiveTemplate != null) return true
+        if (signedActiveTemplate != null && signedActiveTemplate.revokedAt == null) return true
 
         // OUTDATED: customer signed an older version and re-sign is not required
         if (!activeTemplate.requiresResign) {
@@ -120,7 +120,7 @@ class ProtocolResolver(
 
             val hasOlderConsent = customerConsentRepository
                 .findAllByCustomerIdAndStudioId(customerId, studioId)
-                .any { it.templateId in allTemplatesForDefinition }
+                .any { it.templateId in allTemplatesForDefinition && it.revokedAt == null }
 
             if (hasOlderConsent) return true
         }

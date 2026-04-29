@@ -21,7 +21,8 @@ data class CustomerConsent(
     val studioId: StudioId,
     val customerId: CustomerId,
     val templateId: ConsentTemplateId,
-    val signedAt: Instant,          // When the customer signed this consent
-    val witnessedBy: UserId,        // Which employee witnessed/recorded the signature
-    val attachmentS3Key: String?    // Optional: S3 key of an uploaded consent document scan
+    val signedAt: Instant,
+    val witnessedBy: UserId,
+    val attachmentS3Key: String?,
+    val revokedAt: Instant? = null
 )

@@ -15,6 +15,12 @@ import java.util.*
 @Repository
 interface CustomerConsentRepository : JpaRepository<CustomerConsentEntity, UUID> {
 
+    @Query("SELECT cc FROM CustomerConsentEntity cc WHERE cc.id = :id AND cc.studioId = :studioId")
+    fun findByIdAndStudioId(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): CustomerConsentEntity?
+
     @Query("""
         SELECT cc FROM CustomerConsentEntity cc
         WHERE cc.customerId = :customerId
