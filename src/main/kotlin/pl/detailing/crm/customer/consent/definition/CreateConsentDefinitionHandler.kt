@@ -26,12 +26,12 @@ class CreateConsentDefinitionHandler(
     suspend fun handle(command: CreateConsentDefinitionCommand): CreateConsentDefinitionResult =
         withContext(Dispatchers.IO) {
             // Step 1: Validate slug uniqueness
-            val slugExists = consentDefinitionRepository.existsBySlugAndStudioId(
+            val slugAlreadyUsed = consentDefinitionRepository.findBySlugAndStudioId(
                 command.slug.trim().lowercase(),
                 command.studioId.value
-            )
+            ) != null
 
-            if (slugExists) {
+            if (slugAlreadyUsed) {
                 throw ValidationException(
                     "Consent definition with slug '${command.slug}' already exists in this studio"
                 )
