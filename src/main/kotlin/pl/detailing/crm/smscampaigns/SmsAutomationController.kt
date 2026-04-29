@@ -29,7 +29,6 @@ data class SmsNotificationRuleDto(
 data class SmsAutomationConfigDto(
     val preVisit: SmsAutomationRuleDto,
     val postVisit: SmsAutomationRuleDto,
-    val delayedReminder: SmsAutomationRuleDto,
     val bookingConfirmation: SmsNotificationRuleDto,
     val rescheduleConfirmation: SmsNotificationRuleDto
 )
@@ -39,7 +38,6 @@ data class SmsAutomationConfigDto(
 private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
     preVisit = SmsAutomationRuleDto(preVisit.enabled, preVisit.offsetMinutes, preVisit.messageTemplate),
     postVisit = SmsAutomationRuleDto(postVisit.enabled, postVisit.offsetMinutes, postVisit.messageTemplate),
-    delayedReminder = SmsAutomationRuleDto(delayedReminder.enabled, delayedReminder.offsetMinutes, delayedReminder.messageTemplate),
     bookingConfirmation = SmsNotificationRuleDto(bookingConfirmation.enabled, bookingConfirmation.messageTemplate),
     rescheduleConfirmation = SmsNotificationRuleDto(rescheduleConfirmation.enabled, rescheduleConfirmation.messageTemplate)
 )
@@ -77,6 +75,8 @@ class SmsAutomationController(
             throw ForbiddenException("Only OWNER and MANAGER can update SMS automation config")
         }
 
+        val existingDelayedReminder = getConfigHandler.handle(principal.studioId).delayedReminder
+
         val command = UpdateAutomationConfigCommand(
             studioId = principal.studioId,
             preVisit = UpdateAutomationRuleCommand(
@@ -90,9 +90,9 @@ class SmsAutomationController(
                 messageTemplate = request.postVisit.messageTemplate
             ),
             delayedReminder = UpdateAutomationRuleCommand(
-                enabled = request.delayedReminder.enabled,
-                offsetMinutes = request.delayedReminder.offsetMinutes,
-                messageTemplate = request.delayedReminder.messageTemplate
+                enabled = existingDelayedReminder.enabled,
+                offsetMinutes = existingDelayedReminder.offsetMinutes,
+                messageTemplate = existingDelayedReminder.messageTemplate
             ),
             bookingConfirmation = UpdateNotificationRuleCommand(
                 enabled = request.bookingConfirmation.enabled,
