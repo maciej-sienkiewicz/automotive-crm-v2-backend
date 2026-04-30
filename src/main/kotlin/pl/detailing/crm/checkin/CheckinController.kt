@@ -11,6 +11,7 @@ import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
 import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailHandler
+import pl.detailing.crm.email.visitwelcome.WelcomeEmailOptions
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -19,6 +20,7 @@ import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.DamagePoint
 import java.time.Instant
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/checkin")
@@ -164,19 +166,27 @@ class CheckinController(
             )
         )
 
-        // Send welcome email with protocol attachment (fire-and-forget; never aborts check-in)
-        try {
-            sendVisitWelcomeEmailHandler.handle(
-                SendVisitWelcomeEmailCommand(
-                    visitId = result.visitId,
-                    studioId = principal.studioId
+        // Send welcome email (fire-and-forget; never aborts check-in)
+        if (request.sendEmail) {
+            val emailOpts = request.emailOptions ?: WelcomeEmailOptionsRequest()
+            try {
+                sendVisitWelcomeEmailHandler.handle(
+                    SendVisitWelcomeEmailCommand(
+                        visitId = result.visitId,
+                        studioId = principal.studioId,
+                        options = WelcomeEmailOptions(
+                            attachProtocol = emailOpts.attachProtocol,
+                            attachPhotos = emailOpts.attachPhotos,
+                            photoIds = emailOpts.photoIds.mapNotNull {
+                                runCatching { UUID.fromString(it) }.getOrNull()
+                            },
+                            attachDamageMap = emailOpts.attachDamageMap
+                        )
+                    )
                 )
-            )
-        } catch (ex: Exception) {
-            logger.warn(
-                "Failed to send welcome email for visit {}: {}",
-                result.visitId, ex.message
-            )
+            } catch (ex: Exception) {
+                logger.warn("Failed to send welcome email for visit {}: {}", result.visitId, ex.message)
+            }
         }
 
         // Convert protocols to DTOs
@@ -340,18 +350,26 @@ class CheckinController(
             )
         )
 
-        try {
-            sendVisitWelcomeEmailHandler.handle(
-                SendVisitWelcomeEmailCommand(
-                    visitId = result.visitId,
-                    studioId = principal.studioId
+        if (request.sendEmail) {
+            val emailOpts = request.emailOptions ?: WelcomeEmailOptionsRequest()
+            try {
+                sendVisitWelcomeEmailHandler.handle(
+                    SendVisitWelcomeEmailCommand(
+                        visitId = result.visitId,
+                        studioId = principal.studioId,
+                        options = WelcomeEmailOptions(
+                            attachProtocol = emailOpts.attachProtocol,
+                            attachPhotos = emailOpts.attachPhotos,
+                            photoIds = emailOpts.photoIds.mapNotNull {
+                                runCatching { UUID.fromString(it) }.getOrNull()
+                            },
+                            attachDamageMap = emailOpts.attachDamageMap
+                        )
+                    )
                 )
-            )
-        } catch (ex: Exception) {
-            logger.warn(
-                "Failed to send welcome email for walk-in visit {}: {}",
-                result.visitId, ex.message
-            )
+            } catch (ex: Exception) {
+                logger.warn("Failed to send welcome email for walk-in visit {}: {}", result.visitId, ex.message)
+            }
         }
 
         val protocolDtos = protocolsResult.protocols.map { protocol ->
@@ -466,6 +484,13 @@ class CheckinController(
 }
 
 // Request/Response DTOs
+data class WelcomeEmailOptionsRequest(
+    val attachProtocol: Boolean = true,
+    val attachPhotos: Boolean = false,
+    val photoIds: List<String> = emptyList(),
+    val attachDamageMap: Boolean = false
+)
+
 data class ReservationToVisitRequest(
     val reservationId: String,
     val title: String?,
@@ -477,7 +502,9 @@ data class ReservationToVisitRequest(
     val photoIds: List<String>,
     val damagePoints: List<DamagePointRequest>?,
     val services: List<ServiceLineItemRequest>,
-    val appointmentColorId: String?
+    val appointmentColorId: String?,
+    val sendEmail: Boolean = false,
+    val emailOptions: WelcomeEmailOptionsRequest? = null
 )
 
 enum class IdentityMode {
@@ -683,7 +710,9 @@ data class WalkInVisitRequest(
     val photoIds: List<String>,
     val damagePoints: List<DamagePointRequest>?,
     val services: List<ServiceLineItemRequest>,
-    val appointmentColorId: String?
+    val appointmentColorId: String?,
+    val sendEmail: Boolean = false,
+    val emailOptions: WelcomeEmailOptionsRequest? = null
 )
 
 data class WalkInVisitCommand(

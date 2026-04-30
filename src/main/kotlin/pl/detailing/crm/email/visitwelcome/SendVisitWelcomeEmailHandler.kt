@@ -18,7 +18,10 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.visit.infrastructure.PhotoSessionService
+import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.util.UUID
 
 /**
  * Sends a welcome email to the customer when a visit is opened (check-in).
@@ -32,22 +35,21 @@ class SendVisitWelcomeEmailHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val pdfProcessingService: PdfProcessingService,
+    private val photoSessionService: PhotoSessionService,
+    private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     suspend fun handle(command: SendVisitWelcomeEmailCommand): Unit = withContext(Dispatchers.IO) {
-        val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
+        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
         if (visitEntity == null) {
             logger.warn("SendVisitWelcomeEmail: visit not found [visitId={}]", command.visitId)
             return@withContext
         }
 
-        val customerEntity = customerRepository.findByIdAndStudioId(
-            visitEntity.customerId,
-            visitEntity.studioId
-        )
+        val customerEntity = customerRepository.findByIdAndStudioId(visitEntity.customerId, visitEntity.studioId)
         if (customerEntity == null) {
             logger.warn("SendVisitWelcomeEmail: customer not found [customerId={}]", visitEntity.customerId)
             return@withContext
@@ -62,29 +64,83 @@ class SendVisitWelcomeEmailHandler(
             return@withContext
         }
 
-        val protocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
-            command.visitId.value,
-            command.studioId.value,
-            ProtocolStage.CHECK_IN
-        ).filter { it.filledPdfS3Key != null }
+        val opts = command.options
+        val attachments = mutableListOf<EmailAttachment>()
 
-        val attachments = protocols.mapIndexedNotNull { index, protocol ->
-            val s3Key = protocol.filledPdfS3Key ?: return@mapIndexedNotNull null
-            try {
-                val rawBytes = s3StorageService.downloadBytes(s3Key)
-                val flatBytes = pdfProcessingService.flattenPdfBytes(rawBytes)
-                val suffix = if (protocols.size > 1) "_${index + 1}" else ""
-                EmailAttachment(
-                    fileName = "protokol_przyjecia_${visitEntity.visitNumber}$suffix.pdf",
-                    content = flatBytes,
-                    contentType = "application/pdf"
+        if (opts.attachProtocol) {
+            val protocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
+                command.visitId.value, command.studioId.value, ProtocolStage.CHECK_IN
+            ).filter { it.filledPdfS3Key != null }
+
+            protocols.forEachIndexed { index, protocol ->
+                val s3Key = protocol.filledPdfS3Key ?: return@forEachIndexed
+                runCatching {
+                    val rawBytes = s3StorageService.downloadBytes(s3Key)
+                    val flatBytes = pdfProcessingService.flattenPdfBytes(rawBytes)
+                    val suffix = if (protocols.size > 1) "_${index + 1}" else ""
+                    attachments += EmailAttachment(
+                        fileName = "protokol_przyjecia_${visitEntity.visitNumber}$suffix.pdf",
+                        content = flatBytes,
+                        contentType = "application/pdf"
+                    )
+                }.onFailure { ex ->
+                    logger.warn(
+                        "SendVisitWelcomeEmail: failed to prepare protocol PDF [s3Key={}]: {}",
+                        s3Key, ex.message
+                    )
+                }
+            }
+        }
+
+        if (opts.attachPhotos) {
+            val photos = visitEntity.photos
+            val selectedPhotos = if (opts.photoIds.isEmpty()) photos
+            else photos.filter { opts.photoIds.contains(it.id) }
+
+            selectedPhotos.forEachIndexed { index, photo ->
+                runCatching {
+                    val bytes = photoSessionService.downloadBytes(photo.fileId)
+                    val ext = photo.fileName.substringAfterLast('.', "jpg")
+                    val contentType = when (ext.lowercase()) {
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "image/jpeg"
+                    }
+                    attachments += EmailAttachment(
+                        fileName = "zdjecie_${visitEntity.visitNumber}_${index + 1}.$ext",
+                        content = bytes,
+                        contentType = contentType
+                    )
+                }.onFailure { ex ->
+                    logger.warn(
+                        "SendVisitWelcomeEmail: failed to download photo [fileId={}]: {}",
+                        photo.fileId, ex.message
+                    )
+                }
+            }
+        }
+
+        if (opts.attachDamageMap) {
+            val damageMapKey = visitEntity.damageMapFileId
+            if (damageMapKey != null) {
+                runCatching {
+                    val bytes = s3DamageMapStorageService.downloadBytes(damageMapKey)
+                    attachments += EmailAttachment(
+                        fileName = "mapa_uszkodzen_${visitEntity.visitNumber}.jpg",
+                        content = bytes,
+                        contentType = "image/jpeg"
+                    )
+                }.onFailure { ex ->
+                    logger.warn(
+                        "SendVisitWelcomeEmail: failed to download damage map [key={}]: {}",
+                        damageMapKey, ex.message
+                    )
+                }
+            } else {
+                logger.debug(
+                    "SendVisitWelcomeEmail: attachDamageMap=true but no damage map on visit [visitId={}]",
+                    command.visitId
                 )
-            } catch (ex: Exception) {
-                logger.warn(
-                    "SendVisitWelcomeEmail: failed to prepare protocol PDF attachment [s3Key={}]: {}",
-                    s3Key, ex.message
-                )
-                null
             }
         }
 
@@ -149,8 +205,6 @@ class SendVisitWelcomeEmailHandler(
 
             Numer wizyty: $visitNumber
 
-            W załączniku przesyłamy protokół przyjęcia pojazdu. Prosimy o zapoznanie się z jego treścią i zachowanie go dla celów ewidencyjnych.
-
             W razie pytań zapraszamy do kontaktu z naszym serwisem.
 
             Pozdrawiamy,
@@ -159,7 +213,15 @@ class SendVisitWelcomeEmailHandler(
     }
 }
 
+data class WelcomeEmailOptions(
+    val attachProtocol: Boolean = true,
+    val attachPhotos: Boolean = false,
+    val photoIds: List<UUID> = emptyList(),
+    val attachDamageMap: Boolean = false
+)
+
 data class SendVisitWelcomeEmailCommand(
     val visitId: VisitId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    val options: WelcomeEmailOptions = WelcomeEmailOptions()
 )
