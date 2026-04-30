@@ -110,6 +110,14 @@ class S3DamageMapStorageService(
         return "$studioId/visits/$visitId/damage-map.jpg"
     }
 
+    fun downloadBytes(s3Key: String): ByteArray {
+        val getObjectRequest = GetObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .build()
+        return s3Client.getObject(getObjectRequest).readAllBytes()
+    }
+
     /**
      * Delete a damage map file from S3.
      * Used when cancelling draft visits to clean up generated damage maps.
