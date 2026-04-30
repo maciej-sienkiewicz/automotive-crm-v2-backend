@@ -7,5 +7,6 @@ package pl.detailing.crm.smscampaigns.domain
 enum class SmsTriggerType {
     PRE_VISIT,
     POST_VISIT,
-    DELAYED_REMINDER
+    DELAYED_REMINDER,
+    BOOKING_CONFIRMATION
 }

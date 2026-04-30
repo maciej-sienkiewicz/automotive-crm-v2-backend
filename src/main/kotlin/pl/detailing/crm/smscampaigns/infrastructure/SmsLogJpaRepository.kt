@@ -19,4 +19,14 @@ interface SmsLogJpaRepository : JpaRepository<SmsLogEntity, UUID> {
         @Param("appointmentId") appointmentId: UUID,
         @Param("triggerType") triggerType: SmsTriggerType
     ): Boolean
+
+    fun findByAppointmentIdAndTriggerType(
+        appointmentId: UUID,
+        triggerType: SmsTriggerType
+    ): SmsLogEntity?
+
+    @Query("SELECT l FROM SmsLogEntity l WHERE l.appointmentId IN :appointmentIds")
+    fun findAllByAppointmentIdIn(
+        @Param("appointmentIds") appointmentIds: List<UUID>
+    ): List<SmsLogEntity>
 }

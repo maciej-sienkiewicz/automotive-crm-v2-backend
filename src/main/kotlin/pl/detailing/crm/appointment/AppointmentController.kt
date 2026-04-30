@@ -15,6 +15,8 @@ import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
 import pl.detailing.crm.appointment.list.ListAppointmentsCommand
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
+import pl.detailing.crm.appointment.smsprefs.UpdateAppointmentSmsPreferencesCommand
+import pl.detailing.crm.appointment.smsprefs.UpdateAppointmentSmsPreferencesHandler
 import pl.detailing.crm.appointment.title.UpdateAppointmentTitleHandler
 import pl.detailing.crm.appointment.title.UpdateAppointmentTitleCommand
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -37,7 +39,8 @@ class AppointmentController(
     private val getAppointmentHandler: GetAppointmentHandler,
     private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler,
     private val sendBookingConfirmationSmsHandler: SendBookingConfirmationSmsHandler,
-    private val studioRepository: StudioRepository
+    private val studioRepository: StudioRepository,
+    private val updateAppointmentSmsPreferencesHandler: UpdateAppointmentSmsPreferencesHandler
 ) {
 
     @GetMapping
@@ -416,6 +419,29 @@ class AppointmentController(
         ResponseEntity.noContent().build()
     }
 
+    @PatchMapping("/{id}/sms-preferences")
+    fun updateAppointmentSmsPreferences(
+        @PathVariable id: String,
+        @RequestBody request: UpdateSmsPreferencesRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER and MANAGER can update appointment SMS preferences")
+        }
+
+        updateAppointmentSmsPreferencesHandler.handle(
+            UpdateAppointmentSmsPreferencesCommand(
+                appointmentId = AppointmentId.fromString(id),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                sendReminderSms = request.sendReminderSms
+            )
+        )
+
+        ResponseEntity.noContent().build<Void>()
+    }
+
     @PatchMapping("/{id}/title")
     fun updateAppointmentTitle(
         @PathVariable id: String,
@@ -439,6 +465,10 @@ class AppointmentController(
 
 data class UpdateAppointmentTitleRequest(
     val title: String?
+)
+
+data class UpdateSmsPreferencesRequest(
+    val sendReminderSms: Boolean
 )
 
 data class UpdateAppointmentStatusRequest(

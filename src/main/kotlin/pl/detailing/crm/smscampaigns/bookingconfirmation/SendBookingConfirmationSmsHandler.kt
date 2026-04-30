@@ -16,9 +16,15 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
+import pl.detailing.crm.smscampaigns.domain.SmsTriggerType
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogEntity
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogStatus
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
+import java.time.Instant
+import java.util.UUID
 
 @Service
 class SendBookingConfirmationSmsHandler(
@@ -27,7 +33,8 @@ class SendBookingConfirmationSmsHandler(
     private val smsProvider: SmsProvider,
     private val communicationLogService: CommunicationLogService,
     private val configRepository: SmsAutomationConfigRepository,
-    private val templateProcessor: SmsTemplateProcessor
+    private val templateProcessor: SmsTemplateProcessor,
+    private val smsLogRepository: SmsLogJpaRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -84,6 +91,20 @@ class SendBookingConfirmationSmsHandler(
         )
 
         val result = smsProvider.send(phoneNumber, message)
+
+        smsLogRepository.save(
+            SmsLogEntity(
+                id = UUID.randomUUID(),
+                studioId = command.studioId.value,
+                appointmentId = command.appointmentId.value,
+                triggerType = SmsTriggerType.BOOKING_CONFIRMATION,
+                phoneNumber = phoneNumber,
+                status = if (result.success) SmsLogStatus.SENT else SmsLogStatus.FAILED,
+                externalMessageId = result.externalMessageId,
+                errorMessage = result.errorMessage,
+                sentAt = Instant.now()
+            )
+        )
 
         communicationLogService.record(
             RecordCommunicationCommand(

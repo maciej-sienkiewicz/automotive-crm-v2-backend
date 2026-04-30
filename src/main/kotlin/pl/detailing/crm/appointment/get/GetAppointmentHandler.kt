@@ -11,6 +11,7 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 
 @Service
@@ -18,17 +19,18 @@ class GetAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val smsLogRepository: SmsLogJpaRepository
 ) {
     suspend fun handle(appointmentId: AppointmentId, studioId: StudioId): AppointmentListItem =
         withContext(Dispatchers.IO) {
             val appointment = appointmentRepository.findByIdAndStudioId(appointmentId.value, studioId.value)
                 ?: throw NotFoundException("Appointment not found")
 
-            // Fetch related entities
             val customer = customerRepository.findById(appointment.customerId).orElse(null)
             val vehicle = appointment.vehicleId?.let { vehicleRepository.findById(it).orElse(null) }
             val color = appointmentColorRepository.findById(appointment.appointmentColorId).orElse(null)
+            val smsLogs = smsLogRepository.findAllByAppointmentIdIn(listOf(appointment.id))
 
             val domain = appointment.toDomain()
             val totalNet = domain.calculateTotalNet()
@@ -54,9 +56,6 @@ class GetAppointmentHandler(
                     )
                 },
                 services = appointment.lineItems.map { lineItem ->
-                    // Convert adjustment value based on type:
-                    // - For PERCENT: convert from basis points back to percentage (divide by 100)
-                    // - For others: keep as-is (in cents)
                     val adjustmentValue = when (lineItem.adjustmentType) {
                         AdjustmentType.PERCENT -> lineItem.adjustmentValue / 100.0
                         else -> lineItem.adjustmentValue.toDouble()
@@ -94,7 +93,11 @@ class GetAppointmentHandler(
                 totalGross = totalGross.amountInCents,
                 totalVat = totalVat.amountInCents,
                 createdAt = appointment.createdAt,
-                updatedAt = appointment.updatedAt
+                updatedAt = appointment.updatedAt,
+                smsInfo = buildSmsInfo(
+                    smsLogs = smsLogs,
+                    sendReminderSms = appointment.sendReminderSms
+                )
             )
         }
 }

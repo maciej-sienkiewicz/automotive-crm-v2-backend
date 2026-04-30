@@ -11,6 +11,10 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.smscampaigns.domain.SmsTriggerType
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogEntity
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
+import pl.detailing.crm.smscampaigns.infrastructure.SmsLogStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 import java.time.LocalDate
@@ -22,7 +26,8 @@ class ListAppointmentsHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val smsLogRepository: SmsLogJpaRepository
 ) {
     suspend fun handle(command: ListAppointmentsCommand): ListAppointmentsResult =
         withContext(Dispatchers.IO) {
@@ -63,11 +68,14 @@ class ListAppointmentsHandler(
             val customerIds = appointments.map { it.customerId }.distinct()
             val vehicleIds = appointments.mapNotNull { it.vehicleId }.distinct()
             val colorIds = appointments.map { it.appointmentColorId }.distinct()
+            val appointmentIds = appointments.map { it.id }
 
             // Batch fetch related entities
             val customers = customerRepository.findAllById(customerIds).associateBy { it.id }
             val vehicles = vehicleRepository.findAllById(vehicleIds).associateBy { it.id }
             val colors = appointmentColorRepository.findAllById(colorIds).associateBy { it.id }
+            val smsLogsByAppointment = smsLogRepository.findAllByAppointmentIdIn(appointmentIds)
+                .groupBy { it.appointmentId }
 
             // Map to list items
             val items = appointments.map { appointment ->
@@ -139,7 +147,11 @@ class ListAppointmentsHandler(
                     totalGross = totalGross.amountInCents,
                     totalVat = totalVat.amountInCents,
                     createdAt = appointment.createdAt,
-                    updatedAt = appointment.updatedAt
+                    updatedAt = appointment.updatedAt,
+                    smsInfo = buildSmsInfo(
+                        smsLogs = smsLogsByAppointment[appointment.id] ?: emptyList(),
+                        sendReminderSms = appointment.sendReminderSms
+                    )
                 )
             }
 
@@ -151,6 +163,36 @@ class ListAppointmentsHandler(
                 totalPages = page.totalPages
             )
         }
+}
+
+private fun buildSmsInfo(smsLogs: List<SmsLogEntity>, sendReminderSms: Boolean): AppointmentSmsInfo {
+    val logByTrigger = smsLogs.associateBy { it.triggerType }
+
+    val confirmationLog = logByTrigger[SmsTriggerType.BOOKING_CONFIRMATION]
+    val confirmationSms = confirmationLog?.let {
+        SmsStatusInfo(
+            status = if (it.status == SmsLogStatus.SENT) AppointmentSmsStatus.SENT else AppointmentSmsStatus.FAILED,
+            sentAt = it.sentAt
+        )
+    }
+
+    val reminderLog = logByTrigger[SmsTriggerType.PRE_VISIT]
+    val reminderStatus = when {
+        reminderLog != null -> if (reminderLog.status == SmsLogStatus.SENT) AppointmentSmsStatus.SENT else AppointmentSmsStatus.FAILED
+        sendReminderSms -> AppointmentSmsStatus.PENDING
+        else -> null
+    }
+    val reminderEditable = reminderStatus != AppointmentSmsStatus.SENT
+
+    return AppointmentSmsInfo(
+        confirmationSms = confirmationSms,
+        reminderSms = ReminderSmsStatusInfo(
+            requested = sendReminderSms,
+            status = reminderStatus,
+            sentAt = reminderLog?.sentAt,
+            editable = reminderEditable
+        )
+    )
 }
 
 /**
@@ -193,7 +235,29 @@ data class AppointmentListItem(
     val totalGross: Long,
     val totalVat: Long,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val smsInfo: AppointmentSmsInfo
+)
+
+enum class AppointmentSmsStatus { PENDING, SENT, FAILED }
+
+data class SmsStatusInfo(
+    val status: AppointmentSmsStatus,
+    val sentAt: Instant?
+)
+
+data class ReminderSmsStatusInfo(
+    val requested: Boolean,
+    val status: AppointmentSmsStatus?,
+    val sentAt: Instant?,
+    /** False when reminder has already been sent — field is read-only at that point. */
+    val editable: Boolean
+)
+
+data class AppointmentSmsInfo(
+    /** Non-null when a confirmation SMS was attempted (regardless of success). */
+    val confirmationSms: SmsStatusInfo?,
+    val reminderSms: ReminderSmsStatusInfo
 )
 
 data class CustomerInfo(
