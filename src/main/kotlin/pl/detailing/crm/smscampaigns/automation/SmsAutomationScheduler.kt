@@ -6,9 +6,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
@@ -54,7 +56,8 @@ class SmsAutomationScheduler(
     private val smsProvider: SmsProvider,
     private val templateProcessor: SmsTemplateProcessor,
     private val visitRepository: VisitRepository,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val marketingConsentChecker: MarketingConsentChecker
 ) {
 
     companion object {
@@ -169,6 +172,13 @@ class SmsAutomationScheduler(
             return
         }
 
+        if (!marketingConsentChecker.canSend(
+                customerId = appointment.customerId,
+                studioId = studioId.value,
+                channel = MarketingChannel.SMS,
+                context = "SmsAutomation trigger=$triggerType appointment=${appointment.appointmentId}"
+            )) return
+
         val phoneNumber = normalizePolishPhone(rawPhone)
         val message = templateProcessor.process(
             template = rule.messageTemplate,
@@ -276,6 +286,13 @@ class SmsAutomationScheduler(
             )
             return
         }
+
+        if (!marketingConsentChecker.canSend(
+                customerId = visit.customerId,
+                studioId = studioId.value,
+                channel = MarketingChannel.SMS,
+                context = "SmsAutomation trigger=DELAYED_REMINDER visit=${visit.visitId}"
+            )) return
 
         val phoneNumber = normalizePolishPhone(rawPhone)
         val message = templateProcessor.process(

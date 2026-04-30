@@ -6,9 +6,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.smscampaigns.reminder.domain.ScheduledSmsReminder
@@ -31,7 +33,8 @@ import java.time.Instant
 class ScheduledSmsReminderDispatcher(
     private val reminderRepository: ScheduledSmsReminderRepository,
     private val smsProvider: SmsProvider,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val marketingConsentChecker: MarketingConsentChecker
 ) {
     private val logger = LoggerFactory.getLogger(ScheduledSmsReminderDispatcher::class.java)
 
@@ -57,6 +60,21 @@ class ScheduledSmsReminderDispatcher(
     }
 
     private fun dispatchOne(reminder: ScheduledSmsReminder) {
+        if (!marketingConsentChecker.canSend(
+                customerId = reminder.customerId,
+                studioId = reminder.studioId,
+                channel = MarketingChannel.SMS,
+                context = "ScheduledSmsReminderDispatcher reminder=${reminder.id} visit=${reminder.visitId}"
+            )) {
+            reminderRepository.save(reminder.copy(
+                status = ScheduledSmsReminderStatus.FAILED,
+                sentAt = Instant.now(),
+                errorMessage = "Brak zgody na komunikację SMS",
+                updatedAt = Instant.now()
+            ))
+            return
+        }
+
         val result = smsProvider.send(reminder.phoneNumber, reminder.messageContent)
 
         val updated = reminder.copy(

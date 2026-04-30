@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailProvider
@@ -15,6 +16,7 @@ import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
@@ -42,7 +44,8 @@ class SendVisitWelcomeEmailHandler(
     private val s3StorageService: S3ProtocolStorageService,
     private val pdfProcessingService: PdfProcessingService,
     private val emailProvider: EmailProvider,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val marketingConsentChecker: MarketingConsentChecker
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -73,6 +76,13 @@ class SendVisitWelcomeEmailHandler(
             )
             return@withContext
         }
+
+        if (!marketingConsentChecker.canSend(
+                customerId = visitEntity.customerId,
+                studioId = visitEntity.studioId,
+                channel = MarketingChannel.EMAIL,
+                context = "SendVisitWelcomeEmail visit=${command.visitId}"
+            )) return@withContext
 
         // Load CHECK_IN protocols that already have a filled PDF
         val protocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(

@@ -2,6 +2,7 @@ package pl.detailing.crm.smscampaigns.reminder
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.shared.normalizePolishPhone
@@ -34,7 +35,8 @@ data class ScheduleVisitSmsReminderCommand(
 class ScheduleVisitSmsReminderHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val reminderRepository: ScheduledSmsReminderRepository
+    private val reminderRepository: ScheduledSmsReminderRepository,
+    private val marketingConsentChecker: MarketingConsentChecker
 ) {
     companion object {
         private const val DEFAULT_DELAY_DAYS = 90L
@@ -68,6 +70,17 @@ class ScheduleVisitSmsReminderHandler(
 
         val phone = customerEntity.phone
             ?: throw ValidationException("Klient nie ma zapisanego numeru telefonu")
+
+        if (!marketingConsentChecker.canSend(
+                customerId = visitEntity.customerId,
+                studioId = command.studioId.value,
+                channel = MarketingChannel.SMS,
+                context = "ScheduleSmsReminder visit=${command.visitId}"
+            )) {
+            throw ValidationException(
+                "Nie można zaplanować SMS — klient nie wyraził zgody na komunikację SMS."
+            )
+        }
 
         val normalizedPhone = normalizePolishPhone(phone)
         val scheduledFor = command.scheduledFor
