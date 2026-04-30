@@ -5,26 +5,23 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
-import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
-import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
 class SendVisitReadyForPickupSmsHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val smsProvider: SmsProvider,
-    private val communicationLogService: CommunicationLogService,
-    private val marketingConsentChecker: MarketingConsentChecker
+    private val communicationGateway: OutboundCommunicationGateway,
+    private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -50,19 +47,18 @@ class SendVisitReadyForPickupSmsHandler(
             return@withContext
         }
 
-        if (!marketingConsentChecker.canSend(
-                customerId = visitEntity.customerId,
-                studioId = visitEntity.studioId,
-                channel = MarketingChannel.SMS,
-                context = "SendVisitReadyForPickupSms visit=${command.visitId}"
-            )) return@withContext
-
         val phoneNumber = normalizePolishPhone(rawPhone)
         val firstName = customerEntity.firstName ?: "Kliencie"
         val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
         val message = buildMessage(firstName, vehicleName, visitEntity.visitNumber)
 
-        val result = smsProvider.send(phoneNumber, message)
+        val result = communicationGateway.sendSms(
+            customerId = visitEntity.customerId,
+            studioId = visitEntity.studioId,
+            phoneNumber = phoneNumber,
+            message = message,
+            context = "SendVisitReadyForPickupSms visit=${command.visitId}"
+        )
 
         communicationLogService.record(
             RecordCommunicationCommand(
@@ -80,10 +76,7 @@ class SendVisitReadyForPickupSmsHandler(
         )
 
         if (result.success) {
-            logger.info(
-                "SendVisitReadyForPickupSms: SMS sent [to={} visitId={}]",
-                phoneNumber, command.visitId
-            )
+            logger.info("SendVisitReadyForPickupSms: SMS sent [to={} visitId={}]", phoneNumber, command.visitId)
         } else {
             logger.warn(
                 "SendVisitReadyForPickupSms: SMS failed [to={} visitId={} error={}]",

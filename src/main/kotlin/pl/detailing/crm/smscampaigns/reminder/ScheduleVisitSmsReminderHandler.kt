@@ -2,7 +2,6 @@ package pl.detailing.crm.smscampaigns.reminder
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.shared.normalizePolishPhone
@@ -18,25 +17,22 @@ data class ScheduleVisitSmsReminderCommand(
     val studioId: StudioId,
     val visitId: VisitId,
     val userId: UserId,
-    /** SMS body — written or accepted by the user (possibly LLM-generated). */
     val messageContent: String,
-    /** When to deliver the SMS. Defaults to 90 days from now when null. */
     val scheduledFor: Instant?
 )
 
 /**
  * Creates a new PENDING scheduled reminder for a visit.
  *
- * A visit can only have one active PENDING reminder at a time.
- * Throws [ValidationException] if one already exists (the caller must cancel it first,
- * or use [UpdateSmsReminderHandler] to modify it).
+ * Consent is NOT checked here — it is enforced at dispatch time by
+ * [ScheduledSmsReminderDispatcher] via [OutboundCommunicationGateway].
+ * This allows consent to be granted between scheduling and delivery.
  */
 @Service
 class ScheduleVisitSmsReminderHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val reminderRepository: ScheduledSmsReminderRepository,
-    private val marketingConsentChecker: MarketingConsentChecker
+    private val reminderRepository: ScheduledSmsReminderRepository
 ) {
     companion object {
         private const val DEFAULT_DELAY_DAYS = 90L
@@ -70,17 +66,6 @@ class ScheduleVisitSmsReminderHandler(
 
         val phone = customerEntity.phone
             ?: throw ValidationException("Klient nie ma zapisanego numeru telefonu")
-
-        if (!marketingConsentChecker.canSend(
-                customerId = visitEntity.customerId,
-                studioId = command.studioId.value,
-                channel = MarketingChannel.SMS,
-                context = "ScheduleSmsReminder visit=${command.visitId}"
-            )) {
-            throw ValidationException(
-                "Nie można zaplanować SMS — klient nie wyraził zgody na komunikację SMS."
-            )
-        }
 
         val normalizedPhone = normalizePolishPhone(phone)
         val scheduledFor = command.scheduledFor
