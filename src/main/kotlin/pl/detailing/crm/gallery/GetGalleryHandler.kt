@@ -208,7 +208,10 @@ class GetGalleryHandler(
                 customerId = rp.customerId?.toString(),
                 customerName = rp.customerId?.let { customerNameById[it] }
             )
-        }.sortedByDescending { it.uploadedAt }
+        }.let { photos ->
+            if (command.sortOrder == GallerySortOrder.ASC) photos.sortedBy { it.uploadedAt }
+            else photos.sortedByDescending { it.uploadedAt }
+        }
 
         // ── 9. Paginate ───────────────────────────────────────────────────────
         val total = allPhotos.size

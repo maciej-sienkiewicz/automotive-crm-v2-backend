@@ -24,7 +24,8 @@ class GalleryController(
         @RequestParam(required = false, defaultValue = "20") pageSize: Int,
         @RequestParam(required = false) brand: String?,
         @RequestParam(required = false) model: String?,
-        @RequestParam(required = false) tags: String?
+        @RequestParam(required = false) tags: String?,
+        @RequestParam(required = false, defaultValue = "DESC") sortOrder: String
     ): ResponseEntity<GalleryResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -34,6 +35,9 @@ class GalleryController(
             ?.filter { it.isNotEmpty() }
             ?: emptyList()
 
+        val parsedSortOrder = runCatching { GallerySortOrder.valueOf(sortOrder.uppercase()) }
+            .getOrDefault(GallerySortOrder.DESC)
+
         val result = getGalleryHandler.handle(
             GetGalleryCommand(
                 studioId = principal.studioId.value,
@@ -41,7 +45,8 @@ class GalleryController(
                 brand = brand?.takeIf { it.isNotBlank() },
                 model = model?.takeIf { it.isNotBlank() },
                 page = page,
-                pageSize = pageSize.coerceIn(1, 100)
+                pageSize = pageSize.coerceIn(1, 100),
+                sortOrder = parsedSortOrder
             )
         )
 

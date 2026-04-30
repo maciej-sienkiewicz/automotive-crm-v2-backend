@@ -4,13 +4,16 @@ import java.time.Instant
 
 // ─── command ──────────────────────────────────────────────────────────────────
 
+enum class GallerySortOrder { ASC, DESC }
+
 data class GetGalleryCommand(
     val studioId: java.util.UUID,
     val tags: List<String> = emptyList(),
     val brand: String? = null,
     val model: String? = null,
     val page: Int = 1,
-    val pageSize: Int = 20
+    val pageSize: Int = 20,
+    val sortOrder: GallerySortOrder = GallerySortOrder.DESC
 )
 
 // ─── result ───────────────────────────────────────────────────────────────────
