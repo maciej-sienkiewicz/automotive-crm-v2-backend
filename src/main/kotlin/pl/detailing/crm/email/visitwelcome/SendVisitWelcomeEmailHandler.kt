@@ -70,7 +70,7 @@ class SendVisitWelcomeEmailHandler(
         if (opts.attachProtocol) {
             val protocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
                 command.visitId.value, command.studioId.value, ProtocolStage.CHECK_IN
-            ).filter { it.filledPdfS3Key != null }
+            ).filter { it.templateId != null && it.filledPdfS3Key != null }
 
             protocols.forEachIndexed { index, protocol ->
                 val s3Key = protocol.filledPdfS3Key ?: return@forEachIndexed
