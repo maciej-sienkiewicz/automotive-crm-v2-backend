@@ -11,6 +11,11 @@ import pl.detailing.crm.visit.list.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitCommand
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitHandler
+import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedSmsHandler
+import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedSmsCommand
+import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailHandler
+import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailCommand
+import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailOptions
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitCommand
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler
 import pl.detailing.crm.customer.domain.Customer
@@ -27,9 +32,9 @@ import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
 import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import java.time.LocalDate
 import java.time.Instant
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/visits")
@@ -41,10 +46,13 @@ class VisitController(
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
+    private val sendVisitConfirmedSmsHandler: SendVisitConfirmedSmsHandler,
+    private val sendVisitConfirmedEmailHandler: SendVisitConfirmedEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
-    private val updateVisitTitleHandler: UpdateVisitTitleHandler,
-    private val smsProvider: SmsProvider
+    private val updateVisitTitleHandler: UpdateVisitTitleHandler
 ) {
+
+    private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
 
     /**
      * Get all visits for the studio with pagination and filtering
@@ -241,11 +249,11 @@ class VisitController(
      */
     @PostMapping("/{visitId}/confirm")
     fun confirmVisit(
-        @PathVariable visitId: String
+        @PathVariable visitId: String,
+        @RequestBody(required = false) request: ConfirmVisitRequest?
     ): ResponseEntity<ConfirmVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can confirm visits
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Only OWNER and MANAGER can confirm visits")
         }
@@ -258,6 +266,41 @@ class VisitController(
         )
 
         val result = confirmVisitHandler.handle(command)
+
+        val req = request ?: ConfirmVisitRequest()
+
+        if (req.sendSms) {
+            runCatching {
+                sendVisitConfirmedSmsHandler.handle(
+                    SendVisitConfirmedSmsCommand(
+                        visitId = command.visitId,
+                        studioId = command.studioId
+                    )
+                )
+            }.onFailure { ex ->
+                logger.warn("confirmVisit: SMS notification failed [visitId={}]: {}", visitId, ex.message)
+            }
+        }
+
+        if (req.sendEmail) {
+            val opts = req.emailOptions ?: ConfirmEmailOptionsRequest()
+            runCatching {
+                sendVisitConfirmedEmailHandler.handle(
+                    SendVisitConfirmedEmailCommand(
+                        visitId = command.visitId,
+                        studioId = command.studioId,
+                        options = SendVisitConfirmedEmailOptions(
+                            attachProtocol = opts.attachProtocol,
+                            attachPhotos = opts.attachPhotos,
+                            photoIds = opts.photoIds.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() },
+                            attachDamageMap = opts.attachDamageMap
+                        )
+                    )
+                )
+            }.onFailure { ex ->
+                logger.warn("confirmVisit: email notification failed [visitId={}]: {}", visitId, ex.message)
+            }
+        }
 
         ResponseEntity.ok(ConfirmVisitResponse(
             visitId = result.visitId.value.toString(),
@@ -595,9 +638,19 @@ data class PaginationMetadata(
     val totalPages: Int
 )
 
-/**
- * Response for visit confirmation
- */
+data class ConfirmVisitRequest(
+    val sendSms: Boolean = false,
+    val sendEmail: Boolean = false,
+    val emailOptions: ConfirmEmailOptionsRequest? = null
+)
+
+data class ConfirmEmailOptionsRequest(
+    val attachProtocol: Boolean = true,
+    val attachPhotos: Boolean = false,
+    val photoIds: List<String> = emptyList(),
+    val attachDamageMap: Boolean = false
+)
+
 data class ConfirmVisitResponse(
     val visitId: String,
     val message: String

@@ -361,6 +361,14 @@ class PhotoSessionService(
         return presignedRequest.url().toString()
     }
 
+    fun downloadBytes(s3Key: String): ByteArray {
+        val getObjectRequest = GetObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .build()
+        return s3Client.getObject(getObjectRequest).readAllBytes()
+    }
+
     /**
      * Generate presigned upload URL for direct photo upload (bypassing session)
      * Used for adding photos to existing visits

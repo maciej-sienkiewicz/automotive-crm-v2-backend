@@ -1,4 +1,4 @@
-package pl.detailing.crm.email.visitwelcome
+package pl.detailing.crm.visit.transitions.confirm
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,17 +23,12 @@ import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.util.UUID
 
-/**
- * Sends a welcome email to the customer when a visit is opened (check-in).
- *
- * Consent enforcement is handled transparently by [OutboundCommunicationGateway].
- */
 @Service
-class SendVisitWelcomeEmailHandler(
+class SendVisitConfirmedEmailHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
-    private val s3StorageService: S3ProtocolStorageService,
+    private val s3ProtocolStorageService: S3ProtocolStorageService,
     private val pdfProcessingService: PdfProcessingService,
     private val photoSessionService: PhotoSessionService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
@@ -42,23 +37,23 @@ class SendVisitWelcomeEmailHandler(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    suspend fun handle(command: SendVisitWelcomeEmailCommand): Unit = withContext(Dispatchers.IO) {
+    suspend fun handle(command: SendVisitConfirmedEmailCommand): Unit = withContext(Dispatchers.IO) {
         val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
         if (visitEntity == null) {
-            logger.warn("SendVisitWelcomeEmail: visit not found [visitId={}]", command.visitId)
+            logger.warn("SendVisitConfirmedEmail: visit not found [visitId={}]", command.visitId)
             return@withContext
         }
 
         val customerEntity = customerRepository.findByIdAndStudioId(visitEntity.customerId, visitEntity.studioId)
         if (customerEntity == null) {
-            logger.warn("SendVisitWelcomeEmail: customer not found [customerId={}]", visitEntity.customerId)
+            logger.warn("SendVisitConfirmedEmail: customer not found [customerId={}]", visitEntity.customerId)
             return@withContext
         }
 
         val recipientEmail = customerEntity.email
         if (recipientEmail.isNullOrBlank()) {
-            logger.info(
-                "SendVisitWelcomeEmail: customer has no email, skipping [visitId={} customerId={}]",
+            logger.debug(
+                "SendVisitConfirmedEmail: customer has no email [visitId={} customerId={}]",
                 command.visitId, visitEntity.customerId
             )
             return@withContext
@@ -75,17 +70,17 @@ class SendVisitWelcomeEmailHandler(
             protocols.forEachIndexed { index, protocol ->
                 val s3Key = protocol.filledPdfS3Key ?: return@forEachIndexed
                 runCatching {
-                    val rawBytes = s3StorageService.downloadBytes(s3Key)
-                    val flatBytes = pdfProcessingService.flattenPdfBytes(rawBytes)
+                    val raw = s3ProtocolStorageService.downloadBytes(s3Key)
+                    val flat = pdfProcessingService.flattenPdfBytes(raw)
                     val suffix = if (protocols.size > 1) "_${index + 1}" else ""
                     attachments += EmailAttachment(
                         fileName = "protokol_przyjecia_${visitEntity.visitNumber}$suffix.pdf",
-                        content = flatBytes,
+                        content = flat,
                         contentType = "application/pdf"
                     )
                 }.onFailure { ex ->
                     logger.warn(
-                        "SendVisitWelcomeEmail: failed to prepare protocol PDF [s3Key={}]: {}",
+                        "SendVisitConfirmedEmail: failed to prepare protocol PDF [s3Key={}]: {}",
                         s3Key, ex.message
                     )
                 }
@@ -113,7 +108,7 @@ class SendVisitWelcomeEmailHandler(
                     )
                 }.onFailure { ex ->
                     logger.warn(
-                        "SendVisitWelcomeEmail: failed to download photo [fileId={}]: {}",
+                        "SendVisitConfirmedEmail: failed to download photo [fileId={}]: {}",
                         photo.fileId, ex.message
                     )
                 }
@@ -132,13 +127,13 @@ class SendVisitWelcomeEmailHandler(
                     )
                 }.onFailure { ex ->
                     logger.warn(
-                        "SendVisitWelcomeEmail: failed to download damage map [key={}]: {}",
+                        "SendVisitConfirmedEmail: failed to download damage map [key={}]: {}",
                         damageMapKey, ex.message
                     )
                 }
             } else {
                 logger.debug(
-                    "SendVisitWelcomeEmail: attachDamageMap=true but no damage map on visit [visitId={}]",
+                    "SendVisitConfirmedEmail: attachDamageMap=true but no damage map on visit [visitId={}]",
                     command.visitId
                 )
             }
@@ -147,7 +142,7 @@ class SendVisitWelcomeEmailHandler(
         val customerName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
             .joinToString(" ").ifBlank { "Kliencie" }
         val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
-        val subject = buildSubject(vehicleName, visitEntity.visitNumber)
+        val subject = "Potwierdzenie rozpoczęcia wizyty – $vehicleName (wizyta ${visitEntity.visitNumber})"
         val body = buildBody(customerName, vehicleName, visitEntity.visitNumber, visitEntity.licensePlateSnapshot)
 
         val result = communicationGateway.sendEmail(
@@ -157,7 +152,7 @@ class SendVisitWelcomeEmailHandler(
             subject = subject,
             bodyText = body,
             attachments = attachments,
-            context = "SendVisitWelcomeEmail visit=${command.visitId}"
+            context = "SendVisitConfirmedEmail visit=${command.visitId}"
         )
 
         communicationLogService.record(
@@ -166,7 +161,7 @@ class SendVisitWelcomeEmailHandler(
                 customerId = CustomerId(visitEntity.customerId),
                 visitId = command.visitId,
                 channel = CommunicationChannel.EMAIL,
-                messageType = CommunicationMessageType.VISIT_WELCOME_EMAIL,
+                messageType = CommunicationMessageType.VISIT_CONFIRMED_EMAIL,
                 recipientAddress = recipientEmail,
                 subject = subject,
                 bodyContent = body,
@@ -177,19 +172,16 @@ class SendVisitWelcomeEmailHandler(
 
         if (result.success) {
             logger.info(
-                "SendVisitWelcomeEmail: email sent [to={} visitId={} attachments={}]",
+                "SendVisitConfirmedEmail: sent [to={} visitId={} attachments={}]",
                 recipientEmail, command.visitId, attachments.size
             )
         } else {
             logger.warn(
-                "SendVisitWelcomeEmail: delivery failed [to={} visitId={} error={}]",
+                "SendVisitConfirmedEmail: failed [to={} visitId={} error={}]",
                 recipientEmail, command.visitId, result.errorMessage
             )
         }
     }
-
-    private fun buildSubject(vehicleName: String, visitNumber: String): String =
-        "Potwierdzenie przyjęcia pojazdu – $vehicleName (wizyta $visitNumber)"
 
     private fun buildBody(
         customerName: String,
@@ -201,9 +193,11 @@ class SendVisitWelcomeEmailHandler(
         return """
             Szanowny/a $customerName,
 
-            Dziękujemy za powierzenie nam Państwa pojazdu. Niniejszym potwierdzamy przyjęcie pojazdu $vehicleName$plateInfo do naszego serwisu.
+            Informujemy, że prace nad Państwa pojazdem $vehicleName$plateInfo zostały oficjalnie rozpoczęte.
 
             Numer wizyty: $visitNumber
+
+            O zakończeniu prac oraz gotowości pojazdu do odbioru powiadomimy Państwa osobną wiadomością.
 
             W razie pytań zapraszamy do kontaktu z naszym serwisem.
 
@@ -213,15 +207,15 @@ class SendVisitWelcomeEmailHandler(
     }
 }
 
-data class WelcomeEmailOptions(
+data class SendVisitConfirmedEmailOptions(
     val attachProtocol: Boolean = true,
     val attachPhotos: Boolean = false,
     val photoIds: List<UUID> = emptyList(),
     val attachDamageMap: Boolean = false
 )
 
-data class SendVisitWelcomeEmailCommand(
+data class SendVisitConfirmedEmailCommand(
     val visitId: VisitId,
     val studioId: StudioId,
-    val options: WelcomeEmailOptions = WelcomeEmailOptions()
+    val options: SendVisitConfirmedEmailOptions = SendVisitConfirmedEmailOptions()
 )

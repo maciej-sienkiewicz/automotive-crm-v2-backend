@@ -793,9 +793,11 @@ enum class CommunicationChannel {
 enum class CommunicationMessageType(val label: String) {
     // Email types
     VISIT_WELCOME_EMAIL("E-mail potwierdzenia przyjęcia"),
+    VISIT_CONFIRMED_EMAIL("E-mail potwierdzenia rozpoczęcia wizyty"),
     VISIT_READY_FOR_PICKUP_EMAIL("E-mail gotowości do odbioru"),
 
     // SMS manual types
+    VISIT_CONFIRMED_SMS("SMS potwierdzenia rozpoczęcia wizyty"),
     VISIT_READY_FOR_PICKUP_SMS("SMS gotowości do odbioru"),
 
     // SMS automation types
