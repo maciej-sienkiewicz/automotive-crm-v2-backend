@@ -108,6 +108,7 @@ class CreateAppointmentHandler(
             ),
             status = AppointmentStatus.CREATED,
             note = command.note,
+            sendReminderSms = command.sendReminderSms,
             createdBy = command.userId,
             updatedBy = command.userId,
             createdAt = Instant.now(),

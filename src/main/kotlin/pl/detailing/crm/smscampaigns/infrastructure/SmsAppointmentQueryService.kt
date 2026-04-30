@@ -22,7 +22,8 @@ data class SmsAppointmentView(
     val appointmentEnd: Instant,
     val customerFirstName: String?,
     val customerPhone: String?,
-    val studioName: String
+    val studioName: String,
+    val studioId: UUID
 )
 
 /**
@@ -64,6 +65,61 @@ class SmsAppointmentQueryService {
         useStartTime = false
     )
 
+    /**
+     * Appointments across ALL studios where [sendReminderSms] was explicitly requested
+     * and [startDateTime] falls inside the given window.
+     *
+     * Used by [pl.detailing.crm.smscampaigns.automation.SmsAutomationScheduler] to send
+     * per-appointment reminders regardless of the studio-level PRE_VISIT automation config.
+     */
+    fun findWithSendReminderAndStartTimeBetween(
+        windowStart: Instant,
+        windowEnd: Instant
+    ): List<SmsAppointmentView> {
+        val excludedStatuses = listOf(AppointmentStatus.CANCELLED, AppointmentStatus.ABANDONED)
+
+        val jpql = """
+            SELECT
+                a.id,
+                a.customerId,
+                a.startDateTime,
+                a.endDateTime,
+                c.firstName,
+                c.phone,
+                s.name,
+                a.studioId
+            FROM AppointmentEntity a
+            JOIN CustomerEntity   c ON c.id = a.customerId
+            JOIN StudioEntity     s ON s.id = a.studioId
+            WHERE a.sendReminderSms = true
+            AND   a.deletedAt IS NULL
+            AND   a.status NOT IN :excludedStatuses
+            AND   a.startDateTime >= :windowStart
+            AND   a.startDateTime <  :windowEnd
+        """.trimIndent()
+
+        val rows = entityManager.createQuery(jpql)
+            .setParameter("excludedStatuses", excludedStatuses)
+            .setParameter("windowStart", windowStart)
+            .setParameter("windowEnd", windowEnd)
+            .resultList
+
+        return rows.map { row ->
+            @Suppress("UNCHECKED_CAST")
+            val cols = row as Array<Any?>
+            SmsAppointmentView(
+                appointmentId = cols[0] as UUID,
+                customerId = cols[1] as UUID,
+                appointmentStart = cols[2] as Instant,
+                appointmentEnd = cols[3] as Instant,
+                customerFirstName = cols[4] as String?,
+                customerPhone = cols[5] as String?,
+                studioName = cols[6] as String,
+                studioId = cols[7] as UUID
+            )
+        }
+    }
+
     private fun queryAppointments(
         studioId: StudioId,
         windowStart: Instant,
@@ -82,7 +138,8 @@ class SmsAppointmentQueryService {
                 a.endDateTime,
                 c.firstName,
                 c.phone,
-                s.name
+                s.name,
+                a.studioId
             FROM AppointmentEntity a
             JOIN CustomerEntity   c ON c.id  = a.customerId
             JOIN StudioEntity     s ON s.id  = a.studioId
@@ -110,7 +167,8 @@ class SmsAppointmentQueryService {
                 appointmentEnd = cols[3] as Instant,
                 customerFirstName = cols[4] as String?,
                 customerPhone = cols[5] as String?,
-                studioName = cols[6] as String
+                studioName = cols[6] as String,
+                studioId = cols[7] as UUID
             )
         }
     }

@@ -35,7 +35,7 @@ class SendBookingConfirmationSmsHandler(
         val config = configRepository.findByStudioId(command.studioId)
             ?: SmsAutomationConfig.defaultFor(command.studioId)
 
-        if (!config.bookingConfirmation.enabled) {
+        if (!config.bookingConfirmation.enabled && !command.force) {
             logger.debug("SendBookingConfirmationSms: rule disabled [studioId={}]", command.studioId)
             return@withContext
         }
@@ -117,5 +117,6 @@ class SendBookingConfirmationSmsHandler(
 data class SendBookingConfirmationSmsCommand(
     val appointmentId: AppointmentId,
     val studioId: StudioId,
-    val studioName: String
+    val studioName: String,
+    val force: Boolean = false
 )

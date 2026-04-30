@@ -17,7 +17,8 @@ data class CreateAppointmentCommand(
     val schedule: ScheduleCommand,
     val appointmentTitle: String?,
     val appointmentColorId: AppointmentColorId,
-    val note: String?
+    val note: String?,
+    val sendReminderSms: Boolean = false
 )
 
 sealed class CustomerIdentity {

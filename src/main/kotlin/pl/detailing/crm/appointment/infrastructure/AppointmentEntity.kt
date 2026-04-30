@@ -55,6 +55,9 @@ class AppointmentEntity(
     @Column(name = "note", columnDefinition = "TEXT")
     var note: String?,
 
+    @Column(name = "send_reminder_sms", nullable = false)
+    var sendReminderSms: Boolean = false,
+
     @OneToMany(mappedBy = "appointment", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     var lineItems: MutableList<AppointmentLineItemEntity> = mutableListOf(),
 
@@ -88,6 +91,7 @@ class AppointmentEntity(
         ),
         status = status,
         note = note,
+        sendReminderSms = sendReminderSms,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -108,6 +112,7 @@ class AppointmentEntity(
                 endDateTime = appointment.schedule.endDateTime,
                 status = appointment.status,
                 note = appointment.note,
+                sendReminderSms = appointment.sendReminderSms,
                 createdBy = appointment.createdBy.value,
                 updatedBy = appointment.updatedBy.value,
                 createdAt = appointment.createdAt,

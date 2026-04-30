@@ -52,6 +52,7 @@ data class Appointment(
     val schedule: AppointmentSchedule,
     val status: AppointmentStatus,
     val note: String?,
+    val sendReminderSms: Boolean = false,
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,

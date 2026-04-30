@@ -14,7 +14,9 @@ data class CreateAppointmentRequest(
     val schedule: ScheduleRequest,
     val appointmentTitle: String?,
     val appointmentColorId: String,
-    val note: String?
+    val note: String?,
+    val sendConfirmationSms: Boolean = false,
+    val sendReminderSms: Boolean = false
 )
 
 data class CustomerIdentityRequest(

@@ -62,6 +62,9 @@ class SmsAutomationScheduler(
 
         /** Half-width of the matching window around the target time (in seconds). */
         private const val WINDOW_HALF_WIDTH_SECONDS = 60L
+
+        /** Offset used for per-appointment on-demand reminders when studio automation is disabled. */
+        private const val ON_DEMAND_PRE_VISIT_OFFSET_MINUTES = 60L
     }
 
     @Scheduled(cron = "0 * * * * *")
@@ -70,16 +73,54 @@ class SmsAutomationScheduler(
         val now = Instant.now()
         val activeConfigs = configRepository.findAllWithAnyRuleEnabled()
 
-        if (activeConfigs.isEmpty()) return
+        if (activeConfigs.isNotEmpty()) {
+            logger.debug("SMS automation tick: {} studio(s) with active rules", activeConfigs.size)
+            activeConfigs.forEach { config ->
+                runCatching { processConfig(config, now) }
+                    .onFailure { ex ->
+                        logger.error(
+                            "Error processing SMS automation for studio={}: {}",
+                            config.studioId, ex.message, ex
+                        )
+                    }
+            }
+        }
 
-        logger.debug("SMS automation tick: {} studio(s) with active rules", activeConfigs.size)
+        runCatching { processOnDemandPreVisitReminders(now) }
+            .onFailure { ex ->
+                logger.error("Error processing on-demand pre-visit reminders: {}", ex.message, ex)
+            }
+    }
 
-        activeConfigs.forEach { config ->
-            runCatching { processConfig(config, now) }
+    /**
+     * Sends PRE_VISIT reminders for appointments where the user explicitly requested
+     * a reminder SMS ([AppointmentEntity.sendReminderSms] = true), independent of
+     * whether the studio has the PRE_VISIT automation rule enabled.
+     *
+     * Uses a fixed [ON_DEMAND_PRE_VISIT_OFFSET_MINUTES] offset. Deduplication via
+     * [SmsLogJpaRepository] prevents double-sends when the studio automation already fired.
+     */
+    private fun processOnDemandPreVisitReminders(now: Instant) {
+        val targetTime = now.plusSeconds(ON_DEMAND_PRE_VISIT_OFFSET_MINUTES * 60)
+        val windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS)
+        val windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
+
+        val appointments = appointmentQueryService.findWithSendReminderAndStartTimeBetween(windowStart, windowEnd)
+
+        if (appointments.isEmpty()) return
+
+        logger.debug("SMS on-demand pre-visit: {} candidate(s)", appointments.size)
+
+        appointments.forEach { appointment ->
+            val studioId = StudioId(appointment.studioId)
+            val config = configRepository.findByStudioId(studioId)
+                ?: SmsAutomationConfig.defaultFor(studioId)
+            val rule = config.preVisit.copy(enabled = true)
+            runCatching { dispatchSms(appointment, rule, SmsTriggerType.PRE_VISIT, studioId) }
                 .onFailure { ex ->
                     logger.error(
-                        "Error processing SMS automation for studio={}: {}",
-                        config.studioId, ex.message, ex
+                        "Error dispatching on-demand pre-visit SMS for appointment={}: {}",
+                        appointment.appointmentId, ex.message, ex
                     )
                 }
         }

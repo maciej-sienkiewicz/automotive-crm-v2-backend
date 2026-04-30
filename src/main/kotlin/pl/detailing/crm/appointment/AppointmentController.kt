@@ -19,6 +19,9 @@ import pl.detailing.crm.appointment.title.UpdateAppointmentTitleHandler
 import pl.detailing.crm.appointment.title.UpdateAppointmentTitleCommand
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.smscampaigns.bookingconfirmation.SendBookingConfirmationSmsCommand
+import pl.detailing.crm.smscampaigns.bookingconfirmation.SendBookingConfirmationSmsHandler
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.LocalDate
 import java.util.UUID
 
@@ -32,7 +35,9 @@ class AppointmentController(
     private val deleteAppointmentHandler: DeleteAppointmentHandler,
     private val listAppointmentsHandler: ListAppointmentsHandler,
     private val getAppointmentHandler: GetAppointmentHandler,
-    private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler
+    private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler,
+    private val sendBookingConfirmationSmsHandler: SendBookingConfirmationSmsHandler,
+    private val studioRepository: StudioRepository
 ) {
 
     @GetMapping
@@ -197,10 +202,25 @@ class AppointmentController(
             ),
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
-            note = request.note
+            note = request.note,
+            sendReminderSms = request.sendReminderSms
         )
 
         val result = createAppointmentHandler.handle(command)
+
+        if (request.sendConfirmationSms) {
+            val studio = studioRepository.findByStudioId(principal.studioId.value)
+            if (studio != null) {
+                sendBookingConfirmationSmsHandler.handle(
+                    SendBookingConfirmationSmsCommand(
+                        appointmentId = result.appointmentId,
+                        studioId = principal.studioId,
+                        studioName = studio.name,
+                        force = true
+                    )
+                )
+            }
+        }
 
         ResponseEntity
             .status(HttpStatus.CREATED)
