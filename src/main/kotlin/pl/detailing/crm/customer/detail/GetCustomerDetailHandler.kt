@@ -77,8 +77,8 @@ class GetCustomerDetailHandler(
                 studioId = command.studioId.value
             )
 
-            val marketingConsents = activeDefinitions.mapNotNull { definition ->
-                val consentType = mapSlugToConsentType(definition.slug) ?: return@mapNotNull null
+            val marketingConsents = activeDefinitions.flatMap { definition ->
+                if (definition.marketingChannels.isEmpty()) return@flatMap emptyList()
 
                 val activeTemplate = allTemplates.firstOrNull {
                     it.definitionId == definition.id && it.isActive
@@ -92,19 +92,27 @@ class GetCustomerDetailHandler(
                     .filter { it.templateId in definitionTemplates }
                     .maxByOrNull { it.signedAt }
 
-                MarketingConsentInfo(
-                    id = definition.id.toString(),
-                    type = consentType,
-                    granted = latestConsent != null &&
-                              activeTemplate != null &&
-                              latestConsent.templateId == activeTemplate.id,
-                    grantedAt = latestConsent?.signedAt,
-                    revokedAt = if (latestConsent != null && activeTemplate != null &&
-                                    latestConsent.templateId != activeTemplate.id) {
-                        latestConsent.signedAt
-                    } else null,
-                    lastModifiedBy = "System"
-                )
+                val granted = latestConsent != null &&
+                    activeTemplate != null &&
+                    latestConsent.templateId == activeTemplate.id
+
+                val grantedAt = if (granted) latestConsent?.signedAt else null
+                val revokedAt = if (latestConsent != null && activeTemplate != null &&
+                    latestConsent.templateId != activeTemplate.id) latestConsent.signedAt else null
+
+                definition.marketingChannels.map { channel ->
+                    MarketingConsentInfo(
+                        id = definition.id.toString(),
+                        type = when (channel) {
+                            pl.detailing.crm.shared.MarketingChannel.EMAIL -> MarketingConsentType.EMAIL
+                            pl.detailing.crm.shared.MarketingChannel.SMS -> MarketingConsentType.SMS
+                        },
+                        granted = granted,
+                        grantedAt = grantedAt,
+                        revokedAt = revokedAt,
+                        lastModifiedBy = "System"
+                    )
+                }
             }
 
             // Step 6: Calculate loyalty tier based on lifetime value
@@ -184,16 +192,6 @@ class GetCustomerDetailHandler(
                 lifetimeValue = revenueInfo
             )
         }
-
-    private fun mapSlugToConsentType(slug: String): MarketingConsentType? {
-        return when (slug.lowercase()) {
-            "email", "marketing-email", "email-marketing" -> MarketingConsentType.EMAIL
-            "sms", "marketing-sms", "sms-marketing" -> MarketingConsentType.SMS
-            "phone", "marketing-phone", "phone-marketing" -> MarketingConsentType.PHONE
-            "postal", "marketing-postal", "postal-marketing" -> MarketingConsentType.POSTAL
-            else -> null
-        }
-    }
 
     private fun calculateLoyaltyTier(lifetimeValue: BigDecimal): LoyaltyTier {
         return when {

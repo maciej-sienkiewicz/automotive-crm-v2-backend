@@ -17,18 +17,16 @@ data class ScheduleVisitSmsReminderCommand(
     val studioId: StudioId,
     val visitId: VisitId,
     val userId: UserId,
-    /** SMS body — written or accepted by the user (possibly LLM-generated). */
     val messageContent: String,
-    /** When to deliver the SMS. Defaults to 90 days from now when null. */
     val scheduledFor: Instant?
 )
 
 /**
  * Creates a new PENDING scheduled reminder for a visit.
  *
- * A visit can only have one active PENDING reminder at a time.
- * Throws [ValidationException] if one already exists (the caller must cancel it first,
- * or use [UpdateSmsReminderHandler] to modify it).
+ * Consent is NOT checked here — it is enforced at dispatch time by
+ * [ScheduledSmsReminderDispatcher] via [OutboundCommunicationGateway].
+ * This allows consent to be granted between scheduling and delivery.
  */
 @Service
 class ScheduleVisitSmsReminderHandler(

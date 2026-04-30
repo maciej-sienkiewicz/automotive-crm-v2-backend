@@ -59,9 +59,7 @@ data class MarketingConsentInfo(
 
 enum class MarketingConsentType {
     EMAIL,
-    SMS,
-    PHONE,
-    POSTAL
+    SMS
 }
 
 enum class LoyaltyTier {

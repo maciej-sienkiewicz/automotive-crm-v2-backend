@@ -24,11 +24,6 @@ import java.util.*
 /**
  * Admin API for managing customer consents.
  *
- * A consent is a persistent customer agreement (e.g. RODO, marketing opt-in) that is
- * collected once per customer and shown again only when the PDF changes and requiresResign=true.
- *
- * Contrast with visit protocols, which are generated fresh for every visit.
- *
  * Base URL: /api/v1/consents
  */
 @RestController
@@ -41,9 +36,6 @@ class ConsentController(
     private val consentDefinitionRepository: ConsentDefinitionRepository
 ) {
 
-    /**
-     * List all active consents with their current version info.
-     */
     @GetMapping
     fun listConsents(): ResponseEntity<List<ConsentResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -51,23 +43,16 @@ class ConsentController(
         ResponseEntity.ok(getConsentsHandler.handleList(principal.studioId))
     }
 
-    /**
-     * Get a single consent by ID.
-     */
     @GetMapping("/{id}")
     fun getConsent(@PathVariable id: UUID): ResponseEntity<ConsentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         requireOwnerOrManager(principal)
-        ResponseEntity.ok(
-            getConsentsHandler.handleGet(principal.studioId, ConsentDefinitionId(id))
-        )
+        ResponseEntity.ok(getConsentsHandler.handleGet(principal.studioId, ConsentDefinitionId(id)))
     }
 
     /**
-     * Create a new consent definition and its first PDF version in a single step.
-     *
-     * The slug is auto-generated from the name. The response includes a presigned S3 URL
-     * to upload the PDF directly from the browser.
+     * Create a new consent definition and its first PDF version.
+     * Response includes a presigned S3 upload URL to upload the PDF directly from the browser.
      */
     @PostMapping
     fun createConsent(
@@ -83,7 +68,9 @@ class ConsentController(
                 name = request.name,
                 description = request.description,
                 stage = request.stage,
-                isMandatory = request.isMandatory ?: false,
+                marketingChannels = request.marketingChannels
+                    .mapNotNull { runCatching { MarketingChannel.valueOf(it) }.getOrNull() }
+                    .toSet(),
                 displayOrder = request.displayOrder ?: 0
             )
         )
@@ -92,7 +79,7 @@ class ConsentController(
     }
 
     /**
-     * Update consent display configuration (name, stage, mandatory, order).
+     * Update consent configuration (name, stage, marketing channels, display order).
      * Does not affect existing customer signatures.
      */
     @PatchMapping("/{id}")
@@ -111,7 +98,9 @@ class ConsentController(
                 name = request.name,
                 description = request.description,
                 stage = request.stage,
-                isMandatory = request.isMandatory,
+                marketingChannels = request.marketingChannels?.mapNotNull {
+                    runCatching { MarketingChannel.valueOf(it) }.getOrNull()
+                }?.toSet(),
                 displayOrder = request.displayOrder
             )
         )
@@ -139,9 +128,6 @@ class ConsentController(
         ResponseEntity.noContent().build()
     }
 
-    /**
-     * List all versions for a consent.
-     */
     @GetMapping("/{id}/versions")
     fun listVersions(@PathVariable id: UUID): ResponseEntity<ConsentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -151,9 +137,7 @@ class ConsentController(
 
     /**
      * Publish a new PDF version for an existing consent.
-     *
      * Set requiresResign=true to force customers who already signed to sign again.
-     * Returns a presigned S3 upload URL for the new PDF.
      */
     @PostMapping("/{id}/versions")
     fun addVersion(
@@ -179,13 +163,13 @@ class ConsentController(
                 version = result.version,
                 isActive = result.isActive,
                 requiresResign = result.requiresResign,
-                pdfUrl = result.pdfUploadUrl,  // upload URL on creation; use GET /consents/{id} for download URL later
+                pdfUrl = result.pdfUploadUrl,
                 createdAt = Instant.now()
             )
         )
     }
 
-    // ─── helpers ────────────────────────────────────────────────────────────────
+    // ─── helpers ─────────────────────────────────────────────────────────────
 
     private fun requireOwnerOrManager(principal: pl.detailing.crm.auth.UserPrincipal) {
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
@@ -196,11 +180,10 @@ class ConsentController(
     private fun toConsentResponse(result: CreateConsentResult): ConsentResponse =
         ConsentResponse(
             id = result.definitionId.value,
-            slug = result.slug,
             name = result.name,
             description = result.description,
             stage = result.stage,
-            isMandatory = result.isMandatory,
+            marketingChannels = result.marketingChannels.map { it.name }.toSet(),
             displayOrder = result.displayOrder,
             isActive = true,
             currentVersion = ConsentVersionResponse(
@@ -232,7 +215,7 @@ data class CreateConsentRequest(
     val name: String,
     val description: String? = null,
     val stage: ProtocolStage,
-    val isMandatory: Boolean? = false,
+    val marketingChannels: List<String> = emptyList(),  // "EMAIL", "SMS"
     val displayOrder: Int? = 0
 )
 
@@ -240,7 +223,7 @@ data class UpdateConsentRequest(
     val name: String? = null,
     val description: String? = null,
     val stage: ProtocolStage? = null,
-    val isMandatory: Boolean? = null,
+    val marketingChannels: List<String>? = null,
     val displayOrder: Int? = null
 )
 

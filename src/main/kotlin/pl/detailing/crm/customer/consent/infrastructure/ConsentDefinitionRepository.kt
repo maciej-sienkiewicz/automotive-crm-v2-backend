@@ -22,12 +22,6 @@ interface ConsentDefinitionRepository : JpaRepository<ConsentDefinitionEntity, U
     @Query("SELECT cd FROM ConsentDefinitionEntity cd WHERE cd.studioId = :studioId")
     fun findAllByStudioId(@Param("studioId") studioId: UUID): List<ConsentDefinitionEntity>
 
-    @Query("SELECT cd FROM ConsentDefinitionEntity cd WHERE cd.slug = :slug AND cd.studioId = :studioId")
-    fun findBySlugAndStudioId(
-        @Param("slug") slug: String,
-        @Param("studioId") studioId: UUID
-    ): ConsentDefinitionEntity?
-
     @Query("SELECT cd FROM ConsentDefinitionEntity cd WHERE cd.studioId = :studioId AND cd.stage = :stage AND cd.isActive = true ORDER BY cd.displayOrder ASC")
     fun findActiveByStudioIdAndStage(
         @Param("studioId") studioId: UUID,

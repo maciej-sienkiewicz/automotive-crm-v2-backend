@@ -90,7 +90,7 @@ class ProtocolResolver(
                 ResolvedProtocol.fromConsent(
                     consentDefinitionId = definitionId,
                     consentTemplateId = ConsentTemplateId(activeTemplate.id),
-                    isMandatory = definitionEntity.isMandatory,
+                    isMandatory = false,
                     displayOrder = definitionEntity.displayOrder
                 )
             }

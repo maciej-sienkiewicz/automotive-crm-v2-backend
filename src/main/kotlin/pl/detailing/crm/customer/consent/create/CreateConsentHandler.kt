@@ -16,9 +16,9 @@ import java.time.Instant
 
 /**
  * Creates a consent definition together with its first template version in a single step.
- *
- * The slug is auto-generated from the name (kebab-case, unique within the studio).
  * Returns a presigned S3 upload URL so the caller can immediately upload the PDF.
+ *
+ * Uniqueness rule: at most one active consent per studio may cover a given MarketingChannel.
  */
 @Service
 class CreateConsentHandler(
@@ -30,16 +30,15 @@ class CreateConsentHandler(
     @Transactional
     suspend fun handle(command: CreateConsentCommand): CreateConsentResult =
         withContext(Dispatchers.IO) {
-            val slug = generateUniqueSlug(command.name, command.studioId)
+            validateChannelUniqueness(command.studioId, command.marketingChannels, excludeId = null)
 
             val definition = ConsentDefinition(
                 id = ConsentDefinitionId.random(),
                 studioId = command.studioId,
-                slug = slug,
                 name = command.name.trim(),
                 description = command.description?.trim(),
                 stage = command.stage,
-                isMandatory = command.isMandatory,
+                marketingChannels = command.marketingChannels,
                 displayOrder = command.displayOrder,
                 isActive = true,
                 createdBy = command.createdBy,
@@ -49,8 +48,8 @@ class CreateConsentHandler(
             )
             consentDefinitionRepository.save(ConsentDefinitionEntity.fromDomain(definition))
 
-            val s3Key = s3StorageService.buildS3Key(command.studioId.value, slug, 1)
-            val uploadUrl = s3StorageService.generateUploadUrl(command.studioId.value, slug, 1)
+            val s3Key = s3StorageService.buildS3Key(command.studioId.value, definition.id.value, 1)
+            val uploadUrl = s3StorageService.generateUploadUrl(command.studioId.value, definition.id.value, 1)
 
             val template = ConsentTemplate(
                 id = ConsentTemplateId.random(),
@@ -67,11 +66,10 @@ class CreateConsentHandler(
 
             CreateConsentResult(
                 definitionId = definition.id,
-                slug = definition.slug,
                 name = definition.name,
                 description = definition.description,
                 stage = definition.stage,
-                isMandatory = definition.isMandatory,
+                marketingChannels = definition.marketingChannels,
                 displayOrder = definition.displayOrder,
                 currentVersion = TemplateVersionInfo(
                     versionId = template.id,
@@ -84,25 +82,24 @@ class CreateConsentHandler(
             )
         }
 
-    private fun generateUniqueSlug(name: String, studioId: StudioId): String {
-        val base = name.trim()
-            .lowercase()
-            .replace(Regex("[^a-z0-9\\s-]"), "")
-            .replace(Regex("\\s+"), "-")
-            .replace(Regex("-+"), "-")
-            .trim('-')
-            .ifEmpty { "consent" }
-
-        if (consentDefinitionRepository.findBySlugAndStudioId(base, studioId.value) == null) return base
-
-        // Append a numeric suffix to ensure uniqueness
-        var suffix = 2
-        while (true) {
-            val candidate = "$base-$suffix"
-            if (consentDefinitionRepository.findBySlugAndStudioId(candidate, studioId.value) == null) {
-                return candidate
+    fun validateChannelUniqueness(
+        studioId: StudioId,
+        channels: Set<MarketingChannel>,
+        excludeId: ConsentDefinitionId?
+    ) {
+        if (channels.isEmpty()) return
+        val active = consentDefinitionRepository.findActiveByStudioId(studioId.value)
+        for (channel in channels) {
+            val conflict = active.firstOrNull { entity ->
+                (excludeId == null || entity.id != excludeId.value) &&
+                    channel in entity.marketingChannels
             }
-            suffix++
+            if (conflict != null) {
+                throw ValidationException(
+                    "Zgoda '${conflict.name}' już obejmuje kanał ${channel.name}. " +
+                    "Tylko jedna aktywna zgoda może dotyczyć danego kanału."
+                )
+            }
         }
     }
 }
@@ -113,17 +110,16 @@ data class CreateConsentCommand(
     val name: String,
     val description: String?,
     val stage: ProtocolStage,
-    val isMandatory: Boolean,
+    val marketingChannels: Set<MarketingChannel> = emptySet(),
     val displayOrder: Int
 )
 
 data class CreateConsentResult(
     val definitionId: ConsentDefinitionId,
-    val slug: String,
     val name: String,
     val description: String?,
     val stage: ProtocolStage,
-    val isMandatory: Boolean,
+    val marketingChannels: Set<MarketingChannel>,
     val displayOrder: Int,
     val currentVersion: TemplateVersionInfo
 )

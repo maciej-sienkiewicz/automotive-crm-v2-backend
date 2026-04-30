@@ -8,7 +8,7 @@ import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionReposit
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.S3ConsentStorageService
 import pl.detailing.crm.shared.ConsentDefinitionId
-import pl.detailing.crm.shared.ConsentTemplateId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
@@ -44,11 +44,10 @@ class GetConsentsHandler(
 
         return ConsentResponse(
             id = def.id,
-            slug = def.slug,
             name = def.name,
             description = def.description,
             stage = def.stage,
-            isMandatory = def.isMandatory,
+            marketingChannels = def.marketingChannels.map { it.name }.toSet(),
             displayOrder = def.displayOrder,
             isActive = def.isActive,
             currentVersion = activeTemplate?.let { t ->
@@ -79,11 +78,10 @@ class GetConsentsHandler(
 
 data class ConsentResponse(
     val id: UUID,
-    val slug: String,
     val name: String,
     val description: String?,
     val stage: ProtocolStage,
-    val isMandatory: Boolean,
+    val marketingChannels: Set<String>,  // "EMAIL", "SMS"
     val displayOrder: Int,
     val isActive: Boolean,
     val currentVersion: ConsentVersionResponse?,

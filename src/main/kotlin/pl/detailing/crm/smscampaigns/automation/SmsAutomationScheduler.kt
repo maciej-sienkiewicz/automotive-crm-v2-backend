@@ -5,6 +5,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -23,7 +24,6 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogStatus
 import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitQueryService
 import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitView
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -51,7 +51,7 @@ class SmsAutomationScheduler(
     private val appointmentQueryService: SmsAppointmentQueryService,
     private val visitQueryService: SmsVisitQueryService,
     private val smsLogRepository: SmsLogJpaRepository,
-    private val smsProvider: SmsProvider,
+    private val communicationGateway: OutboundCommunicationGateway,
     private val templateProcessor: SmsTemplateProcessor,
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService
@@ -179,7 +179,13 @@ class SmsAutomationScheduler(
             )
         )
 
-        val result = smsProvider.send(phoneNumber, message)
+        val result = communicationGateway.sendSms(
+            customerId = appointment.customerId,
+            studioId = studioId.value,
+            phoneNumber = phoneNumber,
+            message = message,
+            context = "SmsAutomation trigger=$triggerType appointment=${appointment.appointmentId}"
+        )
 
         smsLogRepository.save(
             SmsLogEntity(
@@ -287,7 +293,13 @@ class SmsAutomationScheduler(
             )
         )
 
-        val result = smsProvider.send(phoneNumber, message)
+        val result = communicationGateway.sendSms(
+            customerId = visit.customerId,
+            studioId = studioId.value,
+            phoneNumber = phoneNumber,
+            message = message,
+            context = "SmsAutomation trigger=DELAYED_REMINDER visit=${visit.visitId}"
+        )
 
         smsLogRepository.save(
             SmsLogEntity(

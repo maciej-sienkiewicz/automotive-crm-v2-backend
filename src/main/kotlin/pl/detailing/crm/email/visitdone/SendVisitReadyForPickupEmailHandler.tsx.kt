@@ -5,9 +5,9 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
-import pl.detailing.crm.email.provider.EmailProvider
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
@@ -19,7 +19,7 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 class SendVisitReadyForPickupEmailHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val emailProvider: EmailProvider,
+    private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -41,36 +41,25 @@ class SendVisitReadyForPickupEmailHandler(
         }
 
         val recipientEmail = customerEntity.email
-        if (recipientEmail.isNullOrBlank()) {
-            return@withContext
-        }
+        if (recipientEmail.isNullOrBlank()) return@withContext
 
         val customerName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
-            .joinToString(" ")
-            .ifBlank { "Kliencie" }
-
+            .joinToString(" ").ifBlank { "Kliencie" }
         val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
-
-        // Pobieramy listę usług z encji wizyty
         val services = visitEntity.serviceItems.map { it.serviceName }
-
         val body = buildBody(
-            customerName = customerName,
-            vehicleName = vehicleName,
-            visitNumber = visitEntity.visitNumber,
-            licensePlate = visitEntity.licensePlateSnapshot,
-            services = services,
-            paymentMethod = command.paymentMethod,
-            warrantyInfo = command.warrantyInfo
+            customerName, vehicleName, visitEntity.visitNumber,
+            visitEntity.licensePlateSnapshot, services, command.paymentMethod, command.warrantyInfo
         )
-
         val subject = "Twój pojazd jest gotowy do odbioru! – $vehicleName"
 
-        val result = emailProvider.send(
+        val result = communicationGateway.sendEmail(
+            customerId = visitEntity.customerId,
+            studioId = visitEntity.studioId,
             to = recipientEmail,
             subject = subject,
             bodyText = body,
-            attachments = emptyList()
+            context = "SendVisitReadyForPickupEmail visit=${command.visitId}"
         )
 
         communicationLogService.record(
@@ -103,8 +92,6 @@ class SendVisitReadyForPickupEmailHandler(
         warrantyInfo: String
     ): String {
         val plateInfo = if (!licensePlate.isNullOrBlank()) " ($licensePlate)" else ""
-
-        // Formatowanie listy usług w punktach
         val servicesList = if (services.isNotEmpty()) {
             "\nWykonane usługi:\n" + services.joinToString("\n") { " • $it" }
         } else ""

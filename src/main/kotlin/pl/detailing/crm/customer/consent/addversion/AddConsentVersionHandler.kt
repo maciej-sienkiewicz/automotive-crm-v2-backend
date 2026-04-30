@@ -42,8 +42,8 @@ class AddConsentVersionHandler(
                 command.definitionId.value, command.studioId.value
             ) ?: 0) + 1
 
-            val s3Key = s3StorageService.buildS3Key(command.studioId.value, definition.slug, nextVersion)
-            val uploadUrl = s3StorageService.generateUploadUrl(command.studioId.value, definition.slug, nextVersion)
+            val s3Key = s3StorageService.buildS3Key(command.studioId.value, definition.id, nextVersion)
+            val uploadUrl = s3StorageService.generateUploadUrl(command.studioId.value, definition.id, nextVersion)
 
             if (command.setAsActive) {
                 consentTemplateRepository.deactivateAllByDefinitionId(command.definitionId.value, command.studioId.value)

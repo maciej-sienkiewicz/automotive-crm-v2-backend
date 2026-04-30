@@ -12,18 +12,14 @@ import pl.detailing.crm.customer.consent.revoke.RevokeConsentCommand
 import pl.detailing.crm.customer.consent.revoke.RevokeConsentHandler
 import pl.detailing.crm.customer.consent.sign.SignConsentCommand
 import pl.detailing.crm.customer.consent.sign.SignConsentHandler
-import pl.detailing.crm.shared.ConsentTemplateId
-import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.ConsentStatus
 import pl.detailing.crm.shared.CustomerConsentId
+import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.ProtocolStage
+import pl.detailing.crm.shared.CustomerId
 import java.time.Instant
 import java.util.*
 
-/**
- * Customer-facing consent endpoints.
- *
- * Base URL: /api/v1/customers/{customerId}/consents
- */
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/consents")
 class CustomerConsentController(
@@ -34,13 +30,6 @@ class CustomerConsentController(
 
     /**
      * Get all consent statuses for a customer.
-     *
-     * Returns every active consent definition with its current status:
-     * - VALID: customer signed the active version
-     * - OUTDATED: customer signed an older version, re-sign not required
-     * - REQUIRED: never signed, or active version requires re-sign
-     *
-     * Inactive definitions are included only if the customer has previously signed them.
      */
     @GetMapping
     fun getConsentStatus(
@@ -54,10 +43,28 @@ class CustomerConsentController(
     }
 
     /**
-     * Record a customer signature on a specific consent template version.
-     * Creates an immutable audit record. Optionally returns a presigned S3 URL
-     * to upload a scanned paper copy.
+     * Returns whether the customer has a valid signed consent for EMAIL and SMS marketing.
+     * Useful for checking send eligibility before dispatching campaigns.
      */
+    @GetMapping("/marketing")
+    fun getMarketingConsentStatus(
+        @PathVariable customerId: UUID
+    ): ResponseEntity<MarketingConsentStatusResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = getConsentStatusHandler.handle(
+            GetConsentStatusCommand(studioId = principal.studioId, customerId = CustomerId(customerId))
+        )
+
+        val validConsents = result.consents.filter { it.status == ConsentStatus.VALID }
+
+        ResponseEntity.ok(
+            MarketingConsentStatusResponse(
+                email = validConsents.any { MarketingChannel.EMAIL in it.marketingChannels },
+                sms = validConsents.any { MarketingChannel.SMS in it.marketingChannels }
+            )
+        )
+    }
+
     @PostMapping("/{templateId}/sign")
     fun signConsent(
         @PathVariable customerId: UUID,
@@ -69,7 +76,7 @@ class CustomerConsentController(
             SignConsentCommand(
                 studioId = principal.studioId,
                 customerId = CustomerId(customerId),
-                templateId = ConsentTemplateId(templateId),
+                templateId = pl.detailing.crm.shared.ConsentTemplateId(templateId),
                 witnessedBy = principal.userId,
                 requestAttachmentUpload = request?.requestAttachmentUpload ?: false
             )
@@ -84,10 +91,6 @@ class CustomerConsentController(
         )
     }
 
-    /**
-     * Revoke a previously recorded consent.
-     * The record is preserved for audit purposes; the customer's status returns to REQUIRED.
-     */
     @DeleteMapping("/{consentId}")
     fun revokeConsent(
         @PathVariable customerId: UUID,
@@ -101,7 +104,7 @@ class CustomerConsentController(
     }
 }
 
-// ─── DTOs ────────────────────────────────────────────────────────────────────
+// ─── DTOs ─────────────────────────────────────────────────────────────────────
 
 data class SignConsentRequest(
     val requestAttachmentUpload: Boolean = false
@@ -116,11 +119,10 @@ data class ConsentStatusResponse(
                 consents = result.consents.map { item ->
                     ConsentStatusItemResponse(
                         definitionId = item.definitionId.value,
-                        definitionSlug = item.definitionSlug,
                         definitionName = item.definitionName,
                         isDefinitionActive = item.isDefinitionActive,
                         stage = item.stage,
-                        isMandatory = item.isMandatory,
+                        marketingChannels = item.marketingChannels.map { it.name }.toSet(),
                         displayOrder = item.displayOrder,
                         status = item.status.name,
                         currentTemplateId = item.currentTemplateId?.value,
@@ -138,13 +140,12 @@ data class ConsentStatusResponse(
 
 data class ConsentStatusItemResponse(
     val definitionId: UUID,
-    val definitionSlug: String,
     val definitionName: String,
     val isDefinitionActive: Boolean,
-    val stage: ProtocolStage?,         // null when definition is inactive
-    val isMandatory: Boolean,
+    val stage: ProtocolStage?,
+    val marketingChannels: Set<String>,  // "EMAIL", "SMS"
     val displayOrder: Int,
-    val status: String,                // VALID | OUTDATED | REQUIRED
+    val status: String,                  // VALID | OUTDATED | REQUIRED
     val currentTemplateId: UUID?,
     val currentVersion: Int?,
     val signedTemplateId: UUID?,
@@ -152,6 +153,11 @@ data class ConsentStatusItemResponse(
     val signedAt: Instant?,
     val downloadUrl: String?,
     val consentId: UUID?
+)
+
+data class MarketingConsentStatusResponse(
+    val email: Boolean,
+    val sms: Boolean
 )
 
 data class SignConsentResponse(

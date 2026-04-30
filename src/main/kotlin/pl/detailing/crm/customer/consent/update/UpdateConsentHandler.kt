@@ -4,13 +4,15 @@ import jakarta.transaction.Transactional
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.customer.consent.create.CreateConsentHandler
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
 @Service
 class UpdateConsentHandler(
-    private val consentDefinitionRepository: ConsentDefinitionRepository
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
+    private val createConsentHandler: CreateConsentHandler
 ) {
 
     @Transactional
@@ -20,10 +22,16 @@ class UpdateConsentHandler(
                 command.definitionId.value, command.studioId.value
             ) ?: throw NotFoundException("Consent not found")
 
+            command.marketingChannels?.let { channels ->
+                createConsentHandler.validateChannelUniqueness(
+                    command.studioId, channels, excludeId = command.definitionId
+                )
+                entity.marketingChannels = channels.toMutableSet()
+            }
+
             command.name?.let { entity.name = it.trim() }
             command.description?.let { entity.description = it.trim() }
             command.stage?.let { entity.stage = it }
-            command.isMandatory?.let { entity.isMandatory = it }
             command.displayOrder?.let { entity.displayOrder = it }
             entity.updatedBy = command.updatedBy.value
             entity.updatedAt = Instant.now()
@@ -39,6 +47,6 @@ data class UpdateConsentCommand(
     val name: String?,
     val description: String?,
     val stage: ProtocolStage?,
-    val isMandatory: Boolean?,
+    val marketingChannels: Set<MarketingChannel>?,
     val displayOrder: Int?
 )
