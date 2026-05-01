@@ -165,7 +165,7 @@ class ListAppointmentsHandler(
         }
 }
 
-private fun buildSmsInfo(smsLogs: List<SmsLogEntity>, sendReminderSms: Boolean): AppointmentSmsInfo {
+fun buildSmsInfo(smsLogs: List<SmsLogEntity>, sendReminderSms: Boolean): AppointmentSmsInfo {
     val logByTrigger = smsLogs.associateBy { it.triggerType }
 
     val confirmationLog = logByTrigger[SmsTriggerType.BOOKING_CONFIRMATION]

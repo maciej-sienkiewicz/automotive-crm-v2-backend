@@ -11,8 +11,6 @@ import pl.detailing.crm.visit.list.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitCommand
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitHandler
-import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedSmsHandler
-import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedSmsCommand
 import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailHandler
 import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailCommand
 import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailOptions
@@ -46,7 +44,6 @@ class VisitController(
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
-    private val sendVisitConfirmedSmsHandler: SendVisitConfirmedSmsHandler,
     private val sendVisitConfirmedEmailHandler: SendVisitConfirmedEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler
@@ -268,19 +265,6 @@ class VisitController(
         val result = confirmVisitHandler.handle(command)
 
         val req = request ?: ConfirmVisitRequest()
-
-        if (req.sendSms) {
-            runCatching {
-                sendVisitConfirmedSmsHandler.handle(
-                    SendVisitConfirmedSmsCommand(
-                        visitId = command.visitId,
-                        studioId = command.studioId
-                    )
-                )
-            }.onFailure { ex ->
-                logger.warn("confirmVisit: SMS notification failed [visitId={}]: {}", visitId, ex.message)
-            }
-        }
 
         if (req.sendEmail) {
             val opts = req.emailOptions ?: ConfirmEmailOptionsRequest()
@@ -639,7 +623,6 @@ data class PaginationMetadata(
 )
 
 data class ConfirmVisitRequest(
-    val sendSms: Boolean = false,
     val sendEmail: Boolean = false,
     val emailOptions: ConfirmEmailOptionsRequest? = null
 )

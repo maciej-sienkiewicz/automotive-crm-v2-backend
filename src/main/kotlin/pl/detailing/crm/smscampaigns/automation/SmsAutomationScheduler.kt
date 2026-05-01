@@ -17,6 +17,7 @@ import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationRule
 import pl.detailing.crm.smscampaigns.domain.SmsTriggerType
+import pl.detailing.crm.smscampaigns.domain.SmsTriggerType.*
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAppointmentQueryService
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAppointmentView
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogEntity
@@ -250,9 +251,10 @@ class SmsAutomationScheduler(
         )?.let { VisitId(it.id) }
 
         val messageType = when (triggerType) {
-            SmsTriggerType.PRE_VISIT -> CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT
-            SmsTriggerType.POST_VISIT -> CommunicationMessageType.SMS_AUTOMATION_POST_VISIT
-            SmsTriggerType.DELAYED_REMINDER -> CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER
+            PRE_VISIT -> CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT
+            POST_VISIT -> CommunicationMessageType.SMS_AUTOMATION_POST_VISIT
+            DELAYED_REMINDER -> CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER
+            BOOKING_CONFIRMATION -> CommunicationMessageType.SMS_BOOKING_CONFIRMATION
         }
 
         communicationLogService.record(
