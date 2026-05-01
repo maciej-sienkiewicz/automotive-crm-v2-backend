@@ -2,6 +2,7 @@ package pl.detailing.crm.communication
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.StudioId
@@ -21,6 +22,9 @@ class AppointmentCommunicationLinker(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    // @Modifying queries require an active transaction; using REQUIRES_NEW so this
+    // always has its own transaction regardless of the caller's coroutine thread context.
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     fun linkToVisit(appointmentId: AppointmentId, visitId: VisitId, studioId: StudioId) {
         try {
             val updated = repository.linkAppointmentCommunicationToVisit(

@@ -49,7 +49,7 @@ interface CommunicationLogJpaRepository : JpaRepository<CommunicationLogEntity, 
      *
      * Returns the number of rows updated.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
         UPDATE CommunicationLogEntity c
         SET c.visitId = :visitId
