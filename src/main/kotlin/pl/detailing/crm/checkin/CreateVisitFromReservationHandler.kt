@@ -35,6 +35,7 @@ import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
+import pl.detailing.crm.communication.AppointmentCommunicationLinker
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -54,7 +55,8 @@ class CreateVisitFromReservationHandler(
     private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
     private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
     private val checkinPhotoService: CheckinPhotoService,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val appointmentCommunicationLinker: AppointmentCommunicationLinker
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -294,7 +296,11 @@ class CreateVisitFromReservationHandler(
             val visitEntity = VisitEntity.fromDomain(visit)
             visitRepository.save(visitEntity)
 
-            // Step 9.1: Log visit creation on the vehicle's audit trail
+            // Step 9.1: Retroactively link pre-visit SMS (booking confirmation, reminder) to this visit.
+            // Those entries were recorded with visitId = null because the visit did not exist yet.
+            appointmentCommunicationLinker.linkToVisit(appointment.id, visitId, command.studioId)
+
+            // Step 9.3: Log visit creation on the vehicle's audit trail
             val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
                 (vehicle.licensePlate?.let { " ($it)" } ?: "")
             auditService.log(LogAuditCommand(
@@ -312,7 +318,7 @@ class CreateVisitFromReservationHandler(
                 )
             ))
 
-            // Step 9.5: Register damage map as a document if it was generated
+            // Step 9.4: Register damage map as a document if it was generated
             if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {
                 try {
                     documentService.registerDocument(

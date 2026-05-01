@@ -7,6 +7,7 @@ import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaReposito
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
@@ -23,6 +24,12 @@ data class RecordCommunicationCommand(
     val studioId: StudioId,
     val customerId: CustomerId,
     val visitId: VisitId?,
+    /**
+     * The appointment this message was sent for.
+     * Set for booking-confirmation and pre-visit/post-visit automation SMS.
+     * Null for messages not originating from a specific appointment.
+     */
+    val appointmentId: AppointmentId? = null,
     val channel: CommunicationChannel,
     val messageType: CommunicationMessageType,
     val recipientAddress: String,
@@ -59,6 +66,7 @@ class CommunicationLogService(
                     studioId = command.studioId.value,
                     customerId = command.customerId.value,
                     visitId = command.visitId?.value,
+                    appointmentId = command.appointmentId?.value,
                     channel = command.channel,
                     messageType = command.messageType,
                     recipientAddress = command.recipientAddress,

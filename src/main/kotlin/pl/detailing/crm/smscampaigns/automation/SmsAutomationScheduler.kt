@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
@@ -262,6 +263,7 @@ class SmsAutomationScheduler(
                 studioId = studioId,
                 customerId = CustomerId(appointment.customerId),
                 visitId = visitId,
+                appointmentId = AppointmentId(appointment.appointmentId),
                 channel = CommunicationChannel.SMS,
                 messageType = messageType,
                 recipientAddress = phoneNumber,

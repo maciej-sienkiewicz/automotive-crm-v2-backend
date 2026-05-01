@@ -111,6 +111,7 @@ class SendBookingConfirmationSmsHandler(
                 studioId = command.studioId,
                 customerId = CustomerId(appointment.customerId),
                 visitId = null,
+                appointmentId = command.appointmentId,
                 channel = CommunicationChannel.SMS,
                 messageType = CommunicationMessageType.SMS_BOOKING_CONFIRMATION,
                 recipientAddress = phoneNumber,

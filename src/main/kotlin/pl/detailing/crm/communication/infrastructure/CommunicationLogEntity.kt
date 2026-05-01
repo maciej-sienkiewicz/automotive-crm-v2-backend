@@ -22,6 +22,7 @@ import java.util.UUID
         Index(name = "idx_comm_log_studio_id", columnList = "studio_id"),
         Index(name = "idx_comm_log_customer", columnList = "studio_id, customer_id"),
         Index(name = "idx_comm_log_visit", columnList = "visit_id"),
+        Index(name = "idx_comm_log_appointment", columnList = "appointment_id"),
         Index(name = "idx_comm_log_sent_at", columnList = "studio_id, sent_at")
     ]
 )
@@ -45,6 +46,16 @@ class CommunicationLogEntity(
      */
     @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
     val visitId: UUID?,
+
+    /**
+     * The appointment (reservation) this message was sent in response to.
+     * Populated for booking-confirmation and pre-visit reminder SMS.
+     * Null for messages not originating from an appointment (e.g. walk-in email).
+     * Used to retroactively link communication to a visit once the reservation
+     * is converted via the check-in flow.
+     */
+    @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
+    val appointmentId: UUID?,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "channel", nullable = false, length = 10)
