@@ -45,11 +45,14 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
 // ── Controller ───────────────────────────────────────────────────────────────
 
 /**
- * REST surface for the SMS automation configuration.
+ * @deprecated Use /api/v1/settings/sms-templates instead.
+ * That endpoint exposes all five rules (including delayedReminder) and
+ * template-variable metadata. This endpoint is kept for backward compatibility.
  *
  * GET  /api/v1/sms-campaigns/automation  → returns current config for the authenticated studio
  * PUT  /api/v1/sms-campaigns/automation  → replaces the config (OWNER / MANAGER only)
  */
+@Deprecated("Superseded by /api/v1/settings/sms-templates")
 @RestController
 @RequestMapping("/api/v1/sms-campaigns/automation")
 class SmsAutomationController(
