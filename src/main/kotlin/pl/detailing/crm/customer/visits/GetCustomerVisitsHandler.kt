@@ -94,6 +94,6 @@ class GetCustomerVisitsHandler(
             inspectionNotes?.takeIf { it.isNotBlank() },
             technicalNotes?.takeIf { it.isNotBlank() }
         )
-        return parts.joinToString("; ").ifEmpty { "Wizyta serwisowa" }
+        return parts.joinToString("; ").ifEmpty { "" }
     }
 }
