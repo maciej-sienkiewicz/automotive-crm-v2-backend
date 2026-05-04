@@ -17,6 +17,8 @@ import pl.detailing.crm.customer.list.CustomerListItem
 import pl.detailing.crm.customer.list.CustomerListQuery
 import pl.detailing.crm.customer.list.ListCustomersHandler
 import pl.detailing.crm.customer.notes.CustomerNoteItem
+import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryCommand
+import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryHandler
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
@@ -37,7 +39,8 @@ class CustomerController(
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
-    private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler
+    private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler,
+    private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler
 ) {
 
     @GetMapping
@@ -447,6 +450,44 @@ class CustomerController(
         ))
     }
 
+    @GetMapping("/{customerId}/revenue-summary")
+    fun getCustomerRevenueSummary(
+        @PathVariable customerId: String,
+        @RequestParam(required = false, defaultValue = "12") months: Int
+    ): ResponseEntity<RevenueSummaryResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetCustomerRevenueSummaryCommand(
+            customerId = CustomerId(UUID.fromString(customerId)),
+            studioId = principal.studioId,
+            months = months
+        )
+
+        val result = getCustomerRevenueSummaryHandler.handle(command)
+
+        ResponseEntity.ok(RevenueSummaryResponse(
+            buckets = result.buckets.map { bucket ->
+                RevenueBucketResponse(
+                    year = bucket.year,
+                    month = bucket.month,
+                    grossAmount = bucket.grossAmount,
+                    currency = bucket.currency,
+                    visitCount = bucket.visitCount
+                )
+            },
+            total = RevenueTotalResponse(
+                grossAmount = result.total.grossAmount,
+                netAmount = result.total.netAmount,
+                currency = result.total.currency,
+                visitCount = result.total.visitCount
+            ),
+            period = RevenuePeriodResponse(
+                from = result.period.from,
+                to = result.period.to
+            )
+        ))
+    }
+
     @PatchMapping("/{customerId}")
     fun updateCustomer(
         @PathVariable customerId: String,
@@ -752,4 +793,31 @@ data class VisitCostResponse(
     val netAmount: Double,
     val grossAmount: Double,
     val currency: String
+)
+
+// Revenue Summary DTOs
+data class RevenueSummaryResponse(
+    val buckets: List<RevenueBucketResponse>,
+    val total: RevenueTotalResponse,
+    val period: RevenuePeriodResponse
+)
+
+data class RevenueBucketResponse(
+    val year: Int,
+    val month: Int,
+    val grossAmount: Long,
+    val currency: String,
+    val visitCount: Int
+)
+
+data class RevenueTotalResponse(
+    val grossAmount: Long,
+    val netAmount: Long,
+    val currency: String,
+    val visitCount: Int
+)
+
+data class RevenuePeriodResponse(
+    val from: String,
+    val to: String
 )
