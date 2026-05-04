@@ -5,14 +5,18 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.RequestParam
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.dashboard.query.GetDashboardSummaryCommand
 import pl.detailing.crm.dashboard.query.GetDashboardSummaryHandler
+import pl.detailing.crm.dashboard.revenuesummary.GetDashboardRevenueSummaryCommand
+import pl.detailing.crm.dashboard.revenuesummary.GetDashboardRevenueSummaryHandler
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
 class DashboardController(
-    private val getDashboardSummaryHandler: GetDashboardSummaryHandler
+    private val getDashboardSummaryHandler: GetDashboardSummaryHandler,
+    private val getDashboardRevenueSummaryHandler: GetDashboardRevenueSummaryHandler
 ) {
 
     /**
@@ -115,6 +119,39 @@ class DashboardController(
 
         ResponseEntity.ok(response)
     }
+
+    @GetMapping("/revenue-summary")
+    fun getRevenueSummary(
+        @RequestParam(required = false, defaultValue = "13") weeks: Int
+    ): ResponseEntity<DashboardRevenueSummaryResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetDashboardRevenueSummaryCommand(
+            studioId = principal.studioId,
+            weeks = weeks
+        )
+
+        val result = getDashboardRevenueSummaryHandler.handle(command)
+
+        ResponseEntity.ok(DashboardRevenueSummaryResponse(
+            currentWeek = WeekRevenueResponse(
+                grossAmount = result.currentWeek.grossAmount,
+                currency = result.currentWeek.currency
+            ),
+            previousWeek = WeekRevenueResponse(
+                grossAmount = result.previousWeek.grossAmount,
+                currency = result.previousWeek.currency
+            ),
+            deltaPercentage = result.deltaPercentage,
+            buckets = result.buckets.map { bucket ->
+                WeeklyRevenueBucketResponse(
+                    weekStart = bucket.weekStart,
+                    grossAmount = bucket.grossAmount,
+                    currency = bucket.currency
+                )
+            }
+        ))
+    }
 }
 
 /**
@@ -165,4 +202,22 @@ data class DashboardDataResponse(
     val callActivity: BusinessMetricResponse,
     val recentCalls: List<IncomingCallResponse>,
     val googleReviews: Any? // Skipped, set to null
+)
+
+data class DashboardRevenueSummaryResponse(
+    val currentWeek: WeekRevenueResponse,
+    val previousWeek: WeekRevenueResponse,
+    val deltaPercentage: Double,
+    val buckets: List<WeeklyRevenueBucketResponse>
+)
+
+data class WeekRevenueResponse(
+    val grossAmount: Long,
+    val currency: String
+)
+
+data class WeeklyRevenueBucketResponse(
+    val weekStart: String,
+    val grossAmount: Long,
+    val currency: String
 )

@@ -257,6 +257,24 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("from") from: Instant,
         @Param("to") to: Instant
     ): List<VisitEntity>
+
+    /**
+     * Find completed visits for a studio within a scheduled date range.
+     * Used for the dashboard revenue summary bucketed by week.
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND v.status = pl.detailing.crm.shared.VisitStatus.COMPLETED
+        AND v.scheduledDate >= :from
+        AND v.scheduledDate < :to
+        ORDER BY v.scheduledDate ASC
+    """)
+    fun findCompletedByStudioIdAndDateRange(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<VisitEntity>
 }
 
 @Repository
