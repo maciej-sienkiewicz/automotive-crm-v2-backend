@@ -8,6 +8,20 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
+data class PeriodVisitRow(
+    val visitId: UUID,
+    val actualCompletionDate: Instant,
+    val customerFirstName: String?,
+    val customerLastName: String?,
+    val brandSnapshot: String,
+    val modelSnapshot: String,
+    val yearOfProductionSnapshot: Int?,
+    val serviceId: UUID?,
+    val serviceName: String?,
+    val finalPriceGross: Long?,
+    val inCategory: Boolean?
+)
+
 /**
  * Native SQL repository for aggregated time-series statistics.
  *
@@ -523,5 +537,166 @@ class StatsRepository(
             Timestamp.from(endDate)
         )
         return result
+    }
+
+    /**
+     * Returns one row per (visit × service_item) for all COMPLETED visits in the given period.
+     *
+     * Visits without service items still appear (LEFT JOIN), yielding a single row with
+     * null serviceId / serviceName / finalPriceGross for that visit.
+     *
+     * Sorted by actual_completion_date DESC so the caller can assemble visits in order.
+     */
+    fun getPeriodVisitRows(
+        studioId: UUID,
+        startDate: Instant,
+        endDate: Instant
+    ): List<PeriodVisitRow> {
+        val sql = """
+            SELECT
+                v.id                            AS visit_id,
+                v.actual_completion_date,
+                c.first_name,
+                c.last_name,
+                v.brand_snapshot,
+                v.model_snapshot,
+                v.year_of_production_snapshot,
+                vsi.service_id,
+                vsi.service_name,
+                vsi.final_price_gross
+            FROM visits v
+            LEFT JOIN customers c ON c.id = v.customer_id AND c.studio_id = v.studio_id
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+            WHERE v.studio_id = ?
+              AND v.status = 'COMPLETED'
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
+            ORDER BY v.actual_completion_date DESC, v.id
+        """.trimIndent()
+
+        return jdbcTemplate.query(
+            sql,
+            { rs, _ ->
+                PeriodVisitRow(
+                    visitId = rs.getObject("visit_id", UUID::class.java),
+                    actualCompletionDate = rs.getTimestamp("actual_completion_date").toInstant(),
+                    customerFirstName = rs.getString("first_name"),
+                    customerLastName = rs.getString("last_name"),
+                    brandSnapshot = rs.getString("brand_snapshot"),
+                    modelSnapshot = rs.getString("model_snapshot"),
+                    yearOfProductionSnapshot = rs.getObject("year_of_production_snapshot") as Int?,
+                    serviceId = rs.getObject("service_id", UUID::class.java),
+                    serviceName = rs.getString("service_name"),
+                    finalPriceGross = rs.getObject("final_price_gross") as Long?,
+                    inCategory = null
+                )
+            },
+            studioId,
+            Timestamp.from(startDate),
+            Timestamp.from(endDate)
+        )
+    }
+
+    /**
+     * Same as [getPeriodVisitRows] but also resolves the [PeriodVisitRow.inCategory] flag for
+     * each service item relative to [categoryId].
+     *
+     * For catalog services: inCategory = true iff the service (resolved through its full version
+     * chain) is assigned to the given category in category_service_assignments.
+     * For manual services (service_id IS NULL): inCategory = true iff the service_name is
+     * registered in manual_service_category_assignments for the category.
+     *
+     * Assignment is evaluated at query time (not at visit completion time).
+     *
+     * SECURITY NOTE: categoryId and studioId come from validated, trusted sources (UUID type +
+     * SecurityContextHelper). The only SQL string interpolation is the hardcoded CTE block.
+     */
+    fun getPeriodVisitRowsWithCategory(
+        studioId: UUID,
+        categoryId: UUID,
+        startDate: Instant,
+        endDate: Instant
+    ): List<PeriodVisitRow> {
+        val sql = """
+            WITH RECURSIVE service_family AS (
+                SELECT csa.service_id AS id
+                FROM category_service_assignments csa
+                WHERE csa.category_id = ?
+                  AND csa.studio_id = ?
+
+                UNION ALL
+
+                SELECT s.id
+                FROM services s
+                INNER JOIN service_family sf ON s.replaces_service_id = sf.id
+                WHERE s.studio_id = ?
+            )
+            SELECT
+                v.id                            AS visit_id,
+                v.actual_completion_date,
+                c.first_name,
+                c.last_name,
+                v.brand_snapshot,
+                v.model_snapshot,
+                v.year_of_production_snapshot,
+                vsi.service_id,
+                vsi.service_name,
+                vsi.final_price_gross,
+                CASE
+                    WHEN vsi.service_id IS NOT NULL
+                         AND vsi.service_id IN (SELECT id FROM service_family)
+                        THEN true
+                    WHEN vsi.service_id IS NULL
+                         AND vsi.service_name IS NOT NULL
+                         AND EXISTS (
+                             SELECT 1
+                             FROM manual_services ms
+                             INNER JOIN manual_service_category_assignments msca
+                                 ON msca.manual_service_id = ms.id
+                             WHERE ms.service_name = vsi.service_name
+                               AND ms.studio_id   = ?
+                               AND msca.category_id = ?
+                               AND msca.studio_id   = ?
+                         )
+                        THEN true
+                    ELSE false
+                END AS in_category
+            FROM visits v
+            LEFT JOIN customers c ON c.id = v.customer_id AND c.studio_id = v.studio_id
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+            WHERE v.studio_id = ?
+              AND v.status = 'COMPLETED'
+              AND v.actual_completion_date >= ?
+              AND v.actual_completion_date < ?
+            ORDER BY v.actual_completion_date DESC, v.id
+        """.trimIndent()
+
+        return jdbcTemplate.query(
+            sql,
+            { rs, _ ->
+                PeriodVisitRow(
+                    visitId = rs.getObject("visit_id", UUID::class.java),
+                    actualCompletionDate = rs.getTimestamp("actual_completion_date").toInstant(),
+                    customerFirstName = rs.getString("first_name"),
+                    customerLastName = rs.getString("last_name"),
+                    brandSnapshot = rs.getString("brand_snapshot"),
+                    modelSnapshot = rs.getString("model_snapshot"),
+                    yearOfProductionSnapshot = rs.getObject("year_of_production_snapshot") as Int?,
+                    serviceId = rs.getObject("service_id", UUID::class.java),
+                    serviceName = rs.getString("service_name"),
+                    finalPriceGross = rs.getObject("final_price_gross") as Long?,
+                    inCategory = rs.getBoolean("in_category")
+                )
+            },
+            categoryId,            // CTE seed: csa.category_id
+            studioId,              // CTE seed: csa.studio_id
+            studioId,              // CTE recursive: s.studio_id
+            studioId,              // CASE manual: ms.studio_id
+            categoryId,            // CASE manual: msca.category_id
+            studioId,              // CASE manual: msca.studio_id
+            studioId,              // WHERE: v.studio_id
+            Timestamp.from(startDate),
+            Timestamp.from(endDate)
+        )
     }
 }

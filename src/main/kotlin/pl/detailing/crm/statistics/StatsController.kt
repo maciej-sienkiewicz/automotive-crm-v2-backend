@@ -111,6 +111,35 @@ data class BreakdownOverview(
     val totals: BreakdownTotalsResponse
 )
 
+// ─── Period-detail response bodies ───────────────────────────────────────────
+
+data class PeriodVisitServiceResponse(
+    val serviceId: String,
+    val serviceName: String,
+    val priceGross: Long,
+    val inCategory: Boolean?
+)
+
+data class PeriodVisitResponse(
+    val visitId: String,
+    val visitDate: String,
+    val clientName: String,
+    val vehicleInfo: String?,
+    val totalRevenueGross: Long,
+    val totalRevenueGrossAll: Long,
+    val services: List<PeriodVisitServiceResponse>
+)
+
+data class PeriodDetailResponse(
+    val period: String,
+    val granularity: String,
+    val orderCount: Int,
+    val totalRevenueGross: Long,
+    val totalRevenueGrossAll: Long,
+    val categoryName: String?,
+    val visits: List<PeriodVisitResponse>
+)
+
 // ─── Controller ──────────────────────────────────────────────────────────────
 
 @RestController
@@ -120,6 +149,7 @@ class StatsController(
     private val getServiceStatsHandler: GetServiceStatsHandler,
     private val getOverviewStatsHandler: GetOverviewStatsHandler,
     private val getBreakdownStatsHandler: GetBreakdownStatsHandler,
+    private val getPeriodVisitsHandler: GetPeriodVisitsHandler,
     private val statsRepository: StatsRepository,
     private val serviceRepository: ServiceRepository
 ) {
@@ -311,6 +341,66 @@ class StatsController(
                 data = result.data.map { it.toFormattedResponse(gran) },
                 totals = StatsTotals(result.totalOrderCount, result.totalRevenueGross),
                 unassignedServiceCount = result.unassignedServiceCount
+            )
+        )
+    }
+
+    /**
+     * Returns a drill-down view of all COMPLETED visits within a specific period,
+     * optionally filtered/tagged by category.
+     *
+     * The [period] path variable must use the same format as StatsDataPoint.period from
+     * the breakdown endpoint — the frontend passes the value directly from the chart X-axis.
+     *
+     * When [categoryId] is supplied, each service in the response gets an [inCategory] flag
+     * and revenue KPIs are split into category-filtered vs all-services totals.
+     * categoryId does NOT filter visits — every completed visit in the period is returned.
+     */
+    @GetMapping("/periods/{period}/visits")
+    fun getPeriodVisits(
+        @PathVariable period: String,
+        @RequestParam granularity: String?,
+        @RequestParam(required = false) categoryId: String?
+    ): ResponseEntity<PeriodDetailResponse> = runBlocking {
+        if (granularity == null) {
+            throw ValidationException("Missing required query parameter 'granularity'")
+        }
+        val principal = SecurityContextHelper.getCurrentUser()
+        val gran = parseGranularity(granularity)
+
+        val result = getPeriodVisitsHandler.handle(
+            studioId = principal.studioId,
+            period = period,
+            granularity = gran,
+            categoryId = categoryId
+        )
+
+        ResponseEntity.ok(
+            PeriodDetailResponse(
+                period = result.period,
+                granularity = result.granularity.name,
+                orderCount = result.orderCount,
+                totalRevenueGross = result.totalRevenueGross,
+                totalRevenueGrossAll = result.totalRevenueGrossAll,
+                categoryName = result.categoryName,
+                visits = result.visits.map { v ->
+                    PeriodVisitResponse(
+                        visitId = v.visitId,
+                        visitDate = v.visitDate,
+                        clientName = v.clientName,
+                        vehicleInfo = v.vehicleInfo,
+                        totalRevenueGross = v.totalRevenueGross,
+                        totalRevenueGrossAll = v.totalRevenueGrossAll,
+                        services = v.services.map { s ->
+                            PeriodVisitServiceResponse(
+                                serviceId = s.serviceId,
+                                serviceName = s.serviceName,
+                                priceGross = s.priceGross,
+                                inCategory = s.inCategory
+                            )
+                        }
+                    )
+                }
             )
         )
     }
