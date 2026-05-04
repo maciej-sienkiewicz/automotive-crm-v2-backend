@@ -8,7 +8,10 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.email.automation.GetEmailTemplateConfigHandler
 import pl.detailing.crm.email.provider.EmailAttachment
+import pl.detailing.crm.email.template.EmailTemplateContext
+import pl.detailing.crm.email.template.EmailTemplateProcessor
 import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
@@ -18,27 +21,26 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.util.UUID
 
-/**
- * Sends a welcome email to the customer when a visit is opened (check-in).
- *
- * Consent enforcement is handled transparently by [OutboundCommunicationGateway].
- */
 @Service
 class SendVisitWelcomeEmailHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
+    private val studioRepository: StudioRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val pdfProcessingService: PdfProcessingService,
     private val photoSessionService: PhotoSessionService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val communicationGateway: OutboundCommunicationGateway,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val emailTemplateConfigHandler: GetEmailTemplateConfigHandler,
+    private val emailTemplateProcessor: EmailTemplateProcessor
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -63,6 +65,28 @@ class SendVisitWelcomeEmailHandler(
             )
             return@withContext
         }
+
+        val templateConfig = emailTemplateConfigHandler.handle(command.studioId)
+        val rule = templateConfig.visitWelcome
+
+        val studioName = studioRepository.findById(command.studioId.value).map { it.name }.orElse("")
+        val firstName = customerEntity.firstName ?: "Kliencie"
+        val lastName = customerEntity.lastName ?: ""
+        val fullName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
+            .joinToString(" ").ifBlank { "Kliencie" }
+        val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
+
+        val context = EmailTemplateContext(
+            firstName = firstName,
+            fullName = fullName,
+            studioName = studioName,
+            vehicleName = vehicleName,
+            licensePlate = visitEntity.licensePlateSnapshot,
+            visitNumber = visitEntity.visitNumber
+        )
+
+        val subject = emailTemplateProcessor.process(rule.subjectTemplate, context)
+        val body = emailTemplateProcessor.process(rule.bodyTemplate, context)
 
         val opts = command.options
         val attachments = mutableListOf<EmailAttachment>()
@@ -144,12 +168,6 @@ class SendVisitWelcomeEmailHandler(
             }
         }
 
-        val customerName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
-            .joinToString(" ").ifBlank { "Kliencie" }
-        val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
-        val subject = buildSubject(vehicleName, visitEntity.visitNumber)
-        val body = buildBody(customerName, vehicleName, visitEntity.visitNumber, visitEntity.licensePlateSnapshot)
-
         val result = communicationGateway.sendEmail(
             customerId = visitEntity.customerId,
             studioId = visitEntity.studioId,
@@ -186,30 +204,6 @@ class SendVisitWelcomeEmailHandler(
                 recipientEmail, command.visitId, result.errorMessage
             )
         }
-    }
-
-    private fun buildSubject(vehicleName: String, visitNumber: String): String =
-        "Potwierdzenie przyjęcia pojazdu – $vehicleName (wizyta $visitNumber)"
-
-    private fun buildBody(
-        customerName: String,
-        vehicleName: String,
-        visitNumber: String,
-        licensePlate: String?
-    ): String {
-        val plateInfo = if (!licensePlate.isNullOrBlank()) " (nr rej. $licensePlate)" else ""
-        return """
-            Szanowny/a $customerName,
-
-            Dziękujemy za powierzenie nam Państwa pojazdu. Niniejszym potwierdzamy przyjęcie pojazdu $vehicleName$plateInfo do naszego serwisu.
-
-            Numer wizyty: $visitNumber
-
-            W razie pytań zapraszamy do kontaktu z naszym serwisem.
-
-            Pozdrawiamy,
-            Zespół DetailBoost
-        """.trimIndent()
     }
 }
 
