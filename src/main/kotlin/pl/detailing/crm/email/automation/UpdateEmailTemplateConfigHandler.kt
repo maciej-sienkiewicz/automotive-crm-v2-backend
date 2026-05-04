@@ -10,7 +10,6 @@ import pl.detailing.crm.shared.StudioId
 data class UpdateEmailTemplateConfigCommand(
     val studioId: StudioId,
     val visitWelcome: UpdateEmailNotificationRuleCommand,
-    val visitConfirmed: UpdateEmailNotificationRuleCommand,
     val visitReadyForPickup: UpdateEmailNotificationRuleCommand
 )
 
@@ -32,11 +31,6 @@ class UpdateEmailTemplateConfigHandler(
                 enabled = command.visitWelcome.enabled,
                 subjectTemplate = command.visitWelcome.subjectTemplate,
                 bodyTemplate = command.visitWelcome.bodyTemplate
-            ),
-            visitConfirmed = EmailNotificationRule(
-                enabled = command.visitConfirmed.enabled,
-                subjectTemplate = command.visitConfirmed.subjectTemplate,
-                bodyTemplate = command.visitConfirmed.bodyTemplate
             ),
             visitReadyForPickup = EmailNotificationRule(
                 enabled = command.visitReadyForPickup.enabled,

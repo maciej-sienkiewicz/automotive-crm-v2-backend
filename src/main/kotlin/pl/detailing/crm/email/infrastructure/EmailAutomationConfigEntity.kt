@@ -32,17 +32,6 @@ class EmailAutomationConfigEntity(
     @Column(name = "visit_welcome_body_template", nullable = false, columnDefinition = "TEXT")
     var visitWelcomeBodyTemplate: String,
 
-    // ── VISIT CONFIRMED ──────────────────────────────────────────────────────────
-
-    @Column(name = "visit_confirmed_enabled", nullable = false)
-    var visitConfirmedEnabled: Boolean,
-
-    @Column(name = "visit_confirmed_subject_template", nullable = false, columnDefinition = "TEXT")
-    var visitConfirmedSubjectTemplate: String,
-
-    @Column(name = "visit_confirmed_body_template", nullable = false, columnDefinition = "TEXT")
-    var visitConfirmedBodyTemplate: String,
-
     // ── VISIT READY FOR PICKUP ───────────────────────────────────────────────────
 
     @Column(name = "visit_ready_for_pickup_enabled", nullable = false)
@@ -69,11 +58,6 @@ class EmailAutomationConfigEntity(
             subjectTemplate = visitWelcomeSubjectTemplate,
             bodyTemplate = visitWelcomeBodyTemplate
         ),
-        visitConfirmed = EmailNotificationRule(
-            enabled = visitConfirmedEnabled,
-            subjectTemplate = visitConfirmedSubjectTemplate,
-            bodyTemplate = visitConfirmedBodyTemplate
-        ),
         visitReadyForPickup = EmailNotificationRule(
             enabled = visitReadyForPickupEnabled,
             subjectTemplate = visitReadyForPickupSubjectTemplate,
@@ -89,9 +73,6 @@ class EmailAutomationConfigEntity(
                 visitWelcomeEnabled = config.visitWelcome.enabled,
                 visitWelcomeSubjectTemplate = config.visitWelcome.subjectTemplate,
                 visitWelcomeBodyTemplate = config.visitWelcome.bodyTemplate,
-                visitConfirmedEnabled = config.visitConfirmed.enabled,
-                visitConfirmedSubjectTemplate = config.visitConfirmed.subjectTemplate,
-                visitConfirmedBodyTemplate = config.visitConfirmed.bodyTemplate,
                 visitReadyForPickupEnabled = config.visitReadyForPickup.enabled,
                 visitReadyForPickupSubjectTemplate = config.visitReadyForPickup.subjectTemplate,
                 visitReadyForPickupBodyTemplate = config.visitReadyForPickup.bodyTemplate,

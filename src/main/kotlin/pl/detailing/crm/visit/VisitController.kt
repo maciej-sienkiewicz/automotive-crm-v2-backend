@@ -11,9 +11,9 @@ import pl.detailing.crm.visit.list.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitCommand
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitHandler
-import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailHandler
-import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailCommand
-import pl.detailing.crm.visit.transitions.confirm.SendVisitConfirmedEmailOptions
+import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailHandler
+import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
+import pl.detailing.crm.email.visitwelcome.WelcomeEmailOptions
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitCommand
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler
 import pl.detailing.crm.customer.domain.Customer
@@ -44,7 +44,7 @@ class VisitController(
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
-    private val sendVisitConfirmedEmailHandler: SendVisitConfirmedEmailHandler,
+    private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler
 ) {
@@ -269,11 +269,11 @@ class VisitController(
         if (req.sendEmail) {
             val opts = req.emailOptions ?: ConfirmEmailOptionsRequest()
             runCatching {
-                sendVisitConfirmedEmailHandler.handle(
-                    SendVisitConfirmedEmailCommand(
+                sendVisitWelcomeEmailHandler.handle(
+                    SendVisitWelcomeEmailCommand(
                         visitId = command.visitId,
                         studioId = command.studioId,
-                        options = SendVisitConfirmedEmailOptions(
+                        options = WelcomeEmailOptions(
                             attachProtocol = opts.attachProtocol,
                             attachPhotos = opts.attachPhotos,
                             photoIds = opts.photoIds.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() },

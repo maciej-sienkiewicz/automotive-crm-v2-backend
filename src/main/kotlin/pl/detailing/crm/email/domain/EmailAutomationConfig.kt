@@ -19,7 +19,6 @@ data class EmailNotificationRule(
 data class EmailAutomationConfig(
     val studioId: StudioId,
     val visitWelcome: EmailNotificationRule,
-    val visitConfirmed: EmailNotificationRule,
     val visitReadyForPickup: EmailNotificationRule
 ) {
     companion object {
@@ -30,21 +29,6 @@ data class EmailAutomationConfig(
 Dziękujemy za powierzenie nam Państwa pojazdu. Niniejszym potwierdzamy przyjęcie pojazdu {{pojazd}}{{rejestracja}} do naszego serwisu.
 
 Numer wizyty: {{numer_wizyty}}
-
-W razie pytań zapraszamy do kontaktu z naszym serwisem.
-
-Pozdrawiamy,
-{{studio}}"""
-
-        private const val DEFAULT_VISIT_CONFIRMED_SUBJECT =
-            "Potwierdzenie rozpoczęcia wizyty – {{pojazd}} (wizyta {{numer_wizyty}})"
-        private const val DEFAULT_VISIT_CONFIRMED_BODY = """Szanowny/a {{imie_nazwisko}},
-
-Informujemy, że prace nad Państwa pojazdem {{pojazd}}{{rejestracja}} zostały oficjalnie rozpoczęte.
-
-Numer wizyty: {{numer_wizyty}}
-
-O zakończeniu prac oraz gotowości pojazdu do odbioru powiadomimy Państwa osobną wiadomością.
 
 W razie pytań zapraszamy do kontaktu z naszym serwisem.
 
@@ -71,11 +55,6 @@ Pozdrawiamy,
                 enabled = false,
                 subjectTemplate = DEFAULT_VISIT_WELCOME_SUBJECT,
                 bodyTemplate = DEFAULT_VISIT_WELCOME_BODY
-            ),
-            visitConfirmed = EmailNotificationRule(
-                enabled = false,
-                subjectTemplate = DEFAULT_VISIT_CONFIRMED_SUBJECT,
-                bodyTemplate = DEFAULT_VISIT_CONFIRMED_BODY
             ),
             visitReadyForPickup = EmailNotificationRule(
                 enabled = false,
