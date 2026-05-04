@@ -23,7 +23,9 @@ class GetDashboardRevenueSummaryHandler(
             val startMonday = currentWeekMonday.minusWeeks((weeks - 1).toLong())
 
             val fromInstant = startMonday.atStartOfDay(warsawZone).toInstant()
-            val toInstant = Instant.now()
+            // Use start of next week as exclusive upper bound so that visits
+            // scheduled later this week (but already COMPLETED) are included.
+            val toInstant = currentWeekMonday.plusWeeks(1).atStartOfDay(warsawZone).toInstant()
 
             val visits = visitRepository.findCompletedByStudioIdAndDateRange(
                 studioId = command.studioId.value,
