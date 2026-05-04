@@ -22,6 +22,7 @@ data class EmailNotificationRuleDto(
 
 data class EmailAutomationConfigDto(
     val visitWelcome: EmailNotificationRuleDto,
+    val visitConfirmed: EmailNotificationRuleDto,
     val visitReadyForPickup: EmailNotificationRuleDto
 )
 
@@ -32,6 +33,11 @@ private fun EmailAutomationConfig.toDto() = EmailAutomationConfigDto(
         enabled = visitWelcome.enabled,
         subjectTemplate = visitWelcome.subjectTemplate,
         bodyTemplate = visitWelcome.bodyTemplate
+    ),
+    visitConfirmed = EmailNotificationRuleDto(
+        enabled = visitConfirmed.enabled,
+        subjectTemplate = visitConfirmed.subjectTemplate,
+        bodyTemplate = visitConfirmed.bodyTemplate
     ),
     visitReadyForPickup = EmailNotificationRuleDto(
         enabled = visitReadyForPickup.enabled,
@@ -78,6 +84,11 @@ class EmailAutomationController(
                 enabled = request.visitWelcome.enabled,
                 subjectTemplate = request.visitWelcome.subjectTemplate,
                 bodyTemplate = request.visitWelcome.bodyTemplate
+            ),
+            visitConfirmed = UpdateEmailNotificationRuleCommand(
+                enabled = request.visitConfirmed.enabled,
+                subjectTemplate = request.visitConfirmed.subjectTemplate,
+                bodyTemplate = request.visitConfirmed.bodyTemplate
             ),
             visitReadyForPickup = UpdateEmailNotificationRuleCommand(
                 enabled = request.visitReadyForPickup.enabled,

@@ -20,6 +20,9 @@ class EmailAutomationConfigRepositoryAdapter(
             existing.visitWelcomeEnabled = config.visitWelcome.enabled
             existing.visitWelcomeSubjectTemplate = config.visitWelcome.subjectTemplate
             existing.visitWelcomeBodyTemplate = config.visitWelcome.bodyTemplate
+            existing.visitConfirmedEnabled = config.visitConfirmed.enabled
+            existing.visitConfirmedSubjectTemplate = config.visitConfirmed.subjectTemplate
+            existing.visitConfirmedBodyTemplate = config.visitConfirmed.bodyTemplate
             existing.visitReadyForPickupEnabled = config.visitReadyForPickup.enabled
             existing.visitReadyForPickupSubjectTemplate = config.visitReadyForPickup.subjectTemplate
             existing.visitReadyForPickupBodyTemplate = config.visitReadyForPickup.bodyTemplate
