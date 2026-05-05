@@ -10,6 +10,7 @@ import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.smscampaigns.reminder.domain.ScheduledSmsReminder
@@ -53,13 +54,27 @@ class ScheduledSmsReminderDispatcher(
     }
 
     private fun dispatchOne(reminder: ScheduledSmsReminder) {
-        val result = communicationGateway.sendSms(
-            customerId = reminder.customerId,
-            studioId = reminder.studioId,
-            phoneNumber = reminder.phoneNumber,
-            message = reminder.messageContent,
-            context = "ScheduledSmsReminderDispatcher reminder=${reminder.id} visit=${reminder.visitId}"
-        )
+        val result = try {
+            communicationGateway.sendSms(
+                customerId = reminder.customerId,
+                studioId = reminder.studioId,
+                phoneNumber = reminder.phoneNumber,
+                message = reminder.messageContent,
+                context = "ScheduledSmsReminderDispatcher reminder=${reminder.id} visit=${reminder.visitId}"
+            )
+        } catch (ex: InsufficientSmsCreditsException) {
+            logger.warn(
+                "SMS reminder skipped — no credits | reminder={} studio={}",
+                reminder.id, reminder.studioId
+            )
+            reminderRepository.save(reminder.copy(
+                status = ScheduledSmsReminderStatus.FAILED,
+                sentAt = Instant.now(),
+                errorMessage = ex.message,
+                updatedAt = Instant.now()
+            ))
+            return
+        }
 
         reminderRepository.save(reminder.copy(
             status = if (result.success) ScheduledSmsReminderStatus.SENT else ScheduledSmsReminderStatus.FAILED,

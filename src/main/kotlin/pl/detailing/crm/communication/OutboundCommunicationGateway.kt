@@ -6,6 +6,7 @@ import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailDeliveryResult
 import pl.detailing.crm.email.provider.EmailProvider
+import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.provider.SmsDeliveryResult
@@ -52,7 +53,7 @@ class OutboundCommunicationGateway(
         val creditDeducted = smsCreditService.tryDeductCredit(StudioId(studioId))
         if (!creditDeducted) {
             logger.warn("SMS blocked — insufficient credits for studio={}", studioId)
-            return SmsDeliveryResult.failure("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
+            throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
         }
 
         val result = smsProvider.send(phoneNumber, message)
