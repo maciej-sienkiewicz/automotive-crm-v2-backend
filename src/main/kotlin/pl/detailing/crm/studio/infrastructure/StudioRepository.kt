@@ -17,9 +17,16 @@ interface StudioRepository : JpaRepository<StudioEntity, UUID> {
     fun findByName(@Param("name") name: String): StudioEntity?
 
     @Query("""
-        SELECT s FROM StudioEntity s 
-        WHERE s.subscriptionStatus = 'TRIALING' 
+        SELECT s FROM StudioEntity s
+        WHERE s.subscriptionStatus = 'TRIALING'
         AND s.trialEndsAt < :now
     """)
     fun findExpiredTrials(@Param("now") now: Instant): List<StudioEntity>
+
+    @Query("""
+        SELECT s FROM StudioEntity s
+        WHERE s.subscriptionStatus = 'ACTIVE'
+        AND s.subscriptionEndsAt < :now
+    """)
+    fun findExpiredSubscriptions(@Param("now") now: Instant): List<StudioEntity>
 }

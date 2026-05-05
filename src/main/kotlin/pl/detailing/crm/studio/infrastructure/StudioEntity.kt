@@ -31,6 +31,12 @@ class StudioEntity(
     @Column(name = "trial_ends_at", columnDefinition = "timestamp with time zone")
     var trialEndsAt: Instant?,
 
+    @Column(name = "subscription_ends_at", columnDefinition = "timestamp with time zone")
+    var subscriptionEndsAt: Instant?,
+
+    @Column(name = "trial_used", nullable = false)
+    var trialUsed: Boolean,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now()
 ) {
@@ -39,6 +45,8 @@ class StudioEntity(
         name = name,
         subscriptionStatus = subscriptionStatus,
         trialEndsAt = trialEndsAt,
+        subscriptionEndsAt = subscriptionEndsAt,
+        trialUsed = trialUsed,
         createdAt = createdAt
     )
 
@@ -48,6 +56,8 @@ class StudioEntity(
             name = studio.name,
             subscriptionStatus = studio.subscriptionStatus,
             trialEndsAt = studio.trialEndsAt,
+            subscriptionEndsAt = studio.subscriptionEndsAt,
+            trialUsed = studio.trialUsed,
             createdAt = studio.createdAt
         )
     }

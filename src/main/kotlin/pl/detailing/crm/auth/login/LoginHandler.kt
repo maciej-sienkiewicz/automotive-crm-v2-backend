@@ -58,7 +58,9 @@ class LoginHandler(
                     phoneNumber = user.phoneNumber,
                     role = user.role.name,
                     subscriptionStatus = subscriptionInfo.status,
-                    trialDaysRemaining = subscriptionInfo.daysRemaining,
+                    daysRemaining = subscriptionInfo.daysRemaining,
+                    subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),
+                    trialEndsAt = subscriptionInfo.trialEndsAt?.toString(),
                     firstName = user.firstName,
                     lastName = user.lastName
                 )

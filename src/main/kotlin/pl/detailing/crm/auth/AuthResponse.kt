@@ -18,5 +18,7 @@ data class UserData(
     val phoneNumber: String,
     val role: String,
     val subscriptionStatus: SubscriptionStatus,
-    val trialDaysRemaining: Long?
+    val daysRemaining: Long?,
+    val subscriptionEndsAt: String?,
+    val trialEndsAt: String?
 )

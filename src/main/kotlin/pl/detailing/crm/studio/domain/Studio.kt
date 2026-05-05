@@ -17,32 +17,35 @@ data class Studio(
     val name: String,
     val subscriptionStatus: SubscriptionStatus,
     val trialEndsAt: Instant?,
+    val subscriptionEndsAt: Instant?,
+    val trialUsed: Boolean,
     val createdAt: Instant
 ) {
-    fun isTrialActive(): Boolean {
-        return subscriptionStatus == SubscriptionStatus.TRIALING &&
-                trialEndsAt != null &&
-                trialEndsAt.isAfter(Instant.now())
-    }
+    fun isTrialActive(): Boolean =
+        subscriptionStatus == SubscriptionStatus.TRIALING &&
+        trialEndsAt != null &&
+        trialEndsAt.isAfter(Instant.now())
 
-    fun isAccessible(): Boolean {
-        return when (subscriptionStatus) {
-            SubscriptionStatus.TRIALING -> isTrialActive()
-            SubscriptionStatus.ACTIVE -> true
-            SubscriptionStatus.PAST_DUE -> true // Grace period
-            SubscriptionStatus.EXPIRED -> false
-        }
+    fun isSubscriptionActive(): Boolean =
+        subscriptionStatus == SubscriptionStatus.ACTIVE &&
+        subscriptionEndsAt != null &&
+        subscriptionEndsAt.isAfter(Instant.now())
+
+    fun isAccessible(): Boolean = when (subscriptionStatus) {
+        SubscriptionStatus.TRIALING  -> isTrialActive()
+        SubscriptionStatus.ACTIVE    -> isSubscriptionActive()
+        SubscriptionStatus.PAST_DUE  -> true
+        SubscriptionStatus.EXPIRED   -> false
     }
 
     fun getDaysRemaining(): Long? {
-        if (subscriptionStatus != SubscriptionStatus.TRIALING || trialEndsAt == null) {
-            return null
-        }
+        val expiresAt = when (subscriptionStatus) {
+            SubscriptionStatus.TRIALING -> trialEndsAt
+            SubscriptionStatus.ACTIVE   -> subscriptionEndsAt
+            else                        -> null
+        } ?: return null
+
         val now = Instant.now()
-        return if (trialEndsAt.isAfter(now)) {
-            java.time.Duration.between(now, trialEndsAt).toDays()
-        } else {
-            0L
-        }
+        return if (expiresAt.isAfter(now)) java.time.Duration.between(now, expiresAt).toDays() else 0L
     }
 }
