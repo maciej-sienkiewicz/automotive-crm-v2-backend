@@ -33,7 +33,7 @@ class AuthController(
             .status(HttpStatus.CREATED)
             .body(UnifiedAuthResponse(
                 success = true,
-                message = "Account created successfully. Trial period: 14 days",
+                message = "Account created successfully. Trial period: 60 days",
                 redirectUrl = "/onboarding",
                 user = UserData(
                     userId = result.userId.toString(),
@@ -42,7 +42,9 @@ class AuthController(
                     phoneNumber = result.phoneNumber,
                     role = "OWNER",
                     subscriptionStatus = pl.detailing.crm.shared.SubscriptionStatus.TRIALING,
-                    trialDaysRemaining = 14,
+                    daysRemaining = 60,
+                    subscriptionEndsAt = null,
+                    trialEndsAt = result.trialEndsAt,
                     firstName = result.firstName,
                     lastName = result.lastName
                 )
@@ -98,7 +100,9 @@ class AuthController(
                     phoneNumber = principal.phoneNumber,
                     role = principal.role.name,
                     subscriptionStatus = subscriptionInfo.status,
-                    trialDaysRemaining = subscriptionInfo.daysRemaining,
+                    daysRemaining = subscriptionInfo.daysRemaining,
+                    subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),
+                    trialEndsAt = subscriptionInfo.trialEndsAt?.toString(),
                     firstName = principal.fullName.split(" ").first(),
                     lastName = principal.fullName.split(" ").last()
                 )
