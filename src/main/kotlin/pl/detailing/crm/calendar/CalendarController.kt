@@ -40,6 +40,7 @@ class CalendarController(
 
         val allowedAppointmentStatuses = listOf(AppointmentStatus.CREATED, AppointmentStatus.ABANDONED, AppointmentStatus.CANCELLED)
         val parsedAppointmentStatuses: List<AppointmentStatus> = when {
+            appointmentStatuses == null && visitStatuses != null -> emptyList()
             appointmentStatuses == null -> allowedAppointmentStatuses
             appointmentStatuses.isBlank() -> emptyList()
             else -> {
@@ -59,6 +60,7 @@ class CalendarController(
 
         val allowedVisitStatuses = listOf(VisitStatus.IN_PROGRESS, VisitStatus.READY_FOR_PICKUP, VisitStatus.COMPLETED, VisitStatus.REJECTED, VisitStatus.ARCHIVED)
         val parsedVisitStatuses: List<VisitStatus> = when {
+            visitStatuses == null && appointmentStatuses != null -> emptyList()
             visitStatuses == null -> allowedVisitStatuses
             visitStatuses.isBlank() -> emptyList()
             else -> {
