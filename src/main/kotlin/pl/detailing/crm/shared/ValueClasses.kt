@@ -691,6 +691,7 @@ class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
 class UnprocessableEntityException(message: String) : BusinessException(message)
+class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : BusinessException(message)
 
 /**
  * Type-safe ID wrapper for global Instagram profile entities

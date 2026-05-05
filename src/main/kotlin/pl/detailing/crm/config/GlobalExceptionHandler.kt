@@ -91,6 +91,17 @@ class GlobalExceptionHandler {
             ))
     }
 
+    @ExceptionHandler(InsufficientSmsCreditsException::class)
+    fun handleInsufficientSmsCredits(ex: InsufficientSmsCreditsException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.PAYMENT_REQUIRED)
+            .body(ErrorResponse(
+                error = "Insufficient SMS Credits",
+                message = ex.message ?: "Brak kredytów SMS",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Invoicing exceptions
     // ─────────────────────────────────────────────────────────────────────────
