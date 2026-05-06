@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.transitions.markready
 
+import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
@@ -19,15 +20,19 @@ class MarkVisitReadyForPickupHandler(
     private val sendVisitReadyForPickupSmsHandler: SendVisitReadyForPickupSmsHandler,
 ) {
 
+    // This method is intentionally non-suspend so that @Transactional works with the
+    // JPA thread-bound transaction manager. Suspend + withContext(Dispatchers.IO) inside
+    // the SMS/email handlers would switch threads, causing the ThreadLocal transaction
+    // context to be lost and preventing proper rollback on InsufficientSmsCreditsException.
     @Transactional
-    suspend fun handle(command: MarkVisitReadyForPickupCommand): MarkVisitReadyForPickupResult {
+    fun handle(command: MarkVisitReadyForPickupCommand): MarkVisitReadyForPickupResult {
         // Step 1: Load visit
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
         // Force load lazy collections within transaction
-        visitEntity.serviceItems.size  // Force load serviceItems
-        visitEntity.photos.size  // Force load photos
+        visitEntity.serviceItems.size
+        visitEntity.photos.size
 
         val visit = visitEntity.toDomain()
 
@@ -39,7 +44,7 @@ class MarkVisitReadyForPickupHandler(
         visitRepository.save(updatedEntity)
 
         // Step 4: Audit logging
-        auditService.log(LogAuditCommand(
+        auditService.logSync(LogAuditCommand(
             studioId = command.studioId,
             userId = command.userId,
             userDisplayName = command.userName ?: "",
@@ -50,23 +55,28 @@ class MarkVisitReadyForPickupHandler(
             changes = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
         ))
 
-        // Step 5: Side-effects
+        // Step 5: Side-effects — run inside runBlocking so any exception (e.g.
+        // InsufficientSmsCreditsException) propagates synchronously and triggers rollback.
         if (command.sendEmail) {
-            sendVisitReadyForPickupEmailHandler.handle(
-                SendVisitReadyForPickupEmailCommand(
-                    visitId = command.visitId,
-                    studioId = command.studioId
+            runBlocking {
+                sendVisitReadyForPickupEmailHandler.handle(
+                    SendVisitReadyForPickupEmailCommand(
+                        visitId = command.visitId,
+                        studioId = command.studioId
+                    )
                 )
-            )
+            }
         }
 
         if (command.sendSms) {
-            sendVisitReadyForPickupSmsHandler.handle(
-                SendVisitReadyForPickupSmsCommand(
-                    visitId = command.visitId,
-                    studioId = command.studioId
+            runBlocking {
+                sendVisitReadyForPickupSmsHandler.handle(
+                    SendVisitReadyForPickupSmsCommand(
+                        visitId = command.visitId,
+                        studioId = command.studioId
+                    )
                 )
-            )
+            }
         }
 
         return MarkVisitReadyForPickupResult(
