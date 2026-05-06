@@ -52,10 +52,6 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     implementation("com.zaxxer:HikariCP")
 
-    // Flyway — manages trends module schema migrations
-    implementation("org.flywaydb:flyway-core")
-    implementation("org.flywaydb:flyway-database-postgresql")
-
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.8.0")
