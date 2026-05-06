@@ -33,6 +33,21 @@ class MonthlySearchRepository(private val jdbc: JdbcTemplate) {
             keywordId
         ).firstOrNull()
 
+    /** Batch fetch: returns all monthly entries grouped by keyword_id for a given location. */
+    fun findByKeywords(keywordIds: List<Long>, locationCode: Int): Map<Long, List<MonthlySearch>> {
+        if (keywordIds.isEmpty()) return emptyMap()
+        val inClause = keywordIds.joinToString(",") { "?" }
+        val sql = """
+            SELECT * FROM monthly_searches
+            WHERE keyword_id IN ($inClause)
+              AND location_code = ?
+            ORDER BY keyword_id, year, month
+        """.trimIndent()
+        val params = keywordIds.map { it as Any } + locationCode
+        return jdbc.query(sql, ROW_MAPPER, *params.toTypedArray())
+            .groupBy { it.keywordId }
+    }
+
     companion object {
         val ROW_MAPPER = RowMapper { rs: ResultSet, _ ->
             MonthlySearch(

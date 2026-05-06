@@ -7,142 +7,108 @@ import pl.detailing.crm.trends.domain.KeywordStatus
 import pl.detailing.crm.trends.repository.*
 import pl.detailing.crm.trends.searchvolume.model.PolandLocations
 import pl.detailing.crm.trends.searchvolume.model.VoivodeshipLocation
-import java.time.LocalDate
+import pl.detailing.crm.trends.service.TrendAnalysisService
 
 /**
  * Read-only REST API for the Trends module.
  *
  * All data is populated by [pl.detailing.crm.trends.scheduler.KeywordSyncScheduler].
  * No DataForSEO calls are made here — every request is served from the database.
+ *
+ * Raw search volumes are intentionally not exposed in responses:
+ * Google buckets them into ~40 discrete steps, making exact numbers misleading.
+ * Instead, responses expose normalized trend indices (0-100) and growth rates (%).
  */
 @RestController
 @RequestMapping("/api/trends")
 class TrendsReadController(
     private val keywordRepo: TrackedKeywordRepository,
     private val metricsRepo: KeywordMetricsRepository,
-    private val monthlyRepo: MonthlySearchRepository,
     private val trendRepo: TrendDataRepository,
-    private val syncRepo: SyncStatusRepository
+    private val syncRepo: SyncStatusRepository,
+    private val trendAnalysis: TrendAnalysisService
 ) {
 
     /**
-     * Lists all tracked keywords with their latest metrics for a given location.
+     * Lists tracked keywords with trend direction and short-term growth rate.
      *
-     * @param locationCode Google Ads location code (default 2616 = Poland)
-     * @param sort         "volume" | "cpc" | "competition" | "keyword"
-     * @param status       keyword status filter (default ACTIVE)
+     * growthRate = avg(last 30d trend index) vs avg(previous 30d trend index) [%]
+     *
+     * @param locationCode for metric context (competition, cpc) — default 2616 = Poland
+     * @param sort         "growth" | "score" | "cpc" | "competition" | "keyword"
+     * @param status       keyword status filter — default ACTIVE
      */
     @GetMapping("/keywords")
     fun listKeywords(
-        @RequestParam(defaultValue = "2616")   locationCode: Int,
-        @RequestParam(defaultValue = "volume") sort: String,
-        @RequestParam(defaultValue = "ACTIVE") status: String
+        @RequestParam(defaultValue = "2616")    locationCode: Int,
+        @RequestParam(defaultValue = "growth")  sort: String,
+        @RequestParam(defaultValue = "ACTIVE")  status: String
     ): ResponseEntity<KeywordsListResponse> {
         val keywordStatus = KeywordStatus.valueOf(status.uppercase())
         val keywords      = keywordRepo.findByStatus(keywordStatus)
-        val metricsByKwId = metricsRepo.findByLocationCode(locationCode).associateBy { it.keywordId }
+        val metricsById   = metricsRepo.findByLocationCode(locationCode).associateBy { it.keywordId }
 
-        val items = keywords
-            .map { kw ->
-                val metric = metricsByKwId[kw.id]
-                KeywordListItem(
-                    keyword          = kw.keyword,
-                    searchVolume     = metric?.searchVolume,
-                    cpc              = metric?.cpc,
-                    competition      = metric?.competition,
-                    competitionIndex = metric?.competitionIndex,
-                    relevanceScore   = kw.relevanceScore,
-                    lastFetchedAt    = kw.lastFetchedAt?.toString()
-                )
-            }
-            .let { list ->
-                when (sort.lowercase()) {
-                    "cpc"         -> list.sortedByDescending { it.cpc ?: 0.0 }
-                    "competition" -> list.sortedByDescending { it.competitionIndex ?: 0 }
-                    "keyword"     -> list.sortedBy { it.keyword }
-                    "score"       -> list.sortedByDescending { it.relevanceScore ?: 0.0 }
-                    else          -> list.sortedByDescending { it.searchVolume ?: 0 }
-                }
-            }
+        val summaries = trendAnalysis.buildTrendSummaries(keywords, metricsById, locationCode)
 
-        val locationName = PolandLocations.BY_CODE[locationCode]?.canonicalName ?: "Unknown"
+        val sorted = when (sort.lowercase()) {
+            "score"       -> summaries.sortedByDescending { it.relevanceScore ?: 0.0 }
+            "cpc"         -> summaries.sortedByDescending { it.cpc ?: 0.0 }
+            "competition" -> summaries.sortedByDescending { it.competitionIndex ?: 0 }
+            "keyword"     -> summaries.sortedBy { it.keyword }
+            else          -> summaries.sortedByDescending { it.growthRate ?: Double.MIN_VALUE }
+        }
 
         return ResponseEntity.ok(
             KeywordsListResponse(
-                locationCode   = locationCode,
-                locationName   = locationName,
-                totalKeywords  = items.size,
-                keywords       = items
+                locationCode  = locationCode,
+                locationName  = PolandLocations.BY_CODE[locationCode]?.canonicalName ?: "Unknown",
+                totalKeywords = sorted.size,
+                keywords      = sorted
             )
         )
     }
 
     /**
-     * Returns the full history for a single keyword:
-     * monthly search volumes and daily trend index.
+     * Full trend detail for a single keyword:
+     * unified normalized timeline (0-100) + MoM / QoQ / YoY growth rates.
      *
-     * @param keyword      keyword text (URL-encoded)
-     * @param locationCode location for monthly data (default 2616 = Poland)
-     * @param from         start of trend date range (YYYY-MM-DD, default: 12 months ago)
-     * @param to           end of trend date range (YYYY-MM-DD, default: today)
+     * @param locationCode controls which location's monthly data feeds the timeline and growth rates
      */
     @GetMapping("/keywords/{keyword}/history")
     fun keywordHistory(
-        @PathVariable             keyword: String,
-        @RequestParam(defaultValue = "2616") locationCode: Int,
-        @RequestParam(required = false)      from: String?,
-        @RequestParam(required = false)      to: String?
-    ): ResponseEntity<KeywordHistoryResponse> {
+        @PathVariable                          keyword: String,
+        @RequestParam(defaultValue = "2616")   locationCode: Int
+    ): ResponseEntity<KeywordTrendDetailResponse> {
         val kw = keywordRepo.findByKeyword(keyword)
             ?: return ResponseEntity.notFound().build()
 
-        val fromDate = from?.let { LocalDate.parse(it) } ?: LocalDate.now().minusMonths(12)
-        val toDate   = to?.let   { LocalDate.parse(it) } ?: LocalDate.now()
+        val metric = metricsRepo.findByKeywordId(kw.id).firstOrNull { it.locationCode == locationCode }
+        val detail = trendAnalysis.buildTrendDetailWithMetrics(kw, locationCode, metric)
 
-        val monthly  = monthlyRepo.findByKeywordAndLocation(kw.id, locationCode)
-        val trends   = trendRepo.findByKeyword(kw.id, fromDate, toDate)
-        val metric   = metricsRepo.findByKeywordId(kw.id).firstOrNull { it.locationCode == locationCode }
-
-        return ResponseEntity.ok(
-            KeywordHistoryResponse(
-                keyword        = kw.keyword,
-                locationCode   = locationCode,
-                locationName   = PolandLocations.BY_CODE[locationCode]?.canonicalName ?: "Unknown",
-                currentMetrics = metric?.let {
-                    CurrentMetricsDto(it.searchVolume, it.cpc, it.competition, it.competitionIndex)
-                },
-                monthlySearches = monthly.map { MonthlyPointDto(it.year, it.month, it.searchVolume) },
-                dailyTrend      = trends.map { DailyTrendPointDto(it.date.toString(), it.trendIndex) }
-            )
-        )
+        return ResponseEntity.ok(detail)
     }
 
     /**
-     * Dashboard overview: top keywords by volume, sync statuses, location summary.
+     * Dashboard overview: top 10 keywords by growth, sync statuses, location count.
      */
     @GetMapping("/summary")
     fun summary(): ResponseEntity<DashboardSummaryResponse> {
-        val active        = keywordRepo.findByStatus(KeywordStatus.ACTIVE)
-        val countryMetrics = metricsRepo.findByLocationCode(PolandLocations.COUNTRY.locationCode)
-        val metricsByKwId  = countryMetrics.associateBy { it.keywordId }
+        val active     = keywordRepo.findByStatus(KeywordStatus.ACTIVE)
+        val metricsById = metricsRepo.findByLocationCode(PolandLocations.COUNTRY.locationCode)
+            .associateBy { it.keywordId }
 
-        val topByVolume = active
-            .mapNotNull { kw -> metricsByKwId[kw.id]?.let { kw to it } }
-            .sortedByDescending { (_, m) -> m.searchVolume ?: 0 }
+        val top10 = trendAnalysis.buildTrendSummaries(active, metricsById, PolandLocations.COUNTRY.locationCode)
+            .sortedByDescending { it.growthRate ?: Double.MIN_VALUE }
             .take(10)
-            .map { (kw, m) ->
-                KeywordListItem(kw.keyword, m.searchVolume, m.cpc, m.competition, m.competitionIndex, kw.relevanceScore, null)
-            }
 
-        val syncStatuses = listOf(
-            "INITIAL_SEED", "VOLUME_REFRESH", "TREND_FILL", "KEYWORD_EXPANSION"
-        ).mapNotNull { syncRepo.find(it) }
+        val syncStatuses = listOf("INITIAL_SEED", "VOLUME_REFRESH", "TREND_FILL", "KEYWORD_EXPANSION")
+            .mapNotNull { syncRepo.find(it) }
             .map { SyncStatusDto(it.taskName, it.status.name, it.lastSuccessAt?.toString(), it.details) }
 
         return ResponseEntity.ok(
             DashboardSummaryResponse(
                 totalTrackedKeywords = active.size,
-                topKeywordsByVolume  = topByVolume,
+                topKeywordsByVolume  = top10,
                 syncStatuses         = syncStatuses,
                 locations            = LocationsSummaryDto(
                     country          = PolandLocations.COUNTRY.canonicalName,
@@ -153,20 +119,21 @@ class TrendsReadController(
     }
 
     /**
-     * Returns all available location codes for use as the `locationCode` query parameter.
-     * The frontend should call this once on init and cache the result.
+     * Returns all available location codes for use as the `locationCode` parameter.
+     * Call once on frontend init and cache the result.
      */
     @GetMapping("/locations")
     fun locations(): ResponseEntity<LocationsResponse> =
         ResponseEntity.ok(
             LocationsResponse(
-                country = PolandLocations.COUNTRY.toItem(),
+                country      = PolandLocations.COUNTRY.toItem(),
                 voivodeships = PolandLocations.VOIVODESHIPS.map { it.toItem() }
             )
         )
 
     /**
-     * Compares a single keyword across all Polish voivodeships, sorted by search volume.
+     * Compares a single keyword across all Polish voivodeships.
+     * Returns trend direction and growth rate per region, sorted by growth.
      */
     @GetMapping("/voivodeships/{keyword}")
     fun voivodeshipComparison(
@@ -175,20 +142,27 @@ class TrendsReadController(
         val kw = keywordRepo.findByKeyword(keyword)
             ?: return ResponseEntity.notFound().build()
 
-        val items = metricsRepo.findByKeywordId(kw.id)
-            .map { m ->
-                val loc = PolandLocations.BY_CODE[m.locationCode]
-                VoivodeshipMetricItem(
-                    locationCode = m.locationCode,
-                    locationName = loc?.canonicalName ?: "Unknown",
-                    polishName   = loc?.polishName,
-                    geoLevel     = if (m.locationCode == PolandLocations.COUNTRY.locationCode) "country" else "voivodeship",
-                    searchVolume = m.searchVolume,
-                    cpc          = m.cpc,
-                    competition  = m.competition
-                )
-            }
-            .sortedByDescending { it.searchVolume ?: 0 }
+        val allMetrics = metricsRepo.findByKeywordId(kw.id).associateBy { it.locationCode }
+
+        val items = PolandLocations.ALL_CODES.map { code ->
+            val loc    = PolandLocations.BY_CODE[code]
+            val metric = allMetrics[code]
+
+            // For regional growth rates use the detail computation per location
+            val detail = trendAnalysis.buildTrendDetailWithMetrics(kw, code, metric)
+
+            VoivodeshipMetricItem(
+                locationCode     = code,
+                locationName     = loc?.canonicalName ?: "Unknown",
+                polishName       = loc?.polishName,
+                geoLevel         = if (code == PolandLocations.COUNTRY.locationCode) "country" else "voivodeship",
+                growthRate       = detail.growthRates.monthOverMonth,
+                latestTrendIndex = null,   // trend_data is country-only (Trends Explore limitation)
+                trendDirection   = detail.trendDirection,
+                competition      = metric?.competition,
+                cpc              = metric?.cpc
+            )
+        }.sortedByDescending { it.growthRate ?: Double.MIN_VALUE }
 
         return ResponseEntity.ok(VoivodeshipComparisonResponse(keyword = keyword, locations = items))
     }
