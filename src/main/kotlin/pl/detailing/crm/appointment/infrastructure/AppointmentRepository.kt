@@ -215,4 +215,21 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("startDate") startDate: Instant,
         @Param("endDate") endDate: Instant
     ): List<AppointmentEntity>
+
+    /**
+     * Find all non-deleted appointments for a studio created within [from, to).
+     * Used for reservation intake tracking (grouped by createdAt week).
+     */
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+        AND a.deletedAt IS NULL
+        AND a.createdAt >= :from
+        AND a.createdAt < :to
+    """)
+    fun findByStudioIdAndCreatedAtRange(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<AppointmentEntity>
 }

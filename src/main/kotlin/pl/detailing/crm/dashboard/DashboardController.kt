@@ -11,12 +11,15 @@ import pl.detailing.crm.dashboard.query.GetDashboardSummaryCommand
 import pl.detailing.crm.dashboard.query.GetDashboardSummaryHandler
 import pl.detailing.crm.dashboard.revenuesummary.GetDashboardRevenueSummaryCommand
 import pl.detailing.crm.dashboard.revenuesummary.GetDashboardRevenueSummaryHandler
+import pl.detailing.crm.dashboard.reservationsummary.GetDashboardReservationSummaryCommand
+import pl.detailing.crm.dashboard.reservationsummary.GetDashboardReservationSummaryHandler
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
 class DashboardController(
     private val getDashboardSummaryHandler: GetDashboardSummaryHandler,
-    private val getDashboardRevenueSummaryHandler: GetDashboardRevenueSummaryHandler
+    private val getDashboardRevenueSummaryHandler: GetDashboardRevenueSummaryHandler,
+    private val getDashboardReservationSummaryHandler: GetDashboardReservationSummaryHandler
 ) {
 
     /**
@@ -120,6 +123,32 @@ class DashboardController(
         ResponseEntity.ok(response)
     }
 
+    @GetMapping("/reservation-summary")
+    fun getReservationSummary(
+        @RequestParam(required = false, defaultValue = "13") weeks: Int
+    ): ResponseEntity<DashboardReservationSummaryResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetDashboardReservationSummaryCommand(
+            studioId = principal.studioId,
+            weeks = weeks
+        )
+
+        val result = getDashboardReservationSummaryHandler.handle(command)
+
+        ResponseEntity.ok(DashboardReservationSummaryResponse(
+            currentWeek = WeekReservationsResponse(count = result.currentWeek.count),
+            previousWeek = WeekReservationsResponse(count = result.previousWeek.count),
+            deltaPercentage = result.deltaPercentage,
+            buckets = result.buckets.map { bucket ->
+                WeeklyReservationBucketResponse(
+                    weekStart = bucket.weekStart,
+                    count = bucket.count
+                )
+            }
+        ))
+    }
+
     @GetMapping("/revenue-summary")
     fun getRevenueSummary(
         @RequestParam(required = false, defaultValue = "13") weeks: Int
@@ -220,4 +249,20 @@ data class WeeklyRevenueBucketResponse(
     val weekStart: String,
     val grossAmount: Long,
     val currency: String
+)
+
+data class DashboardReservationSummaryResponse(
+    val currentWeek: WeekReservationsResponse,
+    val previousWeek: WeekReservationsResponse,
+    val deltaPercentage: Double,
+    val buckets: List<WeeklyReservationBucketResponse>
+)
+
+data class WeekReservationsResponse(
+    val count: Long
+)
+
+data class WeeklyReservationBucketResponse(
+    val weekStart: String,
+    val count: Long
 )
