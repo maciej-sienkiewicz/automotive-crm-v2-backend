@@ -50,6 +50,7 @@ class TrendsReadController(
                     cpc              = metric?.cpc,
                     competition      = metric?.competition,
                     competitionIndex = metric?.competitionIndex,
+                    relevanceScore   = kw.relevanceScore,
                     lastFetchedAt    = kw.lastFetchedAt?.toString()
                 )
             }
@@ -58,6 +59,7 @@ class TrendsReadController(
                     "cpc"         -> list.sortedByDescending { it.cpc ?: 0.0 }
                     "competition" -> list.sortedByDescending { it.competitionIndex ?: 0 }
                     "keyword"     -> list.sortedBy { it.keyword }
+                    "score"       -> list.sortedByDescending { it.relevanceScore ?: 0.0 }
                     else          -> list.sortedByDescending { it.searchVolume ?: 0 }
                 }
             }
@@ -128,11 +130,11 @@ class TrendsReadController(
             .sortedByDescending { (_, m) -> m.searchVolume ?: 0 }
             .take(10)
             .map { (kw, m) ->
-                KeywordListItem(kw.keyword, m.searchVolume, m.cpc, m.competition, m.competitionIndex, null)
+                KeywordListItem(kw.keyword, m.searchVolume, m.cpc, m.competition, m.competitionIndex, kw.relevanceScore, null)
             }
 
         val syncStatuses = listOf(
-            "INITIAL_SEED", "VOLUME_REFRESH", "TREND_FILL"
+            "INITIAL_SEED", "VOLUME_REFRESH", "TREND_FILL", "KEYWORD_EXPANSION"
         ).mapNotNull { syncRepo.find(it) }
             .map { SyncStatusDto(it.taskName, it.status.name, it.lastSuccessAt?.toString(), it.details) }
 

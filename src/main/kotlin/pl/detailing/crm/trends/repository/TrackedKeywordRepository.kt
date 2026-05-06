@@ -44,6 +44,10 @@ class TrackedKeywordRepository(private val jdbc: JdbcTemplate) {
         jdbc.update("UPDATE tracked_keywords SET last_fetched_at = NOW() WHERE id = ?", id)
     }
 
+    fun updateRelevanceScore(id: Long, score: Double) {
+        jdbc.update("UPDATE tracked_keywords SET relevance_score = ? WHERE id = ?", score, id)
+    }
+
     fun countByStatus(status: KeywordStatus): Int =
         jdbc.queryForObject(
             "SELECT COUNT(*) FROM tracked_keywords WHERE status = ?",
@@ -53,12 +57,13 @@ class TrackedKeywordRepository(private val jdbc: JdbcTemplate) {
     companion object {
         val ROW_MAPPER = RowMapper { rs: ResultSet, _ ->
             TrackedKeyword(
-                id = rs.getLong("id"),
-                keyword = rs.getString("keyword"),
-                status = KeywordStatus.valueOf(rs.getString("status")),
-                source = KeywordSource.valueOf(rs.getString("source")),
-                addedAt = rs.getTimestamp("added_at").toInstant(),
-                lastFetchedAt = rs.getTimestamp("last_fetched_at")?.toInstant()
+                id             = rs.getLong("id"),
+                keyword        = rs.getString("keyword"),
+                status         = KeywordStatus.valueOf(rs.getString("status")),
+                source         = KeywordSource.valueOf(rs.getString("source")),
+                addedAt        = rs.getTimestamp("added_at").toInstant(),
+                lastFetchedAt  = rs.getTimestamp("last_fetched_at")?.toInstant(),
+                relevanceScore = rs.getObject("relevance_score") as? Double
             )
         }
     }

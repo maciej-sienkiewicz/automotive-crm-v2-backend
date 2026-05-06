@@ -9,7 +9,8 @@ data class TrackedKeyword(
     val status: KeywordStatus,
     val source: KeywordSource,
     val addedAt: Instant,
-    val lastFetchedAt: Instant?
+    val lastFetchedAt: Instant?,
+    val relevanceScore: Double?
 )
 
 data class KeywordMetric(

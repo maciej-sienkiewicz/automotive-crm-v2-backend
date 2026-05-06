@@ -15,6 +15,7 @@ data class KeywordListItem(
     val cpc: Double?,
     val competition: String?,
     val competitionIndex: Int?,
+    val relevanceScore: Double?,
     val lastFetchedAt: String?
 )
 
