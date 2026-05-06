@@ -12,6 +12,7 @@ import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
@@ -90,6 +91,22 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
             logger.warn(
                 "SendAppointmentRescheduleConfirmationSms: no SMS credits [studioId={} appointmentId={}]",
                 command.studioId, command.appointmentId
+            )
+            communicationLogService.record(
+                RecordCommunicationCommand(
+                    studioId = command.studioId,
+                    customerId = CustomerId(appointment.customerId),
+                    visitId = null,
+                    appointmentId = command.appointmentId,
+                    channel = CommunicationChannel.SMS,
+                    messageType = CommunicationMessageType.SMS_APPOINTMENT_RESCHEDULE_CONFIRMATION,
+                    recipientAddress = phoneNumber,
+                    subject = null,
+                    bodyContent = message,
+                    success = false,
+                    errorMessage = "Brak kredytów SMS",
+                    status = CommunicationStatus.FAILED
+                )
             )
             return@withContext
         }
