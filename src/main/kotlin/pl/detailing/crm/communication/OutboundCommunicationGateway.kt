@@ -65,6 +65,26 @@ class OutboundCommunicationGateway(
         return result
     }
 
+    fun sendTransactionalSms(
+        studioId: UUID,
+        phoneNumber: String,
+        message: String
+    ): SmsDeliveryResult {
+        val creditDeducted = smsCreditService.tryDeductCredit(StudioId(studioId))
+        if (!creditDeducted) {
+            logger.warn("Transactional SMS blocked — insufficient credits for studio={}", studioId)
+            throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
+        }
+
+        val result = smsProvider.send(phoneNumber, message)
+
+        if (!result.success) {
+            smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
+        }
+
+        return result
+    }
+
     fun sendEmail(
         customerId: UUID,
         studioId: UUID,

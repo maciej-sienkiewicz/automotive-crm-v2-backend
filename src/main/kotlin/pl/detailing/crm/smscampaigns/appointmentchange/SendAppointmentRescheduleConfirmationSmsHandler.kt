@@ -8,15 +8,16 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 
@@ -24,7 +25,7 @@ import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 class SendAppointmentRescheduleConfirmationSmsHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
-    private val smsProvider: SmsProvider,
+    private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
     private val configRepository: SmsAutomationConfigRepository,
     private val templateProcessor: SmsTemplateProcessor
@@ -83,7 +84,15 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
             )
         )
 
-        val result = smsProvider.send(phoneNumber, message)
+        val result = try {
+            communicationGateway.sendTransactionalSms(command.studioId.value, phoneNumber, message)
+        } catch (e: InsufficientSmsCreditsException) {
+            logger.warn(
+                "SendAppointmentRescheduleConfirmationSms: no SMS credits [studioId={} appointmentId={}]",
+                command.studioId, command.appointmentId
+            )
+            return@withContext
+        }
 
         communicationLogService.record(
             RecordCommunicationCommand(
