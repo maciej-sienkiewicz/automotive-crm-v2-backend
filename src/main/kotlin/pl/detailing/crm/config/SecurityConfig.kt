@@ -45,6 +45,8 @@ class SecurityConfig {
                 auth.requestMatchers("/api/v1/inbound/calls").permitAll()
                 // SMSAPI inbound-reply webhook — called server-to-server, no session
                 auth.requestMatchers("/api/sms/inbound").permitAll()
+                // CloudFlare email webhook — public, token-validated by CloudflareWebhookTokenFilter
+                auth.requestMatchers("/api/v1/inbound/email").permitAll()
 
                 auth.requestMatchers(
                     "/api/auth/**",

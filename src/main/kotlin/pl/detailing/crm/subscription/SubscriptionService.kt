@@ -44,7 +44,8 @@ class SubscriptionService(
             trialEndsAt = trialEndsAt,
             subscriptionEndsAt = null,
             trialUsed = true,
-            createdAt = Instant.now()
+            createdAt = Instant.now(),
+            emailAlias = UUID.randomUUID().toString().replace("-", "")
         )
 
         studioRepository.save(StudioEntity.fromDomain(studio))

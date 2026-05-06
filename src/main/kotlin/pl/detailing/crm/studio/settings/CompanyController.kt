@@ -48,8 +48,8 @@ class CompanyController(
             studioSettingsRepository.findById(studioId).orElse(null)
         }
 
-        val studioName = withContext(Dispatchers.IO) {
-            studioRepository.findByStudioId(studioId)?.name
+        val studioEntity = withContext(Dispatchers.IO) {
+            studioRepository.findByStudioId(studioId)
         }
 
         val logoUrl = settings?.logoS3Key?.let { generateLogoPresignedUrl(it) }
@@ -57,7 +57,7 @@ class CompanyController(
         ResponseEntity.ok(
             CompanySettingsResponse(
                 id = studioId.toString(),
-                name = settings?.name ?: studioName ?: "",
+                name = settings?.name ?: studioEntity?.name ?: "",
                 taxId = settings?.taxId,
                 regon = settings?.regon,
                 street = settings?.street,
@@ -68,6 +68,7 @@ class CompanyController(
                 website = settings?.website,
                 bankAccount = settings?.bankAccount,
                 logoUrl = logoUrl,
+                emailAlias = studioEntity?.emailAlias,
                 updatedAt = (settings?.updatedAt ?: Instant.now()).toString()
             )
         )
@@ -105,6 +106,10 @@ class CompanyController(
         val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
         val logoUrl = saved.logoS3Key?.let { generateLogoPresignedUrl(it) }
 
+        val studioEmailAlias = withContext(Dispatchers.IO) {
+            studioRepository.findByStudioId(studioId)?.emailAlias
+        }
+
         ResponseEntity.ok(
             CompanySettingsResponse(
                 id = studioId.toString(),
@@ -119,6 +124,7 @@ class CompanyController(
                 website = saved.website,
                 bankAccount = saved.bankAccount,
                 logoUrl = logoUrl,
+                emailAlias = studioEmailAlias,
                 updatedAt = saved.updatedAt.toString()
             )
         )
@@ -227,6 +233,7 @@ data class CompanySettingsResponse(
     val website: String?,
     val bankAccount: String?,
     val logoUrl: String?,
+    val emailAlias: String?,
     val updatedAt: String
 )
 

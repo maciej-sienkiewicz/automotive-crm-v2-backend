@@ -19,7 +19,8 @@ data class Studio(
     val trialEndsAt: Instant?,
     val subscriptionEndsAt: Instant?,
     val trialUsed: Boolean,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val emailAlias: String?
 ) {
     fun isTrialActive(): Boolean =
         subscriptionStatus == SubscriptionStatus.TRIALING &&

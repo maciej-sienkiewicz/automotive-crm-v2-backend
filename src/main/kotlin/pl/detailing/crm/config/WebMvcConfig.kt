@@ -16,7 +16,8 @@ class WebMvcConfig(
                 "/api/auth/**",
                 "/api/v1/auth/**",
                 "/api/health",
-                "/api/v1/vehicle-metadata/**"
+                "/api/v1/vehicle-metadata/**",
+                "/api/v1/inbound/email"
             )
     }
 }

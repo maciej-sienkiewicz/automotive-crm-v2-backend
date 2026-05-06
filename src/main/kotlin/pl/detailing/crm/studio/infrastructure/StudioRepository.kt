@@ -16,6 +16,9 @@ interface StudioRepository : JpaRepository<StudioEntity, UUID> {
     @Query("SELECT s FROM StudioEntity s WHERE s.name = :name")
     fun findByName(@Param("name") name: String): StudioEntity?
 
+    @Query("SELECT s FROM StudioEntity s WHERE s.emailAlias = :emailAlias")
+    fun findByEmailAlias(@Param("emailAlias") emailAlias: String): StudioEntity?
+
     @Query("""
         SELECT s FROM StudioEntity s
         WHERE s.subscriptionStatus = 'TRIALING'

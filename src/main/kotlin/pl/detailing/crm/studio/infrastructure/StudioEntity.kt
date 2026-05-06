@@ -13,7 +13,8 @@ import java.util.UUID
     indexes = [
         Index(name = "idx_studios_created_at", columnList = "created_at"),
         Index(name = "idx_studios_subscription_status", columnList = "subscription_status"),
-        Index(name = "idx_studios_trial_ends_at", columnList = "trial_ends_at")
+        Index(name = "idx_studios_trial_ends_at", columnList = "trial_ends_at"),
+        Index(name = "idx_studios_email_alias", columnList = "email_alias", unique = true)
     ]
 )
 class StudioEntity(
@@ -38,7 +39,12 @@ class StudioEntity(
     var trialUsed: Boolean,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    // UUID without dashes – serves as a unique email alias for inbound CloudFlare email routing.
+    // Nullable to support existing studios created before this feature was introduced.
+    @Column(name = "email_alias", unique = true, nullable = true, length = 32)
+    var emailAlias: String? = null
 ) {
     fun toDomain(): Studio = Studio(
         id = StudioId(id),
@@ -47,7 +53,8 @@ class StudioEntity(
         trialEndsAt = trialEndsAt,
         subscriptionEndsAt = subscriptionEndsAt,
         trialUsed = trialUsed,
-        createdAt = createdAt
+        createdAt = createdAt,
+        emailAlias = emailAlias
     )
 
     companion object {
@@ -58,7 +65,8 @@ class StudioEntity(
             trialEndsAt = studio.trialEndsAt,
             subscriptionEndsAt = studio.subscriptionEndsAt,
             trialUsed = studio.trialUsed,
-            createdAt = studio.createdAt
+            createdAt = studio.createdAt,
+            emailAlias = studio.emailAlias
         )
     }
 }
