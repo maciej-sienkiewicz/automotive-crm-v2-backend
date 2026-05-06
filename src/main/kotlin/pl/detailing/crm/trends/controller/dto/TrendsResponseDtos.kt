@@ -59,6 +59,19 @@ data class SyncStatusDto(
 
 data class LocationsSummaryDto(val country: String, val voivodeshipCount: Int)
 
+// ─── GET /api/trends/locations ───────────────────────────────────────────────
+
+data class LocationsResponse(
+    val country: LocationItem,
+    val voivodeships: List<LocationItem>
+)
+
+data class LocationItem(
+    val locationCode: Int,
+    val canonicalName: String,
+    val polishName: String
+)
+
 // ─── GET /api/trends/voivodeships/{keyword} ───────────────────────────────────
 
 data class VoivodeshipComparisonResponse(

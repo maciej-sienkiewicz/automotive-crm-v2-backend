@@ -6,6 +6,7 @@ import pl.detailing.crm.trends.controller.dto.*
 import pl.detailing.crm.trends.domain.KeywordStatus
 import pl.detailing.crm.trends.repository.*
 import pl.detailing.crm.trends.searchvolume.model.PolandLocations
+import pl.detailing.crm.trends.searchvolume.model.VoivodeshipLocation
 import java.time.LocalDate
 
 /**
@@ -152,6 +153,19 @@ class TrendsReadController(
     }
 
     /**
+     * Returns all available location codes for use as the `locationCode` query parameter.
+     * The frontend should call this once on init and cache the result.
+     */
+    @GetMapping("/locations")
+    fun locations(): ResponseEntity<LocationsResponse> =
+        ResponseEntity.ok(
+            LocationsResponse(
+                country = PolandLocations.COUNTRY.toItem(),
+                voivodeships = PolandLocations.VOIVODESHIPS.map { it.toItem() }
+            )
+        )
+
+    /**
      * Compares a single keyword across all Polish voivodeships, sorted by search volume.
      */
     @GetMapping("/voivodeships/{keyword}")
@@ -178,4 +192,7 @@ class TrendsReadController(
 
         return ResponseEntity.ok(VoivodeshipComparisonResponse(keyword = keyword, locations = items))
     }
+
+    private fun VoivodeshipLocation.toItem() =
+        LocationItem(locationCode = locationCode, canonicalName = canonicalName, polishName = polishName)
 }
