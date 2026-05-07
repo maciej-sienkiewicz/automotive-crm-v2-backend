@@ -19,6 +19,9 @@ class OpenAiEmailLeadClassifier(
 
     override suspend fun classify(from: String, subject: String?, body: String): EmailClassificationResult =
         withContext(Dispatchers.IO) {
+            val bodySnippet = body.take(300).replace("\n", " ↵ ")
+            log.debug("[EMAIL_CLASSIFIER] Sending to LLM: from='{}' subject='{}' body='{}'", from, subject, bodySnippet)
+
             val response = try {
                 chatClient.prompt()
                     .user(buildUserPrompt(from, subject, body))
@@ -36,9 +39,10 @@ class OpenAiEmailLeadClassifier(
 
             // Log reasoning for observability — valuable for tuning the prompt over time
             log.info(
-                "[EMAIL_CLASSIFIER] from='{}' isLead={} | reasoning='{}' | make={} model={} year={} services={}",
+                "[EMAIL_CLASSIFIER] from='{}' isLead={} | reasoning='{}' | make={} model={} year={} services={} | body='{}'",
                 from, response.isLead, response.reasoning,
-                response.vehicleMake, response.vehicleModel, response.vehicleYear, response.requestedServices
+                response.vehicleMake, response.vehicleModel, response.vehicleYear, response.requestedServices,
+                bodySnippet
             )
 
             if (!response.isLead) {

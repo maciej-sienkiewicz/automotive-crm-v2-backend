@@ -37,6 +37,11 @@ class ProcessInboundEmailHandler(
         val studioId = StudioId(studioEntity.id)
 
         log.debug("[INBOUND_EMAIL] Classifying email for studioId={}, from='{}'", studioId, command.from)
+        log.debug(
+            "[INBOUND_EMAIL] Content: subject='{}' body='{}'",
+            command.subject,
+            command.body.take(500).replace("\n", " ↵ ")
+        )
 
         val classification = emailLeadClassifier.classify(
             from = command.from,
