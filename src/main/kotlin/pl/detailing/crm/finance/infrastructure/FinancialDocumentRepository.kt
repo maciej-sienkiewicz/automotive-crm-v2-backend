@@ -200,4 +200,26 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
         ORDER BY d.issueDate DESC, d.createdAt DESC
     """)
     fun findInvoicesByStudioId(studioId: UUID, pageable: Pageable): Page<FinancialDocumentEntity>
+
+    /**
+     * Returns all INCOME + PAID documents for payment-method breakdown reporting.
+     * Optionally filtered by document type and date range (issueDate).
+     */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.studioId  = :studioId
+          AND d.direction = pl.detailing.crm.finance.domain.DocumentDirection.INCOME
+          AND d.status    = pl.detailing.crm.finance.domain.DocumentStatus.PAID
+          AND d.deletedAt IS NULL
+          AND (:documentType IS NULL OR d.documentType = :documentType)
+          AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
+          AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
+        ORDER BY d.issueDate ASC
+    """)
+    fun findPaidIncomeForReport(
+        studioId: UUID,
+        documentType: DocumentType?,
+        dateFrom: LocalDate?,
+        dateTo: LocalDate?
+    ): List<FinancialDocumentEntity>
 }

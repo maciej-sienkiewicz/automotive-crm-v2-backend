@@ -39,6 +39,9 @@ import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.finance.reporting.FinanceReportQuery
 import pl.detailing.crm.finance.reporting.FinanceReportingHandler
+import pl.detailing.crm.finance.reporting.PaymentMethodReportHandler
+import pl.detailing.crm.finance.reporting.PaymentMethodReportQuery
+import pl.detailing.crm.finance.reporting.ReportGranularity
 import pl.detailing.crm.invoicing.InvoicingFacade
 import pl.detailing.crm.invoicing.domain.ExternalInvoiceStatus
 import pl.detailing.crm.invoicing.domain.InvoiceItem
@@ -70,6 +73,7 @@ class FinanceController(
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
     private val reportingHandler: FinanceReportingHandler,
+    private val paymentMethodReportHandler: PaymentMethodReportHandler,
     private val auditService: AuditService
 ) {
 
@@ -660,6 +664,63 @@ class FinanceController(
         )
     }
 
+    /**
+     * Payment-method breakdown report for received payments (INCOME + PAID).
+     * GET /api/v1/finance/payment-method-report
+     *
+     * Query params:
+     *  - granularity: MONTHLY (default) | QUARTERLY | YEARLY
+     *  - dateFrom, dateTo: optional LocalDate range (defaults to current year when omitted)
+     *  - documentType: RECEIPT | INVOICE | OTHER — omit for all types
+     */
+    @GetMapping("/payment-method-report")
+    fun getPaymentMethodReport(
+        @RequestParam(defaultValue = "MONTHLY") granularity: String,
+        @RequestParam(required = false) dateFrom: LocalDate?,
+        @RequestParam(required = false) dateTo: LocalDate?,
+        @RequestParam(required = false) documentType: String?
+    ): ResponseEntity<PaymentMethodReportResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (dateFrom != null && dateTo != null && dateTo.isBefore(dateFrom)) {
+            throw ValidationException("dateTo nie może być wcześniejsze niż dateFrom")
+        }
+
+        val result = paymentMethodReportHandler.getReport(
+            PaymentMethodReportQuery(
+                studioId     = principal.studioId,
+                granularity  = parseEnum(granularity, "granularity"),
+                dateFrom     = dateFrom,
+                dateTo       = dateTo,
+                documentType = documentType?.let { parseEnum(it, "documentType") }
+            )
+        )
+
+        return ResponseEntity.ok(
+            PaymentMethodReportResponse(
+                granularity  = result.granularity.name,
+                dateFrom     = result.dateFrom?.toString(),
+                dateTo       = result.dateTo?.toString(),
+                documentType = result.documentType?.name,
+                periods      = result.periods.map { p ->
+                    PeriodPaymentStatsResponse(
+                        periodLabel = p.periodLabel,
+                        dateFrom    = p.dateFrom.toString(),
+                        dateTo      = p.dateTo.toString(),
+                        cash        = PaymentMethodStatsResponse(p.cash.count, p.cash.totalNet, p.cash.totalGross),
+                        card        = PaymentMethodStatsResponse(p.card.count, p.card.totalNet, p.card.totalGross),
+                        transfer    = PaymentMethodStatsResponse(p.transfer.count, p.transfer.totalNet, p.transfer.totalGross)
+                    )
+                },
+                totals = PaymentMethodTotalsResponse(
+                    cash     = PaymentMethodStatsResponse(result.cash.count, result.cash.totalNet, result.cash.totalGross),
+                    card     = PaymentMethodStatsResponse(result.card.count, result.card.totalNet, result.card.totalGross),
+                    transfer = PaymentMethodStatsResponse(result.transfer.count, result.transfer.totalNet, result.transfer.totalGross)
+                )
+            )
+        )
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
@@ -853,6 +914,36 @@ data class ImportInvoicesResultResponse(
 )
 
 data class InvoicePortalUrlResponse(val url: String)
+
+data class PaymentMethodStatsResponse(
+    val count: Int,
+    val totalNet: Long,
+    val totalGross: Long
+)
+
+data class PeriodPaymentStatsResponse(
+    val periodLabel: String,
+    val dateFrom: String,
+    val dateTo: String,
+    val cash: PaymentMethodStatsResponse,
+    val card: PaymentMethodStatsResponse,
+    val transfer: PaymentMethodStatsResponse
+)
+
+data class PaymentMethodTotalsResponse(
+    val cash: PaymentMethodStatsResponse,
+    val card: PaymentMethodStatsResponse,
+    val transfer: PaymentMethodStatsResponse
+)
+
+data class PaymentMethodReportResponse(
+    val granularity: String,
+    val dateFrom: String?,
+    val dateTo: String?,
+    val documentType: String?,
+    val periods: List<PeriodPaymentStatsResponse>,
+    val totals: PaymentMethodTotalsResponse
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Domain → Response mapping
