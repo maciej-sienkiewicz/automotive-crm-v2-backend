@@ -19,11 +19,9 @@ class OpenAiEmailLeadClassifier(
 
     override suspend fun classify(from: String, subject: String?, body: String): EmailClassificationResult =
         withContext(Dispatchers.IO) {
-            val userPrompt = buildUserPrompt(from, subject, body)
-
             val response = try {
                 chatClient.prompt()
-                    .user(userPrompt)
+                    .user(buildUserPrompt(from, subject, body))
                     .call()
                     .entity(EmailLlmResponse::class.java)
             } catch (e: Exception) {
@@ -36,10 +34,11 @@ class OpenAiEmailLeadClassifier(
                 return@withContext EmailClassificationResult.NotALead
             }
 
-            log.debug(
-                "[EMAIL_CLASSIFIER] from='{}' → isLead={}, make={}, model={}, year={}, services={}",
-                from, response.isLead, response.vehicleMake, response.vehicleModel,
-                response.vehicleYear, response.requestedServices
+            // Log reasoning for observability — valuable for tuning the prompt over time
+            log.info(
+                "[EMAIL_CLASSIFIER] from='{}' isLead={} | reasoning='{}' | make={} model={} year={} services={}",
+                from, response.isLead, response.reasoning,
+                response.vehicleMake, response.vehicleModel, response.vehicleYear, response.requestedServices
             )
 
             if (!response.isLead) {
@@ -56,21 +55,32 @@ class OpenAiEmailLeadClassifier(
             )
         }
 
+    /**
+     * User prompt intentionally contains only the raw email data.
+     * All instructions and rules live in the system prompt (InboundEmailAiConfig).
+     * This separation improves instruction-following on gpt-4o-mini.
+     */
     private fun buildUserPrompt(from: String, subject: String?, body: String): String = """
-        Przeanalizuj poniższy e-mail i oceń, czy jest to zapytanie o usługę detailingu samochodowego, wycenę lub ofertę.
-        Jeśli tak, wyciągnij dostępne informacje o pojeździe i usługach.
-
         Nadawca: $from
         Temat: ${subject?.take(500) ?: "(brak tematu)"}
-        Treść:
+
+        ---
         ${body.take(3000)}
     """.trimIndent()
 
     /**
      * Schema for OpenAI Structured Outputs.
-     * All vehicle/service fields are nullable — extract only what is explicitly stated in the email.
+     *
+     * Field ordering is intentional: [reasoning] comes first so the model generates
+     * its chain-of-thought before committing to [isLead]. This "scratchpad before answer"
+     * technique measurably improves classification accuracy on smaller models like gpt-4o-mini.
+     *
+     * All extraction fields are nullable: the model must return null rather than guess.
      */
     private data class EmailLlmResponse(
+        @JsonProperty("reasoning")
+        val reasoning: String,
+
         @JsonProperty("isLead")
         val isLead: Boolean,
 
