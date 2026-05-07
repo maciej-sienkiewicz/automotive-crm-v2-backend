@@ -61,10 +61,25 @@ class ProcessInboundEmailHandler(
         return ProcessInboundEmailResult.LeadCreated(leadId = created.leadId.toString())
     }
 
-    private fun buildLeadMessage(command: ProcessInboundEmailCommand, classification: EmailClassificationResult.LeadDetected): String {
-        val subjectPart = command.subject?.let { "Temat: $it\n" } ?: ""
-        return "${subjectPart}${classification.summary}"
-    }
+    private fun buildLeadMessage(
+        command: ProcessInboundEmailCommand,
+        classification: EmailClassificationResult.LeadDetected
+    ): String = buildString {
+        command.subject?.let { appendLine("Temat: $it") }
+        appendLine(classification.summary)
+
+        val vehicleParts = listOfNotNull(
+            classification.vehicleMake,
+            classification.vehicleModel,
+            classification.vehicleYear?.toString()
+        )
+        if (vehicleParts.isNotEmpty()) {
+            appendLine("Pojazd: ${vehicleParts.joinToString(" ")}")
+        }
+        if (classification.requestedServices.isNotEmpty()) {
+            appendLine("Zapytane usługi: ${classification.requestedServices.joinToString(", ")}")
+        }
+    }.trimEnd()
 }
 
 sealed class ProcessInboundEmailResult {

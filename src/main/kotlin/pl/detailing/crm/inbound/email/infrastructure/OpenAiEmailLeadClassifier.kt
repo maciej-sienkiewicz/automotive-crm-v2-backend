@@ -1,7 +1,6 @@
 package pl.detailing.crm.inbound.email.infrastructure
 
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -13,8 +12,7 @@ import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
 
 @Service
 class OpenAiEmailLeadClassifier(
-    @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient,
-    private val objectMapper: ObjectMapper
+    @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient
 ) : EmailLeadClassifier {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -23,65 +21,75 @@ class OpenAiEmailLeadClassifier(
         withContext(Dispatchers.IO) {
             val userPrompt = buildUserPrompt(from, subject, body)
 
-            val raw = try {
+            val response = try {
                 chatClient.prompt()
                     .user(userPrompt)
                     .call()
-                    .content()
+                    .entity(EmailLlmResponse::class.java)
             } catch (e: Exception) {
-                log.error("[EMAIL_CLASSIFIER] LLM call failed for from={}: {}", from, e.message)
+                log.error("[EMAIL_CLASSIFIER] LLM call failed for from='{}': {}", from, e.message)
                 return@withContext EmailClassificationResult.NotALead
             }
 
-            if (raw.isNullOrBlank()) {
-                log.warn("[EMAIL_CLASSIFIER] LLM returned empty response for from={}", from)
+            if (response == null) {
+                log.warn("[EMAIL_CLASSIFIER] LLM returned null for from='{}'", from)
                 return@withContext EmailClassificationResult.NotALead
             }
 
-            parseResponse(raw, from)
+            log.debug(
+                "[EMAIL_CLASSIFIER] from='{}' → isLead={}, make={}, model={}, year={}, services={}",
+                from, response.isLead, response.vehicleMake, response.vehicleModel,
+                response.vehicleYear, response.requestedServices
+            )
+
+            if (!response.isLead) {
+                return@withContext EmailClassificationResult.NotALead
+            }
+
+            EmailClassificationResult.LeadDetected(
+                extractedName = response.extractedName?.takeIf { it.isNotBlank() },
+                summary = response.summary?.takeIf { it.isNotBlank() } ?: "Zapytanie ofertowe",
+                vehicleMake = response.vehicleMake?.takeIf { it.isNotBlank() },
+                vehicleModel = response.vehicleModel?.takeIf { it.isNotBlank() },
+                vehicleYear = response.vehicleYear,
+                requestedServices = response.requestedServices ?: emptyList()
+            )
         }
 
     private fun buildUserPrompt(from: String, subject: String?, body: String): String = """
-        Przeanalizuj poniższy e-mail i oceń, czy zawiera zapytanie o usługę detailingu, wycenę lub ofertę.
+        Przeanalizuj poniższy e-mail i oceń, czy jest to zapytanie o usługę detailingu samochodowego, wycenę lub ofertę.
+        Jeśli tak, wyciągnij dostępne informacje o pojeździe i usługach.
 
         Nadawca: $from
         Temat: ${subject?.take(500) ?: "(brak tematu)"}
-        Treść: ${body.take(2000)}
-
-        Odpowiedz WYŁĄCZNIE w formacie JSON:
-        {
-          "isLead": true lub false,
-          "extractedName": "imię i nazwisko nadawcy jeśli zawarte w treści, null jeśli brak",
-          "summary": "1-2 zdaniowe podsumowanie zapytania po polsku, null jeśli nie jest leadem"
-        }
+        Treść:
+        ${body.take(3000)}
     """.trimIndent()
 
-    private fun parseResponse(raw: String, from: String): EmailClassificationResult {
-        val cleaned = raw.trim()
-            .removePrefix("```json").removePrefix("```")
-            .removeSuffix("```")
-            .trim()
+    /**
+     * Schema for OpenAI Structured Outputs.
+     * All vehicle/service fields are nullable — extract only what is explicitly stated in the email.
+     */
+    private data class EmailLlmResponse(
+        @JsonProperty("isLead")
+        val isLead: Boolean,
 
-        return try {
-            val response = objectMapper.readValue(cleaned, LlmClassificationResponse::class.java)
+        @JsonProperty("extractedName")
+        val extractedName: String?,
 
-            if (!response.isLead) {
-                EmailClassificationResult.NotALead
-            } else {
-                EmailClassificationResult.LeadDetected(
-                    extractedName = response.extractedName?.takeIf { it.isNotBlank() && it != "null" },
-                    summary = response.summary?.takeIf { it.isNotBlank() } ?: "Zapytanie ofertowe"
-                )
-            }
-        } catch (e: Exception) {
-            log.warn("[EMAIL_CLASSIFIER] Failed to parse LLM JSON for from={}, raw='{}': {}", from, cleaned, e.message)
-            EmailClassificationResult.NotALead
-        }
-    }
+        @JsonProperty("summary")
+        val summary: String?,
 
-    private data class LlmClassificationResponse(
-        @JsonProperty("isLead") val isLead: Boolean = false,
-        @JsonProperty("extractedName") val extractedName: String? = null,
-        @JsonProperty("summary") val summary: String? = null
+        @JsonProperty("vehicleMake")
+        val vehicleMake: String?,
+
+        @JsonProperty("vehicleModel")
+        val vehicleModel: String?,
+
+        @JsonProperty("vehicleYear")
+        val vehicleYear: Int?,
+
+        @JsonProperty("requestedServices")
+        val requestedServices: List<String>?
     )
 }
