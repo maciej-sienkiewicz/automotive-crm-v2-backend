@@ -50,6 +50,8 @@ class AcceptCallHandler(
                 initialMessage = callLogEntity.note,
                 estimatedValue = 0, // Default value, can be updated later
                 requiresVerification = false, // Accepted calls don't require verification
+                vehicleBrand = null,
+                vehicleModel = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

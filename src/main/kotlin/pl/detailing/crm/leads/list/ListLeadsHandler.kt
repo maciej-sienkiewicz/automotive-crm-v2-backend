@@ -7,21 +7,26 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.domain.Lead
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+
+data class LeadListItem(
+    val lead: Lead,
+    val relatedVisitIds: List<String>
+)
 
 @Service
 class ListLeadsHandler(
-    private val leadRepository: LeadRepository
+    private val leadRepository: LeadRepository,
+    private val leadEstimationRepository: LeadEstimationRepository
 ) {
     private val log = LoggerFactory.getLogger(ListLeadsHandler::class.java)
 
     @Transactional(readOnly = true)
     suspend fun handle(query: ListLeadsQuery): ListLeadsResult =
         withContext(Dispatchers.IO) {
-            // Create pageable
             val pageable = PageRequest.of(query.page - 1, query.limit)
 
-            // Query with filters
             val page = leadRepository.findByStudioIdWithFilters(
                 studioId = query.studioId.value,
                 statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
@@ -30,14 +35,29 @@ class ListLeadsHandler(
                 pageable = pageable
             )
 
-            // Convert to domain
             val leads = page.content.map { it.toDomain() }
+
+            // Batch-load all estimations for current page — single query, no N+1
+            val leadIds = leads.map { it.id.value }
+            val estimationsByLeadId = if (leadIds.isNotEmpty()) {
+                leadEstimationRepository.findByStudioIdAndLeadIdIn(
+                    studioId = query.studioId.value,
+                    leadIds = leadIds
+                ).associateBy { it.leadId }
+            } else emptyMap()
+
+            val items = leads.map { lead ->
+                LeadListItem(
+                    lead = lead,
+                    relatedVisitIds = estimationsByLeadId[lead.id.value]?.relatedVisitIds ?: emptyList()
+                )
+            }
 
             log.debug("[LEADS] Listed leads: studioId={}, page={}, total={}",
                 query.studioId.value, query.page, page.totalElements)
 
             ListLeadsResult(
-                leads = leads,
+                items = items,
                 currentPage = query.page,
                 totalPages = page.totalPages,
                 totalItems = page.totalElements,
@@ -47,7 +67,7 @@ class ListLeadsHandler(
 }
 
 data class ListLeadsResult(
-    val leads: List<Lead>,
+    val items: List<LeadListItem>,
     val currentPage: Int,
     val totalPages: Int,
     val totalItems: Long,

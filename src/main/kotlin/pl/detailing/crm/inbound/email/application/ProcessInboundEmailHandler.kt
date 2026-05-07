@@ -69,6 +69,8 @@ class ProcessInboundEmailHandler(
         val capturedLeadId = created.leadId
         val capturedStudioId = studioId
         val capturedServices = classification.requestedServices
+        val capturedVehicleMake = classification.vehicleMake
+        val capturedVehicleModel = classification.vehicleModel
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
@@ -76,7 +78,9 @@ class ProcessInboundEmailHandler(
                     AnalyzeLeadCommand(
                         leadId = capturedLeadId,
                         studioId = capturedStudioId,
-                        preExtractedNeeds = capturedServices
+                        preExtractedNeeds = capturedServices,
+                        preExtractedVehicleMake = capturedVehicleMake,
+                        preExtractedVehicleModel = capturedVehicleModel
                     )
                 )
             } catch (e: Exception) {

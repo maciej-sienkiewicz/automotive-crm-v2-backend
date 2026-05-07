@@ -59,6 +59,8 @@ class RegisterInboundCallHandler(
                 initialMessage = command.note?.trim(),
                 estimatedValue = 0, // Default value, can be updated later
                 requiresVerification = true, // Inbound calls require verification
+                vehicleBrand = null,
+                vehicleModel = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

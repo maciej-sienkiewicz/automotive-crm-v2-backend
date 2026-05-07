@@ -68,7 +68,7 @@ class LeadsController(
 
         ResponseEntity.ok(
             LeadListResponse(
-                leads = result.leads.map { it.toDto() },
+                leads = result.items.map { it.toDto() },
                 pagination = PaginationInfo(
                     currentPage = result.currentPage,
                     totalPages = result.totalPages,
@@ -122,7 +122,10 @@ class LeadsController(
                 createdAt = result.createdAt,
                 updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
-                requiresVerification = result.requiresVerification
+                requiresVerification = result.requiresVerification,
+                vehicleBrand = null,
+                vehicleModel = null,
+                relatedVisitIds = emptyList()
             )
         )
     }
@@ -162,7 +165,10 @@ class LeadsController(
                 createdAt = null, // Not returned in update
                 updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
-                requiresVerification = result.requiresVerification
+                requiresVerification = result.requiresVerification,
+                vehicleBrand = null,
+                vehicleModel = null,
+                relatedVisitIds = emptyList()
             )
         )
     }
@@ -253,7 +259,10 @@ class LeadsController(
                 createdAt = null,
                 updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
-                requiresVerification = result.requiresVerification
+                requiresVerification = result.requiresVerification,
+                vehicleBrand = null,
+                vehicleModel = null,
+                relatedVisitIds = emptyList()
             )
         )
     }
@@ -293,7 +302,10 @@ class LeadsController(
                 createdAt = null,
                 updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
-                requiresVerification = result.requiresVerification
+                requiresVerification = result.requiresVerification,
+                vehicleBrand = null,
+                vehicleModel = null,
+                relatedVisitIds = emptyList()
             )
         )
     }

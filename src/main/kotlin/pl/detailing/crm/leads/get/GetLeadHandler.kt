@@ -48,6 +48,8 @@ class GetLeadHandler(
             initialMessage = leadEntity.initialMessage,
             estimatedValue = leadEntity.estimatedValue,
             requiresVerification = leadEntity.requiresVerification,
+            vehicleBrand = leadEntity.vehicleBrand,
+            vehicleModel = leadEntity.vehicleModel,
             createdAt = leadEntity.createdAt,
             updatedAt = leadEntity.updatedAt,
             estimation = estimation?.toResult()
@@ -65,6 +67,8 @@ data class GetLeadResult(
     val initialMessage: String?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
     val estimation: EstimationResult?
@@ -77,6 +81,7 @@ data class EstimationResult(
     val matchedItems: List<EstimationItemResult>,
     val unmatchedNeeds: List<String>,
     val totalGross: Long,
+    val relatedVisitIds: List<String>,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -104,6 +109,7 @@ private fun LeadEstimationEntity.toResult() = EstimationResult(
     },
     unmatchedNeeds = unmatchedNeeds,
     totalGross = totalGross,
+    relatedVisitIds = relatedVisitIds,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

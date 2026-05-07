@@ -12,6 +12,7 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationStatusJpa
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -20,6 +21,7 @@ class AnalyzeLeadHandler(
     private val leadRepository: LeadRepository,
     private val serviceRepository: ServiceRepository,
     private val leadEstimationRepository: LeadEstimationRepository,
+    private val visitRepository: VisitRepository,
     private val leadAnalyzer: LeadAnalyzer
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -73,7 +75,7 @@ class AnalyzeLeadHandler(
         }
 
         if (catalogServices.isEmpty()) {
-            withContext(Dispatchers.IO) { markCompleted(estimationId, emptyList(), emptyList(), emptyList(), 0L) }
+            withContext(Dispatchers.IO) { markCompleted(estimationId, emptyList(), emptyList(), emptyList(), 0L, emptyList()) }
             log.info("[LEAD_ANALYSIS] No active services for studio {}, estimation empty", command.studioId)
             return
         }
@@ -82,7 +84,9 @@ class AnalyzeLeadHandler(
             leadAnalyzer.analyze(
                 leadMessage = leadEntity.initialMessage ?: "",
                 preExtractedNeeds = command.preExtractedNeeds,
-                catalogServices = catalogServices
+                catalogServices = catalogServices,
+                preExtractedVehicleMake = command.preExtractedVehicleMake,
+                preExtractedVehicleModel = command.preExtractedVehicleModel
             )
         } catch (e: Exception) {
             log.error("[LEAD_ANALYSIS] LLM failed for leadId={}: {}", command.leadId, e.message)
@@ -113,27 +117,71 @@ class AnalyzeLeadHandler(
                     )
                 }
 
+                // Lookup historical visits for same brand+model with at least one matched service
+                val relatedVisitIds = resolveRelatedVisitIds(
+                    studioId = command.studioId.value,
+                    vehicleBrand = analysisResult.vehicleBrand,
+                    vehicleModel = analysisResult.vehicleModel,
+                    matchedServiceIds = analysisResult.matchedServiceIds
+                )
+
                 est.extractedNeeds = analysisResult.extractedNeeds
                 est.unmatchedNeeds = analysisResult.unmatchedNeeds
                 est.items.addAll(items)
                 est.totalGross = items.sumOf { it.priceGross }
+                est.relatedVisitIds = relatedVisitIds
                 est.status = LeadEstimationStatusJpa.COMPLETED
                 est.updatedAt = Instant.now()
                 leadEstimationRepository.save(est)
+
+                // Persist normalised vehicle on lead (only if LLM identified it and not already set)
+                var leadDirty = false
+                if (analysisResult.vehicleBrand != null && (leadEntity.vehicleBrand == null || leadEntity.vehicleModel == null)) {
+                    leadEntity.vehicleBrand = analysisResult.vehicleBrand
+                    leadEntity.vehicleModel = analysisResult.vehicleModel
+                    leadEntity.updatedAt = Instant.now()
+                    leadDirty = true
+                }
 
                 // Pre-fill lead.estimatedValue with AI total if admin hasn't set a price yet
                 if (leadEntity.estimatedValue == 0L && est.totalGross > 0) {
                     leadEntity.estimatedValue = est.totalGross
                     leadEntity.updatedAt = Instant.now()
+                    leadDirty = true
+                }
+
+                if (leadDirty) {
                     leadRepository.save(leadEntity)
                 }
             }
         }
 
         log.info(
-            "[LEAD_ANALYSIS] Completed for leadId={}: matched={} unmatched={}",
-            command.leadId, analysisResult.matchedServiceIds.size, analysisResult.unmatchedNeeds.size
+            "[LEAD_ANALYSIS] Completed for leadId={}: matched={} unmatched={} vehicle='{} {}' relatedVisits={}",
+            command.leadId, analysisResult.matchedServiceIds.size, analysisResult.unmatchedNeeds.size,
+            analysisResult.vehicleBrand, analysisResult.vehicleModel,
+            "(see estimation)"
         )
+    }
+
+    private fun resolveRelatedVisitIds(
+        studioId: UUID,
+        vehicleBrand: String?,
+        vehicleModel: String?,
+        matchedServiceIds: List<String>
+    ): List<String> {
+        if (vehicleBrand == null || vehicleModel == null || matchedServiceIds.isEmpty()) return emptyList()
+        return try {
+            visitRepository.findIdsByBrandModelAndServiceIds(
+                studioId = studioId,
+                brand = vehicleBrand,
+                model = vehicleModel,
+                serviceIds = matchedServiceIds.map { UUID.fromString(it) }
+            ).map { it.toString() }
+        } catch (e: Exception) {
+            log.warn("[LEAD_ANALYSIS] Failed to resolve related visits: {}", e.message)
+            emptyList()
+        }
     }
 
     private fun markCompleted(
@@ -141,13 +189,15 @@ class AnalyzeLeadHandler(
         extractedNeeds: List<String>,
         unmatchedNeeds: List<String>,
         items: List<LeadEstimationItemEntity>,
-        totalGross: Long
+        totalGross: Long,
+        relatedVisitIds: List<String>
     ) {
         leadEstimationRepository.findById(estimationId).ifPresent { est ->
             est.extractedNeeds = extractedNeeds
             est.unmatchedNeeds = unmatchedNeeds
             est.items.addAll(items)
             est.totalGross = totalGross
+            est.relatedVisitIds = relatedVisitIds
             est.status = LeadEstimationStatusJpa.COMPLETED
             est.updatedAt = Instant.now()
             leadEstimationRepository.save(est)

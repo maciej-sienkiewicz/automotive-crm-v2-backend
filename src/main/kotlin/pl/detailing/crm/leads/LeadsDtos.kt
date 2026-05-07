@@ -1,16 +1,13 @@
 package pl.detailing.crm.leads
 
 import java.time.Instant
-import java.util.UUID
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
 import pl.detailing.crm.leads.get.GetLeadResult
+import pl.detailing.crm.leads.list.LeadListItem
 import pl.detailing.crm.shared.LeadSource
 
-/**
- * DTO for Lead entity
- */
 data class LeadDto(
     val id: String,
     val source: String?,
@@ -21,13 +18,13 @@ data class LeadDto(
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val estimatedValue: Long,
-    val requiresVerification: Boolean
+    val requiresVerification: Boolean,
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
+    val relatedVisitIds: List<String>
 )
 
-/**
- * Extension function to convert Lead domain to DTO
- */
-fun Lead.toDto(): LeadDto = LeadDto(
+fun Lead.toDto(relatedVisitIds: List<String> = emptyList()): LeadDto = LeadDto(
     id = this.id.toString(),
     source = this.source.name,
     status = this.status.name,
@@ -37,12 +34,14 @@ fun Lead.toDto(): LeadDto = LeadDto(
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
-    requiresVerification = this.requiresVerification
+    requiresVerification = this.requiresVerification,
+    vehicleBrand = this.vehicleBrand,
+    vehicleModel = this.vehicleModel,
+    relatedVisitIds = relatedVisitIds
 )
 
-/**
- * Request payload for creating a new lead
- */
+fun LeadListItem.toDto(): LeadDto = lead.toDto(relatedVisitIds = relatedVisitIds)
+
 data class CreateLeadRequest(
     val source: LeadSource,
     val contactIdentifier: String,
@@ -51,9 +50,6 @@ data class CreateLeadRequest(
     val estimatedValue: Long
 )
 
-/**
- * Request payload for updating a lead
- */
 data class UpdateLeadRequest(
     val status: String?,
     val customerName: String?,
@@ -61,23 +57,14 @@ data class UpdateLeadRequest(
     val estimatedValue: Long?
 )
 
-/**
- * Request payload for updating lead status
- */
 data class UpdateStatusRequest(
     val status: String
 )
 
-/**
- * Request payload for updating lead value
- */
 data class UpdateValueRequest(
     val estimatedValue: Long
 )
 
-/**
- * Pagination info
- */
 data class PaginationInfo(
     val currentPage: Int,
     val totalPages: Int,
@@ -85,17 +72,11 @@ data class PaginationInfo(
     val itemsPerPage: Int
 )
 
-/**
- * Response from lead list API
- */
 data class LeadListResponse(
     val leads: List<LeadDto>,
     val pagination: PaginationInfo
 )
 
-/**
- * Full lead detail response — includes AI estimation breakdown
- */
 data class LeadDetailDto(
     val id: String,
     val source: String,
@@ -105,6 +86,8 @@ data class LeadDetailDto(
     val initialMessage: String?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
     val estimation: LeadEstimationDto?
@@ -117,6 +100,7 @@ data class LeadEstimationDto(
     val matchedItems: List<LeadEstimationItemDto>,
     val unmatchedNeeds: List<String>,
     val totalGross: Long,
+    val relatedVisitIds: List<String>,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -138,6 +122,8 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     initialMessage = initialMessage,
     estimatedValue = estimatedValue,
     requiresVerification = requiresVerification,
+    vehicleBrand = vehicleBrand,
+    vehicleModel = vehicleModel,
     createdAt = createdAt,
     updatedAt = updatedAt,
     estimation = estimation?.toDto()
@@ -150,6 +136,7 @@ fun EstimationResult.toDto() = LeadEstimationDto(
     matchedItems = matchedItems.map { it.toDto() },
     unmatchedNeeds = unmatchedNeeds,
     totalGross = totalGross,
+    relatedVisitIds = relatedVisitIds,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
@@ -162,9 +149,6 @@ fun EstimationItemResult.toDto() = LeadEstimationItemDto(
     priceGross = priceGross
 )
 
-/**
- * Pipeline summary for dashboard widget
- */
 data class PipelineSummaryDto(
     val totalPipelineValue: Long,
     val inProgressCount: Int,

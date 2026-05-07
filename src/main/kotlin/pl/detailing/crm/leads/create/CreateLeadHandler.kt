@@ -51,6 +51,8 @@ class CreateLeadHandler(
                 initialMessage = command.initialMessage?.trim(),
                 estimatedValue = command.estimatedValue,
                 requiresVerification = false, // Manual entries don't require verification
+                vehicleBrand = null,
+                vehicleModel = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

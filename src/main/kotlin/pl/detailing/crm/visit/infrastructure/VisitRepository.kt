@@ -194,6 +194,27 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<UUID>
 
     /**
+     * Find visit IDs for a studio where the vehicle brand and model match exactly (case-sensitive,
+     * since both values come from the same canonical vehicle-metadata source) and at least one
+     * service item references one of the given service catalog IDs.
+     * Used by the lead analysis pipeline to surface historical context for the sales team.
+     */
+    @Query("""
+        SELECT DISTINCT v.id FROM VisitEntity v
+        JOIN v.serviceItems si
+        WHERE v.studioId = :studioId
+        AND v.brandSnapshot = :brand
+        AND v.modelSnapshot = :model
+        AND si.serviceId IN :serviceIds
+    """)
+    fun findIdsByBrandModelAndServiceIds(
+        @Param("studioId") studioId: UUID,
+        @Param("brand") brand: String,
+        @Param("model") model: String,
+        @Param("serviceIds") serviceIds: List<UUID>
+    ): List<UUID>
+
+    /**
      * Find visits for the unified calendar view.
      * Uses COALESCE so multi-day visits (with estimatedCompletionDate) are included
      * when they overlap the range, and single-date visits are included when their

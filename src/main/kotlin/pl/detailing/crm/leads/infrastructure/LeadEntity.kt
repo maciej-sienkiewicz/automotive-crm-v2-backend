@@ -50,6 +50,12 @@ class LeadEntity(
     @Column(name = "requires_verification", nullable = false)
     var requiresVerification: Boolean,
 
+    @Column(name = "vehicle_brand", nullable = true, columnDefinition = "text")
+    var vehicleBrand: String?,
+
+    @Column(name = "vehicle_model", nullable = true, columnDefinition = "text")
+    var vehicleModel: String?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -66,6 +72,8 @@ class LeadEntity(
         initialMessage = initialMessage,
         estimatedValue = estimatedValue,
         requiresVerification = requiresVerification,
+        vehicleBrand = vehicleBrand,
+        vehicleModel = vehicleModel,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -81,6 +89,8 @@ class LeadEntity(
             initialMessage = lead.initialMessage,
             estimatedValue = lead.estimatedValue,
             requiresVerification = lead.requiresVerification,
+            vehicleBrand = lead.vehicleBrand,
+            vehicleModel = lead.vehicleModel,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )

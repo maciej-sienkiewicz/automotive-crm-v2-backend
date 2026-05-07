@@ -20,6 +20,8 @@ data class Lead(
     val initialMessage: String?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )

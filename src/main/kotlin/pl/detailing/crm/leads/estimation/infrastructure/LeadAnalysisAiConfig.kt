@@ -31,6 +31,7 @@ class LeadAnalysisAiConfig {
             1. Wyciągnij listę potrzeb/usług wprost wspomnianych przez klienta (extractedNeeds).
             2. Dopasuj każdą potrzebę do konkretnej pozycji z katalogu (matchedServices).
             3. Wskaż potrzeby, dla których nie znalazłeś odpowiednika w katalogu (unmatchedNeeds).
+            4. Zidentyfikuj markę i model pojazdu (vehicleBrand, vehicleModel).
 
             # Zasady ekstrakcji potrzeb klienta — KRYTYCZNE
             - Wyciągaj WYŁĄCZNIE potrzeby wprost wspomniane w wiadomości
@@ -55,11 +56,22 @@ class LeadAnalysisAiConfig {
             - Zachowaj oryginalną polską nazwę
             - unmatchedNeeds + [potrzeby z matchedServices] = extractedNeeds (zbiory rozłączne)
 
+            # Zasady identyfikacji pojazdu — KRYTYCZNE
+            - vehicleBrand: wybierz DOKŁADNIE jedną markę z dostarczonej listy dozwolonych marek.
+              Użyj dokładnie tej samej pisowni co na liście (np. "Bmw", "Volkswagen", "Mercedes-Benz").
+              Jeśli marka nie jest wspomniana w wiadomości lub nie ma jej na liście — zwróć null.
+            - vehicleModel: wpisz model pojazdu dokładnie tak jak jest podany w wiadomości lub
+              wstępnie zidentyfikowanych danych. Jeśli model jest nieznany — zwróć null.
+            - Jeśli dostarczone są wstępnie zidentyfikowane dane pojazdu, traktuj je priorytetowo,
+              ale marka MUSI być na liście dozwolonych marek.
+
             # Format odpowiedzi
             - reasoning        → Krótkie uzasadnienie po polsku (1–2 zdania). Zawsze wypełnione.
             - extractedNeeds   → Lista potrzeb klienta (oryginalne nazwy). [] jeśli brak.
             - matchedServices  → Lista obiektów {serviceId, matchedNeed}. [] jeśli brak dopasowań.
             - unmatchedNeeds   → Potrzeby bez odpowiednika w katalogu. [] jeśli wszystko dopasowane.
+            - vehicleBrand     → Marka z listy dozwolonych lub null.
+            - vehicleModel     → Model pojazdu lub null.
         """.trimIndent()
     }
 }
