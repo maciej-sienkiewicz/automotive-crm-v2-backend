@@ -35,14 +35,39 @@ class CloudflareWebhookTokenFilter(
         chain: FilterChain
     ) {
         if (secretToken.isBlank()) {
-            log.error("[INBOUND_EMAIL_SECURITY] cloudflare.email.webhook.secret-token is not configured — rejecting all requests to {}", WEBHOOK_PATH)
+            log.error(
+                "[INBOUND_EMAIL_SECURITY] cloudflare.email.webhook.secret-token is not configured — " +
+                    "set CLOUDFLARE_EMAIL_WEBHOOK_TOKEN env var. Rejecting all requests to {}",
+                WEBHOOK_PATH
+            )
             writeUnauthorized(response, "Webhook token not configured on server")
             return
         }
 
-        val providedToken = request.getHeader(TOKEN_HEADER)
-        if (providedToken.isNullOrBlank() || !tokensMatch(providedToken, secretToken)) {
-            log.warn("[INBOUND_EMAIL_SECURITY] Invalid or missing {} header from ip={}", TOKEN_HEADER, request.remoteAddr)
+        val providedToken = request.getHeader(TOKEN_HEADER)?.trim()
+
+        if (log.isDebugEnabled) {
+            val headerNames = request.headerNames?.toList() ?: emptyList<String>()
+            log.debug(
+                "[INBOUND_EMAIL_SECURITY] Processing {} — headers present: {}, {} present: {}",
+                request.requestURI, headerNames, TOKEN_HEADER, providedToken != null
+            )
+        }
+
+        if (providedToken.isNullOrBlank()) {
+            log.warn(
+                "[INBOUND_EMAIL_SECURITY] Missing or empty '{}' header from ip={}",
+                TOKEN_HEADER, request.remoteAddr
+            )
+            writeUnauthorized(response, "Unauthorized")
+            return
+        }
+
+        if (!tokensMatch(providedToken, secretToken.trim())) {
+            log.warn(
+                "[INBOUND_EMAIL_SECURITY] Invalid '{}' header value from ip={}",
+                TOKEN_HEADER, request.remoteAddr
+            )
             writeUnauthorized(response, "Unauthorized")
             return
         }
