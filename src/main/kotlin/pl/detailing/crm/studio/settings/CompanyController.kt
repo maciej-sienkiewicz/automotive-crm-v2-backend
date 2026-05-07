@@ -74,6 +74,15 @@ class CompanyController(
         )
     }
 
+    @GetMapping("/email-alias")
+    fun getEmailAlias(): ResponseEntity<EmailAliasResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val alias = withContext(Dispatchers.IO) {
+            studioRepository.findByStudioId(principal.studioId.value)?.emailAlias
+        }
+        ResponseEntity.ok(EmailAliasResponse(emailAlias = alias))
+    }
+
     @PutMapping
     fun updateCompanySettings(
         @org.springframework.web.bind.annotation.RequestBody request: UpdateCompanySettingsRequest
@@ -251,3 +260,5 @@ data class UpdateCompanySettingsRequest(
 )
 
 data class UploadLogoResponse(val logoUrl: String)
+
+data class EmailAliasResponse(val emailAlias: String?)
