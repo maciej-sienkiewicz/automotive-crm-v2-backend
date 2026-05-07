@@ -1,6 +1,11 @@
 package pl.detailing.crm.leads
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -9,6 +14,10 @@ import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.delete.DeleteLeadCommand
 import pl.detailing.crm.leads.delete.DeleteLeadHandler
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
+import pl.detailing.crm.leads.get.GetLeadHandler
+import pl.detailing.crm.leads.get.GetLeadQuery
 import pl.detailing.crm.leads.list.ListLeadsHandler
 import pl.detailing.crm.leads.list.ListLeadsQuery
 import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
@@ -26,8 +35,11 @@ class LeadsController(
     private val updateLeadHandler: UpdateLeadHandler,
     private val deleteLeadHandler: DeleteLeadHandler,
     private val listLeadsHandler: ListLeadsHandler,
-    private val getPipelineSummaryHandler: GetPipelineSummaryHandler
+    private val getPipelineSummaryHandler: GetPipelineSummaryHandler,
+    private val getLeadHandler: GetLeadHandler,
+    private val analyzeLeadHandler: AnalyzeLeadHandler
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     /**
      * Get paginated list of leads with optional filters
@@ -68,17 +80,35 @@ class LeadsController(
     }
 
     /**
-     * Get a single lead by ID
+     * Get a single lead by ID — includes AI estimation breakdown if available
      * GET /api/v1/leads/{id}
      */
     @GetMapping("/{id}")
-    fun getLead(@PathVariable id: String): ResponseEntity<LeadDto> = runBlocking {
+    fun getLead(@PathVariable id: String): ResponseEntity<LeadDetailDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = getLeadHandler.handle(GetLeadQuery(LeadId.fromString(id), principal.studioId))
+        ResponseEntity.ok(result.toDetailDto())
+    }
+
+    /**
+     * Trigger AI analysis for a lead — returns 202 immediately, analysis runs in background.
+     * POST /api/v1/leads/{id}/analyze
+     */
+    @PostMapping("/{id}/analyze")
+    fun analyzeLead(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val leadId = LeadId.fromString(id)
+        val studioId = principal.studioId
 
-        // This would need a GetLeadQuery/Handler, but for simplicity we can use the repository directly
-        // For now, return 501 Not Implemented as it's not in the frontend API requirements
-        ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                analyzeLeadHandler.handle(AnalyzeLeadCommand(leadId = leadId, studioId = studioId))
+            } catch (e: Exception) {
+                log.error("[LEAD_ANALYSIS] Manual analysis failed for leadId={}: {}", leadId, e.message)
+            }
+        }
+
+        ResponseEntity.accepted().build()
     }
 
     /**

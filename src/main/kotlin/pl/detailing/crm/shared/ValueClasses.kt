@@ -228,6 +228,25 @@ value class LeadId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+@JvmInline
+value class LeadEstimationId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = LeadEstimationId(UUID.randomUUID())
+        fun fromString(value: String) = LeadEstimationId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
+value class LeadEstimationItemId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = LeadEstimationItemId(UUID.randomUUID())
+    }
+
+    override fun toString(): String = value.toString()
+}
+
 /**
  * Source of the lead inquiry
  */

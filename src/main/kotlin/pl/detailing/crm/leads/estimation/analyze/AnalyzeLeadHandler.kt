@@ -1,0 +1,160 @@
+package pl.detailing.crm.leads.estimation.analyze
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import pl.detailing.crm.leads.estimation.domain.CatalogService
+import pl.detailing.crm.leads.estimation.domain.LeadAnalyzer
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationItemEntity
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationStatusJpa
+import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.service.infrastructure.ServiceRepository
+import java.time.Instant
+import java.util.UUID
+
+@Service
+class AnalyzeLeadHandler(
+    private val leadRepository: LeadRepository,
+    private val serviceRepository: ServiceRepository,
+    private val leadEstimationRepository: LeadEstimationRepository,
+    private val leadAnalyzer: LeadAnalyzer
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    suspend fun handle(command: AnalyzeLeadCommand) {
+        val leadEntity = withContext(Dispatchers.IO) {
+            leadRepository.findById(command.leadId.value).orElse(null)
+        } ?: run {
+            log.warn("[LEAD_ANALYSIS] Lead {} not found, skipping", command.leadId)
+            return
+        }
+
+        if (leadEntity.studioId != command.studioId.value) {
+            log.warn("[LEAD_ANALYSIS] Lead {} does not belong to studio {}", command.leadId, command.studioId)
+            return
+        }
+
+        // Remove previous estimation if exists (re-analysis scenario)
+        withContext(Dispatchers.IO) {
+            leadEstimationRepository.findByLeadId(command.leadId.value)
+                ?.let { leadEstimationRepository.delete(it) }
+        }
+
+        val estimationId = UUID.randomUUID()
+        val now = Instant.now()
+
+        withContext(Dispatchers.IO) {
+            leadEstimationRepository.save(
+                LeadEstimationEntity(
+                    id = estimationId,
+                    leadId = command.leadId.value,
+                    studioId = command.studioId.value,
+                    status = LeadEstimationStatusJpa.PENDING,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+        }
+
+        log.debug("[LEAD_ANALYSIS] Started for leadId={}", command.leadId)
+
+        val catalogServices = withContext(Dispatchers.IO) {
+            serviceRepository.findActiveByStudioId(command.studioId.value)
+        }.map { s ->
+            CatalogService(
+                id = s.id.toString(),
+                name = s.name,
+                priceNet = s.basePriceNet,
+                vatRate = s.vatRate
+            )
+        }
+
+        if (catalogServices.isEmpty()) {
+            withContext(Dispatchers.IO) { markCompleted(estimationId, emptyList(), emptyList(), emptyList(), 0L) }
+            log.info("[LEAD_ANALYSIS] No active services for studio {}, estimation empty", command.studioId)
+            return
+        }
+
+        val analysisResult = try {
+            leadAnalyzer.analyze(
+                leadMessage = leadEntity.initialMessage ?: "",
+                preExtractedNeeds = command.preExtractedNeeds,
+                catalogServices = catalogServices
+            )
+        } catch (e: Exception) {
+            log.error("[LEAD_ANALYSIS] LLM failed for leadId={}: {}", command.leadId, e.message)
+            withContext(Dispatchers.IO) {
+                leadEstimationRepository.findById(estimationId).ifPresent { est ->
+                    est.status = LeadEstimationStatusJpa.FAILED
+                    est.updatedAt = Instant.now()
+                    leadEstimationRepository.save(est)
+                }
+            }
+            return
+        }
+
+        val catalogById = catalogServices.associateBy { it.id }
+
+        withContext(Dispatchers.IO) {
+            leadEstimationRepository.findById(estimationId).ifPresent { est ->
+                val matchedServices = analysisResult.matchedServiceIds.mapNotNull { id -> catalogById[id] }
+                val items = matchedServices.map { service ->
+                    LeadEstimationItemEntity(
+                        id = UUID.randomUUID(),
+                        estimation = est,
+                        serviceId = UUID.fromString(service.id),
+                        serviceName = service.name,
+                        priceNet = service.priceNet,
+                        vatRate = service.vatRate,
+                        priceGross = grossFromNet(service.priceNet, service.vatRate)
+                    )
+                }
+
+                est.extractedNeeds = analysisResult.extractedNeeds
+                est.unmatchedNeeds = analysisResult.unmatchedNeeds
+                est.items.addAll(items)
+                est.totalGross = items.sumOf { it.priceGross }
+                est.status = LeadEstimationStatusJpa.COMPLETED
+                est.updatedAt = Instant.now()
+                leadEstimationRepository.save(est)
+
+                // Pre-fill lead.estimatedValue with AI total if admin hasn't set a price yet
+                if (leadEntity.estimatedValue == 0L && est.totalGross > 0) {
+                    leadEntity.estimatedValue = est.totalGross
+                    leadEntity.updatedAt = Instant.now()
+                    leadRepository.save(leadEntity)
+                }
+            }
+        }
+
+        log.info(
+            "[LEAD_ANALYSIS] Completed for leadId={}: matched={} unmatched={}",
+            command.leadId, analysisResult.matchedServiceIds.size, analysisResult.unmatchedNeeds.size
+        )
+    }
+
+    private fun markCompleted(
+        estimationId: UUID,
+        extractedNeeds: List<String>,
+        unmatchedNeeds: List<String>,
+        items: List<LeadEstimationItemEntity>,
+        totalGross: Long
+    ) {
+        leadEstimationRepository.findById(estimationId).ifPresent { est ->
+            est.extractedNeeds = extractedNeeds
+            est.unmatchedNeeds = unmatchedNeeds
+            est.items.addAll(items)
+            est.totalGross = totalGross
+            est.status = LeadEstimationStatusJpa.COMPLETED
+            est.updatedAt = Instant.now()
+            leadEstimationRepository.save(est)
+        }
+    }
+
+    // VAT_ZW (rate = -1) means exempt — gross equals net
+    private fun grossFromNet(netCents: Long, vatRate: Int): Long =
+        if (vatRate < 0) netCents else netCents + (netCents * vatRate / 100)
+}

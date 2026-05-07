@@ -1,5 +1,9 @@
 package pl.detailing.crm.inbound.email.application
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -7,6 +11,8 @@ import pl.detailing.crm.inbound.email.domain.EmailClassificationResult
 import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -15,7 +21,8 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
 class ProcessInboundEmailHandler(
     private val studioRepository: StudioRepository,
     private val emailLeadClassifier: EmailLeadClassifier,
-    private val createLeadHandler: CreateLeadHandler
+    private val createLeadHandler: CreateLeadHandler,
+    private val analyzeLeadHandler: AnalyzeLeadHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -57,6 +64,25 @@ class ProcessInboundEmailHandler(
             "[INBOUND_EMAIL] Lead created: leadId={}, studioId={}, from='{}'",
             created.leadId, studioId, command.from
         )
+
+        // Trigger AI estimation in background — email webhook must not wait for LLM calls
+        val capturedLeadId = created.leadId
+        val capturedStudioId = studioId
+        val capturedServices = classification.requestedServices
+
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                analyzeLeadHandler.handle(
+                    AnalyzeLeadCommand(
+                        leadId = capturedLeadId,
+                        studioId = capturedStudioId,
+                        preExtractedNeeds = capturedServices
+                    )
+                )
+            } catch (e: Exception) {
+                log.error("[LEAD_ANALYSIS] Background analysis failed for leadId={}: {}", capturedLeadId, e.message)
+            }
+        }
 
         return ProcessInboundEmailResult.LeadCreated(leadId = created.leadId.toString())
     }
