@@ -689,10 +689,10 @@ class FinanceController(
         val result = paymentMethodReportHandler.getReport(
             PaymentMethodReportQuery(
                 studioId     = principal.studioId,
-                granularity  = parseEnum(granularity, "granularity"),
+                granularity  = parseEnum<ReportGranularity>(granularity, "granularity"),
                 dateFrom     = dateFrom,
                 dateTo       = dateTo,
-                documentType = documentType?.let { parseEnum(it, "documentType") }
+                documentType = documentType?.let { parseEnum<DocumentType>(it, "documentType") }
             )
         )
 
