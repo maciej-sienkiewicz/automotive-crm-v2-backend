@@ -55,15 +55,22 @@ class InboundEmailAiConfig {
             - isLead        → true lub false. Jedyna binarna decyzja.
             - extractedName → Imię lub nazwisko TYLKO jeśli wprost podane w treści wiadomości.
                               NIE wyciągaj z adresu e-mail ani nie dedukuj. Zwróć null jeśli brak.
-            - summary       → 1–2 zdaniowe podsumowanie zapytania po polsku. null jeśli isLead = false.
-            - vehicleMake   → Marka pojazdu (np. BMW, Mercedes, Toyota) TYLKO jeśli wprost napisana.
-                              null jeśli nie wymieniona. Nie dedukuj z modelu ani rocznika.
-            - vehicleModel  → Model pojazdu (np. E46, A-Klasa, Yaris) TYLKO jeśli wprost napisany.
+            - summary       → Zwięzłe podsumowanie zapytania po polsku (1–2 zdania).
+                              Musi zawierać: JAKĄ usługę, NA JAKIM pojeździe, JAKI zakres (jeśli podany).
+                              Przykład: "Klient pyta o cenę oklejenia folią PPF całego Nissana NV200 z 2015 r."
+                              null jeśli isLead = false.
+            - vehicleMake   → Marka pojazdu TYLKO jeśli wprost napisana (np. Nissan, BMW, Mercedes).
+                              null jeśli nie wymieniona. Nie dedukuj z modelu.
+            - vehicleModel  → Model pojazdu TYLKO jeśli wprost napisany (np. NV200, E46, Yaris).
                               null jeśli nie wymieniony.
-            - vehicleYear   → Rocznik jako liczba całkowita (np. 2019) TYLKO jeśli wprost podany.
-                              null jeśli nie ma go w treści.
-            - requestedServices → Lista usług WYMIENIONYCH przez klienta (np. ["polerowanie", "PPF"]).
-                                  Zwróć [] jeśli żadna usługa nie jest wymieniona wprost.
+            - vehicleYear   → Rocznik jako liczba całkowita TYLKO jeśli wprost podany.
+                              Rozpoznawaj polskie wzorce: "z rocznika 2015", "rocznik 2015",
+                              "2015 rok", "z 2015", "(2015)". null jeśli roku nie ma w treści.
+            - requestedServices → Lista usług DOSŁOWNIE wymienionych przez klienta.
+                              Zachowaj oryginalny zakres usługi (np. "folia PPF na całości",
+                              "korekta lakieru", "powłoka ceramiczna", "oklejenie full body PPF").
+                              Nie skracaj ani nie uogólniaj — "folia PPF na całości" ≠ "PPF".
+                              Zwróć [] jeśli żadna usługa nie jest wymieniona wprost.
 
             Gdy isLead = false: summary = null, extractedName = null,
             vehicleMake = null, vehicleModel = null, vehicleYear = null, requestedServices = [].

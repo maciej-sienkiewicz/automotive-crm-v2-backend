@@ -65,19 +65,26 @@ class ProcessInboundEmailHandler(
         command: ProcessInboundEmailCommand,
         classification: EmailClassificationResult.LeadDetected
     ): String = buildString {
-        command.subject?.let { appendLine("Temat: $it") }
-        appendLine(classification.summary)
+        // Original body is the primary content — never paraphrase what the client wrote.
+        // The sales team must see the exact message to avoid losing details.
+        appendLine(command.body.trim())
 
+        // Append structured metadata block extracted by LLM as quick reference for sales team.
         val vehicleParts = listOfNotNull(
             classification.vehicleMake,
             classification.vehicleModel,
             classification.vehicleYear?.toString()
         )
-        if (vehicleParts.isNotEmpty()) {
-            appendLine("Pojazd: ${vehicleParts.joinToString(" ")}")
-        }
-        if (classification.requestedServices.isNotEmpty()) {
-            appendLine("Zapytane usługi: ${classification.requestedServices.joinToString(", ")}")
+        val hasMetadata = vehicleParts.isNotEmpty() || classification.requestedServices.isNotEmpty()
+        if (hasMetadata) {
+            appendLine()
+            appendLine("---")
+            if (vehicleParts.isNotEmpty()) {
+                appendLine("Pojazd: ${vehicleParts.joinToString(" ")}")
+            }
+            if (classification.requestedServices.isNotEmpty()) {
+                appendLine("Usługi: ${classification.requestedServices.joinToString(", ")}")
+            }
         }
     }.trimEnd()
 }
