@@ -1,0 +1,109 @@
+package pl.detailing.crm.leads.get
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.springframework.stereotype.Service
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
+import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadId
+import pl.detailing.crm.shared.LeadSource
+import pl.detailing.crm.shared.LeadStatus
+import pl.detailing.crm.shared.StudioId
+import java.time.Instant
+import java.util.UUID
+
+data class GetLeadQuery(
+    val leadId: LeadId,
+    val studioId: StudioId
+)
+
+@Service
+class GetLeadHandler(
+    private val leadRepository: LeadRepository,
+    private val leadEstimationRepository: LeadEstimationRepository
+) {
+    suspend fun handle(query: GetLeadQuery): GetLeadResult {
+        val leadEntity = withContext(Dispatchers.IO) {
+            leadRepository.findById(query.leadId.value).orElse(null)
+        } ?: throw EntityNotFoundException("Lead ${query.leadId} not found")
+
+        if (leadEntity.studioId != query.studioId.value) {
+            throw ForbiddenException("Lead does not belong to this studio")
+        }
+
+        val estimation = withContext(Dispatchers.IO) {
+            leadEstimationRepository.findByLeadId(query.leadId.value)
+        }
+
+        return GetLeadResult(
+            leadId = query.leadId,
+            studioId = query.studioId,
+            source = leadEntity.source,
+            status = leadEntity.status,
+            contactIdentifier = leadEntity.contactIdentifier,
+            customerName = leadEntity.customerName,
+            initialMessage = leadEntity.initialMessage,
+            estimatedValue = leadEntity.estimatedValue,
+            requiresVerification = leadEntity.requiresVerification,
+            createdAt = leadEntity.createdAt,
+            updatedAt = leadEntity.updatedAt,
+            estimation = estimation?.toResult()
+        )
+    }
+}
+
+data class GetLeadResult(
+    val leadId: LeadId,
+    val studioId: StudioId,
+    val source: LeadSource,
+    val status: LeadStatus,
+    val contactIdentifier: String,
+    val customerName: String?,
+    val initialMessage: String?,
+    val estimatedValue: Long,
+    val requiresVerification: Boolean,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val estimation: EstimationResult?
+)
+
+data class EstimationResult(
+    val id: UUID,
+    val status: String,
+    val extractedNeeds: List<String>,
+    val matchedItems: List<EstimationItemResult>,
+    val unmatchedNeeds: List<String>,
+    val totalGross: Long,
+    val createdAt: Instant,
+    val updatedAt: Instant
+)
+
+data class EstimationItemResult(
+    val serviceId: UUID?,
+    val serviceName: String,
+    val priceNet: Long,
+    val vatRate: Int,
+    val priceGross: Long
+)
+
+private fun LeadEstimationEntity.toResult() = EstimationResult(
+    id = id,
+    status = status.name,
+    extractedNeeds = extractedNeeds,
+    matchedItems = items.map { item ->
+        EstimationItemResult(
+            serviceId = item.serviceId,
+            serviceName = item.serviceName,
+            priceNet = item.priceNet,
+            vatRate = item.vatRate,
+            priceGross = item.priceGross
+        )
+    },
+    unmatchedNeeds = unmatchedNeeds,
+    totalGross = totalGross,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
