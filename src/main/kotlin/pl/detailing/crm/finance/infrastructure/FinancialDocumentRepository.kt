@@ -204,21 +204,25 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     /**
      * Returns all INCOME + PAID documents for payment-method breakdown reporting.
      * Optionally filtered by document type and date range (issueDate).
+     *
+     * Native query required: PostgreSQL cannot infer the type of a NULL parameter
+     * bound against an enum column in a prepared statement. CAST(... AS text) IS NULL
+     * forces the driver to send a typed null that the planner accepts.
      */
-    @Query("""
-        SELECT d FROM FinancialDocumentEntity d
-        WHERE d.studioId  = :studioId
-          AND d.direction = pl.detailing.crm.finance.domain.DocumentDirection.INCOME
-          AND d.status    = pl.detailing.crm.finance.domain.DocumentStatus.PAID
-          AND d.deletedAt IS NULL
-          AND (:documentType IS NULL OR d.documentType = :documentType)
-          AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
-          AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
-        ORDER BY d.issueDate ASC
-    """)
+    @Query(value = """
+        SELECT * FROM financial_documents d
+        WHERE d.studio_id  = CAST(:studioId AS uuid)
+          AND d.direction  = 'INCOME'
+          AND d.status     = 'PAID'
+          AND d.deleted_at IS NULL
+          AND (CAST(:documentType AS text) IS NULL OR d.document_type = CAST(:documentType AS text))
+          AND (CAST(:dateFrom AS text) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS text) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
+        ORDER BY d.issue_date ASC
+    """, nativeQuery = true)
     fun findPaidIncomeForReport(
         studioId: UUID,
-        documentType: DocumentType?,
+        documentType: String?,
         dateFrom: LocalDate?,
         dateTo: LocalDate?
     ): List<FinancialDocumentEntity>

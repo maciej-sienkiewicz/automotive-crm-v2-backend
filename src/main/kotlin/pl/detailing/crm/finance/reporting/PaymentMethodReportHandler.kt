@@ -54,7 +54,7 @@ class PaymentMethodReportHandler(
     fun getReport(query: PaymentMethodReportQuery): PaymentMethodReportResult {
         val documents = documentRepository.findPaidIncomeForReport(
             studioId     = query.studioId.value,
-            documentType = query.documentType,
+            documentType = query.documentType?.name,
             dateFrom     = query.dateFrom,
             dateTo       = query.dateTo
         )
