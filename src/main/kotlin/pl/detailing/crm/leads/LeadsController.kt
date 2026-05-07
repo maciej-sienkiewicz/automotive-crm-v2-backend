@@ -91,27 +91,6 @@ class LeadsController(
     }
 
     /**
-     * Trigger AI analysis for a lead — returns 202 immediately, analysis runs in background.
-     * POST /api/v1/leads/{id}/analyze
-     */
-    @PostMapping("/{id}/analyze")
-    fun analyzeLead(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val leadId = LeadId.fromString(id)
-        val studioId = principal.studioId
-
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try {
-                analyzeLeadHandler.handle(AnalyzeLeadCommand(leadId = leadId, studioId = studioId))
-            } catch (e: Exception) {
-                log.error("[LEAD_ANALYSIS] Manual analysis failed for leadId={}: {}", leadId, e.message)
-            }
-        }
-
-        ResponseEntity.accepted().build()
-    }
-
-    /**
      * Create a new lead (manual entry)
      * POST /api/v1/leads
      */
