@@ -166,14 +166,12 @@ fun EstimationItemResult.toDto() = LeadEstimationItemDto(
 )
 
 data class PipelineSummaryDto(
-    val totalPipelineValue: Long,
-    val inProgressCount: Int,
-    val convertedCount: Int,
-    val abandonedCount: Int,
-    val convertedThisWeekCount: Int,
-    val convertedThisWeekValue: Long,
-    val convertedPreviousWeekCount: Int,
-    val convertedPreviousWeekValue: Long,
-    val leadsValueThisMonth: Long,
-    val convertedValueThisMonth: Long
+    val awaitingFirstContactCount: Int,
+    val avgWaitingTimeMinutes: Long,
+    val conversionRateThisMonth: Double,
+    val conversionRateTrendPp: Double,
+    val convertedValueThisMonth: Long,
+    val convertedCountThisMonth: Int,
+    val atRiskValue: Long,
+    val atRiskCount: Int
 )

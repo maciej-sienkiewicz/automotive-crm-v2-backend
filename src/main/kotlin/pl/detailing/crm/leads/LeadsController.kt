@@ -210,16 +210,14 @@ class LeadsController(
 
         ResponseEntity.ok(
             PipelineSummaryDto(
-                totalPipelineValue = result.totalPipelineValue,
-                inProgressCount = result.inProgressCount,
-                convertedCount = result.convertedCount,
-                abandonedCount = result.abandonedCount,
-                convertedThisWeekCount = result.convertedThisWeekCount,
-                convertedThisWeekValue = result.convertedThisWeekValue,
-                convertedPreviousWeekCount = result.convertedPreviousWeekCount,
-                convertedPreviousWeekValue = result.convertedPreviousWeekValue,
-                leadsValueThisMonth = result.leadsValueThisMonth,
-                convertedValueThisMonth = result.convertedValueThisMonth
+                awaitingFirstContactCount = result.awaitingFirstContactCount,
+                avgWaitingTimeMinutes = result.avgWaitingTimeMinutes,
+                conversionRateThisMonth = result.conversionRateThisMonth,
+                conversionRateTrendPp = result.conversionRateTrendPp,
+                convertedValueThisMonth = result.convertedValueThisMonth,
+                convertedCountThisMonth = result.convertedCountThisMonth,
+                atRiskValue = result.atRiskValue,
+                atRiskCount = result.atRiskCount
             )
         )
     }
