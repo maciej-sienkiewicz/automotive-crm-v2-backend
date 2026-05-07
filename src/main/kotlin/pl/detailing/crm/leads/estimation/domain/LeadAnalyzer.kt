@@ -22,5 +22,6 @@ data class LeadAnalysisResult(
     val matchedServiceIds: List<String>,
     val unmatchedNeeds: List<String>,
     val vehicleBrand: String? = null,
-    val vehicleModel: String? = null
+    val vehicleModel: String? = null,
+    val reasoning: String? = null
 )

@@ -125,7 +125,7 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisitIds = emptyList()
+                relatedVisits = emptyList(), aiReasoning = null
             )
         )
     }
@@ -168,7 +168,7 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisitIds = emptyList()
+                relatedVisits = emptyList(), aiReasoning = null
             )
         )
     }
@@ -262,7 +262,7 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisitIds = emptyList()
+                relatedVisits = emptyList(), aiReasoning = null
             )
         )
     }
@@ -305,7 +305,7 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisitIds = emptyList()
+                relatedVisits = emptyList(), aiReasoning = null
             )
         )
     }

@@ -6,7 +6,13 @@ import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
 import pl.detailing.crm.leads.get.GetLeadResult
 import pl.detailing.crm.leads.list.LeadListItem
+import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.shared.LeadSource
+
+data class RelatedVisitDto(
+    val id: String,
+    val title: String?
+)
 
 data class LeadDto(
     val id: String,
@@ -15,32 +21,40 @@ data class LeadDto(
     val contactIdentifier: String?,
     val customerName: String?,
     val initialMessage: String?,
+    val aiReasoning: String?,
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,
     val vehicleBrand: String?,
     val vehicleModel: String?,
-    val relatedVisitIds: List<String>
+    val relatedVisits: List<RelatedVisitDto>
 )
 
-fun Lead.toDto(relatedVisitIds: List<String> = emptyList()): LeadDto = LeadDto(
+fun Lead.toDto(
+    relatedVisits: List<RelatedVisitDto> = emptyList(),
+    aiReasoning: String? = null
+): LeadDto = LeadDto(
     id = this.id.toString(),
     source = this.source.name,
     status = this.status.name,
     contactIdentifier = this.contactIdentifier,
     customerName = this.customerName,
     initialMessage = this.initialMessage,
+    aiReasoning = aiReasoning,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
     requiresVerification = this.requiresVerification,
     vehicleBrand = this.vehicleBrand,
     vehicleModel = this.vehicleModel,
-    relatedVisitIds = relatedVisitIds
+    relatedVisits = relatedVisits
 )
 
-fun LeadListItem.toDto(): LeadDto = lead.toDto(relatedVisitIds = relatedVisitIds)
+fun LeadListItem.toDto(): LeadDto = lead.toDto(
+    relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
+    aiReasoning = aiReasoning
+)
 
 data class CreateLeadRequest(
     val source: LeadSource,
@@ -100,7 +114,8 @@ data class LeadEstimationDto(
     val matchedItems: List<LeadEstimationItemDto>,
     val unmatchedNeeds: List<String>,
     val totalGross: Long,
-    val relatedVisitIds: List<String>,
+    val relatedVisits: List<RelatedVisitDto>,
+    val aiReasoning: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -136,7 +151,8 @@ fun EstimationResult.toDto() = LeadEstimationDto(
     matchedItems = matchedItems.map { it.toDto() },
     unmatchedNeeds = unmatchedNeeds,
     totalGross = totalGross,
-    relatedVisitIds = relatedVisitIds,
+    relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
+    aiReasoning = aiReasoning,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

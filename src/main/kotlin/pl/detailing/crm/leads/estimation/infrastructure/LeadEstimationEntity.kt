@@ -45,9 +45,12 @@ class LeadEstimationEntity(
     )
     var items: MutableList<LeadEstimationItemEntity> = mutableListOf(),
 
-    @Convert(converter = StringListConverter::class)
-    @Column(name = "related_visit_ids", nullable = false, columnDefinition = "TEXT")
-    var relatedVisitIds: List<String> = emptyList(),
+    @Convert(converter = RelatedVisitListConverter::class)
+    @Column(name = "related_visits", nullable = false, columnDefinition = "TEXT")
+    var relatedVisits: List<RelatedVisit> = emptyList(),
+
+    @Column(name = "ai_reasoning", nullable = true, columnDefinition = "TEXT")
+    var aiReasoning: String? = null,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant,

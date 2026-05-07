@@ -85,7 +85,8 @@ class OpenAiLeadAnalyzer(
             matchedServiceIds = safeMatchedIds,
             unmatchedNeeds = response.unmatchedNeeds,
             vehicleBrand = normalizedBrand,
-            vehicleModel = normalizedModel
+            vehicleModel = normalizedModel,
+            reasoning = response.reasoning.takeIf { it.isNotBlank() }
         )
     }
 

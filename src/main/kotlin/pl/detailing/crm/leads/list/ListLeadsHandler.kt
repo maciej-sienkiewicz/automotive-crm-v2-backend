@@ -8,11 +8,13 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
+import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 
 data class LeadListItem(
     val lead: Lead,
-    val relatedVisitIds: List<String>
+    val relatedVisits: List<RelatedVisit>,
+    val aiReasoning: String?
 )
 
 @Service
@@ -47,9 +49,11 @@ class ListLeadsHandler(
             } else emptyMap()
 
             val items = leads.map { lead ->
+                val est = estimationsByLeadId[lead.id.value]
                 LeadListItem(
                     lead = lead,
-                    relatedVisitIds = estimationsByLeadId[lead.id.value]?.relatedVisitIds ?: emptyList()
+                    relatedVisits = est?.relatedVisits ?: emptyList(),
+                    aiReasoning = est?.aiReasoning
                 )
             }
 

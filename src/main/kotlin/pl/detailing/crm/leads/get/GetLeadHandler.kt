@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
+import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
@@ -81,7 +82,8 @@ data class EstimationResult(
     val matchedItems: List<EstimationItemResult>,
     val unmatchedNeeds: List<String>,
     val totalGross: Long,
-    val relatedVisitIds: List<String>,
+    val relatedVisits: List<RelatedVisit>,
+    val aiReasoning: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -109,7 +111,8 @@ private fun LeadEstimationEntity.toResult() = EstimationResult(
     },
     unmatchedNeeds = unmatchedNeeds,
     totalGross = totalGross,
-    relatedVisitIds = relatedVisitIds,
+    relatedVisits = relatedVisits,
+    aiReasoning = aiReasoning,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

@@ -10,6 +10,7 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationItemEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationStatusJpa
+import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -75,7 +76,7 @@ class AnalyzeLeadHandler(
         }
 
         if (catalogServices.isEmpty()) {
-            withContext(Dispatchers.IO) { markCompleted(estimationId, emptyList(), emptyList(), emptyList(), 0L, emptyList()) }
+            withContext(Dispatchers.IO) { markCompleted(estimationId, emptyList(), emptyList(), emptyList(), 0L, emptyList<RelatedVisit>()) }
             log.info("[LEAD_ANALYSIS] No active services for studio {}, estimation empty", command.studioId)
             return
         }
@@ -118,7 +119,7 @@ class AnalyzeLeadHandler(
                 }
 
                 // Lookup historical visits for same brand+model with at least one matched service
-                val relatedVisitIds = resolveRelatedVisitIds(
+                val relatedVisits = resolveRelatedVisits(
                     studioId = command.studioId.value,
                     vehicleBrand = analysisResult.vehicleBrand,
                     vehicleModel = analysisResult.vehicleModel,
@@ -129,7 +130,8 @@ class AnalyzeLeadHandler(
                 est.unmatchedNeeds = analysisResult.unmatchedNeeds
                 est.items.addAll(items)
                 est.totalGross = items.sumOf { it.priceGross }
-                est.relatedVisitIds = relatedVisitIds
+                est.relatedVisits = relatedVisits
+                est.aiReasoning = analysisResult.reasoning
                 est.status = LeadEstimationStatusJpa.COMPLETED
                 est.updatedAt = Instant.now()
                 leadEstimationRepository.save(est)
@@ -164,20 +166,20 @@ class AnalyzeLeadHandler(
         )
     }
 
-    private fun resolveRelatedVisitIds(
+    private fun resolveRelatedVisits(
         studioId: UUID,
         vehicleBrand: String?,
         vehicleModel: String?,
         matchedServiceIds: List<String>
-    ): List<String> {
+    ): List<RelatedVisit> {
         if (vehicleBrand == null || vehicleModel == null || matchedServiceIds.isEmpty()) return emptyList()
         return try {
-            visitRepository.findIdsByBrandModelAndServiceIds(
+            visitRepository.findByBrandModelAndServiceIds(
                 studioId = studioId,
                 brand = vehicleBrand,
                 model = vehicleModel,
                 serviceIds = matchedServiceIds.map { UUID.fromString(it) }
-            ).map { it.toString() }
+            ).map { RelatedVisit(id = it.id.toString(), title = it.title) }
         } catch (e: Exception) {
             log.warn("[LEAD_ANALYSIS] Failed to resolve related visits: {}", e.message)
             emptyList()
@@ -190,14 +192,14 @@ class AnalyzeLeadHandler(
         unmatchedNeeds: List<String>,
         items: List<LeadEstimationItemEntity>,
         totalGross: Long,
-        relatedVisitIds: List<String>
+        relatedVisits: List<RelatedVisit>
     ) {
         leadEstimationRepository.findById(estimationId).ifPresent { est ->
             est.extractedNeeds = extractedNeeds
             est.unmatchedNeeds = unmatchedNeeds
             est.items.addAll(items)
             est.totalGross = totalGross
-            est.relatedVisitIds = relatedVisitIds
+            est.relatedVisits = relatedVisits
             est.status = LeadEstimationStatusJpa.COMPLETED
             est.updatedAt = Instant.now()
             leadEstimationRepository.save(est)
