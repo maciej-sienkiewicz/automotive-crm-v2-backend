@@ -7,7 +7,6 @@ import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
 import pl.detailing.crm.leads.get.GetLeadResult
 import pl.detailing.crm.leads.list.LeadListItem
-import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
 import pl.detailing.crm.leads.userquote.save.UserQuoteItemResult
 import pl.detailing.crm.shared.LeadSource
@@ -32,7 +31,7 @@ data class LeadDto(
     val contactIdentifier: String?,
     val customerName: String?,
     val initialMessage: String?,
-    val aiReasoning: String?,
+    val reasoning: String?,
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val estimatedValue: Long,
@@ -45,7 +44,7 @@ data class LeadDto(
 
 fun Lead.toDto(
     relatedVisits: List<RelatedVisitDto> = emptyList(),
-    aiReasoning: String? = null,
+    reasoning: String? = null,
     assignedCustomer: CustomerSnapshotDto? = null
 ): LeadDto = LeadDto(
     id = this.id.toString(),
@@ -54,7 +53,7 @@ fun Lead.toDto(
     contactIdentifier = this.contactIdentifier,
     customerName = this.customerName,
     initialMessage = this.initialMessage,
-    aiReasoning = aiReasoning,
+    reasoning = reasoning,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
@@ -67,7 +66,7 @@ fun Lead.toDto(
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
-    aiReasoning = aiReasoning,
+    reasoning = aiReasoning,
     assignedCustomer = assignedCustomer?.toDto()
 )
 

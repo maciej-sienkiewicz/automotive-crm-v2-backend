@@ -1,9 +1,5 @@
 package pl.detailing.crm.leads
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -16,7 +12,6 @@ import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
 import pl.detailing.crm.leads.customer.AssignLeadCustomerHandler
 import pl.detailing.crm.leads.delete.DeleteLeadCommand
 import pl.detailing.crm.leads.delete.DeleteLeadHandler
-import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.leads.get.GetLeadHandler
 import pl.detailing.crm.leads.get.GetLeadQuery
@@ -140,7 +135,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                aiReasoning = null,
+                reasoning = null,
                 assignedCustomer = null
             )
         )
@@ -185,7 +180,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                aiReasoning = null,
+                reasoning = null,
                 assignedCustomer = null
             )
         )
@@ -279,7 +274,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                aiReasoning = null,
+                reasoning = null,
                 assignedCustomer = null
             )
         )
@@ -324,7 +319,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                aiReasoning = null,
+                reasoning = null,
                 assignedCustomer = null
             )
         )
