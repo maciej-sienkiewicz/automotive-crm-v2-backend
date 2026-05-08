@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.domain
 
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -22,6 +23,7 @@ data class Lead(
     val requiresVerification: Boolean,
     val vehicleBrand: String?,
     val vehicleModel: String?,
+    val customerId: CustomerId?,
     val createdAt: Instant,
     val updatedAt: Instant
 )

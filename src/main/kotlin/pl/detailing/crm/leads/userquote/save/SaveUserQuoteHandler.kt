@@ -1,0 +1,122 @@
+package pl.detailing.crm.leads.userquote.save
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteEntity
+import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteItemEntity
+import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
+import pl.detailing.crm.shared.*
+import java.time.Instant
+import java.util.UUID
+
+data class UserQuoteItemInput(
+    val serviceName: String,
+    val priceNet: Long,
+    val vatRate: Int,
+    val priceGross: Long
+)
+
+data class SaveUserQuoteCommand(
+    val leadId: LeadId,
+    val studioId: StudioId,
+    val items: List<UserQuoteItemInput>
+)
+
+data class UserQuoteItemResult(
+    val id: String,
+    val serviceName: String,
+    val priceNet: Long,
+    val vatRate: Int,
+    val priceGross: Long
+)
+
+data class SaveUserQuoteResult(
+    val id: String,
+    val leadId: String,
+    val items: List<UserQuoteItemResult>,
+    val totalNet: Long,
+    val totalGross: Long,
+    val createdAt: Instant,
+    val updatedAt: Instant
+)
+
+@Service
+class SaveUserQuoteHandler(
+    private val leadRepository: LeadRepository,
+    private val userQuoteRepository: LeadUserQuoteRepository
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    @Transactional
+    suspend fun handle(command: SaveUserQuoteCommand): SaveUserQuoteResult =
+        withContext(Dispatchers.IO) {
+            val leadEntity = leadRepository.findById(command.leadId.value)
+                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+
+            if (leadEntity.studioId != command.studioId.value) {
+                throw ForbiddenException("Lead does not belong to this studio")
+            }
+
+            if (command.items.isEmpty()) {
+                throw ValidationException("User quote must contain at least one item")
+            }
+
+            val existing = userQuoteRepository.findByLeadId(command.leadId.value)
+            val now = Instant.now()
+
+            val quoteEntity = if (existing != null) {
+                existing.items.clear()
+                existing.updatedAt = now
+                existing
+            } else {
+                val newQuote = LeadUserQuoteEntity(
+                    id = UUID.randomUUID(),
+                    leadId = command.leadId.value,
+                    studioId = command.studioId.value,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                userQuoteRepository.save(newQuote)
+            }
+
+            val itemEntities = command.items.map { item ->
+                LeadUserQuoteItemEntity(
+                    id = UUID.randomUUID(),
+                    quote = quoteEntity,
+                    serviceName = item.serviceName.trim(),
+                    priceNet = item.priceNet,
+                    vatRate = item.vatRate,
+                    priceGross = item.priceGross
+                )
+            }
+            quoteEntity.items.addAll(itemEntities)
+
+            val saved = userQuoteRepository.save(quoteEntity)
+
+            log.info("[LEADS] User quote saved: leadId={}, itemCount={}", command.leadId, saved.items.size)
+
+            saved.toResult()
+        }
+}
+
+fun LeadUserQuoteEntity.toResult() = SaveUserQuoteResult(
+    id = id.toString(),
+    leadId = leadId.toString(),
+    items = items.map {
+        UserQuoteItemResult(
+            id = it.id.toString(),
+            serviceName = it.serviceName,
+            priceNet = it.priceNet,
+            vatRate = it.vatRate,
+            priceGross = it.priceGross
+        )
+    },
+    totalNet = items.sumOf { it.priceNet },
+    totalGross = items.sumOf { it.priceGross },
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)

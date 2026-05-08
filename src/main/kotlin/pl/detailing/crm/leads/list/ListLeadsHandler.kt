@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.customer.CustomerSnapshot
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
@@ -14,13 +16,15 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 data class LeadListItem(
     val lead: Lead,
     val relatedVisits: List<RelatedVisit>,
-    val aiReasoning: String?
+    val aiReasoning: String?,
+    val assignedCustomer: CustomerSnapshot?
 )
 
 @Service
 class ListLeadsHandler(
     private val leadRepository: LeadRepository,
-    private val leadEstimationRepository: LeadEstimationRepository
+    private val leadEstimationRepository: LeadEstimationRepository,
+    private val customerRepository: CustomerRepository
 ) {
     private val log = LoggerFactory.getLogger(ListLeadsHandler::class.java)
 
@@ -48,12 +52,31 @@ class ListLeadsHandler(
                 ).associateBy { it.leadId }
             } else emptyMap()
 
+            // Batch-load customer snapshots for leads that have an assigned customer
+            val customerIds = leads.mapNotNull { it.customerId?.value }.distinct()
+            val customersById = if (customerIds.isNotEmpty()) {
+                customerRepository.findByIdsAndStudioId(
+                    ids = customerIds,
+                    studioId = query.studioId.value
+                ).associateBy { it.id }
+            } else emptyMap()
+
             val items = leads.map { lead ->
                 val est = estimationsByLeadId[lead.id.value]
+                val customer = lead.customerId?.value?.let { customersById[it] }
                 LeadListItem(
                     lead = lead,
                     relatedVisits = est?.relatedVisits ?: emptyList(),
-                    aiReasoning = est?.aiReasoning
+                    aiReasoning = est?.aiReasoning,
+                    assignedCustomer = customer?.let {
+                        CustomerSnapshot(
+                            id = it.id.toString(),
+                            firstName = it.firstName,
+                            lastName = it.lastName,
+                            email = it.email,
+                            phone = it.phone
+                        )
+                    }
                 )
             }
 

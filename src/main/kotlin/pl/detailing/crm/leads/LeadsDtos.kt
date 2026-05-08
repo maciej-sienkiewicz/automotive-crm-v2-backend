@@ -1,17 +1,28 @@
 package pl.detailing.crm.leads
 
 import java.time.Instant
+import pl.detailing.crm.leads.customer.CustomerSnapshot
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
 import pl.detailing.crm.leads.get.GetLeadResult
 import pl.detailing.crm.leads.list.LeadListItem
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
+import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
+import pl.detailing.crm.leads.userquote.save.UserQuoteItemResult
 import pl.detailing.crm.shared.LeadSource
 
 data class RelatedVisitDto(
     val id: String,
     val title: String?
+)
+
+data class CustomerSnapshotDto(
+    val id: String,
+    val firstName: String?,
+    val lastName: String?,
+    val email: String?,
+    val phone: String?
 )
 
 data class LeadDto(
@@ -28,12 +39,14 @@ data class LeadDto(
     val requiresVerification: Boolean,
     val vehicleBrand: String?,
     val vehicleModel: String?,
-    val relatedVisits: List<RelatedVisitDto>
+    val relatedVisits: List<RelatedVisitDto>,
+    val assignedCustomer: CustomerSnapshotDto?
 )
 
 fun Lead.toDto(
     relatedVisits: List<RelatedVisitDto> = emptyList(),
-    aiReasoning: String? = null
+    aiReasoning: String? = null,
+    assignedCustomer: CustomerSnapshotDto? = null
 ): LeadDto = LeadDto(
     id = this.id.toString(),
     source = this.source.name,
@@ -48,12 +61,22 @@ fun Lead.toDto(
     requiresVerification = this.requiresVerification,
     vehicleBrand = this.vehicleBrand,
     vehicleModel = this.vehicleModel,
-    relatedVisits = relatedVisits
+    relatedVisits = relatedVisits,
+    assignedCustomer = assignedCustomer
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
-    aiReasoning = aiReasoning
+    aiReasoning = aiReasoning,
+    assignedCustomer = assignedCustomer?.toDto()
+)
+
+fun CustomerSnapshot.toDto() = CustomerSnapshotDto(
+    id = id,
+    firstName = firstName,
+    lastName = lastName,
+    email = email,
+    phone = phone
 )
 
 data class CreateLeadRequest(
@@ -77,6 +100,10 @@ data class UpdateStatusRequest(
 
 data class UpdateValueRequest(
     val estimatedValue: Long
+)
+
+data class AssignCustomerRequest(
+    val customerId: String?
 )
 
 data class PaginationInfo(
@@ -104,7 +131,9 @@ data class LeadDetailDto(
     val vehicleModel: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val estimation: LeadEstimationDto?
+    val assignedCustomer: CustomerSnapshotDto?,
+    val estimation: LeadEstimationDto?,
+    val userQuote: LeadUserQuoteDto?
 )
 
 data class LeadEstimationDto(
@@ -113,6 +142,7 @@ data class LeadEstimationDto(
     val extractedNeeds: List<String>,
     val matchedItems: List<LeadEstimationItemDto>,
     val unmatchedNeeds: List<String>,
+    val totalNet: Long,
     val totalGross: Long,
     val relatedVisits: List<RelatedVisitDto>,
     val aiReasoning: String?,
@@ -122,6 +152,34 @@ data class LeadEstimationDto(
 
 data class LeadEstimationItemDto(
     val serviceId: String?,
+    val serviceName: String,
+    val priceNet: Long,
+    val vatRate: Int,
+    val priceGross: Long
+)
+
+data class LeadUserQuoteDto(
+    val id: String,
+    val items: List<LeadUserQuoteItemDto>,
+    val totalNet: Long,
+    val totalGross: Long,
+    val createdAt: Instant,
+    val updatedAt: Instant
+)
+
+data class LeadUserQuoteItemDto(
+    val id: String,
+    val serviceName: String,
+    val priceNet: Long,
+    val vatRate: Int,
+    val priceGross: Long
+)
+
+data class SaveUserQuoteRequest(
+    val items: List<SaveUserQuoteItemRequest>
+)
+
+data class SaveUserQuoteItemRequest(
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
@@ -141,7 +199,9 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     vehicleModel = vehicleModel,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    estimation = estimation?.toDto()
+    assignedCustomer = assignedCustomer?.toDto(),
+    estimation = estimation?.toDto(),
+    userQuote = userQuote?.toDto()
 )
 
 fun EstimationResult.toDto() = LeadEstimationDto(
@@ -150,6 +210,7 @@ fun EstimationResult.toDto() = LeadEstimationDto(
     extractedNeeds = extractedNeeds,
     matchedItems = matchedItems.map { it.toDto() },
     unmatchedNeeds = unmatchedNeeds,
+    totalNet = totalNet,
     totalGross = totalGross,
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
     aiReasoning = aiReasoning,
@@ -159,6 +220,23 @@ fun EstimationResult.toDto() = LeadEstimationDto(
 
 fun EstimationItemResult.toDto() = LeadEstimationItemDto(
     serviceId = serviceId?.toString(),
+    serviceName = serviceName,
+    priceNet = priceNet,
+    vatRate = vatRate,
+    priceGross = priceGross
+)
+
+fun SaveUserQuoteResult.toDto() = LeadUserQuoteDto(
+    id = id,
+    items = items.map { it.toDto() },
+    totalNet = totalNet,
+    totalGross = totalGross,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
+
+fun UserQuoteItemResult.toDto() = LeadUserQuoteItemDto(
+    id = id,
     serviceName = serviceName,
     priceNet = priceNet,
     vatRate = vatRate,

@@ -61,6 +61,7 @@ class RegisterInboundCallHandler(
                 requiresVerification = true, // Inbound calls require verification
                 vehicleBrand = null,
                 vehicleModel = null,
+                customerId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

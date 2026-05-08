@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
+import pl.detailing.crm.leads.customer.AssignLeadCustomerHandler
 import pl.detailing.crm.leads.delete.DeleteLeadCommand
 import pl.detailing.crm.leads.delete.DeleteLeadHandler
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
@@ -24,6 +26,12 @@ import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryQuery
 import pl.detailing.crm.leads.update.UpdateLeadCommand
 import pl.detailing.crm.leads.update.UpdateLeadHandler
+import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteCommand
+import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteHandler
+import pl.detailing.crm.leads.userquote.save.SaveUserQuoteCommand
+import pl.detailing.crm.leads.userquote.save.SaveUserQuoteHandler
+import pl.detailing.crm.leads.userquote.save.UserQuoteItemInput
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -37,7 +45,10 @@ class LeadsController(
     private val listLeadsHandler: ListLeadsHandler,
     private val getPipelineSummaryHandler: GetPipelineSummaryHandler,
     private val getLeadHandler: GetLeadHandler,
-    private val analyzeLeadHandler: AnalyzeLeadHandler
+    private val analyzeLeadHandler: AnalyzeLeadHandler,
+    private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
+    private val saveUserQuoteHandler: SaveUserQuoteHandler,
+    private val deleteUserQuoteHandler: DeleteUserQuoteHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -51,7 +62,9 @@ class LeadsController(
         @RequestParam(required = false) status: List<String>?,
         @RequestParam(required = false) source: List<String>?,
         @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") limit: Int
+        @RequestParam(defaultValue = "20") limit: Int,
+        @RequestParam(required = false) sortBy: String?,
+        @RequestParam(required = false) sortDirection: String?
     ): ResponseEntity<LeadListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -80,7 +93,7 @@ class LeadsController(
     }
 
     /**
-     * Get a single lead by ID — includes AI estimation breakdown if available
+     * Get a single lead by ID — includes AI estimation breakdown and user quote if available
      * GET /api/v1/leads/{id}
      */
     @GetMapping("/{id}")
@@ -125,7 +138,9 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisits = emptyList(), aiReasoning = null
+                relatedVisits = emptyList(),
+                aiReasoning = null,
+                assignedCustomer = null
             )
         )
     }
@@ -157,18 +172,20 @@ class LeadsController(
         ResponseEntity.ok(
             LeadDto(
                 id = result.leadId.toString(),
-                source = null, // Not returned in update
+                source = null,
                 status = result.status.name,
-                contactIdentifier = null, // Not returned in update
+                contactIdentifier = null,
                 customerName = result.customerName,
                 initialMessage = result.initialMessage,
-                createdAt = null, // Not returned in update
+                createdAt = null,
                 updatedAt = result.updatedAt,
                 estimatedValue = result.estimatedValue,
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisits = emptyList(), aiReasoning = null
+                relatedVisits = emptyList(),
+                aiReasoning = null,
+                assignedCustomer = null
             )
         )
     }
@@ -260,7 +277,9 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisits = emptyList(), aiReasoning = null
+                relatedVisits = emptyList(),
+                aiReasoning = null,
+                assignedCustomer = null
             )
         )
     }
@@ -303,8 +322,85 @@ class LeadsController(
                 requiresVerification = result.requiresVerification,
                 vehicleBrand = null,
                 vehicleModel = null,
-                relatedVisits = emptyList(), aiReasoning = null
+                relatedVisits = emptyList(),
+                aiReasoning = null,
+                assignedCustomer = null
             )
         )
+    }
+
+    /**
+     * Assign, change, or unassign a customer to/from a lead.
+     * Pass customerId to assign/change; pass null or omit to unassign.
+     * PATCH /api/v1/leads/{id}/customer
+     */
+    @PatchMapping("/{id}/customer")
+    fun assignCustomer(
+        @PathVariable id: String,
+        @RequestBody request: AssignCustomerRequest
+    ): ResponseEntity<CustomerSnapshotDto?> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = AssignLeadCustomerCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            customerId = request.customerId?.let { CustomerId.fromString(it) }
+        )
+
+        val result = assignLeadCustomerHandler.handle(command)
+
+        if (result.customerSnapshot != null) {
+            ResponseEntity.ok(result.customerSnapshot.toDto())
+        } else {
+            ResponseEntity.ok(null)
+        }
+    }
+
+    /**
+     * Create or replace the user-defined quote for a lead.
+     * Replaces all existing items with the new list.
+     * PUT /api/v1/leads/{id}/user-quote
+     */
+    @PutMapping("/{id}/user-quote")
+    fun saveUserQuote(
+        @PathVariable id: String,
+        @RequestBody request: SaveUserQuoteRequest
+    ): ResponseEntity<LeadUserQuoteDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = SaveUserQuoteCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            items = request.items.map {
+                UserQuoteItemInput(
+                    serviceName = it.serviceName,
+                    priceNet = it.priceNet,
+                    vatRate = it.vatRate,
+                    priceGross = it.priceGross
+                )
+            }
+        )
+
+        val result = saveUserQuoteHandler.handle(command)
+        ResponseEntity.ok(result.toDto())
+    }
+
+    /**
+     * Delete the user-defined quote for a lead.
+     * DELETE /api/v1/leads/{id}/user-quote
+     */
+    @DeleteMapping("/{id}/user-quote")
+    fun deleteUserQuote(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = DeleteUserQuoteCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId
+        )
+
+        deleteUserQuoteHandler.handle(command)
+        ResponseEntity.noContent().build()
     }
 }

@@ -3,10 +3,15 @@ package pl.detailing.crm.leads.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.customer.CustomerSnapshot
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
+import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
+import pl.detailing.crm.leads.userquote.save.toResult
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.LeadId
@@ -24,7 +29,9 @@ data class GetLeadQuery(
 @Service
 class GetLeadHandler(
     private val leadRepository: LeadRepository,
-    private val leadEstimationRepository: LeadEstimationRepository
+    private val leadEstimationRepository: LeadEstimationRepository,
+    private val customerRepository: CustomerRepository,
+    private val userQuoteRepository: LeadUserQuoteRepository
 ) {
     suspend fun handle(query: GetLeadQuery): GetLeadResult {
         val leadEntity = withContext(Dispatchers.IO) {
@@ -37,6 +44,25 @@ class GetLeadHandler(
 
         val estimation = withContext(Dispatchers.IO) {
             leadEstimationRepository.findByLeadId(query.leadId.value)
+        }
+
+        val customerSnapshot = withContext(Dispatchers.IO) {
+            leadEntity.customerId?.let { customerId ->
+                customerRepository.findByIdAndStudioId(customerId, query.studioId.value)
+                    ?.let { c ->
+                        CustomerSnapshot(
+                            id = c.id.toString(),
+                            firstName = c.firstName,
+                            lastName = c.lastName,
+                            email = c.email,
+                            phone = c.phone
+                        )
+                    }
+            }
+        }
+
+        val userQuote = withContext(Dispatchers.IO) {
+            userQuoteRepository.findByLeadId(query.leadId.value)?.toResult()
         }
 
         return GetLeadResult(
@@ -53,7 +79,9 @@ class GetLeadHandler(
             vehicleModel = leadEntity.vehicleModel,
             createdAt = leadEntity.createdAt,
             updatedAt = leadEntity.updatedAt,
-            estimation = estimation?.toResult()
+            assignedCustomer = customerSnapshot,
+            estimation = estimation?.toResult(),
+            userQuote = userQuote
         )
     }
 }
@@ -72,7 +100,9 @@ data class GetLeadResult(
     val vehicleModel: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val estimation: EstimationResult?
+    val assignedCustomer: CustomerSnapshot?,
+    val estimation: EstimationResult?,
+    val userQuote: SaveUserQuoteResult?
 )
 
 data class EstimationResult(
@@ -81,6 +111,7 @@ data class EstimationResult(
     val extractedNeeds: List<String>,
     val matchedItems: List<EstimationItemResult>,
     val unmatchedNeeds: List<String>,
+    val totalNet: Long,
     val totalGross: Long,
     val relatedVisits: List<RelatedVisit>,
     val aiReasoning: String?,
@@ -110,6 +141,7 @@ private fun LeadEstimationEntity.toResult() = EstimationResult(
         )
     },
     unmatchedNeeds = unmatchedNeeds,
+    totalNet = items.sumOf { it.priceNet },
     totalGross = totalGross,
     relatedVisits = relatedVisits,
     aiReasoning = aiReasoning,

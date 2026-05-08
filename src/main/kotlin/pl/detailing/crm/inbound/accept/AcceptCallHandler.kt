@@ -52,6 +52,7 @@ class AcceptCallHandler(
                 requiresVerification = false, // Accepted calls don't require verification
                 vehicleBrand = null,
                 vehicleModel = null,
+                customerId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

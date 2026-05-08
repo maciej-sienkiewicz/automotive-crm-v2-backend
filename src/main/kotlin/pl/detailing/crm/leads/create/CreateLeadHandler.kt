@@ -53,6 +53,7 @@ class CreateLeadHandler(
                 requiresVerification = false, // Manual entries don't require verification
                 vehicleBrand = null,
                 vehicleModel = null,
+                customerId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

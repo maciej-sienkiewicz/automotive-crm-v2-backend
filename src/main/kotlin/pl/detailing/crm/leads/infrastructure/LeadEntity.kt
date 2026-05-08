@@ -2,6 +2,7 @@ package pl.detailing.crm.leads.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.leads.domain.Lead
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -56,6 +57,9 @@ class LeadEntity(
     @Column(name = "vehicle_model", nullable = true, columnDefinition = "text")
     var vehicleModel: String?,
 
+    @Column(name = "customer_id", nullable = true, columnDefinition = "uuid")
+    var customerId: UUID?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -74,6 +78,7 @@ class LeadEntity(
         requiresVerification = requiresVerification,
         vehicleBrand = vehicleBrand,
         vehicleModel = vehicleModel,
+        customerId = customerId?.let { CustomerId(it) },
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -91,6 +96,7 @@ class LeadEntity(
             requiresVerification = lead.requiresVerification,
             vehicleBrand = lead.vehicleBrand,
             vehicleModel = lead.vehicleModel,
+            customerId = lead.customerId?.value,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )
