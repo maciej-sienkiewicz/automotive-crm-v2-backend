@@ -111,16 +111,6 @@ class ProcessInboundEmailHandler(
             classification.vehicleYear?.toString()
         )
         val hasMetadata = vehicleParts.isNotEmpty() || classification.requestedServices.isNotEmpty()
-        if (hasMetadata) {
-            appendLine()
-            appendLine("---")
-            if (vehicleParts.isNotEmpty()) {
-                appendLine("Pojazd: ${vehicleParts.joinToString(" ")}")
-            }
-            if (classification.requestedServices.isNotEmpty()) {
-                appendLine("Usługi: ${classification.requestedServices.joinToString(", ")}")
-            }
-        }
     }.trimEnd()
 }
 
