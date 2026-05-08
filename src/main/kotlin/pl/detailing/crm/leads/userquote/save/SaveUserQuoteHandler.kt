@@ -9,12 +9,14 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteEntity
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteItemEntity
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
+import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.util.UUID
 
 data class UserQuoteItemInput(
-    val serviceName: String,
+    val serviceId: UUID?,
+    val serviceName: String?,
     val priceNet: Long,
     val vatRate: Int,
     val priceGross: Long
@@ -28,6 +30,7 @@ data class SaveUserQuoteCommand(
 
 data class UserQuoteItemResult(
     val id: String,
+    val serviceId: String?,
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
@@ -47,7 +50,8 @@ data class SaveUserQuoteResult(
 @Service
 class SaveUserQuoteHandler(
     private val leadRepository: LeadRepository,
-    private val userQuoteRepository: LeadUserQuoteRepository
+    private val userQuoteRepository: LeadUserQuoteRepository,
+    private val serviceRepository: ServiceRepository
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -63,6 +67,21 @@ class SaveUserQuoteHandler(
 
             if (command.items.isEmpty()) {
                 throw ValidationException("User quote must contain at least one item")
+            }
+
+            // Batch-load catalog services for items that reference one — single query, no N+1
+            val requestedServiceIds = command.items.mapNotNull { it.serviceId }
+            val catalogServices = if (requestedServiceIds.isNotEmpty()) {
+                serviceRepository.findActiveByStudioId(command.studioId.value)
+                    .filter { it.id in requestedServiceIds }
+                    .associateBy { it.id }
+            } else emptyMap()
+
+            // Validate all referenced services exist
+            requestedServiceIds.forEach { serviceId ->
+                if (serviceId !in catalogServices) {
+                    throw EntityNotFoundException("Service '$serviceId' not found in catalog")
+                }
             }
 
             val existing = userQuoteRepository.findByLeadId(command.leadId.value)
@@ -84,10 +103,18 @@ class SaveUserQuoteHandler(
             }
 
             val itemEntities = command.items.map { item ->
+                val resolvedName: String = if (item.serviceId != null) {
+                    catalogServices[item.serviceId]!!.name
+                } else {
+                    item.serviceName?.trim()?.takeIf { it.isNotBlank() }
+                        ?: throw ValidationException("serviceName is required when serviceId is not provided")
+                }
+
                 LeadUserQuoteItemEntity(
                     id = UUID.randomUUID(),
                     quote = quoteEntity,
-                    serviceName = item.serviceName.trim(),
+                    serviceId = item.serviceId,
+                    serviceName = resolvedName,
                     priceNet = item.priceNet,
                     vatRate = item.vatRate,
                     priceGross = item.priceGross
@@ -109,6 +136,7 @@ fun LeadUserQuoteEntity.toResult() = SaveUserQuoteResult(
     items = items.map {
         UserQuoteItemResult(
             id = it.id.toString(),
+            serviceId = it.serviceId?.toString(),
             serviceName = it.serviceName,
             priceNet = it.priceNet,
             vatRate = it.vatRate,

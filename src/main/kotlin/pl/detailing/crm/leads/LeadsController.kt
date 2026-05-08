@@ -35,6 +35,7 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/leads")
@@ -375,6 +376,7 @@ class LeadsController(
             studioId = principal.studioId,
             items = request.items.map {
                 UserQuoteItemInput(
+                    serviceId = it.serviceId?.let { id -> UUID.fromString(id) },
                     serviceName = it.serviceName,
                     priceNet = it.priceNet,
                     vatRate = it.vatRate,

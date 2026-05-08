@@ -169,6 +169,7 @@ data class LeadUserQuoteDto(
 
 data class LeadUserQuoteItemDto(
     val id: String,
+    val serviceId: String?,
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
@@ -180,7 +181,8 @@ data class SaveUserQuoteRequest(
 )
 
 data class SaveUserQuoteItemRequest(
-    val serviceName: String,
+    val serviceId: String?,
+    val serviceName: String?,
     val priceNet: Long,
     val vatRate: Int,
     val priceGross: Long
@@ -237,6 +239,7 @@ fun SaveUserQuoteResult.toDto() = LeadUserQuoteDto(
 
 fun UserQuoteItemResult.toDto() = LeadUserQuoteItemDto(
     id = id,
+    serviceId = serviceId,
     serviceName = serviceName,
     priceNet = priceNet,
     vatRate = vatRate,

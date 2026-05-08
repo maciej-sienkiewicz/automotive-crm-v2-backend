@@ -54,6 +54,9 @@ class LeadUserQuoteItemEntity(
     @JoinColumn(name = "quote_id", nullable = false)
     var quote: LeadUserQuoteEntity,
 
+    @Column(name = "service_id", nullable = true, columnDefinition = "uuid")
+    var serviceId: UUID?,
+
     @Column(name = "service_name", nullable = false, length = 500)
     var serviceName: String,
 
