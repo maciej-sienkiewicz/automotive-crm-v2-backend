@@ -19,6 +19,7 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 import java.util.UUID
 
@@ -82,6 +83,7 @@ class GetLeadHandler(
             updatedAt = leadEntity.updatedAt,
             assignedCustomer = customerSnapshot,
             appointmentId = leadEntity.appointmentId?.let { AppointmentId(it) },
+            visitId = leadEntity.visitId?.let { VisitId(it) },
             estimation = estimation?.toResult(),
             userQuote = userQuote
         )
@@ -104,6 +106,7 @@ data class GetLeadResult(
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshot?,
     val appointmentId: AppointmentId?,
+    val visitId: VisitId?,
     val estimation: EstimationResult?,
     val userQuote: SaveUserQuoteResult?
 )

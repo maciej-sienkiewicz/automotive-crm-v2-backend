@@ -8,6 +8,7 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 import java.util.*
 
@@ -64,6 +65,9 @@ class LeadEntity(
     @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
     var appointmentId: UUID?,
 
+    @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
+    var visitId: UUID?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -84,6 +88,7 @@ class LeadEntity(
         vehicleModel = vehicleModel,
         customerId = customerId?.let { CustomerId(it) },
         appointmentId = appointmentId?.let { AppointmentId(it) },
+        visitId = visitId?.let { VisitId(it) },
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -103,6 +108,7 @@ class LeadEntity(
             vehicleModel = lead.vehicleModel,
             customerId = lead.customerId?.value,
             appointmentId = lead.appointmentId?.value,
+            visitId = lead.visitId?.value,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )

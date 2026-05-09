@@ -96,4 +96,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("sources") sources: List<LeadSource>?
     ): List<LeadEntity>
+
+    /**
+     * Find a lead linked to a specific appointment (used for lead status sync on appointment events)
+     */
+    fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 }

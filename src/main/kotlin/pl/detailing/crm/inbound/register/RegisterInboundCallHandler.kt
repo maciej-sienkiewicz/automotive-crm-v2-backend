@@ -63,6 +63,7 @@ class RegisterInboundCallHandler(
                 vehicleModel = null,
                 customerId = null,
                 appointmentId = null,
+                visitId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

@@ -14,6 +14,7 @@
 BEGIN;
 
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS appointment_id UUID;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS visit_id UUID;
 
 UPDATE leads SET status = 'COMPLETED' WHERE status = 'CONVERTED';
 UPDATE leads SET status = 'LOST'      WHERE status = 'ABANDONED';

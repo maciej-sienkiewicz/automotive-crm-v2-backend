@@ -1,15 +1,18 @@
 package pl.detailing.crm.appointment.infrastructure
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
+import pl.detailing.crm.appointment.events.AppointmentLeadSyncEvent
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
+import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.time.Instant
@@ -27,7 +30,8 @@ import java.util.UUID
 @Service
 class ReservationStatusUpdateJob(
     private val appointmentRepository: AppointmentRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     companion object {
@@ -89,6 +93,16 @@ class ReservationStatusUpdateJob(
                                 newValue = AppointmentStatus.ABANDONED.name
                             )
                         )
+                    )
+                )
+
+                eventPublisher.publishEvent(
+                    AppointmentLeadSyncEvent(
+                        appointmentId = appointment.id,
+                        studioId = appointment.studioId,
+                        targetLeadStatus = LeadStatus.NO_SHOW,
+                        initiatorUserId = SYSTEM_USER_ID.value,
+                        initiatorDisplayName = SYSTEM_USER_NAME
                     )
                 )
 

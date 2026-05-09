@@ -40,7 +40,8 @@ data class LeadDto(
     val vehicleModel: String?,
     val relatedVisits: List<RelatedVisitDto>,
     val assignedCustomer: CustomerSnapshotDto?,
-    val appointmentId: String?
+    val appointmentId: String?,
+    val visitId: String?
 )
 
 fun Lead.toDto(
@@ -63,7 +64,8 @@ fun Lead.toDto(
     vehicleModel = this.vehicleModel,
     relatedVisits = relatedVisits,
     assignedCustomer = assignedCustomer,
-    appointmentId = this.appointmentId?.toString()
+    appointmentId = this.appointmentId?.toString(),
+    visitId = this.visitId?.toString()
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
@@ -134,6 +136,7 @@ data class LeadDetailDto(
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshotDto?,
     val appointmentId: String?,
+    val visitId: String?,
     val estimation: LeadEstimationDto?,
     val userQuote: LeadUserQuoteDto?
 )
@@ -205,6 +208,7 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     updatedAt = updatedAt,
     assignedCustomer = assignedCustomer?.toDto(),
     appointmentId = appointmentId?.toString(),
+    visitId = visitId?.toString(),
     estimation = estimation?.toDto(),
     userQuote = userQuote?.toDto()
 )

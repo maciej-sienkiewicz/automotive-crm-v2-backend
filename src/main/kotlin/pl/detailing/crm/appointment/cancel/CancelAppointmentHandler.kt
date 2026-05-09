@@ -1,9 +1,11 @@
 package pl.detailing.crm.appointment.cancel
 
 import org.apache.coyote.BadRequestException
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
+import pl.detailing.crm.appointment.events.AppointmentLeadSyncEvent
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
@@ -16,7 +18,8 @@ import java.time.Instant
 @Service
 class CancelAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     @Transactional
@@ -58,6 +61,16 @@ class CancelAppointmentHandler(
                 FieldChange("status", previousStatus, AppointmentStatus.CANCELLED.name)
             )
         ))
+
+        eventPublisher.publishEvent(
+            AppointmentLeadSyncEvent(
+                appointmentId = command.appointmentId.value,
+                studioId = command.studioId.value,
+                targetLeadStatus = LeadStatus.NO_SHOW,
+                initiatorUserId = command.userId.value,
+                initiatorDisplayName = command.userName ?: ""
+            )
+        )
 
         return CancelAppointmentResult(
             appointmentId = command.appointmentId
