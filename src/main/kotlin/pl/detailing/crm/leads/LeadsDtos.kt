@@ -39,7 +39,8 @@ data class LeadDto(
     val vehicleBrand: String?,
     val vehicleModel: String?,
     val relatedVisits: List<RelatedVisitDto>,
-    val assignedCustomer: CustomerSnapshotDto?
+    val assignedCustomer: CustomerSnapshotDto?,
+    val appointmentId: String?
 )
 
 fun Lead.toDto(
@@ -61,7 +62,8 @@ fun Lead.toDto(
     vehicleBrand = this.vehicleBrand,
     vehicleModel = this.vehicleModel,
     relatedVisits = relatedVisits,
-    assignedCustomer = assignedCustomer
+    assignedCustomer = assignedCustomer,
+    appointmentId = this.appointmentId?.toString()
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
@@ -131,6 +133,7 @@ data class LeadDetailDto(
     val createdAt: Instant,
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshotDto?,
+    val appointmentId: String?,
     val estimation: LeadEstimationDto?,
     val userQuote: LeadUserQuoteDto?
 )
@@ -201,6 +204,7 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     createdAt = createdAt,
     updatedAt = updatedAt,
     assignedCustomer = assignedCustomer?.toDto(),
+    appointmentId = appointmentId?.toString(),
     estimation = estimation?.toDto(),
     userQuote = userQuote?.toDto()
 )
@@ -254,4 +258,82 @@ data class PipelineSummaryDto(
     val convertedCountThisMonth: Int,
     val atRiskValue: Long,
     val atRiskCount: Int
+)
+
+// ── Lead → Appointment creation ──────────────────────────────────────────────
+
+data class CreateLeadAppointmentRequest(
+    val customer: LeadAppointmentCustomerRequest,
+    val vehicle: LeadAppointmentVehicleRequest,
+    val services: List<LeadAppointmentServiceRequest>,
+    val schedule: LeadAppointmentScheduleRequest,
+    val appointmentTitle: String?,
+    val appointmentColorId: String,
+    val note: String?,
+    val sendReminderSms: Boolean = false
+)
+
+data class LeadAppointmentScheduleRequest(
+    val isAllDay: Boolean,
+    val startDateTime: java.time.Instant,
+    val endDateTime: java.time.Instant
+)
+
+enum class LeadAppointmentCustomerMode { EXISTING, NEW, UPDATE }
+enum class LeadAppointmentVehicleMode { EXISTING, NEW, UPDATE, NONE }
+
+data class LeadAppointmentCustomerRequest(
+    val mode: LeadAppointmentCustomerMode,
+    val id: String?,
+    val newData: LeadAppointmentNewCustomerData?,
+    val updateData: LeadAppointmentNewCustomerData?
+)
+
+data class LeadAppointmentNewCustomerData(
+    val firstName: String?,
+    val lastName: String?,
+    val phone: String?,
+    val email: String?,
+    val company: LeadAppointmentCompanyData?
+)
+
+data class LeadAppointmentCompanyData(
+    val name: String?,
+    val nip: String?,
+    val regon: String?,
+    val address: String?
+)
+
+data class LeadAppointmentVehicleRequest(
+    val mode: LeadAppointmentVehicleMode,
+    val id: String?,
+    val newData: LeadAppointmentNewVehicleData?,
+    val updateData: LeadAppointmentNewVehicleData?
+)
+
+data class LeadAppointmentNewVehicleData(
+    val brand: String,
+    val model: String,
+    val year: Int?,
+    val licensePlate: String?
+)
+
+data class LeadAppointmentServiceRequest(
+    val serviceId: String?,
+    val serviceName: String?,
+    val basePriceNet: Long,
+    val vatRate: Int,
+    val adjustmentType: pl.detailing.crm.appointment.domain.AdjustmentType,
+    val adjustmentValue: Double,
+    val note: String?
+)
+
+data class CreateLeadAppointmentResponse(
+    val appointmentId: String,
+    val customerId: String,
+    val vehicleId: String?,
+    val leadStatus: String,
+    val totalNet: Long,
+    val totalGross: Long,
+    val totalVat: Long
 )

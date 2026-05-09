@@ -260,9 +260,12 @@ enum class LeadSource {
  * Lead lifecycle status
  */
 enum class LeadStatus {
-    IN_PROGRESS,    // Lead is being worked on (contacted)
-    CONVERTED,      // Lead converted to customer (closed won)
-    ABANDONED       // Lead abandoned (closed lost)
+    NEW,            // Just received — nobody responded yet
+    IN_PROGRESS,    // Responded, waiting for client decision
+    CONFIRMED,      // Reservation created from this lead
+    COMPLETED,      // Visit happened successfully
+    LOST,           // Contact lost or offer rejected
+    NO_SHOW         // Reservation was scheduled but client didn't show up
 }
 
 /**

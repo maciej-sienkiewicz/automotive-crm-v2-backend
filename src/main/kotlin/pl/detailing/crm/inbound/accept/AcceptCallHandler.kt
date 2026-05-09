@@ -44,7 +44,7 @@ class AcceptCallHandler(
                 id = LeadId.random(),
                 studioId = StudioId(callLogEntity.studioId),
                 source = LeadSource.PHONE,
-                status = LeadStatus.IN_PROGRESS,
+                status = LeadStatus.NEW,
                 contactIdentifier = callLogEntity.phoneNumber,
                 customerName = callLogEntity.callerName,
                 initialMessage = callLogEntity.note,
@@ -53,6 +53,7 @@ class AcceptCallHandler(
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
+                appointmentId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

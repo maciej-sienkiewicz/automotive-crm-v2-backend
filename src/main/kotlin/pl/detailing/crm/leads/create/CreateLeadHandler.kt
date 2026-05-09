@@ -45,7 +45,7 @@ class CreateLeadHandler(
                 id = LeadId.random(),
                 studioId = command.studioId,
                 source = command.source,
-                status = LeadStatus.IN_PROGRESS,
+                status = LeadStatus.NEW,
                 contactIdentifier = command.contactIdentifier.trim(),
                 customerName = command.customerName?.trim(),
                 initialMessage = command.initialMessage?.trim(),
@@ -54,6 +54,7 @@ class CreateLeadHandler(
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
+                appointmentId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

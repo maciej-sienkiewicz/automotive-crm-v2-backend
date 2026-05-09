@@ -53,7 +53,7 @@ class RegisterInboundCallHandler(
                 id = LeadId.random(),
                 studioId = command.studioId,
                 source = LeadSource.PHONE,
-                status = LeadStatus.IN_PROGRESS,
+                status = LeadStatus.NEW,
                 contactIdentifier = normalizedPhone,
                 customerName = command.callerName?.trim(),
                 initialMessage = command.note?.trim(),
@@ -62,6 +62,7 @@ class RegisterInboundCallHandler(
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
+                appointmentId = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

@@ -12,6 +12,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
 import pl.detailing.crm.leads.userquote.save.toResult
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.LeadId
@@ -80,6 +81,7 @@ class GetLeadHandler(
             createdAt = leadEntity.createdAt,
             updatedAt = leadEntity.updatedAt,
             assignedCustomer = customerSnapshot,
+            appointmentId = leadEntity.appointmentId?.let { AppointmentId(it) },
             estimation = estimation?.toResult(),
             userQuote = userQuote
         )
@@ -101,6 +103,7 @@ data class GetLeadResult(
     val createdAt: Instant,
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshot?,
+    val appointmentId: AppointmentId?,
     val estimation: EstimationResult?,
     val userQuote: SaveUserQuoteResult?
 )

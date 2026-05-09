@@ -81,6 +81,11 @@ enum class AuditAction {
     // Lead-specific
     LEAD_CONVERTED,
     LEAD_ABANDONED,
+    LEAD_CONFIRMED,
+    LEAD_COMPLETED,
+    LEAD_LOST,
+    LEAD_NO_SHOW,
+    LEAD_APPOINTMENT_CREATED,
 
     // Inbound-specific
     CALL_ACCEPTED,

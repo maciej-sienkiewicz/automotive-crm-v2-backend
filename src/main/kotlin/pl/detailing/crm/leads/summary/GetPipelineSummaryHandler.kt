@@ -32,8 +32,10 @@ class GetPipelineSummaryHandler(
                 )
             }
 
+            val newLeads = allLeads.filter { it.status == LeadStatus.NEW }
             val inProgress = allLeads.filter { it.status == LeadStatus.IN_PROGRESS }
-            val converted = allLeads.filter { it.status == LeadStatus.CONVERTED }
+            // CONFIRMED + COMPLETED both represent successfully converted leads
+            val converted = allLeads.filter { it.status == LeadStatus.CONFIRMED || it.status == LeadStatus.COMPLETED }
 
             val now = Instant.now()
             val zoneId = ZoneId.of("Europe/Warsaw")
@@ -49,12 +51,8 @@ class GetPipelineSummaryHandler(
                 .withHour(0).withMinute(0).withSecond(0).withNano(0)
                 .toInstant()
 
-            // Kafelek 1: Do obsłużenia — IN_PROGRESS leads never manually touched
-            // Proxy: updatedAt within 2 minutes of createdAt means no human interaction yet
-            val neverTouchedThresholdSeconds = 120L
-            val awaitingFirstContact = inProgress.filter {
-                ChronoUnit.SECONDS.between(it.createdAt, it.updatedAt) < neverTouchedThresholdSeconds
-            }
+            // Kafelek 1: Do obsłużenia — leady ze statusem NEW (nikt jeszcze nie odpowiedział)
+            val awaitingFirstContact = newLeads
             val avgWaitingTimeMinutes = if (awaitingFirstContact.isEmpty()) 0L else
                 awaitingFirstContact.map { ChronoUnit.MINUTES.between(it.createdAt, now) }.average().toLong()
 
@@ -70,7 +68,7 @@ class GetPipelineSummaryHandler(
                 convertedPreviousMonth.size.toDouble() / leadsCreatedPreviousMonth.size.toDouble() * 100.0
             val conversionRateTrendPp = conversionRateThisMonth - conversionRatePreviousMonth
 
-            // Kafelek 3: Zrealizowane (ten miesiąc) — wartość i liczba
+            // Kafelek 3: Zrealizowane (ten miesiąc) — wartość i liczba (CONFIRMED + COMPLETED)
             val convertedValueThisMonth = convertedThisMonth.sumOf { it.estimatedValue }
             val convertedCountThisMonth = convertedThisMonth.size
 

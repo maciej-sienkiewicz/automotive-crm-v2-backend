@@ -45,10 +45,10 @@ class UpdateLeadHandler(
             )
 
             // Update fields
-            command.status?.let { 
+            command.status?.let {
                 entity.status = it
-                // Clear verification flag when status changes to IN_PROGRESS
-                if (it == LeadStatus.IN_PROGRESS) {
+                // Clear verification flag when an agent picks up the lead
+                if (it == LeadStatus.IN_PROGRESS || it == LeadStatus.CONFIRMED) {
                     entity.requiresVerification = false
                 }
             }
@@ -64,10 +64,11 @@ class UpdateLeadHandler(
                 updated.id, updated.studioId, updated.status)
 
             // Determine audit action based on status change
-            val newStatus = updated.status
             val auditAction = when {
-                command.status == LeadStatus.CONVERTED && oldStatus != LeadStatus.CONVERTED -> AuditAction.LEAD_CONVERTED
-                command.status == LeadStatus.ABANDONED && oldStatus != LeadStatus.ABANDONED -> AuditAction.LEAD_ABANDONED
+                command.status == LeadStatus.CONFIRMED && oldStatus != LeadStatus.CONFIRMED -> AuditAction.LEAD_CONFIRMED
+                command.status == LeadStatus.COMPLETED && oldStatus != LeadStatus.COMPLETED -> AuditAction.LEAD_COMPLETED
+                command.status == LeadStatus.LOST && oldStatus != LeadStatus.LOST -> AuditAction.LEAD_LOST
+                command.status == LeadStatus.NO_SHOW && oldStatus != LeadStatus.NO_SHOW -> AuditAction.LEAD_NO_SHOW
                 command.status != null && command.status != oldStatus -> AuditAction.STATUS_CHANGE
                 else -> AuditAction.UPDATE
             }

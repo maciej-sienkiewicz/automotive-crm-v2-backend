@@ -6,6 +6,12 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.appointment.create.CustomerIdentity
+import pl.detailing.crm.appointment.create.ScheduleCommand
+import pl.detailing.crm.appointment.create.ServiceLineItemCommand
+import pl.detailing.crm.appointment.create.VehicleIdentity
+import pl.detailing.crm.leads.appointment.CreateLeadAppointmentCommand
+import pl.detailing.crm.leads.appointment.CreateLeadAppointmentHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
@@ -26,10 +32,13 @@ import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteCommand
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.UserQuoteItemInput
+import pl.detailing.crm.shared.AppointmentColorId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
+import pl.detailing.crm.shared.ServiceId
+import pl.detailing.crm.shared.VehicleId
 import java.util.UUID
 
 @RestController
@@ -44,7 +53,8 @@ class LeadsController(
     private val analyzeLeadHandler: AnalyzeLeadHandler,
     private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
-    private val deleteUserQuoteHandler: DeleteUserQuoteHandler
+    private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
+    private val createLeadAppointmentHandler: CreateLeadAppointmentHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -399,5 +409,120 @@ class LeadsController(
 
         deleteUserQuoteHandler.handle(command)
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Create an appointment directly from a lead.
+     * Sets lead status to CONFIRMED and links the appointment.
+     * POST /api/v1/leads/{id}/appointment
+     */
+    @PostMapping("/{id}/appointment")
+    fun createAppointmentFromLead(
+        @PathVariable id: String,
+        @RequestBody request: CreateLeadAppointmentRequest
+    ): ResponseEntity<CreateLeadAppointmentResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val customer: CustomerIdentity = when (request.customer.mode) {
+            LeadAppointmentCustomerMode.EXISTING -> CustomerIdentity.Existing(
+                customerId = pl.detailing.crm.shared.CustomerId.fromString(
+                    request.customer.id ?: throw IllegalArgumentException("customer.id required for EXISTING mode")
+                )
+            )
+            LeadAppointmentCustomerMode.NEW -> {
+                val d = request.customer.newData ?: throw IllegalArgumentException("customer.newData required for NEW mode")
+                CustomerIdentity.New(
+                    firstName = d.firstName,
+                    lastName = d.lastName,
+                    phone = d.phone,
+                    email = d.email,
+                    companyName = d.company?.name,
+                    companyNip = d.company?.nip,
+                    companyRegon = d.company?.regon,
+                    companyAddress = d.company?.address
+                )
+            }
+            LeadAppointmentCustomerMode.UPDATE -> {
+                val d = request.customer.updateData ?: throw IllegalArgumentException("customer.updateData required for UPDATE mode")
+                CustomerIdentity.Update(
+                    customerId = pl.detailing.crm.shared.CustomerId.fromString(
+                        request.customer.id ?: throw IllegalArgumentException("customer.id required for UPDATE mode")
+                    ),
+                    firstName = d.firstName,
+                    lastName = d.lastName,
+                    phone = d.phone,
+                    email = d.email,
+                    companyName = d.company?.name,
+                    companyNip = d.company?.nip,
+                    companyRegon = d.company?.regon,
+                    companyAddress = d.company?.address
+                )
+            }
+        }
+
+        val vehicle: VehicleIdentity = when (request.vehicle.mode) {
+            LeadAppointmentVehicleMode.EXISTING -> VehicleIdentity.Existing(
+                vehicleId = VehicleId.fromString(
+                    request.vehicle.id ?: throw IllegalArgumentException("vehicle.id required for EXISTING mode")
+                )
+            )
+            LeadAppointmentVehicleMode.NEW -> {
+                val d = request.vehicle.newData ?: throw IllegalArgumentException("vehicle.newData required for NEW mode")
+                VehicleIdentity.New(brand = d.brand, model = d.model, year = d.year, licensePlate = d.licensePlate)
+            }
+            LeadAppointmentVehicleMode.UPDATE -> {
+                val d = request.vehicle.updateData ?: throw IllegalArgumentException("vehicle.updateData required for UPDATE mode")
+                VehicleIdentity.Update(
+                    vehicleId = VehicleId.fromString(
+                        request.vehicle.id ?: throw IllegalArgumentException("vehicle.id required for UPDATE mode")
+                    ),
+                    brand = d.brand, model = d.model, year = d.year, licensePlate = d.licensePlate
+                )
+            }
+            LeadAppointmentVehicleMode.NONE -> VehicleIdentity.None
+        }
+
+        val command = CreateLeadAppointmentCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            customer = customer,
+            vehicle = vehicle,
+            services = request.services.map { s ->
+                ServiceLineItemCommand(
+                    serviceId = s.serviceId?.let { ServiceId.fromString(it) },
+                    serviceName = s.serviceName,
+                    basePriceNet = s.basePriceNet,
+                    vatRate = s.vatRate,
+                    adjustmentType = s.adjustmentType,
+                    adjustmentValue = s.adjustmentValue,
+                    customNote = s.note
+                )
+            },
+            schedule = ScheduleCommand(
+                isAllDay = request.schedule.isAllDay,
+                startDateTime = request.schedule.startDateTime,
+                endDateTime = request.schedule.endDateTime
+            ),
+            appointmentTitle = request.appointmentTitle,
+            appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
+            note = request.note,
+            sendReminderSms = request.sendReminderSms
+        )
+
+        val result = createLeadAppointmentHandler.handle(command)
+
+        ResponseEntity.status(HttpStatus.CREATED).body(
+            CreateLeadAppointmentResponse(
+                appointmentId = result.appointmentId.toString(),
+                customerId = result.customerId.toString(),
+                vehicleId = result.vehicleId?.toString(),
+                leadStatus = LeadStatus.CONFIRMED.name,
+                totalNet = result.totalNet.amountInCents,
+                totalGross = result.totalGross.amountInCents,
+                totalVat = result.totalVat.amountInCents
+            )
+        )
     }
 }

@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.domain
 
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
@@ -24,6 +25,7 @@ data class Lead(
     val vehicleBrand: String?,
     val vehicleModel: String?,
     val customerId: CustomerId?,
+    val appointmentId: AppointmentId?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
