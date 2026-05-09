@@ -503,8 +503,8 @@ class LeadsController(
                     serviceName = s.serviceName,
                     basePriceNet = s.basePriceNet,
                     vatRate = s.vatRate,
-                    adjustmentType = s.adjustmentType,
-                    adjustmentValue = s.adjustmentValue,
+                    adjustmentType = s.adjustment.type,
+                    adjustmentValue = s.adjustment.value,
                     customNote = s.note
                 )
             },

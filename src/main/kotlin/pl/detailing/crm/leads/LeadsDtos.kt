@@ -323,13 +323,18 @@ data class LeadAppointmentNewVehicleData(
 )
 
 data class LeadAppointmentServiceRequest(
+    val id: String,
     val serviceId: String?,
     val serviceName: String?,
     val basePriceNet: Long,
     val vatRate: Int,
-    val adjustmentType: pl.detailing.crm.appointment.domain.AdjustmentType,
-    val adjustmentValue: Double,
+    val adjustment: LeadAppointmentAdjustmentRequest,
     val note: String?
+)
+
+data class LeadAppointmentAdjustmentRequest(
+    val type: pl.detailing.crm.appointment.domain.AdjustmentType,
+    val value: Double
 )
 
 data class CreateLeadAppointmentResponse(
