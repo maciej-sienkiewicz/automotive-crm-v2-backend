@@ -1,4 +1,4 @@
-package pl.detailing.crm.leads.appointment
+package pl.detailing.crm.appointment.lead
 
 import pl.detailing.crm.appointment.create.CustomerIdentity
 import pl.detailing.crm.appointment.create.ScheduleCommand

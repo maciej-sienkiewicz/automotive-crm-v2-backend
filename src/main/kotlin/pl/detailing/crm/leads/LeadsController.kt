@@ -10,8 +10,8 @@ import pl.detailing.crm.appointment.create.CustomerIdentity
 import pl.detailing.crm.appointment.create.ScheduleCommand
 import pl.detailing.crm.appointment.create.ServiceLineItemCommand
 import pl.detailing.crm.appointment.create.VehicleIdentity
-import pl.detailing.crm.leads.appointment.CreateLeadAppointmentCommand
-import pl.detailing.crm.leads.appointment.CreateLeadAppointmentHandler
+import pl.detailing.crm.appointment.lead.CreateLeadAppointmentCommand
+import pl.detailing.crm.appointment.lead.CreateLeadAppointmentHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand

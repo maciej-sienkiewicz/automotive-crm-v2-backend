@@ -1,13 +1,12 @@
 package pl.detailing.crm.appointment.restore
 
 import org.apache.coyote.BadRequestException
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
-import pl.detailing.crm.appointment.events.AppointmentLeadSyncEvent
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -19,7 +18,7 @@ import java.time.Instant
 class RestoreAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val auditService: AuditService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val leadSyncService: LeadSyncService
 ) {
 
     @Transactional
@@ -58,14 +57,11 @@ class RestoreAppointmentHandler(
             )
         ))
 
-        eventPublisher.publishEvent(
-            AppointmentLeadSyncEvent(
-                appointmentId = command.appointmentId.value,
-                studioId = command.studioId.value,
-                targetLeadStatus = LeadStatus.CONFIRMED,
-                initiatorUserId = command.userId.value,
-                initiatorDisplayName = command.userName ?: ""
-            )
+        leadSyncService.markConfirmed(
+            appointmentId = command.appointmentId.value,
+            studioId = command.studioId.value,
+            userId = command.userId.value,
+            userDisplayName = command.userName ?: ""
         )
 
         return RestoreAppointmentResult(

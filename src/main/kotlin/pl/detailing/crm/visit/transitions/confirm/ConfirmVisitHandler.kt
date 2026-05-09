@@ -2,13 +2,12 @@ package pl.detailing.crm.visit.transitions.confirm
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
-import pl.detailing.crm.appointment.events.AppointmentLeadSyncEvent
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -29,7 +28,7 @@ class ConfirmVisitHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val appointmentRepository: AppointmentRepository,
     private val auditService: AuditService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val leadSyncService: LeadSyncService
 ) {
     @Transactional
     suspend fun handle(command: ConfirmVisitCommand): ConfirmVisitResult =
@@ -80,15 +79,12 @@ class ConfirmVisitHandler(
                     appointmentEntity.updatedAt = Instant.now()
                     appointmentRepository.save(appointmentEntity)
 
-                    eventPublisher.publishEvent(
-                        AppointmentLeadSyncEvent(
-                            appointmentId = visitEntity.appointmentId!!,
-                            studioId = command.studioId.value,
-                            targetLeadStatus = LeadStatus.COMPLETED,
-                            visitId = command.visitId.value,
-                            initiatorUserId = command.userId.value,
-                            initiatorDisplayName = command.userName ?: ""
-                        )
+                    leadSyncService.markCompleted(
+                        appointmentId = visitEntity.appointmentId!!,
+                        visitId = command.visitId.value,
+                        studioId = command.studioId.value,
+                        userId = command.userId.value,
+                        userDisplayName = command.userName ?: ""
                     )
                 }
             }
