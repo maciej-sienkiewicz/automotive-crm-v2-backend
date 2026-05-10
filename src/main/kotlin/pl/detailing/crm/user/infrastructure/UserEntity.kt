@@ -15,7 +15,8 @@ import java.util.UUID
     indexes = [
         Index(name = "idx_users_studio_email", columnList = "studio_id, email", unique = true),
         Index(name = "idx_users_studio_id", columnList = "studio_id"),
-        Index(name = "idx_users_email", columnList = "email")
+        Index(name = "idx_users_email", columnList = "email"),
+        Index(name = "idx_users_mobile_token", columnList = "mobile_token", unique = true)
     ]
 )
 class UserEntity(
@@ -49,7 +50,10 @@ class UserEntity(
     var isActive: Boolean = true,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    @Column(name = "mobile_token", nullable = true, unique = true, length = 64)
+    var mobileToken: String? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),
@@ -61,7 +65,8 @@ class UserEntity(
         role = role,
         phoneNumber = phoneNumber,
         isActive = isActive,
-        createdAt = createdAt
+        createdAt = createdAt,
+        mobileToken = mobileToken
     )
 
     companion object {
@@ -75,7 +80,8 @@ class UserEntity(
             lastName = user.lastName,
             role = user.role,
             isActive = user.isActive,
-            createdAt = user.createdAt
+            createdAt = user.createdAt,
+            mobileToken = user.mobileToken
         )
     }
 }

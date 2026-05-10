@@ -23,5 +23,6 @@ data class User(
     val lastName: String,
     val role: UserRole,
     val isActive: Boolean,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val mobileToken: String? = null
 )

@@ -34,4 +34,7 @@ interface UserRepository : JpaRepository<UserEntity, UUID> {
         @Param("email") email: String,
         @Param("studioId") studioId: UUID
     ): Boolean
+
+    @Query("SELECT u FROM UserEntity u WHERE u.mobileToken = :mobileToken")
+    fun findByMobileToken(@Param("mobileToken") mobileToken: String): UserEntity?
 }
