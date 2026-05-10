@@ -8,5 +8,6 @@ data class AnalyzeLeadCommand(
     val studioId: StudioId,
     val preExtractedNeeds: List<String> = emptyList(),
     val preExtractedVehicleMake: String? = null,
-    val preExtractedVehicleModel: String? = null
+    val preExtractedVehicleModel: String? = null,
+    val overrideReasoning: String? = null
 )

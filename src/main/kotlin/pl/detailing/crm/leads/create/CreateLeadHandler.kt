@@ -45,7 +45,7 @@ class CreateLeadHandler(
                 id = LeadId.random(),
                 studioId = command.studioId,
                 source = command.source,
-                status = LeadStatus.NEW,
+                status = command.initialStatus,
                 contactIdentifier = command.contactIdentifier.trim(),
                 customerName = command.customerName?.trim(),
                 initialMessage = command.initialMessage?.trim(),

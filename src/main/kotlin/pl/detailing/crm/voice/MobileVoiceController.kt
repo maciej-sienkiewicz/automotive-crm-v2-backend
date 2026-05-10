@@ -21,6 +21,7 @@ import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.shared.LeadSource
+import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.isValidPolishPhone
@@ -113,7 +114,8 @@ class MobileVoiceController(
                 customerName = null,
                 initialMessage = text,
                 estimatedValue = 0,
-                userName = "${user.firstName} ${user.lastName}"
+                userName = "${user.firstName} ${user.lastName}",
+                initialStatus = LeadStatus.IN_PROGRESS
             ))
         } catch (ex: Exception) {
             log.error("[voice/lead] Błąd podczas tworzenia leada", ex)
@@ -125,13 +127,15 @@ class MobileVoiceController(
 
         val capturedLeadId = result.leadId
         val capturedStudioId = StudioId(user.studioId)
+        val capturedTranscription = text
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 analyzeLeadHandler.handle(
                     AnalyzeLeadCommand(
                         leadId = capturedLeadId,
-                        studioId = capturedStudioId
+                        studioId = capturedStudioId,
+                        overrideReasoning = capturedTranscription
                     )
                 )
                 log.info("[voice/lead] Analiza AI zakończona dla leadId: ${capturedLeadId.value}")
