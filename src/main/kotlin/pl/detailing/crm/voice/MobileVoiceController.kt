@@ -2,13 +2,15 @@ package pl.detailing.crm.voice
 
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.shared.LeadSource
@@ -20,8 +22,8 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.task.create.CreateTaskCommand
 import pl.detailing.crm.task.create.CreateTaskHandler
 
-private const val MAX_TEXT_LENGTH = 5000
 private const val MAX_TITLE_LENGTH = 255
+private const val MAX_AUDIO_BYTES = 5 * 1024 * 1024L // 5 MB — safe upper bound for 15 s of mobile audio
 private const val VOICE_INTAKE_IDENTIFIER = "voice-intake"
 
 @RestController
@@ -30,7 +32,8 @@ class MobileVoiceController(
     private val mobileTokenService: MobileTokenService,
     private val studioRepository: StudioRepository,
     private val createLeadHandler: CreateLeadHandler,
-    private val createTaskHandler: CreateTaskHandler
+    private val createTaskHandler: CreateTaskHandler,
+    private val transcriptionService: OpenAiTranscriptionService
 ) {
 
     @GetMapping("/context")
@@ -47,18 +50,30 @@ class MobileVoiceController(
         ))
     }
 
-    @PostMapping("/lead")
-    fun createLead(@RequestBody request: VoiceLeadRequest): ResponseEntity<Any> = runBlocking {
-        val user = mobileTokenService.resolveToken(request.token)
+    @PostMapping("/lead", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun createLead(
+        @RequestPart("token") token: String,
+        @RequestPart("audio") audio: MultipartFile,
+        @RequestPart("phoneNumber", required = false) phoneNumber: String?
+    ): ResponseEntity<Any> = runBlocking {
+        val user = mobileTokenService.resolveToken(token)
             ?: return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(VoiceErrorResponse("Invalid or expired token"))
 
-        if (request.text.isBlank() || request.text.length > MAX_TEXT_LENGTH) {
+        val audioError = validateAudio(audio)
+        if (audioError != null) {
             return@runBlocking ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(VoiceErrorResponse("Text must be non-empty and at most $MAX_TEXT_LENGTH characters"))
+                .body(VoiceErrorResponse(audioError))
         }
 
-        val (contactIdentifier, source) = resolveContactInfo(request.phoneNumber)
+        val text = transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+
+        if (text.isBlank()) {
+            return@runBlocking ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(VoiceErrorResponse("Nie udało się rozpoznać mowy w nagraniu"))
+        }
+
+        val (contactIdentifier, source) = resolveContactInfo(phoneNumber)
 
         val result = createLeadHandler.handle(CreateLeadCommand(
             studioId = StudioId(user.studioId),
@@ -66,7 +81,7 @@ class MobileVoiceController(
             source = source,
             contactIdentifier = contactIdentifier,
             customerName = null,
-            initialMessage = request.text,
+            initialMessage = text,
             estimatedValue = 0,
             userName = "${user.firstName} ${user.lastName}"
         ))
@@ -77,19 +92,30 @@ class MobileVoiceController(
         ))
     }
 
-    @PostMapping("/note")
-    fun createNote(@RequestBody request: VoiceNoteRequest): ResponseEntity<Any> = runBlocking {
-        val user = mobileTokenService.resolveToken(request.token)
+    @PostMapping("/note", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun createNote(
+        @RequestPart("token") token: String,
+        @RequestPart("audio") audio: MultipartFile
+    ): ResponseEntity<Any> = runBlocking {
+        val user = mobileTokenService.resolveToken(token)
             ?: return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(VoiceErrorResponse("Invalid or expired token"))
 
-        if (request.text.isBlank() || request.text.length > MAX_TEXT_LENGTH) {
+        val audioError = validateAudio(audio)
+        if (audioError != null) {
             return@runBlocking ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(VoiceErrorResponse("Text must be non-empty and at most $MAX_TEXT_LENGTH characters"))
+                .body(VoiceErrorResponse(audioError))
         }
 
-        val title = request.text.take(MAX_TITLE_LENGTH)
-        val meta = if (request.text.length > MAX_TITLE_LENGTH) request.text else null
+        val text = transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+
+        if (text.isBlank()) {
+            return@runBlocking ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(VoiceErrorResponse("Nie udało się rozpoznać mowy w nagraniu"))
+        }
+
+        val title = text.take(MAX_TITLE_LENGTH)
+        val meta = if (text.length > MAX_TITLE_LENGTH) text else null
 
         val task = createTaskHandler.handle(CreateTaskCommand(
             studioId = StudioId(user.studioId),
@@ -103,6 +129,12 @@ class MobileVoiceController(
             id = task.id.value.toString(),
             message = "Notatka zapisana"
         ))
+    }
+
+    private fun validateAudio(audio: MultipartFile): String? {
+        if (audio.isEmpty) return "Plik audio jest pusty"
+        if (audio.size > MAX_AUDIO_BYTES) return "Plik audio przekracza dozwolony rozmiar (max 5 MB)"
+        return null
     }
 
     private fun resolveContactInfo(phoneNumber: String?): Pair<String, LeadSource> {

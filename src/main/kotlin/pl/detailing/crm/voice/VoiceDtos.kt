@@ -1,16 +1,5 @@
 package pl.detailing.crm.voice
 
-data class VoiceLeadRequest(
-    val token: String,
-    val phoneNumber: String? = null,
-    val text: String
-)
-
-data class VoiceNoteRequest(
-    val token: String,
-    val text: String
-)
-
 data class VoiceContextResponse(
     val firstName: String,
     val studioName: String
