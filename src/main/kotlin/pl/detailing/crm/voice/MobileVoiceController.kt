@@ -1,5 +1,9 @@
 package pl.detailing.crm.voice
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -14,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
+import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -34,7 +40,8 @@ class MobileVoiceController(
     private val studioRepository: StudioRepository,
     private val createLeadHandler: CreateLeadHandler,
     private val createTaskHandler: CreateTaskHandler,
-    private val transcriptionService: OpenAiTranscriptionService
+    private val transcriptionService: OpenAiTranscriptionService,
+    private val analyzeLeadHandler: AnalyzeLeadHandler
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(MobileVoiceController::class.java)
@@ -60,35 +67,78 @@ class MobileVoiceController(
         @RequestPart("audio") audio: MultipartFile,
         @RequestPart("phoneNumber", required = false) phoneNumber: String?
     ): ResponseEntity<Any> = runBlocking {
+        log.info("[voice/lead] Żądanie odebrane — plik: '${audio.originalFilename}', rozmiar: ${audio.size} B, contentType: ${audio.contentType}")
+
         val user = mobileTokenService.resolveToken(token)
-            ?: return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
+        if (user == null) {
+            log.warn("[voice/lead] Nieprawidłowy lub wygasły token")
+            return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(VoiceErrorResponse("Invalid or expired token"))
+        }
+        log.info("[voice/lead] Token prawidłowy — użytkownik: ${user.id}, studio: ${user.studioId}")
 
         val audioError = validateAudio(audio)
         if (audioError != null) {
+            log.warn("[voice/lead] Walidacja audio nieudana: $audioError")
             return@runBlocking ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(VoiceErrorResponse(audioError))
         }
+        log.info("[voice/lead] Audio przeszło walidację — wysyłam do Whisper")
 
-        val text = transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+        val text = try {
+            transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+        } catch (ex: Exception) {
+            log.error("[voice/lead] Błąd podczas transkrypcji Whisper", ex)
+            return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(VoiceErrorResponse("Błąd transkrypcji: ${ex.message}"))
+        }
+
+        log.info("[voice/lead] Transkrypcja zakończona — długość: ${text.length} znaków, tekst: '$text'")
 
         if (text.isBlank()) {
+            log.warn("[voice/lead] Whisper zwrócił pusty tekst — przerywam")
             return@runBlocking ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(VoiceErrorResponse("Nie udało się rozpoznać mowy w nagraniu"))
         }
 
         val (contactIdentifier, source) = resolveContactInfo(phoneNumber)
+        log.info("[voice/lead] Tworzę lead — contactIdentifier: '$contactIdentifier', source: $source")
 
-        val result = createLeadHandler.handle(CreateLeadCommand(
-            studioId = StudioId(user.studioId),
-            userId = UserId(user.id),
-            source = source,
-            contactIdentifier = contactIdentifier,
-            customerName = null,
-            initialMessage = text,
-            estimatedValue = 0,
-            userName = "${user.firstName} ${user.lastName}"
-        ))
+        val result = try {
+            createLeadHandler.handle(CreateLeadCommand(
+                studioId = StudioId(user.studioId),
+                userId = UserId(user.id),
+                source = source,
+                contactIdentifier = contactIdentifier,
+                customerName = null,
+                initialMessage = text,
+                estimatedValue = 0,
+                userName = "${user.firstName} ${user.lastName}"
+            ))
+        } catch (ex: Exception) {
+            log.error("[voice/lead] Błąd podczas tworzenia leada", ex)
+            return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(VoiceErrorResponse("Błąd zapisu leada: ${ex.message}"))
+        }
+
+        log.info("[voice/lead] Lead utworzony — leadId: ${result.leadId.value}, uruchamiam analizę AI w tle")
+
+        val capturedLeadId = result.leadId
+        val capturedStudioId = StudioId(user.studioId)
+
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                analyzeLeadHandler.handle(
+                    AnalyzeLeadCommand(
+                        leadId = capturedLeadId,
+                        studioId = capturedStudioId
+                    )
+                )
+                log.info("[voice/lead] Analiza AI zakończona dla leadId: ${capturedLeadId.value}")
+            } catch (ex: Exception) {
+                log.error("[voice/lead] Analiza AI nie powiodła się dla leadId: ${capturedLeadId.value}", ex)
+            }
+        }
 
         ResponseEntity.status(HttpStatus.CREATED).body(VoiceResultResponse(
             id = result.leadId.value.toString(),
