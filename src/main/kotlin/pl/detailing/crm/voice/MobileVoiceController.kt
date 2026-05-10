@@ -1,6 +1,7 @@
 package pl.detailing.crm.voice
 
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -23,7 +24,7 @@ import pl.detailing.crm.task.create.CreateTaskCommand
 import pl.detailing.crm.task.create.CreateTaskHandler
 
 private const val MAX_TITLE_LENGTH = 255
-private const val MAX_AUDIO_BYTES = 5 * 1024 * 1024L // 5 MB — safe upper bound for 15 s of mobile audio
+private const val MAX_AUDIO_BYTES = 5 * 1024 * 1024L
 private const val VOICE_INTAKE_IDENTIFIER = "voice-intake"
 
 @RestController
@@ -35,6 +36,9 @@ class MobileVoiceController(
     private val createTaskHandler: CreateTaskHandler,
     private val transcriptionService: OpenAiTranscriptionService
 ) {
+    companion object {
+        private val log = LoggerFactory.getLogger(MobileVoiceController::class.java)
+    }
 
     @GetMapping("/context")
     fun getContext(@RequestParam token: String): ResponseEntity<Any> {
@@ -97,34 +101,59 @@ class MobileVoiceController(
         @RequestPart("token") token: String,
         @RequestPart("audio") audio: MultipartFile
     ): ResponseEntity<Any> = runBlocking {
+        log.info("[voice/note] Żądanie odebrane — plik: '${audio.originalFilename}', rozmiar: ${audio.size} B, contentType: ${audio.contentType}")
+
         val user = mobileTokenService.resolveToken(token)
-            ?: return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
+        if (user == null) {
+            log.warn("[voice/note] Nieprawidłowy lub wygasły token")
+            return@runBlocking ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(VoiceErrorResponse("Invalid or expired token"))
+        }
+        log.info("[voice/note] Token prawidłowy — użytkownik: ${user.id}, studio: ${user.studioId}")
 
         val audioError = validateAudio(audio)
         if (audioError != null) {
+            log.warn("[voice/note] Walidacja audio nieudana: $audioError")
             return@runBlocking ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(VoiceErrorResponse(audioError))
         }
+        log.info("[voice/note] Audio przeszło walidację — wysyłam do Whisper")
 
-        val text = transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+        val text = try {
+            transcriptionService.transcribe(audio.bytes, audio.originalFilename ?: "audio.m4a")
+        } catch (ex: Exception) {
+            log.error("[voice/note] Błąd podczas transkrypcji Whisper", ex)
+            return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(VoiceErrorResponse("Błąd transkrypcji: ${ex.message}"))
+        }
+
+        log.info("[voice/note] Transkrypcja zakończona — długość tekstu: ${text.length} znaków, tekst: '$text'")
 
         if (text.isBlank()) {
+            log.warn("[voice/note] Whisper zwrócił pusty tekst — przerywam")
             return@runBlocking ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(VoiceErrorResponse("Nie udało się rozpoznać mowy w nagraniu"))
         }
 
         val title = text.take(MAX_TITLE_LENGTH)
         val meta = if (text.length > MAX_TITLE_LENGTH) text else null
+        log.info("[voice/note] Tworzę task — title: '$title', meta: ${if (meta != null) "tak (${meta.length} znaków)" else "brak"}")
 
-        val task = createTaskHandler.handle(CreateTaskCommand(
-            studioId = StudioId(user.studioId),
-            userId = UserId(user.id),
-            userName = "${user.firstName} ${user.lastName}",
-            title = title,
-            meta = meta
-        ))
+        val task = try {
+            createTaskHandler.handle(CreateTaskCommand(
+                studioId = StudioId(user.studioId),
+                userId = UserId(user.id),
+                userName = "${user.firstName} ${user.lastName}",
+                title = title,
+                meta = meta
+            ))
+        } catch (ex: Exception) {
+            log.error("[voice/note] Błąd podczas tworzenia taska", ex)
+            return@runBlocking ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(VoiceErrorResponse("Błąd zapisu notatki: ${ex.message}"))
+        }
 
+        log.info("[voice/note] Task utworzony pomyślnie — id: ${task.id.value}")
         ResponseEntity.status(HttpStatus.CREATED).body(VoiceResultResponse(
             id = task.id.value.toString(),
             message = "Notatka zapisana"
@@ -145,7 +174,6 @@ class MobileVoiceController(
         return if (isValidPolishPhone(normalized)) {
             normalized to LeadSource.PHONE
         } else {
-            // Use MANUAL source for invalid phones — CreateLeadHandler rejects PHONE source with invalid numbers
             phoneNumber to LeadSource.MANUAL
         }
     }
