@@ -15,6 +15,8 @@ import pl.detailing.crm.auth.login.LoginRequest
 import pl.detailing.crm.auth.signup.SignupHandler
 import pl.detailing.crm.auth.signup.SignupRequest
 import pl.detailing.crm.subscription.SubscriptionService
+import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.voice.MobileTokenService
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -22,7 +24,9 @@ class AuthController(
     private val signupHandler: SignupHandler,
     private val loginHandler: LoginHandler,
     private val subscriptionService: SubscriptionService,
-    private val securityContextRepository: SecurityContextRepository
+    private val securityContextRepository: SecurityContextRepository,
+    private val userRepository: UserRepository,
+    private val mobileTokenService: MobileTokenService
 ) {
 
     @PostMapping("/signup")
@@ -91,6 +95,9 @@ class AuthController(
             val principal = SecurityContextHelper.getCurrentUser()
             val subscriptionInfo = subscriptionService.getSubscriptionInfo(principal.studioId)
 
+            val userEntity = userRepository.findById(principal.userId.value).orElse(null)
+            val mobileToken = userEntity?.let { mobileTokenService.ensureToken(it) }
+
             ResponseEntity.ok(UnifiedAuthResponse(
                 success = true,
                 user = UserData(
@@ -104,7 +111,8 @@ class AuthController(
                     subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),
                     trialEndsAt = subscriptionInfo.trialEndsAt?.toString(),
                     firstName = principal.fullName.split(" ").first(),
-                    lastName = principal.fullName.split(" ").last()
+                    lastName = principal.fullName.split(" ").last(),
+                    mobileToken = mobileToken
                 )
             ))
         } catch (e: Exception) {

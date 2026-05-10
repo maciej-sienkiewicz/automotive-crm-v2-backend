@@ -11,6 +11,7 @@ import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.domain.User
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.voice.MobileTokenService
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -20,7 +21,8 @@ class SignupHandler(
     private val validatorComposite: SignupValidatorComposite,
     private val subscriptionService: SubscriptionService,
     private val userRepository: UserRepository,
-    private val passwordEncoder: PasswordEncoder
+    private val passwordEncoder: PasswordEncoder,
+    private val mobileTokenService: MobileTokenService
 ) {
 
     @Transactional
@@ -50,7 +52,8 @@ class SignupHandler(
             lastName = command.lastName,
             role = UserRole.OWNER,
             isActive = true,
-            createdAt = Instant.now()
+            createdAt = Instant.now(),
+            mobileToken = mobileTokenService.generateSecureToken()
         )
 
         val userEntity = UserEntity.fromDomain(user)

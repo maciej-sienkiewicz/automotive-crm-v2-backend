@@ -6,7 +6,6 @@ import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.security.SecureRandom
 import java.util.Base64
-import java.util.UUID
 
 @Service
 class MobileTokenService(
@@ -20,17 +19,16 @@ class MobileTokenService(
     }
 
     @Transactional
-    fun generateToken(userId: UUID): String {
-        val user = userRepository.findById(userId).orElseThrow {
-            IllegalArgumentException("User not found: $userId")
-        }
+    fun ensureToken(user: UserEntity): String {
+        val existing = user.mobileToken
+        if (existing != null) return existing
         val token = generateSecureToken()
         user.mobileToken = token
         userRepository.save(user)
         return token
     }
 
-    private fun generateSecureToken(): String {
+    fun generateSecureToken(): String {
         val bytes = ByteArray(48)
         secureRandom.nextBytes(bytes)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
