@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.create
 
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
@@ -14,5 +15,6 @@ data class CreateLeadCommand(
     val initialMessage: String?,
     val estimatedValue: Long,
     val userName: String? = null,
-    val initialStatus: LeadStatus = LeadStatus.NEW
+    val initialStatus: LeadStatus = LeadStatus.NEW,
+    val customerId: CustomerId? = null
 )

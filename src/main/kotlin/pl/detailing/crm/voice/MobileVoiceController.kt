@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -16,10 +17,12 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
@@ -39,6 +42,7 @@ private const val VOICE_INTAKE_IDENTIFIER = "voice-intake"
 class MobileVoiceController(
     private val mobileTokenService: MobileTokenService,
     private val studioRepository: StudioRepository,
+    private val customerRepository: CustomerRepository,
     private val createLeadHandler: CreateLeadHandler,
     private val createTaskHandler: CreateTaskHandler,
     private val transcriptionService: OpenAiTranscriptionService,
@@ -103,7 +107,9 @@ class MobileVoiceController(
         }
 
         val (contactIdentifier, source) = resolveContactInfo(phoneNumber)
-        log.info("[voice/lead] Tworzę lead — contactIdentifier: '$contactIdentifier', source: $source")
+
+        val customerId = resolveCustomerId(phoneNumber, user.studioId)
+        log.info("[voice/lead] Tworzę lead — contactIdentifier: '$contactIdentifier', source: $source, customerId: $customerId")
 
         val result = try {
             createLeadHandler.handle(CreateLeadCommand(
@@ -115,7 +121,8 @@ class MobileVoiceController(
                 initialMessage = text,
                 estimatedValue = 0,
                 userName = "${user.firstName} ${user.lastName}",
-                initialStatus = LeadStatus.IN_PROGRESS
+                initialStatus = LeadStatus.IN_PROGRESS,
+                customerId = customerId
             ))
         } catch (ex: Exception) {
             log.error("[voice/lead] Błąd podczas tworzenia leada", ex)
@@ -212,6 +219,20 @@ class MobileVoiceController(
             id = task.id.value.toString(),
             message = "Notatka zapisana"
         ))
+    }
+
+    private suspend fun resolveCustomerId(phoneNumber: String?, studioId: java.util.UUID): CustomerId? {
+        if (phoneNumber == null) return null
+        val normalized = normalizePolishPhone(phoneNumber)
+        if (!isValidPolishPhone(normalized)) return null
+        return withContext(Dispatchers.IO) {
+            customerRepository.findActiveByStudioIdAndPhone(studioId, normalized)
+                ?.let { CustomerId(it.id) }
+                .also { found ->
+                    if (found != null) log.info("[voice/lead] Znaleziono klienta po telefonie $normalized — customerId: ${found.value}")
+                    else log.info("[voice/lead] Brak klienta w bazie dla telefonu $normalized")
+                }
+        }
     }
 
     private fun validateAudio(audio: MultipartFile): String? {
