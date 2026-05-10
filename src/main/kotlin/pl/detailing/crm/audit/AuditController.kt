@@ -249,6 +249,11 @@ class AuditController(
         BONUS_DELETED -> "Usunięcie bonusu/dodatku"
         WORK_TIME_PERIOD_SAVED -> TODO()
         WORK_TIME_ENTRY_DELETED -> TODO()
+        AuditAction.LEAD_CONFIRMED -> TODO()
+        AuditAction.LEAD_COMPLETED -> TODO()
+        AuditAction.LEAD_LOST -> TODO()
+        AuditAction.LEAD_NO_SHOW -> TODO()
+        AuditAction.LEAD_APPOINTMENT_CREATED -> TODO()
     }
 }
 
