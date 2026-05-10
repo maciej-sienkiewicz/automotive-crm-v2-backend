@@ -92,7 +92,8 @@ class GetPipelineSummaryHandler(
                 convertedValueThisMonth = convertedValueThisMonth,
                 convertedCountThisMonth = convertedCountThisMonth,
                 atRiskValue = atRiskValue,
-                atRiskCount = atRiskCount
+                atRiskCount = atRiskCount,
+                newLeadsCount = newLeads.size
             )
         }
 }
@@ -105,5 +106,6 @@ data class PipelineSummaryResult(
     val convertedValueThisMonth: Long,
     val convertedCountThisMonth: Int,
     val atRiskValue: Long,
-    val atRiskCount: Int
+    val atRiskCount: Int,
+    val newLeadsCount: Int
 )

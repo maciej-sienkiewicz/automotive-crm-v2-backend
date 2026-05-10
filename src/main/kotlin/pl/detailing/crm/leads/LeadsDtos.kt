@@ -261,7 +261,8 @@ data class PipelineSummaryDto(
     val convertedValueThisMonth: Long,
     val convertedCountThisMonth: Int,
     val atRiskValue: Long,
-    val atRiskCount: Int
+    val atRiskCount: Int,
+    val newLeadsCount: Int
 )
 
 // ── Lead → Appointment creation ──────────────────────────────────────────────

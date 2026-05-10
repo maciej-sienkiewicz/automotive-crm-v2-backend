@@ -244,7 +244,8 @@ class LeadsController(
                 convertedValueThisMonth = result.convertedValueThisMonth,
                 convertedCountThisMonth = result.convertedCountThisMonth,
                 atRiskValue = result.atRiskValue,
-                atRiskCount = result.atRiskCount
+                atRiskCount = result.atRiskCount,
+                newLeadsCount = result.newLeadsCount
             )
         )
     }
