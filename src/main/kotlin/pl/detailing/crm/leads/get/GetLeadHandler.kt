@@ -120,7 +120,7 @@ data class EstimationResult(
     val totalNet: Long,
     val totalGross: Long,
     val relatedVisits: List<RelatedVisit>,
-    val aiReasoning: String?,
+    val aiSummary: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -150,7 +150,7 @@ private fun LeadEstimationEntity.toResult() = EstimationResult(
     totalNet = items.sumOf { it.priceNet },
     totalGross = totalGross,
     relatedVisits = relatedVisits,
-    aiReasoning = aiReasoning,
+    aiSummary = aiSummary,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

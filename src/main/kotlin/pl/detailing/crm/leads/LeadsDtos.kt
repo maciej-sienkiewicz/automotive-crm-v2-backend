@@ -31,7 +31,7 @@ data class LeadDto(
     val contactIdentifier: String?,
     val customerName: String?,
     val initialMessage: String?,
-    val reasoning: String?,
+    val summary: String?,
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val estimatedValue: Long,
@@ -46,7 +46,7 @@ data class LeadDto(
 
 fun Lead.toDto(
     relatedVisits: List<RelatedVisitDto> = emptyList(),
-    reasoning: String? = null,
+    summary: String? = null,
     assignedCustomer: CustomerSnapshotDto? = null
 ): LeadDto = LeadDto(
     id = this.id.toString(),
@@ -55,7 +55,7 @@ fun Lead.toDto(
     contactIdentifier = this.contactIdentifier,
     customerName = this.customerName,
     initialMessage = this.initialMessage,
-    reasoning = reasoning,
+    summary = summary,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
@@ -70,7 +70,7 @@ fun Lead.toDto(
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
-    reasoning = aiReasoning,
+    summary = aiSummary,
     assignedCustomer = assignedCustomer?.toDto()
 )
 
@@ -150,7 +150,7 @@ data class LeadEstimationDto(
     val totalNet: Long,
     val totalGross: Long,
     val relatedVisits: List<RelatedVisitDto>,
-    val aiReasoning: String?,
+    val aiSummary: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -222,7 +222,7 @@ fun EstimationResult.toDto() = LeadEstimationDto(
     totalNet = totalNet,
     totalGross = totalGross,
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
-    aiReasoning = aiReasoning,
+    aiSummary = aiSummary,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

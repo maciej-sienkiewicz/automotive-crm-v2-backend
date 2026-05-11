@@ -16,7 +16,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 data class LeadListItem(
     val lead: Lead,
     val relatedVisits: List<RelatedVisit>,
-    val aiReasoning: String?,
+    val aiSummary: String?,
     val assignedCustomer: CustomerSnapshot?
 )
 
@@ -69,7 +69,7 @@ class ListLeadsHandler(
                 LeadListItem(
                     lead = lead,
                     relatedVisits = est?.relatedVisits ?: emptyList(),
-                    aiReasoning = est?.aiReasoning,
+                    aiSummary = est?.aiSummary,
                     assignedCustomer = customer?.let {
                         CustomerSnapshot(
                             id = it.id.toString(),

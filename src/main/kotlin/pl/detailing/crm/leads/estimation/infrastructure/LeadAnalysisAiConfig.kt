@@ -66,12 +66,20 @@ class LeadAnalysisAiConfig {
               ale marka MUSI być na liście dozwolonych marek.
 
             # Format odpowiedzi
-            - reasoning        → Krótkie uzasadnienie po polsku (1–2 zdania). Zawsze wypełnione.
+            - reasoning        → Wewnętrzny tok rozumowania (CoT) — 2–3 zdania po polsku.
+                                 Opisz krok po kroku jak interpretujesz wiadomość i dopasujesz potrzeby.
+                                 To pole jest TYLKO do wewnętrznego użytku — nie jest pokazywane użytkownikowi.
+                                 Zawsze wypełnione.
             - extractedNeeds   → Lista potrzeb klienta (oryginalne nazwy). [] jeśli brak.
             - matchedServices  → Lista obiektów {serviceId, matchedNeed}. [] jeśli brak dopasowań.
             - unmatchedNeeds   → Potrzeby bez odpowiednika w katalogu. [] jeśli wszystko dopasowane.
             - vehicleBrand     → Marka z listy dozwolonych lub null.
             - vehicleModel     → Model pojazdu lub null.
+            - summary          → Treściwe podsumowanie dla administratora CRM (1–2 zdania po polsku).
+                                 Opisz co klient chce zlecić i jaki pojazd dotyczy zapytania.
+                                 Pisz w trzeciej osobie: "Klient pyta o...", "Klient zleca...", "Zapytanie dotyczy...".
+                                 Skup się na tym CO jest do zrobienia — pomiń wewnętrzne rozważania.
+                                 Zawsze wypełnione.
         """.trimIndent()
     }
 }

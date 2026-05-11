@@ -9,5 +9,5 @@ data class AnalyzeLeadCommand(
     val preExtractedNeeds: List<String> = emptyList(),
     val preExtractedVehicleMake: String? = null,
     val preExtractedVehicleModel: String? = null,
-    val overrideReasoning: String? = null
+    val overrideSummary: String? = null
 )

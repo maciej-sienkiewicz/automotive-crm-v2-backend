@@ -131,7 +131,7 @@ class AnalyzeLeadHandler(
                 est.items.addAll(items)
                 est.totalGross = items.sumOf { it.priceGross }
                 est.relatedVisits = relatedVisits
-                est.aiReasoning = command.overrideReasoning ?: analysisResult.reasoning
+                est.aiSummary = command.overrideSummary ?: analysisResult.summary
                 est.status = LeadEstimationStatusJpa.COMPLETED
                 est.updatedAt = Instant.now()
                 leadEstimationRepository.save(est)

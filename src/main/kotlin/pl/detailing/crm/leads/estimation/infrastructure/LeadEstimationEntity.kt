@@ -49,8 +49,8 @@ class LeadEstimationEntity(
     @Column(name = "related_visits", nullable = false, columnDefinition = "TEXT")
     var relatedVisits: List<RelatedVisit> = emptyList(),
 
-    @Column(name = "ai_reasoning", nullable = true, columnDefinition = "TEXT")
-    var aiReasoning: String? = null,
+    @Column(name = "ai_summary", nullable = true, columnDefinition = "TEXT")
+    var aiSummary: String? = null,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant,

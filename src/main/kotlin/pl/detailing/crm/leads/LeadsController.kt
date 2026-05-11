@@ -152,7 +152,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                reasoning = null,
+                summary = null,
                 assignedCustomer = null,
                 appointmentId = null,
                 visitId = null
@@ -199,7 +199,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                reasoning = null,
+                summary = null,
                 assignedCustomer = null,
                 appointmentId = null,
                 visitId = null
@@ -301,7 +301,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                reasoning = null,
+                summary = null,
                 assignedCustomer = null,
                 appointmentId = null,
                 visitId = null
@@ -348,7 +348,7 @@ class LeadsController(
                 vehicleBrand = null,
                 vehicleModel = null,
                 relatedVisits = emptyList(),
-                reasoning = null,
+                summary = null,
                 assignedCustomer = null,
                 appointmentId = null,
                 visitId = null

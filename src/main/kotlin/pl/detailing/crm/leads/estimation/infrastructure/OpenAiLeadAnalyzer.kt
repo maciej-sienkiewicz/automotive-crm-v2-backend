@@ -75,9 +75,9 @@ class OpenAiLeadAnalyzer(
         }
 
         log.info(
-            "[LEAD_ANALYZER] extracted={} matched={} unmatched={} vehicle='{} {}' | reasoning='{}'",
+            "[LEAD_ANALYZER] extracted={} matched={} unmatched={} vehicle='{} {}' | summary='{}'",
             response.extractedNeeds.size, safeMatchedIds.size,
-            response.unmatchedNeeds.size, normalizedBrand, normalizedModel, response.reasoning
+            response.unmatchedNeeds.size, normalizedBrand, normalizedModel, response.summary
         )
 
         LeadAnalysisResult(
@@ -86,7 +86,7 @@ class OpenAiLeadAnalyzer(
             unmatchedNeeds = response.unmatchedNeeds,
             vehicleBrand = normalizedBrand,
             vehicleModel = normalizedModel,
-            reasoning = response.reasoning.takeIf { it.isNotBlank() }
+            summary = response.summary.takeIf { it.isNotBlank() }
         )
     }
 
@@ -141,7 +141,8 @@ class OpenAiLeadAnalyzer(
 
     /**
      * Structured output schema. Field order is intentional:
-     * reasoning first (CoT scratchpad) → better extraction → better matching → vehicle identification.
+     * reasoning first (CoT scratchpad improves extraction quality) → extraction → matching
+     * → vehicle identification → summary last (synthesises all of the above).
      */
     private data class AnalysisLlmResponse(
         @JsonProperty("reasoning")
@@ -160,7 +161,10 @@ class OpenAiLeadAnalyzer(
         val vehicleBrand: String?,
 
         @JsonProperty("vehicleModel")
-        val vehicleModel: String?
+        val vehicleModel: String?,
+
+        @JsonProperty("summary")
+        val summary: String
     )
 
     private data class MatchedServiceItem(
