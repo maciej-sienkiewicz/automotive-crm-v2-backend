@@ -142,7 +142,6 @@ class MobileVoiceController(
                     AnalyzeLeadCommand(
                         leadId = capturedLeadId,
                         studioId = capturedStudioId,
-                        overrideReasoning = capturedTranscription
                     )
                 )
                 log.info("[voice/lead] Analiza AI zakończona dla leadId: ${capturedLeadId.value}")
