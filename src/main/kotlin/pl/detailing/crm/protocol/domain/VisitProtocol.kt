@@ -21,7 +21,6 @@ data class VisitProtocol(
     val consentTemplateId: ConsentTemplateId?,      // null for visit-document protocols
     val stage: ProtocolStage,
     val version: Int,
-    val isMandatory: Boolean,
     val status: VisitProtocolStatus,
     val consentDefinitionId: ConsentDefinitionId?,  // set when this protocol captures a customer consent
     val filledPdfS3Key: String?,

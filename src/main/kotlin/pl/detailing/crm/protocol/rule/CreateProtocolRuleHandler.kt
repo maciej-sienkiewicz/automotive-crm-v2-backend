@@ -43,7 +43,6 @@ class CreateProtocolRuleHandler(
                 triggerType = command.triggerType,
                 stage = command.stage,
                 serviceIds = command.serviceIds,
-                isMandatory = command.isMandatory,
                 displayOrder = command.displayOrder,
                 createdBy = command.userId,
                 updatedBy = command.userId,
@@ -63,8 +62,6 @@ data class CreateProtocolRuleCommand(
     val triggerType: ProtocolTriggerType,
     val stage: ProtocolStage,
     val serviceIds: Set<ServiceId>,
-    val consentDefinitionId: ConsentDefinitionId? = null, // kept for call-site compat, ignored
-    val isMandatory: Boolean,
     val displayOrder: Int
 )
 

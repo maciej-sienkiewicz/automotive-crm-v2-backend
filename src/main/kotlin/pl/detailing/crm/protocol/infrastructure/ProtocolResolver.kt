@@ -52,7 +52,6 @@ class ProtocolResolver(
         ).map { rule ->
             ResolvedProtocol.fromVisitDocument(
                 templateId = ProtocolTemplateId(rule.templateId),
-                isMandatory = rule.isMandatory,
                 displayOrder = rule.displayOrder
             )
         }
@@ -63,7 +62,6 @@ class ProtocolResolver(
             ).map { rule ->
                 ResolvedProtocol.fromVisitDocument(
                     templateId = ProtocolTemplateId(rule.templateId),
-                    isMandatory = rule.isMandatory,
                     displayOrder = rule.displayOrder
                 )
             }
@@ -90,7 +88,6 @@ class ProtocolResolver(
                 ResolvedProtocol.fromConsent(
                     consentDefinitionId = definitionId,
                     consentTemplateId = ConsentTemplateId(activeTemplate.id),
-                    isMandatory = false,
                     displayOrder = definitionEntity.displayOrder
                 )
             }
@@ -135,26 +132,5 @@ class ProtocolResolver(
         return false
     }
 
-    suspend fun areMandatoryProtocolsSatisfied(
-        visitId: VisitId,
-        studioId: StudioId,
-        stage: ProtocolStage,
-        existingProtocols: List<VisitProtocolEntity>
-    ): Boolean = withContext(Dispatchers.IO) {
-        val required = resolveRequiredProtocols(visitId, studioId, stage)
-        val mandatory = required.filter { it.isMandatory }
 
-        mandatory.all { resolved ->
-            existingProtocols.any { protocol ->
-                val matchesDoc = resolved.templateId != null &&
-                    protocol.templateId == resolved.templateId.value
-
-                val matchesConsent = resolved.consentDefinitionId != null &&
-                    protocol.consentDefinitionId == resolved.consentDefinitionId.value
-
-                (matchesDoc || matchesConsent) &&
-                    protocol.status == VisitProtocolStatus.SIGNED
-            }
-        }
-    }
 }

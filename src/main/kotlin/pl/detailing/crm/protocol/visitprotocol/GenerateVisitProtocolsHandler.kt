@@ -72,7 +72,6 @@ class GenerateVisitProtocolsHandler(
                     consentTemplateId = resolved.consentTemplateId,
                     stage = command.stage,
                     version = maxVersion + 1,
-                    isMandatory = resolved.isMandatory,
                     status = VisitProtocolStatus.PENDING,
                     consentDefinitionId = resolved.consentDefinitionId,
                     filledPdfS3Key = null,

@@ -149,8 +149,6 @@ class ProtocolController(
                 triggerType = request.triggerType,
                 stage = request.stage,
                 serviceIds = request.serviceIds?.map { ServiceId.fromString(it) }?.toSet() ?: emptySet(),
-                consentDefinitionId = null,
-                isMandatory = request.isMandatory,
                 displayOrder = request.displayOrder ?: 0
             )
         )
@@ -265,7 +263,6 @@ class ProtocolController(
             stage = rule.stage.name,
             serviceIds = rule.serviceIds.map { it.toString() },
             serviceNames = serviceNames,
-            isMandatory = rule.isMandatory,
             displayOrder = rule.displayOrder,
             createdAt = rule.createdAt.toString(),
             updatedAt = rule.updatedAt.toString()
@@ -294,7 +291,6 @@ class ProtocolController(
             consentTemplateId = protocol.consentTemplateId?.toString(),
             stage = protocol.stage.name,
             consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
-            isMandatory = protocol.isMandatory,
             isSigned = protocol.status == VisitProtocolStatus.SIGNED,
             signedAt = protocol.signedAt?.toString(),
             signedBy = protocol.signedBy,

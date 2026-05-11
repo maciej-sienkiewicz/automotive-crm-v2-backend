@@ -17,7 +17,6 @@ data class ResolvedProtocol(
     val templateId: ProtocolTemplateId?,
     val consentTemplateId: ConsentTemplateId?,
     val consentDefinitionId: ConsentDefinitionId?,
-    val isMandatory: Boolean,
     val displayOrder: Int
 ) {
     val isConsentProtocol: Boolean get() = consentTemplateId != null
@@ -25,27 +24,23 @@ data class ResolvedProtocol(
     companion object {
         fun fromVisitDocument(
             templateId: ProtocolTemplateId,
-            isMandatory: Boolean,
             displayOrder: Int,
             consentDefinitionId: ConsentDefinitionId? = null
         ) = ResolvedProtocol(
             templateId = templateId,
             consentTemplateId = null,
             consentDefinitionId = consentDefinitionId,
-            isMandatory = isMandatory,
             displayOrder = displayOrder
         )
 
         fun fromConsent(
             consentDefinitionId: ConsentDefinitionId,
             consentTemplateId: ConsentTemplateId,
-            isMandatory: Boolean,
             displayOrder: Int
         ) = ResolvedProtocol(
             templateId = null,
             consentTemplateId = consentTemplateId,
             consentDefinitionId = consentDefinitionId,
-            isMandatory = isMandatory,
             displayOrder = displayOrder
         )
     }

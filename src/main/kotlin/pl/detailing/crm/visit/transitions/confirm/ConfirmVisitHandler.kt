@@ -8,7 +8,6 @@ import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.leads.appointment.LeadSyncService
-import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -25,7 +24,6 @@ import java.time.Instant
 @Service
 class ConfirmVisitHandler(
     private val visitRepository: VisitRepository,
-    private val visitProtocolRepository: VisitProtocolRepository,
     private val appointmentRepository: AppointmentRepository,
     private val auditService: AuditService,
     private val leadSyncService: LeadSyncService
@@ -42,23 +40,6 @@ class ConfirmVisitHandler(
             // Validate visit is in DRAFT status (check directly on entity to avoid lazy loading issues)
             if (visitEntity.status != VisitStatus.DRAFT) {
                 throw ValidationException("Only DRAFT visits can be confirmed. Current status: ${visitEntity.status}")
-            }
-
-            // Check if all mandatory protocols are signed
-            val protocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
-                command.visitId.value,
-                command.studioId.value,
-                ProtocolStage.CHECK_IN
-            )
-
-            val mandatoryProtocols = protocols.filter { it.isMandatory }
-            val unsignedMandatory = mandatoryProtocols.filter { it.status != VisitProtocolStatus.SIGNED }
-
-            if (unsignedMandatory.isNotEmpty()) {
-                throw ValidationException(
-                    "Cannot confirm visit: ${unsignedMandatory.size} mandatory protocol(s) not signed yet. " +
-                    "All mandatory documents must be signed before confirming the visit."
-                )
             }
 
             // Update visit status to IN_PROGRESS
