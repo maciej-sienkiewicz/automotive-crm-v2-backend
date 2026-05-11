@@ -183,7 +183,6 @@ class CheckinController(
                 templateName = templateName,
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
-                isMandatory = protocol.isMandatory,
                 status = protocol.status.name,
                 filledPdfUrl = filledPdfUrl
             )
@@ -343,7 +342,6 @@ class CheckinController(
                 templateName = templateName,
                 stage = protocol.stage.name,
                 consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
-                isMandatory = protocol.isMandatory,
                 status = protocol.status.name,
                 filledPdfUrl = filledPdfUrl
             )
@@ -571,7 +569,6 @@ data class VisitProtocolDto(
     val templateName: String,
     val stage: String,
     val consentDefinitionId: String?,
-    val isMandatory: Boolean,
     val status: String,
     val filledPdfUrl: String?
 )
