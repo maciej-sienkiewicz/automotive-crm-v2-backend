@@ -47,15 +47,15 @@ class DamageMapReportService(
         private val TEXT_MUTED = Color(0x64, 0x74, 0x8B)
 
         private val SYSTEM_FONTS_REGULAR = listOf(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",       // Alpine Linux
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",       // Debian/Ubuntu
             "/usr/share/fonts/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
         )
         private val SYSTEM_FONTS_BOLD = listOf(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/DejaVu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans-Bold.ttf",  // Alpine Linux
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  // Debian/Ubuntu
             "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
             "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
