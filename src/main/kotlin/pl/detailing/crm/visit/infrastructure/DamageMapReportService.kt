@@ -122,7 +122,7 @@ class DamageMapReportService(
         cs.setFont(bold, 13f)
         cs.setNonStrokingColor(BRAND_BLUE)
         cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - MARGIN - 24f)
-        cs.showText("Protokół uszkodzeń pojazdu")
+        cs.showText(bold.safe("Protokół uszkodzeń pojazdu"))
         cs.endText()
 
         val lineY = PAGE_HEIGHT - MARGIN - HEADER_HEIGHT
@@ -162,7 +162,7 @@ class DamageMapReportService(
         cs.setFont(bold, 8f)
         cs.setNonStrokingColor(TEXT_MUTED)
         cs.newLineAtOffset(MARGIN, legendTopY - 17f)
-        cs.showText("LEGENDA USZKODZEŃ")
+        cs.showText(bold.safe("LEGENDA USZKODZEN"))
         cs.endText()
 
         val tableTopY = legendTopY - LEGEND_TITLE_HEIGHT
@@ -225,12 +225,13 @@ class DamageMapReportService(
             cs.setFont(bold, idSize)
             cs.setNonStrokingColor(Color.WHITE)
             cs.newLineAtOffset(x + numColW / 2f - idW / 2f, rowMidY - 3f)
-            cs.showText(idText)
+            cs.showText(idText)  // digits are always safe
             cs.endText()
 
             // Description — truncated to fit column width
             val maxDescW = descColW - 12f
-            val noteText = truncateText(point.note?.trim()?.ifBlank { null } ?: "—", regular, 8f, maxDescW)
+            val rawNote = regular.safe(point.note?.trim()?.ifBlank { null } ?: "-")
+            val noteText = truncateText(rawNote, regular, 8f, maxDescW)
             cs.beginText()
             cs.setFont(regular, 8f)
             cs.setNonStrokingColor(TEXT_PRIMARY)
@@ -274,6 +275,13 @@ class DamageMapReportService(
     // ─── Text helpers ──────────────────────────────────────────────────────────
 
     /**
+     * Returns [text] safe for this font: passes through unchanged for Unicode fonts (PDType0Font),
+     * transliterates Polish characters to ASCII equivalents for Helvetica (PDType1Font).
+     */
+    private fun PDFont.safe(text: String): String =
+        if (this is PDType1Font) toWinAnsiSafe(text) else text
+
+    /**
      * Truncates [text] so its rendered width at [fontSize] fits within [maxWidth] points.
      * Appends "..." if truncation occurred.
      */
@@ -308,10 +316,19 @@ class DamageMapReportService(
     // ─── Font loading ──────────────────────────────────────────────────────────
 
     /**
-     * Loads a Unicode-capable font (supports Polish characters) from well-known system paths.
-     * Falls back to Helvetica (ASCII-only) if no system font is found.
+     * Loads DejaVu Sans from the bundled classpath resource first (environment-independent),
+     * then falls back to well-known system paths, and finally to Helvetica (ASCII-only).
      */
     private fun loadFont(doc: PDDocument, bold: Boolean): PDFont {
+        val classpathName = if (bold) "/fonts/DejaVuSans-Bold.ttf" else "/fonts/DejaVuSans.ttf"
+        javaClass.getResourceAsStream(classpathName)?.use { stream ->
+            runCatching {
+                return PDType0Font.load(doc, stream, false)
+            }.onFailure {
+                logger.warn("Could not load classpath font '$classpathName': ${it.message}")
+            }
+        }
+
         val paths = if (bold) SYSTEM_FONTS_BOLD else SYSTEM_FONTS_REGULAR
         for (path in paths) {
             val file = File(path)
@@ -319,11 +336,27 @@ class DamageMapReportService(
             runCatching {
                 return PDType0Font.load(doc, file.inputStream(), false)
             }.onFailure {
-                logger.warn("Could not load font at '$path': ${it.message}")
+                logger.warn("Could not load system font '$path': ${it.message}")
             }
         }
+
         val fallbackName = if (bold) Standard14Fonts.FontName.HELVETICA_BOLD else Standard14Fonts.FontName.HELVETICA
-        logger.warn("No Unicode font found on system; falling back to Helvetica — Polish characters may not render")
+        logger.warn("No Unicode font found; falling back to Helvetica — Polish characters will be stripped")
         return PDType1Font(fallbackName)
     }
+
+    /**
+     * Removes characters outside WinAnsiEncoding so Helvetica fallback doesn't crash.
+     * Only called when a Unicode font could not be loaded.
+     */
+    private fun toWinAnsiSafe(text: String): String =
+        text.map { c ->
+            when (c) {
+                'ą' -> 'a'; 'ć' -> 'c'; 'ę' -> 'e'; 'ł' -> 'l'; 'ń' -> 'n'
+                'ó' -> 'o'; 'ś' -> 's'; 'ź', 'ż' -> 'z'
+                'Ą' -> 'A'; 'Ć' -> 'C'; 'Ę' -> 'E'; 'Ł' -> 'L'; 'Ń' -> 'N'
+                'Ó' -> 'O'; 'Ś' -> 'S'; 'Ź', 'Ż' -> 'Z'
+                else -> if (c.code in 32..255) c else '?'
+            }
+        }.joinToString("")
 }
