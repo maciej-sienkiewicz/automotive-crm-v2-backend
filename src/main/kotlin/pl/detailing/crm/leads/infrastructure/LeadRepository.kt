@@ -26,8 +26,8 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
              l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
              l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
-        AND (:dateFrom IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
-        AND (:dateTo IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
+        AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
+        AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
     """,
     countQuery = """
         SELECT count(*) FROM leads l
@@ -38,8 +38,8 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
              l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
              l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
-        AND (:dateFrom IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
-        AND (:dateTo IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
+        AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
+        AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
     """,
     nativeQuery = true)
     fun findByStudioIdWithFilters(
@@ -93,16 +93,16 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
     /**
      * Find leads by studio with source filter
      */
-    @Query("""
-        SELECT l FROM LeadEntity l
-        WHERE l.studioId = :studioId
-        AND (:sources IS NULL OR l.source IN :sources)
-        AND (:dateFrom IS NULL OR l.createdAt >= :dateFrom)
-        AND (:dateTo IS NULL OR l.createdAt < :dateTo)
-    """)
+    @Query(value = """
+        SELECT * FROM leads l
+        WHERE l.studio_id = CAST(:studioId AS uuid)
+        AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
+        AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
+        AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
+    """, nativeQuery = true)
     fun findByStudioIdWithSourceFilter(
         @Param("studioId") studioId: UUID,
-        @Param("sources") sources: List<LeadSource>?,
+        @Param("sources") sources: List<String>?,
         @Param("dateFrom") dateFrom: Instant? = null,
         @Param("dateTo") dateTo: Instant? = null
     ): List<LeadEntity>

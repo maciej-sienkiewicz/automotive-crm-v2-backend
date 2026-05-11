@@ -22,7 +22,7 @@ class GetPipelineSummaryHandler(
         withContext(Dispatchers.IO) {
             val allLeads = leadRepository.findByStudioIdWithSourceFilter(
                 studioId = query.studioId.value,
-                sources = query.sourceFilter?.takeIf { it.isNotEmpty() },
+                sources = query.sourceFilter?.takeIf { it.isNotEmpty() }?.map { it.name },
                 dateFrom = query.dateFrom,
                 dateTo = query.dateTo
             )
