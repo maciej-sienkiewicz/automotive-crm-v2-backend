@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.smscampaigns.consent.ServiceChangesSummary
 import pl.detailing.crm.smscampaigns.consent.SmsConsentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -107,7 +108,8 @@ class SaveVisitServicesHandler(
         ))
 
         if (payload.notifyCustomer) {
-            sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit)
+            val changesSummary = buildChangesSummary(payload, visit)
+            sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
         }
 
         return MoneyAmountResponse(
@@ -118,19 +120,38 @@ class SaveVisitServicesHandler(
     }
 
     /**
+     * Collects human-readable service names for each change type so the consent SMS
+     * can tell the customer exactly what was added, removed, or repriced.
+     *
+     * - Added names come directly from [ServicesChangesPayload.added].
+     * - Removed / price-changed names are resolved from [visit] by service item ID,
+     *   because the payload only carries IDs for those operations.
+     */
+    private fun buildChangesSummary(
+        payload: ServicesChangesPayload,
+        visit: pl.detailing.crm.visit.domain.Visit
+    ): ServiceChangesSummary {
+        val itemNamesById = visit.serviceItems.associate { it.id.value.toString() to it.serviceName }
+
+        return ServiceChangesSummary(
+            addedNames = payload.added.map { it.serviceName },
+            removedNames = payload.deleted.mapNotNull { itemNamesById[it.serviceLineItemId] },
+            priceChangedNames = payload.updated.mapNotNull { itemNamesById[it.serviceLineItemId] }
+        )
+    }
+
+    /**
      * Calculates the proposed total gross price (if all pending changes were approved)
      * and dispatches a consent SMS to the customer.
      *
-     * "Proposed total" includes:
-     *  - All currently CONFIRMED items (not being changed)
-     *  - PENDING ADD / EDIT items at their new price
-     * It excludes PENDING DELETE items (they would be removed on approval).
+     * "Proposed total" includes all items except those pending deletion.
      */
     private fun sendConsentSms(
         customerId: java.util.UUID,
         studioId: StudioId,
         visitId: VisitId,
-        updatedVisit: pl.detailing.crm.visit.domain.Visit
+        updatedVisit: pl.detailing.crm.visit.domain.Visit,
+        changesSummary: ServiceChangesSummary
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
 
@@ -148,7 +169,8 @@ class SaveVisitServicesHandler(
             visitId = visitId,
             studioId = studioId,
             customerPhone = phone,
-            proposedTotalGrossCents = proposedTotalGross
+            proposedTotalGrossCents = proposedTotalGross,
+            changes = changesSummary
         )
     }
 }
