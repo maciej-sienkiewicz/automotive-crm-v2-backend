@@ -149,10 +149,11 @@ class SendVisitWelcomeEmailHandler(
             if (damageMapKey != null) {
                 runCatching {
                     val bytes = s3DamageMapStorageService.downloadBytes(damageMapKey)
+                    val isPdf = damageMapKey.endsWith(".pdf")
                     attachments += EmailAttachment(
-                        fileName = "mapa_uszkodzen_${visitEntity.visitNumber}.jpg",
+                        fileName = if (isPdf) "mapa_uszkodzen_${visitEntity.visitNumber}.pdf" else "mapa_uszkodzen_${visitEntity.visitNumber}.jpg",
                         content = bytes,
-                        contentType = "image/jpeg"
+                        contentType = if (isPdf) "application/pdf" else "image/jpeg"
                     )
                 }.onFailure { ex ->
                     logger.warn(

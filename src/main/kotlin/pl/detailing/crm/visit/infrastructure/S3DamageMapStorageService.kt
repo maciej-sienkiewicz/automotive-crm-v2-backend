@@ -42,17 +42,17 @@ class S3DamageMapStorageService(
     }
 
     /**
-     * Upload a damage map image to S3.
+     * Upload a damage map PDF to S3.
      *
      * @param studioId The studio ID
      * @param visitId The visit ID
-     * @param imageBytes The JPG image bytes
-     * @return The S3 key where the image was stored
+     * @param pdfBytes The PDF bytes
+     * @return The S3 key where the file was stored
      */
     suspend fun uploadDamageMap(
         studioId: UUID,
         visitId: UUID,
-        imageBytes: ByteArray
+        pdfBytes: ByteArray
     ): String = withContext(Dispatchers.IO) {
         val s3Key = buildDamageMapS3Key(studioId, visitId)
 
@@ -60,22 +60,22 @@ class S3DamageMapStorageService(
             val putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(s3Key)
-                .contentType("image/jpeg")
-                .contentLength(imageBytes.size.toLong())
+                .contentType("application/pdf")
+                .contentLength(pdfBytes.size.toLong())
                 .metadata(mapOf(
                     "studio-id" to studioId.toString(),
                     "visit-id" to visitId.toString()
                 ))
                 .build()
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(imageBytes))
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(pdfBytes))
 
-            logger.info("Successfully uploaded damage map to S3: $s3Key (${imageBytes.size} bytes)")
+            logger.info("Successfully uploaded damage map PDF to S3: $s3Key (${pdfBytes.size} bytes)")
 
             return@withContext s3Key
 
         } catch (e: Exception) {
-            logger.error("Failed to upload damage map to S3: $s3Key", e)
+            logger.error("Failed to upload damage map PDF to S3: $s3Key", e)
             throw IllegalStateException("Failed to upload damage map to S3: ${e.message}", e)
         }
     }
@@ -102,12 +102,12 @@ class S3DamageMapStorageService(
     }
 
     /**
-     * Build S3 key for a damage map image.
+     * Build S3 key for a damage map PDF.
      *
-     * Pattern: {studioId}/visits/{visitId}/damage-map.jpg
+     * Pattern: {studioId}/visits/{visitId}/damage-map.pdf
      */
     fun buildDamageMapS3Key(studioId: UUID, visitId: UUID): String {
-        return "$studioId/visits/$visitId/damage-map.jpg"
+        return "$studioId/visits/$visitId/damage-map.pdf"
     }
 
     fun downloadBytes(s3Key: String): ByteArray {

@@ -27,7 +27,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.convert.VisitNumberGenerator
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.domain.VisitServiceItem
-import pl.detailing.crm.visit.infrastructure.DamageMarkingService
+import pl.detailing.crm.visit.infrastructure.DamageMapReportService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.audit.domain.AuditAction
@@ -49,7 +49,7 @@ class CreateVisitFromReservationHandler(
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val damageMarkingService: DamageMarkingService,
+    private val damageMapReportService: DamageMapReportService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val documentService: DocumentService,
     private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
@@ -268,26 +268,20 @@ class CreateVisitFromReservationHandler(
                 updatedAt = Instant.now()
             )
 
-            // Step 8: Generate and upload damage map if damage points are provided
+            // Step 8: Generate and upload damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    // Generate damage map image
-                    val damageMapBytes = damageMarkingService.generateDamageMap(command.damagePoints)
+                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints)
 
                     if (damageMapBytes != null) {
-                        // Upload to S3 and get the file ID
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
                             studioId = command.studioId.value,
                             visitId = visitId.value,
-                            imageBytes = damageMapBytes
+                            pdfBytes = damageMapBytes
                         )
-
-                        // Update visit with damage map file ID
                         visit = visit.withDamageMap(damageMapFileId, command.userId)
                     }
                 } catch (e: Exception) {
-                    // Log error but don't fail the entire visit creation
-                    // The visit can still be created without a damage map
                     println("Warning: Failed to generate damage map: ${e.message}")
                 }
             }
@@ -327,13 +321,12 @@ class CreateVisitFromReservationHandler(
                         documentType = DocumentType.DAMAGE_MAP,
                         name = "Damage Map - ${visit.visitNumber}",
                         s3Key = visit.damageMapFileId!!,
-                        fileName = "damage-map.jpg",
+                        fileName = "damage-map.pdf",
                         createdBy = command.userId.value,
                         createdByName = command.userName,
                         category = "damage"
                     )
                 } catch (e: Exception) {
-                    // Log error but don't fail the visit creation
                     println("Warning: Failed to register damage map document: ${e.message}")
                 }
             }
@@ -478,15 +471,15 @@ class CreateVisitFromReservationHandler(
                 updatedAt = Instant.now()
             )
 
-            // Step 9: Generate damage map if damage points are provided
+            // Step 9: Generate damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damageMapBytes = damageMarkingService.generateDamageMap(command.damagePoints)
+                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints)
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
                             studioId = command.studioId.value,
                             visitId = visitId.value,
-                            imageBytes = damageMapBytes
+                            pdfBytes = damageMapBytes
                         )
                         visit = visit.withDamageMap(damageMapFileId, command.userId)
                     }
@@ -527,7 +520,7 @@ class CreateVisitFromReservationHandler(
                         documentType = DocumentType.DAMAGE_MAP,
                         name = "Damage Map - ${visit.visitNumber}",
                         s3Key = visit.damageMapFileId!!,
-                        fileName = "damage-map.jpg",
+                        fileName = "damage-map.pdf",
                         createdBy = command.userId.value,
                         createdByName = command.userName,
                         category = "damage"
