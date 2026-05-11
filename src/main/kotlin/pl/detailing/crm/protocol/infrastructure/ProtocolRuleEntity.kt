@@ -46,9 +46,6 @@ class ProtocolRuleEntity(
     @Column(name = "service_id", columnDefinition = "uuid")
     val serviceIds: MutableSet<UUID> = mutableSetOf(),
 
-    @Column(name = "is_mandatory", nullable = false)
-    var isMandatory: Boolean = true,
-
     @Column(name = "display_order", nullable = false)
     var displayOrder: Int = 0,
 
@@ -87,7 +84,6 @@ class ProtocolRuleEntity(
                 triggerType = rule.triggerType,
                 stage = rule.stage,
                 serviceIds = rule.serviceIds.map { it.value }.toMutableSet(),
-                isMandatory = false,
                 displayOrder = rule.displayOrder,
                 createdBy = rule.createdBy.value,
                 updatedBy = rule.updatedBy.value,

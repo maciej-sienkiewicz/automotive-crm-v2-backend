@@ -46,9 +46,6 @@ class VisitProtocolEntity(
     @Column(name = "consent_definition_id", nullable = true, columnDefinition = "uuid")
     val consentDefinitionId: UUID? = null,
 
-    @Column(name = "is_mandatory", nullable = false)
-    val isMandatory: Boolean,
-
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
     var status: VisitProtocolStatus,
@@ -107,7 +104,6 @@ class VisitProtocolEntity(
                 consentTemplateId = p.consentTemplateId?.value,
                 stage = p.stage,
                 version = p.version,
-                isMandatory = false,
                 status = p.status,
                 consentDefinitionId = p.consentDefinitionId?.value,
                 filledPdfS3Key = p.filledPdfS3Key,
