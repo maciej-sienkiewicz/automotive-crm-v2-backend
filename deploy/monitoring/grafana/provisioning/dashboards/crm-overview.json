@@ -323,10 +323,10 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 41}, "id": 21,
       "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
       "targets": [
-        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_visits_started_total[$__rate_interval])) * 86400", "instant": false, "legendFormat": "Rozpoczęte / dzień", "range": true, "refId": "A"},
-        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_visits_completed_total[$__rate_interval])) * 86400", "instant": false, "legendFormat": "Ukończone / dzień", "range": true, "refId": "B"}
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_visits_started_total[1d]))", "instant": false, "legendFormat": "Rozpoczęte / dzień", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_visits_completed_total[1d]))", "instant": false, "legendFormat": "Ukończone / dzień", "range": true, "refId": "B"}
       ],
-      "title": "Wizyty – trendy (estymowane / dzień)", "type": "timeseries"
+      "title": "Wizyty – trendy (liczba / dzień)", "type": "timeseries"
     },
 
     {
