@@ -191,12 +191,12 @@ class GetDashboardSummaryHandler(
 
             VisitDetail(
                 id = VisitId(visit.id),
-                name = visit.title ?: "Brak nazwy wizyty.",
+                name = visit.title ?: (visit.brandSnapshot + " " + customer?.lastName),
                 brand = visit.brandSnapshot,
                 model = visit.modelSnapshot,
                 amount = Money.fromCents(totalAmount),
-                customerFirstName = customer?.firstName ?: "Unknown",
-                customerLastName = customer?.lastName ?: "Unknown",
+                customerFirstName = customer?.firstName ?: "",
+                customerLastName = customer?.lastName ?: "",
                 phoneNumber = customer?.phone,
                 estimatedCompletionDate = visit.estimatedCompletionDate
             )

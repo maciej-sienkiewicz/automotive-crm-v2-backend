@@ -93,8 +93,8 @@ class ListAppointmentsHandler(
                     customerId = appointment.customerId.toString(),
                     vehicleId = appointment.vehicleId?.toString(),
                     customer = CustomerInfo(
-                        firstName = customer?.firstName ?: "Unknown",
-                        lastName = customer?.lastName ?: "Customer",
+                        firstName = customer?.firstName ?: "",
+                        lastName = customer?.lastName ?: "",
                         phone = customer?.phone ?: "",
                         email = customer?.email ?: ""
                     ),
