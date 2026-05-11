@@ -1,0 +1,545 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Detailing CRM – pełny wgląd w ruch API, komunikację (SMS/Email), wizyty, storage i JVM",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 1, "title": "API – Ruch i Wydajność", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 200}]},
+          "unit": "reqps", "mappings": []
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1}, "id": 2,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_api_request_duration_seconds_count[$__rate_interval]))", "instant": true, "legendFormat": "req/s", "refId": "A"}],
+      "title": "Request Rate", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]},
+          "unit": "percent", "mappings": [], "decimals": 2
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1}, "id": 3,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_api_errors_total[$__rate_interval])) / sum(rate(crm_api_request_duration_seconds_count[$__rate_interval])) * 100", "instant": true, "legendFormat": "error %", "refId": "A"}],
+      "title": "Error Rate", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 500}, {"color": "red", "value": 2000}]},
+          "unit": "ms", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1}, "id": 4,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "histogram_quantile(0.95, sum by (le) (rate(crm_api_request_duration_seconds_bucket[$__rate_interval]))) * 1000", "instant": true, "legendFormat": "p95", "refId": "A"}],
+      "title": "P95 Latency", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1}, "id": 5,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_api_request_duration_seconds_count[$__range]))", "instant": true, "legendFormat": "requests", "refId": "A"}],
+      "title": "Żądań (wybrany okres)", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2, "fillOpacity": 10}, "unit": "reqps"},
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5}, "id": 6,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by (path, method) (rate(crm_api_request_duration_seconds_count[$__rate_interval])) > 0", "instant": false, "legendFormat": "{{method}} {{path}}", "range": true, "refId": "A"}],
+      "title": "Request Rate wg endpointu", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2}, "unit": "ms"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "p50"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "p95"}, "properties": [{"id": "color", "value": {"fixedColor": "yellow", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "p99"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5}, "id": 7,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "histogram_quantile(0.50, sum by (le) (rate(crm_api_request_duration_seconds_bucket[$__rate_interval]))) * 1000", "instant": false, "legendFormat": "p50", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "histogram_quantile(0.95, sum by (le) (rate(crm_api_request_duration_seconds_bucket[$__rate_interval]))) * 1000", "instant": false, "legendFormat": "p95", "range": true, "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "histogram_quantile(0.99, sum by (le) (rate(crm_api_request_duration_seconds_bucket[$__rate_interval]))) * 1000", "instant": false, "legendFormat": "p99", "range": true, "refId": "C"}
+      ],
+      "title": "Latencja – p50 / p95 / p99", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "ms", "decimals": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "method"}, "properties": [{"id": "custom.width", "value": 60}]},
+          {"matcher": {"id": "byName", "options": "p95 (ms)"}, "properties": [{"id": "custom.displayMode", "value": "color-background-solid"}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 14}, "id": 8,
+      "options": {
+        "sortBy": [{"desc": true, "displayName": "Value"}],
+        "footer": {"enablePagination": false, "show": false}
+      },
+      "transformations": [
+        {"id": "sortBy", "options": {"fields": [{"desc": true, "displayName": "Value"}]}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true}, "renameByName": {"Value": "p95 (ms)", "path": "Path", "method": "Method"}}}
+      ],
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "topk(10, histogram_quantile(0.95, sum by (path, method, le) (rate(crm_api_request_duration_seconds_bucket[1h]))) * 1000)", "instant": true, "format": "table", "legendFormat": "", "refId": "A"}],
+      "title": "TOP 10 najwolniejszych endpointów (p95, ostatnia godzina)", "type": "table"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 10}, {"color": "red", "value": 50}]}, "unit": "none", "decimals": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "status"}, "properties": [{"id": "custom.width", "value": 60}]},
+          {"matcher": {"id": "byName", "options": "exception"}, "properties": [{"id": "custom.width", "value": 200}]},
+          {"matcher": {"id": "byName", "options": "Błędy"}, "properties": [{"id": "custom.displayMode", "value": "color-background-solid"}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 14}, "id": 9,
+      "options": {
+        "sortBy": [{"desc": true, "displayName": "Błędy"}],
+        "footer": {"enablePagination": false, "show": false}
+      },
+      "transformations": [
+        {"id": "sortBy", "options": {"fields": [{"desc": true, "displayName": "Błędy"}]}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true, "application": true, "environment": true}, "renameByName": {"Value": "Błędy", "path": "Path", "status": "Status", "exception": "Exception", "method": "Method", "controller": "Controller"}}}
+      ],
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sort_desc(sum by (path, method, status, exception) (increase(crm_api_errors_total[$__range]))) > 0", "instant": true, "format": "table", "legendFormat": "", "refId": "A"}],
+      "title": "Zestawienie błędów (wybrany okres)", "type": "table"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}, "id": 10, "title": "Komunikacja – SMS i Email", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24}, "id": 11,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_communication_sms_sent_total{result=\"sent\"}[$__range]))", "instant": true, "legendFormat": "SMS", "refId": "A"}],
+      "title": "SMS wysłane", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 24}, "id": 12,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_communication_emails_sent_total{result=\"sent\"}[$__range]))", "instant": true, "legendFormat": "Email", "refId": "A"}],
+      "title": "Emaile wysłane", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 20}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 24}, "id": 13,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_communication_sms_sent_total{result=\"failed\"}[$__range]))", "instant": true, "legendFormat": "failed", "refId": "A"}],
+      "title": "SMS nieudane", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 24}, "id": 14,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_communication_sms_sent_total{result=\"no_credits\"}[$__range]))", "instant": true, "legendFormat": "no credits", "refId": "A"}],
+      "title": "SMS brak kredytów", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2, "fillOpacity": 15}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28}, "id": 15,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_communication_sms_sent_total{result=\"sent\"}[$__rate_interval])) * 3600", "instant": false, "legendFormat": "SMS / godzinę", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_communication_emails_sent_total{result=\"sent\"}[$__rate_interval])) * 3600", "instant": false, "legendFormat": "Email / godzinę", "range": true, "refId": "B"}
+      ],
+      "title": "Wolumen komunikacji (wysłane / godz.)", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short", "decimals": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28}, "id": 16,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sort_desc(sum by (studio_id) (increase(crm_communication_sms_sent_total{result=\"sent\"}[$__range])))", "instant": true, "legendFormat": "SMS {{studio_id}}", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sort_desc(sum by (studio_id) (increase(crm_communication_emails_sent_total{result=\"sent\"}[$__range])))", "instant": true, "legendFormat": "Email {{studio_id}}", "refId": "B"}
+      ],
+      "title": "Komunikacja per studio (wybrany okres)", "type": "bargauge"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36}, "id": 17, "title": "Wizyty – Lifecycle", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 37}, "id": 18,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_visits_started_total[$__range]))", "instant": true, "legendFormat": "started", "refId": "A"}],
+      "title": "Wizyty rozpoczęte", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 37}, "id": 19,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_visits_completed_total[$__range]))", "instant": true, "legendFormat": "completed", "refId": "A"}],
+      "title": "Wizyty ukończone", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "max": 100,
+          "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 50}, {"color": "green", "value": 80}]},
+          "unit": "percent", "decimals": 1
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 37}, "id": 20,
+      "options": {
+        "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showThresholdLabels": false, "showThresholdMarkers": true
+      },
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(increase(crm_visits_completed_total[$__range])) / sum(increase(crm_visits_started_total[$__range])) * 100", "instant": true, "legendFormat": "rate", "refId": "A"}],
+      "title": "Wskaźnik ukończenia wizyt (%)", "type": "gauge"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2, "fillOpacity": 10}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 41}, "id": 21,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_visits_started_total[$__rate_interval])) * 86400", "instant": false, "legendFormat": "Rozpoczęte / dzień", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_visits_completed_total[$__rate_interval])) * 86400", "instant": false, "legendFormat": "Ukończone / dzień", "range": true, "refId": "B"}
+      ],
+      "title": "Wizyty – trendy (estymowane / dzień)", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short", "decimals": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 41}, "id": 22,
+      "options": {
+        "displayMode": "gradient", "minVizHeight": 10, "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true, "valueMode": "color"
+      },
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sort_desc(sum by (studio_id) (increase(crm_visits_completed_total[$__range])))", "instant": true, "legendFormat": "{{studio_id}}", "refId": "A"}],
+      "title": "Ukończone wizyty per studio (wybrany okres)", "type": "bargauge"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 49}, "id": 23, "title": "Storage – Dysk i AWS S3", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"}, "max": 100, "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]},
+          "unit": "percent", "decimals": 1
+        }, "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 50}, "id": 24,
+      "options": {
+        "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showThresholdLabels": false, "showThresholdMarkers": true
+      },
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "(crm_storage_disk_total_bytes - crm_storage_disk_free_bytes) / crm_storage_disk_total_bytes * 100", "instant": true, "legendFormat": "disk usage", "refId": "A"}],
+      "title": "Dysk – Wykorzystanie (%)", "type": "gauge"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 5368709120}, {"color": "green", "value": 10737418240}]},
+          "unit": "bytes", "mappings": [], "decimals": 1
+        }, "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 50}, "id": 25,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_disk_free_bytes", "instant": true, "legendFormat": "free", "refId": "A"}],
+      "title": "Dysk – Wolne miejsce", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "bytes", "mappings": [], "decimals": 2,
+          "noValue": "Brak danych CloudWatch"
+        }, "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 4, "x": 16, "y": 50}, "id": 26,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_s3_size_bytes", "instant": true, "legendFormat": "S3 size", "refId": "A"}],
+      "title": "S3 – Rozmiar bucketa", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0,
+          "noValue": "Brak danych CloudWatch"
+        }, "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 4, "x": 20, "y": 50}, "id": 27,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_s3_objects_total", "instant": true, "legendFormat": "objects", "refId": "A"}],
+      "title": "S3 – Liczba obiektów", "type": "stat"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 56}, "id": 28, "title": "JVM & System", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2, "fillOpacity": 15}, "unit": "bytes"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Heap Max"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}}, {"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57}, "id": 29,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "instant": false, "legendFormat": "Heap Used", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})", "instant": false, "legendFormat": "Heap Max", "range": true, "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(jvm_memory_used_bytes{area=\"nonheap\"})", "instant": false, "legendFormat": "Non-Heap Used", "range": true, "refId": "C"}
+      ],
+      "title": "JVM – Pamięć", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"}, "max": 100, "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]},
+          "unit": "percent", "decimals": 1
+        }, "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 57}, "id": 30,
+      "options": {
+        "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showThresholdLabels": false, "showThresholdMarkers": true
+      },
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(jvm_memory_used_bytes{area=\"heap\"}) / sum(jvm_memory_max_bytes{area=\"heap\"}) * 100", "instant": true, "legendFormat": "heap %", "refId": "A"}],
+      "title": "Heap – Wykorzystanie (%)", "type": "gauge"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 200}, {"color": "red", "value": 400}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 57}, "id": 31,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "jvm_threads_live_threads", "instant": true, "legendFormat": "threads", "refId": "A"}],
+      "title": "JVM – Live Threads", "type": "stat"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 65}, "id": 32, "title": "Security Monitoring – Anomaly Detection", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "never", "lineWidth": 2, "fillOpacity": 20}, "unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "403 Security Rejections"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "401 Unauthorized"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 66}, "id": 33,
+      "options": {"legend": {"calcs": ["max", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by (status) (rate(crm_api_security_rejections_total[$__rate_interval])) * 60", "instant": false, "legendFormat": "Security Rejection {{status}} / min", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_api_errors_total{status=\"401\"}[$__rate_interval])) * 60", "instant": false, "legendFormat": "401 Unauthorized / min", "range": true, "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(rate(crm_api_errors_total{status=\"403\"}[$__rate_interval])) * 60", "instant": false, "legendFormat": "403 Forbidden / min", "range": true, "refId": "C"}
+      ],
+      "title": "Odrzucenia bezpieczeństwa (401/403) – Anomaly Detection", "type": "timeseries"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 102400}, {"color": "red", "value": 1048576}]}, "unit": "bytes", "decimals": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "path"}, "properties": [{"id": "custom.width", "value": 300}]},
+          {"matcher": {"id": "byName", "options": "p99 Rozmiar"}, "properties": [{"id": "custom.displayMode", "value": "color-background-solid"}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 66}, "id": 34,
+      "options": {
+        "sortBy": [{"desc": true, "displayName": "p99 Rozmiar"}],
+        "footer": {"enablePagination": false, "show": false}
+      },
+      "transformations": [
+        {"id": "sortBy", "options": {"fields": [{"desc": true, "displayName": "p99 Rozmiar"}]}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true, "application": true, "environment": true}, "renameByName": {"Value": "p99 Rozmiar", "path": "Path", "method": "Method"}}}
+      ],
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "topk(15, histogram_quantile(0.99, sum by (path, method, le) (rate(crm_api_response_size_bytes_bucket[$__rate_interval]))))", "instant": true, "format": "table", "legendFormat": "", "refId": "A"}],
+      "title": "Największe odpowiedzi p99 – wykrywanie exfiltration", "type": "table"
+    }
+
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["crm", "detailing", "observability", "spring-boot"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Źródło danych",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Detailing CRM – Observability",
+  "uid": "detailing-crm-obs-v1",
+  "version": 1,
+  "weekStart": ""
+}
