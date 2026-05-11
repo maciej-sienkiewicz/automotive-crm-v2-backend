@@ -47,6 +47,43 @@ object MetricsTags {
     const val TAG_VALUE_ANONYMOUS = "anonymous"
     const val TAG_VALUE_NONE = "none"
 
+    // ── Communication metrics ─────────────────────────────────────────────────
+    /** Counter: emails dispatched via OutboundCommunicationGateway. Prometheus: crm_communication_emails_sent_total */
+    const val COMM_EMAIL_SENT = "crm.communication.emails.sent"
+
+    /** Counter: SMS messages dispatched via OutboundCommunicationGateway. Prometheus: crm_communication_sms_sent_total */
+    const val COMM_SMS_SENT = "crm.communication.sms.sent"
+
+    // ── Visit lifecycle metrics ───────────────────────────────────────────────
+    /** Counter: visits transitioned to IN_PROGRESS (work started). */
+    const val VISITS_STARTED = "crm.visits.started"
+
+    /** Counter: visits transitioned to COMPLETED (vehicle picked up by customer). */
+    const val VISITS_COMPLETED = "crm.visits.completed"
+
+    // ── Storage metrics ───────────────────────────────────────────────────────
+    /** Gauge: total disk bytes on the server root filesystem. */
+    const val STORAGE_DISK_TOTAL = "crm.storage.disk.total.bytes"
+
+    /** Gauge: free (usable) disk bytes on the server root filesystem. */
+    const val STORAGE_DISK_FREE = "crm.storage.disk.free.bytes"
+
+    /** Gauge: S3 bucket size in bytes (refreshed from CloudWatch, 24h lag). */
+    const val STORAGE_S3_SIZE = "crm.storage.s3.size.bytes"
+
+    /** Gauge: number of objects in the S3 bucket (refreshed from CloudWatch, 24h lag). */
+    const val STORAGE_S3_OBJECTS = "crm.storage.s3.objects.total"
+
+    // ── Additional tag keys ───────────────────────────────────────────────────
+    /** UUID of the studio (tenant) for multi-tenant breakdowns. */
+    const val TAG_STUDIO_ID = "studio_id"
+
+    /** Outcome of a communication attempt: sent / failed / no_credits. */
+    const val TAG_RESULT = "result"
+
+    /** S3 bucket name. */
+    const val TAG_BUCKET = "bucket"
+
     // ── HttpServletRequest attribute keys shared between aspect and filter ───
     /** Set by ApiMetricsAspect; read by HttpMetricsFilter for response-size tagging. */
     const val ATTR_CONTROLLER = "crm.obs.controller"

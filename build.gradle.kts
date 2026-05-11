@@ -64,6 +64,7 @@ dependencies {
     implementation(platform("software.amazon.awssdk:bom:2.21.0"))
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:sts")
+    implementation("software.amazon.awssdk:cloudwatch")
 
     // Apache PDFBox for PDF form filling and manipulation
     implementation("org.apache.pdfbox:pdfbox:3.0.1")
