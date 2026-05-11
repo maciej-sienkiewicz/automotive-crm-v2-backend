@@ -20,17 +20,12 @@ class GetPipelineSummaryHandler(
     @Transactional(readOnly = true)
     suspend fun handle(query: GetPipelineSummaryQuery): PipelineSummaryResult =
         withContext(Dispatchers.IO) {
-            val allLeads = if (query.sourceFilter != null && query.sourceFilter.isNotEmpty()) {
-                leadRepository.findByStudioIdWithSourceFilter(
-                    studioId = query.studioId.value,
-                    sources = query.sourceFilter
-                )
-            } else {
-                leadRepository.findByStudioIdWithSourceFilter(
-                    studioId = query.studioId.value,
-                    sources = null
-                )
-            }
+            val allLeads = leadRepository.findByStudioIdWithSourceFilter(
+                studioId = query.studioId.value,
+                sources = query.sourceFilter?.takeIf { it.isNotEmpty() },
+                dateFrom = query.dateFrom,
+                dateTo = query.dateTo
+            )
 
             val newLeads = allLeads.filter { it.status == LeadStatus.NEW }
             val inProgress = allLeads.filter { it.status == LeadStatus.IN_PROGRESS }

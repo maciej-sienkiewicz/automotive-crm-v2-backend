@@ -39,6 +39,8 @@ import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.shared.VehicleId
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 
 @RestController
@@ -70,9 +72,12 @@ class LeadsController(
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") limit: Int,
         @RequestParam(required = false) sortBy: String?,
-        @RequestParam(required = false) sortDirection: String?
+        @RequestParam(required = false) sortDirection: String?,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
     ): ResponseEntity<LeadListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val zone = ZoneId.of("Europe/Warsaw")
 
         val query = ListLeadsQuery(
             studioId = principal.studioId,
@@ -80,7 +85,9 @@ class LeadsController(
             statuses = status?.map { LeadStatus.valueOf(it) },
             sources = source?.map { LeadSource.valueOf(it) },
             page = page,
-            limit = limit
+            limit = limit,
+            dateFrom = dateFrom?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant() },
+            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() }
         )
 
         val result = listLeadsHandler.handle(query)
@@ -224,13 +231,18 @@ class LeadsController(
      */
     @GetMapping("/pipeline-summary")
     fun getPipelineSummary(
-        @RequestParam(required = false) source: List<String>?
+        @RequestParam(required = false) source: List<String>?,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
     ): ResponseEntity<PipelineSummaryDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val zone = ZoneId.of("Europe/Warsaw")
 
         val query = GetPipelineSummaryQuery(
             studioId = principal.studioId,
-            sourceFilter = source?.map { LeadSource.valueOf(it) }
+            sourceFilter = source?.map { LeadSource.valueOf(it) },
+            dateFrom = dateFrom?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant() },
+            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() }
         )
 
         val result = getPipelineSummaryHandler.handle(query)

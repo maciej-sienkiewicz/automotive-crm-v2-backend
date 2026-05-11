@@ -38,6 +38,8 @@ class ListLeadsHandler(
                 statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
                 sources = query.sources?.takeIf { it.isNotEmpty() }?.map { it.name },
                 search = query.search?.takeIf { it.isNotBlank() },
+                dateFrom = query.dateFrom,
+                dateTo = query.dateTo,
                 pageable = pageable
             )
 
