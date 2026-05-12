@@ -92,50 +92,71 @@ class GusRawSoapClient(
 
     // ─── SOAP Envelope builders ───────────────────────────────────────────────
 
-    private fun loginEnvelope(apiKey: String) = soapEnvelope(
-        action = GusActions.ZALOGUJ,
-        body = """<Zaloguj xmlns="http://CIS/BIR/PUBL/2014/07">
-                    <pKluczUzytkownika>${escapeXml(apiKey)}</pKluczUzytkownika>
-                  </Zaloguj>"""
-    )
+    // Koperty budowane indywidualnie – zgodnie ze strukturą z dokumentacji GUS BIR 1.1.
+    // Używamy jawnych prefiksów (ns:, dat:, wsa:) zamiast domyślnego xmlns=,
+    // żeby namespace każdego elementu był identyczny jak w dokumentacji.
 
-    private fun logoutEnvelope(sessionId: String) = soapEnvelope(
-        action = GusActions.WYLOGUJ,
-        body = """<Wyloguj xmlns="http://CIS/BIR/PUBL/2014/07">
-                    <pIdentyfikatorSesji>${escapeXml(sessionId)}</pIdentyfikatorSesji>
-                  </Wyloguj>"""
-    )
+    private fun loginEnvelope(apiKey: String) =
+        """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:ns="http://CIS/BIR/PUBL/2014/07">
+  <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
+    <wsa:To>$endpointUrl</wsa:To>
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj</wsa:Action>
+  </soap:Header>
+  <soap:Body>
+    <ns:Zaloguj>
+      <ns:pKluczUzytkownika>${escapeXml(apiKey)}</ns:pKluczUzytkownika>
+    </ns:Zaloguj>
+  </soap:Body>
+</soap:Envelope>"""
 
-    private fun searchByNipEnvelope(nip: String) = soapEnvelope(
-        action = GusActions.DANE_SZUKAJ,
-        body = """<DaneSzukajPodmioty xmlns="http://CIS/BIR/PUBL/2014/07">
-                    <pParametryWyszukiwania xmlns:i="http://www.w3.org/2001/XMLSchema-instance"
-                                           xmlns="http://CIS/BIR/PUBL/2014/07/DataContract">
-                      <Nip>${escapeXml(nip)}</Nip>
-                    </pParametryWyszukiwania>
-                  </DaneSzukajPodmioty>"""
-    )
+    private fun logoutEnvelope(sessionId: String) =
+        """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:ns="http://CIS/BIR/PUBL/2014/07">
+  <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
+    <wsa:To>$endpointUrl</wsa:To>
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Wyloguj</wsa:Action>
+  </soap:Header>
+  <soap:Body>
+    <ns:Wyloguj>
+      <ns:pIdentyfikatorSesji>${escapeXml(sessionId)}</ns:pIdentyfikatorSesji>
+    </ns:Wyloguj>
+  </soap:Body>
+</soap:Envelope>"""
 
-    private fun fullReportEnvelope(regon: String, reportName: String) = soapEnvelope(
-        action = GusActions.DANE_POBIERZ_PELNY,
-        body = """<DanePobierzPelnyRaport xmlns="http://CIS/BIR/PUBL/2014/07">
-                    <pRegon>${escapeXml(regon)}</pRegon>
-                    <pNazwaRaportu>${escapeXml(reportName)}</pNazwaRaportu>
-                  </DanePobierzPelnyRaport>"""
-    )
+    private fun searchByNipEnvelope(nip: String) =
+        // ns: = http://CIS/BIR/PUBL/2014/07 (BIR – element pParametryWyszukiwania)
+        // dat: = http://CIS/BIR/PUBL/2014/07/DataContract (DataContract – pola wewnętrzne jak Nip)
+        """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:ns="http://CIS/BIR/PUBL/2014/07"
+                        xmlns:dat="http://CIS/BIR/PUBL/2014/07/DataContract">
+  <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty</wsa:Action>
+    <wsa:To>$endpointUrl</wsa:To>
+  </soap:Header>
+  <soap:Body>
+    <ns:DaneSzukajPodmioty>
+      <ns:pParametryWyszukiwania>
+        <dat:Nip>${escapeXml(nip)}</dat:Nip>
+      </ns:pParametryWyszukiwania>
+    </ns:DaneSzukajPodmioty>
+  </soap:Body>
+</soap:Envelope>"""
 
-    private fun soapEnvelope(action: String, body: String) =
-        """<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:a="http://www.w3.org/2005/08/addressing">
-  <s:Header>
-    <a:Action s:mustUnderstand="1">$action</a:Action>
-    <a:To s:mustUnderstand="1">$endpointUrl</a:To>
-  </s:Header>
-  <s:Body>
-    $body
-  </s:Body>
-</s:Envelope>"""
+    private fun fullReportEnvelope(regon: String, reportName: String) =
+        """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:ns="http://CIS/BIR/PUBL/2014/07">
+  <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport</wsa:Action>
+    <wsa:To>$endpointUrl</wsa:To>
+  </soap:Header>
+  <soap:Body>
+    <ns:DanePobierzPelnyRaport>
+      <ns:pRegon>${escapeXml(regon)}</ns:pRegon>
+      <ns:pNazwaRaportu>${escapeXml(reportName)}</ns:pNazwaRaportu>
+    </ns:DanePobierzPelnyRaport>
+  </soap:Body>
+</soap:Envelope>"""
 
     private fun escapeXml(value: String) = value
         .replace("&", "&amp;")
