@@ -19,7 +19,7 @@ import java.time.Instant
  * Nie zna żadnych szczegółów protokołu SOAP ani struktury XML GUS.
  * Całą komunikację deleguje do [CompanyDataProvider].
  */
-class GusCompanyService(
+open class GusCompanyService(
     private val companyDataProvider: CompanyDataProvider
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -29,7 +29,7 @@ class GusCompanyService(
         key = "#nip",
         cacheManager = "gusCacheManager"
     )
-    fun getCompanyByNip(nip: String, requestedByStudioId: String): CompanyInfo {
+    open fun getCompanyByNip(nip: String, requestedByStudioId: String): CompanyInfo {
         val normalizedNip = nip.replace("-", "").trim()
         validateNip(normalizedNip)
 
