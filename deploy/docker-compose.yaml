@@ -22,6 +22,8 @@ services:
       SMSAPI_OAUTH_TOKEN: ${ENV_SMSAPI_OAUTH_TOKEN}
       CLOUDFLARE_EMAIL_WEBHOOK_TOKEN: ${ENV_CLOUDFLARE_EMAIL_WEBHOOK_TOKEN}
       APP_ENV: ${ENV_APP_ENV:-production}
+      GUS_API_KEY: ${ENV_GUS_API_KEY}
+      ENV_GUS_ENDPOINT_URL: ${ENV_GUS_ENDPOINT_URL}
     depends_on:
       - redis
     networks:
