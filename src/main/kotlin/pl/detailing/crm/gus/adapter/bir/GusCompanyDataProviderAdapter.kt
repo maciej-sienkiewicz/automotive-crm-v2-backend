@@ -57,6 +57,16 @@ class GusCompanyDataProviderAdapter(
         val entries = GusXmlParser.parseSearchResult(searchXml)
 
         if (entries.isEmpty()) {
+            // Pusta odpowiedź może oznaczać "nie znaleziono" LUB wygasłą sesję.
+            // Dokumentacja GUS zaleca weryfikację przez GetValue(StatusSesji).
+            val sessionStatus = soapClient.getSessionStatus(sessionId)
+            if (sessionStatus != "1") {
+                log.warn("GUS session expired (StatusSesji={}) – invalidating for retry", sessionStatus)
+                sessionManager.invalidate()
+                throw GusServiceUnavailableException(
+                    "Sesja GUS wygasła (StatusSesji=$sessionStatus) – ponawiam logowanie"
+                )
+            }
             throw CompanyNotFoundException(nip)
         }
 
@@ -69,7 +79,17 @@ class GusCompanyDataProviderAdapter(
         val reportName = resolveReportName(primaryEntry.entityType)
         log.debug("Using report '{}' for REGON={}", reportName, primaryEntry.regon)
 
-        val reportXml = soapClient.fetchFullReport(primaryEntry.regon, reportName, sessionId)
+        val reportXml = try {
+            soapClient.fetchFullReport(primaryEntry.regon, reportName, sessionId)
+        } catch (ex: GusServiceUnavailableException) {
+            // Pusta odpowiedź DanePobierzPelnyRaport też może być symptomem wygasłej sesji
+            val sessionStatus = runCatching { soapClient.getSessionStatus(sessionId) }.getOrDefault("1")
+            if (sessionStatus != "1") {
+                log.warn("GUS session expired during report fetch (StatusSesji={}) – invalidating for retry", sessionStatus)
+                sessionManager.invalidate()
+            }
+            throw ex
+        }
         val report = GusXmlParser.parseFullReport(reportXml)
 
         if (report?.errorCode != null) {
