@@ -18,10 +18,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.RedisSerializationContext
 import org.springframework.data.redis.serializer.StringRedisSerializer
 import org.springframework.http.client.SimpleClientHttpRequestFactory
+import org.springframework.http.converter.StringHttpMessageConverter
 import org.springframework.web.client.RestTemplate
 import pl.detailing.crm.gus.adapter.bir.GusCompanyDataProviderAdapter
 import pl.detailing.crm.gus.adapter.bir.GusSessionManager
@@ -43,10 +45,16 @@ class GusConfig {
     @Bean("gusRestTemplate")
     fun gusRestTemplate(props: GusProperties): RestTemplate {
         val factory = SimpleClientHttpRequestFactory().apply {
-            setConnectTimeout(props.connectTimeoutMs)   // int milliseconds
-            setReadTimeout(props.readTimeoutMs)          // int milliseconds
+            setConnectTimeout(props.connectTimeoutMs)
+            setReadTimeout(props.readTimeoutMs)
         }
-        return RestTemplate(factory)
+        return RestTemplate(factory).apply {
+            // GUS returns MTOM (multipart/related) with no charset in the outer Content-Type.
+            // StringHttpMessageConverter defaults to ISO-8859-1 in that case, which corrupts
+            // Polish characters. Override to UTF-8 so all GUS responses are decoded correctly.
+            messageConverters.filterIsInstance<StringHttpMessageConverter>()
+                .forEach { it.defaultCharset = Charsets.UTF_8 }
+        }
     }
 
     // ─── Adapter layer ────────────────────────────────────────────────────────
@@ -112,6 +120,7 @@ class GusConfig {
         // ObjectMapper with JavaTimeModule + default typing (needed for Spring Redis to
         // reconstruct the correct runtime type on cache read).
         val redisMapper = ObjectMapper().apply {
+            registerKotlinModule()   // Kotlin data class deserialization (no no-arg constructor)
             registerModule(JavaTimeModule())
             disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             activateDefaultTyping(
