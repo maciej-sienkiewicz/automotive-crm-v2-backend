@@ -2,8 +2,6 @@ package pl.detailing.crm.gus.adapter.bir
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
-import io.github.resilience4j.kotlin.circuitbreaker.executeCatching
-import io.github.resilience4j.kotlin.retry.executeCatching
 import io.github.resilience4j.retry.Retry
 import org.slf4j.LoggerFactory
 import pl.detailing.crm.gus.adapter.bir.mapper.GusCompanyMapper
@@ -72,11 +70,10 @@ class GusCompanyDataProviderAdapter(
         log.debug("Using report '{}' for REGON={}", reportName, primaryEntry.regon)
 
         val reportXml = soapClient.fetchFullReport(primaryEntry.regon, reportName, sessionId)
-        val report    = GusXmlParser.parseFullReport(reportXml)
+        val report = GusXmlParser.parseFullReport(reportXml)
 
         if (report?.errorCode != null) {
             log.warn("GUS returned error code {} for REGON={}", report.errorCode, primaryEntry.regon)
-            // ErrorCode=4 → nie znaleziono pełnych danych; budujemy z wyników wyszukiwania
             if (report.errorCode == "4") throw CompanyNotFoundException(nip)
         }
 
@@ -85,20 +82,22 @@ class GusCompanyDataProviderAdapter(
 
     // ─── Resilience wrapper ───────────────────────────────────────────────────
 
-    private fun <T> executeWithResilience(block: () -> T): T {
-        val retryResult = retry.executeCatching {
-            circuitBreaker.executeCatching {
-                runCatching { block() }
-                    .onFailure { ex ->
-                        if (ex is GusServiceUnavailableException) {
-                            // Sprawdź czy błąd może być spowodowany wygasłą sesją
-                            sessionManager.invalidate()
-                        }
-                    }
-            }.getOrThrow()
+    /**
+     * Owija wywołanie w Retry + CircuitBreaker używając blokującego API Resilience4j.
+     * Przy [GusServiceUnavailableException] inwaliduje sesję przed ponowieniem próby.
+     * [CallNotPermittedException] (CB otwarty) propaguje się do wywołującego.
+     */
+    private fun <T> executeWithResilience(block: () -> T): T =
+        retry.executeCallable {
+            circuitBreaker.executeCallable {
+                try {
+                    block()
+                } catch (ex: GusServiceUnavailableException) {
+                    sessionManager.invalidate()
+                    throw ex
+                }
+            }
         }
-        return retryResult.getOrThrow()
-    }
 
     // ─── Report name resolution ───────────────────────────────────────────────
 
