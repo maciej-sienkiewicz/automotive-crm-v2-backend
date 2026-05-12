@@ -3,7 +3,6 @@ package pl.detailing.crm.gus.adapter.bir.soap
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestTemplate
 import org.xml.sax.InputSource
@@ -62,9 +61,10 @@ class GusRawSoapClient(
 
     private fun callSoap(envelope: String, action: String, sessionId: String?): String {
         val headers = HttpHeaders().apply {
-            contentType = MediaType.parseMediaType(
-                "application/soap+xml; charset=UTF-8; action=\"$action\""
-            )
+            // MUST use raw set() – MediaType.parseMediaType() silently drops the quotes around
+            // the action URI when serializing back to string, causing WCF to return 400 Bad Request.
+            // Correct wire format: action="http://CIS/BIR/..."
+            set(HttpHeaders.CONTENT_TYPE, "application/soap+xml; charset=UTF-8; action=\"$action\"")
             if (sessionId != null) set("sid", sessionId)
         }
         return try {
@@ -90,57 +90,48 @@ class GusRawSoapClient(
 
     private fun loginEnvelope(apiKey: String) = soapEnvelope(
         action = GusActions.ZALOGUJ,
-        body = """
-            <Zaloguj xmlns="http://CIS/BIR/PUBL/2014/07">
-              <pKluczUzytkownika>${escapeXml(apiKey)}</pKluczUzytkownika>
-            </Zaloguj>
-        """
+        body = """<Zaloguj xmlns="http://CIS/BIR/PUBL/2014/07">
+                    <pKluczUzytkownika>${escapeXml(apiKey)}</pKluczUzytkownika>
+                  </Zaloguj>"""
     )
 
     private fun logoutEnvelope(sessionId: String) = soapEnvelope(
         action = GusActions.WYLOGUJ,
-        body = """
-            <Wyloguj xmlns="http://CIS/BIR/PUBL/2014/07">
-              <pIdentyfikatorSesji>${escapeXml(sessionId)}</pIdentyfikatorSesji>
-            </Wyloguj>
-        """
+        body = """<Wyloguj xmlns="http://CIS/BIR/PUBL/2014/07">
+                    <pIdentyfikatorSesji>${escapeXml(sessionId)}</pIdentyfikatorSesji>
+                  </Wyloguj>"""
     )
 
     private fun searchByNipEnvelope(nip: String) = soapEnvelope(
         action = GusActions.DANE_SZUKAJ,
-        body = """
-            <DaneSzukajPodmioty xmlns="http://CIS/BIR/PUBL/2014/07">
-              <pParametryWyszukiwania
-                  xmlns:i="http://www.w3.org/2001/XMLSchema-instance"
-                  xmlns="http://CIS/BIR/PUBL/2014/07/DataContract">
-                <Nip>${escapeXml(nip)}</Nip>
-              </pParametryWyszukiwania>
-            </DaneSzukajPodmioty>
-        """
+        body = """<DaneSzukajPodmioty xmlns="http://CIS/BIR/PUBL/2014/07">
+                    <pParametryWyszukiwania xmlns:i="http://www.w3.org/2001/XMLSchema-instance"
+                                           xmlns="http://CIS/BIR/PUBL/2014/07/DataContract">
+                      <Nip>${escapeXml(nip)}</Nip>
+                    </pParametryWyszukiwania>
+                  </DaneSzukajPodmioty>"""
     )
 
     private fun fullReportEnvelope(regon: String, reportName: String) = soapEnvelope(
         action = GusActions.DANE_POBIERZ_PELNY,
-        body = """
-            <DanePobierzPelnyRaport xmlns="http://CIS/BIR/PUBL/2014/07">
-              <pRegon>${escapeXml(regon)}</pRegon>
-              <pNazwaRaportu>${escapeXml(reportName)}</pNazwaRaportu>
-            </DanePobierzPelnyRaport>
-        """
+        body = """<DanePobierzPelnyRaport xmlns="http://CIS/BIR/PUBL/2014/07">
+                    <pRegon>${escapeXml(regon)}</pRegon>
+                    <pNazwaRaportu>${escapeXml(reportName)}</pNazwaRaportu>
+                  </DanePobierzPelnyRaport>"""
     )
 
-    private fun soapEnvelope(action: String, body: String) = """
-        <?xml version="1.0" encoding="utf-8"?>
-        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-                    xmlns:a="http://www.w3.org/2005/08/addressing">
-          <s:Header>
-            <a:Action s:mustUnderstand="1">$action</a:Action>
-          </s:Header>
-          <s:Body>
-            ${body.trimIndent()}
-          </s:Body>
-        </s:Envelope>
-    """.trimIndent()
+    private fun soapEnvelope(action: String, body: String) =
+        """<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://www.w3.org/2005/08/addressing">
+  <s:Header>
+    <a:Action s:mustUnderstand="1">$action</a:Action>
+    <a:To s:mustUnderstand="1">$endpointUrl</a:To>
+  </s:Header>
+  <s:Body>
+    $body
+  </s:Body>
+</s:Envelope>"""
 
     private fun escapeXml(value: String) = value
         .replace("&", "&amp;")
@@ -151,15 +142,15 @@ class GusRawSoapClient(
 }
 
 object GusActions {
-    const val ZALOGUJ        = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj"
-    const val WYLOGUJ        = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Wyloguj"
-    const val DANE_SZUKAJ    = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty"
+    const val ZALOGUJ            = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj"
+    const val WYLOGUJ            = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Wyloguj"
+    const val DANE_SZUKAJ        = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty"
     const val DANE_POBIERZ_PELNY = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport"
 }
 
 object GusReportNames {
-    const val OS_PRAWNA          = "BIR11OsPrawna"
-    const val OS_FIZYCZNA_OGOLNE = "BIR11OsFizycznaDaneOgolne"
+    const val OS_PRAWNA             = "BIR11OsPrawna"
+    const val OS_FIZYCZNA_OGOLNE    = "BIR11OsFizycznaDaneOgolne"
     const val JEDN_LOK_OS_PRAWNEJ   = "BIR11JednLokalnaOsPrawnej"
     const val JEDN_LOK_OS_FIZYCZNEJ = "BIR11JednLokalnaOsFizycznej"
 }

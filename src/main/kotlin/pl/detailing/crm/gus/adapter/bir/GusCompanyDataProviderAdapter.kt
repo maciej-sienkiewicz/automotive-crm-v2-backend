@@ -84,18 +84,15 @@ class GusCompanyDataProviderAdapter(
 
     /**
      * Owija wywołanie w Retry + CircuitBreaker używając blokującego API Resilience4j.
-     * Przy [GusServiceUnavailableException] inwaliduje sesję przed ponowieniem próby.
+     * Sesja jest inwalidowana tylko wtedy gdy błąd wystąpił PO zalogowaniu (tj. wywołanie
+     * searchByNip/fetchFullReport zwróciło komunikację o wygaśnięciu sesji) – nie przy błędzie
+     * samego Zaloguj, gdzie sesja i tak nie istnieje.
      * [CallNotPermittedException] (CB otwarty) propaguje się do wywołującego.
      */
     private fun <T> executeWithResilience(block: () -> T): T =
         retry.executeCallable {
             circuitBreaker.executeCallable {
-                try {
-                    block()
-                } catch (ex: GusServiceUnavailableException) {
-                    sessionManager.invalidate()
-                    throw ex
-                }
+                block()
             }
         }
 
