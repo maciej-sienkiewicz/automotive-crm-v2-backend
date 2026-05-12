@@ -71,13 +71,23 @@ class GusCompanyDataProviderAdapter(
             throw CompanyNotFoundException(nip)
         }
 
-        // Preferuj wpis z rejestru REGON (SilosID 4–6) nad CEIDG (1–3)
+        // Prefer main entity types (P/F) over local units (LP/LF).
+        // Among F-type entries, prefer active (no end date) and lower SilosID:
+        //   SilosID=1 (CEIDG, active) > SilosID=2 (Rolnicza) > SilosID=3 (Pozostala) > SilosID=4 (historical/deleted)
         val primaryEntry = entries
             .filter { it.regon.isNotBlank() }
-            .maxByOrNull { it.silosId }
+            .let { valid ->
+                val main = valid.filter { it.entityType.uppercase() in setOf("P", "F") }
+                main.ifEmpty { valid }
+            }
+            .let { candidates ->
+                val active = candidates.filter { it.activityEndDate.isNullOrBlank() }
+                active.ifEmpty { candidates }
+            }
+            .minByOrNull { it.silosId }
             ?: entries.first()
 
-        val reportName = resolveReportName(primaryEntry.entityType)
+        val reportName = resolveReportName(primaryEntry.entityType, primaryEntry.silosId)
         log.debug("Using report '{}' for REGON={}", reportName, primaryEntry.regon)
 
         val reportXml = try {
@@ -121,11 +131,20 @@ class GusCompanyDataProviderAdapter(
 
     // ─── Report name resolution ───────────────────────────────────────────────
 
-    private fun resolveReportName(entityType: String): String = when (entityType.uppercase()) {
-        "P"  -> GusReportNames.OS_PRAWNA
-        "F"  -> GusReportNames.OS_FIZYCZNA_OGOLNE
-        "LP" -> GusReportNames.JEDN_LOK_OS_PRAWNEJ
-        "LF" -> GusReportNames.JEDN_LOK_OS_FIZYCZNEJ
-        else -> GusReportNames.OS_PRAWNA
-    }
+    // BIR11OsFizycznaDaneOgolne has no address fields – address is in activity-specific reports.
+    // SilosID determines which activity type the physical-person entity belongs to.
+    private fun resolveReportName(entityType: String, silosId: Int = 0): String =
+        when (entityType.uppercase()) {
+            "P"  -> GusReportNames.OS_PRAWNA
+            "F"  -> when (silosId) {
+                1    -> GusReportNames.OS_FIZYCZNA_CEIDG
+                2    -> GusReportNames.OS_FIZYCZNA_ROLNICZA
+                3    -> GusReportNames.OS_FIZYCZNA_POZOSTALA
+                4    -> GusReportNames.OS_FIZYCZNA_SKRESLONA
+                else -> GusReportNames.OS_FIZYCZNA_OGOLNE
+            }
+            "LP" -> GusReportNames.JEDN_LOK_OS_PRAWNEJ
+            "LF" -> GusReportNames.JEDN_LOK_OS_FIZYCZNEJ
+            else -> GusReportNames.OS_PRAWNA
+        }
 }

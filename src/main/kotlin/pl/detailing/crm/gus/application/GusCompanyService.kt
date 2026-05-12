@@ -25,7 +25,7 @@ open class GusCompanyService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Cacheable(
-        cacheNames = ["gus-company"],
+        cacheNames = ["gus-company-v2"],
         key = "#nip",
         cacheManager = "gusCacheManager"
     )

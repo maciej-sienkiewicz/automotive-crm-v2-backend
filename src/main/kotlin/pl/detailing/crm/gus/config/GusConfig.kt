@@ -144,7 +144,7 @@ class GusConfig {
 
         return RedisCacheManager.builder(connectionFactory)
             .cacheDefaults(cacheConfig)
-            .withCacheConfiguration("gus-company", cacheConfig)
+            .withCacheConfiguration("gus-company-v2", cacheConfig)
             .build()
     }
 }

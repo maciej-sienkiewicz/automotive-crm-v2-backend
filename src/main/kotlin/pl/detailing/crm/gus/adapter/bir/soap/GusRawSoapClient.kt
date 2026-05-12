@@ -234,8 +234,12 @@ object GusActions {
 }
 
 object GusReportNames {
-    const val OS_PRAWNA             = "BIR11OsPrawna"
-    const val OS_FIZYCZNA_OGOLNE    = "BIR11OsFizycznaDaneOgolne"
-    const val JEDN_LOK_OS_PRAWNEJ   = "BIR11JednLokalnaOsPrawnej"
-    const val JEDN_LOK_OS_FIZYCZNEJ = "BIR11JednLokalnaOsFizycznej"
+    const val OS_PRAWNA                  = "BIR11OsPrawna"
+    const val OS_FIZYCZNA_OGOLNE         = "BIR11OsFizycznaDaneOgolne"
+    const val OS_FIZYCZNA_CEIDG          = "BIR11OsFizycznaDzialalnoscCeidg"
+    const val OS_FIZYCZNA_ROLNICZA       = "BIR11OsFizycznaDzialalnoscRolnicza"
+    const val OS_FIZYCZNA_POZOSTALA      = "BIR11OsFizycznaDzialalnoscPozostala"
+    const val OS_FIZYCZNA_SKRESLONA      = "BIR11OsFizycznaDzialalnoscSkreslonaDo20141108"
+    const val JEDN_LOK_OS_PRAWNEJ        = "BIR11JednLokalnaOsPrawnej"
+    const val JEDN_LOK_OS_FIZYCZNEJ      = "BIR11JednLokalnaOsFizycznej"
 }

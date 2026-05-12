@@ -114,16 +114,22 @@ object GusXmlParser {
                 else                                -> ""
             }
 
-            // Dla os. fizycznych: imię i nazwisko zamiast nazwy firmy
+            // For physical persons: BIR11OsFizycznaDaneOgolne has fiz_imie1/fiz_nazwisko (person name),
+            // while activity reports (CEIDG, Rolnicza, etc.) have fiz_nazwa (business name).
+            // Try personal name fields first; fall back to fiz_nazwa if absent.
             val name = if (prefix == "fiz_") {
                 val nazwisko = e.text("fiz_nazwisko")
                 val imie1    = e.text("fiz_imie1")
                 val imie2    = e.text("fiz_imie2")
-                buildString {
-                    append(imie1)
-                    if (imie2.isNotBlank()) append(" $imie2")
-                    if (nazwisko.isNotBlank()) append(" $nazwisko")
-                }.trim()
+                if (imie1.isNotBlank() || nazwisko.isNotBlank()) {
+                    buildString {
+                        append(imie1)
+                        if (imie2.isNotBlank()) append(" $imie2")
+                        if (nazwisko.isNotBlank()) append(" $nazwisko")
+                    }.trim()
+                } else {
+                    e.text("fiz_nazwa")
+                }
             } else {
                 e.text("${prefix}nazwa")
             }

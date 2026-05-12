@@ -1,8 +1,10 @@
 package pl.detailing.crm.gus.domain
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import java.io.Serializable
 import java.time.LocalDate
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CompanyInfo(
     val nip: String,
     val regon: String,
@@ -21,6 +23,7 @@ data class CompanyInfo(
     val isActive: Boolean
 ) : Serializable
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CompanyAddress(
     val street: String?,
     val buildingNumber: String?,
