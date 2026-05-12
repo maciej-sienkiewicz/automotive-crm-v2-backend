@@ -13,6 +13,11 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.cache.RedisCacheConfiguration
 import org.springframework.data.redis.cache.RedisCacheManager
 import org.springframework.data.redis.connection.RedisConnectionFactory
+import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.RedisSerializationContext
 import org.springframework.data.redis.serializer.StringRedisSerializer
@@ -102,6 +107,20 @@ class GusConfig {
         connectionFactory: RedisConnectionFactory,
         props: GusProperties
     ): CacheManager {
+        // GenericJackson2JsonRedisSerializer's no-arg constructor creates a bare ObjectMapper
+        // without JavaTimeModule, which can't handle LocalDate. We must supply our own
+        // ObjectMapper with JavaTimeModule + default typing (needed for Spring Redis to
+        // reconstruct the correct runtime type on cache read).
+        val redisMapper = ObjectMapper().apply {
+            registerModule(JavaTimeModule())
+            disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            activateDefaultTyping(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY
+            )
+        }
+
         val cacheConfig = RedisCacheConfiguration.defaultCacheConfig()
             .entryTtl(Duration.ofHours(props.cacheTtlHours))
             .serializeKeysWith(
@@ -109,7 +128,7 @@ class GusConfig {
             )
             .serializeValuesWith(
                 RedisSerializationContext.SerializationPair.fromSerializer(
-                    GenericJackson2JsonRedisSerializer()
+                    GenericJackson2JsonRedisSerializer(redisMapper)
                 )
             )
             .disableCachingNullValues()
