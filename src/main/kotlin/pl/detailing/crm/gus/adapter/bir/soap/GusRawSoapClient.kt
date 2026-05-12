@@ -78,11 +78,15 @@ class GusRawSoapClient(
     // ─── SOAP response parsing ────────────────────────────────────────────────
 
     private fun extractText(soapResponse: String, tagName: String): String? = try {
+        // GUS WCF service sometimes prepends a UTF-8 BOM (﻿) which causes
+        // DocumentBuilder to fail with "Content is not allowed in prolog."
+        val cleaned = soapResponse.trimStart('﻿')
         val doc = docBuilderFactory.newDocumentBuilder()
-            .parse(InputSource(StringReader(soapResponse)))
+            .parse(InputSource(StringReader(cleaned)))
         doc.getElementsByTagName(tagName).item(0)?.textContent?.trim()
     } catch (ex: Exception) {
-        log.error("Failed to extract <{}> from SOAP response: {}", tagName, ex.message)
+        val preview = soapResponse.take(120).replace("\n", "\\n").replace("\r", "\\r")
+        log.error("Failed to extract <{}> from SOAP response: {} | response_start='{}'", tagName, ex.message, preview)
         null
     }
 
