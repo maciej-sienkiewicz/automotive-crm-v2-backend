@@ -57,6 +57,22 @@ class GusRawSoapClient(
             ?: throw GusServiceUnavailableException("GUS zwrócił pustą odpowiedź na DanePobierzPelnyRaport")
     }
 
+    /**
+     * Wywołuje GetValue(StatusSesji) – metoda diagnostyczna z dokumentacji GUS BIR 1.1.
+     * Zwraca "1" gdy sesja aktywna, "0" gdy wygasła.
+     * Uwaga: GetValue używa innej przestrzeni nazw niż pozostałe metody (brak /PUBL/).
+     */
+    fun getSessionStatus(sessionId: String): String {
+        log.debug("GUS GetValue – StatusSesji")
+        return try {
+            val response = callSoap(getValueEnvelope("StatusSesji"), GusActions.GET_VALUE, sessionId)
+            extractText(response, "GetValueResult") ?: "0"
+        } catch (ex: Exception) {
+            log.warn("GUS GetValue failed (assuming session valid): {}", ex.message)
+            "1"
+        }
+    }
+
     // ─── HTTP transport ───────────────────────────────────────────────────────
 
     private fun callSoap(envelope: String, action: String, sessionId: String?): String {
@@ -131,8 +147,8 @@ class GusRawSoapClient(
                         xmlns:ns="http://CIS/BIR/PUBL/2014/07"
                         xmlns:dat="http://CIS/BIR/PUBL/2014/07/DataContract">
   <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
-    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty</wsa:Action>
     <wsa:To>$endpointUrl</wsa:To>
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty</wsa:Action>
   </soap:Header>
   <soap:Body>
     <ns:DaneSzukajPodmioty>
@@ -147,14 +163,29 @@ class GusRawSoapClient(
         """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
                         xmlns:ns="http://CIS/BIR/PUBL/2014/07">
   <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
-    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport</wsa:Action>
     <wsa:To>$endpointUrl</wsa:To>
+    <wsa:Action>http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport</wsa:Action>
   </soap:Header>
   <soap:Body>
     <ns:DanePobierzPelnyRaport>
       <ns:pRegon>${escapeXml(regon)}</ns:pRegon>
       <ns:pNazwaRaportu>${escapeXml(reportName)}</ns:pNazwaRaportu>
     </ns:DanePobierzPelnyRaport>
+  </soap:Body>
+</soap:Envelope>"""
+
+    // GetValue używa innej przestrzeni nazw: http://CIS/BIR/2014/07 (brak /PUBL/)
+    private fun getValueEnvelope(paramName: String) =
+        """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:ns="http://CIS/BIR/2014/07">
+  <soap:Header xmlns:wsa="http://www.w3.org/2005/08/addressing">
+    <wsa:To>$endpointUrl</wsa:To>
+    <wsa:Action>http://CIS/BIR/2014/07/IUslugaBIR/GetValue</wsa:Action>
+  </soap:Header>
+  <soap:Body>
+    <ns:GetValue>
+      <ns:pNazwaParametru>${escapeXml(paramName)}</ns:pNazwaParametru>
+    </ns:GetValue>
   </soap:Body>
 </soap:Envelope>"""
 
@@ -171,6 +202,8 @@ object GusActions {
     const val WYLOGUJ            = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Wyloguj"
     const val DANE_SZUKAJ        = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DaneSzukajPodmioty"
     const val DANE_POBIERZ_PELNY = "http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/DanePobierzPelnyRaport"
+    // GetValue ma inny namespace (brak /PUBL/) – zgodnie z dokumentacją GUS BIR 1.1
+    const val GET_VALUE          = "http://CIS/BIR/2014/07/IUslugaBIR/GetValue"
 }
 
 object GusReportNames {
