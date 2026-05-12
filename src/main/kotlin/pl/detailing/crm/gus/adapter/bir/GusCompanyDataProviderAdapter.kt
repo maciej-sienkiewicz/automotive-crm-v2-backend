@@ -54,6 +54,7 @@ class GusCompanyDataProviderAdapter(
         val sessionId = sessionManager.getActiveSessionId()
 
         val searchXml = soapClient.searchByNip(nip, sessionId)
+        if (log.isDebugEnabled) log.debug("GUS DaneSzukajPodmioty raw XML for NIP={}: {}", nip, searchXml)
         val entries = GusXmlParser.parseSearchResult(searchXml)
 
         if (entries.isEmpty()) {
@@ -80,7 +81,9 @@ class GusCompanyDataProviderAdapter(
         log.debug("Using report '{}' for REGON={}", reportName, primaryEntry.regon)
 
         val reportXml = try {
-            soapClient.fetchFullReport(primaryEntry.regon, reportName, sessionId)
+            soapClient.fetchFullReport(primaryEntry.regon, reportName, sessionId).also { xml ->
+                if (log.isDebugEnabled) log.debug("GUS DanePobierzPelnyRaport raw XML for REGON={}: {}", primaryEntry.regon, xml)
+            }
         } catch (ex: GusServiceUnavailableException) {
             // Pusta odpowiedź DanePobierzPelnyRaport też może być symptomem wygasłej sesji
             val sessionStatus = runCatching { soapClient.getSessionStatus(sessionId) }.getOrDefault("1")
