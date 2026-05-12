@@ -7,6 +7,9 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.AuthenticationException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import pl.detailing.crm.gus.exception.CompanyNotFoundException
+import pl.detailing.crm.gus.exception.GusServiceUnavailableException
+import pl.detailing.crm.gus.exception.InvalidNipException
 import pl.detailing.crm.invoicing.domain.*
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -169,6 +172,28 @@ class GlobalExceptionHandler {
                 timestamp = Instant.now().toString()
             ))
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUS integration exceptions
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @ExceptionHandler(InvalidNipException::class)
+    fun handleInvalidNip(ex: InvalidNipException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+            ErrorResponse("Invalid NIP", ex.message ?: "Nieprawidłowy numer NIP", Instant.now().toString())
+        )
+
+    @ExceptionHandler(CompanyNotFoundException::class)
+    fun handleCompanyNotFound(ex: CompanyNotFoundException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+            ErrorResponse("Company Not Found", ex.message ?: "Firma nie została znaleziona", Instant.now().toString())
+        )
+
+    @ExceptionHandler(GusServiceUnavailableException::class)
+    fun handleGusUnavailable(ex: GusServiceUnavailableException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+            ErrorResponse("GUS Service Unavailable", ex.message ?: "Usługa GUS jest chwilowo niedostępna", Instant.now().toString())
+        )
 
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
