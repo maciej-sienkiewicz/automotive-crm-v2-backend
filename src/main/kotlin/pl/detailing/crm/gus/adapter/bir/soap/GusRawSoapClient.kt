@@ -94,9 +94,10 @@ class GusRawSoapClient(
     // ─── SOAP response parsing ────────────────────────────────────────────────
 
     private fun extractText(soapResponse: String, tagName: String): String? = try {
+        val unwrapped = unwrapMtomIfNeeded(soapResponse)
         // GUS WCF service sometimes prepends a UTF-8 BOM (﻿) which causes
         // DocumentBuilder to fail with "Content is not allowed in prolog."
-        val cleaned = soapResponse.trimStart('﻿')
+        val cleaned = unwrapped.trimStart('﻿')
         val doc = docBuilderFactory.newDocumentBuilder()
             .parse(InputSource(StringReader(cleaned)))
         doc.getElementsByTagName(tagName).item(0)?.textContent?.trim()
@@ -104,6 +105,32 @@ class GusRawSoapClient(
         val preview = soapResponse.take(120).replace("\n", "\\n").replace("\r", "\\r")
         log.error("Failed to extract <{}> from SOAP response: {} | response_start='{}'", tagName, ex.message, preview)
         null
+    }
+
+    /**
+     * GUS WCF może zwrócić odpowiedź jako MTOM multipart/related zamiast czystego XML.
+     * Format: \r\n--<boundary>\r\n<MIME headers>\r\n\r\n<SOAP XML>\r\n--<boundary>--
+     * Jeśli odpowiedź nie zaczyna się od "--", zwraca ją bez zmian.
+     */
+    private fun unwrapMtomIfNeeded(response: String): String {
+        val trimmed = response.trimStart('\r', '\n', ' ')
+        if (!trimmed.startsWith("--")) return response
+
+        val headersEnd = response.indexOf("\r\n\r\n")
+        if (headersEnd == -1) return response
+
+        val xmlStart = headersEnd + 4
+        val boundaryTag = trimmed.substringBefore("\r\n")   // e.g. "--uuid:xxxx+id=yyy"
+        val nextBoundaryPos = response.indexOf(boundaryTag, xmlStart)
+
+        val xml = if (nextBoundaryPos == -1) {
+            response.substring(xmlStart)
+        } else {
+            response.substring(xmlStart, nextBoundaryPos).trimEnd('\r', '\n')
+        }
+
+        log.debug("Unwrapped MTOM multipart response ({} chars of SOAP XML)", xml.length)
+        return xml
     }
 
     // ─── SOAP Envelope builders ───────────────────────────────────────────────
