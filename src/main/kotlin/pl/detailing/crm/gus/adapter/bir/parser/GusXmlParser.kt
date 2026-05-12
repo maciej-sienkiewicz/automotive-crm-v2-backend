@@ -128,17 +128,29 @@ object GusXmlParser {
                 e.text("${prefix}nazwa")
             }
 
+            val postalCode     = e.text("${prefix}adSiedzKodPocztowy")
+            val city           = e.text("${prefix}adSiedzMiejscowosc_Nazwa")
+            val street         = e.text("${prefix}adSiedzUlica_Nazwa")
+            val buildingNumber = e.text("${prefix}adSiedzNumerNieruchomosci")
+            val apartmentNumber = e.text("${prefix}adSiedzNumerLokalu")
+
+            log.debug(
+                "GUS full report parsed: prefix='{}' name='{}' city='{}' street='{}' building='{}' apt='{}' postal='{}' phone='{}' email='{}'",
+                prefix, name, city, street, buildingNumber, apartmentNumber, postalCode,
+                e.text("${prefix}numerTelefonu"), e.text("${prefix}adresEmail")
+            )
+
             GusFullReportEntry(
                 regon               = e.text("${prefix}regon9").ifBlank { e.text("${prefix}regon14") },
                 nip                 = e.text("${prefix}nip"),
                 name                = name,
                 shortName           = e.text("${prefix}nazwaSkrocona").takeIf { it.isNotBlank() },
                 krsNumber           = e.text("${prefix}numerWRejestrzeEwidencji").takeIf { it.isNotBlank() },
-                postalCode          = e.text("${prefix}adSiedzKodPocztowy").takeIf { it.isNotBlank() },
-                city                = e.text("${prefix}adSiedzMiejscowosc_Nazwa").takeIf { it.isNotBlank() },
-                street              = e.text("${prefix}adSiedzUlica_Nazwa").takeIf { it.isNotBlank() },
-                buildingNumber      = e.text("${prefix}adSiedzNumerNieruchomosci").takeIf { it.isNotBlank() },
-                apartmentNumber     = e.text("${prefix}adSiedzNumerLokalu").takeIf { it.isNotBlank() },
+                postalCode          = postalCode.takeIf { it.isNotBlank() },
+                city                = city.takeIf { it.isNotBlank() },
+                street              = street.takeIf { it.isNotBlank() },
+                buildingNumber      = buildingNumber.takeIf { it.isNotBlank() },
+                apartmentNumber     = apartmentNumber.takeIf { it.isNotBlank() },
                 phone               = e.text("${prefix}numerTelefonu").takeIf { it.isNotBlank() },
                 email               = e.text("${prefix}adresEmail").takeIf { it.isNotBlank() },
                 website             = e.text("${prefix}adresStronyinternetowej").takeIf { it.isNotBlank() },
