@@ -4,8 +4,8 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import io.github.resilience4j.retry.Retry
 import io.github.resilience4j.retry.RetryConfig
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.boot.web.client.RestTemplateBuilder
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
@@ -16,11 +16,15 @@ import org.springframework.data.redis.connection.RedisConnectionFactory
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.RedisSerializationContext
 import org.springframework.data.redis.serializer.StringRedisSerializer
+import org.springframework.http.client.SimpleClientHttpRequestFactory
+import org.springframework.web.client.RestTemplate
 import pl.detailing.crm.gus.adapter.bir.GusCompanyDataProviderAdapter
 import pl.detailing.crm.gus.adapter.bir.GusSessionManager
 import pl.detailing.crm.gus.adapter.bir.soap.GusRawSoapClient
 import pl.detailing.crm.gus.application.GusCompanyService
+import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
+import pl.detailing.crm.gus.exception.InvalidNipException
 import pl.detailing.crm.gus.port.CompanyDataProvider
 import java.time.Duration
 
@@ -32,20 +36,19 @@ class GusConfig {
     // ─── HTTP client ──────────────────────────────────────────────────────────
 
     @Bean("gusRestTemplate")
-    fun gusRestTemplate(
-        builder: RestTemplateBuilder,
-        props: GusProperties
-    ) = builder
-        .connectTimeout(Duration.ofMillis(props.connectTimeoutMs.toLong()))
-        .readTimeout(Duration.ofMillis(props.readTimeoutMs.toLong()))
-        .build()
+    fun gusRestTemplate(props: GusProperties): RestTemplate {
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(props.connectTimeoutMs)   // int milliseconds
+            setReadTimeout(props.readTimeoutMs)          // int milliseconds
+        }
+        return RestTemplate(factory)
+    }
 
     // ─── Adapter layer ────────────────────────────────────────────────────────
 
     @Bean
     fun gusRawSoapClient(
-        @org.springframework.beans.factory.annotation.Qualifier("gusRestTemplate")
-        restTemplate: org.springframework.web.client.RestTemplate,
+        @Qualifier("gusRestTemplate") restTemplate: RestTemplate,
         props: GusProperties
     ) = GusRawSoapClient(restTemplate, props.endpointUrl)
 
@@ -72,8 +75,8 @@ class GusConfig {
             .waitDuration(Duration.ofMillis(props.retryInitialDelayMs))
             .retryExceptions(GusServiceUnavailableException::class.java)
             .ignoreExceptions(
-                pl.detailing.crm.gus.exception.CompanyNotFoundException::class.java,
-                pl.detailing.crm.gus.exception.InvalidNipException::class.java
+                CompanyNotFoundException::class.java,
+                InvalidNipException::class.java
             )
             .build()
         return Retry.of("gus-bir", config)
