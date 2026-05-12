@@ -13,15 +13,14 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.cache.RedisCacheConfiguration
 import org.springframework.data.redis.cache.RedisCacheManager
 import org.springframework.data.redis.connection.RedisConnectionFactory
-import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
+import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.RedisSerializationContext
 import org.springframework.data.redis.serializer.StringRedisSerializer
+import pl.detailing.crm.gus.domain.CompanyInfo
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.http.converter.StringHttpMessageConverter
 import org.springframework.web.client.RestTemplate
@@ -115,20 +114,16 @@ class GusConfig {
         connectionFactory: RedisConnectionFactory,
         props: GusProperties
     ): CacheManager {
-        // GenericJackson2JsonRedisSerializer's no-arg constructor creates a bare ObjectMapper
-        // without JavaTimeModule, which can't handle LocalDate. We must supply our own
-        // ObjectMapper with JavaTimeModule + default typing (needed for Spring Redis to
-        // reconstruct the correct runtime type on cache read).
+        // Jackson2JsonRedisSerializer knows the exact type (CompanyInfo), so no @class
+        // polymorphic type metadata is written or expected. This avoids the
+        // GenericJackson2JsonRedisSerializer pitfall where final Kotlin classes are written
+        // without @class but read back as Object (which requires @class).
         val redisMapper = ObjectMapper().apply {
-            registerKotlinModule()   // Kotlin data class deserialization (no no-arg constructor)
+            registerKotlinModule()
             registerModule(JavaTimeModule())
             disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY
-            )
         }
+        val serializer = Jackson2JsonRedisSerializer(redisMapper, CompanyInfo::class.java)
 
         val cacheConfig = RedisCacheConfiguration.defaultCacheConfig()
             .entryTtl(Duration.ofHours(props.cacheTtlHours))
@@ -136,9 +131,7 @@ class GusConfig {
                 RedisSerializationContext.SerializationPair.fromSerializer(StringRedisSerializer())
             )
             .serializeValuesWith(
-                RedisSerializationContext.SerializationPair.fromSerializer(
-                    GenericJackson2JsonRedisSerializer(redisMapper)
-                )
+                RedisSerializationContext.SerializationPair.fromSerializer(serializer)
             )
             .disableCachingNullValues()
 
