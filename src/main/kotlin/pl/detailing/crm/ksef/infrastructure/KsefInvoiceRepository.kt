@@ -15,6 +15,34 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     fun findAllByStudioId(studioId: UUID, pageable: Pageable): Page<KsefInvoiceEntity>
 
+    /**
+     * Listuje wyłącznie faktury kosztowe (direction=EXPENSE), pomijając wykluczone (status=EXCLUDED).
+     * To jest domyślny widok w module kosztów – faktury oznaczone jako prywatne/wykluczone
+     * pozostają w bazie dla spójności synchronizacji, ale nie są wyświetlane.
+     */
+    @Query("""
+        SELECT i FROM KsefInvoiceEntity i
+        WHERE i.studioId = :studioId
+          AND i.direction = 'EXPENSE'
+          AND i.status <> 'EXCLUDED'
+        ORDER BY i.invoicingDate DESC
+    """)
+    fun findActiveExpensesByStudioId(
+        @Param("studioId") studioId: UUID,
+        pageable: Pageable
+    ): Page<KsefInvoiceEntity>
+
+    /**
+     * Liczba aktywnych faktur kosztowych (bez wykluczonych) – używana do paginacji.
+     */
+    @Query("""
+        SELECT COUNT(i) FROM KsefInvoiceEntity i
+        WHERE i.studioId = :studioId
+          AND i.direction = 'EXPENSE'
+          AND i.status <> 'EXCLUDED'
+    """)
+    fun countActiveExpensesByStudioId(@Param("studioId") studioId: UUID): Long
+
     fun existsByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): Boolean
 
     fun countByStudioId(studioId: UUID): Long
@@ -34,21 +62,25 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     // ─── Statystyki miesięczne (native SQL dla wydajności) ────────────────────
 
     /**
-     * Zwraca miesięczne podsumowanie przychodów i kosztów dla danego studio.
+     * Zwraca miesięczne podsumowanie kosztów dla danego studio.
+     *
+     * Faktury EXCLUDED (oznaczone przez użytkownika jako prywatne/niewliczane w koszty)
+     * są pomijane – nie wchodzą do sumy kosztów ani liczby dokumentów.
+     *
      * Korekty (FA_KOR) są wliczane automatycznie – ich kwoty mają odpowiedni znak
      * po stronie KSeF, więc SUM() daje prawidłowy wynik netto.
      *
      * Kolumny wyniku (w kolejności):
      * 0  month_label      – format 'YYYY-MM'
-     * 1  revenue_gross    – przychody brutto (INCOME)
+     * 1  revenue_gross    – przychody brutto (INCOME) – historyczne, zawsze 0 przy EXPENSE-only sync
      * 2  revenue_net      – przychody netto (INCOME)
      * 3  revenue_vat      – VAT od przychodów (INCOME)
-     * 4  costs_gross      – koszty brutto (EXPENSE)
-     * 5  costs_net        – koszty netto (EXPENSE)
-     * 6  costs_vat        – VAT od kosztów (EXPENSE)
-     * 7  income_count     – liczba faktur przychodowych (bez korekt)
-     * 8  expense_count    – liczba faktur kosztowych (bez korekt)
-     * 9  correction_count – liczba korekt (wszystkie kierunki)
+     * 4  costs_gross      – koszty brutto (EXPENSE, bez EXCLUDED)
+     * 5  costs_net        – koszty netto (EXPENSE, bez EXCLUDED)
+     * 6  costs_vat        – VAT od kosztów (EXPENSE, bez EXCLUDED)
+     * 7  income_count     – liczba faktur przychodowych (bez korekt, bez EXCLUDED)
+     * 8  expense_count    – liczba faktur kosztowych (bez korekt, bez EXCLUDED)
+     * 9  correction_count – liczba korekt (bez EXCLUDED)
      */
     @Query(value = """
         SELECT
@@ -64,7 +96,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
             COUNT(CASE WHEN is_correction = TRUE THEN 1 END)                               AS correction_count
         FROM ksef_invoices
         WHERE studio_id       = :studioId
-          AND status         != 'CANCELLED'
+          AND status         NOT IN ('CANCELLED', 'EXCLUDED')
           AND invoicing_date >= CAST(:dateFrom AS TIMESTAMPTZ)
           AND invoicing_date  < CAST(:dateTo   AS TIMESTAMPTZ)
         GROUP BY DATE_TRUNC('month', invoicing_date)
@@ -78,6 +110,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     /**
      * Łączne sumy dla całego zakresu dat (bez podziału na miesiące).
+     * Faktury EXCLUDED są pomijane – identycznie jak w findMonthlyStatistics.
      * Zwraca pojedynczy wiersz z kolumnami w kolejności identycznej jak findMonthlyStatistics
      * (bez month_label – 9 wartości zamiast 10).
      */
@@ -94,7 +127,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
             COUNT(CASE WHEN is_correction = TRUE THEN 1 END)                               AS correction_count
         FROM ksef_invoices
         WHERE studio_id       = :studioId
-          AND status         != 'CANCELLED'
+          AND status         NOT IN ('CANCELLED', 'EXCLUDED')
           AND invoicing_date >= CAST(:dateFrom AS TIMESTAMPTZ)
           AND invoicing_date  < CAST(:dateTo   AS TIMESTAMPTZ)
     """, nativeQuery = true)

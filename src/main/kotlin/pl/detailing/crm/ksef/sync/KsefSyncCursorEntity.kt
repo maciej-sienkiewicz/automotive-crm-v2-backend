@@ -1,19 +1,27 @@
 package pl.detailing.crm.ksef.sync
 
 import jakarta.persistence.*
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.util.UUID
 
 /**
  * Przechowuje stan synchronizacji KSeF per studio (multi-tenant cursor).
  *
- * lastIncomeSync  – data ostatniego udanego fetchu SUBJECT1 (przychody)
- * lastExpenseSync – data ostatniego udanego fetchu SUBJECT2 (koszty)
+ * lastExpenseSync – data ostatniego udanego fetchu SUBJECT2 (koszty); punkt startowy delta-sync
+ * lastIncomeSync  – zachowane dla zgodności wstecznej, nie jest aktualizowane przez scheduler
  * syncStatus      – IDLE | RUNNING | ERROR
  * lastError       – ostatni błąd synchronizacji (max 2000 znaków)
  *
- * Scheduler używa tego rekordu do delta sync – pobiera tylko faktury
- * od (lastSync - 1h) do teraz, żeby uniknąć duplikatów i przegapień.
+ * Gdy lastExpenseSync == null (pierwszy sync), punkt zero wyznacza credentials.createdAt,
+ * co gwarantuje brak pobierania danych historycznych sprzed aktywacji integracji.
+ *
+ * Scheduler używa tego rekordu do delta sync – pobiera faktury od (lastExpenseSync - 1h) do teraz,
+ * co zabezpiecza przed przegapieniem faktur z opóźnieniami po stronie KSeF.
+ *
+ * Mechanizm stale-RUNNING: jeśli status = RUNNING przez dłużej niż [isStale] próg
+ * (np. po restarcie serwera w trakcie synca), scheduler może zresetować go do IDLE
+ * i zainicjować nowy sync bez cofania się do danych historycznych.
  */
 @Entity
 @Table(name = "ksef_sync_cursor")
@@ -41,8 +49,8 @@ class KsefSyncCursorEntity(
 ) {
     fun toRunning(): KsefSyncCursorEntity = copy(syncStatus = "RUNNING", updatedAt = OffsetDateTime.now())
 
+    /** Aktualizuje tylko lastExpenseSync – INCOME nie jest już synchronizowane przez scheduler. */
     fun toSuccess(syncedAt: OffsetDateTime): KsefSyncCursorEntity = copy(
-        lastIncomeSync = syncedAt,
         lastExpenseSync = syncedAt,
         syncStatus = "IDLE",
         lastError = null,
@@ -54,6 +62,20 @@ class KsefSyncCursorEntity(
         lastError = error.take(2000),
         updatedAt = OffsetDateTime.now()
     )
+
+    /** Resetuje "zawieszony" stan RUNNING do IDLE (np. po restarcie serwera). */
+    fun toIdle(): KsefSyncCursorEntity = copy(
+        syncStatus = "IDLE",
+        lastError = null,
+        updatedAt = OffsetDateTime.now()
+    )
+
+    /**
+     * Zwraca true jeśli status = RUNNING i rekord nie był aktualizowany przez dłużej niż [threshold].
+     * Służy do wykrywania "zamarłych" synców po restarcie serwera.
+     */
+    fun isStale(threshold: Duration): Boolean =
+        syncStatus == "RUNNING" && updatedAt.isBefore(OffsetDateTime.now().minus(threshold))
 
     private fun copy(
         lastIncomeSync: OffsetDateTime? = this.lastIncomeSync,

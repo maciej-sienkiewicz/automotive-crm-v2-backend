@@ -11,6 +11,9 @@ import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.auth.KsefSessionCache
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
+import pl.detailing.crm.ksef.exclusion.ExcludeKsefInvoiceCommand
+import pl.detailing.crm.ksef.exclusion.ExcludeKsefInvoiceHandler
+import pl.detailing.crm.ksef.exclusion.RestoreKsefInvoiceCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
 import pl.detailing.crm.ksef.list.ListKsefInvoicesCommand
@@ -34,6 +37,7 @@ class KsefController(
     private val ksefAuthService: KsefAuthService,
     private val fetchInvoicesHandler: FetchKsefInvoicesHandler,
     private val listInvoicesHandler: ListKsefInvoicesHandler,
+    private val excludeInvoiceHandler: ExcludeKsefInvoiceHandler,
     private val statisticsHandler: KsefStatisticsHandler,
     private val syncService: KsefSyncService,
     private val syncCursorRepository: KsefSyncCursorRepository
@@ -238,6 +242,47 @@ class KsefController(
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Invoice exclusion (business filtering)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Oznacza fakturę jako wykluczoną z widoków kosztowych (np. zakup prywatny).
+     * Faktura pozostaje w bazie dla spójności synchronizacji z KSeF.
+     * PATCH /api/v1/ksef/invoices/{ksefNumber}/exclude
+     */
+    @PatchMapping("/invoices/{ksefNumber}/exclude")
+    @Transactional
+    fun excludeInvoice(@PathVariable ksefNumber: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER or MANAGER can exclude KSeF invoices")
+        }
+
+        excludeInvoiceHandler.exclude(
+            ExcludeKsefInvoiceCommand(studioId = principal.studioId, ksefNumber = ksefNumber)
+        )
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Przywraca wykluczoną fakturę do aktywnych widoków kosztowych.
+     * PATCH /api/v1/ksef/invoices/{ksefNumber}/restore
+     */
+    @PatchMapping("/invoices/{ksefNumber}/restore")
+    @Transactional
+    fun restoreInvoice(@PathVariable ksefNumber: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Only OWNER or MANAGER can restore KSeF invoices")
+        }
+
+        excludeInvoiceHandler.restore(
+            RestoreKsefInvoiceCommand(studioId = principal.studioId, ksefNumber = ksefNumber)
+        )
+        return ResponseEntity.noContent().build()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Synchronizacja (background sync management)
     // ─────────────────────────────────────────────────────────────────────
 
@@ -324,7 +369,7 @@ class KsefController(
                         correctionCount = m.correctionCount
                     )
                 },
-                dataAsOf = cursor?.lastIncomeSync ?: cursor?.updatedAt,
+                dataAsOf = cursor?.lastExpenseSync ?: cursor?.updatedAt,
                 syncStatus = cursor?.syncStatus ?: "NEVER_SYNCED"
             )
         )
@@ -398,7 +443,7 @@ data class KsefInvoiceResponse(
     val fetchedAt: Instant,
     val direction: String,           // INCOME | EXPENSE
     val isCorrection: Boolean,       // true = FA_KOR
-    val status: String,              // ACTIVE | CORRECTED | CANCELLED
+    val status: String,              // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
     val paymentForm: String?,        // np. "PRZELEW", "GOTOWKA" – null gdy niedostępna
     val paymentFormLabel: String?    // czytelna etykieta np. "Przelew", "Gotówka"
 )

@@ -23,6 +23,13 @@ data class ListKsefInvoicesResult(
 @Service
 class ListKsefInvoicesHandler(private val invoiceRepository: KsefInvoiceRepository) {
 
+    /**
+     * Zwraca listę aktywnych faktur kosztowych (direction=EXPENSE, status≠EXCLUDED).
+     *
+     * Faktury oznaczone jako EXCLUDED (prywatne / nieistotne biznesowo) pozostają
+     * w bazie dla spójności synchronizacji z KSeF, ale są domyślnie odfiltrowane
+     * z tego widoku. Aby wyświetlić wykluczone faktury, użyj dedykowanego endpointu.
+     */
     fun handle(command: ListKsefInvoicesCommand): ListKsefInvoicesResult {
         val pageable = PageRequest.of(
             maxOf(0, command.page - 1),
@@ -30,7 +37,7 @@ class ListKsefInvoicesHandler(private val invoiceRepository: KsefInvoiceReposito
             Sort.by(Sort.Direction.DESC, "invoicingDate")
         )
 
-        val page = invoiceRepository.findAllByStudioId(command.studioId.value, pageable)
+        val page = invoiceRepository.findActiveExpensesByStudioId(command.studioId.value, pageable)
 
         return ListKsefInvoicesResult(
             invoices = page.content.map { it.toDomain() },

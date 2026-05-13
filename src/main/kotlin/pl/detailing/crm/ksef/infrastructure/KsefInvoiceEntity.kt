@@ -91,7 +91,14 @@ class KsefInvoiceEntity(
     @Column(name = "original_ksef_number", length = 100)
     val originalKsefNumber: String? = null,
 
-    /** ACTIVE (domyślnie) | CORRECTED (do tej faktury wystawiono korektę) | CANCELLED */
+    /**
+     * ACTIVE    – faktura aktywna (domyślnie)
+     * CORRECTED – do tej faktury wystawiono korektę (FA_KOR)
+     * CANCELLED – faktura anulowana po stronie KSeF
+     * EXCLUDED  – użytkownik oznaczył jako prywatną/nieistotną biznesowo;
+     *             pomijana w widokach kosztowych i statystykach, ale przechowywana
+     *             dla spójności synchronizacji z KSeF
+     */
     @Column(name = "status", nullable = false, length = 20)
     val status: String = "ACTIVE",
 
