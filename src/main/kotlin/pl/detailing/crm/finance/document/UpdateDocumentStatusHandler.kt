@@ -11,14 +11,12 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
-import pl.detailing.crm.invoicing.InvoicingFacade
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
-import java.time.ZoneOffset
 
 data class UpdateDocumentStatusCommand(
     val studioId: StudioId,
@@ -29,34 +27,22 @@ data class UpdateDocumentStatusCommand(
 )
 
 /**
- * Transitions a financial document to a new status.
+ * Transitions an income record to a new payment status.
  *
- * Allowed transitions:
- * - PENDING  → PAID     (user confirms receipt of bank transfer)
- * - PENDING  → OVERDUE  (manual mark or triggered by scheduler)
- * - OVERDUE  → PAID     (late payment finally received)
- *
- * PAID documents cannot be un-paid; use soft-delete to void a paid document.
- *
- * When the document is linked to an external provider (e.g. inFakt) and the new status
- * is PAID, the handler also notifies the provider to mark the invoice as paid there.
- * Provider call failures are logged as warnings but do NOT roll back the local status change.
+ * Allowed: PENDING → PAID, PENDING → OVERDUE, OVERDUE → PAID.
+ * PAID documents cannot be un-paid; soft-delete to void.
  */
 @Service
 class UpdateDocumentStatusHandler(
     private val documentRepository: FinancialDocumentRepository,
-    private val auditService: AuditService,
-    private val invoicingFacade: InvoicingFacade
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(UpdateDocumentStatusHandler::class.java)
 
     @Transactional
     fun handle(command: UpdateDocumentStatusCommand): FinancialDocument {
-        val entity = documentRepository.findByIdAndStudioId(
-            command.documentId.value, command.studioId.value
-        ) ?: throw EntityNotFoundException(
-            "Dokument finansowy ${command.documentId} nie istnieje lub należy do innego studia"
-        )
+        val entity = documentRepository.findByIdAndStudioId(command.documentId.value, command.studioId.value)
+            ?: throw EntityNotFoundException("Dokument finansowy ${command.documentId} nie istnieje")
 
         val oldStatus = entity.status
         validateTransition(oldStatus, command.newStatus, command.documentId)
@@ -68,31 +54,7 @@ class UpdateDocumentStatusHandler(
 
         val saved = documentRepository.save(entity)
 
-        log.info(
-            "Document status updated: studio={} document={} {} → {}",
-            command.studioId, command.documentId, oldStatus, command.newStatus
-        )
-
-        // Notify the external provider when marking as paid
-        if (command.newStatus == DocumentStatus.PAID) {
-            val provider   = entity.provider
-            val externalId = entity.externalId
-            if (provider != null && externalId != null) {
-                val paidDate = entity.paidAt?.atOffset(ZoneOffset.UTC)?.toLocalDate()?.toString()
-                try {
-                    invoicingFacade.markInvoiceAsPaid(command.studioId, provider, externalId, paidDate)
-                    log.info(
-                        "[Invoice] Marked externalId={} as paid in provider={}",
-                        externalId, provider
-                    )
-                } catch (ex: Exception) {
-                    log.warn(
-                        "[Invoice] Failed to mark externalId={} as paid in provider={}: {}",
-                        externalId, provider, ex.message
-                    )
-                }
-            }
-        }
+        log.info("Document status: studio={} doc={} {} → {}", command.studioId, command.documentId, oldStatus, command.newStatus)
 
         auditService.logSync(
             LogAuditCommand(
@@ -103,28 +65,17 @@ class UpdateDocumentStatusHandler(
                 entityId          = command.documentId.toString(),
                 entityDisplayName = entity.documentNumber,
                 action            = AuditAction.DOCUMENT_STATUS_CHANGED,
-                changes           = listOf(
-                    FieldChange("status", oldStatus.name, command.newStatus.name)
-                )
+                changes           = listOf(FieldChange("status", oldStatus.name, command.newStatus.name))
             )
         )
 
         return saved.toDomain()
     }
 
-    private fun validateTransition(
-        from: DocumentStatus,
-        to: DocumentStatus,
-        documentId: FinancialDocumentId
-    ) {
-        if (from == to) {
-            throw ValidationException("Dokument $documentId ma już status ${from.displayName}")
-        }
-        if (from == DocumentStatus.PAID) {
-            throw ValidationException(
-                "Nie można zmienić statusu opłaconego dokumentu $documentId. " +
-                "Aby anulować, użyj operacji usunięcia dokumentu."
-            )
-        }
+    private fun validateTransition(from: DocumentStatus, to: DocumentStatus, id: FinancialDocumentId) {
+        if (from == to) throw ValidationException("Dokument $id ma już status ${from.displayName}")
+        if (from == DocumentStatus.PAID) throw ValidationException(
+            "Nie można zmienić statusu opłaconego dokumentu $id. Aby anulować, usuń dokument."
+        )
     }
 }

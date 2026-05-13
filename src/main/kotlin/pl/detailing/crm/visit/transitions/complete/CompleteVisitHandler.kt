@@ -13,9 +13,6 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.document.InvoiceItemCommand
-import pl.detailing.crm.finance.document.IssueVisitInvoiceCommand
-import pl.detailing.crm.finance.document.IssueVisitInvoiceHandler
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -27,8 +24,7 @@ class CompleteVisitHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val auditService: AuditService,
-    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
-    private val issueVisitInvoiceHandler: IssueVisitInvoiceHandler
+    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -65,70 +61,19 @@ class CompleteVisitHandler(
         }
     }
 
-    /**
-     * Completes a visit by issuing a VAT invoice via the configured external provider.
-     *
-     * If no provider is configured: the visit completes without an invoice.
-     * If the provider call fails: the invoice is saved locally with SYNC_FAILED status
-     * and can be retried later – the visit still completes successfully.
-     */
     private fun handleInvoiceCompletion(
         command: CompleteVisitCommand,
         visit: Visit,
         customer: CustomerEntity?
     ): CompleteVisitResult {
-        val billedItems = visit.serviceItems.filter {
-            it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED
-        }
-
-        if (billedItems.isEmpty()) {
-            log.info("[Invoice] Visit {} has no billable items – skipping invoice", command.visitId)
-            return buildResult(visit)
-        }
-
-        val buyerName = resolveBuyerName(customer)
-        if (buyerName == null) {
-            log.warn("[Invoice] Visit {} – no buyer name available, skipping invoice", command.visitId)
-            return buildResult(visit)
-        }
-
-        issueVisitInvoiceHandler.handle(
-            IssueVisitInvoiceCommand(
-                studioId           = command.studioId,
-                userId             = command.userId,
-                visitId            = visit.id,
-                visitNumber        = visit.visitNumber.toString(),
-                buyerName          = buyerName,
-                buyerNip           = customer?.companyNip,
-                buyerEmail         = customer?.email,
-                buyerStreet        = customer?.companyAddressStreet ?: customer?.homeAddressStreet,
-                buyerCity          = customer?.companyAddressCity ?: customer?.homeAddressCity,
-                buyerPostCode      = customer?.companyAddressPostalCode ?: customer?.homeAddressPostalCode,
-                vehicleBrand       = visit.brandSnapshot,
-                vehicleModel       = visit.modelSnapshot,
-                customerFirstName  = customer?.firstName,
-                customerLastName   = customer?.lastName,
-                items              = billedItems.map { item ->
-                    InvoiceItemCommand(
-                        name                = item.serviceName,
-                        quantity            = 1.0,
-                        unit                = "usł.",
-                        unitNetPriceInCents = item.finalPriceNet.amountInCents,
-                        vatRate             = item.vatRate.rate
-                    )
-                },
-                paymentMethod      = command.paymentMethod,
-                issueDate          = LocalDate.now(),
-                dueDate            = command.dueDate,
-                currency           = "PLN",
-                description        = "Wizyta #${visit.visitNumber} – ${buildVehicleLabel(visit)}",
-                grossAmountInCents = visit.calculateTotalGross().amountInCents,
-                netAmountInCents   = visit.calculateTotalNet().amountInCents,
-                vatAmountInCents   = visit.calculateTotalVat().amountInCents
-            )
+        val financialDocument = issueFinancialDocument(command, visit, customer)
+        return CompleteVisitResult(
+            visitId                 = visit.id,
+            newStatus               = visit.status,
+            completedAt             = visit.pickupDate!!,
+            financialDocumentId     = financialDocument?.id,
+            financialDocumentNumber = financialDocument?.documentNumber
         )
-
-        return buildResult(visit)
     }
 
     /**
@@ -219,11 +164,9 @@ class CompleteVisitHandler(
 /**
  * Command to complete a visit (hand over vehicle to customer).
  *
- * For [DocumentType.INVOICE]: the invoice is sent to the studio's external provider.
- * If the provider call fails, the invoice is saved locally with SYNC_FAILED status.
- * If no provider is configured, the visit completes without an invoice.
- *
- * For [DocumentType.RECEIPT] and other types: a [FinancialDocument] is created locally.
+ * A [FinancialDocument] is created for every document type, including INVOICE.
+ * The admin issues the formal VAT invoice in an external program; the CRM record
+ * is an internal annotation only.
  */
 data class CompleteVisitCommand(
     val studioId: StudioId,

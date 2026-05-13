@@ -40,47 +40,24 @@ data class CreateFinancialDocumentCommand(
     val studioId: StudioId,
     val userId: UserId,
     val userDisplayName: String,
-
-    /** How this document entered the system. Defaults to MANUAL for API-created documents. */
     val source: DocumentSource = DocumentSource.MANUAL,
-
     val visitId: VisitId?,
-
-    // ── Denormalised vehicle / customer context (optional) ────────────────
     val vehicleBrand: String? = null,
     val vehicleModel: String? = null,
     val customerFirstName: String? = null,
     val customerLastName: String? = null,
-
     val documentType: DocumentType,
     val direction: DocumentDirection,
     val paymentMethod: PaymentMethod,
-
-    /** Net amount in grosz. */
     val totalNet: Long,
-
-    /** VAT amount in grosz. */
     val totalVat: Long,
-
-    /** Gross amount in grosz. Must equal totalNet + totalVat. */
     val totalGross: Long,
-
     val currency: String = "PLN",
     val issueDate: LocalDate,
-
-    /**
-     * Payment due date.
-     * Required when [paymentMethod] == [PaymentMethod.TRANSFER]; ignored otherwise.
-     */
     val dueDate: LocalDate?,
-
     val description: String?,
     val counterpartyName: String?,
-    val counterpartyNip: String?,
-
-    // KSeF placeholders – pass null until KSeF integration is implemented
-    val ksefInvoiceId: UUID? = null,
-    val ksefNumber: String? = null
+    val counterpartyNip: String?
 )
 
 /**
@@ -137,8 +114,6 @@ class CreateFinancialDocumentHandler(
             description       = command.description,
             counterpartyName  = command.counterpartyName,
             counterpartyNip   = command.counterpartyNip,
-            ksefInvoiceId     = command.ksefInvoiceId,
-            ksefNumber        = command.ksefNumber,
             createdBy         = command.userId.value,
             updatedBy         = command.userId.value
         )

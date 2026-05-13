@@ -11,11 +11,6 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
-import pl.detailing.crm.invoicing.domain.ExternalInvoiceNotFoundException
-import pl.detailing.crm.invoicing.domain.InvoicingCredentialsNotFoundException
-import pl.detailing.crm.invoicing.domain.InvoicingProviderApiException
-import pl.detailing.crm.invoicing.domain.InvoicingProviderNotSupportedException
-import pl.detailing.crm.invoicing.domain.InvoicingValidationException
 import pl.detailing.crm.shared.ConflictException
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
@@ -154,21 +149,11 @@ class ApiMetricsAspect(private val registry: MeterRegistry) {
         is org.springframework.security.core.AuthenticationException -> "401"
         is ForbiddenException -> "403"
         is ValidationException -> "400"
-        is InvoicingValidationException -> "400"
         is EntityNotFoundException -> "404"
         is NotFoundException -> "404"
-        is ExternalInvoiceNotFoundException -> "404"
         is ConflictException -> "409"
         is InsufficientSmsCreditsException -> "402"
         is UnprocessableEntityException -> "422"
-        is InvoicingCredentialsNotFoundException -> "422"
-        is InvoicingProviderNotSupportedException -> "501"
-        is InvoicingProviderApiException -> when (ex.httpStatus) {
-            401, 403 -> "422"
-            404 -> "404"
-            in 500..599 -> "502"
-            else -> "422"
-        }
         else -> "500"
     }
 }

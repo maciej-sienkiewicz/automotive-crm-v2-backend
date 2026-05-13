@@ -10,26 +10,19 @@ import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryFilters
 import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
-import pl.detailing.crm.ksef.domain.KsefInvoice
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
 import java.time.OffsetDateTime
 
-data class FetchKsefInvoicesCommand(
+data class FetchExpensesCommand(
     val studioId: StudioId,
     val dateFrom: OffsetDateTime,
     val dateTo: OffsetDateTime,
-    val dateType: InvoiceQueryDateType = InvoiceQueryDateType.INVOICING,
-    val subjectType: InvoiceQuerySubjectType = InvoiceQuerySubjectType.SUBJECT1,
-    val pageSize: Int = 50
+    val pageSize: Int = 100
 )
 
-data class FetchKsefInvoicesResult(
-    val fetched: Int,
-    val skipped: Int,
-    val invoices: List<KsefInvoice>
-)
+data class FetchExpensesResult(val fetched: Int, val skipped: Int)
 
 @Service
 class FetchKsefInvoicesHandler(
@@ -41,142 +34,84 @@ class FetchKsefInvoicesHandler(
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
     /**
-     * Pobiera metadane faktur z KSeF i zapisuje nowe lokalnie.
-     *
-     * Logika kategoryzacji:
-     * - SUBJECT1 → direction = INCOME  (studio jest sprzedawcą – przychód)
-     * - SUBJECT2 → direction = EXPENSE (studio jest nabywcą   – koszt)
-     *
-     * Korekty (FA_KOR) są oznaczane flagą isCorrection=true.
-     * Po zapisaniu korekty automatycznie aktualizowany jest status faktury korygowanej
-     * (jeśli znamy jej ksefNumber z metadanych SDK).
-     *
-     * Wszystkie strony są pobierane automatycznie (pagination loop).
+     * Fetches EXPENSE (SUBJECT2) invoices from KSeF for the given date range.
+     * Deduplicates by ksefNumber. Marks corrected invoices as CORRECTED when FA_KOR is detected.
      */
     @Transactional
-    fun handle(command: FetchKsefInvoicesCommand): FetchKsefInvoicesResult {
-        val effectivePageSize = command.pageSize.coerceIn(10, 250)
-        val direction = directionFor(command.subjectType)
-
-        log.info(
-            "Fetching KSeF invoices for studio={} direction={} from={} to={}",
-            command.studioId, direction, command.dateFrom, command.dateTo
-        )
+    fun handle(command: FetchExpensesCommand): FetchExpensesResult {
+        val pageSize = command.pageSize.coerceIn(10, 250)
+        log.info("Fetching KSeF expenses studio={} from={} to={}", command.studioId, command.dateFrom, command.dateTo)
 
         val accessToken = ksefAuthService.getValidAccessToken(command.studioId)
 
         val filters = InvoiceQueryFilters().apply {
-            subjectType = command.subjectType
-            dateRange = InvoiceQueryDateRange(command.dateType, command.dateFrom, command.dateTo)
+            subjectType = InvoiceQuerySubjectType.SUBJECT2
+            dateRange   = InvoiceQueryDateRange(InvoiceQueryDateType.INVOICING, command.dateFrom, command.dateTo)
         }
 
-        val allMetadata = fetchAllPages(filters, accessToken, effectivePageSize)
+        val allMetadata = fetchAllPages(filters, accessToken, pageSize)
 
-        var fetchedCount = 0
-        var skippedCount = 0
-        val savedInvoices = mutableListOf<KsefInvoice>()
+        var fetched = 0
+        var skipped = 0
 
         for (metadata in allMetadata) {
             if (invoiceRepository.existsByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)) {
-                skippedCount++
+                skipped++
                 continue
             }
 
             val isCorrection = metadata.invoiceType?.value == "FA_KOR"
+            val xmlData = safeParseXml(metadata.ksefNumber, accessToken)
 
-            // originalKsefNumber: KSeF API v2 nie zwraca tej informacji w metadanych –
-            // jest dostępna tylko w pełnym XML faktury (TODO dla przyszłej implementacji).
-            val originalKsefNumber: String? = null
-
-            val xmlData = fetchInvoiceXmlData(metadata.ksefNumber, accessToken)
-
-            val entity = KsefInvoiceEntity(
-                studioId = command.studioId.value,
-                ksefNumber = metadata.ksefNumber,
-                invoiceNumber = metadata.invoiceNumber,
-                invoicingDate = metadata.invoicingDate,
-                issueDate = metadata.issueDate,
-                sellerNip = metadata.seller?.nip,
-                sellerName = xmlData.sellerName,
-                buyerNip = metadata.buyer?.identifier?.value,
-                buyerName = xmlData.buyerName,
-                netAmount = metadata.netAmount,
-                grossAmount = metadata.grossAmount,
-                vatAmount = metadata.vatAmount,
-                currency = metadata.currency,
-                invoiceType = metadata.invoiceType?.value,
-                direction = direction,
-                isCorrection = isCorrection,
-                originalKsefNumber = originalKsefNumber,
-                status = "ACTIVE",
-                paymentForm = xmlData.paymentForm?.name
+            invoiceRepository.save(
+                KsefInvoiceEntity(
+                    studioId       = command.studioId.value,
+                    source         = "KSEF",
+                    ksefNumber     = metadata.ksefNumber,
+                    invoiceNumber  = metadata.invoiceNumber,
+                    invoicingDate  = metadata.invoicingDate,
+                    issueDate      = metadata.issueDate,
+                    sellerNip      = metadata.seller?.nip,
+                    sellerName     = xmlData.sellerName,
+                    buyerNip       = metadata.buyer?.identifier?.value,
+                    buyerName      = xmlData.buyerName,
+                    netAmount      = metadata.netAmount,
+                    grossAmount    = metadata.grossAmount,
+                    vatAmount      = metadata.vatAmount,
+                    currency       = metadata.currency,
+                    invoiceType    = metadata.invoiceType?.value,
+                    direction      = "EXPENSE",
+                    isCorrection   = isCorrection,
+                    status         = "ACTIVE",
+                    paymentStatus  = "PENDING",
+                    paymentForm    = xmlData.paymentForm?.name
+                )
             )
-            val saved = invoiceRepository.save(entity)
-            savedInvoices.add(saved.toDomain())
-            fetchedCount++
-
-            // Jeśli to korekta i znamy numer korygowanej faktury – zaktualizuj jej status
-            if (isCorrection && originalKsefNumber != null) {
-                invoiceRepository.updateStatus(command.studioId.value, originalKsefNumber, "CORRECTED")
-                log.debug("Marked invoice {} as CORRECTED due to FA_KOR {}", originalKsefNumber, metadata.ksefNumber)
-            }
+            fetched++
         }
 
-        log.info(
-            "KSeF fetch complete for studio={} direction={}: fetched={} skipped={}",
-            command.studioId, direction, fetchedCount, skippedCount
-        )
-
-        return FetchKsefInvoicesResult(
-            fetched = fetchedCount,
-            skipped = skippedCount,
-            invoices = savedInvoices
-        )
+        log.info("KSeF fetch complete studio={}: fetched={} skipped={}", command.studioId, fetched, skipped)
+        return FetchExpensesResult(fetched, skipped)
     }
 
-    /**
-     * Pobiera pełny XML faktury i wyciąga formę płatności oraz nazwy sprzedawcy/nabywcy.
-     *
-     * Błędy sieciowe / parsowania są obsługiwane gracefully – zwracamy pusty obiekt
-     * zamiast przerywać cały import faktur z powodu jednego nieudanego pobrania.
-     */
-    private fun fetchInvoiceXmlData(ksefNumber: String, accessToken: String): KsefXmlData {
+    private fun safeParseXml(ksefNumber: String, accessToken: String): KsefXmlData {
         return try {
-            val invoiceXml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
-            xmlParser.parseInvoiceData(invoiceXml).also { data ->
-                log.debug("Invoice {} paymentForm={} seller='{}' buyer='{}'",
-                    ksefNumber, data.paymentForm, data.sellerName, data.buyerName)
-            }
+            val xml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
+            xmlParser.parseInvoiceData(xml)
         } catch (e: Exception) {
-            log.warn("Nie udało się pobrać pełnego XML dla faktury {}: {}", ksefNumber, e.message)
+            log.warn("Failed to fetch XML for invoice {}: {}", ksefNumber, e.message)
             KsefXmlData(null, null, null)
         }
     }
 
-    private fun directionFor(subjectType: InvoiceQuerySubjectType): String = when (subjectType) {
-        InvoiceQuerySubjectType.SUBJECT1 -> "INCOME"
-        else -> "EXPENSE"
-    }
-
-    private fun fetchAllPages(
-        filters: InvoiceQueryFilters,
-        accessToken: String,
-        pageSize: Int
-    ) = buildList {
-        var pageOffset = 0
+    private fun fetchAllPages(filters: InvoiceQueryFilters, accessToken: String, pageSize: Int) = buildList {
+        var offset = 0
         var hasMore = true
-
         while (hasMore) {
-            val response = ksefClient.queryInvoiceMetadata(
-                pageOffset,
-                pageSize,
-                SortOrder.ASC,
-                filters,
-                accessToken
-            )
+            val response = ksefClient.queryInvoiceMetadata(offset, pageSize, SortOrder.ASC, filters, accessToken)
             addAll(response.invoices)
             hasMore = response.hasMore == true && response.invoices.isNotEmpty()
-            pageOffset += pageSize
+            offset += pageSize
         }
     }
 }

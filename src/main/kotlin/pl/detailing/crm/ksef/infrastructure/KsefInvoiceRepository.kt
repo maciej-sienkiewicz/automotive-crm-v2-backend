@@ -13,43 +13,35 @@ import java.util.UUID
 @Repository
 interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
-    fun findAllByStudioId(studioId: UUID, pageable: Pageable): Page<KsefInvoiceEntity>
+    fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefInvoiceEntity?
+
+    fun existsByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): Boolean
+
+    fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefInvoiceEntity?
 
     /**
-     * Listuje wyłącznie faktury kosztowe (direction=EXPENSE), pomijając wykluczone (status=EXCLUDED).
-     * To jest domyślny widok w module kosztów – faktury oznaczone jako prywatne/wykluczone
-     * pozostają w bazie dla spójności synchronizacji, ale nie są wyświetlane.
+     * Paginated listing with optional source and paymentStatus filters.
+     * EXCLUDED invoices are hidden by default (pass includeExcluded=true to show them).
      */
     @Query("""
         SELECT i FROM KsefInvoiceEntity i
         WHERE i.studioId = :studioId
-          AND i.direction = 'EXPENSE'
-          AND i.status <> 'EXCLUDED'
-        ORDER BY i.invoicingDate DESC
+          AND (:includeExcluded = true OR i.status <> 'EXCLUDED')
+          AND (:source IS NULL OR i.source = :source)
+          AND (:paymentStatus IS NULL OR i.paymentStatus = :paymentStatus)
+          AND (:dateFrom IS NULL OR i.invoicingDate >= :dateFrom)
+          AND (:dateTo   IS NULL OR i.invoicingDate <= :dateTo)
+        ORDER BY i.invoicingDate DESC NULLS LAST, i.fetchedAt DESC
     """)
-    fun findActiveExpensesByStudioId(
+    fun findWithFilters(
         @Param("studioId") studioId: UUID,
+        @Param("source") source: String?,
+        @Param("paymentStatus") paymentStatus: String?,
+        @Param("includeExcluded") includeExcluded: Boolean,
+        @Param("dateFrom") dateFrom: OffsetDateTime?,
+        @Param("dateTo") dateTo: OffsetDateTime?,
         pageable: Pageable
     ): Page<KsefInvoiceEntity>
-
-    /**
-     * Liczba aktywnych faktur kosztowych (bez wykluczonych) – używana do paginacji.
-     */
-    @Query("""
-        SELECT COUNT(i) FROM KsefInvoiceEntity i
-        WHERE i.studioId = :studioId
-          AND i.direction = 'EXPENSE'
-          AND i.status <> 'EXCLUDED'
-    """)
-    fun countActiveExpensesByStudioId(@Param("studioId") studioId: UUID): Long
-
-    fun existsByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): Boolean
-
-    fun countByStudioId(studioId: UUID): Long
-
-    fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefInvoiceEntity?
-
-    // ─── Aktualizacja statusu ─────────────────────────────────────────────────
 
     @Modifying
     @Query("UPDATE KsefInvoiceEntity i SET i.status = :status WHERE i.studioId = :studioId AND i.ksefNumber = :ksefNumber")
@@ -59,44 +51,39 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("status") status: String
     ): Int
 
-    // ─── Statystyki miesięczne (native SQL dla wydajności) ────────────────────
+    @Modifying
+    @Query("UPDATE KsefInvoiceEntity i SET i.paymentStatus = :paymentStatus WHERE i.id = :id AND i.studioId = :studioId")
+    fun updatePaymentStatus(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("paymentStatus") paymentStatus: String
+    ): Int
+
+    // ── Statistics (native SQL for performance) ───────────────────────────────
 
     /**
-     * Zwraca miesięczne podsumowanie kosztów dla danego studio.
+     * Monthly expense breakdown, excluding CANCELLED and EXCLUDED invoices.
+     * Correction invoices (FA_KOR) are included — their amounts carry the correct sign from KSeF.
      *
-     * Faktury EXCLUDED (oznaczone przez użytkownika jako prywatne/niewliczane w koszty)
-     * są pomijane – nie wchodzą do sumy kosztów ani liczby dokumentów.
-     *
-     * Korekty (FA_KOR) są wliczane automatycznie – ich kwoty mają odpowiedni znak
-     * po stronie KSeF, więc SUM() daje prawidłowy wynik netto.
-     *
-     * Kolumny wyniku (w kolejności):
-     * 0  month_label      – format 'YYYY-MM'
-     * 1  revenue_gross    – przychody brutto (INCOME) – historyczne, zawsze 0 przy EXPENSE-only sync
-     * 2  revenue_net      – przychody netto (INCOME)
-     * 3  revenue_vat      – VAT od przychodów (INCOME)
-     * 4  costs_gross      – koszty brutto (EXPENSE, bez EXCLUDED)
-     * 5  costs_net        – koszty netto (EXPENSE, bez EXCLUDED)
-     * 6  costs_vat        – VAT od kosztów (EXPENSE, bez EXCLUDED)
-     * 7  income_count     – liczba faktur przychodowych (bez korekt, bez EXCLUDED)
-     * 8  expense_count    – liczba faktur kosztowych (bez korekt, bez EXCLUDED)
-     * 9  correction_count – liczba korekt (bez EXCLUDED)
+     * Result columns (index):
+     * 0  month_label      – 'YYYY-MM'
+     * 1  costs_gross
+     * 2  costs_net
+     * 3  costs_vat
+     * 4  expense_count    – non-correction invoices
+     * 5  correction_count
      */
     @Query(value = """
         SELECT
             TO_CHAR(DATE_TRUNC('month', invoicing_date), 'YYYY-MM')            AS month_label,
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN gross_amount ELSE 0 END), 0) AS revenue_gross,
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN net_amount   ELSE 0 END), 0) AS revenue_net,
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN vat_amount   ELSE 0 END), 0) AS revenue_vat,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN gross_amount ELSE 0 END), 0) AS costs_gross,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN net_amount   ELSE 0 END), 0) AS costs_net,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN vat_amount   ELSE 0 END), 0) AS costs_vat,
-            COUNT(CASE WHEN direction = 'INCOME'  AND is_correction = FALSE THEN 1 END)    AS income_count,
-            COUNT(CASE WHEN direction = 'EXPENSE' AND is_correction = FALSE THEN 1 END)    AS expense_count,
-            COUNT(CASE WHEN is_correction = TRUE THEN 1 END)                               AS correction_count
+            COALESCE(SUM(gross_amount), 0)                                      AS costs_gross,
+            COALESCE(SUM(net_amount),   0)                                      AS costs_net,
+            COALESCE(SUM(vat_amount),   0)                                      AS costs_vat,
+            COUNT(CASE WHEN is_correction = FALSE THEN 1 END)                   AS expense_count,
+            COUNT(CASE WHEN is_correction = TRUE  THEN 1 END)                   AS correction_count
         FROM ksef_invoices
-        WHERE studio_id       = :studioId
-          AND status         NOT IN ('CANCELLED', 'EXCLUDED')
+        WHERE studio_id      = :studioId
+          AND status        NOT IN ('CANCELLED', 'EXCLUDED')
           AND invoicing_date >= CAST(:dateFrom AS TIMESTAMPTZ)
           AND invoicing_date  < CAST(:dateTo   AS TIMESTAMPTZ)
         GROUP BY DATE_TRUNC('month', invoicing_date)
@@ -109,25 +96,19 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     ): List<Array<Any?>>
 
     /**
-     * Łączne sumy dla całego zakresu dat (bez podziału na miesiące).
-     * Faktury EXCLUDED są pomijane – identycznie jak w findMonthlyStatistics.
-     * Zwraca pojedynczy wiersz z kolumnami w kolejności identycznej jak findMonthlyStatistics
-     * (bez month_label – 9 wartości zamiast 10).
+     * Year-total expense summary (same filters as findMonthlyStatistics).
+     * Result columns: costs_gross, costs_net, costs_vat, expense_count, correction_count
      */
     @Query(value = """
         SELECT
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN gross_amount ELSE 0 END), 0) AS revenue_gross,
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN net_amount   ELSE 0 END), 0) AS revenue_net,
-            COALESCE(SUM(CASE WHEN direction = 'INCOME'  THEN vat_amount   ELSE 0 END), 0) AS revenue_vat,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN gross_amount ELSE 0 END), 0) AS costs_gross,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN net_amount   ELSE 0 END), 0) AS costs_net,
-            COALESCE(SUM(CASE WHEN direction = 'EXPENSE' THEN vat_amount   ELSE 0 END), 0) AS costs_vat,
-            COUNT(CASE WHEN direction = 'INCOME'  AND is_correction = FALSE THEN 1 END)    AS income_count,
-            COUNT(CASE WHEN direction = 'EXPENSE' AND is_correction = FALSE THEN 1 END)    AS expense_count,
-            COUNT(CASE WHEN is_correction = TRUE THEN 1 END)                               AS correction_count
+            COALESCE(SUM(gross_amount), 0)                                      AS costs_gross,
+            COALESCE(SUM(net_amount),   0)                                      AS costs_net,
+            COALESCE(SUM(vat_amount),   0)                                      AS costs_vat,
+            COUNT(CASE WHEN is_correction = FALSE THEN 1 END)                   AS expense_count,
+            COUNT(CASE WHEN is_correction = TRUE  THEN 1 END)                   AS correction_count
         FROM ksef_invoices
-        WHERE studio_id       = :studioId
-          AND status         NOT IN ('CANCELLED', 'EXCLUDED')
+        WHERE studio_id      = :studioId
+          AND status        NOT IN ('CANCELLED', 'EXCLUDED')
           AND invoicing_date >= CAST(:dateFrom AS TIMESTAMPTZ)
           AND invoicing_date  < CAST(:dateTo   AS TIMESTAMPTZ)
     """, nativeQuery = true)

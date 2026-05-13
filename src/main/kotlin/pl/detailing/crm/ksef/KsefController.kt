@@ -1,30 +1,25 @@
 package pl.detailing.crm.ksef
 
+import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
-import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryDateType
-import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.auth.KsefSessionCache
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
-import pl.detailing.crm.ksef.exclusion.ExcludeKsefInvoiceCommand
-import pl.detailing.crm.ksef.exclusion.ExcludeKsefInvoiceHandler
-import pl.detailing.crm.ksef.exclusion.RestoreKsefInvoiceCommand
-import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesCommand
+import pl.detailing.crm.ksef.domain.PaymentForm
+import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
-import pl.detailing.crm.ksef.list.ListKsefInvoicesCommand
-import pl.detailing.crm.ksef.list.ListKsefInvoicesHandler
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.ksef.statistics.KsefStatisticsHandler
 import pl.detailing.crm.ksef.statistics.KsefStatisticsQuery
 import pl.detailing.crm.ksef.sync.KsefSyncCursorRepository
 import pl.detailing.crm.ksef.sync.KsefSyncService
-import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
-import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -35,274 +30,57 @@ class KsefController(
     private val credentialsRepository: KsefCredentialsRepository,
     private val sessionCache: KsefSessionCache,
     private val ksefAuthService: KsefAuthService,
-    private val fetchInvoicesHandler: FetchKsefInvoicesHandler,
-    private val listInvoicesHandler: ListKsefInvoicesHandler,
-    private val excludeInvoiceHandler: ExcludeKsefInvoiceHandler,
-    private val statisticsHandler: KsefStatisticsHandler,
+    private val fetchHandler: FetchKsefInvoicesHandler,
+    private val invoiceRepository: KsefInvoiceRepository,
     private val syncService: KsefSyncService,
-    private val syncCursorRepository: KsefSyncCursorRepository
+    private val syncCursorRepository: KsefSyncCursorRepository,
+    private val statisticsHandler: KsefStatisticsHandler
 ) {
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Credentials management
-    // ─────────────────────────────────────────────────────────────────────
+    // ── Credentials ────────────────────────────────────────────────────────────
 
-    /**
-     * Zapisz (utwórz lub zastąp) dane dostępowe KSeF dla bieżącego studia.
-     * POST /api/v1/ksef/credentials
-     */
     @PostMapping("/credentials")
     @Transactional
-    fun saveCredentials(@RequestBody request: SaveKsefCredentialsRequest): ResponseEntity<KsefCredentialsResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
-            throw ForbiddenException("Only OWNER can configure KSeF credentials")
-        }
-
-        val studioId = principal.studioId.value
+    fun saveCredentials(@RequestBody req: SaveKsefCredentialsRequest): ResponseEntity<KsefCredentialsResponse> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
 
         credentialsRepository.deleteByStudioId(studioId)
-        sessionCache.invalidate(principal.studioId)
+        sessionCache.invalidate(SecurityContextHelper.getCurrentUser().studioId)
 
-        val entity = credentialsRepository.save(
-            KsefCredentialsEntity(
-                studioId = studioId,
-                nip = request.nip.trim(),
-                ksefToken = request.ksefToken.trim()
-            )
+        val saved = credentialsRepository.save(
+            KsefCredentialsEntity(studioId = studioId, nip = req.nip.trim(), ksefToken = req.ksefToken.trim())
         )
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(entity.toResponse())
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved.toResponse())
     }
 
-    /**
-     * Pobierz dane dostępowe KSeF (token zamaskowany).
-     * GET /api/v1/ksef/credentials
-     */
     @GetMapping("/credentials")
     fun getCredentials(): ResponseEntity<KsefCredentialsResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
-            throw ForbiddenException("Only OWNER can view KSeF credentials")
-        }
-
-        val entity = credentialsRepository.findByStudioId(principal.studioId.value)
+        requireOwner()
+        val entity = credentialsRepository.findByStudioId(SecurityContextHelper.getCurrentUser().studioId.value)
             ?: return ResponseEntity.notFound().build()
-
         return ResponseEntity.ok(entity.toResponse())
     }
 
-    /**
-     * Usuń dane dostępowe KSeF.
-     * DELETE /api/v1/ksef/credentials
-     */
     @DeleteMapping("/credentials")
     @Transactional
     fun deleteCredentials(): ResponseEntity<Void> {
+        requireOwner()
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
-            throw ForbiddenException("Only OWNER can delete KSeF credentials")
-        }
-
         credentialsRepository.deleteByStudioId(principal.studioId.value)
         sessionCache.invalidate(principal.studioId)
-
         return ResponseEntity.noContent().build()
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Session management
-    // ─────────────────────────────────────────────────────────────────────
+    // ── Sync ───────────────────────────────────────────────────────────────────
 
-    /**
-     * Otwórz sesję KSeF (weryfikacja credentials lub pre-warm cache).
-     * POST /api/v1/ksef/session
-     */
-    @PostMapping("/session")
-    fun startSession(): ResponseEntity<KsefSessionResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can manage KSeF sessions")
-        }
-
-        val session = ksefAuthService.authenticate(principal.studioId)
-
-        return ResponseEntity.ok(
-            KsefSessionResponse(
-                authenticated = true,
-                accessTokenValidUntil = session.accessTokenValidUntil
-            )
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Invoice fetching (manual)
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Ręczny fetch faktur z KSeF dla podanego zakresu dat.
-     * POST /api/v1/ksef/invoices/fetch
-     */
-    @PostMapping("/invoices/fetch")
-    fun fetchInvoices(@RequestBody request: FetchKsefInvoicesRequest): ResponseEntity<FetchKsefInvoicesResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can fetch KSeF invoices")
-        }
-
-        val dateType = when (request.dateType?.uppercase()) {
-            "ISSUE", "ISSUEDATE"                                 -> InvoiceQueryDateType.ISSUE
-            "PERMANENTSTORAGE", "PERMANENTSTORAGEDATE"           -> InvoiceQueryDateType.PERMANENTSTORAGE
-            else                                                 -> InvoiceQueryDateType.INVOICING
-        }
-
-        val subjectType = when (request.subjectType?.uppercase()) {
-            "SUBJECT2"          -> InvoiceQuerySubjectType.SUBJECT2
-            "SUBJECT3"          -> InvoiceQuerySubjectType.SUBJECT3
-            "SUBJECTAUTHORIZED" -> InvoiceQuerySubjectType.SUBJECTAUTHORIZED
-            else                -> InvoiceQuerySubjectType.SUBJECT1
-        }
-
-        val result = fetchInvoicesHandler.handle(
-            FetchKsefInvoicesCommand(
-                studioId    = principal.studioId,
-                dateFrom    = request.dateFrom,
-                dateTo      = request.dateTo,
-                dateType    = dateType,
-                subjectType = subjectType,
-                pageSize    = request.pageSize ?: 50
-            )
-        )
-
-        return ResponseEntity.ok(
-            FetchKsefInvoicesResponse(
-                fetched = result.fetched,
-                skipped = result.skipped,
-                total   = result.fetched + result.skipped
-            )
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Invoice listing
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Lista lokalnie zapisanych faktur KSeF.
-     * GET /api/v1/ksef/invoices?page=1&size=20&direction=INCOME
-     *
-     * direction (opcjonalne): INCOME | EXPENSE – filtruje po kierunku faktury
-     */
-    @GetMapping("/invoices")
-    fun listInvoices(
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
-    ): ResponseEntity<KsefInvoiceListResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = listInvoicesHandler.handle(
-            ListKsefInvoicesCommand(
-                studioId = principal.studioId,
-                page     = maxOf(1, page),
-                pageSize = size.coerceIn(1, 100)
-            )
-        )
-
-        return ResponseEntity.ok(
-            KsefInvoiceListResponse(
-                invoices = result.invoices.map { inv ->
-                    KsefInvoiceResponse(
-                        id               = inv.id.toString(),
-                        ksefNumber       = inv.ksefNumber,
-                        invoiceNumber    = inv.invoiceNumber,
-                        invoicingDate    = inv.invoicingDate,
-                        issueDate        = inv.issueDate?.toString(),
-                        sellerNip        = inv.sellerNip,
-                        sellerName       = inv.sellerName,
-                        buyerNip         = inv.buyerNip,
-                        buyerName        = inv.buyerName,
-                        netAmount        = inv.netAmount,
-                        grossAmount      = inv.grossAmount,
-                        vatAmount        = inv.vatAmount,
-                        currency         = inv.currency,
-                        invoiceType      = inv.invoiceType,
-                        fetchedAt        = inv.fetchedAt,
-                        direction        = inv.direction,
-                        isCorrection     = inv.isCorrection,
-                        status           = inv.status,
-                        paymentForm      = inv.paymentForm?.name,
-                        paymentFormLabel = inv.paymentForm?.displayName
-                    )
-                },
-                total    = result.total,
-                page     = result.page,
-                pageSize = result.pageSize
-            )
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Invoice exclusion (business filtering)
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Oznacza fakturę jako wykluczoną z widoków kosztowych (np. zakup prywatny).
-     * Faktura pozostaje w bazie dla spójności synchronizacji z KSeF.
-     * PATCH /api/v1/ksef/invoices/{ksefNumber}/exclude
-     */
-    @PatchMapping("/invoices/{ksefNumber}/exclude")
-    @Transactional
-    fun excludeInvoice(@PathVariable ksefNumber: String): ResponseEntity<Void> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can exclude KSeF invoices")
-        }
-
-        excludeInvoiceHandler.exclude(
-            ExcludeKsefInvoiceCommand(studioId = principal.studioId, ksefNumber = ksefNumber)
-        )
-        return ResponseEntity.noContent().build()
-    }
-
-    /**
-     * Przywraca wykluczoną fakturę do aktywnych widoków kosztowych.
-     * PATCH /api/v1/ksef/invoices/{ksefNumber}/restore
-     */
-    @PatchMapping("/invoices/{ksefNumber}/restore")
-    @Transactional
-    fun restoreInvoice(@PathVariable ksefNumber: String): ResponseEntity<Void> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can restore KSeF invoices")
-        }
-
-        excludeInvoiceHandler.restore(
-            RestoreKsefInvoiceCommand(studioId = principal.studioId, ksefNumber = ksefNumber)
-        )
-        return ResponseEntity.noContent().build()
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Synchronizacja (background sync management)
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Status synchronizacji KSeF dla bieżącego studia.
-     * GET /api/v1/ksef/sync/status
-     */
     @GetMapping("/sync/status")
     fun getSyncStatus(): ResponseEntity<KsefSyncStatusResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER or MANAGER can view KSeF sync status")
-        }
-
-        val cursor = syncCursorRepository.findById(principal.studioId.value).orElse(null)
-
+        requireManagerOrOwner()
+        val cursor = syncCursorRepository.findById(SecurityContextHelper.getCurrentUser().studioId.value).orElse(null)
         return ResponseEntity.ok(
             KsefSyncStatusResponse(
                 syncStatus      = cursor?.syncStatus ?: "NEVER_SYNCED",
-                lastIncomeSync  = cursor?.lastIncomeSync,
                 lastExpenseSync = cursor?.lastExpenseSync,
                 lastError       = cursor?.lastError,
                 updatedAt       = cursor?.updatedAt
@@ -310,94 +88,294 @@ class KsefController(
         )
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Statystyki finansowe
-    // ─────────────────────────────────────────────────────────────────────
+    @PostMapping("/sync/trigger")
+    fun triggerSync(): ResponseEntity<KsefSyncStatusResponse> {
+        requireManagerOrOwner()
+        val studioId = SecurityContextHelper.getCurrentUser().studioId
+        syncService.syncStudio(studioId)
+        val cursor = syncCursorRepository.findById(studioId.value).orElse(null)
+        return ResponseEntity.ok(
+            KsefSyncStatusResponse(
+                syncStatus      = cursor?.syncStatus ?: "NEVER_SYNCED",
+                lastExpenseSync = cursor?.lastExpenseSync,
+                lastError       = cursor?.lastError,
+                updatedAt       = cursor?.updatedAt
+            )
+        )
+    }
+
+    // ── Expense documents (KSeF + manual) ─────────────────────────────────────
 
     /**
-     * Statystyki przychodów i kosztów z KSeF z podziałem miesięcznym.
-     * GET /api/v1/ksef/statistics?year=2024
-     *
-     * Korekty (FA_KOR) wliczane automatycznie – ich kwoty mają odpowiedni znak,
-     * więc SUM() daje prawidłowy wynik netto bez dodatkowego filtrowania.
+     * Paginated list of expense documents.
+     * source: KSEF | MANUAL | null (all)
+     * paymentStatus: PAID | PENDING | null (all)
+     * includeExcluded: include hidden documents (default false)
      */
-    @GetMapping("/statistics")
-    fun getStatistics(
-        @RequestParam year: Int
-    ): ResponseEntity<KsefStatisticsResponse> {
+    @GetMapping("/expenses")
+    fun listExpenses(
+        @RequestParam(defaultValue = "1")    page: Int,
+        @RequestParam(defaultValue = "20")   size: Int,
+        @RequestParam(required = false)      source: String?,
+        @RequestParam(required = false)      paymentStatus: String?,
+        @RequestParam(required = false)      dateFrom: OffsetDateTime?,
+        @RequestParam(required = false)      dateTo: OffsetDateTime?,
+        @RequestParam(defaultValue = "false") includeExcluded: Boolean
+    ): ResponseEntity<ExpenseListResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val pageable  = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 100))
 
-        if (year < 2000 || year > 2100) {
-            throw ValidationException("Year must be between 2000 and 2100")
-        }
-
-        val result = statisticsHandler.handle(
-            KsefStatisticsQuery(studioId = principal.studioId, year = year)
+        val result = invoiceRepository.findWithFilters(
+            studioId        = principal.studioId.value,
+            source          = source?.uppercase(),
+            paymentStatus   = paymentStatus?.uppercase(),
+            includeExcluded = includeExcluded,
+            dateFrom        = dateFrom,
+            dateTo          = dateTo,
+            pageable        = pageable
         )
 
-        val cursor = syncCursorRepository.findById(principal.studioId.value).orElse(null)
+        return ResponseEntity.ok(
+            ExpenseListResponse(
+                expenses = result.content.map { it.toResponse() },
+                total    = result.totalElements,
+                page     = page,
+                pageSize = result.size
+            )
+        )
+    }
+
+    /** Create a manual expense document (for invoices not received via KSeF). */
+    @PostMapping("/expenses")
+    @Transactional
+    fun createManualExpense(@RequestBody req: CreateManualExpenseRequest): ResponseEntity<ExpenseResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (req.grossAmount < 0 || req.netAmount < 0) {
+            throw ValidationException("Kwoty nie mogą być ujemne")
+        }
+
+        val paymentForm = req.paymentMethod?.let {
+            runCatching { PaymentForm.valueOf(it.uppercase()) }.getOrElse {
+                throw ValidationException("Nieznana forma płatności: $it. Dozwolone: ${PaymentForm.entries.joinToString { e -> e.name }}")
+            }
+        }
+
+        val entity = KsefInvoiceEntity(
+            studioId      = principal.studioId.value,
+            source        = "MANUAL",
+            ksefNumber    = "MANUAL-${UUID.randomUUID()}",
+            invoiceNumber = req.documentNumber,
+            invoicingDate = req.saleDate,
+            issueDate     = req.saleDate?.toLocalDate(),
+            sellerNip     = req.sellerNip,
+            sellerName    = req.sellerName,
+            netAmount     = req.netAmount,
+            grossAmount   = req.grossAmount,
+            vatAmount     = if (req.grossAmount != null && req.netAmount != null) req.grossAmount - req.netAmount else null,
+            currency      = "PLN",
+            direction     = "EXPENSE",
+            status        = "ACTIVE",
+            paymentStatus = "PENDING",
+            paymentForm   = paymentForm?.name
+        )
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(invoiceRepository.save(entity).toResponse())
+    }
+
+    /** Fetch (pull) expense invoices from KSeF for a given date range. */
+    @PostMapping("/expenses/sync")
+    fun fetchFromKsef(@RequestBody req: FetchExpensesRequest): ResponseEntity<FetchExpensesResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = fetchHandler.handle(
+            FetchExpensesCommand(
+                studioId = principal.studioId,
+                dateFrom = req.dateFrom,
+                dateTo   = req.dateTo
+            )
+        )
+        return ResponseEntity.ok(FetchExpensesResponse(fetched = result.fetched, skipped = result.skipped))
+    }
+
+    /** Mark KSeF invoice as EXCLUDED (hidden from statistics and listings). */
+    @PatchMapping("/expenses/{id}/exclude")
+    @Transactional
+    fun excludeExpense(@PathVariable id: UUID): ResponseEntity<Void> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = findExpenseOrThrow(id, principal.studioId.value)
+
+        if (entity.status == "CANCELLED") {
+            throw ValidationException("Nie można ukryć anulowanej faktury")
+        }
+        if (entity.status != "EXCLUDED") {
+            invoiceRepository.updateStatus(principal.studioId.value, entity.ksefNumber, "EXCLUDED")
+        }
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Restore a previously excluded expense document. */
+    @PatchMapping("/expenses/{id}/restore")
+    @Transactional
+    fun restoreExpense(@PathVariable id: UUID): ResponseEntity<Void> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = findExpenseOrThrow(id, principal.studioId.value)
+
+        if (entity.status == "EXCLUDED") {
+            invoiceRepository.updateStatus(principal.studioId.value, entity.ksefNumber, "ACTIVE")
+        }
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Update payment status (PAID / PENDING). */
+    @PatchMapping("/expenses/{id}/payment-status")
+    @Transactional
+    fun updatePaymentStatus(
+        @PathVariable id: UUID,
+        @RequestBody req: UpdatePaymentStatusRequest
+    ): ResponseEntity<ExpenseResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        findExpenseOrThrow(id, principal.studioId.value)
+
+        val newStatus = req.paymentStatus.uppercase()
+        if (newStatus != "PAID" && newStatus != "PENDING") {
+            throw ValidationException("paymentStatus musi być PAID lub PENDING")
+        }
+
+        invoiceRepository.updatePaymentStatus(id, principal.studioId.value, newStatus)
+
+        return ResponseEntity.ok(
+            invoiceRepository.findByIdAndStudioId(id, principal.studioId.value)!!.toResponse()
+        )
+    }
+
+    /** Delete a MANUAL expense document (KSeF invoices cannot be deleted — only excluded). */
+    @DeleteMapping("/expenses/{id}")
+    @Transactional
+    fun deleteManualExpense(@PathVariable id: UUID): ResponseEntity<Void> {
+        requireOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = findExpenseOrThrow(id, principal.studioId.value)
+
+        if (entity.source != "MANUAL") {
+            throw ValidationException("Można usuwać tylko ręcznie dodane dokumenty kosztowe. Faktury KSeF można wyłącznie ukryć.")
+        }
+
+        invoiceRepository.delete(entity)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ── Statistics ─────────────────────────────────────────────────────────────
+
+    @GetMapping("/statistics")
+    fun getStatistics(@RequestParam year: Int): ResponseEntity<KsefStatisticsResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (year < 2000 || year > 2100) throw ValidationException("Rok musi być w zakresie 2000–2100")
+
+        val result = statisticsHandler.handle(KsefStatisticsQuery(principal.studioId, year))
+        val cursor  = syncCursorRepository.findById(principal.studioId.value).orElse(null)
 
         return ResponseEntity.ok(
             KsefStatisticsResponse(
-                year = result.year,
-                totals = KsefStatisticsTotalsResponse(
-                    revenueGross    = result.totals.revenueGross,
-                    revenueNet      = result.totals.revenueNet,
-                    revenueVat      = result.totals.revenueVat,
+                year       = result.year,
+                totals     = KsefExpenseTotalsResponse(
                     costsGross      = result.totals.costsGross,
                     costsNet        = result.totals.costsNet,
                     costsVat        = result.totals.costsVat,
-                    profitGross     = result.totals.profitGross,
-                    profitNet       = result.totals.profitNet,
-                    incomeCount     = result.totals.incomeCount,
                     expenseCount    = result.totals.expenseCount,
                     correctionCount = result.totals.correctionCount
                 ),
-                monthly = result.monthly.map { m ->
-                    KsefMonthlyBreakdownResponse(
-                        monthLabel      = m.monthLabel,
-                        revenueGross    = m.revenueGross,
-                        revenueNet      = m.revenueNet,
-                        revenueVat      = m.revenueVat,
+                monthly    = result.monthly.map { m ->
+                    KsefMonthlyExpenseResponse(
+                        month           = m.month,
                         costsGross      = m.costsGross,
                         costsNet        = m.costsNet,
                         costsVat        = m.costsVat,
-                        profitGross     = m.profitGross,
-                        profitNet       = m.profitNet,
-                        incomeCount     = m.incomeCount,
                         expenseCount    = m.expenseCount,
                         correctionCount = m.correctionCount
                     )
                 },
-                dataAsOf = cursor?.lastExpenseSync ?: cursor?.updatedAt,
+                dataAsOf   = cursor?.lastExpenseSync,
                 syncStatus = cursor?.syncStatus ?: "NEVER_SYNCED"
             )
         )
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Private helpers
-    // ─────────────────────────────────────────────────────────────────────
+    // ── Private helpers ────────────────────────────────────────────────────────
+
+    private fun requireOwner() {
+        if (SecurityContextHelper.getCurrentUser().role != UserRole.OWNER) {
+            throw ForbiddenException("Tylko właściciel może wykonać tę operację")
+        }
+    }
+
+    private fun requireManagerOrOwner() {
+        val role = SecurityContextHelper.getCurrentUser().role
+        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel lub manager może wykonać tę operację")
+        }
+    }
+
+    private fun findExpenseOrThrow(id: UUID, studioId: UUID): KsefInvoiceEntity =
+        invoiceRepository.findByIdAndStudioId(id, studioId)
+            ?: throw NotFoundException("Dokument kosztowy $id nie istnieje")
 
     private fun KsefCredentialsEntity.toResponse() = KsefCredentialsResponse(
-        nip          = nip,
-        tokenMasked  = maskToken(ksefToken),
-        createdAt    = createdAt,
-        updatedAt    = updatedAt
+        nip         = nip,
+        tokenMasked = maskToken(ksefToken),
+        createdAt   = createdAt,
+        updatedAt   = updatedAt
     )
 
     private fun maskToken(token: String): String =
         if (token.length <= 8) "****" else token.take(4) + "****" + token.takeLast(4)
+
+    private fun KsefInvoiceEntity.toResponse() = ExpenseResponse(
+        id             = id.toString(),
+        source         = source,
+        ksefNumber     = if (source == "KSEF") ksefNumber else null,
+        documentNumber = invoiceNumber,
+        saleDate       = invoicingDate,
+        sellerName     = sellerName,
+        sellerNip      = sellerNip,
+        netAmount      = netAmount,
+        grossAmount    = grossAmount,
+        vatAmount      = vatAmount,
+        currency       = currency ?: "PLN",
+        paymentMethod  = paymentForm,
+        paymentMethodLabel = paymentForm?.let { runCatching { PaymentForm.valueOf(it).displayName }.getOrNull() },
+        paymentStatus  = paymentStatus,
+        status         = status,
+        isCorrection   = isCorrection,
+        fetchedAt      = fetchedAt
+    )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Request / Response DTOs
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Request DTOs ───────────────────────────────────────────────────────────────
 
-data class SaveKsefCredentialsRequest(
-    val nip: String,
-    val ksefToken: String
+data class SaveKsefCredentialsRequest(val nip: String, val ksefToken: String)
+
+data class FetchExpensesRequest(val dateFrom: OffsetDateTime, val dateTo: OffsetDateTime)
+
+data class CreateManualExpenseRequest(
+    val saleDate: OffsetDateTime?,
+    val documentNumber: String?,
+    val sellerName: String?,
+    val sellerNip: String?,
+    val netAmount: Double?,
+    val grossAmount: Double?,
+    /** PaymentForm name: GOTOWKA | KARTA | PRZELEW | MOBILNA | KREDYT | BON | CZEK */
+    val paymentMethod: String?
 )
+
+data class UpdatePaymentStatusRequest(val paymentStatus: String)
+
+// ── Response DTOs ──────────────────────────────────────────────────────────────
 
 data class KsefCredentialsResponse(
     val nip: String,
@@ -406,96 +384,63 @@ data class KsefCredentialsResponse(
     val updatedAt: Instant
 )
 
-data class KsefSessionResponse(
-    val authenticated: Boolean,
-    val accessTokenValidUntil: OffsetDateTime
-)
-
-data class FetchKsefInvoicesRequest(
-    val dateFrom: OffsetDateTime,
-    val dateTo: OffsetDateTime,
-    val dateType: String?,    // INVOICING (default) | ISSUE | PERMANENTSTORAGE
-    val subjectType: String?, // SUBJECT1 sprzedawca/przychód (default) | SUBJECT2 nabywca/koszt
-    val pageSize: Int?
-)
-
-data class FetchKsefInvoicesResponse(
-    val fetched: Int,
-    val skipped: Int,
-    val total: Int
-)
-
-data class KsefInvoiceResponse(
-    val id: String,
-    val ksefNumber: String,
-    val invoiceNumber: String?,
-    val invoicingDate: OffsetDateTime?,
-    val issueDate: String?,
-    val sellerNip: String?,
-    val sellerName: String?,
-    val buyerNip: String?,
-    val buyerName: String?,
-    val netAmount: Double?,
-    val grossAmount: Double?,
-    val vatAmount: Double?,
-    val currency: String?,
-    val invoiceType: String?,
-    val fetchedAt: Instant,
-    val direction: String,           // INCOME | EXPENSE
-    val isCorrection: Boolean,       // true = FA_KOR
-    val status: String,              // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
-    val paymentForm: String?,        // np. "PRZELEW", "GOTOWKA" – null gdy niedostępna
-    val paymentFormLabel: String?    // czytelna etykieta np. "Przelew", "Gotówka"
-)
-
-data class KsefInvoiceListResponse(
-    val invoices: List<KsefInvoiceResponse>,
-    val total: Long,
-    val page: Int,
-    val pageSize: Int
-)
-
 data class KsefSyncStatusResponse(
-    val syncStatus: String,             // IDLE | RUNNING | ERROR | NEVER_SYNCED
-    val lastIncomeSync: OffsetDateTime?,
+    val syncStatus: String,
     val lastExpenseSync: OffsetDateTime?,
     val lastError: String?,
     val updatedAt: OffsetDateTime?
 )
 
+data class FetchExpensesResponse(val fetched: Int, val skipped: Int)
+
+data class ExpenseResponse(
+    val id: String,
+    val source: String,                 // KSEF | MANUAL
+    val ksefNumber: String?,            // null for MANUAL
+    val documentNumber: String?,
+    val saleDate: OffsetDateTime?,
+    val sellerName: String?,
+    val sellerNip: String?,
+    val netAmount: Double?,
+    val grossAmount: Double?,
+    val vatAmount: Double?,
+    val currency: String,
+    val paymentMethod: String?,         // PaymentForm.name
+    val paymentMethodLabel: String?,    // PaymentForm.displayName
+    val paymentStatus: String,          // PAID | PENDING
+    val status: String,                 // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
+    val isCorrection: Boolean,
+    val fetchedAt: Instant
+)
+
+data class ExpenseListResponse(
+    val expenses: List<ExpenseResponse>,
+    val total: Long,
+    val page: Int,
+    val pageSize: Int
+)
+
+data class KsefExpenseTotalsResponse(
+    val costsGross: Double,
+    val costsNet: Double,
+    val costsVat: Double,
+    val expenseCount: Long,
+    val correctionCount: Long
+)
+
+data class KsefMonthlyExpenseResponse(
+    val month: String,
+    val costsGross: Double,
+    val costsNet: Double,
+    val costsVat: Double,
+    val expenseCount: Long,
+    val correctionCount: Long
+)
+
 data class KsefStatisticsResponse(
     val year: Int,
-    val totals: KsefStatisticsTotalsResponse,
-    val monthly: List<KsefMonthlyBreakdownResponse>,
-    val dataAsOf: OffsetDateTime?,      // data ostatniej synchronizacji
+    val totals: KsefExpenseTotalsResponse,
+    val monthly: List<KsefMonthlyExpenseResponse>,
+    val dataAsOf: OffsetDateTime?,
     val syncStatus: String
-)
-
-data class KsefStatisticsTotalsResponse(
-    val revenueGross: Double,
-    val revenueNet: Double,
-    val revenueVat: Double,
-    val costsGross: Double,
-    val costsNet: Double,
-    val costsVat: Double,
-    val profitGross: Double,
-    val profitNet: Double,
-    val incomeCount: Long,
-    val expenseCount: Long,
-    val correctionCount: Long
-)
-
-data class KsefMonthlyBreakdownResponse(
-    val monthLabel: String,
-    val revenueGross: Double,
-    val revenueNet: Double,
-    val revenueVat: Double,
-    val costsGross: Double,
-    val costsNet: Double,
-    val costsVat: Double,
-    val profitGross: Double,
-    val profitNet: Double,
-    val incomeCount: Long,
-    val expenseCount: Long,
-    val correctionCount: Long
 )
