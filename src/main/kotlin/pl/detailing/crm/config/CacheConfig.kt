@@ -52,6 +52,7 @@ class CacheConfig {
             )
             .serializeValuesWith(jsonSerializer)
             .disableCachingNullValues()
+            .prefixCacheNameWith("crm:v2:")
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
 
