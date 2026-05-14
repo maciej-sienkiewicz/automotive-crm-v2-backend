@@ -5,9 +5,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.smscredits.payment.MockPaymentGateway
 import pl.detailing.crm.smscredits.payment.PaymentRequest
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
@@ -20,6 +22,7 @@ import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogReposi
 import pl.detailing.crm.subscription.pricing.ProrationService
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /**
  * Orchestrates plan changes and add-on activations, combining:
@@ -45,7 +48,8 @@ class PlanManagementService(
     private val planRepository: PlanJpaRepository,
     private val addOnRepository: AddOnJpaRepository,
     private val paymentLogRepository: SubscriptionPaymentLogRepository,
-    private val pendingPlanChangeRepository: PendingPlanChangeRepository
+    private val pendingPlanChangeRepository: PendingPlanChangeRepository,
+    private val studioRepository: StudioRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -180,6 +184,16 @@ class PlanManagementService(
      */
     @Transactional
     fun changePlan(studioId: StudioId, newPlanKey: PlanKey): StudioEntitlements {
+        val studio = studioRepository.findByStudioId(studioId.value)
+            ?: throw EntityNotFoundException("Studio not found: $studioId")
+
+        // First-time plan selection: studio has no active subscription yet.
+        // Treat as an initial purchase — charge full first month, activate the studio.
+        if (studio.subscriptionStatus == SubscriptionStatus.NO_PLAN ||
+            studio.subscriptionStatus == SubscriptionStatus.EXPIRED) {
+            return activateInitialPlan(studioId, newPlanKey)
+        }
+
         val preview = previewPlanChange(studioId, newPlanKey)
 
         if (preview.changeType == ChangeType.NO_CHANGE) {
@@ -249,6 +263,50 @@ class PlanManagementService(
 
         // Current entitlements are unchanged until effectiveAt.
         return entitlementService.getEntitlements(studioId)
+    }
+
+    /**
+     * Initial plan purchase for studios that have never had a subscription (NO_PLAN or EXPIRED).
+     * Charges the full monthly price, sets the studio ACTIVE for 30 days, assigns the feature plan.
+     */
+    private fun activateInitialPlan(studioId: StudioId, planKey: PlanKey): StudioEntitlements {
+        val plan = planRepository.findByKey(planKey)
+            ?: throw EntityNotFoundException("Plan not found: $planKey")
+
+        val result = paymentGateway.charge(
+            PaymentRequest(
+                amountInCents = plan.monthlyPriceGrossCents,
+                currency = "PLN",
+                description = "Aktywacja planu ${plan.name} — pierwszy miesiąc",
+                studioId = studioId.value
+            )
+        )
+        if (!result.success) throw ValidationException("Płatność nie powiodła się: ${result.message}")
+
+        val subscriptionEndsAt = Instant.now().plus(30, ChronoUnit.DAYS)
+        val studioEntity = studioRepository.findByStudioId(studioId.value)!!
+        studioEntity.subscriptionStatus = SubscriptionStatus.ACTIVE
+        studioEntity.subscriptionEndsAt = subscriptionEndsAt
+        studioRepository.save(studioEntity)
+
+        paymentLogRepository.save(
+            SubscriptionPaymentLogEntity(
+                studioId = studioId.value,
+                eventType = SubscriptionEventType.SUBSCRIPTION_PURCHASE,
+                amountInCents = plan.monthlyPriceGrossCents,
+                currency = "PLN",
+                transactionId = result.transactionId,
+                planKey = planKey,
+                description = "Aktywacja planu ${plan.name} — pierwszy miesiąc (do $subscriptionEndsAt)"
+            )
+        )
+
+        logger.info(
+            "Studio={} activated initial plan={} txId={} endsAt={}",
+            studioId, planKey, result.transactionId, subscriptionEndsAt
+        )
+
+        return entitlementService.assignPlan(studioId, planKey)
     }
 
     /**
