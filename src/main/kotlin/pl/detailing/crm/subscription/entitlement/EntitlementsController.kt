@@ -9,7 +9,13 @@ import pl.detailing.crm.subscription.entitlement.domain.AddOn
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.Plan
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
+import pl.detailing.crm.subscription.management.AddOnActivationPreview
+import pl.detailing.crm.subscription.management.ChangeType
+import pl.detailing.crm.subscription.management.PlanChangePreview
+import pl.detailing.crm.subscription.management.PlanManagementService
 import pl.detailing.crm.subscription.pricing.PricingService
+import pl.detailing.crm.subscription.SubscriptionService
+import java.time.Instant
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -55,9 +61,7 @@ data class AddOnDto(
     val isAvailable: Boolean
 )
 
-data class CustomPriceRequest(
-    val addOnKeys: List<AddOnKey>
-)
+data class CustomPriceRequest(val addOnKeys: List<AddOnKey>)
 
 data class CustomPriceResponse(
     val basePlanKey: String,
@@ -76,30 +80,93 @@ data class AddOnPriceLineDto(
 
 data class AssignPlanRequest(val planKey: PlanKey)
 data class ActivateAddOnRequest(val addOnKey: AddOnKey)
+data class PreviewPlanChangeRequest(val newPlanKey: PlanKey)
+data class PreviewAddOnRequest(val addOnKey: AddOnKey)
+
+/**
+ * Unified "my subscription" view — combines billing status with plan/add-on details.
+ *
+ * [billingStatus]  — TRIALING | ACTIVE | PAST_DUE | EXPIRED
+ * [plan]           — currently assigned feature plan
+ * [activeAddOns]   — add-ons currently active with their pricing
+ * [periodEndsAt]   — when the current billing period ends (null during trial)
+ * [daysRemaining]  — days left in the current billing period
+ * [monthlyCostCents] — total monthly cost (plan + add-ons) at the current rates
+ */
+data class MyPlanResponse(
+    val billingStatus: String,
+    val plan: PlanSummaryDto,
+    val activeAddOns: List<ActiveAddOnDto>,
+    val periodEndsAt: Instant?,
+    val trialEndsAt: Instant?,
+    val daysRemaining: Long?,
+    val monthlyCostCents: Long,
+    val nextRenewalCostCents: Long?
+)
+
+data class ActiveAddOnDto(
+    val key: String,
+    val name: String,
+    val monthlyPriceGrossCents: Long?
+)
+
+data class PlanChangePreviewDto(
+    val changeType: String,
+    val newPlanKey: String,
+    val newPlanName: String,
+    val effectiveAt: Instant,
+    val proratedAmountCents: Long?,
+    val proratedAmountFormatted: String?,
+    val daysRemaining: Long?,
+    val periodEndsAt: Instant?,
+    val explanation: String
+)
+
+data class AddOnActivationPreviewDto(
+    val addOnKey: String,
+    val addOnName: String,
+    val proratedAmountCents: Long?,
+    val proratedAmountFormatted: String?,
+    val daysRemaining: Long?,
+    val periodEndsAt: Instant?,
+    val explanation: String
+)
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
 /**
- * REST surface for feature entitlements.
+ * REST surface for feature entitlements and plan management.
  *
- * GET  /api/v1/me/entitlements          → studio's current feature map (safe for frontend feature-gating)
- * GET  /api/v1/subscription/feature-plans    → full plan catalog
- * GET  /api/v1/subscription/add-ons          → full add-on catalog
- * POST /api/v1/subscription/calculate-price  → dynamic price for a custom plan
- * POST /api/v1/subscription/assign-plan      → assign a plan to the studio (OWNER only)
- * POST /api/v1/subscription/activate-add-on  → activate an add-on (OWNER only)
- * DELETE /api/v1/subscription/add-ons/{key}  → deactivate an add-on (OWNER only)
+ * Read (no auth/subscription gating on catalog + entitlements):
+ *   GET  /api/v1/me/entitlements                  → feature map for frontend rendering
+ *   GET  /api/v1/subscription/my-plan             → unified billing + plan view (OWNER)
+ *   GET  /api/v1/subscription/feature-plans       → full plan catalog
+ *   GET  /api/v1/subscription/add-ons             → full add-on catalog
+ *   POST /api/v1/subscription/calculate-price     → dynamic custom plan pricing
+ *
+ * Preview (before committing changes):
+ *   POST /api/v1/subscription/preview-plan-change → shows proration/timing before change
+ *   POST /api/v1/subscription/preview-add-on      → shows prorated cost before activating
+ *
+ * Mutation (OWNER only, with billing):
+ *   POST   /api/v1/subscription/change-plan       → upgrade (immediate) or downgrade (deferred)
+ *   POST   /api/v1/subscription/activate-add-on   → immediate + prorated billing
+ *   DELETE /api/v1/subscription/add-ons/{key}     → deactivate add-on (end of period)
  */
 @RestController
 class EntitlementsController(
     private val entitlementService: EntitlementService,
-    private val pricingService: PricingService
+    private val pricingService: PricingService,
+    private val planManagementService: PlanManagementService,
+    private val subscriptionService: SubscriptionService
 ) {
 
+    // ── Read ──────────────────────────────────────────────────────────────────
+
     /**
-     * Returns the complete feature map for the authenticated studio.
-     * This is the single endpoint the frontend reads to decide what to render.
-     * Never returns 403 — missing features appear as {enabled: false, upsell: {...}}.
+     * The primary endpoint for frontend feature-gating.
+     * Returns enabled/disabled status for every feature with upsell metadata for locked ones.
+     * Never throws 403 — locked features appear as {enabled: false, upsell: {...}}.
      */
     @GetMapping("/api/v1/me/entitlements")
     fun getMyEntitlements(): ResponseEntity<EntitlementsResponse> {
@@ -108,9 +175,7 @@ class EntitlementsController(
         val allAddOns = entitlementService.getAllAddOns()
         val plans = entitlementService.getAllPlans()
 
-        val planSummary = plans.firstOrNull { it.key == entitlements.planKey }
-            ?: plans.first()
-
+        val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
         val featureMap = buildFeatureMap(entitlements, allAddOns)
 
         return ResponseEntity.ok(
@@ -126,42 +191,126 @@ class EntitlementsController(
         )
     }
 
-    @GetMapping("/api/v1/subscription/feature-plans")
-    fun getPlans(): ResponseEntity<List<PlanDto>> {
+    /**
+     * Unified "my subscription" view for the account/billing settings screen.
+     * Combines billing lifecycle data with the current feature plan and add-ons.
+     */
+    @GetMapping("/api/v1/subscription/my-plan")
+    fun getMyPlan(): ResponseEntity<MyPlanResponse> {
+        requireOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId
+
+        val billingInfo = subscriptionService.getSubscriptionInfo(studioId)
+        val entitlements = entitlementService.getEntitlements(studioId)
+        val allAddOns = entitlementService.getAllAddOns()
         val plans = entitlementService.getAllPlans()
-        return ResponseEntity.ok(plans.map { it.toDto() })
+
+        val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
+
+        val activeAddOnDtos = entitlements.activeAddOnKeys.mapNotNull { addOnKey ->
+            allAddOns.find { it.key == addOnKey }?.let { addOn ->
+                ActiveAddOnDto(
+                    key = addOn.key.name,
+                    name = addOn.name,
+                    monthlyPriceGrossCents = addOn.monthlyPriceGrossCents
+                )
+            }
+        }
+
+        val addOnMonthlyTotal = activeAddOnDtos.sumOf { it.monthlyPriceGrossCents ?: 0L }
+        val planMonthlyCost = planSummary.monthlyPriceGrossCents
+        val monthlyCostCents = planMonthlyCost + addOnMonthlyTotal
+
+        return ResponseEntity.ok(
+            MyPlanResponse(
+                billingStatus = billingInfo.status.name,
+                plan = PlanSummaryDto(
+                    key = planSummary.key.name,
+                    name = planSummary.name,
+                    monthlyPriceGrossCents = planMonthlyCost
+                ),
+                activeAddOns = activeAddOnDtos,
+                periodEndsAt = billingInfo.subscriptionEndsAt,
+                trialEndsAt = billingInfo.trialEndsAt,
+                daysRemaining = billingInfo.daysRemaining,
+                monthlyCostCents = monthlyCostCents,
+                nextRenewalCostCents = if (billingInfo.isAccessible) monthlyCostCents else null
+            )
+        )
     }
+
+    @GetMapping("/api/v1/subscription/feature-plans")
+    fun getPlans(): ResponseEntity<List<PlanDto>> =
+        ResponseEntity.ok(entitlementService.getAllPlans().map { it.toDto() })
 
     @GetMapping("/api/v1/subscription/add-ons")
-    fun getAddOns(): ResponseEntity<List<AddOnDto>> {
-        val addOns = entitlementService.getAllAddOns()
-        return ResponseEntity.ok(addOns.map { it.toDto() })
-    }
+    fun getAddOns(): ResponseEntity<List<AddOnDto>> =
+        ResponseEntity.ok(entitlementService.getAllAddOns().map { it.toDto() })
 
     @PostMapping("/api/v1/subscription/calculate-price")
-    fun calculateCustomPrice(
-        @RequestBody request: CustomPriceRequest
-    ): ResponseEntity<CustomPriceResponse> {
-        val result = pricingService.calculateCustomPrice(request.addOnKeys)
-        return ResponseEntity.ok(result)
-    }
+    fun calculateCustomPrice(@RequestBody request: CustomPriceRequest): ResponseEntity<CustomPriceResponse> =
+        ResponseEntity.ok(pricingService.calculateCustomPrice(request.addOnKeys))
 
-    @PostMapping("/api/v1/subscription/assign-plan")
-    fun assignPlan(@RequestBody request: AssignPlanRequest): ResponseEntity<EntitlementsResponse> {
+    // ── Preview ───────────────────────────────────────────────────────────────
+
+    /**
+     * Returns a preview of what a plan change would cost and when it would take effect.
+     * Call this before showing the confirmation dialog — no side effects.
+     */
+    @PostMapping("/api/v1/subscription/preview-plan-change")
+    fun previewPlanChange(@RequestBody request: PreviewPlanChangeRequest): ResponseEntity<PlanChangePreviewDto> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        entitlementService.assignPlan(studioId, request.planKey)
+        val preview = planManagementService.previewPlanChange(studioId, request.newPlanKey)
+        return ResponseEntity.ok(preview.toDto())
+    }
+
+    /**
+     * Returns a preview of the prorated cost for activating an add-on today.
+     * Call this before showing the purchase confirmation — no side effects.
+     */
+    @PostMapping("/api/v1/subscription/preview-add-on")
+    fun previewAddOnActivation(@RequestBody request: PreviewAddOnRequest): ResponseEntity<AddOnActivationPreviewDto> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentStudioId()
+        val preview = planManagementService.previewAddOnActivation(studioId, request.addOnKey)
+        return ResponseEntity.ok(preview.toDto())
+    }
+
+    // ── Mutation ──────────────────────────────────────────────────────────────
+
+    /**
+     * Changes the studio's plan with appropriate billing:
+     * - Upgrade → immediate, prorated charge for the price difference
+     * - Downgrade → deferred to end of billing period, no charge
+     *
+     * Always preview first via POST /preview-plan-change.
+     */
+    @PostMapping("/api/v1/subscription/change-plan")
+    fun changePlan(@RequestBody request: AssignPlanRequest): ResponseEntity<EntitlementsResponse> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentStudioId()
+        planManagementService.changePlan(studioId, request.planKey)
         return getMyEntitlements()
     }
 
+    /**
+     * Activates an add-on immediately with prorated billing for remaining days.
+     * Preview first via POST /preview-add-on.
+     */
     @PostMapping("/api/v1/subscription/activate-add-on")
     fun activateAddOn(@RequestBody request: ActivateAddOnRequest): ResponseEntity<EntitlementsResponse> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        entitlementService.activateAddOn(studioId, request.addOnKey)
+        planManagementService.activateAddOnWithBilling(studioId, request.addOnKey)
         return getMyEntitlements()
     }
 
+    /**
+     * Deactivates an add-on. Features are removed immediately from the entitlement cache.
+     * No refund is issued for the remaining period.
+     */
     @DeleteMapping("/api/v1/subscription/add-ons/{key}")
     fun deactivateAddOn(@PathVariable key: AddOnKey): ResponseEntity<EntitlementsResponse> {
         requireOwner()
@@ -179,10 +328,6 @@ class EntitlementsController(
         }
     }
 
-    /**
-     * Builds the [FeatureKey] → [FeatureStatusDto] map that tells the frontend
-     * exactly which features are available and how to upsell the missing ones.
-     */
     private fun buildFeatureMap(
         entitlements: pl.detailing.crm.subscription.entitlement.domain.StudioEntitlements,
         allAddOns: List<AddOn>
@@ -191,16 +336,17 @@ class EntitlementsController(
             .flatMap { addOn -> addOn.features.map { feature -> feature to addOn } }
             .toMap()
 
+        val addOnFeatureKeys: Set<FeatureKey> = entitlements.activeAddOnKeys
+            .flatMap { key -> allAddOns.find { it.key == key }?.features ?: emptySet() }
+            .toSet()
+
         return FeatureKey.entries.associate { featureKey ->
             val enabled = entitlements.hasFeature(featureKey)
             val source = when {
                 !enabled -> null
-                featureKey in entitlements.activeAddOnKeys.flatMap { key ->
-                    allAddOns.find { it.key == key }?.features ?: emptySet()
-                } -> "ADD_ON"
+                featureKey in addOnFeatureKeys -> "ADD_ON"
                 else -> "PLAN"
             }
-
             val upsell = if (!enabled) {
                 val relevantAddOn = addOnByFeature[featureKey]
                 UpsellDto(
@@ -215,6 +361,8 @@ class EntitlementsController(
         }
     }
 }
+
+// ── Mappers ───────────────────────────────────────────────────────────────────
 
 private fun Plan.toDto() = PlanDto(
     key = key.name,
@@ -231,4 +379,30 @@ private fun AddOn.toDto() = AddOnDto(
     monthlyPriceGrossCents = monthlyPriceGrossCents,
     features = features.map { it.name },
     isAvailable = isAvailable
+)
+
+private fun PlanChangePreview.toDto() = PlanChangePreviewDto(
+    changeType = changeType.name,
+    newPlanKey = newPlanKey.name,
+    newPlanName = newPlanName,
+    effectiveAt = effectiveAt,
+    proratedAmountCents = proratedAmountCents,
+    proratedAmountFormatted = proratedAmountCents?.let {
+        java.math.BigDecimal(it).movePointLeft(2).toPlainString() + " PLN"
+    },
+    daysRemaining = daysRemaining,
+    periodEndsAt = periodEndsAt,
+    explanation = explanation
+)
+
+private fun AddOnActivationPreview.toDto() = AddOnActivationPreviewDto(
+    addOnKey = addOnKey.name,
+    addOnName = addOnName,
+    proratedAmountCents = proratedAmountCents,
+    proratedAmountFormatted = proratedAmountCents?.let {
+        java.math.BigDecimal(it).movePointLeft(2).toPlainString() + " PLN"
+    },
+    daysRemaining = daysRemaining,
+    periodEndsAt = periodEndsAt,
+    explanation = explanation
 )
