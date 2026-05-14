@@ -39,7 +39,7 @@ class CacheConfig {
             .registerModule(kotlinModule())
             .activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
+                ObjectMapper.DefaultTyping.EVERYTHING,
                 JsonTypeInfo.As.PROPERTY
             )
 
@@ -52,7 +52,7 @@ class CacheConfig {
             )
             .serializeValuesWith(jsonSerializer)
             .disableCachingNullValues()
-            .prefixCacheNameWith("crm:v2:")
+            .prefixCacheNameWith("crm:v3:")
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
 
