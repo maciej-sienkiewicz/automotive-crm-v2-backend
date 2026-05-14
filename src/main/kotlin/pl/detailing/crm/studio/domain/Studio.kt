@@ -33,6 +33,7 @@ data class Studio(
         subscriptionEndsAt.isAfter(Instant.now())
 
     fun isAccessible(): Boolean = when (subscriptionStatus) {
+        SubscriptionStatus.NO_PLAN   -> false
         SubscriptionStatus.TRIALING  -> isTrialActive()
         SubscriptionStatus.ACTIVE    -> isSubscriptionActive()
         SubscriptionStatus.PAST_DUE  -> true

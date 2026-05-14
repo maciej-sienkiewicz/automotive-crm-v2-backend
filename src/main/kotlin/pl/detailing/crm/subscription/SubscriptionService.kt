@@ -40,6 +40,42 @@ class SubscriptionService(
 
     // ─── Studio creation ──────────────────────────────────────────────────────
 
+    /** Creates a studio with no plan — user must explicitly choose trial or paid plan. */
+    suspend fun createStudio(name: String): Studio = withContext(Dispatchers.IO) {
+        val studio = Studio(
+            id = StudioId.random(),
+            name = name,
+            subscriptionStatus = SubscriptionStatus.NO_PLAN,
+            trialEndsAt = null,
+            subscriptionEndsAt = null,
+            trialUsed = false,
+            createdAt = Instant.now(),
+            emailAlias = UUID.randomUUID().toString().replace("-", "")
+        )
+        studioRepository.save(StudioEntity.fromDomain(studio))
+        studio
+    }
+
+    /** Starts the free trial for a studio that has never used one. */
+    @Transactional
+    suspend fun startTrial(studioId: StudioId): SubscriptionInfo = withContext(Dispatchers.IO) {
+        val entity = studioRepository.findByStudioId(studioId.value)
+            ?: throw EntityNotFoundException("Studio not found: $studioId")
+
+        if (entity.trialUsed) throw ValidationException("Okres próbny został już wykorzystany.")
+        if (entity.subscriptionStatus == SubscriptionStatus.ACTIVE)
+            throw ValidationException("Studio ma już aktywną subskrypcję.")
+
+        val trialEndsAt = Instant.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
+        entity.subscriptionStatus = SubscriptionStatus.TRIALING
+        entity.trialEndsAt = trialEndsAt
+        entity.trialUsed = true
+        studioRepository.save(entity)
+
+        logger.info("Studio={} started free trial, ends at {}", studioId, trialEndsAt)
+        entity.toDomain().toSubscriptionInfo()
+    }
+
     suspend fun createStudioWithTrial(name: String): Studio = withContext(Dispatchers.IO) {
         val trialEndsAt = Instant.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
 

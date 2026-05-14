@@ -45,10 +45,10 @@ class AuthController(
                     email = result.email,
                     phoneNumber = result.phoneNumber,
                     role = "OWNER",
-                    subscriptionStatus = pl.detailing.crm.shared.SubscriptionStatus.TRIALING,
-                    daysRemaining = 60,
+                    subscriptionStatus = pl.detailing.crm.shared.SubscriptionStatus.NO_PLAN,
+                    daysRemaining = null,
                     subscriptionEndsAt = null,
-                    trialEndsAt = result.trialEndsAt,
+                    trialEndsAt = null,
                     firstName = result.firstName,
                     lastName = result.lastName
                 )

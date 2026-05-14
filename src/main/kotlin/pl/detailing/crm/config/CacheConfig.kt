@@ -1,5 +1,6 @@
 package pl.detailing.crm.config
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -28,9 +29,9 @@ class CacheConfig {
 
     @Bean
     @Primary
-    fun cacheManager(connectionFactory: RedisConnectionFactory): RedisCacheManager {
+    fun cacheManager(connectionFactory: RedisConnectionFactory, objectMapper: ObjectMapper): RedisCacheManager {
         val jsonSerializer = RedisSerializationContext.SerializationPair
-            .fromSerializer(GenericJackson2JsonRedisSerializer())
+            .fromSerializer(GenericJackson2JsonRedisSerializer(objectMapper))
 
         val defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
             .serializeKeysWith(

@@ -18,6 +18,5 @@ data class SignupResult(
     val email: String,
     val phoneNumber: String,
     val firstName: String,
-    val lastName: String,
-    val trialEndsAt: String
+    val lastName: String
 )

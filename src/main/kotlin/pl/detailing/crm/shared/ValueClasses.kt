@@ -42,6 +42,7 @@ enum class UserRole {
  * Subscription status for studio billing
  */
 enum class SubscriptionStatus {
+    NO_PLAN,    // Freshly registered — no plan or trial selected yet
     TRIALING,   // In free trial period
     ACTIVE,     // Active paid subscription
     PAST_DUE,   // Payment failed but still accessible

@@ -13,8 +13,6 @@ import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.voice.MobileTokenService
 import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 @Service
 class SignupHandler(
@@ -40,7 +38,7 @@ class SignupHandler(
             passwordHash = passwordEncoder.encode(request.password)
         )
 
-        val studio = subscriptionService.createStudioWithTrial(command.studioName)
+        val studio = subscriptionService.createStudio(command.studioName)
 
         val user = User(
             id = UserId.random(),
@@ -59,18 +57,13 @@ class SignupHandler(
         val userEntity = UserEntity.fromDomain(user)
         userRepository.save(userEntity)
 
-        val formatter = DateTimeFormatter.ISO_INSTANT
-        val trialEndsAtFormatted = studio.trialEndsAt?.atOffset(ZoneOffset.UTC)?.format(formatter)
-            ?: Instant.now().toString()
-
         SignupResult(
             userId = user.id,
             studioId = studio.id,
             email = user.email,
             phoneNumber = user.phoneNumber,
             firstName = command.firstName,
-            lastName = command.lastName,
-            trialEndsAt = trialEndsAtFormatted
+            lastName = command.lastName
         )
     }
 }

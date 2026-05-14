@@ -115,6 +115,16 @@ class SubscriptionController(
         return ResponseEntity.ok(plans)
     }
 
+    @PostMapping("/start-trial")
+    fun startTrial(): ResponseEntity<SubscriptionStatusResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER) {
+            throw ForbiddenException("Uruchomienie trialu jest dostępne wyłącznie dla właściciela studia")
+        }
+        val info = subscriptionService.startTrial(principal.studioId)
+        ResponseEntity.ok(info.toResponse())
+    }
+
     @PostMapping("/purchase")
     fun purchase(
         @RequestBody request: PurchaseSubscriptionRequest
