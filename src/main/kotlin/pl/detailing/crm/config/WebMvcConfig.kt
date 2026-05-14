@@ -26,7 +26,8 @@ class WebMvcConfig(
                 "/api/v1/subscription/add-ons",
                 "/api/v1/subscription/calculate-price",
                 "/api/v1/subscription/preview-plan-change",
-                "/api/v1/subscription/preview-add-on"
+                "/api/v1/subscription/preview-add-on",
+                "/api/v1/subscription/payment-history"
             )
     }
 }

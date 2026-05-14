@@ -315,7 +315,7 @@ class EntitlementsController(
     fun deactivateAddOn(@PathVariable key: AddOnKey): ResponseEntity<EntitlementsResponse> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        entitlementService.deactivateAddOn(studioId, key)
+        planManagementService.deactivateAddOnWithLog(studioId, key)
         return getMyEntitlements()
     }
 

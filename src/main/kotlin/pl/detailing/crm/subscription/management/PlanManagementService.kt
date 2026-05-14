@@ -14,6 +14,9 @@ import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import pl.detailing.crm.subscription.entitlement.domain.StudioEntitlements
 import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository
 import pl.detailing.crm.subscription.entitlement.infrastructure.PlanJpaRepository
+import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
+import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
+import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogRepository
 import pl.detailing.crm.subscription.pricing.ProrationService
 import java.math.BigDecimal
 import java.time.Instant
@@ -39,7 +42,8 @@ class PlanManagementService(
     private val prorationService: ProrationService,
     private val paymentGateway: MockPaymentGateway,
     private val planRepository: PlanJpaRepository,
-    private val addOnRepository: AddOnJpaRepository
+    private val addOnRepository: AddOnJpaRepository,
+    private val paymentLogRepository: SubscriptionPaymentLogRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -169,6 +173,8 @@ class PlanManagementService(
             return entitlementService.getEntitlements(studioId)
         }
 
+        var transactionId: String? = null
+
         if (preview.changeType == ChangeType.UPGRADE && preview.proratedAmountCents != null && preview.proratedAmountCents > 0) {
             val result = paymentGateway.charge(
                 PaymentRequest(
@@ -179,15 +185,30 @@ class PlanManagementService(
                 )
             )
             if (!result.success) throw ValidationException("Płatność nie powiodła się: ${result.message}")
-            logger.info("Studio={} upgraded to plan={} proratedCents={} txId={}", studioId, newPlanKey, preview.proratedAmountCents, result.transactionId)
+            transactionId = result.transactionId
+            logger.info("Studio={} upgraded to plan={} proratedCents={} txId={}", studioId, newPlanKey, preview.proratedAmountCents, transactionId)
         }
 
         if (preview.changeType == ChangeType.DOWNGRADE) {
-            // Downgrade is scheduled — store the pending plan change but keep current plan active.
-            // For now: immediate switch (real implementation would use a scheduled job).
             // TODO: persist a "pending_plan_change" record, apply on subscriptionEndsAt via scheduler.
             logger.info("Studio={} scheduled downgrade to plan={} effective={}", studioId, newPlanKey, preview.effectiveAt)
         }
+
+        paymentLogRepository.save(
+            SubscriptionPaymentLogEntity(
+                studioId = studioId.value,
+                eventType = if (preview.changeType == ChangeType.UPGRADE) SubscriptionEventType.PLAN_UPGRADE
+                            else SubscriptionEventType.PLAN_DOWNGRADE,
+                amountInCents = preview.proratedAmountCents ?: 0L,
+                transactionId = transactionId,
+                planKey = newPlanKey,
+                description = when (preview.changeType) {
+                    ChangeType.UPGRADE   -> "Upgrade do planu ${preview.newPlanName} — ${preview.daysRemaining} dni (proporcjonalnie)"
+                    ChangeType.DOWNGRADE -> "Downgrade do planu ${preview.newPlanName} — wejdzie w życie ${preview.periodEndsAt}"
+                    else -> "Zmiana planu na ${preview.newPlanName}"
+                }
+            )
+        )
 
         return entitlementService.assignPlan(studioId, newPlanKey)
     }
@@ -204,6 +225,7 @@ class PlanManagementService(
         if (addOn.monthlyPriceGrossCents == null) throw ValidationException("Moduł '${addOn.name}' nie ma jeszcze ustalonej ceny.")
 
         val proration = prorationService.calculateAddOnActivation(studioId, addOn.monthlyPriceGrossCents)
+        var transactionId: String? = null
 
         if (proration != null && proration.proratedAmountCents > 0) {
             val result = paymentGateway.charge(
@@ -215,10 +237,44 @@ class PlanManagementService(
                 )
             )
             if (!result.success) throw ValidationException("Płatność nie powiodła się: ${result.message}")
-            logger.info("Studio={} activated add-on={} proratedCents={} txId={}", studioId, addOnKey, proration.proratedAmountCents, result.transactionId)
+            transactionId = result.transactionId
+            logger.info("Studio={} activated add-on={} proratedCents={} txId={}", studioId, addOnKey, proration.proratedAmountCents, transactionId)
         }
 
+        val currentPlanKey = entitlementService.getEntitlements(studioId).planKey
+        paymentLogRepository.save(
+            SubscriptionPaymentLogEntity(
+                studioId = studioId.value,
+                eventType = SubscriptionEventType.ADD_ON_ACTIVATION,
+                amountInCents = proration?.proratedAmountCents ?: 0L,
+                transactionId = transactionId,
+                planKey = currentPlanKey,
+                addOnKey = addOnKey,
+                description = if (proration != null)
+                    "Aktywacja modułu ${addOn.name} — ${proration.daysRemaining} dni (proporcjonalnie)"
+                else
+                    "Aktywacja modułu ${addOn.name} — bezpłatnie w trakcie okresu próbnego"
+            )
+        )
+
         return entitlementService.activateAddOn(studioId, addOnKey)
+    }
+
+    @Transactional
+    fun deactivateAddOnWithLog(studioId: StudioId, addOnKey: AddOnKey) {
+        val addOn = addOnRepository.findByKey(addOnKey)
+        val currentPlanKey = entitlementService.getEntitlements(studioId).planKey
+        paymentLogRepository.save(
+            SubscriptionPaymentLogEntity(
+                studioId = studioId.value,
+                eventType = SubscriptionEventType.ADD_ON_DEACTIVATION,
+                amountInCents = 0,
+                planKey = currentPlanKey,
+                addOnKey = addOnKey,
+                description = "Dezaktywacja modułu ${addOn?.name ?: addOnKey.name}"
+            )
+        )
+        entitlementService.deactivateAddOn(studioId, addOnKey)
     }
 
     // ─────────────────────────────────────────────────────────────────────────

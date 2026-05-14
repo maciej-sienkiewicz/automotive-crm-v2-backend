@@ -17,6 +17,9 @@ import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentJpaReposi
 import pl.detailing.crm.smscredits.payment.MockPaymentGateway
 import pl.detailing.crm.smscredits.payment.PaymentRequest
 import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
+import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
+import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogRepository
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -26,7 +29,8 @@ class SubscriptionService(
     private val studioRepository: StudioRepository,
     private val paymentJpaRepository: SubscriptionPaymentJpaRepository,
     private val paymentGateway: MockPaymentGateway,
-    private val entitlementService: EntitlementService
+    private val entitlementService: EntitlementService,
+    private val paymentLogRepository: SubscriptionPaymentLogRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -133,6 +137,17 @@ class SubscriptionService(
 
             // Invalidate the entitlement cache so the next request reflects the new subscription state
             entitlementService.evictEntitlementsCache(studioId)
+
+            paymentLogRepository.save(
+                SubscriptionPaymentLogEntity(
+                    studioId = studioId.value,
+                    eventType = SubscriptionEventType.SUBSCRIPTION_PURCHASE,
+                    amountInCents = plan.priceGrossInCents,
+                    currency = plan.currency,
+                    transactionId = paymentResult.transactionId,
+                    description = "Subskrypcja ${plan.name} — ${plan.durationDays} dni (do ${newEndsAt})"
+                )
+            )
 
             entity.toDomain().toSubscriptionInfo()
         }
