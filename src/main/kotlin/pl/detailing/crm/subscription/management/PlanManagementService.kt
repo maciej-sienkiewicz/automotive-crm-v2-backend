@@ -29,7 +29,8 @@ import java.time.Instant
  *
  * Plan change semantics:
  *   UPGRADE (more expensive) → immediate, prorated charge for the price difference
- *   DOWNGRADE (less expensive) → scheduled for period end, no charge, no refund
+ *   DOWNGRADE (less expensive) → persisted in [PendingPlanChangeEntity], applied by
+ *                                 [PlanDowngradeScheduler] at [effectiveAt] (= period end)
  *   SAME PLAN                  → no-op
  *
  * Add-on activation:
@@ -43,7 +44,8 @@ class PlanManagementService(
     private val paymentGateway: MockPaymentGateway,
     private val planRepository: PlanJpaRepository,
     private val addOnRepository: AddOnJpaRepository,
-    private val paymentLogRepository: SubscriptionPaymentLogRepository
+    private val paymentLogRepository: SubscriptionPaymentLogRepository,
+    private val pendingPlanChangeRepository: PendingPlanChangeRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -83,9 +85,7 @@ class PlanManagementService(
             }
 
             newPlan.monthlyPriceGrossCents < currentPlan.monthlyPriceGrossCents -> {
-                val periodEndsAt = prorationService.daysRemainingInPeriod(studioId).let {
-                    prorationService.calculateAddOnActivation(studioId, 0)?.periodEndsAt
-                }
+                val periodEndsAt = prorationService.calculateAddOnActivation(studioId, 0)?.periodEndsAt
                 PlanChangePreview(
                     changeType = ChangeType.DOWNGRADE,
                     newPlanKey = newPlanKey,
@@ -159,11 +159,24 @@ class PlanManagementService(
         )
     }
 
+    /** Returns the PENDING downgrade for the studio, if any. */
+    fun getPendingDowngrade(studioId: StudioId): PendingPlanChangeEntity? =
+        pendingPlanChangeRepository.findByStudioIdAndStatus(studioId.value, PendingPlanChangeStatus.PENDING)
+
     // ── Execution ─────────────────────────────────────────────────────────────
 
     /**
      * Executes a plan change with appropriate billing.
-     * Upgrades are immediate (prorated charge). Downgrades are deferred to period end.
+     *
+     * UPGRADE: immediate activation + prorated charge for the price difference.
+     *   Any existing pending downgrade is cancelled (user changed their mind).
+     *
+     * DOWNGRADE: persists a [PendingPlanChangeEntity] row; the current plan remains
+     *   active until [PlanDowngradeScheduler] processes it at [effectiveAt].
+     *   Only one PENDING downgrade per studio is allowed — subsequent requests
+     *   replace the previous one.
+     *
+     * SAME PLAN: no-op.
      */
     @Transactional
     fun changePlan(studioId: StudioId, newPlanKey: PlanKey): StudioEntitlements {
@@ -173,44 +186,80 @@ class PlanManagementService(
             return entitlementService.getEntitlements(studioId)
         }
 
-        var transactionId: String? = null
+        if (preview.changeType == ChangeType.UPGRADE) {
+            // Cancel any pending downgrade — user is upgrading instead.
+            val cancelled = pendingPlanChangeRepository.cancelPendingForStudio(studioId.value)
+            if (cancelled > 0) logger.info("Studio={} cancelled pending downgrade due to upgrade", studioId)
 
-        if (preview.changeType == ChangeType.UPGRADE && preview.proratedAmountCents != null && preview.proratedAmountCents > 0) {
-            val result = paymentGateway.charge(
-                PaymentRequest(
-                    amountInCents = preview.proratedAmountCents,
-                    currency = "PLN",
-                    description = "Zmiana planu na ${preview.newPlanName} — ${preview.daysRemaining} dni",
-                    studioId = studioId.value
+            var transactionId: String? = null
+            if (preview.proratedAmountCents != null && preview.proratedAmountCents > 0) {
+                val result = paymentGateway.charge(
+                    PaymentRequest(
+                        amountInCents = preview.proratedAmountCents,
+                        currency = "PLN",
+                        description = "Zmiana planu na ${preview.newPlanName} — ${preview.daysRemaining} dni",
+                        studioId = studioId.value
+                    )
+                )
+                if (!result.success) throw ValidationException("Płatność nie powiodła się: ${result.message}")
+                transactionId = result.transactionId
+                logger.info("Studio={} upgraded to plan={} proratedCents={} txId={}", studioId, newPlanKey, preview.proratedAmountCents, transactionId)
+            }
+
+            paymentLogRepository.save(
+                SubscriptionPaymentLogEntity(
+                    studioId = studioId.value,
+                    eventType = SubscriptionEventType.PLAN_UPGRADE,
+                    amountInCents = preview.proratedAmountCents ?: 0L,
+                    transactionId = transactionId,
+                    planKey = newPlanKey,
+                    description = "Upgrade do planu ${preview.newPlanName} — ${preview.daysRemaining} dni (proporcjonalnie)"
                 )
             )
-            if (!result.success) throw ValidationException("Płatność nie powiodła się: ${result.message}")
-            transactionId = result.transactionId
-            logger.info("Studio={} upgraded to plan={} proratedCents={} txId={}", studioId, newPlanKey, preview.proratedAmountCents, transactionId)
+
+            return entitlementService.assignPlan(studioId, newPlanKey)
         }
 
-        if (preview.changeType == ChangeType.DOWNGRADE) {
-            // TODO: persist a "pending_plan_change" record, apply on subscriptionEndsAt via scheduler.
-            logger.info("Studio={} scheduled downgrade to plan={} effective={}", studioId, newPlanKey, preview.effectiveAt)
-        }
+        // DOWNGRADE — defer to period end.
+        val currentPlanKey = entitlementService.getEntitlements(studioId).planKey
+        val effectiveAt = preview.periodEndsAt ?: Instant.now()
+
+        // Replace any existing pending downgrade for this studio.
+        pendingPlanChangeRepository.cancelPendingForStudio(studioId.value)
+        pendingPlanChangeRepository.save(
+            PendingPlanChangeEntity(
+                studioId = studioId.value,
+                fromPlanKey = currentPlanKey,
+                toPlanKey = newPlanKey,
+                effectiveAt = effectiveAt
+            )
+        )
 
         paymentLogRepository.save(
             SubscriptionPaymentLogEntity(
                 studioId = studioId.value,
-                eventType = if (preview.changeType == ChangeType.UPGRADE) SubscriptionEventType.PLAN_UPGRADE
-                            else SubscriptionEventType.PLAN_DOWNGRADE,
-                amountInCents = preview.proratedAmountCents ?: 0L,
-                transactionId = transactionId,
+                eventType = SubscriptionEventType.PLAN_DOWNGRADE,
+                amountInCents = 0L,
                 planKey = newPlanKey,
-                description = when (preview.changeType) {
-                    ChangeType.UPGRADE   -> "Upgrade do planu ${preview.newPlanName} — ${preview.daysRemaining} dni (proporcjonalnie)"
-                    ChangeType.DOWNGRADE -> "Downgrade do planu ${preview.newPlanName} — wejdzie w życie ${preview.periodEndsAt}"
-                    else -> "Zmiana planu na ${preview.newPlanName}"
-                }
+                description = "Downgrade do planu ${preview.newPlanName} zaplanowany na $effectiveAt"
             )
         )
 
-        return entitlementService.assignPlan(studioId, newPlanKey)
+        logger.info("Studio={} scheduled downgrade from={} to={} effectiveAt={}", studioId, currentPlanKey, newPlanKey, effectiveAt)
+
+        // Current entitlements are unchanged until effectiveAt.
+        return entitlementService.getEntitlements(studioId)
+    }
+
+    /**
+     * Cancels a pending downgrade. The studio keeps its current plan for the full billing period.
+     * Returns false if there was no pending downgrade to cancel.
+     */
+    @Transactional
+    fun cancelPendingDowngrade(studioId: StudioId): Boolean {
+        val cancelled = pendingPlanChangeRepository.cancelPendingForStudio(studioId.value)
+        if (cancelled > 0) logger.info("Studio={} cancelled pending downgrade (user request)", studioId)
+        return cancelled > 0
     }
 
     /**

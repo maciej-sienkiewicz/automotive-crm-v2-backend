@@ -86,22 +86,31 @@ data class PreviewAddOnRequest(val addOnKey: AddOnKey)
 /**
  * Unified "my subscription" view — combines billing status with plan/add-on details.
  *
- * [billingStatus]  — TRIALING | ACTIVE | PAST_DUE | EXPIRED
- * [plan]           — currently assigned feature plan
- * [activeAddOns]   — add-ons currently active with their pricing
- * [periodEndsAt]   — when the current billing period ends (null during trial)
- * [daysRemaining]  — days left in the current billing period
+ * [billingStatus]    — TRIALING | ACTIVE | PAST_DUE | EXPIRED
+ * [plan]             — currently assigned feature plan
+ * [activeAddOns]     — add-ons currently active with their pricing
+ * [pendingDowngrade] — scheduled plan change (if any); null when none is pending
+ * [periodEndsAt]     — when the current billing period ends (null during trial)
+ * [daysRemaining]    — days left in the current billing period
  * [monthlyCostCents] — total monthly cost (plan + add-ons) at the current rates
  */
 data class MyPlanResponse(
     val billingStatus: String,
     val plan: PlanSummaryDto,
     val activeAddOns: List<ActiveAddOnDto>,
+    val pendingDowngrade: PendingDowngradeDto?,
     val periodEndsAt: Instant?,
     val trialEndsAt: Instant?,
     val daysRemaining: Long?,
     val monthlyCostCents: Long,
     val nextRenewalCostCents: Long?
+)
+
+/** Describes a scheduled plan downgrade that has not yet been applied. */
+data class PendingDowngradeDto(
+    val toPlanKey: String,
+    val toPlanName: String,
+    val effectiveAt: Instant
 )
 
 data class ActiveAddOnDto(
@@ -193,13 +202,13 @@ class EntitlementsController(
 
     /**
      * Unified "my subscription" view for the account/billing settings screen.
-     * Combines billing lifecycle data with the current feature plan and add-ons.
+     * Combines billing lifecycle data with the current feature plan, active add-ons,
+     * and any scheduled plan downgrade waiting to be applied at period end.
      */
     @GetMapping("/api/v1/subscription/my-plan")
     fun getMyPlan(): ResponseEntity<MyPlanResponse> {
         requireOwner()
-        val principal = SecurityContextHelper.getCurrentUser()
-        val studioId = principal.studioId
+        val studioId = SecurityContextHelper.getCurrentUser().studioId
 
         val billingInfo = subscriptionService.getSubscriptionInfo(studioId)
         val entitlements = entitlementService.getEntitlements(studioId)
@@ -210,27 +219,27 @@ class EntitlementsController(
 
         val activeAddOnDtos = entitlements.activeAddOnKeys.mapNotNull { addOnKey ->
             allAddOns.find { it.key == addOnKey }?.let { addOn ->
-                ActiveAddOnDto(
-                    key = addOn.key.name,
-                    name = addOn.name,
-                    monthlyPriceGrossCents = addOn.monthlyPriceGrossCents
-                )
+                ActiveAddOnDto(key = addOn.key.name, name = addOn.name, monthlyPriceGrossCents = addOn.monthlyPriceGrossCents)
             }
         }
 
-        val addOnMonthlyTotal = activeAddOnDtos.sumOf { it.monthlyPriceGrossCents ?: 0L }
-        val planMonthlyCost = planSummary.monthlyPriceGrossCents
-        val monthlyCostCents = planMonthlyCost + addOnMonthlyTotal
+        val pendingDowngrade = planManagementService.getPendingDowngrade(studioId)?.let { pending ->
+            val targetPlan = plans.firstOrNull { it.key == pending.toPlanKey }
+            PendingDowngradeDto(
+                toPlanKey = pending.toPlanKey.name,
+                toPlanName = targetPlan?.name ?: pending.toPlanKey.displayName,
+                effectiveAt = pending.effectiveAt
+            )
+        }
+
+        val monthlyCostCents = planSummary.monthlyPriceGrossCents + activeAddOnDtos.sumOf { it.monthlyPriceGrossCents ?: 0L }
 
         return ResponseEntity.ok(
             MyPlanResponse(
                 billingStatus = billingInfo.status.name,
-                plan = PlanSummaryDto(
-                    key = planSummary.key.name,
-                    name = planSummary.name,
-                    monthlyPriceGrossCents = planMonthlyCost
-                ),
+                plan = PlanSummaryDto(key = planSummary.key.name, name = planSummary.name, monthlyPriceGrossCents = planSummary.monthlyPriceGrossCents),
                 activeAddOns = activeAddOnDtos,
+                pendingDowngrade = pendingDowngrade,
                 periodEndsAt = billingInfo.subscriptionEndsAt,
                 trialEndsAt = billingInfo.trialEndsAt,
                 daysRemaining = billingInfo.daysRemaining,
@@ -238,6 +247,20 @@ class EntitlementsController(
                 nextRenewalCostCents = if (billingInfo.isAccessible) monthlyCostCents else null
             )
         )
+    }
+
+    /**
+     * Cancels a scheduled plan downgrade.
+     * The studio keeps its current plan for the full billing period.
+     * Returns 204 if cancelled, 404 if there was no pending downgrade.
+     */
+    @DeleteMapping("/api/v1/subscription/pending-plan-change")
+    fun cancelPendingDowngrade(): ResponseEntity<Void> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentStudioId()
+        val cancelled = planManagementService.cancelPendingDowngrade(studioId)
+        return if (cancelled) ResponseEntity.noContent().build()
+        else ResponseEntity.notFound().build()
     }
 
     @GetMapping("/api/v1/subscription/feature-plans")
