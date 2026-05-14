@@ -34,7 +34,7 @@ class EntitlementService(
      * Falls back to BASIC plan entitlements if no explicit plan has been assigned yet
      * (e.g., during trial period before first purchase).
      */
-    @Cacheable(value = ["studio-entitlements"], key = "#studioId.value.toString()")
+    @Cacheable(value = ["studio-entitlements"], key = "#studioId.toString()")
     @Transactional(readOnly = true)
     fun getEntitlements(studioId: StudioId): StudioEntitlements {
         logger.debug("Loading entitlements from DB for studio={}", studioId)
@@ -69,7 +69,7 @@ class EntitlementService(
     // ── Plan / Add-on management ──────────────────────────────────────────────
 
     @Transactional
-    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.value.toString()")
+    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun assignPlan(studioId: StudioId, planKey: PlanKey): StudioEntitlements {
         val plan = planRepository.findByKey(planKey)
             ?: throw EntityNotFoundException("Plan not found: $planKey")
@@ -96,7 +96,7 @@ class EntitlementService(
     }
 
     @Transactional
-    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.value.toString()")
+    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun activateAddOn(studioId: StudioId, addOnKey: AddOnKey): StudioEntitlements {
         val subscription = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
             ?: throw EntityNotFoundException("Studio has no active subscription plan: $studioId")
@@ -115,7 +115,7 @@ class EntitlementService(
     }
 
     @Transactional
-    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.value.toString()")
+    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun deactivateAddOn(studioId: StudioId, addOnKey: AddOnKey) {
         val subscription = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value) ?: return
         subscription.activeAddOns.removeIf { it.addOn.key == addOnKey }
@@ -127,7 +127,7 @@ class EntitlementService(
      * Explicit cache eviction — call this after any billing/subscription mutation
      * to ensure stale entitlements are never served.
      */
-    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.value.toString()")
+    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun evictEntitlementsCache(studioId: StudioId) {
         logger.debug("Evicted entitlements cache for studio={}", studioId)
     }
