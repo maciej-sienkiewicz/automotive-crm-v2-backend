@@ -1,6 +1,9 @@
 package pl.detailing.crm.config
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
+import com.fasterxml.jackson.module.kotlin.kotlinModule
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -20,8 +23,10 @@ import java.time.Duration
  * - "studio-entitlements" — 5-minute TTL, evicted immediately on any subscription mutation.
  *   Key: studioId (UUID as String). Value: serialized [StudioEntitlements].
  *
- * Using JSON serialization (not Java native serialization) for Redis portability
- * and debuggability.
+ * Uses a Redis-specific ObjectMapper with:
+ *   - KotlinModule  — so Kotlin data classes deserialize via their primary constructor
+ *   - DefaultTyping — embeds "@class" in stored JSON so the correct type is restored on read
+ *     (without this, Jackson returns LinkedHashMap instead of the target class)
  */
 @Configuration
 @EnableCaching
@@ -29,9 +34,17 @@ class CacheConfig {
 
     @Bean
     @Primary
-    fun cacheManager(connectionFactory: RedisConnectionFactory, objectMapper: ObjectMapper): RedisCacheManager {
+    fun cacheManager(connectionFactory: RedisConnectionFactory): RedisCacheManager {
+        val redisMapper = ObjectMapper()
+            .registerModule(kotlinModule())
+            .activateDefaultTyping(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY
+            )
+
         val jsonSerializer = RedisSerializationContext.SerializationPair
-            .fromSerializer(GenericJackson2JsonRedisSerializer(objectMapper))
+            .fromSerializer(GenericJackson2JsonRedisSerializer(redisMapper))
 
         val defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
             .serializeKeysWith(
