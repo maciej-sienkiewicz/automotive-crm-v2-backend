@@ -11,6 +11,7 @@ import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.subscription.entitlement.FeatureLockedException
 import java.time.Instant
 
 @RestControllerAdvice
@@ -104,6 +105,23 @@ class GlobalExceptionHandler {
             ))
     }
 
+    /**
+     * HTTP 402 — feature is not included in the studio's active plan.
+     * Frontend uses this signal to render a paywall / demo mockup instead of an error screen.
+     */
+    @ExceptionHandler(FeatureLockedException::class)
+    fun handleFeatureLocked(ex: FeatureLockedException): ResponseEntity<FeatureLockedResponse> {
+        return ResponseEntity
+            .status(HttpStatus.PAYMENT_REQUIRED)
+            .body(
+                FeatureLockedResponse(
+                    feature = ex.featureKey.name,
+                    featureDisplayName = ex.featureKey.displayName,
+                    message = ex.message ?: "Ten moduł nie jest dostępny w Twoim planie."
+                )
+            )
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // GUS integration exceptions
     // ─────────────────────────────────────────────────────────────────────────
@@ -143,4 +161,16 @@ data class ErrorResponse(
     val error: String,
     val message: String,
     val timestamp: String
+)
+
+/**
+ * Returned with HTTP 402 when a studio accesses a locked feature.
+ * The [status] field is a stable string contract for frontend feature-gate logic.
+ */
+data class FeatureLockedResponse(
+    val status: String = "FEATURE_LOCKED",
+    val feature: String,
+    val featureDisplayName: String,
+    val message: String,
+    val timestamp: String = Instant.now().toString()
 )

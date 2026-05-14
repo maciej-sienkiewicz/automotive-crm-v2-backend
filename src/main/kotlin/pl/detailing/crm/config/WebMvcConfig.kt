@@ -18,7 +18,12 @@ class WebMvcConfig(
                 "/api/health",
                 "/api/v1/vehicle-metadata/**",
                 "/api/v1/inbound/email",
-                "/api/mobile/**"
+                "/api/mobile/**",
+                // Entitlements and pricing are always accessible (needed for expired/trial studios)
+                "/api/v1/me/entitlements",
+                "/api/v1/subscription/feature-plans",
+                "/api/v1/subscription/add-ons",
+                "/api/v1/subscription/calculate-price"
             )
     }
 }
