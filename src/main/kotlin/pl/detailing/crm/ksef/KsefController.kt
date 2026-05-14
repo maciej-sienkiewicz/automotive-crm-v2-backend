@@ -152,7 +152,7 @@ class KsefController(
         requireManagerOrOwner()
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (req.grossAmount < 0 || req.netAmount < 0) {
+        if ((req.grossAmount ?: 0.0) < 0 || (req.netAmount ?: 0.0) < 0) {
             throw ValidationException("Kwoty nie mogą być ujemne")
         }
 
@@ -171,10 +171,13 @@ class KsefController(
             issueDate     = req.saleDate?.toLocalDate(),
             sellerNip     = req.sellerNip,
             sellerName    = req.sellerName,
+            buyerNip      = null,
+            buyerName     = null,
             netAmount     = req.netAmount,
             grossAmount   = req.grossAmount,
             vatAmount     = if (req.grossAmount != null && req.netAmount != null) req.grossAmount - req.netAmount else null,
             currency      = "PLN",
+            invoiceType   = null,
             direction     = "EXPENSE",
             status        = "ACTIVE",
             paymentStatus = "PENDING",
