@@ -22,17 +22,28 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     /**
      * Paginated listing with optional source and paymentStatus filters.
      * EXCLUDED invoices are hidden by default (pass includeExcluded=true to show them).
+     *
+     * Native query with explicit CASTs to avoid PostgreSQL "could not determine data type"
+     * errors when nullable parameters are passed as $N bind variables.
      */
-    @Query("""
-        SELECT i FROM KsefInvoiceEntity i
-        WHERE i.studioId = :studioId
+    @Query(value = """
+        SELECT * FROM ksef_invoices i
+        WHERE i.studio_id = CAST(:studioId AS uuid)
           AND (:includeExcluded = true OR i.status <> 'EXCLUDED')
-          AND (:source IS NULL OR i.source = :source)
-          AND (:paymentStatus IS NULL OR i.paymentStatus = :paymentStatus)
-          AND (:dateFrom IS NULL OR i.invoicingDate >= :dateFrom)
-          AND (:dateTo   IS NULL OR i.invoicingDate <= :dateTo)
-        ORDER BY i.invoicingDate DESC NULLS LAST, i.fetchedAt DESC
-    """)
+          AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
+          AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
+          AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
+          AND (CAST(:dateTo   AS timestamptz) IS NULL OR i.invoicing_date <= CAST(:dateTo   AS timestamptz))
+        ORDER BY i.invoicing_date DESC NULLS LAST, i.fetched_at DESC
+    """, countQuery = """
+        SELECT COUNT(*) FROM ksef_invoices i
+        WHERE i.studio_id = CAST(:studioId AS uuid)
+          AND (:includeExcluded = true OR i.status <> 'EXCLUDED')
+          AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
+          AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
+          AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
+          AND (CAST(:dateTo   AS timestamptz) IS NULL OR i.invoicing_date <= CAST(:dateTo   AS timestamptz))
+    """, nativeQuery = true)
     fun findWithFilters(
         @Param("studioId") studioId: UUID,
         @Param("source") source: String?,
