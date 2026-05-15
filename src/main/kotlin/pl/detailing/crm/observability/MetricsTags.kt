@@ -84,6 +84,16 @@ object MetricsTags {
     /** S3 bucket name. */
     const val TAG_BUCKET = "bucket"
 
+    // ── Platform business gauges ──────────────────────────────────────────────
+    /** Gauge: total number of detailing studios (companies) that registered on the platform. */
+    const val PLATFORM_STUDIOS_TOTAL = "crm.platform.studios.total"
+
+    /** Gauge: cumulative total number of appointments (reservations) ever created on the platform. */
+    const val PLATFORM_APPOINTMENTS_TOTAL = "crm.platform.appointments.total"
+
+    /** Gauge: cumulative total number of visits ever created on the platform. */
+    const val PLATFORM_VISITS_TOTAL = "crm.platform.visits.total"
+
     // ── HttpServletRequest attribute keys shared between aspect and filter ───
     /** Set by ApiMetricsAspect; read by HttpMetricsFilter for response-size tagging. */
     const val ATTR_CONTROLLER = "crm.obs.controller"
