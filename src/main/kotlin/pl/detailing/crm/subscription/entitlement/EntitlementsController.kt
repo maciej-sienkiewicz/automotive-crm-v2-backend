@@ -82,6 +82,10 @@ data class AssignPlanRequest(val planKey: PlanKey)
 data class ActivateAddOnRequest(val addOnKey: AddOnKey)
 data class PreviewPlanChangeRequest(val newPlanKey: PlanKey)
 data class PreviewAddOnRequest(val addOnKey: AddOnKey)
+data class ActivatePackageRequest(
+    val planKey: PlanKey,
+    val addOnKeys: List<AddOnKey> = emptyList()
+)
 
 /**
  * Unified "my subscription" view — combines billing status with plan/add-on details.
@@ -315,6 +319,19 @@ class EntitlementsController(
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
         planManagementService.changePlan(studioId, request.planKey)
+        return getMyEntitlements()
+    }
+
+    /**
+     * First-purchase bundle: activates the base plan and all selected add-ons in one request.
+     * Only valid when the studio has no active subscription.
+     * Returns the resulting entitlements immediately after activation.
+     */
+    @PostMapping("/api/v1/subscription/activate-package")
+    fun activatePackage(@RequestBody request: ActivatePackageRequest): ResponseEntity<EntitlementsResponse> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentStudioId()
+        planManagementService.activatePackage(studioId, request.planKey, request.addOnKeys)
         return getMyEntitlements()
     }
 

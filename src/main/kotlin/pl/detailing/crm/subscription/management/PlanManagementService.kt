@@ -367,6 +367,36 @@ class PlanManagementService(
         return entitlementService.activateAddOn(studioId, addOnKey)
     }
 
+    /**
+     * First-purchase bundle: activates the base plan and all selected add-ons in one transaction.
+     * Only valid when the studio has no active subscription (NO_PLAN or EXPIRED).
+     * All add-ons are validated before any payment is attempted to minimise partial-activation risk.
+     */
+    @Transactional
+    fun activatePackage(studioId: StudioId, planKey: PlanKey, addOnKeys: List<AddOnKey>): StudioEntitlements {
+        val studio = studioRepository.findByStudioId(studioId.value)
+            ?: throw EntityNotFoundException("Studio not found: $studioId")
+
+        if (studio.subscriptionStatus != SubscriptionStatus.NO_PLAN &&
+            studio.subscriptionStatus != SubscriptionStatus.EXPIRED) {
+            throw ValidationException("Studio ma już aktywną subskrypcję. Użyj change-plan lub activate-add-on.")
+        }
+
+        val addOns = addOnKeys.map { key ->
+            addOnRepository.findByKey(key)
+                ?: throw EntityNotFoundException("Moduł nie istnieje: $key")
+        }
+        addOns.forEach { addOn ->
+            if (!addOn.isAvailable) throw ValidationException("Moduł '${addOn.name}' nie jest jeszcze dostępny.")
+            if (addOn.monthlyPriceGrossCents == null) throw ValidationException("Moduł '${addOn.name}' nie ma jeszcze ustalonej ceny.")
+        }
+
+        activateInitialPlan(studioId, planKey)
+        addOnKeys.forEach { addOnKey -> activateAddOnWithBilling(studioId, addOnKey) }
+
+        return entitlementService.getEntitlements(studioId)
+    }
+
     @Transactional
     fun deactivateAddOnWithLog(studioId: StudioId, addOnKey: AddOnKey) {
         val addOn = addOnRepository.findByKey(addOnKey)
