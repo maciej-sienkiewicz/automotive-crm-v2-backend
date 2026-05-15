@@ -6,6 +6,7 @@ import org.aspectj.lang.annotation.Aspect
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.shared.FeatureLockedException
 import pl.detailing.crm.shared.UnauthorizedException
 
 /**

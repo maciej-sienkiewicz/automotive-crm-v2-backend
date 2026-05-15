@@ -11,7 +11,6 @@ import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
 import pl.detailing.crm.shared.*
-import pl.detailing.crm.subscription.entitlement.FeatureLockedException
 import java.time.Instant
 
 @RestControllerAdvice

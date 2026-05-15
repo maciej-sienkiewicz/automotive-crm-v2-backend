@@ -1,5 +1,6 @@
 package pl.detailing.crm.shared
 
+import pl.detailing.crm.subscription.entitlement.FeatureKey
 import java.io.Serializable
 import java.util.*
 
@@ -715,6 +716,10 @@ class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
 class UnprocessableEntityException(message: String) : BusinessException(message)
 class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : BusinessException(message)
+class FeatureLockedException(
+    val featureKey: FeatureKey,
+    message: String = "Moduł '${featureKey.displayName}' nie jest dostępny w Twoim planie."
+) : BusinessException(message)
 
 /**
  * Type-safe ID wrapper for global Instagram profile entities

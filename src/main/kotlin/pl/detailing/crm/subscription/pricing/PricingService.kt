@@ -2,8 +2,8 @@ package pl.detailing.crm.subscription.pricing
 
 import org.springframework.stereotype.Service
 import pl.detailing.crm.shared.EntityNotFoundException
-import pl.detailing.crm.subscription.entitlement.EntitlementsController.AddOnPriceLineDto
-import pl.detailing.crm.subscription.entitlement.EntitlementsController.CustomPriceResponse
+import pl.detailing.crm.subscription.entitlement.AddOnPriceLineDto
+import pl.detailing.crm.subscription.entitlement.CustomPriceResponse
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository

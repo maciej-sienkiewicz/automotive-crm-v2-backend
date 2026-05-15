@@ -206,7 +206,7 @@ class EntitlementsController(
      * and any scheduled plan downgrade waiting to be applied at period end.
      */
     @GetMapping("/api/v1/subscription/my-plan")
-    fun getMyPlan(): ResponseEntity<MyPlanResponse> {
+    suspend fun getMyPlan(): ResponseEntity<MyPlanResponse> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentUser().studioId
 
