@@ -338,6 +338,10 @@ data class LeadAppointmentAdjustmentRequest(
     val value: Double
 )
 
+data class GenerateQuoteReplyResponse(
+    val reply: String
+)
+
 data class CreateLeadAppointmentResponse(
     val appointmentId: String,
     val customerId: String,
