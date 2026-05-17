@@ -32,8 +32,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.UNAUTHORIZED)
             .body(ErrorResponse(
-                error = "Unauthorized",
-                message = ex.message ?: "Authentication required",
+                error = "Brak autoryzacji",
+                message = ex.message ?: "Wymagane uwierzytelnienie",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -43,8 +43,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.UNAUTHORIZED)
             .body(ErrorResponse(
-                error = "Unauthorized",
-                message = ex.message ?: "Authentication required",
+                error = "Brak autoryzacji",
+                message = ex.message ?: "Wymagane uwierzytelnienie",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -54,8 +54,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.FORBIDDEN)
             .body(ErrorResponse(
-                error = "Forbidden",
-                message = ex.message ?: "Access denied",
+                error = "Brak dostępu",
+                message = ex.message ?: "Nie masz uprawnień do wykonania tej operacji",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -66,8 +66,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(
-                error = "Validation Error",
-                message = ex.message ?: "Invalid request",
+                error = "Błąd walidacji",
+                message = ex.message ?: "Nieprawidłowe dane żądania",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -77,8 +77,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.NOT_FOUND)
             .body(ErrorResponse(
-                error = "Not Found",
-                message = ex.message ?: "Resource not found",
+                error = "Nie znaleziono",
+                message = ex.message ?: "Żądany zasób nie istnieje",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -88,8 +88,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.CONFLICT)
             .body(ErrorResponse(
-                error = "Conflict",
-                message = ex.message ?: "Conflict",
+                error = "Konflikt danych",
+                message = ex.message ?: "Operacja jest sprzeczna z aktualnym stanem zasobu",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -99,8 +99,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.UNPROCESSABLE_ENTITY)
             .body(ErrorResponse(
-                error = "Unprocessable Entity",
-                message = ex.message ?: "Unprocessable entity",
+                error = "Nie można przetworzyć żądania",
+                message = ex.message ?: "Żądanie jest poprawne składniowo, lecz nie można go wykonać",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -110,7 +110,7 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.PAYMENT_REQUIRED)
             .body(ErrorResponse(
-                error = "Insufficient SMS Credits",
+                error = "Niewystarczające kredyty SMS",
                 message = ex.message ?: "Brak kredytów SMS",
                 timestamp = Instant.now().toString()
             ))
@@ -140,19 +140,19 @@ class GlobalExceptionHandler {
     @ExceptionHandler(InvalidNipException::class)
     fun handleInvalidNip(ex: InvalidNipException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-            ErrorResponse("Invalid NIP", ex.message ?: "Nieprawidłowy numer NIP", Instant.now().toString())
+            ErrorResponse("Nieprawidłowy NIP", ex.message ?: "Podany numer NIP jest nieprawidłowy", Instant.now().toString())
         )
 
     @ExceptionHandler(CompanyNotFoundException::class)
     fun handleCompanyNotFound(ex: CompanyNotFoundException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-            ErrorResponse("Company Not Found", ex.message ?: "Firma nie została znaleziona", Instant.now().toString())
+            ErrorResponse("Nie znaleziono firmy", ex.message ?: "Firma nie została znaleziona", Instant.now().toString())
         )
 
     @ExceptionHandler(GusServiceUnavailableException::class)
     fun handleGusUnavailable(ex: GusServiceUnavailableException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
-            ErrorResponse("GUS Service Unavailable", ex.message ?: "Usługa GUS jest chwilowo niedostępna", Instant.now().toString())
+            ErrorResponse("Usługa GUS niedostępna", ex.message ?: "Usługa GUS jest chwilowo niedostępna", Instant.now().toString())
         )
 
     @ExceptionHandler(Exception::class)
@@ -161,8 +161,8 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse(
-                error = "Internal Server Error",
-                message = "An unexpected error occurred: ${ex.message}",
+                error = "Błąd serwera",
+                message = "Wystąpił nieoczekiwany błąd: ${ex.message}",
                 timestamp = Instant.now().toString()
             ))
     }
