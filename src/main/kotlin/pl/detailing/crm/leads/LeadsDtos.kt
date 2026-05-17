@@ -339,6 +339,7 @@ data class LeadAppointmentAdjustmentRequest(
 )
 
 data class GenerateQuoteReplyResponse(
+    val title: String,
     val reply: String
 )
 

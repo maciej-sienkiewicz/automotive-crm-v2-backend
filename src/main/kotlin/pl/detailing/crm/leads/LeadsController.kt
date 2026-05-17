@@ -565,6 +565,6 @@ class LeadsController(
         )
 
         val result = generateQuoteReplyHandler.handle(command)
-        ResponseEntity.ok(GenerateQuoteReplyResponse(reply = result.reply))
+        ResponseEntity.ok(GenerateQuoteReplyResponse(title = result.title, reply = result.reply))
     }
 }

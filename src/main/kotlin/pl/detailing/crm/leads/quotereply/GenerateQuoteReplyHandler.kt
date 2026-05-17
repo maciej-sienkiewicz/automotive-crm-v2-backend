@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.quotereply
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -44,13 +45,16 @@ class GenerateQuoteReplyHandler(
 
             log.info("[QUOTE_REPLY] Generating reply for leadId={}, services={}", command.leadId, serviceLines.size)
 
-            val reply = chatClient.prompt()
+            val response = chatClient.prompt()
                 .user(userPrompt)
                 .call()
-                .content()
+                .entity(QuoteReplyLlmResponse::class.java)
                 ?: throw IllegalStateException("AI returned empty response")
 
-            GenerateQuoteReplyResult(reply = reply.trim())
+            GenerateQuoteReplyResult(
+                title = response.title.trim(),
+                reply = response.reply.trim()
+            )
         }
 
     private fun resolveServiceLines(command: GenerateQuoteReplyCommand): List<ServiceLine> {
@@ -105,5 +109,10 @@ class GenerateQuoteReplyHandler(
         val name: String,
         val priceGrossGrosze: Long,
         val vatRate: Int
+    )
+
+    private data class QuoteReplyLlmResponse(
+        @JsonProperty("title") val title: String,
+        @JsonProperty("reply") val reply: String
     )
 }

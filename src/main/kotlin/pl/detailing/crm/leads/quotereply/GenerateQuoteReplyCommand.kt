@@ -9,5 +9,6 @@ data class GenerateQuoteReplyCommand(
 )
 
 data class GenerateQuoteReplyResult(
+    val title: String,
     val reply: String
 )

@@ -60,8 +60,12 @@ class QuoteReplyAiConfig {
             - Zamiast "Musimy polerować" pisz "Zalecam przeprowadzenie korekty, aby...".
 
             ## Format wyjściowy
-            Zwróć WYŁĄCZNIE gotową wiadomość do wysłania klientowi — bez żadnych nagłówków,
-            komentarzy ani oznaczeń sekcji. Odpowiedź ma być gotowa do skopiowania i wysłania.
+            Zwróć odpowiedź jako obiekt JSON z dokładnie dwoma polami:
+            - "title" → krótki temat wiadomości e-mail (max 80 znaków, po polsku, bez cudzysłowów),
+              np. "Oferta detailingu dla Pana Volvo XC60 – zabezpieczenie ceramiczne"
+            - "reply" → pełna treść wiadomości do wysłania klientowi, gotowa do skopiowania
+
+            Nie dodawaj żadnych innych pól ani komentarzy poza tym obiektem JSON.
         """.trimIndent()
     }
 }
