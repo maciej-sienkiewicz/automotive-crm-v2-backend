@@ -75,12 +75,22 @@ class SaveVisitServicesHandler(
             existingItem.markForDeletion()
         }
 
-        val updatedVisit = visit.saveServicesChanges(
+        val visitWithPendingChanges = visit.saveServicesChanges(
             added = addedItems,
             updated = updatedItems + deletedItems,  // Deleted items are now updated items with DELETE operation
             deletedIds = emptyList(),  // No physical deletion
             updatedBy = userId
         )
+
+        val updatedVisit = if (!payload.requireConfirmation) {
+            var autoApproved = visitWithPendingChanges
+            visitWithPendingChanges.getPendingServices().forEach { item ->
+                autoApproved = autoApproved.approveService(item.id, userId)
+            }
+            autoApproved
+        } else {
+            visitWithPendingChanges
+        }
 
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
