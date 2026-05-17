@@ -348,7 +348,72 @@
       "title": "Ukończone wizyty per studio (wybrany okres)", "type": "bargauge"
     },
 
-    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 49}, "id": 23, "title": "Storage – Dysk i AWS S3", "type": "row" },
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 49}, "id": 35, "title": "Platforma – Łączne statystyki", "type": "row" },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 50}, "id": 36,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_platform_appointments_total", "instant": true, "legendFormat": "rezerwacje", "refId": "A"}],
+      "title": "Łącznie rezerwacji", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 50}, "id": 37,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_platform_visits_total", "instant": true, "legendFormat": "wizyty", "refId": "A"}],
+      "title": "Łącznie wizyt", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "purple", "value": null}]},
+          "unit": "short", "mappings": [], "decimals": 0
+        }, "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 50}, "id": 38,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_platform_studios_total", "instant": true, "legendFormat": "studia", "refId": "A"}],
+      "title": "Zarejestrowane studia", "type": "stat"
+    },
+
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineInterpolation": "smooth", "showPoints": "auto", "lineWidth": 2, "fillOpacity": 10}, "unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Rezerwacje (łącznie)"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Wizyty (łącznie)"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 54}, "id": 39,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_platform_appointments_total", "instant": false, "legendFormat": "Rezerwacje (łącznie)", "range": true, "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_platform_visits_total", "instant": false, "legendFormat": "Wizyty (łącznie)", "range": true, "refId": "B"}
+      ],
+      "title": "Wzrost platformy – rezerwacje i wizyty w czasie", "type": "timeseries"
+    },
+
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 62}, "id": 23, "title": "Storage – Dysk i AWS S3", "type": "row" },
 
     {
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
@@ -359,7 +424,7 @@
           "unit": "percent", "decimals": 1
         }, "overrides": []
       },
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 50}, "id": 24,
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 63}, "id": 24,
       "options": {
         "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto",
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
@@ -378,7 +443,7 @@
           "unit": "bytes", "mappings": [], "decimals": 1
         }, "overrides": []
       },
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 50}, "id": 25,
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 63}, "id": 25,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_disk_free_bytes", "instant": true, "legendFormat": "free", "refId": "A"}],
       "title": "Dysk – Wolne miejsce", "type": "stat"
@@ -394,7 +459,7 @@
           "noValue": "Brak danych CloudWatch"
         }, "overrides": []
       },
-      "gridPos": {"h": 6, "w": 4, "x": 16, "y": 50}, "id": 26,
+      "gridPos": {"h": 6, "w": 4, "x": 16, "y": 63}, "id": 26,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_s3_size_bytes", "instant": true, "legendFormat": "S3 size", "refId": "A"}],
       "title": "S3 – Rozmiar bucketa", "type": "stat"
@@ -410,13 +475,13 @@
           "noValue": "Brak danych CloudWatch"
         }, "overrides": []
       },
-      "gridPos": {"h": 6, "w": 4, "x": 20, "y": 50}, "id": 27,
+      "gridPos": {"h": 6, "w": 4, "x": 20, "y": 63}, "id": 27,
       "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "crm_storage_s3_objects_total", "instant": true, "legendFormat": "objects", "refId": "A"}],
       "title": "S3 – Liczba obiektów", "type": "stat"
     },
 
-    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 56}, "id": 28, "title": "JVM & System", "type": "row" },
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 69}, "id": 28, "title": "JVM & System", "type": "row" },
 
     {
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
@@ -426,7 +491,7 @@
           {"matcher": {"id": "byName", "options": "Heap Max"}, "properties": [{"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}}, {"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57}, "id": 29,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 70}, "id": 29,
       "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
       "targets": [
         {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "instant": false, "legendFormat": "Heap Used", "range": true, "refId": "A"},
@@ -445,7 +510,7 @@
           "unit": "percent", "decimals": 1
         }, "overrides": []
       },
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 57}, "id": 30,
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 70}, "id": 30,
       "options": {
         "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto",
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
@@ -464,13 +529,13 @@
           "unit": "short", "mappings": [], "decimals": 0
         }, "overrides": []
       },
-      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 57}, "id": 31,
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 70}, "id": 31,
       "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
       "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "jvm_threads_live_threads", "instant": true, "legendFormat": "threads", "refId": "A"}],
       "title": "JVM – Live Threads", "type": "stat"
     },
 
-    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 65}, "id": 32, "title": "Security Monitoring – Anomaly Detection", "type": "row" },
+    { "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 78}, "id": 32, "title": "Security Monitoring – Anomaly Detection", "type": "row" },
 
     {
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
@@ -481,7 +546,7 @@
           {"matcher": {"id": "byName", "options": "401 Unauthorized"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]}
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 66}, "id": 33,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 79}, "id": 33,
       "options": {"legend": {"calcs": ["max", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
         {"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum by (status) (rate(crm_api_security_rejections_total[$__rate_interval])) * 60", "instant": false, "legendFormat": "Security Rejection {{status}} / min", "range": true, "refId": "A"},
@@ -500,7 +565,7 @@
           {"matcher": {"id": "byName", "options": "p99 Rozmiar"}, "properties": [{"id": "custom.displayMode", "value": "color-background-solid"}]}
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 66}, "id": 34,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 79}, "id": 34,
       "options": {
         "sortBy": [{"desc": true, "displayName": "p99 Rozmiar"}],
         "footer": {"enablePagination": false, "show": false}
@@ -540,6 +605,6 @@
   "timezone": "browser",
   "title": "Detailing CRM – Observability",
   "uid": "detailing-crm-obs-v1",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

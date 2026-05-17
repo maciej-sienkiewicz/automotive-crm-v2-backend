@@ -72,6 +72,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: ${ENV_GRAFANA_ROOT_URL:-http://localhost:3000}
       GF_FEATURE_TOGGLES_ENABLE: publicDashboards
+      GF_LOG_LEVEL: "error"
+      GF_LOG_FILTERS: "rendering:error"
     depends_on:
       - prometheus
     networks:
