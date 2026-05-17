@@ -134,6 +134,56 @@ class SmsConsentService(
     }
 
     /**
+     * Sends a one-way informational SMS to the customer describing what changed in
+     * the service list and the new total. No reply is expected or tracked —
+     * no [SmsConsentRequestEntity] is created and pending items are NOT auto-approved.
+     *
+     * Used when `requireConfirmation = false` in the services-change payload.
+     */
+    @Transactional
+    fun sendServiceChangeNotification(
+        visitId: VisitId,
+        studioId: StudioId,
+        customerPhone: String,
+        totalGrossCents: Long,
+        changes: ServiceChangesSummary
+    ) {
+        val normalizedPhone = normalizePolishPhone(customerPhone)
+        val message = buildNotificationMessage(changes, totalGrossCents)
+        val result = smsProvider.send(normalizedPhone, message)
+
+        val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
+        if (customerId != null) {
+            communicationLogService.record(
+                RecordCommunicationCommand(
+                    studioId = studioId,
+                    customerId = CustomerId(customerId),
+                    visitId = visitId,
+                    channel = CommunicationChannel.SMS,
+                    messageType = CommunicationMessageType.SMS_SERVICE_CHANGE_NOTIFICATION,
+                    recipientAddress = normalizedPhone,
+                    subject = null,
+                    bodyContent = message,
+                    success = result.success,
+                    errorMessage = result.errorMessage
+                )
+            )
+        }
+
+        if (result.success) {
+            logger.info(
+                "Service-change notification SMS sent | visit={} phone={} totalGross={}",
+                visitId, normalizedPhone, formatGrossPrice(totalGrossCents)
+            )
+        } else {
+            logger.warn(
+                "Service-change notification SMS failed | visit={} phone={} error={}",
+                visitId, normalizedPhone, result.errorMessage
+            )
+        }
+    }
+
+    /**
      * Processes an inbound SMS reply from SMSAPI.
      *
      * If the message body starts with "TAK" (case-insensitive), the most recent PENDING
@@ -240,6 +290,30 @@ class SmsConsentService(
 
         parts.add("Lacznie: ${formatGrossPrice(totalGrossCents)} PLN brutto.")
         parts.add("Odpisz TAK aby zatwierdzic.")
+
+        return parts.joinToString(" ")
+    }
+
+    /**
+     * Builds the one-way notification SMS body — same change details as the consent
+     * message but without the "Odpisz TAK" call-to-action.
+     *
+     * Example: "Dodano: Polerowanie. Lacznie: 450.00 PLN brutto."
+     */
+    internal fun buildNotificationMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String {
+        val parts = mutableListOf<String>()
+
+        if (changes.addedNames.isNotEmpty()) {
+            parts.add("Dodano: ${changes.addedNames.toShortenedList()}.")
+        }
+        if (changes.removedNames.isNotEmpty()) {
+            parts.add("Usunieto: ${changes.removedNames.toShortenedList()}.")
+        }
+        if (changes.priceChangedNames.isNotEmpty()) {
+            parts.add("Zmiana ceny: ${changes.priceChangedNames.toShortenedList()}.")
+        }
+
+        parts.add("Lacznie: ${formatGrossPrice(totalGrossCents)} PLN brutto.")
 
         return parts.joinToString(" ")
     }

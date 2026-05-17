@@ -109,7 +109,11 @@ class SaveVisitServicesHandler(
 
         if (payload.notifyCustomer) {
             val changesSummary = buildChangesSummary(payload, visit)
-            sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
+            if (payload.requireConfirmation) {
+                sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
+            } else {
+                sendNotificationSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
+            }
         }
 
         return MoneyAmountResponse(
@@ -137,6 +141,34 @@ class SaveVisitServicesHandler(
             addedNames = payload.added.map { it.serviceName },
             removedNames = payload.deleted.mapNotNull { itemNamesById[it.serviceLineItemId] },
             priceChangedNames = payload.updated.mapNotNull { itemNamesById[it.serviceLineItemId] }
+        )
+    }
+
+    private fun sendNotificationSms(
+        customerId: java.util.UUID,
+        studioId: StudioId,
+        visitId: VisitId,
+        updatedVisit: pl.detailing.crm.visit.domain.Visit,
+        changesSummary: ServiceChangesSummary
+    ) {
+        val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
+
+        val phone = customer?.phone
+        if (phone.isNullOrBlank()) {
+            logger.warn("notifyCustomer=true but customer {} has no phone – SMS skipped", customerId)
+            return
+        }
+
+        val totalGross = updatedVisit.serviceItems
+            .filter { it.pendingOperation != PendingOperation.DELETE }
+            .sumOf { it.finalPriceGross.amountInCents }
+
+        smsConsentService.sendServiceChangeNotification(
+            visitId = visitId,
+            studioId = studioId,
+            customerPhone = phone,
+            totalGrossCents = totalGross,
+            changes = changesSummary
         )
     }
 

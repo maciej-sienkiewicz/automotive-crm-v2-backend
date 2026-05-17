@@ -811,6 +811,7 @@ enum class CommunicationMessageType(val label: String) {
     // SMS consent types
     SMS_CONSENT_REQUEST("SMS zgoda na zmianę zakresu usług"),
     SMS_INBOUND_REPLY("SMS odpowiedź klienta"),
+    SMS_SERVICE_CHANGE_NOTIFICATION("SMS informacja o zmianie zakresu usług"),
 
     // SMS confirmation types
     SMS_APPOINTMENT_RESCHEDULE_CONFIRMATION("SMS potwierdzenie zmiany terminu"),

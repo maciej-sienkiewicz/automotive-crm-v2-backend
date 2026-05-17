@@ -4,6 +4,7 @@ import pl.detailing.crm.appointment.domain.AdjustmentType
 
 data class ServicesChangesPayload(
     val notifyCustomer: Boolean,
+    val requireConfirmation: Boolean = true,
     val added: List<AddedService>,
     val updated: List<UpdatedService>,
     val deleted: List<DeletedService>
