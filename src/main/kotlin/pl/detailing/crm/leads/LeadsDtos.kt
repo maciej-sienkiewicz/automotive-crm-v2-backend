@@ -253,6 +253,11 @@ fun UserQuoteItemResult.toDto() = LeadUserQuoteItemDto(
     priceGross = priceGross
 )
 
+data class GenerateQuoteReplyResponse(
+    val title: String,
+    val reply: String
+)
+
 data class PipelineSummaryDto(
     val awaitingFirstContactCount: Int,
     val avgWaitingTimeMinutes: Long,

@@ -27,6 +27,8 @@ import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryQuery
 import pl.detailing.crm.leads.update.UpdateLeadCommand
 import pl.detailing.crm.leads.update.UpdateLeadHandler
+import pl.detailing.crm.leads.quotereply.generate.GenerateQuoteReplyHandler
+import pl.detailing.crm.leads.quotereply.generate.GenerateQuoteReplyQuery
 import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteCommand
 import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteCommand
@@ -56,7 +58,8 @@ class LeadsController(
     private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
-    private val createLeadAppointmentHandler: CreateLeadAppointmentHandler
+    private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
+    private val generateQuoteReplyHandler: GenerateQuoteReplyHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -545,5 +548,21 @@ class LeadsController(
                 totalVat = result.totalVat.amountInCents
             )
         )
+    }
+
+    /**
+     * Generate an AI-drafted email reply for a lead's quote.
+     * GET /api/v1/leads/{id}/quote-reply
+     */
+    @GetMapping("/{id}/quote-reply")
+    fun generateQuoteReply(@PathVariable id: String): ResponseEntity<GenerateQuoteReplyResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = generateQuoteReplyHandler.handle(
+            GenerateQuoteReplyQuery(
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId
+            )
+        )
+        ResponseEntity.ok(GenerateQuoteReplyResponse(title = result.title, reply = result.reply))
     }
 }
