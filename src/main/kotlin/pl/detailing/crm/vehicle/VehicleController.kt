@@ -25,6 +25,8 @@ import pl.detailing.crm.vehicle.visits.GetVehicleVisitsCommand
 import pl.detailing.crm.vehicle.visits.GetVehicleVisitsHandler
 import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsCommand
 import pl.detailing.crm.vehicle.appointments.GetVehicleAppointmentsHandler
+import pl.detailing.crm.vehicle.comments.GetVehicleCommentsCommand
+import pl.detailing.crm.vehicle.comments.GetVehicleCommentsHandler
 import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsHandler
 import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsCommand
 import pl.detailing.crm.vehicle.documents.VehicleDocumentItem
@@ -44,7 +46,8 @@ class VehicleController(
     private val getVehicleVisitsHandler: GetVehicleVisitsHandler,
     private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler,
     private val getVehicleDocumentsHandler: GetVehicleDocumentsHandler,
-    private val vehicleDocumentService: VehicleDocumentService
+    private val vehicleDocumentService: VehicleDocumentService,
+    private val getVehicleCommentsHandler: GetVehicleCommentsHandler
 ) {
 
     @GetMapping
@@ -522,6 +525,46 @@ class VehicleController(
         )
     }
 
+    @GetMapping("/{vehicleId}/comments")
+    fun getVehicleComments(
+        @PathVariable vehicleId: String,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int
+    ): ResponseEntity<VehicleCommentsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetVehicleCommentsCommand(
+            vehicleId = VehicleId.fromString(vehicleId),
+            studioId = principal.studioId,
+            page = page,
+            limit = limit
+        )
+
+        val result = getVehicleCommentsHandler.handle(command)
+
+        ResponseEntity.ok(VehicleCommentsResponse(
+            comments = result.comments.map { comment ->
+                VehicleCommentResponse(
+                    id = comment.id,
+                    content = comment.content,
+                    type = comment.type,
+                    createdAt = comment.createdAt,
+                    createdBy = comment.createdBy,
+                    createdByName = comment.createdByName,
+                    visitId = comment.visitId,
+                    visitTitle = comment.visitTitle,
+                    visitDate = comment.visitDate
+                )
+            },
+            pagination = PaginationMeta(
+                currentPage = result.pagination.currentPage,
+                totalPages = result.pagination.totalPages,
+                totalItems = result.pagination.totalItems,
+                itemsPerPage = result.pagination.itemsPerPage
+            )
+        ))
+    }
+
     @DeleteMapping("/{vehicleId}/documents/{documentId}")
     fun deleteVehicleDocument(
         @PathVariable vehicleId: String,
@@ -752,4 +795,22 @@ data class InitiateVehicleDocumentUploadRequest(
 data class InitiateVehicleDocumentUploadResponse(
     val documentId: String,
     val uploadUrl: String
+)
+
+// Vehicle Comments DTOs
+data class VehicleCommentsResponse(
+    val comments: List<VehicleCommentResponse>,
+    val pagination: PaginationMeta
+)
+
+data class VehicleCommentResponse(
+    val id: String,
+    val content: String,
+    val type: String,
+    val createdAt: Instant,
+    val createdBy: String,
+    val createdByName: String,
+    val visitId: String,
+    val visitTitle: String,
+    val visitDate: Instant
 )
