@@ -2,11 +2,13 @@
 
 package pl.detailing.crm.config
 
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.AuthenticationException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
@@ -15,6 +17,15 @@ import java.time.Instant
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    private fun resolveContext(): String = try {
+        val user = SecurityContextHelper.getCurrentUser()
+        "studioId=${user.studioId.value}, userId=${user.userId.value}"
+    } catch (_: Exception) {
+        "studioId=unknown, userId=unknown"
+    }
 
     @ExceptionHandler(AuthenticationException::class)
     fun handleAuthenticationException(ex: AuthenticationException): ResponseEntity<ErrorResponse> {
@@ -51,6 +62,7 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(ValidationException::class)
     fun handleValidation(ex: ValidationException): ResponseEntity<ErrorResponse> {
+        log.warn("ValidationException [{}]: {}", resolveContext(), ex.message)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(
@@ -145,7 +157,7 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
-        ex.printStackTrace()
+        log.error("Unhandled exception [{}]", resolveContext(), ex)
         return ResponseEntity
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse(
