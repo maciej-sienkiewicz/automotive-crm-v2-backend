@@ -29,7 +29,11 @@ class ListArchivedTasksHandler(
                 Sort.by(Sort.Direction.DESC, "deletedAt")
             )
 
-            val pageResult = taskRepository.findByStudioIdAndDeletedAtIsNotNull(query.studioId.value, pageable)
+            val pageResult = taskRepository.findArchivedByStudioId(
+                studioId = query.studioId.value,
+                search = query.search?.trim()?.takeIf { it.isNotBlank() },
+                pageable = pageable
+            )
 
             val userIds = pageResult.content.mapNotNull { it.deletedByUserId }.distinct()
             val usersById = if (userIds.isEmpty()) emptyMap()

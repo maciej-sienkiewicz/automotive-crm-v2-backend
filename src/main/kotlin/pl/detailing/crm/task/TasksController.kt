@@ -47,7 +47,8 @@ class TasksController(
     @GetMapping("/archive")
     fun getArchivedTasks(
         @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
+        @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) search: String?
     ): ResponseEntity<ArchivedTasksPage> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -55,7 +56,8 @@ class TasksController(
             ListArchivedTasksQuery(
                 studioId = principal.studioId,
                 page = maxOf(1, page),
-                pageSize = maxOf(1, minOf(100, size))
+                pageSize = maxOf(1, minOf(100, size)),
+                search = search
             )
         )
 
