@@ -32,6 +32,10 @@ class PdfProcessingService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        private const val MAX_FIELD_FONT_SIZE = 9f
+    }
+
     /**
      * Flatten all AcroForm fields in a PDF and return the resulting bytes.
      *
@@ -196,16 +200,15 @@ class PdfProcessingService(
      */
     private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm) {
         val systemFontPaths = listOf(
-            // Alpine Linux (ttf-dejavu)
+            // Liberation Sans (Arial-compatible, professional) — preferred
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+            // DejaVu Sans — fallback
             "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
-            // Debian/Ubuntu (fonts-dejavu-core)
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            // Debian/Ubuntu (fonts-liberation)
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-            // Other
+            // Other fallbacks
             "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
             "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
         )
@@ -233,7 +236,7 @@ class PdfProcessingService(
 
         val classpathFonts = listOf(
             "/fonts/LiberationSans-Regular.ttf",
-            "/fonts/DejaVuSans.ttf"
+            "/fonts/DejaVuSans.ttf"  // fallback when Liberation Sans unavailable
         )
         logger.info("PDF font setup: no system font found, trying classpath fonts: $classpathFonts")
         for (classpathFont in classpathFonts) {
@@ -258,8 +261,10 @@ class PdfProcessingService(
 
     /**
      * Register [font] in the AcroForm's default resources and update every variable-text field
-     * and its widget annotations to use it — preserving each widget's original font size so the
-     * layout doesn't change.
+     * and its widget annotations to use it.
+     *
+     * Font sizes are capped at [MAX_FIELD_FONT_SIZE] to prevent oversized text when the template
+     * declares large or auto (0) sizes. Auto-size (0) fields are set to the cap explicitly.
      *
      * PDF spec priority for Default Appearance: widget /DA > field /DA > AcroForm /DA.
      * We must update all three levels, otherwise the original (non-embedded) font reference
@@ -270,31 +275,34 @@ class PdfProcessingService(
         val fontKey = resources.add(font)
         val fontRef = "/${fontKey.name}"
 
-        // AcroForm-level fallback DA (size 0 = auto, only used when no field/widget DA present)
-        acroForm.defaultAppearance = "$fontRef 0 Tf 0 g"
+        acroForm.defaultAppearance = "$fontRef $MAX_FIELD_FONT_SIZE Tf 0 g"
 
         for (field in acroForm.fieldTree) {
             if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
-                // Preserve the original font size declared in the field's /DA
-                val fieldSize = parseFontSize(field.defaultAppearance)
+                val fieldSize = cappedFontSize(parseFontSize(field.defaultAppearance))
                 field.defaultAppearance = "$fontRef $fieldSize Tf 0 g"
 
                 for (widget in field.widgets) {
                     val widgetCos = widget.cosObject
-                    // Widget-level /DA takes priority — update it if present,
-                    // preserving the widget's own declared size (may differ per widget).
                     if (widgetCos.containsKey(COSName.DA)) {
-                        val widgetSize = parseFontSize(widgetCos.getString(COSName.DA))
+                        val widgetSize = cappedFontSize(parseFontSize(widgetCos.getString(COSName.DA)))
                         widgetCos.setString(COSName.DA, "$fontRef $widgetSize Tf 0 g")
                     }
-                    // Remove stale appearance streams so PDFBox regenerates them
-                    // with the new embedded font when setValue() is called.
                     widgetCos.removeItem(COSName.AP)
                 }
             }
         }
 
         logger.info("PDF font setup: registered font as '${fontKey.name}'")
+    }
+
+    /**
+     * Returns the font size capped at [MAX_FIELD_FONT_SIZE].
+     * Auto-size (0) is replaced with the cap so every field has a consistent, readable size.
+     */
+    private fun cappedFontSize(size: String): String {
+        val pt = size.toFloatOrNull() ?: 0f
+        return if (pt == 0f || pt > MAX_FIELD_FONT_SIZE) MAX_FIELD_FONT_SIZE.toString() else size
     }
 
     /**

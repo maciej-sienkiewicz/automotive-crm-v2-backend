@@ -47,18 +47,22 @@ class DamageMapReportService(
         private val TEXT_MUTED = Color(0x64, 0x74, 0x8B)
 
         private val SYSTEM_FONTS_REGULAR = listOf(
-            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",       // Alpine Linux
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",       // Debian/Ubuntu
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            // Liberation Sans (Arial-compatible, professional) — preferred
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+            // DejaVu Sans — fallback
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         )
         private val SYSTEM_FONTS_BOLD = listOf(
-            "/usr/share/fonts/truetype/DejaVu/DejaVuSans-Bold.ttf",  // Alpine Linux
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  // Debian/Ubuntu
-            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            // Liberation Sans Bold — preferred
             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
             "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+            // DejaVu Sans Bold — fallback
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
         )
     }
 
@@ -316,16 +320,23 @@ class DamageMapReportService(
     // ─── Font loading ──────────────────────────────────────────────────────────
 
     /**
-     * Loads DejaVu Sans from the bundled classpath resource first (environment-independent),
-     * then falls back to well-known system paths, and finally to Helvetica (ASCII-only).
+     * Loads Liberation Sans from the bundled classpath resource first (environment-independent),
+     * falls back to DejaVu Sans, then well-known system paths, and finally to Helvetica (ASCII-only).
+     * Liberation Sans is Arial-compatible and renders more professionally in client-facing documents.
      */
     private fun loadFont(doc: PDDocument, bold: Boolean): PDFont {
-        val classpathName = if (bold) "/fonts/DejaVuSans-Bold.ttf" else "/fonts/DejaVuSans.ttf"
-        javaClass.getResourceAsStream(classpathName)?.use { stream ->
-            runCatching {
-                return PDType0Font.load(doc, stream, false)
-            }.onFailure {
-                logger.warn("Could not load classpath font '$classpathName': ${it.message}")
+        val classpathFonts = if (bold) {
+            listOf("/fonts/LiberationSans-Bold.ttf", "/fonts/DejaVuSans-Bold.ttf")
+        } else {
+            listOf("/fonts/LiberationSans-Regular.ttf", "/fonts/DejaVuSans.ttf")
+        }
+        for (classpathName in classpathFonts) {
+            javaClass.getResourceAsStream(classpathName)?.use { stream ->
+                runCatching {
+                    return PDType0Font.load(doc, stream, false)
+                }.onFailure {
+                    logger.warn("Could not load classpath font '$classpathName': ${it.message}")
+                }
             }
         }
 
