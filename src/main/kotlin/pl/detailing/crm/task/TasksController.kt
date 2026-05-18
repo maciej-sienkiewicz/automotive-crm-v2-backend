@@ -45,14 +45,21 @@ class TasksController(
      * GET /api/v1/tasks/archive
      */
     @GetMapping("/archive")
-    fun getArchivedTasks(): ResponseEntity<List<ArchivedTaskDto>> = runBlocking {
+    fun getArchivedTasks(
+        @RequestParam(defaultValue = "1") page: Int,
+        @RequestParam(defaultValue = "20") size: Int
+    ): ResponseEntity<ArchivedTasksPage> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val tasks = listArchivedTasksHandler.handle(
-            ListArchivedTasksQuery(studioId = principal.studioId)
+        val result = listArchivedTasksHandler.handle(
+            ListArchivedTasksQuery(
+                studioId = principal.studioId,
+                page = maxOf(1, page),
+                pageSize = maxOf(1, minOf(100, size))
+            )
         )
 
-        ResponseEntity.ok(tasks)
+        ResponseEntity.ok(result)
     }
 
     /**

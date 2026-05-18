@@ -23,6 +23,18 @@ data class ArchivedTaskDto(
     val deletedByUserName: String?
 )
 
+data class TaskPagination(
+    val total: Int,
+    val page: Int,
+    val pageSize: Int,
+    val totalPages: Int
+)
+
+data class ArchivedTasksPage(
+    val items: List<ArchivedTaskDto>,
+    val pagination: TaskPagination
+)
+
 fun Task.toDto(): TaskDto = TaskDto(
     id = this.id.toString(),
     title = this.title,
