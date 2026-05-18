@@ -5,7 +5,8 @@ import pl.detailing.crm.shared.StudioId
 
 data class GenerateQuoteReplyCommand(
     val leadId: LeadId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    val userName: String
 )
 
 data class GenerateQuoteReplyResult(

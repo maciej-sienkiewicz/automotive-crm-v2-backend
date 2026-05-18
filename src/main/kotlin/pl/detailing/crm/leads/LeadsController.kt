@@ -561,7 +561,8 @@ class LeadsController(
 
         val command = GenerateQuoteReplyCommand(
             leadId = LeadId.fromString(id),
-            studioId = principal.studioId
+            studioId = principal.studioId,
+            userName = principal.fullName
         )
 
         val result = generateQuoteReplyHandler.handle(command)
