@@ -35,7 +35,10 @@ class CreateTaskHandler(
                 meta = command.meta?.trim()?.ifBlank { null },
                 done = false,
                 createdAt = Instant.now(),
-                updatedAt = Instant.now()
+                updatedAt = Instant.now(),
+                completedAt = null,
+                deletedAt = null,
+                deletedByUserId = null
             )
 
             taskRepository.save(TaskEntity.fromDomain(task))
