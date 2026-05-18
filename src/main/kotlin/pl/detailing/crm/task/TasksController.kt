@@ -81,7 +81,7 @@ class TasksController(
             )
         )
 
-        ResponseEntity.status(HttpStatus.CREATED).body(task.toDto())
+        ResponseEntity.status(HttpStatus.CREATED).body(task.toDto(createdByUserName = principal.fullName))
     }
 
     /**

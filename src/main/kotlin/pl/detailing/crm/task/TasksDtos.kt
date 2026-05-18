@@ -1,5 +1,6 @@
 package pl.detailing.crm.task
 
+import pl.detailing.crm.task.domain.Task
 import java.time.Instant
 
 data class TaskDto(
@@ -39,6 +40,20 @@ data class ArchivedTasksPage(
 )
 
 
+
+fun Task.toDto(
+    createdByUserName: String? = null,
+    completedByUserName: String? = null
+): TaskDto = TaskDto(
+    id = id.value.toString(),
+    title = title,
+    meta = meta,
+    done = done,
+    createdAt = createdAt,
+    createdByUserName = createdByUserName,
+    completedAt = completedAt,
+    completedByUserName = completedByUserName
+)
 
 data class CreateTaskRequest(
     val title: String,
