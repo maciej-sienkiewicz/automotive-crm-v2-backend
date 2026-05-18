@@ -134,7 +134,10 @@ class PdfProcessingService(
     private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
-                val acroForm: PDAcroForm? = document.documentCatalog.acroForm
+                // Pass null fixup to skip AcroFormDefaultFixup, which would otherwise trigger
+                // PDFBox's FileSystemFontProvider to scan all system fonts (hundreds of files,
+                // several seconds of delay). We set up our own font immediately after.
+                val acroForm: PDAcroForm? = document.documentCatalog.getAcroForm(null)
 
                 if (acroForm == null) {
                     throw IllegalArgumentException("PDF does not contain an AcroForm")
