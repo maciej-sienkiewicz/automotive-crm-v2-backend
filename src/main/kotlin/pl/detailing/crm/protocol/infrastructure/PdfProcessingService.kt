@@ -33,7 +33,7 @@ class PdfProcessingService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        private const val MAX_FIELD_FONT_SIZE = 9f
+        private const val MAX_FIELD_FONT_SIZE = 7f
     }
 
     /**
