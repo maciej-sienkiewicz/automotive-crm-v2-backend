@@ -8,7 +8,19 @@ data class TaskDto(
     val title: String,
     val meta: String?,
     val done: Boolean,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val completedAt: Instant?
+)
+
+data class ArchivedTaskDto(
+    val id: String,
+    val title: String,
+    val meta: String?,
+    val done: Boolean,
+    val createdAt: Instant,
+    val completedAt: Instant?,
+    val deletedAt: Instant,
+    val deletedByUserId: String?
 )
 
 fun Task.toDto(): TaskDto = TaskDto(
@@ -16,7 +28,19 @@ fun Task.toDto(): TaskDto = TaskDto(
     title = this.title,
     meta = this.meta,
     done = this.done,
-    createdAt = this.createdAt
+    createdAt = this.createdAt,
+    completedAt = this.completedAt
+)
+
+fun Task.toArchivedDto(): ArchivedTaskDto = ArchivedTaskDto(
+    id = this.id.toString(),
+    title = this.title,
+    meta = this.meta,
+    done = this.done,
+    createdAt = this.createdAt,
+    completedAt = this.completedAt,
+    deletedAt = this.deletedAt!!,
+    deletedByUserId = this.deletedByUserId?.toString()
 )
 
 data class CreateTaskRequest(

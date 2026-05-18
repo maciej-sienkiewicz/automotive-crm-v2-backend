@@ -30,6 +30,10 @@ class UpdateTaskHandler(
                 throw ForbiddenException("Zadanie nie należy do tego studia")
             }
 
+            if (entity.deletedAt != null) {
+                throw EntityNotFoundException("Zadanie nie zostało znalezione: ${command.taskId}")
+            }
+
             if (command.title != null && command.title.isBlank()) {
                 throw ValidationException("Tytuł zadania nie może być pusty")
             }
@@ -42,7 +46,14 @@ class UpdateTaskHandler(
 
             command.title?.let { entity.title = it.trim() }
             command.meta?.let { entity.meta = it.trim().ifBlank { null } }
-            command.done?.let { entity.done = it }
+            command.done?.let { newDone ->
+                if (newDone && !entity.done) {
+                    entity.completedAt = Instant.now()
+                } else if (!newDone && entity.done) {
+                    entity.completedAt = null
+                }
+                entity.done = newDone
+            }
             entity.updatedAt = Instant.now()
 
             taskRepository.save(entity)

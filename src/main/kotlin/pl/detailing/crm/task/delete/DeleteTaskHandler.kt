@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.task.infrastructure.TaskRepository
+import java.time.Instant
 
 @Service
 class DeleteTaskHandler(
@@ -25,8 +26,15 @@ class DeleteTaskHandler(
                 throw ForbiddenException("Zadanie nie należy do tego studia")
             }
 
-            taskRepository.delete(entity)
+            if (entity.deletedAt != null) {
+                throw EntityNotFoundException("Zadanie nie zostało znalezione: ${command.taskId}")
+            }
 
-            log.info("[TASKS] Deleted task: taskId={}, studioId={}", command.taskId.value, command.studioId.value)
+            entity.deletedAt = Instant.now()
+            entity.deletedByUserId = command.userId.value
+            entity.updatedAt = Instant.now()
+            taskRepository.save(entity)
+
+            log.info("[TASKS] Archived task: taskId={}, studioId={}, deletedBy={}", command.taskId.value, command.studioId.value, command.userId.value)
         }
 }

@@ -13,7 +13,8 @@ import java.util.UUID
     name = "tasks",
     indexes = [
         Index(name = "idx_tasks_studio_created", columnList = "studio_id, created_at"),
-        Index(name = "idx_tasks_studio_done", columnList = "studio_id, done")
+        Index(name = "idx_tasks_studio_done", columnList = "studio_id, done"),
+        Index(name = "idx_tasks_studio_deleted", columnList = "studio_id, deleted_at")
     ]
 )
 class TaskEntity(
@@ -40,7 +41,16 @@ class TaskEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
-    var updatedAt: Instant = Instant.now()
+    var updatedAt: Instant = Instant.now(),
+
+    @Column(name = "completed_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var completedAt: Instant? = null,
+
+    @Column(name = "deleted_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var deletedAt: Instant? = null,
+
+    @Column(name = "deleted_by_user_id", nullable = true, columnDefinition = "uuid")
+    var deletedByUserId: UUID? = null
 ) {
     fun toDomain(): Task = Task(
         id = TaskId(id),
@@ -50,7 +60,10 @@ class TaskEntity(
         meta = meta,
         done = done,
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        completedAt = completedAt,
+        deletedAt = deletedAt,
+        deletedByUserId = deletedByUserId?.let { UserId(it) }
     )
 
     companion object {
@@ -62,7 +75,10 @@ class TaskEntity(
             meta = task.meta,
             done = task.done,
             createdAt = task.createdAt,
-            updatedAt = task.updatedAt
+            updatedAt = task.updatedAt,
+            completedAt = task.completedAt,
+            deletedAt = task.deletedAt,
+            deletedByUserId = task.deletedByUserId?.value
         )
     }
 }

@@ -7,5 +7,7 @@ import java.util.UUID
 @Repository
 interface TaskRepository : JpaRepository<TaskEntity, UUID> {
 
-    fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<TaskEntity>
+    fun findByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(studioId: UUID): List<TaskEntity>
+
+    fun findByStudioIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(studioId: UUID): List<TaskEntity>
 }

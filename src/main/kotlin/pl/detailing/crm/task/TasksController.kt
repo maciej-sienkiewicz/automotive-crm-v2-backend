@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.TaskId
+import pl.detailing.crm.task.archive.ListArchivedTasksHandler
+import pl.detailing.crm.task.archive.ListArchivedTasksQuery
 import pl.detailing.crm.task.create.CreateTaskCommand
 import pl.detailing.crm.task.create.CreateTaskHandler
 import pl.detailing.crm.task.delete.DeleteTaskCommand
@@ -21,7 +23,8 @@ class TasksController(
     private val listTasksHandler: ListTasksHandler,
     private val createTaskHandler: CreateTaskHandler,
     private val updateTaskHandler: UpdateTaskHandler,
-    private val deleteTaskHandler: DeleteTaskHandler
+    private val deleteTaskHandler: DeleteTaskHandler,
+    private val listArchivedTasksHandler: ListArchivedTasksHandler
 ) {
 
     /**
@@ -36,6 +39,20 @@ class TasksController(
         )
 
         ResponseEntity.ok(tasks.map { it.toDto() })
+    }
+
+    /**
+     * GET /api/v1/tasks/archive
+     */
+    @GetMapping("/archive")
+    fun getArchivedTasks(): ResponseEntity<List<ArchivedTaskDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val tasks = listArchivedTasksHandler.handle(
+            ListArchivedTasksQuery(studioId = principal.studioId)
+        )
+
+        ResponseEntity.ok(tasks.map { it.toArchivedDto() })
     }
 
     /**
@@ -93,7 +110,8 @@ class TasksController(
         deleteTaskHandler.handle(
             DeleteTaskCommand(
                 taskId = TaskId.fromString(id),
-                studioId = principal.studioId
+                studioId = principal.studioId,
+                userId = principal.userId
             )
         )
 

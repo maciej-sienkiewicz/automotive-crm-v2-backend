@@ -13,5 +13,8 @@ data class Task(
     val meta: String?,
     val done: Boolean,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val completedAt: Instant?,
+    val deletedAt: Instant?,
+    val deletedByUserId: UserId?
 )
