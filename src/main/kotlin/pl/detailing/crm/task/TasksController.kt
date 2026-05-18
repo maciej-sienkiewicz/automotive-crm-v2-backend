@@ -52,7 +52,7 @@ class TasksController(
             ListArchivedTasksQuery(studioId = principal.studioId)
         )
 
-        ResponseEntity.ok(tasks.map { it.toArchivedDto() })
+        ResponseEntity.ok(tasks)
     }
 
     /**

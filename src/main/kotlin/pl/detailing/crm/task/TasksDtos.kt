@@ -20,7 +20,7 @@ data class ArchivedTaskDto(
     val createdAt: Instant,
     val completedAt: Instant?,
     val deletedAt: Instant,
-    val deletedByUserId: String?
+    val deletedByUserName: String?
 )
 
 fun Task.toDto(): TaskDto = TaskDto(
@@ -32,16 +32,6 @@ fun Task.toDto(): TaskDto = TaskDto(
     completedAt = this.completedAt
 )
 
-fun Task.toArchivedDto(): ArchivedTaskDto = ArchivedTaskDto(
-    id = this.id.toString(),
-    title = this.title,
-    meta = this.meta,
-    done = this.done,
-    createdAt = this.createdAt,
-    completedAt = this.completedAt,
-    deletedAt = this.deletedAt!!,
-    deletedByUserId = this.deletedByUserId?.toString()
-)
 
 data class CreateTaskRequest(
     val title: String,
