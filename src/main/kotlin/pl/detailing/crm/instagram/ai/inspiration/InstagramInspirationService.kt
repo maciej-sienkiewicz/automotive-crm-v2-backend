@@ -55,7 +55,6 @@ class InstagramInspirationService(
      * @param studioId    Identyfikator studia (filtrowanie per-tenant)
      * @param postTone    Preferowany ton posta (opcjonalny)
      * @param postLength  Preferowana długość posta (opcjonalny)
-     * @param serviceType Rodzaj usługi (opcjonalny)
      * @param styleNotes  Reguły stylistyczne (nadrzędne wobec przykładów)
      */
     suspend fun getInspirationContext(
@@ -63,12 +62,11 @@ class InstagramInspirationService(
         studioId: StudioId,
         postTone: String? = null,
         postLength: String? = null,
-        serviceType: String? = null,
         styleNotes: List<String> = emptyList()
     ): InstagramInspirationContext = coroutineScope {
         logger.info(
-            "Fetching inspiration: topic='{}', studioId={}, tone={}, length={}, service={}",
-            topic, studioId, postTone, postLength, serviceType
+            "Fetching inspiration: topic='{}', studioId={}, tone={}, length={}",
+            topic, studioId, postTone, postLength
         )
 
         // Przykłady negatywne: per-studio, bez filtrów ton/długość
@@ -84,7 +82,7 @@ class InstagramInspirationService(
         // Przykłady pozytywne: warstwowe fallbacki
         val likedDeferred = async {
             withContext(Dispatchers.IO) {
-                resolvePositiveExamples(topic, studioId, postTone, postLength, serviceType)
+                resolvePositiveExamples(topic, studioId, postTone, postLength)
             }
         }
 
@@ -112,16 +110,15 @@ class InstagramInspirationService(
         topic: String,
         studioId: StudioId,
         tone: String?,
-        length: String?,
-        service: String?
+        length: String?
     ): Pair<List<String>, FallbackInfo> {
 
         val hasToneOrLength = tone != null || length != null
 
-        // Level 1: LIKED + studio + ton + długość + usługa (ideał)
-        if (hasToneOrLength && service != null) {
+        // Level 1: LIKED + studio + ton + długość (ideał)
+        if (hasToneOrLength) {
             val results = similaritySearch(topic, LIKED_TOP_K,
-                buildFilter(InstagramPostReaction.LIKED.name, studioId, tone, length, service))
+                buildFilter(InstagramPostReaction.LIKED.name, studioId, tone, length, null))
             if (results.size >= MIN_RESULTS_THRESHOLD) {
                 logger.debug("Level 1 (ideal): {} results", results.size)
                 return results to FallbackInfo.ideal()
@@ -129,38 +126,27 @@ class InstagramInspirationService(
             logger.debug("Level 1: {} results, trying level 2...", results.size)
         }
 
-        // Level 2: LIKED + studio + ton + długość (bez usługi)
-        if (hasToneOrLength) {
-            val results = similaritySearch(topic, LIKED_TOP_K,
-                buildFilter(InstagramPostReaction.LIKED.name, studioId, tone, length, null))
-            if (results.size >= MIN_RESULTS_THRESHOLD) {
-                logger.debug("Level 2 (relax service): {} results", results.size)
-                return results to FallbackInfo.relaxService()
-            }
-            logger.debug("Level 2: {} results, trying level 3...", results.size)
-        }
-
-        // Level 3: LIKED + ton + długość globalnie (bez filtra studia)
+        // Level 2: LIKED + ton + długość globalnie (bez filtra studia)
         if (hasToneOrLength) {
             val results = similaritySearch(topic, LIKED_TOP_K,
                 buildFilter(InstagramPostReaction.LIKED.name, null, tone, length, null))
             if (results.size >= MIN_RESULTS_THRESHOLD) {
-                logger.debug("Level 3 (global tone): {} results", results.size)
+                logger.debug("Level 2 (global tone): {} results", results.size)
                 return results to FallbackInfo.globalTone()
             }
-            logger.debug("Level 3: {} results, trying level 4...", results.size)
+            logger.debug("Level 2: {} results, trying level 3...", results.size)
         }
 
-        // Level 4: LIKED + studio (ogólne preferencje)
+        // Level 3: LIKED + studio (ogólne preferencje)
         val results = similaritySearch(topic, LIKED_TOP_K,
             buildFilter(InstagramPostReaction.LIKED.name, studioId, null, null, null))
         if (results.isNotEmpty()) {
-            logger.debug("Level 4 (studio only): {} results", results.size)
+            logger.debug("Level 3 (studio only): {} results", results.size)
             return results to FallbackInfo.studioOnly()
         }
 
-        // Level 5: brak przykładów
-        logger.info("Level 5: no positive examples found for studioId={}", studioId)
+        // Level 4: brak przykładów
+        logger.info("Level 4: no positive examples found for studioId={}", studioId)
         return emptyList<String>() to FallbackInfo.empty()
     }
 

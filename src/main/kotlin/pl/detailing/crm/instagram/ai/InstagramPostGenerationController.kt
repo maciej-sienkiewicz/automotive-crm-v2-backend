@@ -50,8 +50,8 @@ class InstagramPostGenerationController(
 
         val principal = SecurityContextHelper.getCurrentUser()
         logger.info(
-            "Generate request: studioId={}, topic='{}', tone={}, length={}, service={}",
-            principal.studioId, request.topic, request.postTone, request.postLength, request.serviceType
+            "Generate request: studioId={}, topic='{}', tone={}, length={}",
+            principal.studioId, request.topic, request.postTone, request.postLength
         )
 
         val inspirationContext = inspirationService.getInspirationContext(
@@ -59,7 +59,6 @@ class InstagramPostGenerationController(
             studioId = principal.studioId,
             postTone = request.postTone,
             postLength = request.postLength,
-            serviceType = request.serviceType,
             styleNotes = request.styleNotes ?: emptyList()
         )
 
@@ -94,7 +93,6 @@ class InstagramPostGenerationController(
             studioId = principal.studioId,
             postTone = request.postTone,
             postLength = request.postLength,
-            serviceType = request.serviceType,
             styleNotes = request.styleNotes ?: emptyList()
         )
 

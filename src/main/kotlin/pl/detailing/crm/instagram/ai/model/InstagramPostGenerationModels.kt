@@ -9,7 +9,6 @@ package pl.detailing.crm.instagram.ai.model
  * @param context        Dodatkowy kontekst (np. opis realizacji, specyfika klienta)
  * @param postTone       Preferowany ton: premium | technical | emotional | casual
  * @param postLength     Preferowana długość: short | full
- * @param serviceType    Rodzaj usługi: ppf | ceramic | detailing | interior | wrap | polish | other
  * @param styleNotes     Reguły stylistyczne nadrzędne wobec przykładów few-shot,
  *                       np. ["Nie używaj emoji", "Pisz po angielsku"]
  */
@@ -18,7 +17,6 @@ data class GenerateInstagramPostRequest(
     val context: String? = null,
     val postTone: String? = null,
     val postLength: String? = null,
-    val serviceType: String? = null,
     val styleNotes: List<String>? = null
 )
 
@@ -135,11 +133,10 @@ data class InstagramInspirationContext(
 /**
  * Informacja o poziomie fallbacku w strategii warstwowego wyszukiwania.
  *
- * Level 1 – ideał: LIKED + studio + ton + długość + usługa
- * Level 2 – relaks usługi: LIKED + studio + ton + długość
- * Level 3 – globalny ton: LIKED + ton + długość (bez filtra studia)
- * Level 4 – tylko studio: LIKED + studio (bez ton/długość)
- * Level 5 – brak przykładów (LLM generuje bez few-shot)
+ * Level 1 – ideał: LIKED + studio + ton + długość
+ * Level 2 – globalny ton: LIKED + ton + długość (bez filtra studia)
+ * Level 3 – tylko studio: LIKED + studio (bez ton/długość)
+ * Level 4 – brak przykładów (LLM generuje bez few-shot)
  */
 data class FallbackInfo(
     val level: Int,
@@ -153,26 +150,20 @@ data class FallbackInfo(
             suggestion = null
         )
 
-        fun relaxService() = FallbackInfo(
-            level = 2,
-            description = "Znaleziono posty pasujące do tonu i długości studia (bez filtra usługi).",
-            suggestion = null
-        )
-
         fun globalTone() = FallbackInfo(
-            level = 3,
+            level = 2,
             description = "Brak postów studia w żądanym tonie/długości. Użyto globalnych przykładów w tym tonie.",
             suggestion = "Polub więcej postów konkurencji w żądanym tonie, żeby system lepiej się dopasował."
         )
 
         fun studioOnly() = FallbackInfo(
-            level = 4,
+            level = 3,
             description = "Brak postów w żądanym tonie (globalnie). Użyto ogólnych preferencji studia.",
             suggestion = "Polub więcej postów w żądanym tonie, żeby system nauczył się go rozróżniać."
         )
 
         fun empty() = FallbackInfo(
-            level = 5,
+            level = 4,
             description = "Brak jakichkolwiek polubionych postów. LLM generuje bez przykładów few-shot.",
             suggestion = "Zacznij oceniać posty konkurencji (LIKED/DISLIKED), żeby system nauczył się stylu Twojego studia."
         )
