@@ -17,7 +17,7 @@ interface TaskRepository : JpaRepository<TaskEntity, UUID> {
         SELECT t FROM TaskEntity t
         WHERE t.studioId = :studioId
         AND t.deletedAt IS NOT NULL
-        AND (:search IS NULL OR LOWER(t.title) LIKE LOWER(CONCAT('%', :search, '%')))
+        AND (cast(:search as string) IS NULL OR LOWER(t.title) LIKE LOWER(CONCAT('%', cast(:search as string), '%')))
     """)
     fun findArchivedByStudioId(
         @Param("studioId") studioId: UUID,
