@@ -37,6 +37,7 @@ class CreateTaskHandler(
                 createdAt = Instant.now(),
                 updatedAt = Instant.now(),
                 completedAt = null,
+                completedByUserId = null,
                 deletedAt = null,
                 deletedByUserId = null
             )

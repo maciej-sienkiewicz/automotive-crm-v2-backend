@@ -38,7 +38,7 @@ class TasksController(
             ListTasksQuery(studioId = principal.studioId)
         )
 
-        ResponseEntity.ok(tasks.map { it.toDto() })
+        ResponseEntity.ok(tasks)
     }
 
     /**

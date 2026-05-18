@@ -46,6 +46,9 @@ class TaskEntity(
     @Column(name = "completed_at", nullable = true, columnDefinition = "timestamp with time zone")
     var completedAt: Instant? = null,
 
+    @Column(name = "completed_by_user_id", nullable = true, columnDefinition = "uuid")
+    var completedByUserId: UUID? = null,
+
     @Column(name = "deleted_at", nullable = true, columnDefinition = "timestamp with time zone")
     var deletedAt: Instant? = null,
 
@@ -62,6 +65,7 @@ class TaskEntity(
         createdAt = createdAt,
         updatedAt = updatedAt,
         completedAt = completedAt,
+        completedByUserId = completedByUserId?.let { UserId(it) },
         deletedAt = deletedAt,
         deletedByUserId = deletedByUserId?.let { UserId(it) }
     )
@@ -77,6 +81,7 @@ class TaskEntity(
             createdAt = task.createdAt,
             updatedAt = task.updatedAt,
             completedAt = task.completedAt,
+            completedByUserId = task.completedByUserId?.value,
             deletedAt = task.deletedAt,
             deletedByUserId = task.deletedByUserId?.value
         )

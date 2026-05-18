@@ -15,6 +15,7 @@ data class Task(
     val createdAt: Instant,
     val updatedAt: Instant,
     val completedAt: Instant?,
+    val completedByUserId: UserId?,
     val deletedAt: Instant?,
     val deletedByUserId: UserId?
 )

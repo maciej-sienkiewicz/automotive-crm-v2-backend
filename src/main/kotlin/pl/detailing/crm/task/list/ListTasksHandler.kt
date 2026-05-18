@@ -5,23 +5,41 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.task.domain.Task
+import pl.detailing.crm.task.TaskDto
 import pl.detailing.crm.task.infrastructure.TaskRepository
+import pl.detailing.crm.user.infrastructure.UserRepository
 
 @Service
 class ListTasksHandler(
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val userRepository: UserRepository
 ) {
     private val log = LoggerFactory.getLogger(ListTasksHandler::class.java)
 
     @Transactional(readOnly = true)
-    suspend fun handle(query: ListTasksQuery): List<Task> =
+    suspend fun handle(query: ListTasksQuery): List<TaskDto> =
         withContext(Dispatchers.IO) {
-            val tasks = taskRepository.findByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(query.studioId.value)
-                .map { it.toDomain() }
+            val entities = taskRepository.findByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(query.studioId.value)
 
-            log.debug("[TASKS] Listed tasks: studioId={}, count={}", query.studioId.value, tasks.size)
+            val userIds = entities.mapNotNull { it.completedByUserId }.distinct()
+            val usersById = if (userIds.isEmpty()) emptyMap()
+                            else userRepository.findAllById(userIds).associateBy { it.id }
 
-            tasks
+            val result = entities.map { entity ->
+                val completedBy = entity.completedByUserId?.let { usersById[it] }
+                TaskDto(
+                    id = entity.id.toString(),
+                    title = entity.title,
+                    meta = entity.meta,
+                    done = entity.done,
+                    createdAt = entity.createdAt,
+                    completedAt = entity.completedAt,
+                    completedByUserName = completedBy?.let { "${it.firstName} ${it.lastName}" }
+                )
+            }
+
+            log.debug("[TASKS] Listed tasks: studioId={}, count={}", query.studioId.value, result.size)
+
+            result
         }
 }

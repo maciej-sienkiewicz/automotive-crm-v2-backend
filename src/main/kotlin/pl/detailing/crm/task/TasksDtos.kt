@@ -1,6 +1,5 @@
 package pl.detailing.crm.task
 
-import pl.detailing.crm.task.domain.Task
 import java.time.Instant
 
 data class TaskDto(
@@ -9,7 +8,8 @@ data class TaskDto(
     val meta: String?,
     val done: Boolean,
     val createdAt: Instant,
-    val completedAt: Instant?
+    val completedAt: Instant?,
+    val completedByUserName: String?
 )
 
 data class ArchivedTaskDto(
@@ -19,6 +19,7 @@ data class ArchivedTaskDto(
     val done: Boolean,
     val createdAt: Instant,
     val completedAt: Instant?,
+    val completedByUserName: String?,
     val deletedAt: Instant,
     val deletedByUserName: String?
 )
@@ -35,14 +36,6 @@ data class ArchivedTasksPage(
     val pagination: TaskPagination
 )
 
-fun Task.toDto(): TaskDto = TaskDto(
-    id = this.id.toString(),
-    title = this.title,
-    meta = this.meta,
-    done = this.done,
-    createdAt = this.createdAt,
-    completedAt = this.completedAt
-)
 
 
 data class CreateTaskRequest(

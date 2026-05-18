@@ -49,8 +49,10 @@ class UpdateTaskHandler(
             command.done?.let { newDone ->
                 if (newDone && !entity.done) {
                     entity.completedAt = Instant.now()
+                    entity.completedByUserId = command.userId.value
                 } else if (!newDone && entity.done) {
                     entity.completedAt = null
+                    entity.completedByUserId = null
                 }
                 entity.done = newDone
             }
