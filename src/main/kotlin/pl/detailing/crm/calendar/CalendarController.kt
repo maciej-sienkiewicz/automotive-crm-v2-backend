@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.VisitStatus
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/calendar")
@@ -21,7 +22,9 @@ class CalendarController(
         @RequestParam(required = false) startDate: String?,
         @RequestParam(required = false) endDate: String?,
         @RequestParam(required = false) appointmentStatuses: String?,
-        @RequestParam(required = false) visitStatuses: String?
+        @RequestParam(required = false) visitStatuses: String?,
+        @RequestParam(required = false) customerId: String?,
+        @RequestParam(required = false) vehicleId: String?
     ): ResponseEntity<Any> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -78,12 +81,24 @@ class CalendarController(
             }
         }
 
+        val parsedCustomerId: UUID? = if (customerId.isNullOrBlank()) null else {
+            parseUuid(customerId)
+                ?: return@runBlocking badRequest("INVALID_UUID", "Invalid customerId: '$customerId'. Expected UUID format.", "customerId")
+        }
+
+        val parsedVehicleId: UUID? = if (vehicleId.isNullOrBlank()) null else {
+            parseUuid(vehicleId)
+                ?: return@runBlocking badRequest("INVALID_UUID", "Invalid vehicleId: '$vehicleId'. Expected UUID format.", "vehicleId")
+        }
+
         val query = GetCalendarEventsQuery(
             studioId = principal.studioId,
             startDate = startInstant,
             endDate = endInstant,
             appointmentStatuses = parsedAppointmentStatuses,
-            visitStatuses = parsedVisitStatuses
+            visitStatuses = parsedVisitStatuses,
+            customerId = parsedCustomerId,
+            vehicleId = parsedVehicleId
         )
 
         val result = getCalendarEventsHandler.handle(query)
@@ -100,6 +115,12 @@ class CalendarController(
     private fun parseInstant(value: String): Instant? = try {
         OffsetDateTime.parse(value).toInstant()
     } catch (_: DateTimeParseException) {
+        null
+    }
+
+    private fun parseUuid(value: String): UUID? = try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
         null
     }
 }

@@ -231,13 +231,17 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.status IN :statuses
         AND v.scheduledDate < :endDate
         AND COALESCE(v.estimatedCompletionDate, v.scheduledDate) >= :startDate
+        AND (:customerId IS NULL OR v.customerId = :customerId)
+        AND (:vehicleId IS NULL OR v.vehicleId = :vehicleId)
         ORDER BY v.scheduledDate ASC
     """)
     fun findForCalendar(
         @Param("studioId") studioId: UUID,
         @Param("statuses") statuses: List<pl.detailing.crm.shared.VisitStatus>,
         @Param("startDate") startDate: Instant,
-        @Param("endDate") endDate: Instant
+        @Param("endDate") endDate: Instant,
+        @Param("customerId") customerId: UUID?,
+        @Param("vehicleId") vehicleId: UUID?
     ): List<VisitEntity>
 
     /**

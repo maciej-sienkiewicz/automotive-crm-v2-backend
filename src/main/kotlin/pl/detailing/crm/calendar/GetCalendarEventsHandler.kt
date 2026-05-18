@@ -13,13 +13,16 @@ import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.VisitServiceItemEntity
 import java.time.Instant
+import java.util.UUID
 
 data class GetCalendarEventsQuery(
     val studioId: StudioId,
     val startDate: Instant,
     val endDate: Instant,
     val appointmentStatuses: List<AppointmentStatus>,
-    val visitStatuses: List<VisitStatus>
+    val visitStatuses: List<VisitStatus>,
+    val customerId: UUID? = null,
+    val vehicleId: UUID? = null
 )
 
 data class CalendarEventsResult(
@@ -41,7 +44,9 @@ class GetCalendarEventsHandler(
             studioId = query.studioId.value,
             statuses = query.appointmentStatuses,
             startDate = query.startDate,
-            endDate = query.endDate
+            endDate = query.endDate,
+            customerId = query.customerId,
+            vehicleId = query.vehicleId
         )
 
         val visits = if (query.visitStatuses.isEmpty()) emptyList()
@@ -49,7 +54,9 @@ class GetCalendarEventsHandler(
             studioId = query.studioId.value,
             statuses = query.visitStatuses,
             startDate = query.startDate,
-            endDate = query.endDate
+            endDate = query.endDate,
+            customerId = query.customerId,
+            vehicleId = query.vehicleId
         )
 
         // Batch-fetch all related entities in one round-trip per type

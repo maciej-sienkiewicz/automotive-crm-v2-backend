@@ -207,13 +207,17 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         AND a.status IN :statuses
         AND a.startDateTime < :endDate
         AND a.endDateTime > :startDate
+        AND (:customerId IS NULL OR a.customerId = :customerId)
+        AND (:vehicleId IS NULL OR a.vehicleId = :vehicleId)
         ORDER BY a.startDateTime ASC
     """)
     fun findForCalendar(
         @Param("studioId") studioId: UUID,
         @Param("statuses") statuses: List<pl.detailing.crm.appointment.domain.AppointmentStatus>,
         @Param("startDate") startDate: Instant,
-        @Param("endDate") endDate: Instant
+        @Param("endDate") endDate: Instant,
+        @Param("customerId") customerId: UUID?,
+        @Param("vehicleId") vehicleId: UUID?
     ): List<AppointmentEntity>
 
     /**
