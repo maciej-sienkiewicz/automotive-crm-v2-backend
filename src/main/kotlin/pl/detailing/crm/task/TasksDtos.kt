@@ -8,6 +8,7 @@ data class TaskDto(
     val meta: String?,
     val done: Boolean,
     val createdAt: Instant,
+    val createdByUserName: String?,
     val completedAt: Instant?,
     val completedByUserName: String?
 )
@@ -18,6 +19,7 @@ data class ArchivedTaskDto(
     val meta: String?,
     val done: Boolean,
     val createdAt: Instant,
+    val createdByUserName: String?,
     val completedAt: Instant?,
     val completedByUserName: String?,
     val deletedAt: Instant,

@@ -35,20 +35,23 @@ class ListArchivedTasksHandler(
                 pageable = pageable
             )
 
-            val userIds = (pageResult.content.mapNotNull { it.deletedByUserId } +
-                           pageResult.content.mapNotNull { it.completedByUserId }).distinct()
+            val userIds = (pageResult.content.map { it.createdByUserId } +
+                           pageResult.content.mapNotNull { it.completedByUserId } +
+                           pageResult.content.mapNotNull { it.deletedByUserId }).distinct()
             val usersById = if (userIds.isEmpty()) emptyMap()
                             else userRepository.findAllById(userIds).associateBy { it.id }
 
             val items = pageResult.content.map { entity ->
-                val deletedBy = entity.deletedByUserId?.let { usersById[it] }
+                val createdBy = usersById[entity.createdByUserId]
                 val completedBy = entity.completedByUserId?.let { usersById[it] }
+                val deletedBy = entity.deletedByUserId?.let { usersById[it] }
                 ArchivedTaskDto(
                     id = entity.id.toString(),
                     title = entity.title,
                     meta = entity.meta,
                     done = entity.done,
                     createdAt = entity.createdAt,
+                    createdByUserName = createdBy?.let { "${it.firstName} ${it.lastName}" },
                     completedAt = entity.completedAt,
                     completedByUserName = completedBy?.let { "${it.firstName} ${it.lastName}" },
                     deletedAt = entity.deletedAt!!,

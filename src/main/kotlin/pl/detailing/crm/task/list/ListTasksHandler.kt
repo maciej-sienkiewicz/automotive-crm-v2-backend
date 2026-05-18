@@ -21,11 +21,13 @@ class ListTasksHandler(
         withContext(Dispatchers.IO) {
             val entities = taskRepository.findByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(query.studioId.value)
 
-            val userIds = entities.mapNotNull { it.completedByUserId }.distinct()
+            val userIds = (entities.map { it.createdByUserId } +
+                           entities.mapNotNull { it.completedByUserId }).distinct()
             val usersById = if (userIds.isEmpty()) emptyMap()
                             else userRepository.findAllById(userIds).associateBy { it.id }
 
             val result = entities.map { entity ->
+                val createdBy = usersById[entity.createdByUserId]
                 val completedBy = entity.completedByUserId?.let { usersById[it] }
                 TaskDto(
                     id = entity.id.toString(),
@@ -33,6 +35,7 @@ class ListTasksHandler(
                     meta = entity.meta,
                     done = entity.done,
                     createdAt = entity.createdAt,
+                    createdByUserName = createdBy?.let { "${it.firstName} ${it.lastName}" },
                     completedAt = entity.completedAt,
                     completedByUserName = completedBy?.let { "${it.firstName} ${it.lastName}" }
                 )
