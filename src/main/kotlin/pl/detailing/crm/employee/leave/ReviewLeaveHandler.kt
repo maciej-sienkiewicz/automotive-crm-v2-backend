@@ -19,10 +19,10 @@ class ReviewLeaveHandler(
     @Transactional
     suspend fun handle(command: ReviewLeaveCommand) = withContext(Dispatchers.IO) {
         val entity = leaveRequestRepository.findByIdAndStudioId(command.leaveRequestId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Leave request '${command.leaveRequestId}' not found")
+            ?: throw EntityNotFoundException("Wniosek urlopowy '${command.leaveRequestId}' nie został znaleziony")
 
         if (entity.status != LeaveStatus.PENDING) {
-            throw ValidationException("Leave request is not in PENDING status")
+            throw ValidationException("Wniosek urlopowy nie ma statusu PENDING")
         }
 
         val oldStatus = entity.status

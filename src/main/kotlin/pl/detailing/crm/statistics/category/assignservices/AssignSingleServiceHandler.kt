@@ -39,10 +39,10 @@ class AssignSingleServiceHandler(
     suspend fun handle(categoryId: ServiceCategoryId, serviceId: ServiceId, studioId: StudioId) =
         withContext(Dispatchers.IO) {
             val category = serviceCategoryRepository.findByIdAndStudioId(categoryId.value, studioId.value)
-                ?: throw EntityNotFoundException("Category $categoryId not found")
+                ?: throw EntityNotFoundException("Kategoria $categoryId nie została znaleziona")
 
             if (!category.isActive) {
-                throw ConflictException("Category ${category.name} is inactive")
+                throw ConflictException("Kategoria ${category.name} jest nieaktywna")
             }
 
             // Determine whether the UUID refers to a catalog service or a manual service.
@@ -52,7 +52,7 @@ class AssignSingleServiceHandler(
                 assignCatalogService(serviceId.value, categoryId.value, studioId.value)
             } else {
                 val manualService = manualServiceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
-                    ?: throw EntityNotFoundException("Service $serviceId not found")
+                    ?: throw EntityNotFoundException("Usługa $serviceId nie została znaleziona")
                 assignManualService(manualService.id, categoryId.value, studioId.value)
             }
         }
@@ -106,7 +106,7 @@ class AssignSingleServiceHandler(
         var currentId = serviceId
         while (true) {
             val svc = serviceRepository.findByIdAndStudioId(currentId, studioId)
-                ?: throw EntityNotFoundException("Service $currentId not found in studio")
+                ?: throw EntityNotFoundException("Usługa $currentId nie została znaleziona w studiu")
             if (svc.replacesServiceId == null) return currentId
             currentId = svc.replacesServiceId!!
         }

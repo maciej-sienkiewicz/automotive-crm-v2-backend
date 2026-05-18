@@ -51,10 +51,10 @@ class AddBonusHandler(
     @Transactional
     suspend fun handle(command: AddBonusCommand): BonusEntryId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot add a bonus for a terminated employee")
+            throw ValidationException("Nie można dodać premii dla zwolnionego pracownika")
         }
 
         val bonus = BonusEntry(
@@ -121,10 +121,10 @@ class DeleteBonusHandler(
     @Transactional
     suspend fun handle(command: DeleteBonusCommand) = withContext(Dispatchers.IO) {
         val entity = bonusRepository.findByIdAndStudioId(command.bonusEntryId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Bonus entry '${command.bonusEntryId}' not found")
+            ?: throw EntityNotFoundException("Wpis premiowy '${command.bonusEntryId}' nie został znaleziony")
 
         if (entity.status == BonusEntryStatus.INCLUDED_IN_PAYROLL) {
-            throw ValidationException("Cannot delete a bonus that has already been included in a payroll run. Void the payroll entry first.")
+            throw ValidationException("Nie można usunąć premii, która została już uwzględniona w liście płac. Najpierw anuluj wpis listy płac.")
         }
 
         bonusRepository.delete(entity)

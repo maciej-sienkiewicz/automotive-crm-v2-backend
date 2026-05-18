@@ -31,8 +31,8 @@ class ManualPriceRequiredValidator {
                 .joinToString(", ")
 
             throw ValidationException(
-                "The following services require manual price input: $serviceNames. " +
-                "Please provide an explicit price for each service."
+                "Następujące usługi wymagają ręcznego podania ceny: $serviceNames. " +
+                "Proszę podać jawną cenę dla każdej usługi."
             )
         }
     }

@@ -8,11 +8,11 @@ import pl.detailing.crm.shared.ValidationException
 class ContactUniquenessValidator {
     fun validate(context: CreateCustomerValidationContext) {
         if (context.emailExists) {
-            throw ValidationException("Customer with email '${context.email}' already exists in this studio")
+            throw ValidationException("Klient z adresem email '${context.email}' już istnieje w tym studiu")
         }
 
         if (context.phoneExists) {
-            throw ValidationException("Customer with phone '${context.phone}' already exists in this studio")
+            throw ValidationException("Klient z numerem telefonu '${context.phone}' już istnieje w tym studiu")
         }
     }
 }

@@ -8,15 +8,15 @@ import pl.detailing.crm.shared.ValidationException
 class ColorNameValidator {
     fun validate(context: CreateAppointmentColorValidationContext) {
         if (context.name.isBlank()) {
-            throw ValidationException("Color name cannot be empty")
+            throw ValidationException("Nazwa koloru nie może być pusta")
         }
 
         if (context.name.length > 100) {
-            throw ValidationException("Color name cannot exceed 100 characters")
+            throw ValidationException("Nazwa koloru nie może przekraczać 100 znaków")
         }
 
         if (context.nameAlreadyExists) {
-            throw ValidationException("A color with this name already exists in your studio")
+            throw ValidationException("Kolor o tej nazwie już istnieje w Twoim studiu")
         }
     }
 }

@@ -24,7 +24,7 @@ class AssignOwnerHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             command.vehicleId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found with id: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony, id: ${command.vehicleId}")
 
         // Check if owner already assigned
         val alreadyAssigned = vehicleOwnerRepository.existsByVehicleIdAndCustomerId(
@@ -33,7 +33,7 @@ class AssignOwnerHandler(
         )
 
         if (alreadyAssigned) {
-            throw ValidationException("Customer is already assigned as an owner to this vehicle")
+            throw ValidationException("Klient jest już przypisany jako właściciel tego pojazdu")
         }
 
         val vehicleOwner = VehicleOwner(

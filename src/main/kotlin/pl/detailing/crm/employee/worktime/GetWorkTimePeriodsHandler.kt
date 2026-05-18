@@ -23,7 +23,7 @@ class GetWorkTimePeriodsHandler(
     suspend fun handle(employeeId: EmployeeId, studioId: StudioId): List<WorkTimePeriodSummary> =
         withContext(Dispatchers.IO) {
             employeeRepository.findByIdAndStudioId(employeeId.value, studioId.value)
-                ?: throw EntityNotFoundException("Employee '$employeeId' not found")
+                ?: throw EntityNotFoundException("Pracownik '$employeeId' nie został znaleziony")
 
             val entries = workTimeRepository.findByEmployeeIdAndStudioId(employeeId.value, studioId.value)
                 .map { it.toDomain() }

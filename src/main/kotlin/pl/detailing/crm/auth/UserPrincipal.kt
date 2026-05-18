@@ -43,11 +43,11 @@ object SecurityContextHelper {
 
     fun getCurrentUser(): UserPrincipal {
         val authentication = SecurityContextHolder.getContext().authentication
-            ?: throw UnauthorizedException("No authentication found")
+            ?: throw UnauthorizedException("Brak uwierzytelnienia")
 
         return when (authentication) {
             is UserPrincipal -> authentication
-            else -> throw UnauthorizedException("Invalid authentication type")
+            else -> throw UnauthorizedException("Nieprawidłowy typ uwierzytelnienia")
         }
     }
 

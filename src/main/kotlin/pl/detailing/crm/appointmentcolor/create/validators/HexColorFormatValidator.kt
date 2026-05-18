@@ -10,7 +10,7 @@ class HexColorFormatValidator {
 
     fun validate(context: CreateAppointmentColorValidationContext) {
         if (!hexColorPattern.matches(context.hexColor)) {
-            throw ValidationException("Invalid hex color format. Expected format: #RRGGBB (e.g., #FF0000)")
+            throw ValidationException("Nieprawidłowy format koloru hex. Oczekiwany format: #RRGGBB (np. #FF0000)")
         }
     }
 }

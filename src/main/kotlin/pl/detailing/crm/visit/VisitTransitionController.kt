@@ -47,7 +47,7 @@ class VisitTransitionController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can mark visit as ready for pickup")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą oznaczyć wizytę jako gotową do odbioru")
         }
 
         val command = MarkVisitReadyForPickupCommand(
@@ -89,7 +89,7 @@ class VisitTransitionController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can complete visit")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zakończyć wizytę")
         }
 
         val paymentMethod = parsePaymentMethod(request.payment.method)
@@ -136,7 +136,7 @@ class VisitTransitionController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can reject visit")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą odrzucić wizytę")
         }
 
         val command = RejectVisitCommand(
@@ -170,7 +170,7 @@ class VisitTransitionController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER) {
-            throw ForbiddenException("Only OWNER can archive visit")
+            throw ForbiddenException("Tylko właściciel może archiwizować wizyty")
         }
 
         val command = ArchiveVisitCommand(

@@ -35,11 +35,11 @@ class ConfirmVisitHandler(
             val visitEntity = visitRepository.findByIdAndStudioId(
                 command.visitId.value,
                 command.studioId.value
-            ) ?: throw EntityNotFoundException("Visit not found")
+            ) ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
 
             // Validate visit is in DRAFT status (check directly on entity to avoid lazy loading issues)
             if (visitEntity.status != VisitStatus.DRAFT) {
-                throw ValidationException("Only DRAFT visits can be confirmed. Current status: ${visitEntity.status}")
+                throw ValidationException("Potwierdzić można tylko wizyty o statusie DRAFT. Aktualny status: ${visitEntity.status}")
             }
 
             // Update visit status to IN_PROGRESS

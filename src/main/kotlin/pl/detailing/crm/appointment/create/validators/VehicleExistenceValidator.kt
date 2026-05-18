@@ -12,14 +12,14 @@ class VehicleExistenceValidator {
             is VehicleIdentity.Existing -> {
                 if (context.existingVehicle == null) {
                     throw EntityNotFoundException(
-                        "Vehicle with ID '${identity.vehicleId}' not found in this studio"
+                        "Pojazd o ID '${identity.vehicleId}' nie został znaleziony w tym studiu"
                     )
                 }
             }
             is VehicleIdentity.Update -> {
                 if (context.existingVehicle == null) {
                     throw EntityNotFoundException(
-                        "Vehicle with ID '${identity.vehicleId}' not found in this studio"
+                        "Pojazd o ID '${identity.vehicleId}' nie został znaleziony w tym studiu"
                     )
                 }
             }

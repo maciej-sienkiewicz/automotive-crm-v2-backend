@@ -38,7 +38,7 @@ class SaveWorkTimePeriodHandler(
     @Transactional
     suspend fun handle(command: SaveWorkTimePeriodCommand) = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         val periodFrom = command.period.atDay(1)
         val periodTo = command.period.atEndOfMonth()
@@ -48,7 +48,7 @@ class SaveWorkTimePeriodHandler(
         val invalidDates = allDates.filter { it.isBefore(periodFrom) || it.isAfter(periodTo) }
         if (invalidDates.isNotEmpty()) {
             throw UnprocessableEntityException(
-                "Dates $invalidDates do not belong to period ${command.period}"
+                "Daty $invalidDates nie należą do okresu ${command.period}"
             )
         }
 
@@ -56,7 +56,7 @@ class SaveWorkTimePeriodHandler(
         val invalidRegular = command.regularEntries.filter { it.hours <= BigDecimal.ZERO }
         val invalidBenefit = command.benefitEntries.filter { it.hours <= BigDecimal.ZERO }
         if (invalidRegular.isNotEmpty() || invalidBenefit.isNotEmpty()) {
-            throw ValidationException("All hours values must be greater than 0")
+            throw ValidationException("Wszystkie wartości godzin muszą być większe od 0")
         }
 
         // Load all entries for this period
@@ -66,7 +66,7 @@ class SaveWorkTimePeriodHandler(
 
         // 409: the whole period is approved (all entries are APPROVED, none PENDING)
         if (allPeriodEntries.isNotEmpty() && allPeriodEntries.all { it.status == WorkTimeStatus.APPROVED }) {
-            throw ConflictException("Period ${command.period} is already fully approved and cannot be modified")
+            throw ConflictException("Okres ${command.period} jest już w pełni zatwierdzony i nie można go modyfikować")
         }
 
         val pendingEntries = allPeriodEntries.filter { it.status == WorkTimeStatus.PENDING }

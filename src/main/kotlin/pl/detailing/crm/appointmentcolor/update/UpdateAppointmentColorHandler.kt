@@ -22,7 +22,7 @@ class UpdateAppointmentColorHandler(
             val entity = appointmentColorRepository.findByIdAndStudioId(
                 command.colorId.value,
                 command.studioId.value
-            ) ?: throw EntityNotFoundException("Appointment color not found")
+            ) ?: throw EntityNotFoundException("Kolor rezerwacji nie został znaleziony")
 
             entity.name = command.name
             entity.hexColor = command.hexColor

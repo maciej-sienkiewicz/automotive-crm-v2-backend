@@ -23,16 +23,16 @@ class UpdateLeadHandler(
         withContext(Dispatchers.IO) {
             // Find lead
             val entity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             // Verify studio ownership
             if (entity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             // Validate estimated value if provided
             if (command.estimatedValue != null && command.estimatedValue < 0) {
-                throw ValidationException("Estimated value cannot be negative")
+                throw ValidationException("Szacowana wartość nie może być ujemna")
             }
 
             // Capture old values for audit

@@ -35,7 +35,7 @@ class AssignServicesHandler(
         serviceCategoryRepository.findByIdAndStudioId(
             command.categoryId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Category ${command.categoryId} not found")
+        ) ?: throw EntityNotFoundException("Kategoria ${command.categoryId} nie została znaleziona")
 
         // Classify each UUID as catalog or manual
         val catalogRootIds = mutableSetOf<UUID>()
@@ -47,7 +47,7 @@ class AssignServicesHandler(
                 catalogRootIds.add(resolveRootServiceId(serviceId.value, command.studioId.value))
             } else {
                 manualServiceRepository.findByIdAndStudioId(serviceId.value, command.studioId.value)
-                    ?: throw EntityNotFoundException("Service ${serviceId.value} not found in studio")
+                    ?: throw EntityNotFoundException("Usługa ${serviceId.value} nie została znaleziona w studiu")
                 manualIds.add(serviceId.value)
             }
         }
@@ -95,7 +95,7 @@ class AssignServicesHandler(
         var currentId = serviceId
         while (true) {
             val service = serviceRepository.findByIdAndStudioId(currentId, studioId)
-                ?: throw EntityNotFoundException("Service $currentId not found in studio")
+                ?: throw EntityNotFoundException("Usługa $currentId nie została znaleziona w studiu")
             if (service.replacesServiceId == null) return currentId
             currentId = service.replacesServiceId!!
         }

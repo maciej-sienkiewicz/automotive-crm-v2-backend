@@ -83,7 +83,7 @@ class AppointmentColorController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create appointment colors")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć kolory rezerwacji")
         }
 
         val command = CreateAppointmentColorCommand(
@@ -110,7 +110,7 @@ class AppointmentColorController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update appointment colors")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować kolory rezerwacji")
         }
 
         val colorId = AppointmentColorId.fromString(id)
@@ -135,7 +135,7 @@ class AppointmentColorController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete appointment colors")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać kolory rezerwacji")
         }
 
         val colorId = AppointmentColorId.fromString(id)

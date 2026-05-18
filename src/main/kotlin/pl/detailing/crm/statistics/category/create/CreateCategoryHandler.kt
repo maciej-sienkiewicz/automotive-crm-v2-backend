@@ -17,20 +17,20 @@ class CreateCategoryHandler(
         val trimmedName = command.name.trim()
 
         if (trimmedName.isBlank()) {
-            throw ValidationException("Category name cannot be blank")
+            throw ValidationException("Nazwa kategorii nie może być pusta")
         }
         if (trimmedName.length > 200) {
-            throw ValidationException("Category name cannot exceed 200 characters")
+            throw ValidationException("Nazwa kategorii nie może przekraczać 200 znaków")
         }
         if (command.color != null && !command.color.matches(Regex("^#[0-9A-Fa-f]{6}$"))) {
-            throw ValidationException("Color must be a valid hex code, e.g. #1A2B3C")
+            throw ValidationException("Kolor musi być prawidłowym kodem hex, np. #1A2B3C")
         }
 
         val existing = serviceCategoryRepository.findActiveByStudioIdAndName(
             command.studioId.value, trimmedName
         )
         if (existing != null) {
-            throw ValidationException("A category with name '${trimmedName}' already exists in this studio")
+            throw ValidationException("Kategoria o nazwie '${trimmedName}' już istnieje w tym studiu")
         }
 
         val now = Instant.now()

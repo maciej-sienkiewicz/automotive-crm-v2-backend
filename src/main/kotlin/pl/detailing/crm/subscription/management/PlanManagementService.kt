@@ -62,7 +62,7 @@ class PlanManagementService(
     fun previewPlanChange(studioId: StudioId, newPlanKey: PlanKey): PlanChangePreview {
         val current = entitlementService.getEntitlements(studioId)
         val currentPlan = planRepository.findByKey(current.planKey)
-            ?: throw EntityNotFoundException("Current plan not found: ${current.planKey}")
+            ?: throw EntityNotFoundException("Bieżący plan nie został znaleziony: ${current.planKey}")
         val newPlan = planRepository.findByKey(newPlanKey)
             ?: throw EntityNotFoundException("Plan not found: $newPlanKey")
 
@@ -185,7 +185,7 @@ class PlanManagementService(
     @Transactional
     fun changePlan(studioId: StudioId, newPlanKey: PlanKey): StudioEntitlements {
         val studio = studioRepository.findByStudioId(studioId.value)
-            ?: throw EntityNotFoundException("Studio not found: $studioId")
+            ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
 
         // First-time plan selection: studio has no active subscription yet.
         // Treat as an initial purchase — charge full first month, activate the studio.
@@ -375,7 +375,7 @@ class PlanManagementService(
     @Transactional
     fun activatePackage(studioId: StudioId, planKey: PlanKey, addOnKeys: List<AddOnKey>): StudioEntitlements {
         val studio = studioRepository.findByStudioId(studioId.value)
-            ?: throw EntityNotFoundException("Studio not found: $studioId")
+            ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
 
         if (studio.subscriptionStatus != SubscriptionStatus.NO_PLAN &&
             studio.subscriptionStatus != SubscriptionStatus.EXPIRED) {

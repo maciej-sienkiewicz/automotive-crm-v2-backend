@@ -90,7 +90,7 @@ class CompanyController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update company settings")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować ustawienia firmy")
         }
 
         val studioId = principal.studioId.value
@@ -144,7 +144,7 @@ class CompanyController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can upload company logo")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą przesyłać logo firmy")
         }
 
         val contentType = file.contentType ?: "application/octet-stream"
@@ -187,7 +187,7 @@ class CompanyController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete company logo")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać logo firmy")
         }
 
         val studioId = principal.studioId.value

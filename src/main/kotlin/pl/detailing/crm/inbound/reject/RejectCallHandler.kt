@@ -21,7 +21,7 @@ class RejectCallHandler(
             val callLogEntity = callLogRepository.findByIdAndStudioId(
                 command.callId.value,
                 command.studioId.value
-            ) ?: throw EntityNotFoundException("CallLog with id ${command.callId} not found")
+            ) ?: throw EntityNotFoundException("Dziennik połączeń o id ${command.callId} nie został znaleziony")
 
             // Transition to REJECTED
             callLogEntity.status = CallLogStatus.REJECTED

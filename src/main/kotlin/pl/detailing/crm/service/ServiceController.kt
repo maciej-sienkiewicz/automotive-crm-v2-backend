@@ -83,7 +83,7 @@ class ServiceController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create services")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć usługi")
         }
 
         val command = CreateServiceCommand(
@@ -120,7 +120,7 @@ class ServiceController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can archive services")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą archiwizować usługi")
         }
 
         archiveServiceHandler.handle(
@@ -139,7 +139,7 @@ class ServiceController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update services")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować usługi")
         }
 
         val command = UpdateServiceCommand(

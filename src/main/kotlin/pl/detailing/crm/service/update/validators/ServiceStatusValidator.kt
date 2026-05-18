@@ -9,7 +9,7 @@ class ServiceStatusValidator {
     fun validate(context: UpdateServiceValidationContext) {
         if (context.oldService != null && !context.oldService.isActive) {
             throw ValidationException(
-                "Cannot update archived service. Service ${context.oldServiceId} is no longer active"
+                "Nie można aktualizować zarchiwizowanej usługi. Usługa ${context.oldServiceId} nie jest już aktywna"
             )
         }
     }

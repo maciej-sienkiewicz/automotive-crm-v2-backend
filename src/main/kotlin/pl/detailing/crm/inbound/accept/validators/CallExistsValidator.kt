@@ -8,7 +8,7 @@ import pl.detailing.crm.shared.EntityNotFoundException
 class CallExistsValidator {
     fun validate(context: AcceptCallValidationContext) {
         if (context.callLog == null) {
-            throw EntityNotFoundException("CallLog with id ${context.callId} not found")
+            throw EntityNotFoundException("Dziennik połączeń o id ${context.callId} nie został znaleziony")
         }
     }
 }

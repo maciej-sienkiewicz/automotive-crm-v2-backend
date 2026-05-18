@@ -27,22 +27,22 @@ class GeneratePayrollHandler(
     @Transactional
     suspend fun handle(command: GeneratePayrollCommand): PayrollEntryId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (payrollRepository.existsByEmployeeIdAndPeriod(
                 command.employeeId.value, command.studioId.value, command.period.toString()
             )
         ) {
-            throw ConflictException("Payroll for ${command.period} already exists for this employee")
+            throw ConflictException("Lista płac za ${command.period} już istnieje dla tego pracownika")
         }
 
         val contract = contractRepository.findActiveByEmployeeIdAndStudioId(
             command.employeeId.value, command.studioId.value
-        ) ?: throw EntityNotFoundException("No active contract found for employee '${command.employeeId}'")
+        ) ?: throw EntityNotFoundException("Nie znaleziono aktywnej umowy dla pracownika '${command.employeeId}'")
 
         val compensationConfig = compensationConfigRepository.findForDate(
             command.employeeId.value, command.studioId.value, command.period.atDay(1)
-        ) ?: throw EntityNotFoundException("No active compensation config found for employee '${command.employeeId}' in period ${command.period}")
+        ) ?: throw EntityNotFoundException("Nie znaleziono aktywnej konfiguracji wynagrodzenia dla pracownika '${command.employeeId}' w okresie ${command.period}")
 
         // Approved work time entries for the period, grouped by entry type
         val from = command.period.atDay(1)

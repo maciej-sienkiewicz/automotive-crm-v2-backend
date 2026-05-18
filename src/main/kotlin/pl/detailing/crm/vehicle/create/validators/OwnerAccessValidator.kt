@@ -9,14 +9,14 @@ import pl.detailing.crm.vehicle.create.CreateVehicleValidationContext
 class OwnerAccessValidator {
     fun validate(context: CreateVehicleValidationContext) {
         val customer = context.customerExists
-            ?: throw ValidationException("Customer with ID '${context.ownerIds[0]}' not found")
+            ?: throw ValidationException("Klient o ID '${context.ownerIds[0]}' nie został znaleziony")
 
         if (customer.studioId != context.studioId.value) {
-            throw ValidationException("Customer does not belong to the same company")
+            throw ValidationException("Klient nie należy do tego studia")
         }
 
         if (!customer.isActive) {
-            throw ValidationException("Cannot assign vehicle to inactive customer")
+            throw ValidationException("Nie można przypisać pojazdu do nieaktywnego klienta")
         }
     }
 }

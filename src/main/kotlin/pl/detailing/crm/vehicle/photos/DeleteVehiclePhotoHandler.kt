@@ -31,14 +31,14 @@ class DeleteVehiclePhotoHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             id = command.vehicleId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
         // 2. Force load photos
         vehicleEntity.photos.size
 
         // 3. Find the photo to delete
         val photoToDelete = vehicleEntity.photos.find { it.id == command.photoId.value }
-            ?: throw EntityNotFoundException("Photo not found: ${command.photoId}")
+            ?: throw EntityNotFoundException("Zdjęcie nie zostało znalezione: ${command.photoId}")
 
         val deletedFileName = photoToDelete.fileName
 

@@ -36,7 +36,7 @@ class VehicleNoteService(
         createdByName: String
     ): VehicleNoteItem = withContext(Dispatchers.IO) {
         vehicleRepository.findByIdAndStudioId(vehicleId, studioId)
-            ?: throw EntityNotFoundException("Vehicle not found")
+            ?: throw EntityNotFoundException("Pojazd nie został znaleziony")
 
         val now = Instant.now()
         val entity = VehicleNoteEntity(
@@ -75,7 +75,7 @@ class VehicleNoteService(
         updatedByName: String? = null
     ): VehicleNoteItem = withContext(Dispatchers.IO) {
         val entity = vehicleNoteRepository.findByIdAndStudioId(noteId, studioId)
-            ?: throw EntityNotFoundException("Note not found")
+            ?: throw EntityNotFoundException("Notatka nie została znaleziona")
 
         val oldContent = entity.content
         entity.content = content.trim()
@@ -107,7 +107,7 @@ class VehicleNoteService(
         deletedByName: String? = null
     ): Unit = withContext(Dispatchers.IO) {
         val entity = vehicleNoteRepository.findByIdAndStudioId(noteId, studioId)
-            ?: throw EntityNotFoundException("Note not found")
+            ?: throw EntityNotFoundException("Notatka nie została znaleziona")
 
         vehicleNoteRepository.delete(entity)
 

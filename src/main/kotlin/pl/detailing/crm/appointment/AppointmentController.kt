@@ -116,7 +116,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create appointments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć rezerwacje")
         }
 
         // Map request to command
@@ -245,7 +245,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update appointments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować rezerwacje")
         }
 
         val command = UpdateAppointmentCommand(
@@ -359,7 +359,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can cancel appointments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą anulować rezerwacje")
         }
 
         // Only support CANCELLED status for now
@@ -384,7 +384,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can restore appointments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą przywracać rezerwacje")
         }
 
         val command = RestoreAppointmentCommand(
@@ -404,7 +404,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete appointments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać rezerwacje")
         }
 
         val command = DeleteAppointmentCommand(
@@ -427,7 +427,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update appointment SMS preferences")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować preferencje SMS rezerwacji")
         }
 
         updateAppointmentSmsPreferencesHandler.handle(

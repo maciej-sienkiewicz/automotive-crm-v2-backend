@@ -363,7 +363,7 @@ class StatsController(
         @RequestParam(required = false) categoryId: String?
     ): ResponseEntity<PeriodDetailResponse> = runBlocking {
         if (granularity == null) {
-            throw ValidationException("Missing required query parameter 'granularity'")
+            throw ValidationException("Brakujący wymagany parametr zapytania 'granularity'")
         }
         val principal = SecurityContextHelper.getCurrentUser()
         val gran = parseGranularity(granularity)
@@ -434,7 +434,7 @@ class StatsController(
             Granularity.valueOf(value.uppercase())
         } catch (e: IllegalArgumentException) {
             throw ValidationException(
-                "Invalid granularity '$value'. Allowed values: ${Granularity.entries.joinToString()}"
+                "Nieprawidłowa ziarnistość '$value'. Dozwolone wartości: ${Granularity.entries.joinToString()}"
             )
         }
     }
@@ -443,13 +443,13 @@ class StatsController(
         val start = try {
             LocalDate.parse(startDateStr).atStartOfDay(ZoneOffset.UTC).toInstant()
         } catch (e: Exception) {
-            throw ValidationException("Invalid startDate format. Expected YYYY-MM-DD, got: $startDateStr")
+            throw ValidationException("Nieprawidłowy format daty startDate. Oczekiwano YYYY-MM-DD, otrzymano: $startDateStr")
         }
         val end = try {
             // endDate is inclusive for the user, so we advance to start of next day
             LocalDate.parse(endDateStr).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
         } catch (e: Exception) {
-            throw ValidationException("Invalid endDate format. Expected YYYY-MM-DD, got: $endDateStr")
+            throw ValidationException("Nieprawidłowy format daty endDate. Oczekiwano YYYY-MM-DD, otrzymano: $endDateStr")
         }
         return start to end
     }
@@ -461,15 +461,15 @@ class StatsController(
         end: Instant
     ) {
         if (!start.isBefore(end)) {
-            throw ValidationException("startDate must be before or equal to endDate")
+            throw ValidationException("startDate musi być wcześniejsza lub równa endDate")
         }
         val tomorrow = Instant.now().plusSeconds(86_400)
         if (end.isAfter(tomorrow)) {
-            throw ValidationException("endDate cannot be more than 1 day in the future")
+            throw ValidationException("endDate nie może być więcej niż 1 dzień w przyszłości")
         }
         val maxRange = 1826L * 86_400
         if (end.epochSecond - start.epochSecond > maxRange) {
-            throw ValidationException("Date range cannot exceed 5 years (1826 days)")
+            throw ValidationException("Zakres dat nie może przekraczać 5 lat (1826 dni)")
         }
     }
 

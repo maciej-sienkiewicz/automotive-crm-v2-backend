@@ -20,7 +20,7 @@ class UpdateConsentHandler(
         withContext(Dispatchers.IO) {
             val entity = consentDefinitionRepository.findByIdAndStudioId(
                 command.definitionId.value, command.studioId.value
-            ) ?: throw NotFoundException("Consent not found")
+            ) ?: throw NotFoundException("Zgoda nie została znaleziona")
 
             command.marketingChannels?.let { channels ->
                 createConsentHandler.validateChannelUniqueness(

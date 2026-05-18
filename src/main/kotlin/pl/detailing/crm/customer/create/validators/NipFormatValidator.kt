@@ -13,12 +13,12 @@ class NipFormatValidator {
             val cleanedNip = nip.replace("-", "").replace(" ", "")
             
             if (!cleanedNip.matches(Regex("^\\d{10}$"))) {
-                throw ValidationException("Invalid NIP format. NIP must contain exactly 10 digits")
+                throw ValidationException("Nieprawidłowy format NIP. NIP musi zawierać dokładnie 10 cyfr")
             }
             
             // Validate NIP checksum
             if (!isValidNipChecksum(cleanedNip)) {
-                throw ValidationException("Invalid NIP checksum")
+                throw ValidationException("Nieprawidłowa suma kontrolna NIP")
             }
         }
     }

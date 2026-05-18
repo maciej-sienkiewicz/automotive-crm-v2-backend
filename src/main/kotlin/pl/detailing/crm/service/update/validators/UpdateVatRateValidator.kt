@@ -12,7 +12,7 @@ class UpdateVatRateValidator {
 
         if (context.vatRate.rate !in allowedRates) {
             throw ValidationException(
-                "Invalid VAT rate. Allowed rates: ${allowedRates.joinToString(", ")}"
+                "Nieprawidłowa stawka VAT. Dozwolone stawki: ${allowedRates.joinToString(", ")}"
             )
         }
     }

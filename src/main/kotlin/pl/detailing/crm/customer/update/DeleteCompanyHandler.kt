@@ -23,7 +23,7 @@ class DeleteCompanyHandler(
             val entity = customerRepository.findByIdAndStudioId(
                 id = command.customerId.value,
                 studioId = command.studioId.value
-            ) ?: throw NotFoundException("Customer not found")
+            ) ?: throw NotFoundException("Klient nie został znaleziony")
 
             val deletedCompanyName = entity.companyName
             val displayName = listOfNotNull(entity.firstName, entity.lastName).joinToString(" ").ifBlank { entity.email ?: entity.phone ?: "" }

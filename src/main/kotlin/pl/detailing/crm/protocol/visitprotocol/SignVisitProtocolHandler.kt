@@ -41,20 +41,20 @@ class SignVisitProtocolHandler(
         withContext(Dispatchers.IO) {
             val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
                 command.visitId.value, command.protocolId.value, command.studioId.value
-            ) ?: throw NotFoundException("Protocol not found")
+            ) ?: throw NotFoundException("Protokół nie został znaleziony")
 
             val protocol = protocolEntity.toDomain()
 
             if (protocol.status != VisitProtocolStatus.READY_FOR_SIGNATURE) {
-                throw ValidationException("Protocol must be in READY_FOR_SIGNATURE status to be signed")
+                throw ValidationException("Protokół musi mieć status READY_FOR_SIGNATURE, aby go podpisać")
             }
             if (protocol.isImmutable()) {
-                throw ValidationException("Protocol is already signed and cannot be modified")
+                throw ValidationException("Protokół jest już podpisany i nie może być modyfikowany")
             }
             requireNotNull(protocol.filledPdfS3Key) { "Filled PDF S3 key is missing" }
 
             val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
-                ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+                ?: throw EntityNotFoundException("Wizyta nie została znaleziona: ${command.visitId}")
             val visitNumber = visitEntity.visitNumber
 
             val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(

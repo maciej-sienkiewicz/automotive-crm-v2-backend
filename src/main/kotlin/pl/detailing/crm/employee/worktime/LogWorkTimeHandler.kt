@@ -24,20 +24,20 @@ class LogWorkTimeHandler(
     @Transactional
     suspend fun handle(command: LogWorkTimeCommand): WorkTimeEntryId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot log work time for a terminated employee")
+            throw ValidationException("Nie można rejestrować czasu pracy dla zwolnionego pracownika")
         }
 
         if (!command.endTime.isAfter(command.startTime)) {
-            throw ValidationException("End time must be after start time")
+            throw ValidationException("Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia")
         }
 
         val totalMinutes = Duration.between(command.startTime, command.endTime).toMinutes()
         val effectiveMinutes = totalMinutes - command.breakMinutes
         if (effectiveMinutes <= 0) {
-            throw ValidationException("Effective working time must be positive after subtracting break")
+            throw ValidationException("Efektywny czas pracy musi być dodatni po odjęciu przerwy")
         }
 
         val effectiveHours = BigDecimal(effectiveMinutes)

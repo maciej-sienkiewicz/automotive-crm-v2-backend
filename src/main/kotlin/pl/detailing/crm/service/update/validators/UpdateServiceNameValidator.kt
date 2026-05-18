@@ -10,20 +10,20 @@ class UpdateServiceNameValidator {
         val name = context.name.trim()
 
         if (name.isBlank()) {
-            throw ValidationException("Service name cannot be blank")
+            throw ValidationException("Nazwa usługi nie może być pusta")
         }
 
         if (name.length < 3) {
-            throw ValidationException("Service name must be at least 3 characters long")
+            throw ValidationException("Nazwa usługi musi mieć co najmniej 3 znaki")
         }
 
         if (name.length > 200) {
-            throw ValidationException("Service name cannot exceed 200 characters")
+            throw ValidationException("Nazwa usługi nie może przekraczać 200 znaków")
         }
 
         if (context.nameConflictExists) {
             throw ValidationException(
-                "Another active service with name '$name' already exists in this studio"
+                "Inna aktywna usługa o nazwie '$name' już istnieje w tym studiu"
             )
         }
     }

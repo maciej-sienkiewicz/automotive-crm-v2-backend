@@ -60,7 +60,7 @@ class SubscriptionService(
     @Transactional
     suspend fun startTrial(studioId: StudioId): SubscriptionInfo = withContext(Dispatchers.IO) {
         val entity = studioRepository.findByStudioId(studioId.value)
-            ?: throw EntityNotFoundException("Studio not found: $studioId")
+            ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
 
         if (entity.trialUsed) throw ValidationException("Okres próbny został już wykorzystany.")
         if (entity.subscriptionStatus == SubscriptionStatus.ACTIVE)
@@ -98,7 +98,7 @@ class SubscriptionService(
 
     suspend fun getStudio(studioId: StudioId): Studio = withContext(Dispatchers.IO) {
         studioRepository.findByStudioId(studioId.value)?.toDomain()
-            ?: throw EntityNotFoundException("Studio not found: $studioId")
+            ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
     }
 
     suspend fun validateAccess(studioId: StudioId) = withContext(Dispatchers.IO) {
@@ -119,7 +119,7 @@ class SubscriptionService(
     suspend fun purchaseSubscription(studioId: StudioId, planType: SubscriptionPlanType): SubscriptionInfo =
         withContext(Dispatchers.IO) {
             val entity = studioRepository.findByStudioId(studioId.value)
-                ?: throw EntityNotFoundException("Studio not found: $studioId")
+                ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
 
             val plan = SubscriptionPlan.forType(planType)
 

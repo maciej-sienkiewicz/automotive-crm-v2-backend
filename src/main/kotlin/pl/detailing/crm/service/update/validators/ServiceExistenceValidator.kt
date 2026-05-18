@@ -10,12 +10,12 @@ class ServiceExistenceValidator {
     fun validate(context: UpdateServiceValidationContext) {
         if (context.oldService == null) {
             throw EntityNotFoundException(
-                "Service with ID ${context.oldServiceId} not found in this studio"
+                "Usługa o ID ${context.oldServiceId} nie została znaleziona w tym studiu"
             )
         }
 
         if (context.oldService.studioId != context.studioId.value) {
-            throw ForbiddenException("Service does not belong to this studio")
+            throw ForbiddenException("Usługa nie należy do tego studia")
         }
     }
 }

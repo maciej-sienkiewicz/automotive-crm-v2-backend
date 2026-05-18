@@ -115,7 +115,7 @@ class EmployeeController(
     fun createEmployee(@RequestBody request: CreateEmployeeRequest): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create employees")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pracowników")
         }
 
         val command = CreateEmployeeCommand(
@@ -150,7 +150,7 @@ class EmployeeController(
     ): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update employees")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować dane pracowników")
         }
 
         updateEmployeeHandler.handle(UpdateEmployeeCommand(
@@ -185,7 +185,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER) {
-            throw ForbiddenException("Only OWNER can terminate employees")
+            throw ForbiddenException("Tylko właściciel może zakończyć zatrudnienie pracownika")
         }
 
         terminateEmployeeHandler.handle(TerminateEmployeeCommand(
@@ -220,7 +220,7 @@ class EmployeeController(
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create contracts")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć umowy")
         }
 
         val contractId = createContractHandler.handle(CreateContractCommand(
@@ -245,7 +245,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can end contracts")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą rozwiązywać umowy")
         }
 
         endContractHandler.handle(EndContractCommand(
@@ -281,7 +281,7 @@ class EmployeeController(
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create amendments")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć aneksy")
         }
 
         val amendmentId = createAmendmentHandler.handle(CreateAmendmentCommand(
@@ -321,7 +321,7 @@ class EmployeeController(
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can configure compensation")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą konfigurować wynagrodzenie")
         }
 
         val components = request.components.map { c ->
@@ -417,7 +417,7 @@ class EmployeeController(
                     val benefitType = try {
                         WorkTimeEntryType.valueOf(it.benefitType)
                     } catch (e: IllegalArgumentException) {
-                        throw ValidationException("Unknown benefitType '${it.benefitType}'")
+                        throw ValidationException("Nieznany typ świadczenia '${it.benefitType}'")
                     }
                     SaveWorkTimePeriodCommand.BenefitEntry(it.date, benefitType, it.hours)
                 }
@@ -433,7 +433,7 @@ class EmployeeController(
     ): ResponseEntity<ApprovePeriodResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can approve work time periods")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zatwierdzać okresy czasu pracy")
         }
         val result = approvePeriodWorkTimeHandler.handle(
             employeeId = EmployeeId.fromString(employeeId),
@@ -523,7 +523,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can approve work time")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zatwierdzać czas pracy")
         }
 
         approveWorkTimeHandler.handle(ApproveWorkTimeCommand(
@@ -582,7 +582,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can review leave requests")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą rozpatrywać wnioski urlopowe")
         }
 
         reviewLeaveHandler.handle(ReviewLeaveCommand(
@@ -620,7 +620,7 @@ class EmployeeController(
     ): ResponseEntity<LeaveBalanceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can initialise leave balances")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą inicjalizować salda urlopowe")
         }
 
         val balance = leaveBalanceHandler.initBalance(InitLeaveBalanceCommand(
@@ -643,7 +643,7 @@ class EmployeeController(
     ): ResponseEntity<LeaveBalanceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can adjust leave balances")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą korygować salda urlopowe")
         }
 
         val balance = leaveBalanceHandler.adjustBalance(AdjustLeaveBalanceCommand(
@@ -682,7 +682,7 @@ class EmployeeController(
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can generate payroll")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą generować listę płac")
         }
 
         val payrollId = generatePayrollHandler.handle(GeneratePayrollCommand(
@@ -705,7 +705,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can confirm payroll")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą potwierdzać listę płac")
         }
 
         confirmPayrollHandler.handle(ConfirmPayrollCommand(
@@ -745,7 +745,7 @@ class EmployeeController(
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can add bonuses")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą dodawać premie")
         }
 
         val bonusId = addBonusHandler.handle(AddBonusCommand(
@@ -768,7 +768,7 @@ class EmployeeController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete bonuses")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać premie")
         }
 
         deleteBonusHandler.handle(DeleteBonusCommand(
@@ -805,17 +805,17 @@ data class InitialCompensationRequest(
 ) {
     fun toDomain(): InitialCompensationData = when (employmentMode) {
         EmploymentMode.SALARY -> {
-            val etat = etatFraction ?: throw ValidationException("etatFraction is required for SALARY mode")
-            val salary = monthlySalaryGrossCents ?: throw ValidationException("monthlySalaryGrossCents is required for SALARY mode")
+            val etat = etatFraction ?: throw ValidationException("etatFraction jest wymagane w trybie SALARY")
+            val salary = monthlySalaryGrossCents ?: throw ValidationException("monthlySalaryGrossCents jest wymagane w trybie SALARY")
             InitialCompensationData.Salary(etat, salary)
         }
         EmploymentMode.HOURLY -> when (rateType?.uppercase()) {
             "NET" -> {
-                val rate = hourlyRateNetCents ?: throw ValidationException("hourlyRateNetCents is required for HOURLY/NET mode")
+                val rate = hourlyRateNetCents ?: throw ValidationException("hourlyRateNetCents jest wymagane w trybie HOURLY/NET")
                 InitialCompensationData.HourlyNet(rate)
             }
             else -> {
-                val rate = hourlyRateGrossCents ?: throw ValidationException("hourlyRateGrossCents is required for HOURLY/GROSS mode")
+                val rate = hourlyRateGrossCents ?: throw ValidationException("hourlyRateGrossCents jest wymagane w trybie HOURLY/GROSS")
                 InitialCompensationData.HourlyGross(rate)
             }
         }

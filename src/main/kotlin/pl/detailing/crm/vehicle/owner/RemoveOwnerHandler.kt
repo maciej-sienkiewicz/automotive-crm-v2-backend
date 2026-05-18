@@ -26,7 +26,7 @@ class RemoveOwnerHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             command.vehicleId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found with id: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony, id: ${command.vehicleId}")
 
         val ownerKey = VehicleOwnerKey(
             vehicleId = command.vehicleId.value,
@@ -34,7 +34,7 @@ class RemoveOwnerHandler(
         )
 
         val ownerEntity = vehicleOwnerRepository.findById(ownerKey).orElse(null)
-            ?: throw EntityNotFoundException("Owner relationship not found")
+            ?: throw EntityNotFoundException("Powiązanie właściciela nie zostało znalezione")
 
         vehicleOwnerRepository.delete(ownerEntity)
 

@@ -21,10 +21,10 @@ class TerminateEmployeeHandler(
     @Transactional
     suspend fun handle(command: TerminateEmployeeCommand) = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Employee is already terminated")
+            throw ValidationException("Pracownik jest już zwolniony")
         }
 
         // Mark employee terminated

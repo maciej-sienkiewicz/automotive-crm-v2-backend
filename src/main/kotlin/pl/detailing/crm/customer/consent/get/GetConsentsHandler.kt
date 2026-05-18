@@ -33,7 +33,7 @@ class GetConsentsHandler(
     suspend fun handleGet(studioId: StudioId, definitionId: ConsentDefinitionId): ConsentResponse =
         withContext(Dispatchers.IO) {
             definitionRepository.findByIdAndStudioId(definitionId.value, studioId.value)
-                ?: throw NotFoundException("Consent not found")
+                ?: throw NotFoundException("Zgoda nie została znaleziona")
             toResponse(definitionId.value, studioId)
         }
 

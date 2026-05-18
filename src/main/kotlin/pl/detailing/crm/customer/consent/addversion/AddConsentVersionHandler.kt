@@ -32,10 +32,10 @@ class AddConsentVersionHandler(
         withContext(Dispatchers.IO) {
             val definition = consentDefinitionRepository.findByIdAndStudioId(
                 command.definitionId.value, command.studioId.value
-            ) ?: throw NotFoundException("Consent not found")
+            ) ?: throw NotFoundException("Zgoda nie została znaleziona")
 
             if (!definition.isActive) {
-                throw ValidationException("Cannot add a version to an inactive consent")
+                throw ValidationException("Nie można dodać wersji do nieaktywnej zgody")
             }
 
             val nextVersion = (consentTemplateRepository.findMaxVersionByDefinitionId(

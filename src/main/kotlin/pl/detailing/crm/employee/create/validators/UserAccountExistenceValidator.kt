@@ -10,10 +10,10 @@ class UserAccountExistenceValidator {
     fun validate(context: CreateEmployeeValidationContext) {
         if (context.linkedUserId != null) {
             if (!context.linkedUserExists) {
-                throw EntityNotFoundException("User account '${context.linkedUserId}' not found in this studio")
+                throw EntityNotFoundException("Konto użytkownika '${context.linkedUserId}' nie zostało znalezione w tym studiu")
             }
             if (context.linkedUserAlreadyAssigned) {
-                throw ConflictException("User account '${context.linkedUserId}' is already linked to another active employee")
+                throw ConflictException("Konto użytkownika '${context.linkedUserId}' jest już powiązane z innym aktywnym pracownikiem")
             }
         }
     }

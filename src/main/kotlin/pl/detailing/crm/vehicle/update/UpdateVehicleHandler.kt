@@ -20,7 +20,7 @@ class UpdateVehicleHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             command.vehicleId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found with id: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony, id: ${command.vehicleId}")
 
         // Capture old values for audit
         val oldValues = mapOf(

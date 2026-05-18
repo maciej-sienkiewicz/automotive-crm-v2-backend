@@ -48,7 +48,7 @@ class GetCategoryHandler(
             val category = serviceCategoryRepository.findByIdAndStudioId(
                 categoryId.value,
                 studioId.value
-            ) ?: throw EntityNotFoundException("Category $categoryId not found")
+            ) ?: throw EntityNotFoundException("Kategoria $categoryId nie została znaleziona")
 
             // ── Catalog services ──────────────────────────────────────────────
             val assignments = categoryServiceAssignmentRepository.findByCategoryIdAndStudioId(

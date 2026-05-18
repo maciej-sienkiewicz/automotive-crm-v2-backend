@@ -29,7 +29,7 @@ class AddVehiclePhotoHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             id = command.vehicleId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
         // 2. Force load photos
         vehicleEntity.photos.size

@@ -26,19 +26,19 @@ class GenerateQuoteReplyHandler(
     suspend fun handle(command: GenerateQuoteReplyCommand): GenerateQuoteReplyResult =
         withContext(Dispatchers.IO) {
             val leadEntity = leadRepository.findById(command.leadId.value).orElse(null)
-                ?: throw EntityNotFoundException("Lead ${command.leadId} not found")
+                ?: throw EntityNotFoundException("Lead ${command.leadId} nie został znaleziony")
 
             if (leadEntity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             val customerMessage = leadEntity.initialMessage?.takeIf { it.isNotBlank() }
-                ?: throw ValidationException("Lead has no customer message to respond to")
+                ?: throw ValidationException("Lead nie zawiera wiadomości od klienta, na którą można odpowiedzieć")
 
             val serviceLines: List<ServiceLine> = resolveServiceLines(command)
 
             if (serviceLines.isEmpty()) {
-                throw ValidationException("No quote available for this lead — add a user quote or trigger AI estimation first")
+                throw ValidationException("Brak wyceny dla tego leadu — dodaj wycenę użytkownika lub uruchom estymację AI")
             }
 
             val userPrompt = buildUserPrompt(customerMessage, serviceLines)

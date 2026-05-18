@@ -33,7 +33,7 @@ class GetOverviewStatsHandler(
         endDate: Instant
     ): OverviewStatsResult = withContext(Dispatchers.IO) {
         if (!startDate.isBefore(endDate)) {
-            throw ValidationException("startDate must be before endDate")
+            throw ValidationException("startDate musi być wcześniejsza niż endDate")
         }
 
         val data = statsRepository.getOverviewStats(

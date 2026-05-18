@@ -27,11 +27,11 @@ class ConfirmPayrollHandler(
     @Transactional
     suspend fun handle(command: ConfirmPayrollCommand) = withContext(Dispatchers.IO) {
         val entity = payrollRepository.findByIdAndStudioId(command.payrollEntryId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Payroll entry '${command.payrollEntryId}' not found")
+            ?: throw EntityNotFoundException("Wpis listy płac '${command.payrollEntryId}' nie został znaleziony")
 
         val requiredStatus = if (command.markAsPaid) PayrollStatus.CONFIRMED else PayrollStatus.DRAFT
         if (entity.status != requiredStatus) {
-            throw ValidationException("Payroll entry status must be ${requiredStatus.name} for this operation")
+            throw ValidationException("Status wpisu listy płac musi wynosić ${requiredStatus.name} dla tej operacji")
         }
 
         val oldStatus = entity.status

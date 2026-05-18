@@ -219,7 +219,7 @@ class VehicleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create vehicles")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
         }
 
         val command = CreateVehicleCommand(
@@ -266,7 +266,7 @@ class VehicleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update vehicles")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować pojazdy")
         }
 
         val command = UpdateVehicleCommand(
@@ -307,7 +307,7 @@ class VehicleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete vehicles")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać pojazdy")
         }
 
         val command = DeleteVehicleCommand(
@@ -330,7 +330,7 @@ class VehicleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can assign owners")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą przypisywać właścicieli")
         }
 
         val command = AssignOwnerCommand(
@@ -362,7 +362,7 @@ class VehicleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can remove owners")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać właścicieli")
         }
 
         val command = RemoveOwnerCommand(

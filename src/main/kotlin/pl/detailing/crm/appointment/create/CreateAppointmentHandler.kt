@@ -67,7 +67,7 @@ class CreateAppointmentHandler(
 
             if (serviceLineItem.serviceId != null) {
                 val service = services[serviceLineItem.serviceId]
-                    ?: throw EntityNotFoundException("Service with ID '${serviceLineItem.serviceId}' not found")
+                    ?: throw EntityNotFoundException("Usługa o ID '${serviceLineItem.serviceId}' nie została znaleziona")
 
                 AppointmentLineItem.create(
                     serviceId = service.id,
@@ -210,7 +210,7 @@ class CreateAppointmentHandler(
         userId: UserId
     ): CustomerId {
         val entity = customerRepository.findByIdAndStudioId(identity.customerId.value, studioId.value)
-            ?: throw EntityNotFoundException("Customer with ID '${identity.customerId}' not found")
+            ?: throw EntityNotFoundException("Klient o ID '${identity.customerId}' nie został znaleziony")
 
         entity.firstName = identity.firstName?.trim()
         entity.lastName = identity.lastName?.trim()
@@ -280,7 +280,7 @@ class CreateAppointmentHandler(
         userId: UserId
     ): VehicleId {
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(identity.vehicleId.value, studioId.value)
-            ?: throw EntityNotFoundException("Vehicle with ID '${identity.vehicleId}' not found")
+            ?: throw EntityNotFoundException("Pojazd o ID '${identity.vehicleId}' nie został znaleziony")
 
         vehicleEntity.brand = identity.brand.trim()
         vehicleEntity.model = identity.model.trim()

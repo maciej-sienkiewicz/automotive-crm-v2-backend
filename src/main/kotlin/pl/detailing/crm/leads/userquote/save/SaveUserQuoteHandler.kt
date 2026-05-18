@@ -59,14 +59,14 @@ class SaveUserQuoteHandler(
     suspend fun handle(command: SaveUserQuoteCommand): SaveUserQuoteResult =
         withContext(Dispatchers.IO) {
             val leadEntity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             if (leadEntity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             if (command.items.isEmpty()) {
-                throw ValidationException("User quote must contain at least one item")
+                throw ValidationException("Wycena użytkownika musi zawierać co najmniej jedną pozycję")
             }
 
             // Batch-load catalog services for items that reference one — single query, no N+1
@@ -80,7 +80,7 @@ class SaveUserQuoteHandler(
             // Validate all referenced services exist
             requestedServiceIds.forEach { serviceId ->
                 if (serviceId !in catalogServices) {
-                    throw EntityNotFoundException("Service '$serviceId' not found in catalog")
+                    throw EntityNotFoundException("Usługa '$serviceId' nie została znaleziona w katalogu")
                 }
             }
 
@@ -107,7 +107,7 @@ class SaveUserQuoteHandler(
                     catalogServices[item.serviceId]!!.name
                 } else {
                     item.serviceName?.trim()?.takeIf { it.isNotBlank() }
-                        ?: throw ValidationException("serviceName is required when serviceId is not provided")
+                        ?: throw ValidationException("serviceName jest wymagane gdy serviceId nie jest podane")
                 }
 
                 LeadUserQuoteItemEntity(

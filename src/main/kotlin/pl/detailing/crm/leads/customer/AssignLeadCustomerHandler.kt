@@ -45,10 +45,10 @@ class AssignLeadCustomerHandler(
     suspend fun handle(command: AssignLeadCustomerCommand): AssignLeadCustomerResult =
         withContext(Dispatchers.IO) {
             val entity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             if (entity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             val oldCustomerId = entity.customerId?.toString()
@@ -58,7 +58,7 @@ class AssignLeadCustomerHandler(
                 val customer = customerRepository.findByIdAndStudioId(
                     id = command.customerId.value,
                     studioId = command.studioId.value
-                ) ?: throw EntityNotFoundException("Customer not found: ${command.customerId}")
+                ) ?: throw EntityNotFoundException("Klient nie został znaleziony: ${command.customerId}")
 
                 entity.customerId = customer.id
                 snapshot = CustomerSnapshot(

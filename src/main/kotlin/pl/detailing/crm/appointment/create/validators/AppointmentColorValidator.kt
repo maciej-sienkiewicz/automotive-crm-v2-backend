@@ -9,7 +9,7 @@ class AppointmentColorValidator {
     fun validate(context: CreateAppointmentValidationContext) {
         if (!context.appointmentColorExists) {
             throw EntityNotFoundException(
-                "Appointment color not found in this studio"
+                "Kolor rezerwacji nie został znaleziony w tym studiu"
             )
         }
     }

@@ -8,7 +8,7 @@ import pl.detailing.crm.shared.ConflictException
 class EmployeeEmailUniquenessValidator {
     fun validate(context: CreateEmployeeValidationContext) {
         if (context.email != null && context.emailAlreadyExists) {
-            throw ConflictException("An active employee with email '${context.email}' already exists in this studio")
+            throw ConflictException("Aktywny pracownik z adresem e-mail '${context.email}' już istnieje w tym studiu")
         }
     }
 }

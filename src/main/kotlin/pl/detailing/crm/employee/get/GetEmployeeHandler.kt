@@ -13,7 +13,7 @@ class GetEmployeeHandler(
 ) {
     suspend fun handle(employeeId: EmployeeId, studioId: StudioId): Employee = withContext(Dispatchers.IO) {
         val entity = employeeRepository.findByIdAndStudioId(employeeId.value, studioId.value)
-            ?: throw EntityNotFoundException("Employee '$employeeId' not found")
+            ?: throw EntityNotFoundException("Pracownik '$employeeId' nie został znaleziony")
         entity.toDomain()
     }
 }

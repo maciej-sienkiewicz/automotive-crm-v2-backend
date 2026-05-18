@@ -65,14 +65,14 @@ class CreateVisitFromReservationHandler(
             val appointment = appointmentRepository.findByIdAndStudioId(
                 command.reservationId.value,
                 command.studioId.value
-            )?.toDomain() ?: throw EntityNotFoundException("Appointment not found")
+            )?.toDomain() ?: throw EntityNotFoundException("Rezerwacja nie została znaleziona")
 
             // Step 2: Handle customer (create new or use existing)
             val customerId = when (val customerData = command.customer) {
                 null -> {
                     // Customer alias only - we'll need to handle this case differently
                     // For now, throw exception as we need full customer data
-                    throw ValidationException("Customer data required for check-in")
+                    throw ValidationException("Dane klienta są wymagane podczas przyjęcia pojazdu")
                 }
                 is CustomerData.New -> {
                     // Create new customer
@@ -117,7 +117,7 @@ class CreateVisitFromReservationHandler(
             val vehicle = vehicleRepository.findByIdAndStudioId(
                 vehicleId.value,
                 command.studioId.value
-            )?.toDomain() ?: throw EntityNotFoundException("Vehicle not found")
+            )?.toDomain() ?: throw EntityNotFoundException("Pojazd nie został znaleziony")
 
             // Step 5: Generate visit number
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
@@ -344,7 +344,7 @@ class CreateVisitFromReservationHandler(
         withContext(Dispatchers.IO) {
             // Step 1: Handle customer
             val customerId = when (val customerData = command.customer) {
-                null -> throw ValidationException("Customer data required for check-in")
+                null -> throw ValidationException("Dane klienta są wymagane podczas przyjęcia pojazdu")
                 is CustomerData.New -> createCustomer(customerData, command.studioId, command.userId)
                 is CustomerData.Existing -> customerData.id
                 is CustomerData.Update -> {
@@ -370,7 +370,7 @@ class CreateVisitFromReservationHandler(
             val vehicle = vehicleRepository.findByIdAndStudioId(
                 vehicleId.value,
                 command.studioId.value
-            )?.toDomain() ?: throw EntityNotFoundException("Vehicle not found")
+            )?.toDomain() ?: throw EntityNotFoundException("Pojazd nie został znaleziony")
 
             // Step 5: Generate visit number
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
@@ -703,7 +703,7 @@ class CreateVisitFromReservationHandler(
         userId: UserId
     ) {
         val existingEntity = customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
-            ?: throw EntityNotFoundException("Customer not found")
+            ?: throw EntityNotFoundException("Klient nie został znaleziony")
 
         // Check if any data has changed
         val newFirstName = customerData.firstName.trim()
@@ -795,7 +795,7 @@ class CreateVisitFromReservationHandler(
         userId: UserId
     ) {
         val existingEntity = vehicleRepository.findByIdAndStudioId(vehicleId.value, studioId.value)
-            ?: throw EntityNotFoundException("Vehicle not found")
+            ?: throw EntityNotFoundException("Pojazd nie został znaleziony")
 
         val hasChanged = existingEntity.brand != vehicleData.brand.trim() ||
             existingEntity.model != vehicleData.model.trim() ||

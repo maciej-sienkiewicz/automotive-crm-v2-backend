@@ -99,7 +99,7 @@ class CustomerDocumentService(
         deletedByName: String? = null
     ): Unit = withContext(Dispatchers.IO) {
         val entity = customerDocumentRepository.findByIdAndStudioId(documentId, studioId)
-            ?: throw EntityNotFoundException("Document not found: $documentId")
+            ?: throw EntityNotFoundException("Dokument nie został znaleziony: $documentId")
 
         val docName = entity.name
         val customerId = entity.customerId

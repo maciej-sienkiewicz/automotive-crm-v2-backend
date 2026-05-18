@@ -8,7 +8,7 @@ import pl.detailing.crm.shared.EntityNotFoundException
 class ColorExistenceValidator {
     fun validate(context: UpdateAppointmentColorValidationContext) {
         if (!context.colorExists) {
-            throw EntityNotFoundException("Appointment color not found in this studio")
+            throw EntityNotFoundException("Kolor rezerwacji nie został znaleziony w tym studiu")
         }
     }
 }

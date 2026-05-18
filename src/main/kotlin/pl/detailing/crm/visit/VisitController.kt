@@ -252,7 +252,7 @@ class VisitController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can confirm visits")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą potwierdzać wizyty")
         }
 
         val command = ConfirmVisitCommand(
@@ -338,7 +338,7 @@ class VisitController(
 
         // Only OWNER and MANAGER can cancel visits
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can cancel visits")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą anulować wizyty")
         }
 
         val command = CancelDraftVisitCommand(

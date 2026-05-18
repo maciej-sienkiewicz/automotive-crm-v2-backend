@@ -25,14 +25,14 @@ class RequestLeaveHandler(
     @Transactional
     suspend fun handle(command: RequestLeaveCommand): LeaveRequestId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot submit leave request for a terminated employee")
+            throw ValidationException("Nie można złożyć wniosku urlopowego dla zwolnionego pracownika")
         }
 
         if (!command.endDate.isAfter(command.startDate) && command.endDate != command.startDate) {
-            throw ValidationException("End date must be on or after start date")
+            throw ValidationException("Data zakończenia musi być równa lub późniejsza niż data rozpoczęcia")
         }
 
         // Check for overlapping approved/pending requests
@@ -40,7 +40,7 @@ class RequestLeaveHandler(
             command.employeeId.value, command.studioId.value, command.startDate, command.endDate
         )
         if (overlapping.isNotEmpty()) {
-            throw ConflictException("Employee already has an overlapping leave request for this period")
+            throw ConflictException("Pracownik ma już nakładający się wniosek urlopowy w tym okresie")
         }
 
         val businessDays = countBusinessDays(command.startDate, command.endDate)

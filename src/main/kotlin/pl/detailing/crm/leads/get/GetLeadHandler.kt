@@ -38,10 +38,10 @@ class GetLeadHandler(
     suspend fun handle(query: GetLeadQuery): GetLeadResult {
         val leadEntity = withContext(Dispatchers.IO) {
             leadRepository.findById(query.leadId.value).orElse(null)
-        } ?: throw EntityNotFoundException("Lead ${query.leadId} not found")
+        } ?: throw EntityNotFoundException("Lead ${query.leadId} nie został znaleziony")
 
         if (leadEntity.studioId != query.studioId.value) {
-            throw ForbiddenException("Lead does not belong to this studio")
+            throw ForbiddenException("Lead nie należy do tego studia")
         }
 
         val estimation = withContext(Dispatchers.IO) {

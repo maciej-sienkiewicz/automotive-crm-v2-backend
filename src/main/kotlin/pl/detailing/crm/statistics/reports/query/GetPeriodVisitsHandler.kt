@@ -70,7 +70,7 @@ class GetPeriodVisitsHandler(
         val (startDate, endDate) = parsePeriodToRange(period, granularity)
 
         if (startDate.isAfter(Instant.now())) {
-            throw ValidationException("Period '$period' is entirely in the future")
+            throw ValidationException("Okres '$period' jest całkowicie w przyszłości")
         }
 
         // Validate and resolve category
@@ -221,7 +221,7 @@ class GetPeriodVisitsHandler(
         val date = try {
             LocalDate.parse(period, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         } catch (e: DateTimeParseException) {
-            throw ValidationException("Period '$period' is not a valid DAILY period (expected YYYY-MM-DD)")
+            throw ValidationException("Okres '$period' nie jest prawidłowym okresem DAILY (oczekiwano YYYY-MM-DD)")
         }
         val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
         return start to date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
@@ -229,11 +229,11 @@ class GetPeriodVisitsHandler(
 
     private fun parseWeeklyPeriod(period: String): Pair<Instant, Instant> {
         val match = Regex("^(\\d{4})-W(\\d{2})$").matchEntire(period)
-            ?: throw ValidationException("Period '$period' is not a valid WEEKLY period (expected YYYY-Www)")
+            ?: throw ValidationException("Okres '$period' nie jest prawidłowym okresem WEEKLY (oczekiwano YYYY-Www)")
         val year = match.groupValues[1].toInt()
         val week = match.groupValues[2].toInt()
         if (week < 1 || week > 53) {
-            throw ValidationException("Period '$period' is not a valid WEEKLY period (week must be 01-53)")
+            throw ValidationException("Okres '$period' nie jest prawidłowym okresem WEEKLY (tydzień musi być 01-53)")
         }
         val monday = try {
             LocalDate.now()
@@ -241,7 +241,7 @@ class GetPeriodVisitsHandler(
                 .with(WeekFields.ISO.weekOfWeekBasedYear(), week.toLong())
                 .with(DayOfWeek.MONDAY)
         } catch (e: Exception) {
-            throw ValidationException("Period '$period' is not a valid WEEKLY period")
+            throw ValidationException("Okres '$period' nie jest prawidłowym okresem WEEKLY")
         }
         val start = monday.atStartOfDay(ZoneOffset.UTC).toInstant()
         return start to monday.plusWeeks(1).atStartOfDay(ZoneOffset.UTC).toInstant()
@@ -249,11 +249,11 @@ class GetPeriodVisitsHandler(
 
     private fun parseMonthlyPeriod(period: String): Pair<Instant, Instant> {
         val match = Regex("^(\\d{4})-(\\d{2})$").matchEntire(period)
-            ?: throw ValidationException("Period '$period' is not a valid MONTHLY period (expected YYYY-MM)")
+            ?: throw ValidationException("Okres '$period' nie jest prawidłowym okresem MONTHLY (oczekiwano YYYY-MM)")
         val year = match.groupValues[1].toInt()
         val month = match.groupValues[2].toInt()
         if (month < 1 || month > 12) {
-            throw ValidationException("Period '$period' is not a valid MONTHLY period (month must be 01-12)")
+            throw ValidationException("Okres '$period' nie jest prawidłowym okresem MONTHLY (miesiąc musi być 01-12)")
         }
         val date = LocalDate.of(year, month, 1)
         val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
@@ -262,7 +262,7 @@ class GetPeriodVisitsHandler(
 
     private fun parseQuarterlyPeriod(period: String): Pair<Instant, Instant> {
         val match = Regex("^(\\d{4})-Q([1-4])$").matchEntire(period)
-            ?: throw ValidationException("Period '$period' is not a valid QUARTERLY period (expected YYYY-Qq)")
+            ?: throw ValidationException("Okres '$period' nie jest prawidłowym okresem QUARTERLY (oczekiwano YYYY-Qq)")
         val year = match.groupValues[1].toInt()
         val quarter = match.groupValues[2].toInt()
         val startMonth = (quarter - 1) * 3 + 1
@@ -273,7 +273,7 @@ class GetPeriodVisitsHandler(
 
     private fun parseYearlyPeriod(period: String): Pair<Instant, Instant> {
         if (!Regex("^\\d{4}$").matches(period)) {
-            throw ValidationException("Period '$period' is not a valid YEARLY period (expected YYYY)")
+            throw ValidationException("Okres '$period' nie jest prawidłowym okresem YEARLY (oczekiwano YYYY)")
         }
         val year = period.toInt()
         val date = LocalDate.of(year, 1, 1)

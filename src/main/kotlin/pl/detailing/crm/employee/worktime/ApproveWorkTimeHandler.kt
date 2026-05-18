@@ -26,10 +26,10 @@ class ApproveWorkTimeHandler(
     @Transactional
     suspend fun handle(command: ApproveWorkTimeCommand) = withContext(Dispatchers.IO) {
         val entity = workTimeRepository.findByIdAndStudioId(command.entryId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Work time entry '${command.entryId}' not found")
+            ?: throw EntityNotFoundException("Wpis czasu pracy '${command.entryId}' nie został znaleziony")
 
         if (entity.status != WorkTimeStatus.PENDING) {
-            throw ValidationException("Work time entry is not in PENDING status")
+            throw ValidationException("Wpis czasu pracy nie ma statusu PENDING")
         }
 
         val newStatus = if (command.approve) WorkTimeStatus.APPROVED else WorkTimeStatus.REJECTED

@@ -21,17 +21,17 @@ class CreateProtocolRuleHandler(
     suspend fun handle(command: CreateProtocolRuleCommand): CreateProtocolRuleResult =
         withContext(Dispatchers.IO) {
             protocolTemplateRepository.findByIdAndStudioId(command.templateId.value, command.studioId.value)
-                ?: throw ValidationException("Protocol template not found")
+                ?: throw ValidationException("Szablon protokołu nie został znaleziony")
 
             when (command.triggerType) {
                 ProtocolTriggerType.SERVICE_SPECIFIC -> {
                     if (command.serviceIds.isEmpty()) {
-                        throw ValidationException("At least one serviceId is required for SERVICE_SPECIFIC rules")
+                        throw ValidationException("Wymagane jest co najmniej jedno serviceId dla reguł SERVICE_SPECIFIC")
                     }
                 }
                 ProtocolTriggerType.GLOBAL_ALWAYS -> {
                     if (command.serviceIds.isNotEmpty()) {
-                        throw ValidationException("serviceIds must be empty for GLOBAL_ALWAYS rules")
+                        throw ValidationException("serviceIds musi być puste dla reguł GLOBAL_ALWAYS")
                     }
                 }
             }

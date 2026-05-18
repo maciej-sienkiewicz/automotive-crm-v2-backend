@@ -45,7 +45,7 @@ class CheckinController(
 
         // Only OWNER and MANAGER can perform check-in
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can perform vehicle check-in")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
         }
 
         val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
@@ -207,7 +207,7 @@ class CheckinController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can perform vehicle check-in")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
         }
 
         val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
@@ -371,7 +371,7 @@ class CheckinController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can generate upload tokens")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą generować tokeny przesyłania")
         }
 
         val generated: GeneratedUploadToken = uploadContextTokenService.generateToken(

@@ -23,7 +23,7 @@ class DeleteAppointmentHandler(
         val appointmentEntity = appointmentRepository.findByIdAndStudioId(
             id = command.appointmentId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Appointment not found: ${command.appointmentId}")
+        ) ?: throw EntityNotFoundException("Rezerwacja nie została znaleziona: ${command.appointmentId}")
 
         // 2. Soft delete - set deletedAt timestamp
         appointmentEntity.deletedAt = Instant.now()

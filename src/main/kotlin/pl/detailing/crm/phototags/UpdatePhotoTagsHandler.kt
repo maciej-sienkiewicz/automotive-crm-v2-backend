@@ -56,7 +56,7 @@ class UpdatePhotoTagsHandler(
         vehiclePhotoRepository.findByIdAndStudioId(photoId, studioId)?.let {
             return PhotoSource.VEHICLE_PHOTO
         }
-        throw EntityNotFoundException("Photo not found: $photoId")
+        throw EntityNotFoundException("Zdjęcie nie zostało znalezione: $photoId")
     }
 }
 

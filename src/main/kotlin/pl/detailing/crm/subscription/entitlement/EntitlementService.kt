@@ -72,7 +72,7 @@ class EntitlementService(
     @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun assignPlan(studioId: StudioId, planKey: PlanKey): StudioEntitlements {
         val plan = planRepository.findByKey(planKey)
-            ?: throw EntityNotFoundException("Plan not found: $planKey")
+            ?: throw EntityNotFoundException("Plan nie został znaleziony: $planKey")
 
         val existing = studioSubscriptionPlanRepository.findByStudioId(studioId.value)
 
@@ -99,13 +99,13 @@ class EntitlementService(
     @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
     fun activateAddOn(studioId: StudioId, addOnKey: AddOnKey): StudioEntitlements {
         val subscription = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
-            ?: throw EntityNotFoundException("Studio has no active subscription plan: $studioId")
+            ?: throw EntityNotFoundException("Studio nie ma aktywnego planu subskrypcji: $studioId")
 
         val alreadyActive = subscription.activeAddOns.any { it.addOn.key == addOnKey }
         if (alreadyActive) return getEntitlements(studioId)
 
         val addOn = addOnRepository.findByKey(addOnKey)
-            ?: throw EntityNotFoundException("Add-on not found: $addOnKey")
+            ?: throw EntityNotFoundException("Moduł nie został znaleziony: $addOnKey")
 
         subscription.activeAddOns.add(StudioAddOnEntity(studioSubscriptionPlan = subscription, addOn = addOn))
         studioSubscriptionPlanRepository.save(subscription)

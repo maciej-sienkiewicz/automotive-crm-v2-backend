@@ -21,10 +21,10 @@ class RevokeConsentHandler(
         val entity = customerConsentRepository.findByIdAndStudioId(
             command.consentId.value,
             command.studioId.value
-        ) ?: throw NotFoundException("Consent not found")
+        ) ?: throw NotFoundException("Zgoda nie została znaleziona")
 
         if (entity.revokedAt != null) {
-            throw ValidationException("Consent is already revoked")
+            throw ValidationException("Zgoda została już odwołana")
         }
 
         entity.revokedAt = Instant.now()

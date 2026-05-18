@@ -45,7 +45,7 @@ class GenerateVisitProtocolsHandler(
             }
 
             val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
-                ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+                ?: throw EntityNotFoundException("Wizyta nie została znaleziona: ${command.visitId}")
             val visitNumber = visitEntity.visitNumber
 
             val resolveStart = System.currentTimeMillis()

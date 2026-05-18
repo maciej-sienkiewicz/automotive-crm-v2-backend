@@ -33,7 +33,7 @@ class GetCustomerDetailHandler(
             val customerEntity = customerRepository.findByIdAndStudioId(
                 id = command.customerId.value,
                 studioId = command.studioId.value
-            ) ?: throw NotFoundException("Customer not found")
+            ) ?: throw NotFoundException("Klient nie został znaleziony")
 
             // Step 2: Calculate visit statistics
             val visits = visitRepository.findByCustomerIdAndStudioId(

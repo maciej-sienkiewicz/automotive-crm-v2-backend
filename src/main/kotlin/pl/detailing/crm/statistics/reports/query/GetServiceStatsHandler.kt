@@ -45,11 +45,11 @@ class GetServiceStatsHandler(
         endDate: Instant
     ): ServiceStatsResult = withContext(Dispatchers.IO) {
         if (!startDate.isBefore(endDate)) {
-            throw ValidationException("startDate must be before endDate")
+            throw ValidationException("startDate musi być wcześniejsza niż endDate")
         }
 
         val service = serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
-            ?: throw EntityNotFoundException("Service $serviceId not found")
+            ?: throw EntityNotFoundException("Usługa $serviceId nie została znaleziona")
 
         // Resolve root for the full-lineage CTE
         val rootId = resolveRootServiceId(serviceId.value, studioId.value)
@@ -79,7 +79,7 @@ class GetServiceStatsHandler(
         var currentId = serviceId
         while (true) {
             val svc = serviceRepository.findByIdAndStudioId(currentId, studioId)
-                ?: throw EntityNotFoundException("Service $currentId not found in studio")
+                ?: throw EntityNotFoundException("Usługa $currentId nie została znaleziona w studiu")
             if (svc.replacesServiceId == null) return currentId
             currentId = svc.replacesServiceId!!
         }

@@ -27,14 +27,14 @@ class CreateLeadAppointmentHandler(
     suspend fun handle(command: CreateLeadAppointmentCommand): CreateAppointmentResult =
         withContext(Dispatchers.IO) {
             val entity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             if (entity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             if (entity.appointmentId != null) {
-                throw ValidationException("Lead already has an appointment linked (appointmentId=${entity.appointmentId})")
+                throw ValidationException("Lead ma już powiązaną rezerwację (appointmentId=${entity.appointmentId})")
             }
 
             val result = createAppointmentHandler.handle(

@@ -27,7 +27,7 @@ class CancelAppointmentHandler(
         val appointmentEntity = appointmentRepository.findByIdAndStudioId(
             id = command.appointmentId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Appointment not found: ${command.appointmentId}")
+        ) ?: throw EntityNotFoundException("Rezerwacja nie została znaleziona: ${command.appointmentId}")
 
         // 2. Validate current status - can only cancel CREATED appointments
         if (appointmentEntity.status == AppointmentStatus.CONVERTED) {

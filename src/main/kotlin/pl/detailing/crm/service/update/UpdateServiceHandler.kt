@@ -27,7 +27,7 @@ class UpdateServiceHandler(
         val oldServiceEntity = serviceRepository.findByIdAndStudioId(
             command.oldServiceId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Service not found")
+        ) ?: throw EntityNotFoundException("Usługa nie została znaleziona")
 
         oldServiceEntity.isActive = false
         oldServiceEntity.updatedAt = Instant.now()

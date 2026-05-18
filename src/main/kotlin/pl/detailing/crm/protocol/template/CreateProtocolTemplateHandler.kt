@@ -30,7 +30,7 @@ class CreateProtocolTemplateHandler(
                 command.name
             )
             if (exists) {
-                throw ValidationException("Protocol template with name '${command.name}' already exists")
+                throw ValidationException("Szablon protokołu o nazwie '${command.name}' już istnieje")
             }
 
             val templateId = ProtocolTemplateId.random()

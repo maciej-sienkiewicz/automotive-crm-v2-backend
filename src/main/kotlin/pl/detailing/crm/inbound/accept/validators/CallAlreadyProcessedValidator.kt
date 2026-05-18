@@ -12,7 +12,7 @@ class CallAlreadyProcessedValidator {
 
         if (callLog.status != CallLogStatus.PENDING) {
             throw ValidationException(
-                "CallLog with id ${context.callId} has already been processed (status: ${callLog.status})"
+                "Dziennik połączeń o id ${context.callId} został już przetworzony (status: ${callLog.status})"
             )
         }
     }

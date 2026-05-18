@@ -53,7 +53,7 @@ class EmployeeDocumentService(
     suspend fun getDownloadUrl(documentId: UUID, studioId: UUID): String =
         withContext(Dispatchers.IO) {
             val entity = employeeDocumentRepository.findByIdAndStudioId(documentId, studioId)
-                ?: throw EntityNotFoundException("Document not found: $documentId")
+                ?: throw EntityNotFoundException("Dokument nie został znaleziony: $documentId")
             generateAttachmentUrl(entity.fileId, entity.fileName)
         }
 
@@ -61,7 +61,7 @@ class EmployeeDocumentService(
     suspend fun getPreviewUrl(documentId: UUID, studioId: UUID): String =
         withContext(Dispatchers.IO) {
             val entity = employeeDocumentRepository.findByIdAndStudioId(documentId, studioId)
-                ?: throw EntityNotFoundException("Document not found: $documentId")
+                ?: throw EntityNotFoundException("Dokument nie został znaleziony: $documentId")
             documentStorageService.generateDownloadUrl(entity.fileId)
         }
 

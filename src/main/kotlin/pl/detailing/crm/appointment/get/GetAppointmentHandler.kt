@@ -25,7 +25,7 @@ class GetAppointmentHandler(
     suspend fun handle(appointmentId: AppointmentId, studioId: StudioId): AppointmentListItem =
         withContext(Dispatchers.IO) {
             val appointment = appointmentRepository.findByIdAndStudioId(appointmentId.value, studioId.value)
-                ?: throw NotFoundException("Appointment not found")
+                ?: throw NotFoundException("Rezerwacja nie została znaleziona")
 
             val customer = customerRepository.findById(appointment.customerId).orElse(null)
             val vehicle = appointment.vehicleId?.let { vehicleRepository.findById(it).orElse(null) }

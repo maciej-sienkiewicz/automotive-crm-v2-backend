@@ -20,11 +20,11 @@ class DeleteLeadHandler(
         withContext(Dispatchers.IO) {
             // Find lead
             val entity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             // Verify studio ownership
             if (entity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             // Delete

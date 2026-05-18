@@ -17,7 +17,7 @@ class GetAppointmentColorByIdHandler(
     suspend fun handle(colorId: AppointmentColorId, studioId: StudioId): AppointmentColorResponse =
         withContext(Dispatchers.IO) {
             val entity = appointmentColorRepository.findByIdAndStudioId(colorId.value, studioId.value)
-                ?: throw EntityNotFoundException("Appointment color not found")
+                ?: throw EntityNotFoundException("Kolor rezerwacji nie został znaleziony")
 
             val userIds = listOf(entity.createdBy, entity.updatedBy).distinct()
             val users = userRepository.findAllById(userIds).associateBy { it.id }

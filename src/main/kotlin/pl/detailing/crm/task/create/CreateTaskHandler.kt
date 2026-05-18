@@ -24,7 +24,7 @@ class CreateTaskHandler(
     suspend fun handle(command: CreateTaskCommand): Task =
         withContext(Dispatchers.IO) {
             if (command.title.isBlank()) {
-                throw ValidationException("Task title cannot be blank")
+                throw ValidationException("Tytuł zadania nie może być pusty")
             }
 
             val task = Task(

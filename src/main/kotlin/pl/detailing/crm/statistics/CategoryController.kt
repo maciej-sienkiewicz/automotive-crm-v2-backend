@@ -238,7 +238,7 @@ class CategoryController(
 
     private fun requireManagerOrOwner(role: UserRole) {
         if (role != UserRole.OWNER && role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can manage service categories")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zarządzać kategoriami usług")
         }
     }
 }

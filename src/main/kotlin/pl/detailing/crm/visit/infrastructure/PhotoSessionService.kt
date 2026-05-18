@@ -104,33 +104,33 @@ class PhotoSessionService(
     ): UploadUrlResult = withContext(Dispatchers.IO) {
         // Validate session
         val session = photoUploadSessionRepository.findByIdAndStudioId(sessionId, studioId.value)
-            ?: throw EntityNotFoundException("Upload session not found")
+            ?: throw EntityNotFoundException("Sesja przesyłania nie została znaleziona")
 
         if (session.token != sessionToken) {
-            throw ForbiddenException("Invalid session token")
+            throw ForbiddenException("Nieprawidłowy token sesji")
         }
 
         if (session.isExpired()) {
-            throw ValidationException("Upload session expired")
+            throw ValidationException("Sesja przesyłania wygasła")
         }
 
         if (session.isClaimed()) {
-            throw ValidationException("Upload session already claimed")
+            throw ValidationException("Sesja przesyłania została już wykorzystana")
         }
 
         // Validate file
         if (contentType.lowercase() !in ALLOWED_CONTENT_TYPES) {
-            throw ValidationException("Invalid content type. Allowed: ${ALLOWED_CONTENT_TYPES.joinToString()}")
+            throw ValidationException("Nieprawidłowy typ zawartości. Dozwolone: ${ALLOWED_CONTENT_TYPES.joinToString()}")
         }
 
         if (fileSize > MAX_FILE_SIZE) {
-            throw ValidationException("File size exceeds maximum allowed (${MAX_FILE_SIZE / 1024 / 1024}MB)")
+            throw ValidationException("Rozmiar pliku przekracza dozwolone maksimum (${MAX_FILE_SIZE / 1024 / 1024} MB)")
         }
 
         // Check photo count limit
         val existingPhotos = temporaryPhotoRepository.findUnclaimedBySessionId(sessionId)
         if (existingPhotos.size >= maxPhotosPerSession) {
-            throw ValidationException("Maximum $maxPhotosPerSession photos per session exceeded")
+            throw ValidationException("Przekroczono maksymalną liczbę zdjęć na sesję: $maxPhotosPerSession")
         }
 
         // Generate photo ID and S3 key
@@ -191,7 +191,7 @@ class PhotoSessionService(
     ): List<SessionPhotoInfo> = withContext(Dispatchers.IO) {
         // Validate session exists
         photoUploadSessionRepository.findByIdAndStudioId(sessionId, studioId.value)
-            ?: throw EntityNotFoundException("Upload session not found")
+            ?: throw EntityNotFoundException("Sesja przesyłania nie została znaleziona")
 
         val photos = temporaryPhotoRepository.findBySessionId(sessionId)
 
@@ -219,18 +219,18 @@ class PhotoSessionService(
     ): Unit = withContext(Dispatchers.IO) {
         // Validate session
         val session = photoUploadSessionRepository.findByIdAndStudioId(sessionId, studioId.value)
-            ?: throw EntityNotFoundException("Upload session not found")
+            ?: throw EntityNotFoundException("Sesja przesyłania nie została znaleziona")
 
         if (session.isClaimed()) {
-            throw ValidationException("Cannot delete photos from claimed session")
+            throw ValidationException("Nie można usuwać zdjęć z wykorzystanej sesji")
         }
 
         // Find photo
         val photo = temporaryPhotoRepository.findByIdAndSessionId(photoId, sessionId)
-            ?: throw EntityNotFoundException("Photo not found in session")
+            ?: throw EntityNotFoundException("Zdjęcie nie zostało znalezione w sesji")
 
         if (photo.claimed) {
-            throw ValidationException("Cannot delete claimed photo")
+            throw ValidationException("Nie można usunąć wykorzystanego zdjęcia")
         }
 
         // Delete from S3
@@ -264,18 +264,18 @@ class PhotoSessionService(
 
         for (photoId in photoIds) {
             val tempPhoto = temporaryPhotoRepository.findById(photoId).orElse(null)
-                ?: throw EntityNotFoundException("Photo $photoId not found")
+                ?: throw EntityNotFoundException("Zdjęcie $photoId nie zostało znalezione")
 
             if (tempPhoto.claimed) {
-                throw ValidationException("Photo $photoId already claimed")
+                throw ValidationException("Zdjęcie $photoId zostało już wykorzystane")
             }
 
             // Validate session
             val session = photoUploadSessionRepository.findById(tempPhoto.sessionId).orElse(null)
-                ?: throw EntityNotFoundException("Upload session not found for photo $photoId")
+                ?: throw EntityNotFoundException("Sesja przesyłania nie została znaleziona dla zdjęcia $photoId")
 
             if (session.isExpired()) {
-                throw ValidationException("Upload session expired")
+                throw ValidationException("Sesja przesyłania wygasła")
             }
 
             // Copy file from temp to final location

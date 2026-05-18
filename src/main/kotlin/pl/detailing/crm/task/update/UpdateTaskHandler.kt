@@ -24,14 +24,14 @@ class UpdateTaskHandler(
     suspend fun handle(command: UpdateTaskCommand): Task =
         withContext(Dispatchers.IO) {
             val entity = taskRepository.findById(command.taskId.value)
-                .orElseThrow { EntityNotFoundException("Task not found: ${command.taskId}") }
+                .orElseThrow { EntityNotFoundException("Zadanie nie zostało znalezione: ${command.taskId}") }
 
             if (entity.studioId != command.studioId.value) {
-                throw ForbiddenException("Task does not belong to this studio")
+                throw ForbiddenException("Zadanie nie należy do tego studia")
             }
 
             if (command.title != null && command.title.isBlank()) {
-                throw ValidationException("Task title cannot be blank")
+                throw ValidationException("Tytuł zadania nie może być pusty")
             }
 
             val oldValues = mapOf(

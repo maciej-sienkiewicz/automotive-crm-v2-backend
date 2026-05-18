@@ -25,14 +25,14 @@ class LoginHandler(
             val email = request.email.lowercase().trim()
 
             val userEntity = userRepository.findByEmail(email)
-                ?: throw UnauthorizedException("Invalid email or password")
+                ?: throw UnauthorizedException("Nieprawidłowy adres e-mail lub hasło")
 
             if (!userEntity.isActive) {
-                throw UnauthorizedException("Account is inactive")
+                throw UnauthorizedException("Konto jest nieaktywne")
             }
 
             if (!passwordEncoder.matches(request.password, userEntity.passwordHash)) {
-                throw UnauthorizedException("Invalid email or password")
+                throw UnauthorizedException("Nieprawidłowy adres e-mail lub hasło")
             }
 
             val user = userEntity.toDomain()

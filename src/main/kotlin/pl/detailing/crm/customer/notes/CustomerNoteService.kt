@@ -36,7 +36,7 @@ class CustomerNoteService(
         createdByName: String
     ): CustomerNoteItem = withContext(Dispatchers.IO) {
         customerRepository.findByIdAndStudioId(customerId, studioId)
-            ?: throw EntityNotFoundException("Customer not found")
+            ?: throw EntityNotFoundException("Klient nie został znaleziony")
 
         val now = Instant.now()
         val entity = CustomerNoteEntity(
@@ -75,7 +75,7 @@ class CustomerNoteService(
         updatedByName: String? = null
     ): CustomerNoteItem = withContext(Dispatchers.IO) {
         val entity = customerNoteRepository.findByIdAndStudioId(noteId, studioId)
-            ?: throw EntityNotFoundException("Note not found")
+            ?: throw EntityNotFoundException("Notatka nie została znaleziona")
 
         val oldContent = entity.content
         entity.content = content.trim()
@@ -107,7 +107,7 @@ class CustomerNoteService(
         deletedByName: String? = null
     ): Unit = withContext(Dispatchers.IO) {
         val entity = customerNoteRepository.findByIdAndStudioId(noteId, studioId)
-            ?: throw EntityNotFoundException("Note not found")
+            ?: throw EntityNotFoundException("Notatka nie została znaleziona")
 
         customerNoteRepository.delete(entity)
 

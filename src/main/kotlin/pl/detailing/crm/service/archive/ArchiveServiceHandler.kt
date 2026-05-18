@@ -20,10 +20,10 @@ class ArchiveServiceHandler(
         val entity = serviceRepository.findByIdAndStudioId(
             command.serviceId.value,
             command.studioId.value
-        ) ?: throw EntityNotFoundException("Service not found")
+        ) ?: throw EntityNotFoundException("Usługa nie została znaleziona")
 
         if (!entity.isActive) {
-            throw ValidationException("Service is already archived")
+            throw ValidationException("Usługa jest już zarchiwizowana")
         }
 
         val archived = entity.toDomain().archive()

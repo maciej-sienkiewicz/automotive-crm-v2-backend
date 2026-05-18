@@ -90,7 +90,7 @@ class GetBreakdownStatsHandler(
         endDateStr: String
     ): BreakdownResult = withContext(Dispatchers.IO) {
         if (!startDate.isBefore(endDate)) {
-            throw ValidationException("startDate must be before or equal to endDate")
+            throw ValidationException("startDate musi być wcześniejsza lub równa endDate")
         }
 
         val endDateInclusive = endDate.minusSeconds(1)

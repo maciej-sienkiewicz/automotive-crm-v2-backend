@@ -21,10 +21,10 @@ class SetCompensationHandler(
     @Transactional
     suspend fun handle(command: SetCompensationCommand): CompensationConfigId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot set compensation for a terminated employee")
+            throw ValidationException("Nie można ustawić wynagrodzenia dla zwolnionego pracownika")
         }
 
         // Close previous active config

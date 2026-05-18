@@ -52,7 +52,7 @@ class LeaveBalanceHandler(
             command.employeeId.value, command.studioId.value, command.year
         )
         if (existing != null) {
-            throw ConflictException("Leave balance for year ${command.year} already exists for this employee")
+            throw ConflictException("Saldo urlopowe za rok ${command.year} już istnieje dla tego pracownika")
         }
 
         val balance = LeaveBalance(
@@ -76,7 +76,7 @@ class LeaveBalanceHandler(
     suspend fun adjustBalance(command: AdjustLeaveBalanceCommand): LeaveBalance = withContext(Dispatchers.IO) {
         val entity = leaveBalanceRepository.findByEmployeeIdAndYear(
             command.employeeId.value, command.studioId.value, command.year
-        ) ?: throw EntityNotFoundException("Leave balance for year ${command.year} not found")
+        ) ?: throw EntityNotFoundException("Saldo urlopowe za rok ${command.year} nie zostało znalezione")
 
         entity.adjustmentDays += command.adjustmentDays
         if (command.notes != null) {

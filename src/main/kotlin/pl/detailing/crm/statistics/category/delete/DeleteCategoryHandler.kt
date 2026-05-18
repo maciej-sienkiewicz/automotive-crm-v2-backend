@@ -21,7 +21,7 @@ class DeleteCategoryHandler(
         val entity = serviceCategoryRepository.findByIdAndStudioId(
             categoryId.value,
             studioId.value
-        ) ?: throw EntityNotFoundException("Category $categoryId not found")
+        ) ?: throw EntityNotFoundException("Kategoria $categoryId nie została znaleziona")
 
         entity.isActive = false
         entity.updatedAt = Instant.now()

@@ -118,7 +118,7 @@ class ConsentController(
         requireOwnerOrManager(principal)
 
         val entity = consentDefinitionRepository.findByIdAndStudioId(id, principal.studioId.value)
-            ?: throw NotFoundException("Consent not found")
+            ?: throw NotFoundException("Zgoda nie została znaleziona")
 
         entity.isActive = false
         entity.updatedBy = principal.userId.value
@@ -173,7 +173,7 @@ class ConsentController(
 
     private fun requireOwnerOrManager(principal: pl.detailing.crm.auth.UserPrincipal) {
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can manage consents")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zarządzać zgodami")
         }
     }
 

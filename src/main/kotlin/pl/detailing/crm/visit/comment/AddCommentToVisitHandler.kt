@@ -22,15 +22,15 @@ class AddCommentToVisitHandler(
     suspend fun handle(command: AddCommentToVisitCommand): AddCommentToVisitResult {
         // Step 1: Verify visit exists and user has access
         val visitEntity = visitRepository.findById(command.visitId.value)
-            .orElseThrow { NotFoundException("Visit not found: ${command.visitId}") }
+            .orElseThrow { NotFoundException("Wizyta nie została znaleziona: ${command.visitId}") }
 
         if (visitEntity.studioId != command.studioId.value) {
-            throw ForbiddenException("Visit does not belong to this studio")
+            throw ForbiddenException("Wizyta nie należy do tego studia")
         }
 
         // Step 2: Get user details for audit
         val userEntity = userRepository.findById(command.userId.value)
-            .orElseThrow { NotFoundException("User not found: ${command.userId}") }
+            .orElseThrow { NotFoundException("Użytkownik nie został znaleziony: ${command.userId}") }
 
         val userName = "${userEntity.firstName} ${userEntity.lastName}"
 

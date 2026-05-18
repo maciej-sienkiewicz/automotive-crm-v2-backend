@@ -244,7 +244,7 @@ class CustomerController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can create customers")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć klientów")
         }
 
         val command = CreateCustomerCommand(
@@ -496,7 +496,7 @@ class CustomerController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update customers")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować klientów")
         }
 
         val command = pl.detailing.crm.customer.update.UpdateCustomerCommand(
@@ -548,7 +548,7 @@ class CustomerController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update company data")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować dane firmy")
         }
 
         val command = pl.detailing.crm.customer.update.UpdateCompanyCommand(
@@ -588,7 +588,7 @@ class CustomerController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can delete company data")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać dane firmy")
         }
 
         val command = pl.detailing.crm.customer.update.DeleteCompanyCommand(

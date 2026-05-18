@@ -17,10 +17,10 @@ class UpdateEmployeeHandler(
     @Transactional
     suspend fun handle(command: UpdateEmployeeCommand) = withContext(Dispatchers.IO) {
         val entity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (entity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot update a terminated employee")
+            throw ValidationException("Nie można aktualizować danych zwolnionego pracownika")
         }
 
         val oldValues = mapOf(

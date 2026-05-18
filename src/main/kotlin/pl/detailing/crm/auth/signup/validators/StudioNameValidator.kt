@@ -8,28 +8,28 @@ import pl.detailing.crm.shared.ValidationException
 class NameValidator {
     fun validate(context: SignupValidationContext) {
         if (context.firstName.trim().length < 2) {
-            throw ValidationException("First name must be at least 2 characters long")
+            throw ValidationException("Imię musi mieć co najmniej 2 znaki")
         }
 
         if (context.lastName.trim().length < 2) {
-            throw ValidationException("Last name must be at least 2 characters long")
+            throw ValidationException("Nazwisko musi mieć co najmniej 2 znaki")
         }
 
         if (context.firstName.trim().length > 50) {
-            throw ValidationException("First name cannot exceed 50 characters")
+            throw ValidationException("Imię nie może przekraczać 50 znaków")
         }
 
         if (context.lastName.trim().length > 50) {
-            throw ValidationException("Last name cannot exceed 50 characters")
+            throw ValidationException("Nazwisko nie może przekraczać 50 znaków")
         }
 
         val nameRegex = "^[a-zA-ZÄ…Ä‡Ä™Å‚Å„Ć³Å›ĹşĹĽÄ„Ä†Ä˜Ĺ�ĹƒĆłĹšĹšĹ˝\\s-]+$".toRegex()
         if (!nameRegex.matches(context.firstName)) {
-            throw ValidationException("First name contains invalid characters")
+            throw ValidationException("Imię zawiera niedozwolone znaki")
         }
 
         if (!nameRegex.matches(context.lastName)) {
-            throw ValidationException("Last name contains invalid characters")
+            throw ValidationException("Nazwisko zawiera niedozwolone znaki")
         }
     }
 }

@@ -24,7 +24,7 @@ class PricingService(
 ) {
     fun calculateCustomPrice(addOnKeys: List<AddOnKey>): CustomPriceResponse {
         val basePlan = planRepository.findByKey(PlanKey.BASIC)
-            ?: throw EntityNotFoundException("BASIC plan not found in catalog")
+            ?: throw EntityNotFoundException("Plan BASIC nie został znaleziony w katalogu")
 
         val addOnEntities = if (addOnKeys.isEmpty()) emptyList()
         else addOnRepository.findAllByKeyIn(addOnKeys)

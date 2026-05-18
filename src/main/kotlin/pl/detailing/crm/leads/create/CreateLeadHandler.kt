@@ -24,19 +24,19 @@ class CreateLeadHandler(
         withContext(Dispatchers.IO) {
             // Validate estimated value
             if (command.estimatedValue < 0) {
-                throw ValidationException("Estimated value cannot be negative")
+                throw ValidationException("Szacowana wartość nie może być ujemna")
             }
 
             // Validate contact identifier
             if (command.contactIdentifier.isBlank()) {
-                throw ValidationException("Contact identifier cannot be blank")
+                throw ValidationException("Identyfikator kontaktu nie może być pusty")
             }
 
             // For phone source, validate phone format
             if (command.source == LeadSource.PHONE) {
                 val normalizedPhone = normalizePolishPhone(command.contactIdentifier.trim())
                 if (!isValidPolishPhone(normalizedPhone)) {
-                    throw ValidationException("Invalid Polish phone number format: ${command.contactIdentifier}")
+                    throw ValidationException("Nieprawidłowy format polskiego numeru telefonu: ${command.contactIdentifier}")
                 }
             }
 

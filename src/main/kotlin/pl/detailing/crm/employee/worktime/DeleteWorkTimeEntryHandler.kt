@@ -24,18 +24,18 @@ class DeleteWorkTimeEntryHandler(
         userName: String?
     ) = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(employeeId.value, studioId.value)
-            ?: throw EntityNotFoundException("Employee '$employeeId' not found")
+            ?: throw EntityNotFoundException("Pracownik '$employeeId' nie został znaleziony")
 
         val entry = workTimeRepository.findByIdAndStudioId(entryId.value, studioId.value)
-            ?: throw EntityNotFoundException("Work time entry '$entryId' not found")
+            ?: throw EntityNotFoundException("Wpis czasu pracy '$entryId' nie został znaleziony")
 
         if (entry.employeeId != employeeId.value) {
-            throw EntityNotFoundException("Work time entry '$entryId' not found")
+            throw EntityNotFoundException("Wpis czasu pracy '$entryId' nie został znaleziony")
         }
 
         if (entry.status != WorkTimeStatus.PENDING) {
             throw ForbiddenException(
-                "Cannot delete work time entry '${entryId}' with status '${entry.status}' — only PENDING entries can be deleted"
+                "Nie można usunąć wpisu czasu pracy '${entryId}' ze statusem '${entry.status}' — można usuwać tylko wpisy ze statusem PENDING"
             )
         }
 

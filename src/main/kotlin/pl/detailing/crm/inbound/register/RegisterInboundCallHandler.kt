@@ -28,7 +28,7 @@ class RegisterInboundCallHandler(
             // Validate phone format
             val normalizedPhone = normalizePolishPhone(command.phoneNumber.trim())
             if (!isValidPolishPhone(normalizedPhone)) {
-                throw ValidationException("Invalid Polish phone number format: ${command.phoneNumber}")
+                throw ValidationException("Nieprawidłowy format polskiego numeru telefonu: ${command.phoneNumber}")
             }
 
             // Create call log

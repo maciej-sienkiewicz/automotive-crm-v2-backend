@@ -38,7 +38,7 @@ class UpdateAppointmentHandler(
     suspend fun handle(command: UpdateAppointmentCommand): CreateAppointmentResult = withContext(Dispatchers.IO) {
         // Step 1: Find existing appointment
         val existingEntity = appointmentRepository.findByIdAndStudioId(command.appointmentId.value, command.studioId.value)
-            ?: throw NotFoundException("Appointment not found")
+            ?: throw NotFoundException("Rezerwacja nie została znaleziona")
 
         // Capture old values for audit
         val oldValues = mapOf(
@@ -89,7 +89,7 @@ class UpdateAppointmentHandler(
 
             if (serviceLineItem.serviceId != null) {
                 val service = services[serviceLineItem.serviceId]
-                    ?: throw EntityNotFoundException("Service with ID '${serviceLineItem.serviceId}' not found")
+                    ?: throw EntityNotFoundException("Usługa o ID '${serviceLineItem.serviceId}' nie została znaleziona")
 
                 AppointmentLineItem.create(
                     serviceId = service.id,
@@ -218,7 +218,7 @@ class UpdateAppointmentHandler(
         userId: UserId
     ): CustomerId {
         val entity = customerRepository.findByIdAndStudioId(identity.customerId.value, studioId.value)
-            ?: throw EntityNotFoundException("Customer with ID '${identity.customerId}' not found")
+            ?: throw EntityNotFoundException("Klient o ID '${identity.customerId}' nie został znaleziony")
 
         entity.firstName = identity.firstName?.trim()
         entity.lastName = identity.lastName?.trim()
@@ -288,7 +288,7 @@ class UpdateAppointmentHandler(
         userId: UserId
     ): VehicleId {
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(identity.vehicleId.value, studioId.value)
-            ?: throw EntityNotFoundException("Vehicle with ID '${identity.vehicleId}' not found")
+            ?: throw EntityNotFoundException("Pojazd o ID '${identity.vehicleId}' nie został znaleziony")
 
         vehicleEntity.brand = identity.brand.trim()
         vehicleEntity.model = identity.model.trim()

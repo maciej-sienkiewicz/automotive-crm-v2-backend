@@ -22,10 +22,10 @@ class CreateAmendmentHandler(
     @Transactional
     suspend fun handle(command: CreateAmendmentCommand): ContractAmendmentId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         contractRepository.findByIdAndStudioId(command.contractId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Contract '${command.contractId}' not found")
+            ?: throw EntityNotFoundException("Umowa '${command.contractId}' nie została znaleziona")
 
         val comp = command.compensation
         val (mode, etat, monthly, rateGross, rateNet) = when (comp) {

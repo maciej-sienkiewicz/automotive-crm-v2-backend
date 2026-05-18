@@ -87,7 +87,7 @@ class VehicleDocumentService(
         deletedByName: String? = null
     ): Unit = withContext(Dispatchers.IO) {
         val entity = vehicleDocumentRepository.findByIdAndStudioId(documentId, studioId)
-            ?: throw EntityNotFoundException("Document not found: $documentId")
+            ?: throw EntityNotFoundException("Dokument nie został znaleziony: $documentId")
 
         val docName = entity.name
         val vehicleId = entity.vehicleId

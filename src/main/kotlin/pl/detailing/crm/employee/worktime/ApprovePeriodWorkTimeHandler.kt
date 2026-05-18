@@ -31,7 +31,7 @@ class ApprovePeriodWorkTimeHandler(
         userName: String?
     ): ApprovePeriodResult = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(employeeId.value, studioId.value)
-            ?: throw EntityNotFoundException("Employee '$employeeId' not found")
+            ?: throw EntityNotFoundException("Pracownik '$employeeId' nie został znaleziony")
 
         val from = period.atDay(1)
         val to = period.atEndOfMonth()

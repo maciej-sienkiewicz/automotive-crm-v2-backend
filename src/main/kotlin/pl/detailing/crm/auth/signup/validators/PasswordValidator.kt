@@ -10,23 +10,23 @@ class PasswordValidator {
         val password = context.password
 
         if (password != context.confirmPassword) {
-            throw ValidationException("Passwords do not match")
+            throw ValidationException("Hasła nie są zgodne")
         }
 
         if (password.length < 8) {
-            throw ValidationException("Password must be at least 8 characters long")
+            throw ValidationException("Hasło musi mieć co najmniej 8 znaków")
         }
 
         if (!password.any { it.isUpperCase() }) {
-            throw ValidationException("Password must contain at least one uppercase letter")
+            throw ValidationException("Hasło musi zawierać co najmniej jedną wielką literę")
         }
 
         if (!password.any { it.isLowerCase() }) {
-            throw ValidationException("Password must contain at least one lowercase letter")
+            throw ValidationException("Hasło musi zawierać co najmniej jedną małą literę")
         }
 
         if (!password.any { it.isDigit() }) {
-            throw ValidationException("Password must contain at least one digit")
+            throw ValidationException("Hasło musi zawierać co najmniej jedną cyfrę")
         }
     }
 }

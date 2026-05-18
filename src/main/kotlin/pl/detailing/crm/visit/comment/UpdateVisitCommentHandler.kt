@@ -25,14 +25,14 @@ class UpdateVisitCommentHandler(
     suspend fun handle(command: UpdateVisitCommentCommand): UpdateVisitCommentResult {
         // Step 1: Get comment
         val commentEntity = visitCommentRepository.findById(command.commentId.value)
-            .orElseThrow { NotFoundException("Comment not found: ${command.commentId}") }
+            .orElseThrow { NotFoundException("Komentarz nie został znaleziony: ${command.commentId}") }
 
         // Step 2: Verify visit exists and user has access
         val visitEntity = visitRepository.findById(commentEntity.visitId)
-            .orElseThrow { NotFoundException("Visit not found") }
+            .orElseThrow { NotFoundException("Wizyta nie została znaleziona") }
 
         if (visitEntity.studioId != command.studioId.value) {
-            throw ForbiddenException("Visit does not belong to this studio")
+            throw ForbiddenException("Wizyta nie należy do tego studia")
         }
 
         // Step 3: Check if comment is deleted
@@ -50,7 +50,7 @@ class UpdateVisitCommentHandler(
 
         // Step 5: Get user details for audit
         val userEntity = userRepository.findById(command.userId.value)
-            .orElseThrow { NotFoundException("User not found: ${command.userId}") }
+            .orElseThrow { NotFoundException("Użytkownik nie został znaleziony: ${command.userId}") }
 
         val userName = "${userEntity.firstName} ${userEntity.lastName}"
 

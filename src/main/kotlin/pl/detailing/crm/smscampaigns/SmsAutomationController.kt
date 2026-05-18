@@ -72,7 +72,7 @@ class SmsAutomationController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Only OWNER and MANAGER can update SMS automation config")
+            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować konfigurację automatyzacji SMS")
         }
 
         val existingDelayedReminder = getConfigHandler.handle(principal.studioId).delayedReminder

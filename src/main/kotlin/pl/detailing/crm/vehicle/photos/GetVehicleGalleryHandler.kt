@@ -30,7 +30,7 @@ class GetVehicleGalleryHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioId(
             id = command.vehicleId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
         // 2. Get photos directly attached to vehicle
         vehicleEntity.photos.size // Force load

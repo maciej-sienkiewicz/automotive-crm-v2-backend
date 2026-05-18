@@ -19,10 +19,10 @@ class GetVisitCommentsHandler(
     suspend fun handle(query: GetVisitCommentsQuery): GetVisitCommentsResult {
         // Step 1: Verify visit exists and user has access
         val visitEntity = visitRepository.findById(query.visitId.value)
-            .orElseThrow { NotFoundException("Visit not found: ${query.visitId}") }
+            .orElseThrow { NotFoundException("Wizyta nie została znaleziona: ${query.visitId}") }
 
         if (visitEntity.studioId != query.studioId.value) {
-            throw ForbiddenException("Visit does not belong to this studio")
+            throw ForbiddenException("Wizyta nie należy do tego studia")
         }
 
         // Step 2: Get all comments (including deleted ones - they'll be shown as strikethrough)

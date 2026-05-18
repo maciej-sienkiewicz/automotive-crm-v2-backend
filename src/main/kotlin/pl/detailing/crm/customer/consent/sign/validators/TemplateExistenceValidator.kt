@@ -13,14 +13,14 @@ class TemplateExistenceValidator {
     fun validate(context: SignConsentValidationContext) {
         if (context.template == null) {
             throw ValidationException(
-                "Consent template with ID '${context.templateId}' does not exist or is not accessible"
+                "Szablon zgody o ID '${context.templateId}' nie istnieje lub jest niedostępny"
             )
         }
 
         if (!context.template.isActive) {
             throw ValidationException(
-                "Consent template version ${context.template.version} is no longer active. " +
-                "Please use the current active version."
+                "Wersja ${context.template.version} szablonu zgody nie jest już aktywna. " +
+                "Proszę użyć aktualnej aktywnej wersji."
             )
         }
     }

@@ -8,7 +8,7 @@ import pl.detailing.crm.shared.ValidationException
 class TermsValidator {
     fun validate(context: SignupValidationContext) {
         if (!context.acceptTerms) {
-            throw ValidationException("You must accept the terms and conditions")
+            throw ValidationException("Musisz zaakceptować regulamin i warunki korzystania")
         }
     }
 }

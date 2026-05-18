@@ -30,13 +30,13 @@ class EndContractHandler(
     @Transactional
     suspend fun handle(command: EndContractCommand) = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         val contractEntity = contractRepository.findByIdAndStudioId(command.contractId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Contract '${command.contractId}' not found")
+            ?: throw EntityNotFoundException("Umowa '${command.contractId}' nie została znaleziona")
 
         if (!contractEntity.isActive) {
-            throw ValidationException("Contract is already inactive")
+            throw ValidationException("Umowa jest już nieaktywna")
         }
 
         contractEntity.isActive = false

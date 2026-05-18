@@ -25,10 +25,10 @@ class CreateContractHandler(
     @Transactional
     suspend fun handle(command: CreateContractCommand): EmploymentContractId = withContext(Dispatchers.IO) {
         val employeeEntity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Employee '${command.employeeId}' not found")
+            ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
         if (employeeEntity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Cannot add a contract to a terminated employee")
+            throw ValidationException("Nie można dodać umowy dla zwolnionego pracownika")
         }
 
         // Deactivate any existing active contract

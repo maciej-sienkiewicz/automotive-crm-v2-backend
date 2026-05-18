@@ -12,14 +12,14 @@ class CustomerExistenceValidator {
             is CustomerIdentity.Existing -> {
                 if (context.existingCustomer == null) {
                     throw EntityNotFoundException(
-                        "Customer with ID '${identity.customerId}' not found in this studio"
+                        "Klient o ID '${identity.customerId}' nie został znaleziony w tym studiu"
                     )
                 }
             }
             is CustomerIdentity.Update -> {
                 if (context.existingCustomer == null) {
                     throw EntityNotFoundException(
-                        "Customer with ID '${identity.customerId}' not found in this studio"
+                        "Klient o ID '${identity.customerId}' nie został znaleziony w tym studiu"
                     )
                 }
             }

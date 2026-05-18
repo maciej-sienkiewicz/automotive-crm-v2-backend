@@ -23,7 +23,7 @@ class UpdateCompanyHandler(
             val entity = customerRepository.findByIdAndStudioId(
                 id = command.customerId.value,
                 studioId = command.studioId.value
-            ) ?: throw NotFoundException("Customer not found")
+            ) ?: throw NotFoundException("Klient nie został znaleziony")
 
             // Capture old values for audit
             val oldValues = mapOf(

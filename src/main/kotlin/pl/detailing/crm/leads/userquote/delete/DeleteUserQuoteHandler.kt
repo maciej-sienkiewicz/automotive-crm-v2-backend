@@ -25,10 +25,10 @@ class DeleteUserQuoteHandler(
     suspend fun handle(command: DeleteUserQuoteCommand) =
         withContext(Dispatchers.IO) {
             val leadEntity = leadRepository.findById(command.leadId.value)
-                .orElseThrow { EntityNotFoundException("Lead not found: ${command.leadId}") }
+                .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
             if (leadEntity.studioId != command.studioId.value) {
-                throw ForbiddenException("Lead does not belong to this studio")
+                throw ForbiddenException("Lead nie należy do tego studia")
             }
 
             userQuoteRepository.deleteByLeadId(command.leadId.value)

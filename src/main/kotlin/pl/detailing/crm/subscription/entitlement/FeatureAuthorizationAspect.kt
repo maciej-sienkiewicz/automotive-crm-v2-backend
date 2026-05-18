@@ -35,7 +35,7 @@ class FeatureAuthorizationAspect(
         val studioId = try {
             SecurityContextHelper.getCurrentStudioId()
         } catch (e: Exception) {
-            throw UnauthorizedException("Authentication required")
+            throw UnauthorizedException("Wymagane uwierzytelnienie")
         }
 
         val featureKey = requiresFeature.value

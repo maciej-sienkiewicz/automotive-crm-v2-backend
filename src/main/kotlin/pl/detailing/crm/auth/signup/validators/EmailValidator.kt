@@ -10,11 +10,11 @@ class EmailValidator {
         val emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$".toRegex()
 
         if (!emailRegex.matches(context.email)) {
-            throw ValidationException("Invalid email format")
+            throw ValidationException("Nieprawidłowy format adresu e-mail")
         }
 
         if (context.emailExists) {
-            throw ValidationException("Email already registered")
+            throw ValidationException("Adres e-mail jest już zarejestrowany")
         }
     }
 }

@@ -13,7 +13,7 @@ class NewCustomerUniquenessValidator {
             -> {
                 if (identity.email != null && context.customerEmailExists) {
                     throw ValidationException(
-                        "Customer with email '${identity.email}' already exists in this studio"
+                        "Klient z adresem e-mail '${identity.email}' już istnieje w tym studiu"
                     )
                 }
 

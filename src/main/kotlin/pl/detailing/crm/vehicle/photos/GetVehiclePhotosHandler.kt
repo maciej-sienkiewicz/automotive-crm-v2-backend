@@ -24,7 +24,7 @@ class GetVehiclePhotosHandler(
         val vehicleEntity = vehicleRepository.findByIdAndStudioIdWithPhotos(
             id = command.vehicleId.value,
             studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Vehicle not found: ${command.vehicleId}")
+        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
         // 2. Get photos and generate presigned URLs
         val photoResponses = vehicleEntity.photos.map { photoEntity ->

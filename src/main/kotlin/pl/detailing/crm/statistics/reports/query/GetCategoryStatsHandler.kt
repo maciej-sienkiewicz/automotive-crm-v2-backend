@@ -37,13 +37,13 @@ class GetCategoryStatsHandler(
         endDate: Instant
     ): CategoryStatsResult = withContext(Dispatchers.IO) {
         if (!startDate.isBefore(endDate)) {
-            throw ValidationException("startDate must be before endDate")
+            throw ValidationException("startDate musi być wcześniejsza niż endDate")
         }
 
         val category = serviceCategoryRepository.findByIdAndStudioId(
             categoryId.value,
             studioId.value
-        ) ?: throw EntityNotFoundException("Category $categoryId not found")
+        ) ?: throw EntityNotFoundException("Kategoria $categoryId nie została znaleziona")
 
         val data = statsRepository.getCategoryStats(
             studioId = studioId.value,

@@ -15,11 +15,11 @@ class ProductionYearValidator {
         val minYear = 1900
 
         if (year > currentYear) {
-            throw ValidationException("Production year cannot be in the future (current year: $currentYear)")
+            throw ValidationException("Rok produkcji nie może być w przyszłości (aktualny rok: $currentYear)")
         }
 
         if (year < minYear) {
-            throw ValidationException("Production year must be greater than $minYear")
+            throw ValidationException("Rok produkcji musi być większy niż $minYear")
         }
     }
 }

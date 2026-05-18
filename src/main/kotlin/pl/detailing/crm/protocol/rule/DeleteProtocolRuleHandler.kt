@@ -20,7 +20,7 @@ class DeleteProtocolRuleHandler(
             val entity = protocolRuleRepository.findByIdAndStudioId(
                 command.ruleId.value,
                 command.studioId.value
-            ) ?: throw NotFoundException("Protocol rule not found: ${command.ruleId}")
+            ) ?: throw NotFoundException("Reguła protokołu nie została znaleziona: ${command.ruleId}")
 
             protocolRuleRepository.delete(entity)
         }
