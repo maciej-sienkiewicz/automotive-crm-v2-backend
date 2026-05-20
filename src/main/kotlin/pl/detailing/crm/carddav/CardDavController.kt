@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestMethod
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.shared.ForbiddenException
 import java.util.UUID
@@ -17,15 +18,25 @@ class CardDavController(
     private val vCardFormatter: VCardFormatter
 ) {
 
-    // OPTIONS — capability advertisement for CardDAV clients
+    // Explicit OPTIONS handler — @RequestMapping without method list skips OPTIONS in Spring MVC,
+    // so we need a dedicated mapping to advertise DAV capabilities correctly.
+    @RequestMapping(
+        value = ["", "/", "/contacts", "/contacts/", "/contacts/{customerId}.vcf"],
+        method = [RequestMethod.OPTIONS]
+    )
+    fun handleOptionsMethod(response: HttpServletResponse) {
+        serveOptions(response)
+    }
+
+    // Generic handler for WebDAV methods (PROPFIND, REPORT) and GET.
+    // Empty method list matches everything except OPTIONS (handled above).
     @RequestMapping(value = ["", "/", "/contacts", "/contacts/", "/contacts/{customerId}.vcf"])
-    fun handleOptions(
+    fun handleRequest(
         @PathVariable tenantId: UUID,
         request: HttpServletRequest,
         response: HttpServletResponse
     ) {
         when (request.method.uppercase()) {
-            "OPTIONS" -> serveOptions(response)
             "PROPFIND" -> handlePropfind(tenantId, request, response)
             "REPORT" -> handleReport(tenantId, request, response)
             "GET" -> {
