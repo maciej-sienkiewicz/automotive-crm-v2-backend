@@ -418,8 +418,10 @@ data class VisitServiceItem(
             customNote = customNote
         )
 
-        val effectiveAdjustmentType = newAdjustmentType ?: adjustmentType
-        val effectiveAdjustmentValue = newAdjustmentValue ?: adjustmentValue
+        // When no adjustment is provided, treat the edit as a manual net price override (SET_NET)
+        // so that a prior SET_GROSS/PERCENT/etc. doesn't silently swallow the change.
+        val effectiveAdjustmentType = newAdjustmentType ?: AdjustmentType.SET_NET
+        val effectiveAdjustmentValue = newAdjustmentValue ?: newBasePriceNet.amountInCents
 
         val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, vatRate, effectiveAdjustmentType, effectiveAdjustmentValue)
         val finalGross = vatRate.calculateGrossAmount(finalNet)
