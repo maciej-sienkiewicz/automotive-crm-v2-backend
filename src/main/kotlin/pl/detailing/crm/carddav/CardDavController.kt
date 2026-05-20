@@ -3,6 +3,7 @@ package pl.detailing.crm.carddav
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
@@ -17,6 +18,81 @@ class CardDavController(
     private val xmlBuilder: CardDavXmlBuilder,
     private val vCardFormatter: VCardFormatter
 ) {
+
+    // Apple Configuration Profile (.mobileconfig) — public endpoint, no auth required.
+    // iOS scans the QR code → downloads this file → prompts "Install profile" → asks for password.
+    // Deterministic UUIDs derived from tenantId so reinstalling the same profile updates rather
+    // than duplicates the CardDAV account on the device.
+    @GetMapping("/setup.mobileconfig", produces = ["application/x-apple-aspen-config"])
+    fun serveMobileConfig(
+        @PathVariable tenantId: UUID,
+        request: HttpServletRequest,
+        response: HttpServletResponse
+    ) {
+        val baseUrl = buildBaseUrl(request)
+        val principalUrl = "$baseUrl/api/v1/carddav/$tenantId/"
+        val host = request.getHeader("X-Forwarded-Host") ?: request.serverName
+
+        // Two deterministic UUIDs: one for the outer profile, one for the CardDAV payload.
+        // Using the tenantId itself and its "version-5" name-based variant.
+        val outerUuid = tenantId
+        val innerUuid = UUID.nameUUIDFromBytes("carddav:$tenantId".toByteArray())
+
+        response.setHeader("Content-Disposition", "attachment; filename=\"crm-contacts.mobileconfig\"")
+        response.writer.write(buildMobileConfig(host, principalUrl, outerUuid, innerUuid))
+    }
+
+    private fun buildMobileConfig(host: String, principalUrl: String, outerUuid: UUID, innerUuid: UUID) = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>PayloadContent</key>
+            <array>
+                <dict>
+                    <key>CardDAVAccountDescription</key>
+                    <string>CRM Kontakty</string>
+                    <key>CardDAVHostName</key>
+                    <string>$host</string>
+                    <key>CardDAVPrincipalURL</key>
+                    <string>$principalUrl</string>
+                    <key>CardDAVPort</key>
+                    <integer>443</integer>
+                    <key>CardDAVUseSSL</key>
+                    <true/>
+                    <key>PayloadDescription</key>
+                    <string>Synchronizacja kontaktów CRM z telefonem</string>
+                    <key>PayloadDisplayName</key>
+                    <string>CRM Kontakty</string>
+                    <key>PayloadIdentifier</key>
+                    <string>pl.detailboost.carddav.$innerUuid</string>
+                    <key>PayloadType</key>
+                    <string>com.apple.carddav.account</string>
+                    <key>PayloadUUID</key>
+                    <string>$innerUuid</string>
+                    <key>PayloadVersion</key>
+                    <integer>1</integer>
+                </dict>
+            </array>
+            <key>PayloadDescription</key>
+            <string>Konfiguruje synchronizację kontaktów CRM z aplikacją Kontakty</string>
+            <key>PayloadDisplayName</key>
+            <string>CRM Kontakty</string>
+            <key>PayloadIdentifier</key>
+            <string>pl.detailboost.profile.$outerUuid</string>
+            <key>PayloadOrganization</key>
+            <string>Detailboost</string>
+            <key>PayloadRemovalDisallowed</key>
+            <false/>
+            <key>PayloadType</key>
+            <string>Configuration</string>
+            <key>PayloadUUID</key>
+            <string>$outerUuid</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+        </plist>
+    """.trimIndent()
 
     // Explicit OPTIONS handler — @RequestMapping without method list skips OPTIONS in Spring MVC,
     // so we need a dedicated mapping to advertise DAV capabilities correctly.

@@ -42,6 +42,9 @@ class CardDavSecurityConfig {
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
+                // .mobileconfig is a public download — it contains no secrets (no password),
+                // only the server address. iOS prompts for credentials after install.
+                auth.requestMatchers(AntPathRequestMatcher("/api/v1/carddav/*/setup.mobileconfig")).permitAll()
                 auth.requestMatchers("/api/v1/carddav/**", "/.well-known/carddav").authenticated()
             }
             .httpBasic { basic ->
