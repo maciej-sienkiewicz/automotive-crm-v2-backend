@@ -7,6 +7,8 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.smscampaigns.consent.ServiceChangesSummary
 import pl.detailing.crm.smscampaigns.consent.SmsConsentService
+import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.entitlement.FeatureKey
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
@@ -19,7 +21,8 @@ class SaveVisitServicesHandler(
     private val visitRepository: VisitRepository,
     private val auditService: AuditService,
     private val customerRepository: CustomerRepository,
-    private val smsConsentService: SmsConsentService
+    private val smsConsentService: SmsConsentService,
+    private val entitlementService: EntitlementService
 ) {
 
     companion object {
@@ -117,7 +120,7 @@ class SaveVisitServicesHandler(
             changes = changes
         ))
 
-        if (payload.notifyCustomer) {
+        if (payload.notifyCustomer && entitlementService.hasFeature(studioId, FeatureKey.SMS_EMAIL)) {
             val changesSummary = buildChangesSummary(payload, visit)
             if (payload.requireConfirmation) {
                 sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)

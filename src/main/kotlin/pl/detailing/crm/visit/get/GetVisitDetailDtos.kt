@@ -13,7 +13,8 @@ import java.time.Instant
 data class VisitDetailResponse(
     val visit: VisitResponse,
     val journalEntries: List<JournalEntryResponse>,
-    val documents: List<VisitDocumentResponse>
+    val documents: List<VisitDocumentResponse>,
+    val hasSmsFeature: Boolean
 )
 
 /**

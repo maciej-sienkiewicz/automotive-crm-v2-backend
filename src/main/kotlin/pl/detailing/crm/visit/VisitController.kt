@@ -30,6 +30,8 @@ import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
 import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
+import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.entitlement.FeatureKey
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -46,7 +48,8 @@ class VisitController(
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
-    private val updateVisitTitleHandler: UpdateVisitTitleHandler
+    private val updateVisitTitleHandler: UpdateVisitTitleHandler,
+    private val entitlementService: EntitlementService
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -121,8 +124,8 @@ class VisitController(
 
         val result = getVisitDetailHandler.handle(command)
 
-
-        val response = mapToVisitDetailResponse(result)
+        val hasSmsFeature = entitlementService.hasFeature(principal.studioId, FeatureKey.SMS_EMAIL)
+        val response = mapToVisitDetailResponse(result, hasSmsFeature)
 
         ResponseEntity.ok(response)
     }
@@ -356,11 +359,12 @@ class VisitController(
     /**
      * Map domain result to API response
      */
-    private fun mapToVisitDetailResponse(result: GetVisitDetailResult): VisitDetailResponse {
+    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, hasSmsFeature: Boolean): VisitDetailResponse {
         return VisitDetailResponse(
             visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
-            documents = result.documents.map { mapToDocumentResponse(it) }
+            documents = result.documents.map { mapToDocumentResponse(it) },
+            hasSmsFeature = hasSmsFeature
         )
     }
 
