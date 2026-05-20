@@ -19,6 +19,9 @@ class WebMvcConfig(
                 "/api/v1/vehicle-metadata/**",
                 "/api/v1/inbound/email",
                 "/api/mobile/**",
+                // CardDAV uses HTTP Basic auth (stateless), not session-based auth.
+                // SecurityContextHelper.getCurrentStudioId() is incompatible with CardDavUserDetails.
+                "/api/v1/carddav/**",
                 // Entitlements and pricing are always accessible (needed for expired/trial studios)
                 "/api/v1/me/entitlements",
                 "/api/v1/subscription/my-plan",

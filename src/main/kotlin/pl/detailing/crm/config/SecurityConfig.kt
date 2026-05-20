@@ -5,12 +5,14 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository
 import org.springframework.security.web.context.SecurityContextRepository
+import org.springframework.security.web.firewall.StrictHttpFirewall
 import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
@@ -20,6 +22,18 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @EnableWebSecurity
 @EnableRedisHttpSession(maxInactiveIntervalInSeconds = 604800)
 class SecurityConfig {
+
+    // StrictHttpFirewall only allows standard HTTP methods by default (GET, POST, PUT, DELETE,
+    // PATCH, HEAD, OPTIONS, TRACE). WebDAV methods PROPFIND and REPORT must be explicitly
+    // added, otherwise the firewall rejects them with HTTP 400 before any security filter runs.
+    @Bean
+    fun webSecurityCustomizer(): WebSecurityCustomizer {
+        val firewall = StrictHttpFirewall()
+        firewall.setAllowedHttpMethods(
+            listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "PROPFIND", "REPORT")
+        )
+        return WebSecurityCustomizer { web -> web.httpFirewall(firewall) }
+    }
 
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
