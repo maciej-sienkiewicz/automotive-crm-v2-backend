@@ -12,6 +12,7 @@ import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 import org.springframework.stereotype.Component
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.util.UUID
@@ -26,7 +27,11 @@ class CardDavSecurityConfig {
         cardDavUserDetailsService: CardDavUserDetailsService
     ): SecurityFilterChain {
         http
-            .securityMatcher("/api/v1/carddav/**")
+            // AntPathRequestMatcher used instead of default MvcRequestMatcher: MvcRequestMatcher
+            // relies on HandlerMappingIntrospector which fails for non-standard HTTP methods
+            // (PROPFIND, REPORT) and for UUID path variables, causing the CardDAV filter chain
+            // to silently fall through to the main SecurityConfig.
+            .securityMatcher(AntPathRequestMatcher("/api/v1/carddav/**"))
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
