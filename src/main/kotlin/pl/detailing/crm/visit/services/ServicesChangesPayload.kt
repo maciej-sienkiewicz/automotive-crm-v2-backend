@@ -26,7 +26,8 @@ data class ServiceAdjustment(
 
 data class UpdatedService(
     val serviceLineItemId: String,
-    val basePriceNet: Long
+    val basePriceNet: Long,
+    val adjustment: ServiceAdjustment? = null
 )
 
 data class DeletedService(

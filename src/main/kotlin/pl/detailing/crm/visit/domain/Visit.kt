@@ -401,9 +401,13 @@ data class VisitServiceItem(
         }
     }
 
-    fun toPending(newBasePriceNet: Money): VisitServiceItem {
+    fun toPending(
+        newBasePriceNet: Money,
+        newAdjustmentType: AdjustmentType? = null,
+        newAdjustmentValue: Long? = null
+    ): VisitServiceItem {
         require(status == VisitServiceStatus.CONFIRMED) { "Only confirmed items can be edited" }
-        
+
         val snapshot = ConfirmedServiceSnapshot(
             basePriceNet = basePriceNet,
             vatRate = vatRate,
@@ -413,12 +417,17 @@ data class VisitServiceItem(
             finalPriceGross = finalPriceGross,
             customNote = customNote
         )
-        
-        val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, vatRate, adjustmentType, adjustmentValue)
+
+        val effectiveAdjustmentType = newAdjustmentType ?: adjustmentType
+        val effectiveAdjustmentValue = newAdjustmentValue ?: adjustmentValue
+
+        val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, vatRate, effectiveAdjustmentType, effectiveAdjustmentValue)
         val finalGross = vatRate.calculateGrossAmount(finalNet)
 
         return copy(
             basePriceNet = newBasePriceNet,
+            adjustmentType = effectiveAdjustmentType,
+            adjustmentValue = effectiveAdjustmentValue,
             finalPriceNet = finalNet,
             finalPriceGross = finalGross,
             status = VisitServiceStatus.PENDING,

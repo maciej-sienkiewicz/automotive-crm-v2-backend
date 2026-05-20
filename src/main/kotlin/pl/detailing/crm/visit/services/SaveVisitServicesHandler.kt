@@ -64,8 +64,17 @@ class SaveVisitServicesHandler(
         val updatedItems = payload.updated.map { updated ->
             val existingItem = visit.serviceItems.find { it.id.value.toString() == updated.serviceLineItemId }
                 ?: throw EntityNotFoundException("Service item ${updated.serviceLineItemId} not found in visit $visitId")
-            
-            existingItem.toPending(Money(updated.basePriceNet))
+
+            val newAdjustmentType = updated.adjustment?.type
+            val newAdjustmentValue = updated.adjustment?.let { adj ->
+                when (adj.type) {
+                    pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT ->
+                        pl.detailing.crm.appointment.domain.AdjustmentType.convertPercentValueToBasisPoints(adj.value)
+                    else -> adj.value.toLong()
+                }
+            }
+
+            existingItem.toPending(Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue)
         }
 
         val deletedItems = payload.deleted.map { deleted ->
