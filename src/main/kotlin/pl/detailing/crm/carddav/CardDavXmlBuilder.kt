@@ -19,19 +19,27 @@ class CardDavXmlBuilder {
         val doc = newDocument()
         val multistatus = doc.multistatusRoot()
 
-        // Principal resource
+        val tenantRoot = "$baseUrl/api/v1/carddav/$tenantId"
+        val contactsUrl = "$tenantRoot/contacts/"
+
+        // Principal resource — iOS reads current-user-principal and addressbook-home-set from here
         multistatus.appendChild(
             doc.response(
-                href = "$baseUrl/api/v1/carddav/$tenantId/",
+                href = "$tenantRoot/",
                 propstats = listOf(
                     doc.propstat(
                         status = HTTP_200,
                         props = {
                             it.appendChild(doc.el(DAV, "resourcetype") {
                                 appendChild(doc.el(DAV, "collection"))
-                                appendChild(doc.el(CARDDAV, "addressbook"))
                             })
                             it.appendChild(doc.el(DAV, "displayname") { textContent = "CRM Contacts" })
+                            it.appendChild(doc.el(DAV, "current-user-principal") {
+                                appendChild(doc.el(DAV, "href") { textContent = "$tenantRoot/" })
+                            })
+                            it.appendChild(doc.el(CARDDAV, "addressbook-home-set") {
+                                appendChild(doc.el(DAV, "href") { textContent = contactsUrl })
+                            })
                         }
                     )
                 )
@@ -41,7 +49,7 @@ class CardDavXmlBuilder {
         // Address book collection
         multistatus.appendChild(
             doc.response(
-                href = "$baseUrl/api/v1/carddav/$tenantId/contacts/",
+                href = contactsUrl,
                 propstats = listOf(
                     doc.propstat(
                         status = HTTP_200,
@@ -55,6 +63,11 @@ class CardDavXmlBuilder {
                                 appendChild(doc.el(DAV, "supported-report") {
                                     appendChild(doc.el(DAV, "report") {
                                         appendChild(doc.el(CARDDAV, "addressbook-query"))
+                                    })
+                                })
+                                appendChild(doc.el(DAV, "supported-report") {
+                                    appendChild(doc.el(DAV, "report") {
+                                        appendChild(doc.el(CARDDAV, "addressbook-multiget"))
                                     })
                                 })
                             })
