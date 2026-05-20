@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher
+import org.springframework.security.web.util.matcher.OrRequestMatcher
 import org.springframework.stereotype.Component
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.util.UUID
@@ -31,11 +32,17 @@ class CardDavSecurityConfig {
             // relies on HandlerMappingIntrospector which fails for non-standard HTTP methods
             // (PROPFIND, REPORT) and for UUID path variables, causing the CardDAV filter chain
             // to silently fall through to the main SecurityConfig.
-            .securityMatcher(AntPathRequestMatcher("/api/v1/carddav/**"))
+            // /.well-known/carddav is included so iOS can discover the tenant URL via RFC 6764.
+            .securityMatcher(
+                OrRequestMatcher(
+                    AntPathRequestMatcher("/api/v1/carddav/**"),
+                    AntPathRequestMatcher("/.well-known/carddav")
+                )
+            )
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/api/v1/carddav/**").authenticated()
+                auth.requestMatchers("/api/v1/carddav/**", "/.well-known/carddav").authenticated()
             }
             .httpBasic { basic ->
                 basic.realmName("CRM CardDAV")

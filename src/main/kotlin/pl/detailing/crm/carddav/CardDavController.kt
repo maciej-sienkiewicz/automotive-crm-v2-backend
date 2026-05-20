@@ -60,7 +60,22 @@ class CardDavController(
         assertTenant(tenantId)
 
         val baseUrl = buildBaseUrl(request)
-        val xml = xmlBuilder.propfindAddressBookRoot(tenantId, baseUrl)
+        val depth = request.getHeader("Depth") ?: "0"
+        val uri = request.requestURI
+
+        val xml = when {
+            isVcfPath(uri) -> {
+                val customerId = extractCustomerId(uri)
+                    ?: run { response.sendError(HttpServletResponse.SC_NOT_FOUND); return }
+                val customer = cardDavService.getContactForTenant(tenantId, customerId)
+                xmlBuilder.propfindSingleContact(tenantId, customer, vCardFormatter, baseUrl)
+            }
+            isContactsPath(uri) -> {
+                val customers = cardDavService.getContactsForTenant(tenantId)
+                xmlBuilder.propfindAddressBook(tenantId, customers, vCardFormatter, baseUrl, depth)
+            }
+            else -> xmlBuilder.propfindPrincipal(tenantId, baseUrl)
+        }
 
         response.status = MULTI_STATUS
         response.contentType = CONTENT_TYPE_XML
@@ -116,6 +131,10 @@ class CardDavController(
         val defaultPort = if (scheme == "https") 443 else 80
         return if (port == defaultPort) "$scheme://$host" else "$scheme://$host:$port"
     }
+
+    private fun isContactsPath(uri: String) = uri.contains("/contacts")
+
+    private fun isVcfPath(uri: String) = VCF_PATTERN.containsMatchIn(uri)
 
     private fun extractCustomerId(uri: String): UUID? {
         val match = VCF_PATTERN.find(uri) ?: return null

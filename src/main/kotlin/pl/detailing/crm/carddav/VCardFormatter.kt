@@ -12,15 +12,14 @@ class VCardFormatter {
         val phone = normalizePhone(customer.phone ?: return "")
         val uid = customer.id.toString()
 
-        return buildString {
-            appendLine("BEGIN:VCARD")
-            appendLine("VERSION:3.0")
-            appendLine("FN:$fn")
-            appendLine("N:${customer.lastName ?: ""};${customer.firstName ?: ""};;;")
-            appendLine("TEL;TYPE=CELL,VOICE:$phone")
-            appendLine("UID:$uid")
-            appendLine("END:VCARD")
-        }.trimEnd() + "\r\n"
+        // RFC 2425 §5.2 requires CRLF line endings in vCard data.
+        return "BEGIN:VCARD\r\n" +
+            "VERSION:3.0\r\n" +
+            "FN:$fn\r\n" +
+            "N:${customer.lastName ?: ""};${customer.firstName ?: ""};;;\r\n" +
+            "TEL;TYPE=CELL,VOICE:$phone\r\n" +
+            "UID:$uid\r\n" +
+            "END:VCARD\r\n"
     }
 
     fun etag(customer: CustomerEntity): String {
