@@ -107,7 +107,12 @@ class CardDavController(
     private fun buildBaseUrl(request: HttpServletRequest): String {
         val scheme = request.getHeader("X-Forwarded-Proto") ?: request.scheme
         val host = request.getHeader("X-Forwarded-Host") ?: request.serverName
-        val port = request.serverPort
+        // Behind a reverse proxy (X-Forwarded-Proto is set), serverPort reflects the internal
+        // backend port (e.g. 8080), not the public port. Use X-Forwarded-Port when available;
+        // otherwise fall back to the scheme default (443 for https, 80 for http).
+        val port = request.getHeader("X-Forwarded-Port")?.toIntOrNull()
+            ?: if (request.getHeader("X-Forwarded-Proto") != null) (if (scheme == "https") 443 else 80)
+            else request.serverPort
         val defaultPort = if (scheme == "https") 443 else 80
         return if (port == defaultPort) "$scheme://$host" else "$scheme://$host:$port"
     }
