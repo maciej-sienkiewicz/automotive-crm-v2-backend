@@ -25,6 +25,12 @@ data class WeeklyStatDto(
     val storyCount: Int
 )
 
+data class DailyStoryStatDto(
+    /** Data "YYYY-MM-DD" (UTC). Tylko dni z przynajmniej 1 story. */
+    val date: String,
+    val storyCount: Int
+)
+
 data class FollowerSnapshotDto(
     /** Data snapshotu "YYYY-MM-DD" (UTC). */
     val date: String,
@@ -49,6 +55,8 @@ data class InstagramProfileSummaryDto(
     val avgEngagement: Double,
     // ── Aktywność stories ──
     val storiesPerWeek: Double,
+    /** Dzienny rozkład stories w oknie `weeks` – jeden wpis per dzień z przynajmniej 1 story. */
+    val dailyStoryStats: List<DailyStoryStatDto>,
     // ── Metryki profilu (z /user/details) ──
     val followerCount: Int?,
     val followingCount: Int?,
@@ -142,6 +150,14 @@ class GetCompetitionSummaryHandler(
                 stories.size.toDouble() / weeklyStats.size
             else 0.0
 
+            val dailyStoryStats = stories
+                .groupBy { it.takenAt.atZone(ZoneOffset.UTC).toLocalDate() }
+                .entries
+                .sortedBy { it.key }
+                .map { (date, dayStories) ->
+                    DailyStoryStatDto(date = date.toString(), storyCount = dayStories.size)
+                }
+
             // ── Historia followerów ─────────────────────────────────────────────
             val followerHistory = metricsSnapshotRepository
                 .findByProfileIdAndSnapshotDateAfterOrderBySnapshotDateAsc(sp.profileId, cutoffDate)
@@ -168,6 +184,7 @@ class GetCompetitionSummaryHandler(
                 weeklyStats = weeklyStats,
                 avgEngagement = avgEngagement,
                 storiesPerWeek = storiesPerWeek,
+                dailyStoryStats = dailyStoryStats,
                 followerCount = gp.followerCount,
                 followingCount = gp.followingCount,
                 mediaCount = gp.mediaCount,

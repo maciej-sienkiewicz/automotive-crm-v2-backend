@@ -19,6 +19,7 @@ import pl.detailing.crm.instagram.reject.RejectInstagramProfileCommand
 import pl.detailing.crm.instagram.reject.RejectInstagramProfileHandler
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileCommand
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileHandler
+import pl.detailing.crm.instagram.summary.DailyStoryStatDto
 import pl.detailing.crm.instagram.summary.FollowerSnapshotDto
 import pl.detailing.crm.instagram.summary.GetCompetitionSummaryHandler
 import pl.detailing.crm.instagram.summary.GetCompetitionSummaryQuery
@@ -210,6 +211,12 @@ data class WeeklyStatResponse(
     val storyCount: Int
 )
 
+data class DailyStoryStatResponse(
+    /** Data "YYYY-MM-DD" (UTC). */
+    val date: String,
+    val storyCount: Int
+)
+
 data class FollowerSnapshotResponse(
     val date: String,
     val followerCount: Int?
@@ -233,6 +240,8 @@ data class InstagramProfileSummaryResponse(
     val avgEngagement: Double,
     // ── Aktywność stories ──
     val storiesPerWeek: Double,
+    /** Dzienny rozkład stories – jeden wpis per dzień z przynajmniej 1 story. */
+    val dailyStoryStats: List<DailyStoryStatResponse>,
     // ── Metryki profilu ──
     val followerCount: Int?,
     val followingCount: Int?,
@@ -288,6 +297,11 @@ private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
     storyCount = storyCount
 )
 
+private fun DailyStoryStatDto.toResponse() = DailyStoryStatResponse(
+    date = date,
+    storyCount = storyCount
+)
+
 private fun FollowerSnapshotDto.toResponse() = FollowerSnapshotResponse(
     date = date,
     followerCount = followerCount
@@ -309,6 +323,7 @@ private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryRes
     weeklyStats = weeklyStats.map { it.toResponse() },
     avgEngagement = avgEngagement,
     storiesPerWeek = storiesPerWeek,
+    dailyStoryStats = dailyStoryStats.map { it.toResponse() },
     followerCount = followerCount,
     followingCount = followingCount,
     mediaCount = mediaCount,
