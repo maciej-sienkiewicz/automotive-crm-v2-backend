@@ -69,6 +69,7 @@ class GenerateQuoteReplyHandler(
     private fun resolveServiceLines(command: GenerateQuoteReplyCommand): List<ServiceLine> {
         val userQuote = userQuoteRepository.findByLeadId(command.leadId.value)
         if (userQuote != null && userQuote.items.isNotEmpty()) {
+            log.info("[QUOTE_REPLY] Using USER quote for leadId={}, itemCount={}", command.leadId, userQuote.items.size)
             return userQuote.items.map { item ->
                 ServiceLine(
                     name = item.serviceName,
@@ -78,8 +79,16 @@ class GenerateQuoteReplyHandler(
             }
         }
 
+        log.info(
+            "[QUOTE_REPLY] No user quote for leadId={} (found={}, itemCount={}), falling back to AI estimation",
+            command.leadId,
+            userQuote != null,
+            userQuote?.items?.size ?: 0
+        )
+
         val estimation = estimationRepository.findByLeadId(command.leadId.value)
         if (estimation != null && estimation.items.isNotEmpty()) {
+            log.info("[QUOTE_REPLY] Using AI estimation for leadId={}, itemCount={}", command.leadId, estimation.items.size)
             return estimation.items.map { item ->
                 ServiceLine(
                     name = item.serviceName,
