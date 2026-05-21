@@ -18,11 +18,12 @@ import java.time.temporal.TemporalAdjusters
 
 data class WeeklyStatDto(
     val weekStart: String,
-    val avgLikes: Double,
-    val avgComments: Double,
     val postCount: Int,
-    /** Liczba stories opublikowanych w danym tygodniu. */
-    val storyCount: Int
+    val storyCount: Int,
+    val totalLikes: Int,
+    val totalComments: Int,
+    val avgLikes: Double,
+    val avgComments: Double
 )
 
 data class DailyStoryStatDto(
@@ -234,12 +235,16 @@ class GetCompetitionSummaryHandler(
             val weekPosts = postsByWeek[monday] ?: emptyList()
             val weekStories = storiesByWeek[monday] ?: emptyList()
             val count = weekPosts.size
+            val totalLikes = weekPosts.sumOf { it.likeCount }
+            val totalComments = weekPosts.sumOf { it.commentCount }
             WeeklyStatDto(
                 weekStart = formatter.format(monday.atStartOfDay(ZoneOffset.UTC).toInstant()),
-                avgLikes = if (count > 0) weekPosts.sumOf { it.likeCount }.toDouble() / count else 0.0,
-                avgComments = if (count > 0) weekPosts.sumOf { it.commentCount }.toDouble() / count else 0.0,
                 postCount = count,
-                storyCount = weekStories.size
+                storyCount = weekStories.size,
+                totalLikes = totalLikes,
+                totalComments = totalComments,
+                avgLikes = if (count > 0) totalLikes.toDouble() / count else 0.0,
+                avgComments = if (count > 0) totalComments.toDouble() / count else 0.0
             )
         }
     }

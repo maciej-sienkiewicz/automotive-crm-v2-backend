@@ -204,11 +204,12 @@ data class InstagramPostResponse(
 
 data class WeeklyStatResponse(
     val weekStart: String,
-    val avgLikes: Double,
-    val avgComments: Double,
     val postCount: Int,
-    /** Liczba stories opublikowanych w tym tygodniu. */
-    val storyCount: Int
+    val storyCount: Int,
+    val totalLikes: Int,
+    val totalComments: Int,
+    val avgLikes: Double,
+    val avgComments: Double
 )
 
 data class DailyStoryStatResponse(
@@ -291,10 +292,12 @@ private fun InstagramPostDto.toResponse() = InstagramPostResponse(
 
 private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
     weekStart = weekStart,
-    avgLikes = avgLikes,
-    avgComments = avgComments,
     postCount = postCount,
-    storyCount = storyCount
+    storyCount = storyCount,
+    totalLikes = totalLikes,
+    totalComments = totalComments,
+    avgLikes = avgLikes,
+    avgComments = avgComments
 )
 
 private fun DailyStoryStatDto.toResponse() = DailyStoryStatResponse(
