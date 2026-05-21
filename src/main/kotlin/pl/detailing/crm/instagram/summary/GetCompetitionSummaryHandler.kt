@@ -129,7 +129,8 @@ class GetCompetitionSummaryHandler(
                         takenAt = post.takenAt
                     )
                 },
-                stories = stories.map { it.takenAt }
+                stories = stories.map { it.takenAt },
+                weeks = query.weeks
             )
 
             // ── Agregaty postów ─────────────────────────────────────────────────
@@ -140,15 +141,12 @@ class GetCompetitionSummaryHandler(
             val avgViews = if (viewPosts.isNotEmpty())
                 viewPosts.sumOf { it.viewCount!! }.toDouble() / viewPosts.size
             else null
-            val postsPerWeek = if (weeklyStats.isNotEmpty())
-                postCount.toDouble() / weeklyStats.size
-            else 0.0
+            // Mianownik = query.weeks bo weeklyStats zawsze ma dokładnie tyle wpisów
+            val postsPerWeek = postCount.toDouble() / query.weeks
             val lastPostAt = posts.firstOrNull()?.takenAt
 
             // ── Aktywność stories ───────────────────────────────────────────────
-            val storiesPerWeek = if (weeklyStats.isNotEmpty())
-                stories.size.toDouble() / weeklyStats.size
-            else 0.0
+            val storiesPerWeek = stories.size.toDouble() / query.weeks
 
             val dailyStoryStats = stories
                 .groupBy { it.takenAt.atZone(ZoneOffset.UTC).toLocalDate() }
@@ -213,9 +211,12 @@ class GetCompetitionSummaryHandler(
 
     private fun computeWeeklyStats(
         posts: List<PostData>,
-        stories: List<Instant>
+        stories: List<Instant>,
+        weeks: Int
     ): List<WeeklyStatDto> {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
+        val currentMonday = LocalDate.now(ZoneOffset.UTC)
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
         val weekKey = { instant: Instant ->
             instant.atZone(ZoneOffset.UTC)
@@ -226,9 +227,10 @@ class GetCompetitionSummaryHandler(
         val postsByWeek = posts.groupBy { weekKey(it.takenAt) }
         val storiesByWeek = stories.groupBy { weekKey(it) }
 
-        val allWeeks = (postsByWeek.keys + storiesByWeek.keys).toSortedSet()
-
-        return allWeeks.map { monday ->
+        // Zawsze generuj dokładnie `weeks` tygodni wstecz od bieżącego poniedziałku.
+        // Tygodnie bez danych dostają zera – brak luk w tablicy.
+        return (weeks - 1 downTo 0).map { offset ->
+            val monday = currentMonday.minusWeeks(offset.toLong())
             val weekPosts = postsByWeek[monday] ?: emptyList()
             val weekStories = storiesByWeek[monday] ?: emptyList()
             val count = weekPosts.size
