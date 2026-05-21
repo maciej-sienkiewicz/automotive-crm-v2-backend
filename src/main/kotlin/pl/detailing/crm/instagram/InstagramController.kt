@@ -19,6 +19,7 @@ import pl.detailing.crm.instagram.reject.RejectInstagramProfileCommand
 import pl.detailing.crm.instagram.reject.RejectInstagramProfileHandler
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileCommand
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileHandler
+import pl.detailing.crm.instagram.summary.FollowerSnapshotDto
 import pl.detailing.crm.instagram.summary.GetCompetitionSummaryHandler
 import pl.detailing.crm.instagram.summary.GetCompetitionSummaryQuery
 import pl.detailing.crm.instagram.summary.InstagramProfileSummaryDto
@@ -40,12 +41,6 @@ class InstagramController(
     private val sync: InstagramSyncService,
 ) {
 
-    /**
-     * Dodaj profil konkurencji do obserwowania.
-     * Profil otrzymuje status PENDING_APPROVAL i czeka na akceptację admina.
-     *
-     * POST /api/v1/instagram/profiles
-     */
     @PostMapping
     fun addProfile(
         @RequestBody request: AddInstagramProfileRequest
@@ -73,11 +68,6 @@ class InstagramController(
         )
     }
 
-    /**
-     * Pobierz listę wszystkich profili obserwowanych przez studio.
-     *
-     * GET /api/v1/instagram/profiles
-     */
     @GetMapping
     fun listProfiles(): ResponseEntity<List<InstagramProfileResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -87,12 +77,6 @@ class InstagramController(
         ResponseEntity.ok(result.map { it.toResponse() })
     }
 
-    /**
-     * Zatwierdź profil (tylko OWNER lub MANAGER).
-     * Status zmienia się na ACTIVE – profil będzie uwzględniony w niedzielnym sync.
-     *
-     * POST /api/v1/instagram/profiles/{id}/approve
-     */
     @PostMapping("/{id}/approve")
     fun approveProfile(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -111,12 +95,6 @@ class InstagramController(
         ResponseEntity.noContent().build()
     }
 
-    /**
-     * Odrzuć profil (tylko OWNER lub MANAGER).
-     * Status zmienia się na REJECTED – profil wypada z niedzielnego sync.
-     *
-     * POST /api/v1/instagram/profiles/{id}/reject
-     */
     @PostMapping("/{id}/reject")
     fun rejectProfile(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -135,12 +113,6 @@ class InstagramController(
         ResponseEntity.noContent().build()
     }
 
-    /**
-     * Usuń profil z listy obserwowanych przez studio.
-     * Jeśli żadne inne studio go nie obserwuje, globalny profil jest usuwany automatycznie.
-     *
-     * DELETE /api/v1/instagram/profiles/{id}
-     */
     @DeleteMapping("/{id}")
     fun removeProfile(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -155,11 +127,6 @@ class InstagramController(
         ResponseEntity.noContent().build()
     }
 
-    /**
-     * Pobierz posty konkurenta (dane z ostatniej niedzielnej synchronizacji, nie z API).
-     *
-     * GET /api/v1/instagram/profiles/{id}/posts
-     */
     @GetMapping("/{id}/posts")
     fun getPosts(@PathVariable id: String): ResponseEntity<List<InstagramPostResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -175,11 +142,15 @@ class InstagramController(
     }
 
     /**
-     * Pobierz zagregowane statystyki wszystkich aktywnych profili konkurencji.
-     * Zawiera tygodniowe statystyki (avgLikes, avgComments, postCount) oraz sumaryczne KPI.
+     * Pobierz zagregowane statystyki aktywnych profili konkurencji.
      *
      * GET /api/v1/instagram/profiles/summary?weeks=N  (domyślnie 52)
-     * Tylko profile o statusie ACTIVE są uwzględniane.
+     *
+     * Odpowiedź zawiera:
+     * - Statystyki postów (avgLikes, avgComments, postsPerWeek, weeklyStats z postCount i storyCount)
+     * - Aktywność stories (storiesPerWeek, storyCount per tydzień w weeklyStats)
+     * - Metryki profilu (followerCount, hasContactData, isVerified, category, externalUrl itp.)
+     * - Historię followerów (followerHistory) do analizy trendu w oknie `weeks`
      */
     @GetMapping("/summary")
     fun getCompetitionSummary(
@@ -223,32 +194,25 @@ data class InstagramPostResponse(
     val caption: String?,
     val takenAt: Instant,
     val scrapedAt: Instant,
-    /** "feed_item" | "clips" | "carousel_container" – null dla starych rekordów */
     val productType: String?,
-    /** Liczba slajdów karuzeli; dla innych typów 1 */
     val carouselMediaCount: Int,
-    /** Hashtagi wyekstrahowane z caption */
     val hashtags: List<String>,
-    /** Suma lajków i komentarzy */
     val engagementScore: Int,
-    /** URL zdjęcia z image_versions2 (pierwszy kandydat); null dla starych rekordów */
     val imageUrl: String?
-)
-
-private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
-    id = id,
-    profileId = profileId,
-    username = username,
-    status = status.name,
-    apiError = apiError,
-    addedAt = addedAt
 )
 
 data class WeeklyStatResponse(
     val weekStart: String,
     val avgLikes: Double,
     val avgComments: Double,
-    val postCount: Int
+    val postCount: Int,
+    /** Liczba stories opublikowanych w tym tygodniu. */
+    val storyCount: Int
+)
+
+data class FollowerSnapshotResponse(
+    val date: String,
+    val followerCount: Int?
 )
 
 data class InstagramProfileSummaryResponse(
@@ -258,6 +222,7 @@ data class InstagramProfileSummaryResponse(
     val status: String,
     val apiError: Boolean,
     val addedAt: Instant,
+    // ── Metryki postów ──
     val postCount: Int,
     val avgLikes: Double,
     val avgComments: Double,
@@ -265,8 +230,37 @@ data class InstagramProfileSummaryResponse(
     val postsPerWeek: Double,
     val lastPostAt: Instant?,
     val weeklyStats: List<WeeklyStatResponse>,
-    /** Średnia (lajki + komentarze) na post – cała historia profilu, nie tylko okno `weeks` */
-    val avgEngagement: Double
+    val avgEngagement: Double,
+    // ── Aktywność stories ──
+    val storiesPerWeek: Double,
+    // ── Metryki profilu ──
+    val followerCount: Int?,
+    val followingCount: Int?,
+    val mediaCount: Int?,
+    /** true gdy profil ma uzupełniony publiczny e-mail lub numer telefonu. */
+    val hasContactData: Boolean,
+    val isVerified: Boolean,
+    val isBusiness: Boolean,
+    /** 1 = personal, 2 = creator, 3 = professional/business */
+    val accountType: Int?,
+    val category: String?,
+    val externalUrl: String?,
+    val biography: String?,
+    val hasHighlightReels: Boolean,
+    val totalClipsCount: Int,
+    val isPrivate: Boolean,
+    val detailsLastSyncedAt: Instant?,
+    // ── Trend followerów ──
+    val followerHistory: List<FollowerSnapshotResponse>
+)
+
+private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
+    id = id,
+    profileId = profileId,
+    username = username,
+    status = status.name,
+    apiError = apiError,
+    addedAt = addedAt
 )
 
 private fun InstagramPostDto.toResponse() = InstagramPostResponse(
@@ -290,7 +284,13 @@ private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
     weekStart = weekStart,
     avgLikes = avgLikes,
     avgComments = avgComments,
-    postCount = postCount
+    postCount = postCount,
+    storyCount = storyCount
+)
+
+private fun FollowerSnapshotDto.toResponse() = FollowerSnapshotResponse(
+    date = date,
+    followerCount = followerCount
 )
 
 private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryResponse(
@@ -307,5 +307,21 @@ private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryRes
     postsPerWeek = postsPerWeek,
     lastPostAt = lastPostAt,
     weeklyStats = weeklyStats.map { it.toResponse() },
-    avgEngagement = avgEngagement
+    avgEngagement = avgEngagement,
+    storiesPerWeek = storiesPerWeek,
+    followerCount = followerCount,
+    followingCount = followingCount,
+    mediaCount = mediaCount,
+    hasContactData = hasContactData,
+    isVerified = isVerified,
+    isBusiness = isBusiness,
+    accountType = accountType,
+    category = category,
+    externalUrl = externalUrl,
+    biography = biography,
+    hasHighlightReels = hasHighlightReels,
+    totalClipsCount = totalClipsCount,
+    isPrivate = isPrivate,
+    detailsLastSyncedAt = detailsLastSyncedAt,
+    followerHistory = followerHistory.map { it.toResponse() }
 )

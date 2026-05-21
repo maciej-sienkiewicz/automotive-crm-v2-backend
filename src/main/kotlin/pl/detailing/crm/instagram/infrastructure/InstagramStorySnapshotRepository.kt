@@ -2,12 +2,16 @@ package pl.detailing.crm.instagram.infrastructure
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
+import java.time.Instant
 import java.util.*
 
 @Repository
 interface InstagramStorySnapshotRepository : JpaRepository<InstagramStorySnapshotEntity, UUID> {
 
-    fun findByProfileIdOrderByTakenAtDesc(profileId: UUID): List<InstagramStorySnapshotEntity>
+    fun findByProfileIdAndTakenAtAfterOrderByTakenAtDesc(
+        profileId: UUID,
+        cutoff: Instant
+    ): List<InstagramStorySnapshotEntity>
 
     fun existsByStoryId(storyId: String): Boolean
 

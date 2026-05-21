@@ -9,8 +9,9 @@ import java.util.*
  * Dane są globalne (nie per-studio) – każde story jest przechowywane raz
  * i udostępniane wszystkim studiom obserwującym dany profil.
  *
- * Stories w Instagramie znikają po 24h, ale zachowujemy je historycznie.
- * Duplikaty są pomijane na podstawie unikalnego storyId.
+ * Przechowujemy wyłącznie timestamp publikacji (takenAt), który pozwala
+ * zliczać aktywność stories per dzień / tydzień. Treść wizualna (zdjęcia, wideo)
+ * nie jest zbierana – stories służą wyłącznie do analizy częstotliwości aktywności.
  */
 @Entity
 @Table(
@@ -31,13 +32,6 @@ class InstagramStorySnapshotEntity(
     /** Natywne ID story z API Instagrama (np. "3880105700017480750_5487602384") */
     @Column(name = "story_id", nullable = false, length = 60, unique = true)
     val storyId: String,
-
-    /** URL zdjęcia z image_versions2.candidates[0]; null gdy API nie zwróciło */
-    @Column(name = "image_url", nullable = true, columnDefinition = "text")
-    val imageUrl: String?,
-
-    @Column(name = "video_url", nullable = true, columnDefinition = "text")
-    val videoUrl: String?,
 
     /** Czas publikacji story (Unix timestamp z API → Instant) */
     @Column(name = "taken_at", nullable = false, columnDefinition = "timestamp with time zone")

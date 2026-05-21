@@ -16,10 +16,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-/**
- * Surowe DTO z odpowiedzi RapidAPI ig-scraper5.
- * Pola, które nie są potrzebne, są ignorowane.
- */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiPostsResponse(
     @JsonProperty("items") val items: List<RapidApiItem> = emptyList(),
@@ -40,11 +36,8 @@ data class RapidApiNode(
     @JsonProperty("view_count") val viewCount: Long? = null,
     @JsonProperty("caption") val caption: RapidApiCaption? = null,
     @JsonProperty("taken_at") val takenAt: Long? = null,
-    /** Niepusta lista = post przypięty (może mieć starą datę, mimo że pojawia się na górze) */
     @JsonProperty("timeline_pinned_user_ids") val timelinePinnedUserIds: List<String> = emptyList(),
-    /** Typ formatu: "feed_item" (zdjęcie), "clips" (Reels), "carousel_container" (karuzela) */
     @JsonProperty("product_type") val productType: String? = null,
-    /** Liczba slajdów – obecne tylko dla carousel_container */
     @JsonProperty("carousel_media_count") val carouselMediaCount: Int? = null,
     @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null,
 )
@@ -57,11 +50,6 @@ data class RapidApiCaption(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiImageVersions2(
     @JsonProperty("candidates") val candidates: List<RapidApiImageCandidate> = emptyList()
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class RapidApiVideoVersion(
-    @JsonProperty("url") val url: String
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -79,13 +67,9 @@ data class RawInstagramPost(
     val viewCount: Long?,
     val captionText: String?,
     val takenAt: Long,
-    /** true = post przypięty przez autora (timeline_pinned_user_ids niepusta) */
     val isPinned: Boolean = false,
-    /** "feed_item" | "clips" | "carousel_container" – null jeśli API nie zwróciło */
     val productType: String? = null,
-    /** Liczba slajdów karuzeli; dla innych typów zawsze 1 */
     val carouselMediaCount: Int = 1,
-    /** URL pierwszego kandydata z image_versions2 (najwyższa rozdzielczość) */
     val imageUrl: String? = null
 )
 
@@ -98,7 +82,56 @@ data class RapidApiUserDetailsResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiUserDetails(
-    @JsonProperty("id") val id: String? = null
+    @JsonProperty("id") val id: String? = null,
+    @JsonProperty("follower_count") val followerCount: Int? = null,
+    @JsonProperty("following_count") val followingCount: Int? = null,
+    @JsonProperty("media_count") val mediaCount: Int? = null,
+    @JsonProperty("biography") val biography: String? = null,
+    @JsonProperty("external_url") val externalUrl: String? = null,
+    @JsonProperty("public_email") val publicEmail: String? = null,
+    @JsonProperty("public_phone_number") val publicPhoneNumber: String? = null,
+    @JsonProperty("is_verified") val isVerified: Boolean? = null,
+    @JsonProperty("is_business") val isBusiness: Boolean? = null,
+    @JsonProperty("account_type") val accountType: Int? = null,
+    @JsonProperty("category") val category: String? = null,
+    @JsonProperty("has_highlight_reels") val hasHighlightReels: Boolean? = null,
+    @JsonProperty("total_clips_count") val totalClipsCount: Int? = null,
+    @JsonProperty("is_private") val isPrivate: Boolean? = null,
+    @JsonProperty("latest_reel_media") val latestReelMedia: Long? = null,
+    @JsonProperty("should_show_public_contacts") val shouldShowPublicContacts: Boolean? = null,
+    @JsonProperty("bio_links") val bioLinks: List<RapidApiBioLink>? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RapidApiBioLink(
+    @JsonProperty("url") val url: String? = null,
+    @JsonProperty("link_type") val linkType: String? = null
+)
+
+/**
+ * Bogaty wynik wywołania /user/details – wszystkie pola istotne dla analizy profilu.
+ */
+data class RawInstagramUserDetails(
+    val instagramUserId: String,
+    val followerCount: Int?,
+    val followingCount: Int?,
+    val mediaCount: Int?,
+    val biography: String?,
+    val externalUrl: String?,
+    /** true gdy profil ma uzupełniony publiczny e-mail LUB numer telefonu */
+    val hasContactData: Boolean,
+    val publicEmail: String?,
+    val publicPhoneNumber: String?,
+    val isVerified: Boolean,
+    val isBusiness: Boolean,
+    /** Typ konta: 1 = personal, 2 = creator, 3 = business/professional */
+    val accountType: Int?,
+    val category: String?,
+    val hasHighlightReels: Boolean,
+    val totalClipsCount: Int,
+    val isPrivate: Boolean,
+    /** Unix timestamp ostatniego Reela – pozwala ocenić aktywność wideo */
+    val latestReelMedia: Long?
 )
 
 // ── Stories ───────────────────────────────────────────────────────────────────
@@ -106,21 +139,17 @@ data class RapidApiUserDetails(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class RapidApiStoryItem(
     @JsonProperty("id") val id: String? = null,
-    @JsonProperty("taken_at") val takenAt: Long? = null,
-    @JsonProperty("image_versions2") val imageVersions2: RapidApiImageVersions2? = null,
-    @JsonProperty("video_versions") val videoVersions: List<RapidApiVideoVersion>? = emptyList(),
-    @JsonProperty("media_type") val mediaType: String
+    @JsonProperty("taken_at") val takenAt: Long? = null
 )
 
+/** Minimalne dane story – tylko timestamp potrzebny do liczenia aktywności. */
 data class RawInstagramStory(
     val storyId: String,
-    val imageUrl: String?,
-    val videoUrl: String?,
     val takenAt: Long
 )
 
 /**
- * Klient HTTP do pobierania postów z RapidAPI (ig-scraper5).
+ * Klient HTTP do pobierania danych z RapidAPI (ig-scraper5).
  *
  * Konfiguracja przez application.properties:
  *   instagram.rapidapi.key               – klucz RapidAPI
@@ -137,7 +166,6 @@ class RapidApiInstagramClient(
     private val log = LoggerFactory.getLogger(RapidApiInstagramClient::class.java)
 
     companion object {
-        /** API zawsze zwraca 12 postów; mniej oznacza ostatnią stronę */
         private const val FULL_PAGE_SIZE = 12
     }
 
@@ -145,28 +173,10 @@ class RapidApiInstagramClient(
         .connectTimeout(Duration.ofSeconds(timeoutSeconds))
         .build()
 
-    /**
-     * Pobiera pojedynczą stronę postów (max 12) – używana przy regularnym (tygodniowym) sync.
-     *
-     * @return lista surowych postów lub pusta lista gdy profil nie ma postów
-     * @throws RapidApiException gdy API zwraca błąd (np. 404 – konto usunięte, 429 – rate limit)
-     */
     fun fetchPosts(username: String): List<RawInstagramPost> {
         return fetchPage(username, afterCursor = null).first
     }
 
-    /**
-     * Pobiera pełną historię postów do 12 miesięcy wstecz – używana przy pierwszym sync profilu.
-     *
-     * Algorytm:
-     * - Strony pobierane od najnowszych do starszych (kolejność gwarantowana przez API).
-     * - Posty przypięte (isPinned=true) z pierwszego batcha włączane zawsze, niezależnie od daty.
-     * - Iteracja kończy się gdy:
-     *   a) batch zawiera mniej niż 12 postów (brak kolejnej strony), LUB
-     *   b) najstarszy nieprzypięty post w batchu jest sprzed okna 12 miesięcy.
-     *
-     * @throws RapidApiException gdy API zwraca błąd
-     */
     fun fetchPostsFullHistory(username: String): List<RawInstagramPost> {
         val cutoff = Instant.now().minus(365, ChronoUnit.DAYS)
         val result = mutableListOf<RawInstagramPost>()
@@ -183,10 +193,8 @@ class RapidApiInstagramClient(
             val pinned = posts.filter { it.isPinned }
             val regular = posts.filter { !it.isPinned }
 
-            // Posty przypięte pojawiają się tylko w pierwszym batchu – zawsze je włączamy
             if (page == 1) result.addAll(pinned)
 
-            // Nieprzypięte posty w oknie 12 miesięcy
             result.addAll(regular.filter { Instant.ofEpochSecond(it.takenAt).isAfter(cutoff) })
 
             val hasOlderPost = regular.any { !Instant.ofEpochSecond(it.takenAt).isAfter(cutoff) }
@@ -207,13 +215,13 @@ class RapidApiInstagramClient(
     }
 
     /**
-     * Pobiera natywne ID konta Instagram na podstawie username.
-     * Wynik zapisywany do InstagramProfileEntity.instagramUserId.
+     * Pobiera szczegóły profilu z /user/details. Zwraca bogaty obiekt ze wszystkimi
+     * metrykami potrzebnymi do analizy trendu, popularności i SEO konta.
      *
-     * @return Instagram user ID (ciąg cyfr) lub null gdy API nie zwróciło danych
+     * @return dane profilu lub null gdy API nie zwróciło pola "id"
      * @throws RapidApiException gdy API zwraca błąd HTTP
      */
-    fun fetchUserDetails(username: String): String? {
+    fun fetchUserDetails(username: String): RawInstagramUserDetails? {
         if (!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)) {
             return null
         }
@@ -239,16 +247,41 @@ class RapidApiInstagramClient(
         }
 
         val parsed = objectMapper.readValue(response.body(), RapidApiUserDetailsResponse::class.java)
-        return parsed.user?.id?.also {
-            log.debug("Instagram user details: @{} → instagramUserId={}", username, it)
+        val user = parsed.user ?: return null
+        val userId = user.id ?: return null
+
+        val hasContactData = !user.publicEmail.isNullOrBlank() || !user.publicPhoneNumber.isNullOrBlank()
+
+        return RawInstagramUserDetails(
+            instagramUserId = userId,
+            followerCount = user.followerCount,
+            followingCount = user.followingCount,
+            mediaCount = user.mediaCount,
+            biography = user.biography?.takeIf { it.isNotBlank() },
+            externalUrl = user.externalUrl?.takeIf { it.isNotBlank() },
+            hasContactData = hasContactData,
+            publicEmail = user.publicEmail?.takeIf { it.isNotBlank() },
+            publicPhoneNumber = user.publicPhoneNumber?.takeIf { it.isNotBlank() },
+            isVerified = user.isVerified ?: false,
+            isBusiness = user.isBusiness ?: false,
+            accountType = user.accountType,
+            category = user.category?.takeIf { it.isNotBlank() },
+            hasHighlightReels = user.hasHighlightReels ?: false,
+            totalClipsCount = user.totalClipsCount ?: 0,
+            isPrivate = user.isPrivate ?: false,
+            latestReelMedia = user.latestReelMedia
+        ).also {
+            log.debug(
+                "Instagram user details: @{} → userId={}, followers={}, media={}",
+                username, userId, it.followerCount, it.mediaCount
+            )
         }
     }
 
     /**
      * Pobiera aktywne stories dla podanego Instagram user ID.
-     * Nie wymaga username – używa numerycznego ID konta.
+     * Zwraca wyłącznie identyfikatory i timestamp publikacji – dane zdjęć nie są zbierane.
      *
-     * @return lista surowych stories lub pusta lista gdy brak aktywnych stories
      * @throws RapidApiException gdy API zwraca błąd HTTP
      */
     fun fetchStories(instagramUserId: String): List<RawInstagramStory> {
@@ -280,21 +313,14 @@ class RapidApiInstagramClient(
         return items.mapNotNull { item ->
             val id = item.id ?: return@mapNotNull null
             val takenAt = item.takenAt ?: return@mapNotNull null
-            val isImage = item.mediaType == "1"
-            val isVideo = item.mediaType == "2"
-            RawInstagramStory(
-                storyId = id,
-                imageUrl = if(isImage) item.imageVersions2?.candidates?.firstOrNull()?.url else null,
-                videoUrl = if(isVideo) item.videoVersions?.first()?.url else null,
-                takenAt = takenAt,
-            )
+            RawInstagramStory(storyId = id, takenAt = takenAt)
         }
     }
 
     // ── prywatne ──────────────────────────────────────────────────────────────
 
     private fun fetchPage(username: String, afterCursor: String?): Pair<List<RawInstagramPost>, String?> {
-        if(!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)){
+        if (!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)) {
             return emptyList<RawInstagramPost>() to null
         }
 
