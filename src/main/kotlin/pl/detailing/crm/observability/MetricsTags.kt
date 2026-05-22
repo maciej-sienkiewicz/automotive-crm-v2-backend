@@ -94,6 +94,16 @@ object MetricsTags {
     /** Gauge: cumulative total number of visits ever created on the platform. */
     const val PLATFORM_VISITS_TOTAL = "crm.platform.visits.total"
 
+    // ── Security metrics ──────────────────────────────────────────────────────
+    /** Counter: rate-limit threshold exceeded (HTTP 429 returned). */
+    const val SECURITY_RATE_LIMIT_EXCEEDED = "crm.security.rate_limit.exceeded"
+
+    /** Counter: login attempts with tag result=success|failure|locked|blocked. */
+    const val SECURITY_LOGIN_ATTEMPTS = "crm.security.login.attempts"
+
+    /** Counter: cross-tenant access attempts (authenticated user accessing another tenant's entity). */
+    const val SECURITY_CROSS_TENANT_ATTEMPT = "crm.security.cross_tenant.attempt"
+
     // ── HttpServletRequest attribute keys shared between aspect and filter ───
     /** Set by ApiMetricsAspect; read by HttpMetricsFilter for response-size tagging. */
     const val ATTR_CONTROLLER = "crm.obs.controller"

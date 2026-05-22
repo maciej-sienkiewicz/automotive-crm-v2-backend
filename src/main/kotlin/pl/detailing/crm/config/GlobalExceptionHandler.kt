@@ -2,6 +2,7 @@
 
 package pl.detailing.crm.config
 
+import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -12,11 +13,14 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
+import pl.detailing.crm.security.TenantIsolationAuditService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
 @RestControllerAdvice
-class GlobalExceptionHandler {
+class GlobalExceptionHandler(
+    private val tenantIsolationAuditService: TenantIsolationAuditService
+) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -73,7 +77,13 @@ class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(EntityNotFoundException::class)
-    fun handleNotFound(ex: EntityNotFoundException): ResponseEntity<ErrorResponse> {
+    fun handleNotFound(ex: EntityNotFoundException, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        try {
+            val user = SecurityContextHelper.getCurrentUser()
+            tenantIsolationAuditService.checkRequest(request, user)
+        } catch (_: Exception) {
+            // Not authenticated or audit check failed — swallow silently, return 404 regardless
+        }
         return ResponseEntity
             .status(HttpStatus.NOT_FOUND)
             .body(ErrorResponse(

@@ -25,7 +25,8 @@ enum class AuditModule {
     FINANCE,
     CASH_REGISTER,
     EMPLOYEE,
-    TASK
+    TASK,
+    SECURITY
 }
 
 /**
@@ -127,7 +128,13 @@ enum class AuditAction {
     PAYROLL_CONFIRMED,
     PAYROLL_PAID,
     BONUS_ADDED,
-    BONUS_DELETED
+    BONUS_DELETED,
+
+    // Security events
+    CROSS_TENANT_ACCESS_ATTEMPT,
+    LOGIN_FAILURE,
+    LOGIN_SUCCESS,
+    ACCOUNT_LOCKED
 }
 
 /**

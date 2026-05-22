@@ -1,0 +1,120 @@
+groups:
+  - name: crm_security
+    interval: 30s
+    rules:
+
+      # ── Brute-force / credential stuffing ──────────────────────────────────
+      - alert: LoginBruteForce
+        expr: |
+          rate(crm_security_login_attempts_total{result="failure"}[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Podejrzana liczba błędnych prób logowania"
+          description: >
+            Więcej niż 1 błędna próba logowania na 2 sekundy przez ostatnie 2 minuty.
+            Może oznaczać atak brute-force lub credential stuffing.
+
+      - alert: AccountLockoutSpike
+        expr: |
+          increase(crm_security_login_attempts_total{result="locked"}[10m]) > 3
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Masowe blokady kont w krótkim czasie"
+          description: >
+            Ponad 3 konta zostały zablokowane w ciągu 10 minut.
+            Może oznaczać skoordynowany atak na znane adresy e-mail.
+
+      # ── Rate limiting ───────────────────────────────────────────────────────
+      - alert: RateLimitExceeded
+        expr: |
+          rate(crm_security_rate_limit_exceeded_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Przekroczenia limitów żądań (HTTP 429)"
+          description: >
+            Endpoint {{ $labels.path }} regularnie przekracza rate limit.
+            Może oznaczać atak DoS lub nieprawidłowo skonfigurowanego klienta.
+
+      # ── Cross-tenant access ─────────────────────────────────────────────────
+      - alert: CrossTenantAccessAttempt
+        expr: |
+          increase(crm_security_cross_tenant_attempt_total[15m]) > 0
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Próba dostępu do danych innego tenanta!"
+          description: >
+            Studio {{ $labels.studio_id }} próbowało uzyskać dostęp do encji {{ $labels.entity_type }}
+            należącej do innego tenanta. Sprawdź audit_logs tabeli SECURITY.
+
+      # ── Anomalous 401/403 rejections ────────────────────────────────────────
+      - alert: HighSecurityRejectionRate
+        expr: |
+          rate(crm_api_security_rejections_total[5m]) > 2
+        for: 3m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Wysoka liczba odrzuceń 401/403 przez Spring Security"
+          description: >
+            Ponad 2 żądania na sekundę są odrzucane przez filtr bezpieczeństwa
+            (nie docierają do kontrolerów). Może oznaczać skanowanie endpointów
+            lub atak na sesje.
+
+      # ── Data exfiltration anomaly ───────────────────────────────────────────
+      - alert: AbnormallyLargeResponse
+        expr: |
+          histogram_quantile(0.99,
+            rate(crm_api_response_size_bytes_bucket[10m])
+          ) > 5000000
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Anomalnie duże odpowiedzi API (p99 > 5 MB)"
+          description: >
+            99-ty percentyl rozmiaru odpowiedzi przekroczył 5 MB przez 5 minut.
+            Może oznaczać próbę eksfiltracji danych przez masowe stronicowanie.
+
+  - name: crm_availability
+    interval: 60s
+    rules:
+
+      # ── API error rate ──────────────────────────────────────────────────────
+      - alert: HighApiErrorRate
+        expr: |
+          rate(crm_api_errors_total{status=~"5.."}[5m]) /
+          rate(crm_api_request_duration_seconds_count[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Wysoki wskaźnik błędów 5xx"
+          description: >
+            Ponad 5% żądań kończy się błędem serwera przez ostatnie 5 minut.
+
+      - alert: ApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(crm_api_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Wysokie opóźnienie API (p95 > 2s)"
+          description: >
+            95-ty percentyl czasu odpowiedzi przekroczył 2 sekundy przez 5 minut.
