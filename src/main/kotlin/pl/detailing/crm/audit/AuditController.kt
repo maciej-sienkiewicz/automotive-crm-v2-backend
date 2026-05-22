@@ -179,6 +179,7 @@ class AuditController(
         FINANCE -> "Finanse"
         EMPLOYEE -> TODO()
         AuditModule.TASK -> TODO()
+        AuditModule.SECURITY -> TODO()
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
@@ -254,6 +255,10 @@ class AuditController(
         AuditAction.LEAD_LOST -> TODO()
         AuditAction.LEAD_NO_SHOW -> TODO()
         AuditAction.LEAD_APPOINTMENT_CREATED -> TODO()
+        AuditAction.CROSS_TENANT_ACCESS_ATTEMPT -> TODO()
+        AuditAction.LOGIN_FAILURE -> TODO()
+        AuditAction.LOGIN_SUCCESS -> TODO()
+        AuditAction.ACCOUNT_LOCKED -> TODO()
     }
 }
 
