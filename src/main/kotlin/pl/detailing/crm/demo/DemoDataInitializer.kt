@@ -9,6 +9,8 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.communication.infrastructure.CommunicationLogEntity
+import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.customer.notes.CustomerNoteEntity
@@ -17,10 +19,18 @@ import pl.detailing.crm.instagram.infrastructure.InstagramProfileEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileEntity
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
+import pl.detailing.crm.leads.infrastructure.LeadEntity
+import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.infrastructure.ServiceEntity
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentEntity
+import pl.detailing.crm.statistics.category.infrastructure.CategoryServiceAssignmentRepository
+import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryEntity
+import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
 import pl.detailing.crm.vehicle.infrastructure.*
+import pl.detailing.crm.vehicle.notes.VehicleNoteEntity
+import pl.detailing.crm.vehicle.notes.VehicleNoteRepository
 import pl.detailing.crm.visit.infrastructure.*
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -36,6 +46,12 @@ class DemoDataInitializer(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val appointmentRepository: AppointmentRepository,
     private val visitRepository: VisitRepository,
+    private val visitCommentRepository: VisitCommentRepository,
+    private val vehicleNoteRepository: VehicleNoteRepository,
+    private val leadRepository: LeadRepository,
+    private val communicationLogRepository: CommunicationLogJpaRepository,
+    private val serviceCategoryRepository: ServiceCategoryRepository,
+    private val categoryServiceAssignmentRepository: CategoryServiceAssignmentRepository,
     private val instagramProfileRepository: InstagramProfileRepository,
     private val studioInstagramProfileRepository: StudioInstagramProfileRepository
 ) {
@@ -44,12 +60,17 @@ class DemoDataInitializer(
     fun seed(studioId: UUID, userId: UUID) {
         val colors = createColors(studioId, userId)
         val services = createServices(studioId, userId)
+        createServiceCategories(studioId, userId, services)
         val customers = createCustomers(studioId, userId)
         createCustomerNotes(studioId, userId, customers)
         val vehicles = createVehicles(studioId, userId, customers)
-        createHistoricalVisits(studioId, userId, customers, vehicles, services, colors)
-        createInProgressVisits(studioId, userId, customers, vehicles, services, colors)
+        createVehicleNotes(studioId, userId, vehicles)
+        val pastVisits = createHistoricalVisits(studioId, userId, customers, vehicles, services, colors)
+        val inProgressVisits = createInProgressVisits(studioId, userId, customers, vehicles, services, colors)
+        createVisitComments(studioId, userId, pastVisits + inProgressVisits)
         createFutureAppointments(studioId, userId, customers, vehicles, services, colors)
+        createLeads(studioId, customers, vehicles)
+        createCommunicationLogs(studioId, customers, pastVisits + inProgressVisits)
         createInstagramProfiles(studioId, userId)
     }
 
@@ -290,8 +311,9 @@ class DemoDataInitializer(
         vehicles: List<VehicleEntity>,
         services: List<ServiceEntity>,
         colors: List<AppointmentColorEntity>
-    ) {
+    ): List<VisitEntity> {
         val now = Instant.now()
+        val createdVisits = mutableListOf<VisitEntity>()
 
         data class VisitSpec(
             val customerIdx: Int,
@@ -456,7 +478,9 @@ class DemoDataInitializer(
             }
             visitEntity.serviceItems = visitServiceItems.toMutableList()
             visitRepository.save(visitEntity)
+            createdVisits.add(visitEntity)
         }
+        return createdVisits
     }
 
     private fun createInProgressVisits(
@@ -466,8 +490,9 @@ class DemoDataInitializer(
         vehicles: List<VehicleEntity>,
         services: List<ServiceEntity>,
         colors: List<AppointmentColorEntity>
-    ) {
+    ): List<VisitEntity> {
         val now = Instant.now()
+        val createdVisits = mutableListOf<VisitEntity>()
         val startOfToday = now.truncatedTo(ChronoUnit.DAYS).plus(8, ChronoUnit.HOURS)
 
         data class InProgressSpec(
@@ -599,7 +624,9 @@ class DemoDataInitializer(
             }
             visitEntity.serviceItems = visitServiceItems.toMutableList()
             visitRepository.save(visitEntity)
+            createdVisits.add(visitEntity)
         }
+        return createdVisits
     }
 
     private fun createFutureAppointments(
@@ -772,6 +799,300 @@ class DemoDataInitializer(
                     )
                 )
             }
+        }
+    }
+
+    private fun createVisitComments(studioId: UUID, userId: UUID, visits: List<VisitEntity>) {
+        val now = Instant.now()
+        val authorName = "Jan Detailer"
+
+        data class CommentSpec(val visitIdx: Int, val type: CommentType, val content: String, val daysAgoOffset: Long)
+
+        val specs = listOf(
+            CommentSpec(0, CommentType.INTERNAL, "Korekta lakieru zakończona – efekt ★★★★★. Klient dopytywał o ceramikę na kolejną wizytę.", 0),
+            CommentSpec(0, CommentType.FOR_CUSTOMER, "Dziękujemy za wizytę! Ceramika aktywuje się przez 24h – proszę nie myć auta przez ten czas.", 0),
+            CommentSpec(1, CommentType.INTERNAL, "Tapicerka skórzana wymagała dodatkowego odtłuszczacza. Użyto Gyeon Leather Cleaner.", 0),
+            CommentSpec(2, CommentType.INTERNAL, "Drobna rysa na drzwiach lewych – poinformowano klienta, usunięto w trakcie korekty.", 0),
+            CommentSpec(3, CommentType.FOR_CUSTOMER, "Porsche wyjechało w idealnym stanie. Zapraszamy na serwis ceramiki za 12 miesięcy.", 0),
+            CommentSpec(3, CommentType.INTERNAL, "Lakier w stanie wzorowym – scratch resistance 9/10 po korekcie. Zdjęcia przed/po w galerii.", 0),
+            CommentSpec(5, CommentType.INTERNAL, "BMW 5 – ceramika nałożona w 3 warstwach. Kąt kontaktowy wody >115°. Odbiór bez zastrzeżeń.", 0),
+            CommentSpec(7, CommentType.INTERNAL, "Cayenne – korekta 2-etapowa. Defekty usuniętę w 95%. Klient zarezerwował już kolejną wizytę.", 0),
+            CommentSpec(9, CommentType.FOR_CUSTOMER, "Mercedes S-Klasa gotowy do odbioru. Efekt showroom osiągnięty. Ceramika aktywna.", 0),
+            CommentSpec(9, CommentType.INTERNAL, "Lakier S-Klasy w bardzo dobrym stanie wejściowym. Korekta 1-etapowa + 4 warstwy ceramiki.", 0),
+            CommentSpec(11, CommentType.INTERNAL, "Wnętrze Mustanga było silnie zaniedbane – plamy z kawy na fotelach. Wymagało 2x pranie.", 0),
+            CommentSpec(14, CommentType.INTERNAL, "Mazda 6 – lakier czerwony wymagał szczególnej uwagi przy polerze. Użyto Rupes Bigfoot Nano.", 0),
+            CommentSpec(19, CommentType.INTERNAL, "Kia Stinger – nowy klient z polecenia od Pana Kowalskiego. Bardzo zadowolony z efektu.", 0),
+            CommentSpec(19, CommentType.FOR_CUSTOMER, "Ceramika na Kii Stinger aplikowana pomyślnie. Pełna hydrofobowość od jutra. Dziękujemy!", 0),
+            CommentSpec(23, CommentType.INTERNAL, "BMW X5 – serwis pogwarancyjny ceramiki. Uzupełniono warstwę topcoat. Stan: idealny.", 0),
+            CommentSpec(27, CommentType.INTERNAL, "BMW 5 – odświeżenie ceramiki. Klient zgłosił mikro rysy po myjni automatycznej. Usunięto.", 0),
+            CommentSpec(30, CommentType.INTERNAL, "Skoda RS – nowy klient. Wnętrze zabudowane foliami sportowymi, wymagało specjalnych preparatów.", 0),
+            CommentSpec(34, CommentType.INTERNAL, "BMW M135i – lakier biały. Korekta 1-etapowa przyniosła efekt 88% usunięcia defektów.", 0),
+            CommentSpec(35, CommentType.INTERNAL, "Korekta lakieru Porsche Cayenne w toku. Etap 1 ukończony – przechodzę do etapu 2.", 0),
+            CommentSpec(35, CommentType.FOR_CUSTOMER, "Pana Cayenne jest u nas w opracowaniu. Przewidywany odbiór dziś ok. 18:00.", 0),
+            CommentSpec(36, CommentType.INTERNAL, "Mercedes S-Klasa – klient poprosił o dodatkową warstwę topcoat. Aplikuję.", 0),
+            CommentSpec(37, CommentType.INTERNAL, "Audi A4 – tapicerka w bardzo dobrym stanie. Pranie uzupełniające wystarczyło.", 0)
+        )
+
+        val entities = specs.mapNotNull { spec ->
+            val visit = visits.getOrNull(spec.visitIdx) ?: return@mapNotNull null
+            val createdAt = visit.scheduledDate.plus(spec.daysAgoOffset, ChronoUnit.HOURS)
+            VisitCommentEntity(
+                id = UUID.randomUUID(),
+                visitId = visit.id,
+                type = spec.type,
+                content = spec.content,
+                isDeleted = false,
+                createdBy = userId,
+                createdByName = authorName,
+                createdAt = createdAt,
+                updatedBy = null,
+                updatedByName = null,
+                updatedAt = null,
+                deletedBy = null,
+                deletedByName = null,
+                deletedAt = null
+            )
+        }
+        visitCommentRepository.saveAll(entities)
+    }
+
+    private fun createVehicleNotes(studioId: UUID, userId: UUID, vehicles: List<VehicleEntity>) {
+        val now = Instant.now()
+        val authorName = "Jan Detailer"
+
+        data class VehicleNoteSpec(val vehicleIdx: Int, val content: String, val daysAgo: Long)
+
+        val specs = listOf(
+            VehicleNoteSpec(0, "BMW X5 – powłoka ceramiczna IGL Eclipse aplikowana 15.11.2024. Następna inspekcja: listopad 2025.", 180),
+            VehicleNoteSpec(0, "Lakier w doskonałym stanie. Brak zarysowań głębszych niż clear coat.", 28),
+            VehicleNoteSpec(1, "Audi A6 – tapicerka jasna beżowa, wymaga szczególnej ostrożności przy praniu.", 168),
+            VehicleNoteSpec(3, "Porsche 911 – lakier Karmin bardzo wrażliwy na zarysowania. Używać tylko najdelikatniejszych pad.", 155),
+            VehicleNoteSpec(3, "Ceramika 2-warstwowa aplikowana 10.01.2025. Klient pyta o topcoat przy kolejnej wizycie.", 12),
+            VehicleNoteSpec(5, "BMW 5 – ceramika aplikowana dwukrotnie, warstwa bazowa + topcoat. Efekt perfekcyjny.", 141),
+            VehicleNoteSpec(7, "Porsche Cayenne – klient przyjeżdża zawsze z własną glinką do mycia. Przechowywana w schowku.", 128),
+            VehicleNoteSpec(9, "Mercedes S-Klasa – właściciel wymaga protokołu odbioru z każdą wizytą. Obligatoryjnie.", 115),
+            VehicleNoteSpec(11, "Ford Mustang – felgi GT500 wymagają specjalnego detergentu, nie używać standardowego od felg.", 102),
+            VehicleNoteSpec(16, "BMW M135i – zawieszenie obniżone. Zachować ostrożność przy najazdach na rampy.", 63),
+            VehicleNoteSpec(19, "Lexus RX – biała perłowa tapicerka alcantara. Pranie tylko suchą parą, bez mokrej metody.", 43),
+            VehicleNoteSpec(21, "VW Transporter (TRANS-POL) – nie myć po 18:00, auto musi być w bazie firmy na 19:00.", 30),
+            VehicleNoteSpec(25, "Skoda Octavia RS – felgi 19\" kute. Klient prosi o naklejenie etykiet korekcji lakieru po każdej wizycie.", 5)
+        )
+
+        val entities = specs.mapNotNull { spec ->
+            val vehicle = vehicles.getOrNull(spec.vehicleIdx) ?: return@mapNotNull null
+            VehicleNoteEntity(
+                id = UUID.randomUUID(),
+                studioId = studioId,
+                vehicleId = vehicle.id,
+                content = spec.content,
+                createdBy = userId,
+                createdByName = authorName,
+                createdAt = now.minus(spec.daysAgo, ChronoUnit.DAYS),
+                updatedAt = now.minus(spec.daysAgo, ChronoUnit.DAYS)
+            )
+        }
+        vehicleNoteRepository.saveAll(entities)
+    }
+
+    private fun createLeads(studioId: UUID, customers: List<CustomerEntity>, vehicles: List<VehicleEntity>) {
+        val now = Instant.now()
+
+        data class LeadSpec(
+            val phone: String,
+            val name: String?,
+            val message: String,
+            val brand: String?,
+            val model: String?,
+            val status: LeadStatus,
+            val source: LeadSource,
+            val estimatedValue: Long,
+            val daysAgo: Long,
+            val customerIdx: Int?
+        )
+
+        val specs = listOf(
+            LeadSpec("+48732100200", "Krzysztof Baran", "Witam, chciałbym zapytać o cenę korekty lakieru dla mojego BMW M3. Macie wolny termin w przyszłym tygodniu?", "BMW", "M3", LeadStatus.COMPLETED, LeadSource.PHONE, 89900L, 90, null),
+            LeadSpec("+48601200300", "Marta Witek", "Dzień dobry! Interesuje mnie powłoka ceramiczna dla Audi A5 Sportback. Proszę o wycenę.", "Audi", "A5", LeadStatus.COMPLETED, LeadSource.EMAIL, 179900L, 75, null),
+            LeadSpec("+48512300400", "Dominik Przybysz", "Chciałbym umówić pranie tapicerki w moim Range Rover Velar. Jakie macie terminy?", "Land Rover", "Range Rover Velar", LeadStatus.COMPLETED, LeadSource.PHONE, 49900L, 60, null),
+            LeadSpec("+48698400500", "Aleksandra Kubiak", "Mam Porsche Macan z drobnym zarysowaniem na drzwiach. Czy jesteście w stanie to usunąć?", "Porsche", "Macan", LeadStatus.COMPLETED, LeadSource.EMAIL, 69900L, 45, null),
+            LeadSpec("+48723500600", "Tomasz Wróbel", "Pytam o zabezpieczenie folią PPF przedniej części BMW 5. Cena i dostępność?", "BMW", "5 Series", LeadStatus.CONFIRMED, LeadSource.PHONE, 299900L, 14, null),
+            LeadSpec("+48601600700", "Natalia Kowalska", "Zainteresowana kompleksowym detailingiem wnętrza Mercedes CLA. Proszę o kontakt.", "Mercedes-Benz", "CLA", LeadStatus.IN_PROGRESS, LeadSource.EMAIL, 34900L, 7, null),
+            LeadSpec("+48512700800", "Paweł Nowicki", "Mam nowe Audi RS6. Szukam studia do ceramiki. Zobaczyłem was na Instagramie.", "Audi", "RS6 Avant", LeadStatus.IN_PROGRESS, LeadSource.PHONE, 199900L, 3, null),
+            LeadSpec("+48698800900", null, "Dobry wieczór. Chciałem zapytać o mycie detailingowe dla VW Golfa.", "Volkswagen", "Golf", LeadStatus.NEW, LeadSource.PHONE, 13900L, 1, null),
+            LeadSpec("+48723900100", "Katarzyna Malinowska", "Proszę o informację nt. powłoki ceramicznej dla Tesla Model 3. Słyszałem, że specjalizujecie się w elektryk.", "Tesla", "Model 3", LeadStatus.NEW, LeadSource.EMAIL, 179900L, 0, null),
+            LeadSpec("+48601100200", null, "Mam Lamborghini Huracán i szukam studia premium do korekty lakieru + ceramika. Proszę o kontakt.", "Lamborghini", "Huracán", LeadStatus.LOST, LeadSource.PHONE, 299900L, 30, null),
+            LeadSpec("+48512200300", "Robert Janiak", "Pytanie o cenę ozonowania + pranie, bo pies naśmiecił w samochodzie... Kia Sportage.", "Kia", "Sportage", LeadStatus.LOST, LeadSource.EMAIL, 31800L, 20, null),
+            LeadSpec("+48698300400", "Jolanta Sekula", "Chciałam umówić korekcie lakieru dla mojego Jaguara F-Pace, ale niestety muszę odwołać.", "Jaguar", "F-Pace", LeadStatus.NO_SHOW, LeadSource.PHONE, 69900L, 15, null)
+        )
+
+        val entities = specs.map { spec ->
+            LeadEntity(
+                id = UUID.randomUUID(),
+                studioId = studioId,
+                source = spec.source,
+                status = spec.status,
+                contactIdentifier = spec.phone,
+                customerName = spec.name,
+                initialMessage = spec.message,
+                estimatedValue = spec.estimatedValue,
+                requiresVerification = false,
+                vehicleBrand = spec.brand,
+                vehicleModel = spec.model,
+                customerId = spec.customerIdx?.let { customers.getOrNull(it)?.id },
+                appointmentId = null,
+                visitId = null,
+                createdAt = now.minus(spec.daysAgo, ChronoUnit.DAYS),
+                updatedAt = now.minus(spec.daysAgo / 2, ChronoUnit.DAYS)
+            )
+        }
+        leadRepository.saveAll(entities)
+    }
+
+    private fun createCommunicationLogs(
+        studioId: UUID,
+        customers: List<CustomerEntity>,
+        visits: List<VisitEntity>
+    ) {
+        val now = Instant.now()
+        val logs = mutableListOf<CommunicationLogEntity>()
+
+        data class CommSpec(
+            val visitIdx: Int,
+            val customerIdx: Int,
+            val channel: CommunicationChannel,
+            val type: CommunicationMessageType,
+            val recipient: String,
+            val subject: String?,
+            val body: String,
+            val hoursAfterStart: Long
+        )
+
+        val specs = listOf(
+            CommSpec(0, 0, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_WELCOME_EMAIL, "jan.kowalski@gmail.com", "Potwierdzenie przyjęcia pojazdu – BMW X5 [VIS-2025-00001]", "Dzień dobry, Panie Janie! Przyjęliśmy Pana pojazd BMW X5 (PO12345) do realizacji. Numer wizyty: VIS-2025-00001. Szacowany czas realizacji: 6 godzin.", 0),
+            CommSpec(0, 0, CommunicationChannel.SMS, CommunicationMessageType.VISIT_READY_FOR_PICKUP_SMS, "+48512345678", null, "Dzień dobry! Pana BMW X5 jest gotowe do odbioru. Zapraszamy serdecznie. Detailing Studio DEMO", 7),
+            CommSpec(1, 1, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_WELCOME_EMAIL, "anna.nowak@wp.pl", "Potwierdzenie przyjęcia pojazdu – Audi A6 [VIS-2025-00002]", "Dzień dobry, Pani Anno! Przyjęliśmy Pani pojazd Audi A6 (WA23456) do realizacji. Numer wizyty: VIS-2025-00002.", 0),
+            CommSpec(1, 1, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_READY_FOR_PICKUP_EMAIL, "anna.nowak@wp.pl", "Pojazd gotowy do odbioru – Audi A6 [VIS-2025-00002]", "Pani Anno, Pani Audi A6 jest gotowe do odbioru! Zapraszamy w godzinach 8-18. Z poważaniem, Detailing Studio DEMO", 6),
+            CommSpec(2, 2, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48723456789", null, "Dzień dobry! Potwierdzamy przyjęcie Pana Mercedes C220 do realizacji. Nr wizyty: VIS-2025-00003.", 0),
+            CommSpec(3, 2, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_WELCOME_EMAIL, "piotr.wisniewski@onet.pl", "Potwierdzenie przyjęcia pojazdu – Porsche 911 [VIS-2025-00004]", "Witamy! Przyjęliśmy Porsche 911 Carrera 4S (GD99999) do pełnego detailingu. Numer wizyty: VIS-2025-00004.", 0),
+            CommSpec(3, 2, CommunicationChannel.SMS, CommunicationMessageType.VISIT_READY_FOR_PICKUP_SMS, "+48723456789", null, "Pana Porsche 911 jest gotowe do odbioru. Wynik korekty: ★★★★★. Zapraszamy!", 9),
+            CommSpec(5, 4, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_WELCOME_EMAIL, "marek.kowalczyk@gmail.com", "Potwierdzenie przyjęcia pojazdu – BMW 5 [VIS-2025-00006]", "Dzień dobry, Panie Marku! Przyjęliśmy BMW 5 Series 530i (WR56789) do korekty lakieru + ceramiki.", 0),
+            CommSpec(5, 4, CommunicationChannel.SMS, CommunicationMessageType.VISIT_READY_FOR_PICKUP_SMS, "+48512987654", null, "Dzień dobry! BMW 5 z powłoką ceramiczną gotowe do odbioru. Ceramika aktywuje się przez 24h – proszę nie myć auta. Dziękujemy!", 8),
+            CommSpec(8, 8, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_WELCOME_EMAIL, "michal.sz@gmail.com", "Potwierdzenie przyjęcia – Mercedes S 500 [VIS-2025-00009]", "Panie Michale, witamy! Mercedes S 500 4MATIC (KR90123) przyjęty do full detailingu.", 0),
+            CommSpec(8, 8, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48723987654", null, "Dokumenty podpisane. Przystępujemy do realizacji Pana Mercedes S-Klasy. Efekt showroom gwarantowany!", 1),
+            CommSpec(8, 8, CommunicationChannel.EMAIL, CommunicationMessageType.VISIT_READY_FOR_PICKUP_EMAIL, "michal.sz@gmail.com", "Pojazd gotowy do odbioru – Mercedes S 500 [VIS-2025-00009]", "Panie Michale, Mercedes S-Klasa jest gotowy do odbioru w efekcie showroom. Zapraszamy!", 9),
+            CommSpec(18, 18, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48723654321", null, "Pana Kia Stinger przyjęty. Korekta lakieru + ceramika w realizacji. Szacowany czas: 6h.", 0),
+            CommSpec(18, 18, CommunicationChannel.SMS, CommunicationMessageType.SMS_AUTOMATION_POST_VISIT, "+48723654321", null, "Dziękujemy za wizytę! Ceramika na Kii Stinger aktywna. Dbaj o lakier – unikaj myjni automatycznych. Zapraszamy ponownie!", 24),
+            CommSpec(23, 0, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48512345678", null, "BMW X5 – serwis ceramiki. Uzupełnienie topcoat w realizacji. Pan Jan – ok. 4 godziny.", 0),
+            CommSpec(35, 5, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48798654321", null, "Dzień dobry! Przyjęliśmy Pani Porsche Cayenne do korekty 2-etapowej + ceramiki. Nr: VIS-2025-00036.", 0),
+            CommSpec(36, 8, CommunicationChannel.SMS, CommunicationMessageType.VISIT_CONFIRMED_SMS, "+48723987654", null, "Pana Mercedes S-Klasy – przyjęty do korekty lakieru. Szacowany czas: 7 godzin. Nr: VIS-2025-00037.", 0)
+        )
+
+        specs.forEach { spec ->
+            val visit = visits.getOrNull(spec.visitIdx) ?: return@forEach
+            val customer = customers.getOrNull(spec.customerIdx) ?: return@forEach
+            val sentAt = visit.scheduledDate.plus(spec.hoursAfterStart, ChronoUnit.HOURS)
+
+            logs.add(
+                CommunicationLogEntity(
+                    id = UUID.randomUUID(),
+                    studioId = studioId,
+                    customerId = customer.id,
+                    visitId = visit.id,
+                    appointmentId = visit.appointmentId,
+                    channel = spec.channel,
+                    messageType = spec.type,
+                    recipientAddress = spec.recipient,
+                    subject = spec.subject,
+                    bodyContent = spec.body,
+                    status = CommunicationStatus.SENT,
+                    errorMessage = null,
+                    sentAt = sentAt
+                )
+            )
+        }
+
+        // SMS automation pre-visit reminders for future appointments (based on recent visits' customers)
+        val reminderSpecs = listOf(
+            Triple(0, "+48512345678", "Przypomnienie: jutro o 09:00 wizyta Pana BMW X5 w naszym studio. Zapraszamy!"),
+            Triple(2, "+48723456789", "Przypomnienie: pojutrze o 10:00 pełny detailing Porsche 911. Proszę o punktualność."),
+            Triple(7, "+48698234567", "Przypomnienie: za 3 dni wizyta Pani Audi Q5. Mycie + detailing 08:00-12:00.")
+        )
+        reminderSpecs.forEach { (customerIdx, phone, msg) ->
+            val customer = customers.getOrNull(customerIdx) ?: return@forEach
+            logs.add(
+                CommunicationLogEntity(
+                    id = UUID.randomUUID(),
+                    studioId = studioId,
+                    customerId = customer.id,
+                    visitId = null,
+                    appointmentId = null,
+                    channel = CommunicationChannel.SMS,
+                    messageType = CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT,
+                    recipientAddress = phone,
+                    subject = null,
+                    bodyContent = msg,
+                    status = CommunicationStatus.SENT,
+                    errorMessage = null,
+                    sentAt = now.minus(1, ChronoUnit.DAYS)
+                )
+            )
+        }
+
+        communicationLogRepository.saveAll(logs)
+    }
+
+    private fun createServiceCategories(studioId: UUID, userId: UUID, services: List<ServiceEntity>) {
+        val now = Instant.now()
+
+        data class CategorySpec(val name: String, val description: String, val color: String, val serviceIndices: List<Int>)
+
+        val specs = listOf(
+            CategorySpec(
+                "Pielęgnacja lakieru",
+                "Korekty lakieru, powłoki ceramiczne i wszystkie usługi związane z zewnętrzną ochroną pojazdu.",
+                "#2563EB",
+                listOf(3, 4, 5)  // korekta 1-etap, korekta 2-etap, ceramika
+            ),
+            CategorySpec(
+                "Detailing wnętrza",
+                "Czyszczenie, pranie tapicerki i kompleksowy detailing kabiny pasażerskiej.",
+                "#16A34A",
+                listOf(1, 2)  // detailing wnętrza, pranie tapicerki
+            ),
+            CategorySpec(
+                "Usługi podstawowe",
+                "Mycie detailingowe, ozonowanie i impregnacja szyb – regularna pielęgnacja pojazdu.",
+                "#F97316",
+                listOf(0, 6, 7)  // mycie, ozonowanie, szyby
+            )
+        )
+
+        specs.forEach { spec ->
+            val categoryId = UUID.randomUUID()
+            val category = ServiceCategoryEntity(
+                id = categoryId,
+                studioId = studioId,
+                name = spec.name,
+                description = spec.description,
+                color = spec.color,
+                isActive = true,
+                createdBy = userId,
+                createdAt = now,
+                updatedAt = now
+            )
+            serviceCategoryRepository.save(category)
+
+            val assignments = spec.serviceIndices.mapNotNull { sIdx ->
+                val svc = services.getOrNull(sIdx) ?: return@mapNotNull null
+                CategoryServiceAssignmentEntity(
+                    id = UUID.randomUUID(),
+                    categoryId = categoryId,
+                    serviceId = svc.id,
+                    studioId = studioId,
+                    assignedAt = now
+                )
+            }
+            categoryServiceAssignmentRepository.saveAll(assignments)
         }
     }
 }

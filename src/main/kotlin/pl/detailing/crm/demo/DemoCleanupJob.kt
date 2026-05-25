@@ -67,25 +67,57 @@ class DemoCleanupJob(
         val studioId = demo.studioId
         logger.info("Cleaning demo account: studioId={}", studioId)
 
-        // 1. Delete visits (cascades service items + photos via CascadeType.ALL)
+        // 1. Delete visit comment revisions (FK: comment_id -> visit_comments.id)
+        entityManager.createQuery(
+            """DELETE FROM VisitCommentRevisionEntity r
+               WHERE r.commentId IN (
+                   SELECT c.id FROM VisitCommentEntity c
+                   WHERE c.visitId IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)
+               )"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 2. Delete visit comments (FK: visit_id -> visits.id)
+        entityManager.createQuery(
+            """DELETE FROM VisitCommentEntity c
+               WHERE c.visitId IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)"""
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.flush()
+
+        // 3. Delete visits (cascades service items + photos via CascadeType.ALL)
         val visits = visitRepository.findByStudioId(studioId)
         visitRepository.deleteAll(visits)
         entityManager.flush()
 
-        // 2. Delete appointments (cascades line items via CascadeType.ALL)
+        // 4. Delete appointments (cascades line items via CascadeType.ALL)
         val appointments = appointmentRepository.findByStudioId(studioId)
         appointmentRepository.deleteAll(appointments)
         entityManager.flush()
 
-        // 3. Delete appointment colors
+        // 5. Delete appointment colors
         val colors = appointmentColorRepository.findByStudioId(studioId)
         appointmentColorRepository.deleteAll(colors)
 
-        // 4. Delete services
+        // 6. Delete category service assignments (FK: service_id -> services.id)
+        entityManager.createQuery(
+            "DELETE FROM CategoryServiceAssignmentEntity a WHERE a.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 7. Delete service categories
+        entityManager.createQuery(
+            "DELETE FROM ServiceCategoryEntity c WHERE c.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.flush()
+
+        // 8. Delete services
         val services = serviceRepository.findByStudioId(studioId)
         serviceRepository.deleteAll(services)
 
-        // 5. Delete vehicle owners (junction table – no FK cascade from vehicle)
+        // 9. Delete vehicle notes (FK: vehicle_id -> vehicles.id)
+        entityManager.createQuery(
+            "DELETE FROM VehicleNoteEntity n WHERE n.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 10. Delete vehicle owners (junction table – no FK cascade from vehicle)
         val customers = customerRepository.findByStudioId(studioId)
         val vehicles = vehicleRepository.findByStudioId(studioId)
 
@@ -96,32 +128,70 @@ class DemoCleanupJob(
         }
         entityManager.flush()
 
-        // 6. Delete vehicles (cascades vehicle_photos via CascadeType.ALL)
+        // 11. Delete vehicles (cascades vehicle_photos via CascadeType.ALL)
         vehicleRepository.deleteAll(vehicles)
         entityManager.flush()
 
-        // 7. Delete customer notes
+        // 12. Delete customer notes
         customers.forEach { customer ->
             val notes = customerNoteRepository.findByCustomerIdAndStudioIdOrderByCreatedAtDesc(customer.id, studioId)
             customerNoteRepository.deleteAll(notes)
         }
 
-        // 8. Delete customer documents via native query (no repository method needed)
+        // 13. Delete customer documents
         entityManager.createQuery(
             "DELETE FROM CustomerDocumentEntity cd WHERE cd.studioId = :studioId"
         ).setParameter("studioId", studioId).executeUpdate()
         entityManager.flush()
 
-        // 9. Delete customers
+        // 14. Delete customers
         customerRepository.deleteAll(customers)
         entityManager.flush()
 
-        // 10. Delete studio instagram profile links
+        // 15. Delete communication logs
+        entityManager.createQuery(
+            "DELETE FROM CommunicationLogEntity c WHERE c.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.flush()
+
+        // 16. Delete lead estimation items (cascade doesn't fire on JPQL DELETE)
+        entityManager.createQuery(
+            """DELETE FROM LeadEstimationItemEntity i
+               WHERE i.estimation.id IN (
+                   SELECT e.id FROM LeadEstimationEntity e WHERE e.studioId = :studioId
+               )"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 17. Delete lead estimations
+        entityManager.createQuery(
+            "DELETE FROM LeadEstimationEntity e WHERE e.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 18. Delete lead user quote items
+        entityManager.createQuery(
+            """DELETE FROM LeadUserQuoteItemEntity i
+               WHERE i.quote.id IN (
+                   SELECT q.id FROM LeadUserQuoteEntity q WHERE q.studioId = :studioId
+               )"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 19. Delete lead user quotes
+        entityManager.createQuery(
+            "DELETE FROM LeadUserQuoteEntity q WHERE q.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 20. Delete leads
+        entityManager.createQuery(
+            "DELETE FROM LeadEntity l WHERE l.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.flush()
+
+        // 21. Delete studio instagram profile links
         val studioProfiles = studioInstagramProfileRepository.findByStudioId(studioId)
         studioInstagramProfileRepository.deleteAll(studioProfiles)
         entityManager.flush()
 
-        // 11. Remove orphaned global instagram profiles and their snapshots
+        // 22. Remove orphaned global instagram profiles and their snapshots
         studioProfiles.forEach { sp ->
             val remainingRefs = studioInstagramProfileRepository.countByProfileIdAndStatus(
                 sp.profileId, InstagramProfileStatus.ACTIVE
@@ -135,15 +205,15 @@ class DemoCleanupJob(
         }
         entityManager.flush()
 
-        // 12. Delete user
+        // 23. Delete user
         userRepository.deleteById(demo.userId)
         entityManager.flush()
 
-        // 13. Delete studio
+        // 24. Delete studio
         studioRepository.deleteById(studioId)
         entityManager.flush()
 
-        // 14. Delete demo account record
+        // 25. Delete demo account record
         demoAccountRepository.delete(demo)
 
         logger.info("Demo account cleanup complete: studioId={}", studioId)
