@@ -65,6 +65,7 @@ class SecurityConfig {
                 auth.requestMatchers(
                     "/api/auth/**",
                     "/api/v1/auth/**",
+                    "/api/v1/demo",
                     "/api/health",
                     "/api/v1/vehicle-metadata/**",
                     "/actuator/**"
