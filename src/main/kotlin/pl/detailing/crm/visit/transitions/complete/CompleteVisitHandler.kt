@@ -1,5 +1,7 @@
 package pl.detailing.crm.visit.transitions.complete
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,7 +31,7 @@ class CompleteVisitHandler(
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
     @Transactional
-    suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult {
+    suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult = withContext(Dispatchers.IO) {
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
@@ -55,7 +57,7 @@ class CompleteVisitHandler(
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
 
-        return when (command.documentType) {
+        when (command.documentType) {
             DocumentType.INVOICE -> handleInvoiceCompletion(command, updatedVisit, customer)
             else                 -> handleReceiptCompletion(command, updatedVisit, customer)
         }
