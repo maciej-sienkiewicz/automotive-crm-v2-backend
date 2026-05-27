@@ -89,7 +89,7 @@ class FinanceController(
                 totalGross        = request.totalGross,
                 currency          = request.currency ?: "PLN",
                 issueDate         = request.issueDate,
-                dueDate           = request.dueDate,
+                dueDate           = request.dueDate ?: LocalDate.now().plusDays(14),
                 description       = request.description,
                 counterpartyName  = request.counterpartyName,
                 counterpartyNip   = request.counterpartyNip
@@ -409,7 +409,7 @@ data class CreateDocumentRequest(
     val totalGross: Long,
     val currency: String? = "PLN",
     val issueDate: LocalDate,
-    val dueDate: LocalDate?,
+    val dueDate: LocalDate? = LocalDate.now().plusDays(14),
     val description: String?,
     val counterpartyName: String?,
     val counterpartyNip: String?,

@@ -128,7 +128,7 @@ class CompleteVisitHandler(
                 totalGross        = visit.calculateTotalGross().amountInCents,
                 currency          = "PLN",
                 issueDate         = LocalDate.now(),
-                dueDate           = command.dueDate,
+                dueDate           = command.dueDate ?: LocalDate.now().plusDays(14),
                 description       = "Wizyta #${visit.visitNumber} – ${buildVehicleLabel(visit)}",
                 counterpartyName  = resolveBuyerName(customer),
                 counterpartyNip   = customer?.companyNip

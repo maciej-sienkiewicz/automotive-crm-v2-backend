@@ -54,7 +54,7 @@ data class CreateFinancialDocumentCommand(
     val totalGross: Long,
     val currency: String = "PLN",
     val issueDate: LocalDate,
-    val dueDate: LocalDate?,
+    val dueDate: LocalDate,
     val description: String?,
     val counterpartyName: String?,
     val counterpartyNip: String?
