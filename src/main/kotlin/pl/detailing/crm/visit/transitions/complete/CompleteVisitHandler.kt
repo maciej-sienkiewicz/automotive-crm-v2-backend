@@ -32,11 +32,10 @@ class CompleteVisitHandler(
 
     @Transactional
     suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult = withContext(Dispatchers.IO) {
-        val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
+        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
         visitEntity.serviceItems.size
-        visitEntity.photos.size
 
         val visit = visitEntity.toDomain()
         val updatedVisit = visit.complete(command.userId)
