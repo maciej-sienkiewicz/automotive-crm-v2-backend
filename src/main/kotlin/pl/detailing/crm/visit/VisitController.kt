@@ -30,6 +30,8 @@ import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
 import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
+import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
+import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -46,7 +48,8 @@ class VisitController(
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
-    private val updateVisitTitleHandler: UpdateVisitTitleHandler
+    private val updateVisitTitleHandler: UpdateVisitTitleHandler,
+    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -312,6 +315,33 @@ class VisitController(
         )
 
         updateVisitTitleHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Update estimated completion date for an active visit
+     * PATCH /api/visits/{visitId}/estimated-completion-date
+     *
+     * Allowed for visits in DRAFT, IN_PROGRESS, READY_FOR_PICKUP status.
+     * Pass null to clear the date.
+     */
+    @PatchMapping("/{visitId}/estimated-completion-date")
+    fun updateEstimatedCompletionDate(
+        @PathVariable visitId: String,
+        @RequestBody request: UpdateEstimatedCompletionDateRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = UpdateEstimatedCompletionDateCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            estimatedCompletionDate = request.estimatedCompletionDate
+        )
+
+        updateEstimatedCompletionDateHandler.handle(command)
 
         ResponseEntity.noContent().build()
     }
@@ -661,6 +691,10 @@ data class VisitPhotoResponse(
 
 data class UpdateVisitTitleRequest(
     val title: String?
+)
+
+data class UpdateEstimatedCompletionDateRequest(
+    val estimatedCompletionDate: Instant?
 )
 
 /**
