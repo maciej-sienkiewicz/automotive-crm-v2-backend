@@ -15,6 +15,12 @@ import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
 import pl.detailing.crm.appointment.list.ListAppointmentsCommand
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
+import pl.detailing.crm.appointment.recurrence.*
+import pl.detailing.crm.appointment.recurrence.create.*
+import pl.detailing.crm.appointment.recurrence.delete.*
+import pl.detailing.crm.appointment.recurrence.domain.RecurrenceSeriesId
+import pl.detailing.crm.appointment.recurrence.get.*
+import pl.detailing.crm.appointment.recurrence.update.*
 import pl.detailing.crm.appointment.smsprefs.UpdateAppointmentSmsPreferencesCommand
 import pl.detailing.crm.appointment.smsprefs.UpdateAppointmentSmsPreferencesHandler
 import pl.detailing.crm.appointment.title.UpdateAppointmentTitleHandler
@@ -40,7 +46,11 @@ class AppointmentController(
     private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler,
     private val sendBookingConfirmationSmsHandler: SendBookingConfirmationSmsHandler,
     private val studioRepository: StudioRepository,
-    private val updateAppointmentSmsPreferencesHandler: UpdateAppointmentSmsPreferencesHandler
+    private val updateAppointmentSmsPreferencesHandler: UpdateAppointmentSmsPreferencesHandler,
+    private val createRecurringAppointmentHandler: CreateRecurringAppointmentHandler,
+    private val updateRecurringAppointmentHandler: UpdateRecurringAppointmentHandler,
+    private val deleteRecurringAppointmentHandler: DeleteRecurringAppointmentHandler,
+    private val getRecurrenceSeriesHandler: GetRecurrenceSeriesHandler
 ) {
 
     @GetMapping
@@ -237,10 +247,75 @@ class AppointmentController(
             ))
     }
 
+    @PostMapping("/recurring")
+    fun createRecurringAppointment(
+        @RequestBody request: CreateRecurringAppointmentRequest
+    ): ResponseEntity<CreateRecurringAppointmentResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć rezerwacje")
+        }
+
+        val baseRequest = request.toBaseRequest()
+        val baseCommand = buildCreateCommand(baseRequest, principal)
+
+        val recurrenceRule = RecurrenceRuleCommand(
+            type = request.recurrence.type,
+            intervalWeeks = request.recurrence.intervalWeeks,
+            daysOfWeek = request.recurrence.daysOfWeek?.toSet(),
+            dayOfMonth = request.recurrence.dayOfMonth,
+            endType = request.recurrence.endType,
+            endDate = request.recurrence.endDate,
+            maxOccurrences = request.recurrence.maxOccurrences
+        )
+
+        val result = createRecurringAppointmentHandler.handle(
+            CreateRecurringAppointmentCommand(base = baseCommand, recurrenceRule = recurrenceRule)
+        )
+
+        if (request.sendConfirmationSms) {
+            val studio = studioRepository.findByStudioId(principal.studioId.value)
+            if (studio != null) {
+                sendBookingConfirmationSmsHandler.handle(
+                    SendBookingConfirmationSmsCommand(
+                        appointmentId = result.firstAppointmentId,
+                        studioId = principal.studioId,
+                        studioName = studio.name,
+                        force = true
+                    )
+                )
+            }
+        }
+
+        ResponseEntity.status(HttpStatus.CREATED).body(
+            CreateRecurringAppointmentResponse(
+                seriesId = result.seriesId.value.toString(),
+                occurrenceCount = result.occurrenceCount,
+                firstAppointmentId = result.firstAppointmentId.toString(),
+                customerId = result.customerId.toString(),
+                vehicleId = result.vehicleId?.toString()
+            )
+        )
+    }
+
+    @GetMapping("/series/{seriesId}")
+    fun getRecurrenceSeries(@PathVariable seriesId: String): ResponseEntity<RecurrenceSeriesResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val response = getRecurrenceSeriesHandler.handle(
+            GetRecurrenceSeriesQuery(
+                seriesId = RecurrenceSeriesId.fromString(seriesId),
+                studioId = principal.studioId
+            )
+        )
+        ResponseEntity.ok(response)
+    }
+
     @PutMapping("/{id}")
     fun updateAppointment(
         @PathVariable id: String,
-        @RequestBody request: CreateAppointmentRequest
+        @RequestBody request: CreateAppointmentRequest,
+        @RequestParam(required = false) scope: String?
     ): ResponseEntity<AppointmentCreateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -400,21 +475,40 @@ class AppointmentController(
     }
 
     @DeleteMapping("/{id}")
-    fun deleteAppointment(@PathVariable id: String): ResponseEntity<Unit> = runBlocking {
+    fun deleteAppointment(
+        @PathVariable id: String,
+        @RequestParam(required = false) scope: String?
+    ): ResponseEntity<Unit> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać rezerwacje")
         }
 
-        val command = DeleteAppointmentCommand(
-            appointmentId = AppointmentId.fromString(id),
-            studioId = principal.studioId,
-            userId = principal.userId,
-            userName = principal.fullName
-        )
+        val editScope = scope?.let {
+            try { RecurrenceEditScope.valueOf(it.uppercase()) } catch (e: IllegalArgumentException) { null }
+        }
 
-        deleteAppointmentHandler.handle(command)
+        if (editScope != null && editScope != RecurrenceEditScope.THIS) {
+            deleteRecurringAppointmentHandler.handle(
+                DeleteRecurringAppointmentCommand(
+                    appointmentId = AppointmentId.fromString(id),
+                    studioId = principal.studioId,
+                    userId = principal.userId,
+                    userName = principal.fullName,
+                    scope = editScope
+                )
+            )
+        } else {
+            deleteAppointmentHandler.handle(
+                DeleteAppointmentCommand(
+                    appointmentId = AppointmentId.fromString(id),
+                    studioId = principal.studioId,
+                    userId = principal.userId,
+                    userName = principal.fullName
+                )
+            )
+        }
 
         ResponseEntity.noContent().build()
     }
@@ -461,6 +555,40 @@ class AppointmentController(
 
         ResponseEntity.noContent().build()
     }
+
+    private fun buildCreateCommand(
+        request: CreateAppointmentRequest,
+        principal: pl.detailing.crm.auth.UserPrincipal
+    ): CreateAppointmentCommand = CreateAppointmentCommand(
+        studioId = principal.studioId,
+        userId = principal.userId,
+        userName = principal.fullName,
+        customer = when (request.customer.mode) {
+            CustomerMode.EXISTING -> CustomerIdentity.Existing(CustomerId.fromString(request.customer.id!!))
+            CustomerMode.NEW -> {
+                val d = request.customer.newData!!
+                CustomerIdentity.New(d.firstName, d.lastName, d.phone, d.email, d.company?.name, d.company?.nip, d.company?.regon, d.company?.address)
+            }
+            CustomerMode.UPDATE -> {
+                val d = request.customer.updateData ?: throw BadRequestException("customer.updateData is required for UPDATE mode")
+                CustomerIdentity.Update(CustomerId.fromString(request.customer.id ?: throw BadRequestException("customer.id is required for UPDATE mode")), d.firstName, d.lastName, d.phone, d.email, d.company?.name, d.company?.nip, d.company?.regon, d.company?.address)
+            }
+        },
+        vehicle = when (request.vehicle.mode) {
+            VehicleMode.EXISTING -> VehicleIdentity.Existing(VehicleId.fromString(request.vehicle.id!!))
+            VehicleMode.NEW -> { val d = request.vehicle.newData!!; VehicleIdentity.New(d.brand, d.model, d.year, d.licensePlate) }
+            VehicleMode.UPDATE -> { val d = request.vehicle.updateData!!; VehicleIdentity.Update(VehicleId.fromString(request.vehicle.id!!), d.brand, d.model, d.year, d.licensePlate) }
+            VehicleMode.NONE -> VehicleIdentity.None
+        },
+        services = request.services.map {
+            ServiceLineItemCommand(it.serviceId?.let { sid -> ServiceId.fromString(sid) }, it.serviceName, it.basePriceNet, it.vatRate, it.adjustment.type, it.adjustment.value, it.note)
+        },
+        schedule = ScheduleCommand(request.schedule.isAllDay, request.schedule.startDateTime, request.schedule.endDateTime),
+        appointmentTitle = request.appointmentTitle,
+        appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
+        note = request.note,
+        sendReminderSms = request.sendReminderSms
+    )
 }
 
 data class UpdateAppointmentTitleRequest(

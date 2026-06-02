@@ -2,6 +2,7 @@ package pl.detailing.crm.appointment.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.appointment.domain.*
+import pl.detailing.crm.appointment.recurrence.domain.RecurrenceSeriesId
 import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.util.UUID
@@ -16,7 +17,8 @@ import java.util.UUID
         Index(name = "idx_appointments_studio_schedule", columnList = "studio_id, start_date_time, end_date_time"),
         Index(name = "idx_appointments_studio_status", columnList = "studio_id, status"),
         Index(name = "idx_appointments_created_by", columnList = "created_by"),
-        Index(name = "idx_appointments_updated_by", columnList = "updated_by")
+        Index(name = "idx_appointments_updated_by", columnList = "updated_by"),
+        Index(name = "idx_appointments_series", columnList = "recurrence_series_id, recurrence_index")
     ]
 )
 class AppointmentEntity(
@@ -74,7 +76,16 @@ class AppointmentEntity(
     var updatedAt: Instant = Instant.now(),
 
     @Column(name = "deleted_at", nullable = true, columnDefinition = "timestamp with time zone")
-    var deletedAt: Instant? = null
+    var deletedAt: Instant? = null,
+
+    @Column(name = "recurrence_series_id", nullable = true, columnDefinition = "uuid")
+    var recurrenceSeriesId: UUID? = null,
+
+    @Column(name = "recurrence_index", nullable = true)
+    var recurrenceIndex: Int? = null,
+
+    @Column(name = "is_detached", nullable = false)
+    var isDetached: Boolean = false
 ) {
     fun toDomain(): Appointment = Appointment(
         id = AppointmentId(id),
@@ -95,7 +106,10 @@ class AppointmentEntity(
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        recurrenceSeriesId = recurrenceSeriesId?.let { RecurrenceSeriesId(it) },
+        recurrenceIndex = recurrenceIndex,
+        isDetached = isDetached
     )
 
     companion object {
@@ -116,7 +130,10 @@ class AppointmentEntity(
                 createdBy = appointment.createdBy.value,
                 updatedBy = appointment.updatedBy.value,
                 createdAt = appointment.createdAt,
-                updatedAt = appointment.updatedAt
+                updatedAt = appointment.updatedAt,
+                recurrenceSeriesId = appointment.recurrenceSeriesId?.value,
+                recurrenceIndex = appointment.recurrenceIndex,
+                isDetached = appointment.isDetached
             )
 
             // Map line items with bidirectional relationship
