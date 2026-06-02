@@ -77,6 +77,12 @@ class ListAppointmentsHandler(
             val smsLogsByAppointment = smsLogRepository.findAllByAppointmentIdIn(appointmentIds)
                 .groupBy { it.appointmentId }
 
+            // Batch-fetch series counts for recurring appointments
+            val localSeriesCounts = mutableMapOf<UUID, Long>()
+            appointments.mapNotNull { it.recurrenceSeriesId }.distinct().forEach { sid ->
+                localSeriesCounts[sid] = appointmentRepository.countBySeriesId(sid)
+            }
+
             // Map to list items
             val items = appointments.map { appointment ->
                 val customer = customers[appointment.customerId]
@@ -151,7 +157,15 @@ class ListAppointmentsHandler(
                     smsInfo = buildSmsInfo(
                         smsLogs = smsLogsByAppointment[appointment.id] ?: emptyList(),
                         sendReminderSms = appointment.sendReminderSms
-                    )
+                    ),
+                    recurrenceInfo = appointment.recurrenceSeriesId?.let { sid ->
+                        RecurrenceInfo(
+                            seriesId = sid.toString(),
+                            recurrenceIndex = appointment.recurrenceIndex ?: 0,
+                            totalInSeries = localSeriesCounts[sid] ?: 0L,
+                            isDetached = appointment.isDetached
+                        )
+                    }
                 )
             }
 
@@ -236,7 +250,15 @@ data class AppointmentListItem(
     val totalVat: Long,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val smsInfo: AppointmentSmsInfo
+    val smsInfo: AppointmentSmsInfo,
+    val recurrenceInfo: RecurrenceInfo? = null
+)
+
+data class RecurrenceInfo(
+    val seriesId: String,
+    val recurrenceIndex: Int,
+    val totalInSeries: Long,
+    val isDetached: Boolean
 )
 
 enum class AppointmentSmsStatus { PENDING, SENT, FAILED }

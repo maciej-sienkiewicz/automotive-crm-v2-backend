@@ -220,6 +220,39 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("vehicleId") vehicleId: UUID?
     ): List<AppointmentEntity>
 
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.recurrenceSeriesId = :seriesId
+        AND a.deletedAt IS NULL
+        ORDER BY a.recurrenceIndex ASC
+    """)
+    fun findBySeriesId(@Param("seriesId") seriesId: java.util.UUID): List<AppointmentEntity>
+
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.recurrenceSeriesId = :seriesId
+        AND a.recurrenceIndex >= :fromIndex
+        AND a.isDetached = false
+        AND a.deletedAt IS NULL
+        ORDER BY a.recurrenceIndex ASC
+    """)
+    fun findBySeriesIdAndIndexGreaterThanEqual(
+        @Param("seriesId") seriesId: java.util.UUID,
+        @Param("fromIndex") fromIndex: Int
+    ): List<AppointmentEntity>
+
+    @Query("""
+        SELECT a FROM AppointmentEntity a
+        WHERE a.recurrenceSeriesId = :seriesId
+        AND a.isDetached = false
+        AND a.deletedAt IS NULL
+        ORDER BY a.recurrenceIndex ASC
+    """)
+    fun findNonDetachedBySeriesId(@Param("seriesId") seriesId: java.util.UUID): List<AppointmentEntity>
+
+    @Query("SELECT COUNT(a) FROM AppointmentEntity a WHERE a.recurrenceSeriesId = :seriesId AND a.deletedAt IS NULL")
+    fun countBySeriesId(@Param("seriesId") seriesId: java.util.UUID): Long
+
     /**
      * Find all non-deleted appointments for a studio created within [from, to).
      * Used for reservation intake tracking (grouped by createdAt week).

@@ -1,5 +1,6 @@
 package pl.detailing.crm.appointment.domain
 
+import pl.detailing.crm.appointment.recurrence.domain.RecurrenceSeriesId
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -56,7 +57,10 @@ data class Appointment(
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val recurrenceSeriesId: RecurrenceSeriesId? = null,
+    val recurrenceIndex: Int? = null,
+    val isDetached: Boolean = false
 ) {
     /**
      * Calculate total net amount across all line items
