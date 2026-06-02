@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.StudioId
 import java.time.LocalDate
@@ -62,7 +63,8 @@ data class FinanceSummaryResult(
  */
 @Service
 class FinanceReportingHandler(
-    private val documentRepository: FinancialDocumentRepository
+    private val documentRepository: FinancialDocumentRepository,
+    private val ksefInvoiceRepository: KsefInvoiceRepository
 ) {
     fun getSummary(query: FinanceReportQuery): FinanceSummaryResult {
         val sid  = query.studioId.value
@@ -70,10 +72,15 @@ class FinanceReportingHandler(
         val to   = query.dateTo
 
         val totalRevenueCents = documentRepository.sumGross(sid, DocumentDirection.INCOME,  DocumentStatus.PAID, from, to)
-        val totalCostsCents   = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PAID, from, to)
+
+        val financialDocCostsCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PAID, from, to)
+        val ksefCostsCents = (ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to) * 100).toLong()
+        val totalCostsCents = financialDocCostsCents + ksefCostsCents
 
         val pendingReceivablesCents = documentRepository.sumGross(sid, DocumentDirection.INCOME,  DocumentStatus.PENDING, from, to)
-        val pendingPayablesCents    = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PENDING, from, to)
+        val financialDocPendingPayablesCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PENDING, from, to)
+        val ksefPendingPayablesCents = (ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to) * 100).toLong()
+        val pendingPayablesCents = financialDocPendingPayablesCents + ksefPendingPayablesCents
 
         val overdueReceivables = documentRepository.countOverdue(sid, DocumentDirection.INCOME)
         val overduePayables    = documentRepository.countOverdue(sid, DocumentDirection.EXPENSE)

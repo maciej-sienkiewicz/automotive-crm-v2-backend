@@ -70,6 +70,29 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("paymentStatus") paymentStatus: String
     ): Int
 
+    // ── Finance summary aggregates ────────────────────────────────────────────
+
+    /**
+     * Sum of gross_amount (in PLN) for invoices matching the given paymentStatus,
+     * excluding CANCELLED and EXCLUDED. Multiply result by 100 to get grosz.
+     * dateFrom/dateTo filter on issue_date (LocalDate); pass null to ignore.
+     */
+    @Query(value = """
+        SELECT COALESCE(SUM(gross_amount), 0)
+        FROM ksef_invoices
+        WHERE studio_id      = CAST(:studioId AS uuid)
+          AND payment_status = :paymentStatus
+          AND status        NOT IN ('CANCELLED', 'EXCLUDED')
+          AND (CAST(:dateFrom AS date) IS NULL OR issue_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR issue_date <= CAST(:dateTo   AS date))
+    """, nativeQuery = true)
+    fun sumGrossByPaymentStatus(
+        @Param("studioId") studioId: UUID,
+        @Param("paymentStatus") paymentStatus: String,
+        @Param("dateFrom") dateFrom: java.time.LocalDate?,
+        @Param("dateTo") dateTo: java.time.LocalDate?
+    ): Double
+
     // ── Statistics (native SQL for performance) ───────────────────────────────
 
     /**
