@@ -19,7 +19,8 @@ class SaveVisitServicesHandler(
     private val visitRepository: VisitRepository,
     private val auditService: AuditService,
     private val customerRepository: CustomerRepository,
-    private val smsConsentService: SmsConsentService
+    private val smsConsentService: SmsConsentService,
+    private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository
 ) {
 
     companion object {
@@ -36,25 +37,36 @@ class SaveVisitServicesHandler(
 
         val visit = visitEntity.toDomain()
 
+        val serviceIds = payload.added.mapNotNull { it.serviceId?.let { id -> ServiceId.fromString(id) } }
+        val servicesFromDb = if (serviceIds.isNotEmpty()) {
+            serviceRepository.findAllById(serviceIds.map { it.value })
+                .associateBy { it.id }
+        } else emptyMap()
+
         val addedItems = payload.added.map { added ->
             val adjustmentType = added.adjustment?.type ?: pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT
             val adjustmentValue = added.adjustment?.value ?: 0.0
 
-            // Convert adjustment value based on type:
-            // - For PERCENT: validate non-negative and convert using semantic convention
-            //   (0–100 = discount, >100 = markup) to basis points
-            // - For others: round to Long (cents)
             val adjustmentValueLong = when (adjustmentType) {
                 pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT ->
                     pl.detailing.crm.appointment.domain.AdjustmentType.convertPercentValueToBasisPoints(adjustmentValue)
                 else -> adjustmentValue.toLong()
             }
 
+            val serviceId = added.serviceId?.let { ServiceId.fromString(it) }
+            val vatRate = if (serviceId != null) {
+                val dbService = servicesFromDb[serviceId.value]
+                    ?: throw EntityNotFoundException("Usługa o ID '${serviceId.value}' nie została znaleziona")
+                VatRate.fromInt(dbService.vatRate)
+            } else {
+                VatRate.fromInt(added.vatRate)
+            }
+
             VisitServiceItem.createPending(
-                serviceId = added.serviceId?.let { ServiceId.fromString(it) },
+                serviceId = serviceId,
                 serviceName = added.serviceName,
                 basePriceNet = Money(added.basePriceNet),
-                vatRate = VatRate.fromInt(added.vatRate),
+                vatRate = vatRate,
                 adjustmentType = adjustmentType,
                 adjustmentValue = adjustmentValueLong,
                 customNote = added.note
