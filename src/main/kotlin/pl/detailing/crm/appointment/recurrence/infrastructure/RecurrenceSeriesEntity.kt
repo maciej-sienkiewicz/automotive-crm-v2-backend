@@ -45,7 +45,7 @@ class RecurrenceSeriesEntity(
     @Column(name = "max_occurrences", nullable = true)
     val maxOccurrences: Int? = null,
 
-    @Column(name = "is_open_ended", nullable = false)
+    @Column(name = "is_open_ended", nullable = false, columnDefinition = "boolean not null default false")
     val isOpenEnded: Boolean = false,
 
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")

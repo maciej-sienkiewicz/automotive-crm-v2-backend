@@ -84,7 +84,7 @@ class AppointmentEntity(
     @Column(name = "recurrence_index", nullable = true)
     var recurrenceIndex: Int? = null,
 
-    @Column(name = "is_detached", nullable = false)
+    @Column(name = "is_detached", nullable = false, columnDefinition = "boolean not null default false")
     var isDetached: Boolean = false
 ) {
     fun toDomain(): Appointment = Appointment(
