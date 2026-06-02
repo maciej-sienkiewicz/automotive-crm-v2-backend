@@ -181,7 +181,8 @@ data class AppointmentLineItem(
                     val baseGross = vatRate.calculateGrossAmount(basePriceNet)
                     val newGross = (baseGross.amountInCents + adjustmentValue).coerceAtLeast(0)
                     // Calculate net from gross: net = gross / (1 + vatRate/100)
-                    val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
+                    // For VAT_ZW (rate=-1) gross == net, so multiplier is 1.0
+                    val vatMultiplier = if (vatRate == VatRate.VAT_ZW) 1.0 else 1.0 + (vatRate.rate.toDouble() / 100.0)
                     val calculatedNet = (newGross / vatMultiplier).toLong()
                     Money(calculatedNet.coerceAtLeast(0))
                 }
@@ -191,7 +192,8 @@ data class AppointmentLineItem(
                 }
                 AdjustmentType.SET_GROSS -> {
                     // adjustmentValue is the final gross price, calculate net from it
-                    val vatMultiplier = 1.0 + (vatRate.rate.toDouble() / 100.0)
+                    // For VAT_ZW (rate=-1) gross == net, so multiplier is 1.0
+                    val vatMultiplier = if (vatRate == VatRate.VAT_ZW) 1.0 else 1.0 + (vatRate.rate.toDouble() / 100.0)
                     val calculatedNet = (adjustmentValue / vatMultiplier).toLong()
                     Money(calculatedNet.coerceAtLeast(0))
                 }
