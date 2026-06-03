@@ -27,12 +27,23 @@ class CreateVehicleValidationContextBuilder(
                 false
             }
 
+            val customer = if (command.ownerIds.isNotEmpty()) {
+                    async {
+                        customerRepository.findByIdAndStudioId(
+                            command.ownerIds[0].value,
+                            command.studioId.value
+                        )
+                    }.await()
+                } else {
+                    null
+                }
+
             CreateVehicleValidationContext(
                 studioId = command.studioId,
                 ownerIds = command.ownerIds,
                 licensePlate = command.licensePlate,
                 yearOfProduction = command.yearOfProduction,
-                customerExists = null,
+                customerExists = customer,
                 licensePlateExists = licensePlateExists
             )
         }
