@@ -86,7 +86,8 @@ class SaveVisitServicesHandler(
                 }
             }
 
-            existingItem.toPending(Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue)
+            val newVatRate = updated.vatRate?.let { VatRate.fromInt(it) }
+            existingItem.toPending(Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue, newVatRate)
         }
 
         val deletedItems = payload.deleted.map { deleted ->

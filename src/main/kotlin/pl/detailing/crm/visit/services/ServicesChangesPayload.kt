@@ -27,6 +27,7 @@ data class ServiceAdjustment(
 data class UpdatedService(
     val serviceLineItemId: String,
     val basePriceNet: Long,
+    val vatRate: Int? = null,
     val adjustment: ServiceAdjustment? = null
 )
 
