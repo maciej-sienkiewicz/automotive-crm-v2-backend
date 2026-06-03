@@ -24,6 +24,10 @@ import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserRole
+import pl.detailing.crm.vehicle.VehicleDataResponse
+import pl.detailing.crm.vehicle.VehicleResponse as VehicleCreateResponse
+import pl.detailing.crm.vehicle.create.CreateVehicleCommand
+import pl.detailing.crm.vehicle.create.CreateVehicleHandler
 import java.time.Instant
 import java.util.UUID
 import java.time.temporal.ChronoUnit
@@ -35,6 +39,7 @@ class CustomerController(
     private val listCustomersHandler: ListCustomersHandler,
     private val getCustomerByIdHandler: GetCustomerByIdHandler,
     private val getCustomerVehiclesHandler: GetCustomerVehiclesHandler,
+    private val createVehicleHandler: CreateVehicleHandler,
     private val getCustomerDetailHandler: pl.detailing.crm.customer.detail.GetCustomerDetailHandler,
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
@@ -404,6 +409,53 @@ class CustomerController(
         )
 
         ResponseEntity.ok(vehicles)
+    }
+
+    @PostMapping("/{customerId}/vehicles")
+    fun createCustomerVehicle(
+        @PathVariable customerId: String,
+        @RequestBody request: CreateCustomerVehicleRequest
+    ): ResponseEntity<VehicleCreateResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
+        }
+
+        val command = CreateVehicleCommand(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            ownerIds = listOf(CustomerId.fromString(customerId)),
+            licensePlate = request.licensePlate?.takeIf { it.isNotBlank() },
+            brand = request.make,
+            model = request.model,
+            yearOfProduction = request.year,
+            color = request.color?.takeIf { it.isNotBlank() },
+            paintType = null,
+            currentMileage = request.mileage
+        )
+
+        val result = createVehicleHandler.handle(command)
+
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(VehicleCreateResponse(
+                data = VehicleDataResponse(
+                    id = result.vehicleId.toString(),
+                    licensePlate = result.licensePlate,
+                    brand = result.brand,
+                    model = result.model,
+                    yearOfProduction = result.yearOfProduction,
+                    color = result.color,
+                    paintType = result.paintType,
+                    currentMileage = result.currentMileage.toLong(),
+                    status = result.status.name.lowercase(),
+                    ownerIds = result.ownerIds.map { it.toString() },
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now()
+                )
+            ))
     }
 
     @GetMapping("/{customerId}/visits")
@@ -820,4 +872,13 @@ data class RevenueTotalResponse(
 data class RevenuePeriodResponse(
     val from: String,
     val to: String
+)
+
+data class CreateCustomerVehicleRequest(
+    val make: String,
+    val model: String,
+    val year: Int?,
+    val licensePlate: String?,
+    val color: String?,
+    val mileage: Int
 )
