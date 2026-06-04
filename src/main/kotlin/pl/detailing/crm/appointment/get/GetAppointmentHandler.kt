@@ -97,7 +97,16 @@ class GetAppointmentHandler(
                 smsInfo = buildSmsInfo(
                     smsLogs = smsLogs,
                     sendReminderSms = appointment.sendReminderSms
-                )
+                ),
+                recurrenceInfo = appointment.recurrenceSeriesId?.let { sid ->
+                    val count = appointmentRepository.countBySeriesId(sid)
+                    RecurrenceInfo(
+                        seriesId = sid.toString(),
+                        recurrenceIndex = appointment.recurrenceIndex ?: 0,
+                        totalInSeries = count,
+                        isDetached = appointment.isDetached
+                    )
+                }
             )
         }
 }
