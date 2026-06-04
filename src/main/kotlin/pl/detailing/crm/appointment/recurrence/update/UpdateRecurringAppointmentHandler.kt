@@ -27,7 +27,9 @@ data class UpdateRecurringAppointmentCommand(
     val sendReminderSms: Boolean?,
     // New line items (null = no change to line items)
     val lineItemUpdater: ((AppointmentLineItemEntity) -> Unit)? = null,
-    val newLineItems: List<AppointmentLineItemEntity>? = null
+    val newLineItems: List<AppointmentLineItemEntity>? = null,
+    // If true, copy line items from anchor appointment to all targets
+    val copyLineItemsFromAnchor: Boolean = false
 )
 
 data class UpdateRecurringAppointmentResult(
@@ -57,6 +59,8 @@ class UpdateRecurringAppointmentHandler(
             // Verify series belongs to studio
             recurrenceSeriesRepository.findByIdAndStudioId(seriesId, command.studioId.value)
                 ?: throw EntityNotFoundException("Seria cykliczna nie została znaleziona")
+
+            val anchorLineItems = if (command.copyLineItemsFromAnchor) anchor.lineItems.toList() else null
 
             val targets = when (command.scope) {
                 RecurrenceEditScope.THIS -> {
@@ -92,9 +96,12 @@ class UpdateRecurringAppointmentHandler(
                 entity.updatedBy = command.userId.value
                 entity.updatedAt = now
 
-                if (command.newLineItems != null) {
+                val lineItemSource = command.newLineItems
+                    ?: if (anchorLineItems != null && entity.id != anchor.id) anchorLineItems else null
+
+                if (lineItemSource != null) {
                     entity.lineItems.clear()
-                    val newItems = command.newLineItems.map { template ->
+                    val newItems = lineItemSource.map { template ->
                         AppointmentLineItemEntity(
                             appointment = entity,
                             serviceId = template.serviceId,

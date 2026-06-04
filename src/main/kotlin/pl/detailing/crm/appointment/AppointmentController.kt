@@ -414,6 +414,27 @@ class AppointmentController(
 
         val result = updateAppointmentHandler.handle(command)
 
+        val editScope = scope?.let {
+            try { RecurrenceEditScope.valueOf(it.uppercase()) } catch (e: IllegalArgumentException) { null }
+        }
+
+        if (editScope != null && editScope != RecurrenceEditScope.THIS) {
+            updateRecurringAppointmentHandler.handle(
+                UpdateRecurringAppointmentCommand(
+                    appointmentId = AppointmentId.fromString(id),
+                    studioId = principal.studioId,
+                    userId = principal.userId,
+                    userName = principal.fullName,
+                    scope = editScope,
+                    appointmentTitle = command.appointmentTitle,
+                    appointmentColorId = command.appointmentColorId,
+                    note = command.note,
+                    sendReminderSms = null,
+                    copyLineItemsFromAnchor = true
+                )
+            )
+        }
+
         ResponseEntity.ok(
             AppointmentCreateResponse(
                 id = result.appointmentId.toString(),
