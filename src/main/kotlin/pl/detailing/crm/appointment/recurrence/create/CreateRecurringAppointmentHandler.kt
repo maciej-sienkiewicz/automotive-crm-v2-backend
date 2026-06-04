@@ -5,7 +5,6 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.create.CreateAppointmentHandler
-import pl.detailing.crm.appointment.create.CreateAppointmentValidatorComposite
 import pl.detailing.crm.appointment.domain.*
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity
@@ -14,17 +13,18 @@ import pl.detailing.crm.appointment.recurrence.domain.*
 import pl.detailing.crm.appointment.recurrence.infrastructure.RecurrenceSeriesEntity
 import pl.detailing.crm.appointment.recurrence.infrastructure.RecurrenceSeriesRepository
 import pl.detailing.crm.audit.domain.*
-import pl.detailing.crm.customer.infrastructure.CustomerRepository
-import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
-import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
-import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 
 @Service
 class CreateRecurringAppointmentHandler(
+    private val validatorComposite: CreateAppointmentValidatorComposite,
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
+    private val customerRepository: CustomerRepository,
+    private val vehicleRepository: VehicleRepository,
+    private val vehicleOwnerRepository: VehicleOwnerRepository,
+    private val serviceRepository: ServiceRepository,
     private val auditService: AuditService,
     private val createAppointmentHandler: CreateAppointmentHandler
 ) {
