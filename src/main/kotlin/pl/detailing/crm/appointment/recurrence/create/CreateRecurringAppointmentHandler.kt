@@ -18,13 +18,8 @@ import java.time.Instant
 
 @Service
 class CreateRecurringAppointmentHandler(
-    private val validatorComposite: CreateAppointmentValidatorComposite,
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
-    private val customerRepository: CustomerRepository,
-    private val vehicleRepository: VehicleRepository,
-    private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val serviceRepository: ServiceRepository,
     private val auditService: AuditService,
     private val createAppointmentHandler: CreateAppointmentHandler
 ) {
