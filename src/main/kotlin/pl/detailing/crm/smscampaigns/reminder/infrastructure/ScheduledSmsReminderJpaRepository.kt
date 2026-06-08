@@ -35,4 +35,6 @@ interface ScheduledSmsReminderJpaRepository : JpaRepository<ScheduledSmsReminder
         WHERE r.status = 'PENDING' AND r.scheduledFor <= :now
     """)
     fun findDueForDispatch(@Param("now") now: Instant): List<ScheduledSmsReminderEntity>
+
+    fun findAllByAppointmentId(appointmentId: UUID): List<ScheduledSmsReminderEntity>
 }

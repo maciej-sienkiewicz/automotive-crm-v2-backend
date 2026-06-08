@@ -19,6 +19,12 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("studioId") studioId: UUID
     ): AppointmentEntity?
 
+    @Query("SELECT a FROM AppointmentEntity a WHERE a.id = :id AND a.studioId = :studioId")
+    fun findByIdAndStudioIdIncludingDeleted(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): AppointmentEntity?
+
     @Query("SELECT a FROM AppointmentEntity a WHERE a.studioId = :studioId AND a.deletedAt IS NULL")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<AppointmentEntity>
 

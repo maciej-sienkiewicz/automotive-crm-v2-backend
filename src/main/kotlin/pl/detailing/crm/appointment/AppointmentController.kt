@@ -41,6 +41,7 @@ class AppointmentController(
     private val cancelAppointmentHandler: CancelAppointmentHandler,
     private val restoreAppointmentHandler: RestoreAppointmentHandler,
     private val deleteAppointmentHandler: DeleteAppointmentHandler,
+    private val hardDeleteAppointmentHandler: HardDeleteAppointmentHandler,
     private val listAppointmentsHandler: ListAppointmentsHandler,
     private val getAppointmentHandler: GetAppointmentHandler,
     private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler,
@@ -530,6 +531,40 @@ class AppointmentController(
                 )
             )
         }
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Permanently delete an appointment regardless of its status
+     * DELETE /api/v1/appointments/{id}/permanent
+     *
+     * Deletes the appointment and all associated data:
+     * - Scheduled SMS reminders
+     * - SMS send logs
+     * - Appointment line items (cascade)
+     *
+     * Blocked for CONVERTED appointments — delete the linked visit first.
+     * Only OWNER and MANAGER roles are allowed.
+     */
+    @DeleteMapping("/{id}/permanent")
+    fun hardDeleteAppointment(
+        @PathVariable id: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać rezerwacje")
+        }
+
+        hardDeleteAppointmentHandler.handle(
+            HardDeleteAppointmentCommand(
+                appointmentId = AppointmentId.fromString(id),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName
+            )
+        )
 
         ResponseEntity.noContent().build()
     }

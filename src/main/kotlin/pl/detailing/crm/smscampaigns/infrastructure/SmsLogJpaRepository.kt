@@ -29,4 +29,6 @@ interface SmsLogJpaRepository : JpaRepository<SmsLogEntity, UUID> {
     fun findAllByAppointmentIdIn(
         @Param("appointmentIds") appointmentIds: List<UUID>
     ): List<SmsLogEntity>
+
+    fun findAllByAppointmentId(appointmentId: UUID): List<SmsLogEntity>
 }
