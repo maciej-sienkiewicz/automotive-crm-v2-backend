@@ -63,6 +63,7 @@ enum class AuditAction {
     VISIT_REJECTED,
     VISIT_MARKED_READY,
     VISIT_ARCHIVED,
+    VISIT_DELETED,
 
     // Appointment-specific
     APPOINTMENT_CANCELLED,

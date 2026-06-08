@@ -207,6 +207,7 @@ class AuditController(
         VISIT_REJECTED -> "Odrzucenie wizyty"
         VISIT_MARKED_READY -> "Oznaczenie jako gotowe"
         VISIT_ARCHIVED -> "Archiwizacja wizyty"
+        VISIT_DELETED -> "Usunięcie wizyty"
         APPOINTMENT_CANCELLED -> "Anulowanie rezerwacji"
         APPOINTMENT_CONVERTED -> "Konwersja rezerwacji"
         PROTOCOL_GENERATED -> "Wygenerowanie protokolu"

@@ -16,6 +16,8 @@ import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
 import pl.detailing.crm.email.visitwelcome.WelcomeEmailOptions
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitCommand
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler
+import pl.detailing.crm.visit.delete.DeleteVisitCommand
+import pl.detailing.crm.visit.delete.DeleteVisitHandler
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
@@ -48,6 +50,7 @@ class VisitController(
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
+    private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
 ) {
@@ -348,25 +351,17 @@ class VisitController(
 
     /**
      * Cancel a DRAFT visit
-     * DELETE /api/visits/{visitId}
+     * DELETE /api/visits/{visitId}/cancel
      *
-     * This endpoint:
-     * - Validates visit is in DRAFT status (only DRAFT visits can be cancelled)
-     * - Deletes all associated protocols from database and S3
-     * - Deletes damage map from S3 if exists
-     * - Deletes all documents associated with the visit
-     * - Deletes the visit from database
-     * - Appointment remains in CONFIRMED status (ready to be converted again)
-     *
-     * Note: Only DRAFT visits can be cancelled. Confirmed visits should use rejection flow.
+     * Validates visit is in DRAFT status and cancels it.
+     * Appointment remains in CONFIRMED status (ready to be converted again).
      */
-    @DeleteMapping("/{visitId}")
+    @DeleteMapping("/{visitId}/cancel")
     fun cancelDraftVisit(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can cancel visits
         if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą anulować wizyty")
         }
@@ -379,6 +374,43 @@ class VisitController(
         )
 
         cancelDraftVisitHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Permanently delete a visit regardless of its status
+     * DELETE /api/visits/{visitId}
+     *
+     * Deletes the visit and all associated data:
+     * - Photos (DB records + S3 files)
+     * - Protocols (DB records + S3 files)
+     * - Damage map (S3 file)
+     * - Documents (DB records + S3 files)
+     * - Comments and notes (hard delete from DB)
+     * - Visit entity itself (cascades to service items, journal entries)
+     *
+     * Appointment remains unchanged.
+     * Only OWNER and MANAGER roles are allowed.
+     */
+    @DeleteMapping("/{visitId}")
+    fun deleteVisit(
+        @PathVariable visitId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać wizyty")
+        }
+
+        val command = DeleteVisitCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+
+        deleteVisitHandler.handle(command)
 
         ResponseEntity.noContent().build()
     }
