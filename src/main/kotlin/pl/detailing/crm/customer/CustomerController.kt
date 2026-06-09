@@ -462,7 +462,8 @@ class CustomerController(
     fun getCustomerVisits(
         @PathVariable customerId: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
-        @RequestParam(required = false, defaultValue = "10") limit: Int
+        @RequestParam(required = false, defaultValue = "10") limit: Int,
+        @RequestParam(defaultValue = "false") includeDeleted: Boolean
     ): ResponseEntity<CustomerVisitsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -470,7 +471,8 @@ class CustomerController(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
             page = page,
-            limit = limit
+            limit = limit,
+            includeDeleted = includeDeleted
         )
 
         val result = getCustomerVisitsHandler.handle(command)

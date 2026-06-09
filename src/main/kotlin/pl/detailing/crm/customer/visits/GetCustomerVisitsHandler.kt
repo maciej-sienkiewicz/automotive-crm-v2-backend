@@ -14,11 +14,17 @@ class GetCustomerVisitsHandler(
 ) {
     suspend fun handle(command: GetCustomerVisitsCommand): GetCustomerVisitsResult =
         withContext(Dispatchers.IO) {
-            // Get all visits for the customer, excluding drafts
-            val allVisits = visitRepository.findByCustomerIdAndStudioIdExcludingDraft(
-                customerId = command.customerId.value,
-                studioId = command.studioId.value
-            )
+            val allVisits = if (command.includeDeleted) {
+                visitRepository.findDeletedByCustomerIdAndStudioIdExcludingDraft(
+                    customerId = command.customerId.value,
+                    studioId = command.studioId.value
+                )
+            } else {
+                visitRepository.findByCustomerIdAndStudioIdExcludingDraft(
+                    customerId = command.customerId.value,
+                    studioId = command.studioId.value
+                )
+            }
 
             // Calculate pagination
             val totalItems = allVisits.size
@@ -74,7 +80,8 @@ class GetCustomerVisitsHandler(
                     ),
                     status = visit.status.name.lowercase(),
                     createdBy = creatorNames[visit.createdBy] ?: "",
-                    notes = visit.technicalNotes ?: visit.inspectionNotes ?: ""
+                    notes = visit.technicalNotes ?: visit.inspectionNotes ?: "",
+                    deletedAt = visit.deletedAt
                 )
             }
 

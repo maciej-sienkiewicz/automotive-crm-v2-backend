@@ -17,7 +17,8 @@ data class VisitInfo(
     val totalCost: CostInfo,
     val status: String,
     val createdBy: String,
-    val notes: String
+    val notes: String,
+    val deletedAt: Instant? = null
 )
 
 data class CostInfo(
