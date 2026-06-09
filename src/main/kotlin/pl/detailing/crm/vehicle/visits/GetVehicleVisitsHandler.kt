@@ -73,6 +73,7 @@ class GetVehicleVisitsHandler(
                     date = visit.scheduledDate,
                     customerId = visit.customerId.toString(),
                     customerName = customerNames[visit.customerId] ?: "",
+                    title = visit.title,
                     description = buildDescription(visit.inspectionNotes, visit.technicalNotes),
                     totalCost = VehicleVisitCostInfo(
                         netAmount = BigDecimal.valueOf(totalNetAmount).divide(BigDecimal.valueOf(100)),
@@ -124,6 +125,7 @@ data class VehicleVisitInfo(
     val date: Instant,
     val customerId: String,
     val customerName: String,
+    val title: String?,
     val description: String,
     val totalCost: VehicleVisitCostInfo,
     val status: String,
