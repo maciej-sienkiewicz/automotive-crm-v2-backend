@@ -222,7 +222,7 @@ class RapidApiInstagramClient(
      * @throws RapidApiException gdy API zwraca błąd HTTP
      */
     fun fetchUserDetails(username: String): RawInstagramUserDetails? {
-        if (!setOf("carspa.official", "carslab_pl", "carartdetailing").contains(username)) {
+        if (!setOf("carspa.official", "carslab_pl", "carartdetailing", "detailingcentrum_poznan", "fineauto.pl").contains(username)) {
             return null
         }
 
