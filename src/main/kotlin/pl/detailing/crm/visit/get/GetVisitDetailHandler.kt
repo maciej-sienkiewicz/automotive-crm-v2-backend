@@ -22,8 +22,8 @@ class GetVisitDetailHandler(
 
     @Transactional(readOnly = true)
     suspend fun handle(command: GetVisitDetailCommand): GetVisitDetailResult {
-        // 1. Find visit with studio isolation
-        val visitEntity = visitRepository.findByIdAndStudioId(
+        // 1. Find visit with studio isolation (including soft-deleted — allows viewing deleted visits)
+        val visitEntity = visitRepository.findByIdAndStudioIdIncludingDeleted(
             id = command.visitId.value,
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")

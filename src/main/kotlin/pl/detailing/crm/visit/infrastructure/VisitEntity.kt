@@ -151,7 +151,10 @@ class VisitEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
-    var updatedAt: Instant = Instant.now()
+    var updatedAt: Instant = Instant.now(),
+
+    @Column(name = "deleted_at", columnDefinition = "timestamp with time zone")
+    var deletedAt: Instant? = null
 ) {
     fun toDomain(): Visit = Visit(
         id = VisitId(id),

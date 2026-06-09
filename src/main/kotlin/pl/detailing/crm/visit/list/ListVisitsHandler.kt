@@ -35,21 +35,41 @@ class ListVisitsHandler(
         val page = if (command.scheduledDate != null) {
             val startOfDay = command.scheduledDate.atStartOfDay(warsawZone).toInstant()
             val endOfDay = command.scheduledDate.plusDays(1).atStartOfDay(warsawZone).toInstant()
-            visitRepository.findVisitsWithFiltersAndScheduledDate(
-                studioId = command.studioId.value,
-                status = command.status,
-                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
-                startOfDay = startOfDay,
-                endOfDay = endOfDay,
-                pageable = pageRequest
-            )
+            if (command.includeDeleted) {
+                visitRepository.findDeletedVisitsWithFiltersAndScheduledDate(
+                    studioId = command.studioId.value,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    startOfDay = startOfDay,
+                    endOfDay = endOfDay,
+                    pageable = pageRequest
+                )
+            } else {
+                visitRepository.findVisitsWithFiltersAndScheduledDate(
+                    studioId = command.studioId.value,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    startOfDay = startOfDay,
+                    endOfDay = endOfDay,
+                    pageable = pageRequest
+                )
+            }
         } else {
-            visitRepository.findVisitsWithFilters(
-                studioId = command.studioId.value,
-                status = command.status,
-                searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
-                pageable = pageRequest
-            )
+            if (command.includeDeleted) {
+                visitRepository.findDeletedVisitsWithFilters(
+                    studioId = command.studioId.value,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    pageable = pageRequest
+                )
+            } else {
+                visitRepository.findVisitsWithFilters(
+                    studioId = command.studioId.value,
+                    status = command.status,
+                    searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    pageable = pageRequest
+                )
+            }
         }
 
         val visits = page.content
@@ -132,7 +152,8 @@ class ListVisitsHandler(
                 totalNet = totalNet.amountInCents,
                 totalGross = totalGross.amountInCents,
                 createdAt = visit.createdAt,
-                updatedAt = visit.updatedAt
+                updatedAt = visit.updatedAt,
+                deletedAt = visit.deletedAt
             )
         }
 
@@ -155,7 +176,8 @@ data class ListVisitsCommand(
     val pageSize: Int = 20,
     val status: VisitStatus? = null,
     val searchTerm: String? = null,
-    val scheduledDate: LocalDate? = null
+    val scheduledDate: LocalDate? = null,
+    val includeDeleted: Boolean = false
 )
 
 /**
@@ -191,7 +213,8 @@ data class VisitListItem(
     val totalNet: Long,
     val totalGross: Long,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val deletedAt: Instant? = null
 )
 
 data class VisitCustomerInfo(

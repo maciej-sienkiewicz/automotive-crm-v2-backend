@@ -13,67 +13,76 @@ import java.util.*
 interface VisitRepository : JpaRepository<VisitEntity, UUID> {
 
     /**
-     * Find visit by ID with studio isolation
+     * Find visit by ID with studio isolation (excludes soft-deleted)
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.id = :id AND v.studioId = :studioId")
+    @Query("SELECT v FROM VisitEntity v WHERE v.id = :id AND v.studioId = :studioId AND v.deletedAt IS NULL")
     fun findByIdAndStudioId(
         @Param("id") id: UUID,
         @Param("studioId") studioId: UUID
     ): VisitEntity?
 
     /**
-     * Find visit by ID with studio isolation, eagerly fetching photos
+     * Find visit by ID with studio isolation, including soft-deleted (for viewing deleted records)
      */
-    @Query("SELECT v FROM VisitEntity v LEFT JOIN FETCH v.photos WHERE v.id = :id AND v.studioId = :studioId")
+    @Query("SELECT v FROM VisitEntity v WHERE v.id = :id AND v.studioId = :studioId")
+    fun findByIdAndStudioIdIncludingDeleted(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): VisitEntity?
+
+    /**
+     * Find visit by ID with studio isolation, eagerly fetching photos (excludes soft-deleted)
+     */
+    @Query("SELECT v FROM VisitEntity v LEFT JOIN FETCH v.photos WHERE v.id = :id AND v.studioId = :studioId AND v.deletedAt IS NULL")
     fun findByIdAndStudioIdWithPhotos(
         @Param("id") id: UUID,
         @Param("studioId") studioId: UUID
     ): VisitEntity?
 
     /**
-     * Find all visits for a studio
+     * Find all non-deleted visits for a studio
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId ORDER BY v.scheduledDate DESC")
+    @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<VisitEntity>
 
     /**
-     * Find visits by studio and status
+     * Find visits by studio and status (excludes soft-deleted)
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId AND v.status = :status ORDER BY v.scheduledDate DESC")
+    @Query("SELECT v FROM VisitEntity v WHERE v.studioId = :studioId AND v.status = :status AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByStudioIdAndStatus(
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus
     ): List<VisitEntity>
 
     /**
-     * Find visits by customer with studio isolation
+     * Find visits by customer with studio isolation (excludes soft-deleted)
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId ORDER BY v.scheduledDate DESC")
+    @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByCustomerIdAndStudioId(
         @Param("customerId") customerId: UUID,
         @Param("studioId") studioId: UUID
     ): List<VisitEntity>
 
     /**
-     * Find visits by customer with studio isolation, excluding DRAFT status
+     * Find visits by customer with studio isolation, excluding DRAFT status and soft-deleted
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT ORDER BY v.scheduledDate DESC")
+    @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByCustomerIdAndStudioIdExcludingDraft(
         @Param("customerId") customerId: UUID,
         @Param("studioId") studioId: UUID
     ): List<VisitEntity>
 
     /**
-     * Find visits by vehicle with studio isolation, excluding DRAFT status
+     * Find visits by vehicle with studio isolation, excluding DRAFT status and soft-deleted
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT ORDER BY v.scheduledDate DESC")
+    @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByVehicleIdAndStudioIdExcludingDraft(
         @Param("vehicleId") vehicleId: UUID,
         @Param("studioId") studioId: UUID
     ): List<VisitEntity>
 
     /**
-     * Check if visit number already exists for studio
+     * Check if visit number already exists for studio (including soft-deleted, to preserve uniqueness)
      */
     @Query("SELECT COUNT(v) > 0 FROM VisitEntity v WHERE v.visitNumber = :visitNumber AND v.studioId = :studioId")
     fun existsByVisitNumberAndStudioId(
@@ -82,9 +91,9 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Boolean
 
     /**
-     * Find visit by appointment ID with studio isolation
+     * Find visit by appointment ID with studio isolation (excludes soft-deleted)
      */
-    @Query("SELECT v FROM VisitEntity v WHERE v.appointmentId = :appointmentId AND v.studioId = :studioId")
+    @Query("SELECT v FROM VisitEntity v WHERE v.appointmentId = :appointmentId AND v.studioId = :studioId AND v.deletedAt IS NULL")
     fun findByAppointmentIdAndStudioId(
         @Param("appointmentId") appointmentId: UUID,
         @Param("studioId") studioId: UUID
@@ -106,7 +115,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<String>
 
     /**
-     * Find visits with filtering and pagination (database-side), without date filter.
+     * Find non-deleted visits with filtering and pagination (database-side), without date filter.
      */
     @Query("""
         SELECT DISTINCT v FROM VisitEntity v
@@ -115,6 +124,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         WHERE v.studioId = :studioId
         AND (:status IS NULL OR v.status = :status)
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
+        AND v.deletedAt IS NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
              LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -136,7 +146,38 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Page<VisitEntity>
 
     /**
-     * Find visits with filtering, pagination and timezone-aware date filter.
+     * Find visits (including soft-deleted) with filtering and pagination, without date filter.
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        LEFT JOIN CustomerEntity c ON v.customerId = c.id
+        LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
+        WHERE v.studioId = :studioId
+        AND (:status IS NULL OR v.status = :status)
+        AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
+        AND v.deletedAt IS NOT NULL
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        ORDER BY v.deletedAt DESC
+    """)
+    fun findDeletedVisitsWithFilters(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        pageable: Pageable
+    ): Page<VisitEntity>
+
+    /**
+     * Find non-deleted visits with filtering, pagination and timezone-aware date filter.
      * startOfDay/endOfDay are UTC Instants representing midnight in the target timezone.
      */
     @Query("""
@@ -146,6 +187,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         WHERE v.studioId = :studioId
         AND (:status IS NULL OR v.status = :status)
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
+        AND v.deletedAt IS NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
              LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -171,7 +213,42 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Page<VisitEntity>
 
     /**
-     * Find all non-draft visits for a studio that have at least one photo, eagerly fetching photos.
+     * Find deleted visits with filtering, pagination and timezone-aware date filter.
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        LEFT JOIN CustomerEntity c ON v.customerId = c.id
+        LEFT JOIN VehicleEntity veh ON v.vehicleId = veh.id
+        WHERE v.studioId = :studioId
+        AND (:status IS NULL OR v.status = :status)
+        AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
+        AND v.deletedAt IS NOT NULL
+        AND (:searchTerm IS NULL OR :searchTerm = '' OR
+             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.brandSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.modelSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             LOWER(v.licensePlateSnapshot) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+        AND v.scheduledDate >= :startOfDay
+        AND v.scheduledDate < :endOfDay
+        ORDER BY v.deletedAt DESC
+    """)
+    fun findDeletedVisitsWithFiltersAndScheduledDate(
+        @Param("studioId") studioId: UUID,
+        @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
+        @Param("searchTerm") searchTerm: String?,
+        @Param("startOfDay") startOfDay: Instant,
+        @Param("endOfDay") endOfDay: Instant,
+        pageable: Pageable
+    ): Page<VisitEntity>
+
+    /**
+     * Find all non-draft, non-deleted visits for a studio that have at least one photo.
      * Used by the gallery endpoint to aggregate all visit photos.
      */
     @Query("""
@@ -179,6 +256,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         JOIN FETCH v.photos
         WHERE v.studioId = :studioId
         AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT
+        AND v.deletedAt IS NULL
     """)
     fun findByStudioIdWithPhotos(@Param("studioId") studioId: UUID): List<VisitEntity>
 
@@ -231,6 +309,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.status IN :statuses
         AND v.scheduledDate < :endDate
         AND COALESCE(v.estimatedCompletionDate, v.scheduledDate) >= :startDate
+        AND v.deletedAt IS NULL
         AND (:customerId IS NULL OR v.customerId = :customerId)
         AND (:vehicleId IS NULL OR v.vehicleId = :vehicleId)
         ORDER BY v.scheduledDate ASC
@@ -257,6 +336,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.createdAt < :endDate
         AND v.status != 'REJECTED'
         AND v.status != 'ARCHIVED'
+        AND v.deletedAt IS NULL
     """)
     fun sumRevenueByStudioIdAndDateRange(
         @Param("studioId") studioId: UUID,
@@ -275,6 +355,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.status = pl.detailing.crm.shared.VisitStatus.COMPLETED
         AND v.scheduledDate >= :from
         AND v.scheduledDate < :to
+        AND v.deletedAt IS NULL
         ORDER BY v.scheduledDate ASC
     """)
     fun findCompletedByCustomerIdAndDateRange(
@@ -294,6 +375,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.status = pl.detailing.crm.shared.VisitStatus.COMPLETED
         AND v.scheduledDate >= :from
         AND v.scheduledDate < :to
+        AND v.deletedAt IS NULL
         ORDER BY v.scheduledDate ASC
     """)
     fun findCompletedByStudioIdAndDateRange(
