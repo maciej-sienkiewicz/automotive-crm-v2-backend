@@ -112,6 +112,51 @@ class VisitController(
     }
 
     /**
+     * Get only soft-deleted visits with pagination and filtering
+     * GET /api/visits/deleted
+     */
+    @GetMapping("/deleted")
+    fun getDeletedVisits(
+        @RequestParam(defaultValue = "1") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) scheduledDate: String?
+    ): ResponseEntity<VisitListResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val visitStatus = status?.let {
+            try { VisitStatus.valueOf(it.uppercase()) } catch (e: IllegalArgumentException) { null }
+        }
+
+        val scheduledDateFilter = scheduledDate?.let {
+            try { LocalDate.parse(it) } catch (e: Exception) { null }
+        }
+
+        val command = pl.detailing.crm.visit.list.ListVisitsCommand(
+            studioId = principal.studioId,
+            page = maxOf(1, page),
+            pageSize = maxOf(1, minOf(100, size)),
+            status = visitStatus,
+            searchTerm = search,
+            scheduledDate = scheduledDateFilter,
+            includeDeleted = true
+        )
+
+        val result = listVisitsHandler.handle(command)
+
+        ResponseEntity.ok(VisitListResponse(
+            visits = result.items,
+            pagination = PaginationMetadata(
+                total = result.total,
+                page = result.page,
+                pageSize = result.pageSize,
+                totalPages = result.totalPages
+            )
+        ))
+    }
+
+    /**
      * Get visit details by ID
      * GET /api/visits/{visitId}
      */
