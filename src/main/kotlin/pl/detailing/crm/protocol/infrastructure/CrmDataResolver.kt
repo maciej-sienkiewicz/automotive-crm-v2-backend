@@ -102,11 +102,11 @@ class CrmDataResolver(
                 put(CrmDataKey.TOTAL_GROSS_AMOUNT, formatMoney(totalGross.amountInCents))
                 put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents))
 
-                // Services list - comma-separated with notes in parentheses
+                // Services list - one per line with notes in parentheses
                 val servicesList = visitDomain.serviceItems
                     .filter { it.status == pl.detailing.crm.shared.VisitServiceStatus.CONFIRMED ||
                              it.status == pl.detailing.crm.shared.VisitServiceStatus.APPROVED }
-                    .joinToString(", ") { service ->
+                    .joinToString("\n") { service ->
                         if (service.customNote.isNullOrBlank()) {
                             service.serviceName
                         } else {
