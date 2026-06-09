@@ -73,10 +73,28 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<VisitEntity>
 
     /**
+     * Find only soft-deleted visits by customer, excluding DRAFT status
+     */
+    @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NOT NULL ORDER BY v.deletedAt DESC")
+    fun findDeletedByCustomerIdAndStudioIdExcludingDraft(
+        @Param("customerId") customerId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<VisitEntity>
+
+    /**
      * Find visits by vehicle with studio isolation, excluding DRAFT status and soft-deleted
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
     fun findByVehicleIdAndStudioIdExcludingDraft(
+        @Param("vehicleId") vehicleId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<VisitEntity>
+
+    /**
+     * Find only soft-deleted visits by vehicle, excluding DRAFT status
+     */
+    @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NOT NULL ORDER BY v.deletedAt DESC")
+    fun findDeletedByVehicleIdAndStudioIdExcludingDraft(
         @Param("vehicleId") vehicleId: UUID,
         @Param("studioId") studioId: UUID
     ): List<VisitEntity>

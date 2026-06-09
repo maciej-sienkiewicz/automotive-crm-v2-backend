@@ -19,10 +19,17 @@ class GetVehicleVisitsHandler(
 ) {
     suspend fun handle(command: GetVehicleVisitsCommand): GetVehicleVisitsResult =
         withContext(Dispatchers.IO) {
-            val allVisits = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(
-                vehicleId = command.vehicleId.value,
-                studioId = command.studioId.value
-            )
+            val allVisits = if (command.includeDeleted) {
+                visitRepository.findDeletedByVehicleIdAndStudioIdExcludingDraft(
+                    vehicleId = command.vehicleId.value,
+                    studioId = command.studioId.value
+                )
+            } else {
+                visitRepository.findByVehicleIdAndStudioIdExcludingDraft(
+                    vehicleId = command.vehicleId.value,
+                    studioId = command.studioId.value
+                )
+            }
 
             val totalItems = allVisits.size
             val totalPages = if (command.limit > 0) {
@@ -74,7 +81,8 @@ class GetVehicleVisitsHandler(
                     ),
                     status = visit.status.name.lowercase(),
                     createdBy = creatorNames[visit.createdBy] ?: "",
-                    notes = visit.technicalNotes ?: visit.inspectionNotes ?: ""
+                    notes = visit.technicalNotes ?: visit.inspectionNotes ?: "",
+                    deletedAt = visit.deletedAt
                 )
             }
 
@@ -102,7 +110,8 @@ data class GetVehicleVisitsCommand(
     val vehicleId: VehicleId,
     val studioId: StudioId,
     val page: Int = 1,
-    val limit: Int = 10
+    val limit: Int = 10,
+    val includeDeleted: Boolean = false
 )
 
 data class GetVehicleVisitsResult(
@@ -119,7 +128,8 @@ data class VehicleVisitInfo(
     val totalCost: VehicleVisitCostInfo,
     val status: String,
     val createdBy: String,
-    val notes: String
+    val notes: String,
+    val deletedAt: Instant? = null
 )
 
 data class VehicleVisitCostInfo(

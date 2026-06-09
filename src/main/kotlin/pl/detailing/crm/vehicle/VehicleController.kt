@@ -382,7 +382,8 @@ class VehicleController(
     fun getVehicleVisits(
         @PathVariable vehicleId: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
-        @RequestParam(required = false, defaultValue = "10") limit: Int
+        @RequestParam(required = false, defaultValue = "10") limit: Int,
+        @RequestParam(defaultValue = "false") includeDeleted: Boolean
     ): ResponseEntity<VehicleVisitsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -390,7 +391,8 @@ class VehicleController(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
             page = page,
-            limit = limit
+            limit = limit,
+            includeDeleted = includeDeleted
         )
 
         val result = getVehicleVisitsHandler.handle(command)
