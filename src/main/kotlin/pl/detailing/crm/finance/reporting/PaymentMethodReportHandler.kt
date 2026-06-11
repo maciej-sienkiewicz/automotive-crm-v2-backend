@@ -85,7 +85,12 @@ class PaymentMethodReportHandler(
     }
 
     private fun statsFor(docs: List<FinancialDocumentEntity>, method: PaymentMethod): PaymentMethodStats {
-        val filtered = docs.filter { it.paymentMethod == method }
+        val transferMethods = setOf(PaymentMethod.TRANSFER, PaymentMethod.BLIK_NA_NUMER, PaymentMethod.BLIK_TERMINAL)
+        val filtered = if (method == PaymentMethod.TRANSFER) {
+            docs.filter { it.paymentMethod in transferMethods }
+        } else {
+            docs.filter { it.paymentMethod == method }
+        }
         return PaymentMethodStats(
             count      = filtered.size,
             totalNet   = filtered.sumOf { it.totalNet },

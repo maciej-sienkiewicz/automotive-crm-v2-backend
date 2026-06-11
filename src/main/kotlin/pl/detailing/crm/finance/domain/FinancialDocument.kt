@@ -31,6 +31,8 @@ enum class PaymentMethod(val displayName: String) {
     CASH("Gotówka"),
     CARD("Karta"),
     TRANSFER("Przelew"),
+    BLIK_NA_NUMER("BLIK na numer"),
+    BLIK_TERMINAL("BLIK terminal"),
     OTHER("Inne");
 
     fun defaultStatus(): DocumentStatus = when (this) {

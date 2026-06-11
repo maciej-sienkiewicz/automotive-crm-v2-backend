@@ -253,7 +253,7 @@ data class CompleteVisitRequest(
 )
 
 data class PaymentRequest(
-    /** CASH | CARD | TRANSFER */
+    /** CASH | CARD | TRANSFER | BLIK_NA_NUMER | BLIK_TERMINAL */
     val method: String,
 
     /** RECEIPT | INVOICE (default: RECEIPT when absent) */
