@@ -5,6 +5,11 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
@@ -42,7 +47,8 @@ data class DeleteLeadCommentCommand(
 @Service
 class LeadCommentHandler(
     private val leadRepository: LeadRepository,
-    private val commentRepository: LeadCommentRepository
+    private val commentRepository: LeadCommentRepository,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(LeadCommentHandler::class.java)
 
@@ -97,6 +103,7 @@ class LeadCommentHandler(
             require(content.isNotBlank()) { "Treść komentarza nie może być pusta" }
             require(content.length <= 5000) { "Komentarz nie może przekraczać 5000 znaków" }
 
+            val oldContent = entity.content
             entity.content = content
             entity.updatedBy = command.userId.value
             entity.updatedByName = command.userName
@@ -104,6 +111,18 @@ class LeadCommentHandler(
 
             val saved = commentRepository.save(entity)
             log.info("[LEADS] Updated comment: commentId={}", command.commentId)
+
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.LEAD,
+                entityId = command.leadId.value.toString(),
+                entityDisplayName = null,
+                action = AuditAction.LEAD_COMMENT_UPDATED,
+                changes = listOf(FieldChange("content", oldContent, content))
+            ))
+
             saved
         }
 

@@ -45,6 +45,7 @@ class AssignLeadUserHandler(
         }
 
         val oldAssignedUserId = entity.assignedUserId?.toString()
+        val oldAssignedUserName = entity.assignedUserName
         entity.assignedUserId = command.assignedUserId
         entity.assignedUserName = command.assignedUserName
         entity.updatedAt = Instant.now()
@@ -60,9 +61,10 @@ class AssignLeadUserHandler(
             module = AuditModule.LEAD,
             entityId = command.leadId.value.toString(),
             entityDisplayName = entity.customerName,
-            action = AuditAction.UPDATE,
+            action = AuditAction.LEAD_USER_ASSIGNED,
             changes = listOf(
-                FieldChange("assignedUserId", oldAssignedUserId, command.assignedUserId?.toString())
+                FieldChange("assignedUserId", oldAssignedUserId, command.assignedUserId?.toString()),
+                FieldChange("assignedUserName", oldAssignedUserName, command.assignedUserName)
             )
         ))
     }

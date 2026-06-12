@@ -90,7 +90,7 @@ class AssignLeadCustomerHandler(
                     module = AuditModule.LEAD,
                     entityId = command.leadId.value.toString(),
                     entityDisplayName = entity.customerName,
-                    action = AuditAction.UPDATE,
+                    action = AuditAction.LEAD_CUSTOMER_ASSIGNED,
                     changes = changes
                 ))
             }

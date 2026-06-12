@@ -434,6 +434,8 @@ class LeadsController(
         val command = SaveUserQuoteCommand(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName ?: "",
             items = request.items.map {
                 UserQuoteItemInput(
                     serviceId = it.serviceId?.let { id -> UUID.fromString(id) },

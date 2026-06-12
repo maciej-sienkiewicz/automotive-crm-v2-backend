@@ -61,7 +61,7 @@ class UpdateLostReasonHandler(
             module = AuditModule.LEAD,
             entityId = command.leadId.value.toString(),
             entityDisplayName = entity.customerName,
-            action = AuditAction.UPDATE,
+            action = AuditAction.LEAD_LOST_REASON_UPDATED,
             changes = listOf(FieldChange("lostReason", old, trimmed))
         ))
     }

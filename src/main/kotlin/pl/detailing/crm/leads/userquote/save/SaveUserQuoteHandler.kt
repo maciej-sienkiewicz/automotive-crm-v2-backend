@@ -5,6 +5,11 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteEntity
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteItemEntity
@@ -25,6 +30,8 @@ data class UserQuoteItemInput(
 data class SaveUserQuoteCommand(
     val leadId: LeadId,
     val studioId: StudioId,
+    val userId: UserId,
+    val userName: String,
     val items: List<UserQuoteItemInput>
 )
 
@@ -51,7 +58,8 @@ data class SaveUserQuoteResult(
 class SaveUserQuoteHandler(
     private val leadRepository: LeadRepository,
     private val userQuoteRepository: LeadUserQuoteRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -125,6 +133,18 @@ class SaveUserQuoteHandler(
             val saved = userQuoteRepository.save(quoteEntity)
 
             log.info("[LEADS] User quote saved: leadId={}, itemCount={}", command.leadId, saved.items.size)
+
+            val itemsSummary = saved.items.joinToString(", ") { "${it.serviceName}: ${it.priceNet}" }
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.LEAD,
+                entityId = command.leadId.value.toString(),
+                entityDisplayName = leadEntity.customerName,
+                action = AuditAction.LEAD_QUOTE_UPDATED,
+                changes = listOf(FieldChange("items", null, itemsSummary))
+            ))
 
             saved.toResult()
         }

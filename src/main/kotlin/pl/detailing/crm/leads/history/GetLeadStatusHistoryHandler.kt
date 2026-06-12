@@ -27,7 +27,7 @@ data class LeadStatusHistoryEntry(
     val toStatus: String?
 )
 
-private val STATUS_ACTIONS = setOf(
+private val HISTORY_ACTIONS = setOf(
     AuditAction.CREATE,
     AuditAction.STATUS_CHANGE,
     AuditAction.LEAD_CONFIRMED,
@@ -36,7 +36,12 @@ private val STATUS_ACTIONS = setOf(
     AuditAction.LEAD_NO_SHOW,
     AuditAction.LEAD_CONVERTED,
     AuditAction.LEAD_ABANDONED,
-    AuditAction.LEAD_APPOINTMENT_CREATED
+    AuditAction.LEAD_APPOINTMENT_CREATED,
+    AuditAction.LEAD_USER_ASSIGNED,
+    AuditAction.LEAD_CUSTOMER_ASSIGNED,
+    AuditAction.LEAD_LOST_REASON_UPDATED,
+    AuditAction.LEAD_QUOTE_UPDATED,
+    AuditAction.LEAD_COMMENT_UPDATED
 )
 
 @Service
@@ -54,7 +59,7 @@ class GetLeadStatusHistoryHandler(
                 entityId = query.leadId.value.toString(),
                 pageable = pageable
             ).content
-                .filter { it.action in STATUS_ACTIONS }
+                .filter { it.action in HISTORY_ACTIONS }
                 .map { entry ->
                     val changes = parseChanges(entry.changes)
                     LeadStatusHistoryEntry(
