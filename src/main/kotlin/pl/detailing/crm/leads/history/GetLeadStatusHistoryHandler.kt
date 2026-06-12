@@ -27,7 +27,7 @@ data class LeadStatusHistoryEntry(
     val toStatus: String?
 )
 
-private val STATUS_ACTIONS = listOf(
+private val STATUS_ACTIONS = setOf(
     AuditAction.CREATE,
     AuditAction.STATUS_CHANGE,
     AuditAction.LEAD_CONFIRMED,
@@ -46,18 +46,15 @@ class GetLeadStatusHistoryHandler(
     @Transactional(readOnly = true)
     suspend fun handle(query: GetLeadStatusHistoryQuery): List<LeadStatusHistoryEntry> =
         withContext(Dispatchers.IO) {
-            val pageable = PageRequest.of(0, 200, Sort.by(Sort.Direction.ASC, "createdAt"))
+            val pageable = PageRequest.of(0, 500, Sort.by(Sort.Direction.ASC, "createdAt"))
 
-            auditLogRepository.findByStudioIdWithFilters(
+            auditLogRepository.findByStudioIdAndModuleAndEntityId(
                 studioId = query.studioId.value,
-                modules = listOf(AuditModule.LEAD),
-                actions = STATUS_ACTIONS,
-                userId = null,
-                from = null,
-                to = null,
+                module = AuditModule.LEAD,
+                entityId = query.leadId.value.toString(),
                 pageable = pageable
             ).content
-                .filter { it.entityId == query.leadId.value.toString() }
+                .filter { it.action in STATUS_ACTIONS }
                 .map { entry ->
                     val changes = parseChanges(entry.changes)
                     LeadStatusHistoryEntry(
@@ -75,7 +72,6 @@ class GetLeadStatusHistoryHandler(
         if (changesJson.isNullOrBlank()) return emptyMap()
         return try {
             val result = mutableMapOf<String, Pair<String?, String?>>()
-            // Simple JSON parsing for FieldChange list: [{"field":"status","oldValue":"NEW","newValue":"IN_PROGRESS"}]
             val fieldPattern = Regex(""""field"\s*:\s*"([^"]+)"""")
             val oldPattern = Regex(""""oldValue"\s*:\s*"?([^",}\]]*)"?""")
             val newPattern = Regex(""""newValue"\s*:\s*"?([^",}\]]*)"?""")
