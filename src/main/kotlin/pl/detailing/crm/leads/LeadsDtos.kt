@@ -47,10 +47,10 @@ data class LeadDto(
     val assignedCustomer: CustomerSnapshotDto?,
     val appointmentId: String?,
     val visitId: String?,
-    val assignedUserId: String?,
-    val assignedUserName: String?,
-    val lostReason: String?,
-    val serviceTags: List<LeadServiceTagDto>
+    val assignedUserId: String? = null,
+    val assignedUserName: String? = null,
+    val lostReason: String? = null,
+    val serviceTags: List<LeadServiceTagDto> = emptyList()
 )
 
 fun Lead.toDto(
