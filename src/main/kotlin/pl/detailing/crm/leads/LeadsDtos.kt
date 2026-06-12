@@ -434,13 +434,18 @@ data class UpdateLeadCommentRequest(
 
 // ── Status history ────────────────────────────────────────────────────────────
 
+data class HistoryFieldChangeDto(
+    val field: String,
+    val oldValue: String?,
+    val newValue: String?
+)
+
 data class LeadStatusHistoryEntryDto(
     val changedAt: Instant,
     val action: String,
     val changedByUserId: String,
     val changedByName: String,
-    val fromStatus: String?,
-    val toStatus: String?
+    val changes: List<HistoryFieldChangeDto>
 )
 
 // ── Employee stats ───────────────────────────────────────────────────────────

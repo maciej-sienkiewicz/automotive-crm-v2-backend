@@ -18,13 +18,18 @@ data class GetLeadStatusHistoryQuery(
     val studioId: StudioId
 )
 
+data class HistoryFieldChange(
+    val field: String,
+    val oldValue: String?,
+    val newValue: String?
+)
+
 data class LeadStatusHistoryEntry(
     val changedAt: Instant,
     val action: String,
     val changedByUserId: String,
     val changedByName: String,
-    val fromStatus: String?,
-    val toStatus: String?
+    val changes: List<HistoryFieldChange>
 )
 
 private val HISTORY_ACTIONS = setOf(
@@ -61,36 +66,52 @@ class GetLeadStatusHistoryHandler(
             ).content
                 .filter { it.action in HISTORY_ACTIONS }
                 .map { entry ->
-                    val changes = parseChanges(entry.changes)
                     LeadStatusHistoryEntry(
                         changedAt = entry.createdAt,
                         action = entry.action.name,
                         changedByUserId = entry.userId.toString(),
                         changedByName = entry.userDisplayName,
-                        fromStatus = changes["status"]?.first,
-                        toStatus = changes["status"]?.second
+                        changes = parseChanges(entry.changes)
                     )
                 }
         }
 
-    private fun parseChanges(changesJson: String?): Map<String, Pair<String?, String?>> {
-        if (changesJson.isNullOrBlank()) return emptyMap()
+    private fun parseChanges(changesJson: String?): List<HistoryFieldChange> {
+        if (changesJson.isNullOrBlank()) return emptyList()
         return try {
-            val result = mutableMapOf<String, Pair<String?, String?>>()
             val fieldPattern = Regex(""""field"\s*:\s*"([^"]+)"""")
-            val oldPattern = Regex(""""oldValue"\s*:\s*"?([^",}\]]*)"?""")
-            val newPattern = Regex(""""newValue"\s*:\s*"?([^",}\]]*)"?""")
+            val oldPattern = Regex(""""oldValue"\s*:\s*("([^"]*)"|(null)|\d+)""")
+            val newPattern = Regex(""""newValue"\s*:\s*("([^"]*)"|(null)|\d+)""")
 
             val fields = fieldPattern.findAll(changesJson).map { it.groupValues[1] }.toList()
-            val olds = oldPattern.findAll(changesJson).map { it.groupValues[1].takeIf { v -> v != "null" } }.toList()
-            val news = newPattern.findAll(changesJson).map { it.groupValues[1].takeIf { v -> v != "null" } }.toList()
+            val olds = oldPattern.findAll(changesJson).map { m ->
+                val quoted = m.groupValues[2]
+                val raw = m.groupValues[1]
+                when {
+                    raw == "null" -> null
+                    quoted.isNotEmpty() -> quoted
+                    else -> raw
+                }
+            }.toList()
+            val news = newPattern.findAll(changesJson).map { m ->
+                val quoted = m.groupValues[2]
+                val raw = m.groupValues[1]
+                when {
+                    raw == "null" -> null
+                    quoted.isNotEmpty() -> quoted
+                    else -> raw
+                }
+            }.toList()
 
-            fields.forEachIndexed { i, field ->
-                result[field] = Pair(olds.getOrNull(i), news.getOrNull(i))
+            fields.mapIndexed { i, field ->
+                HistoryFieldChange(
+                    field = field,
+                    oldValue = olds.getOrNull(i),
+                    newValue = news.getOrNull(i)
+                )
             }
-            result
         } catch (e: Exception) {
-            emptyMap()
+            emptyList()
         }
     }
 }

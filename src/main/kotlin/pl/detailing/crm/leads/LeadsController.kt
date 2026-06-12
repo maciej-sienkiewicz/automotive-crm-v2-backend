@@ -839,8 +839,7 @@ class LeadsController(
                 action = it.action,
                 changedByUserId = it.changedByUserId,
                 changedByName = it.changedByName,
-                fromStatus = it.fromStatus,
-                toStatus = it.toStatus
+                changes = it.changes.map { c -> HistoryFieldChangeDto(c.field, c.oldValue, c.newValue) }
             )
         })
     }
