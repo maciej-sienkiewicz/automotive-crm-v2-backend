@@ -48,13 +48,17 @@ class AcceptCallHandler(
                 contactIdentifier = callLogEntity.phoneNumber,
                 customerName = callLogEntity.callerName,
                 initialMessage = callLogEntity.note,
-                estimatedValue = 0, // Default value, can be updated later
-                requiresVerification = false, // Accepted calls don't require verification
+                estimatedValue = 0,
+                requiresVerification = false,
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
                 appointmentId = null,
                 visitId = null,
+                assignedUserId = null,
+                assignedUserName = null,
+                lostReason = null,
+                stagnantAlertSentAt = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

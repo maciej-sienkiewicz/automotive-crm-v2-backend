@@ -57,13 +57,17 @@ class RegisterInboundCallHandler(
                 contactIdentifier = normalizedPhone,
                 customerName = command.callerName?.trim(),
                 initialMessage = command.note?.trim(),
-                estimatedValue = 0, // Default value, can be updated later
-                requiresVerification = true, // Inbound calls require verification
+                estimatedValue = 0,
+                requiresVerification = true,
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
                 appointmentId = null,
                 visitId = null,
+                assignedUserId = null,
+                assignedUserName = null,
+                lostReason = null,
+                stagnantAlertSentAt = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )

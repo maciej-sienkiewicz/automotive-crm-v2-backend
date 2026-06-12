@@ -50,12 +50,16 @@ class CreateLeadHandler(
                 customerName = command.customerName?.trim(),
                 initialMessage = command.initialMessage?.trim(),
                 estimatedValue = command.estimatedValue,
-                requiresVerification = false, // Manual entries don't require verification
+                requiresVerification = false,
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = command.customerId,
                 appointmentId = null,
                 visitId = null,
+                assignedUserId = null,
+                assignedUserName = null,
+                lostReason = null,
+                stagnantAlertSentAt = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )
