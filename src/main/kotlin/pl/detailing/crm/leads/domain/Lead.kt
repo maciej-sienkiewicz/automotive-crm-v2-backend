@@ -29,10 +29,10 @@ data class Lead(
     val customerId: CustomerId?,
     val appointmentId: AppointmentId?,
     val visitId: VisitId?,
-    val assignedUserId: UserId?,
-    val assignedUserName: String?,
-    val lostReason: String?,
-    val stagnantAlertSentAt: Instant?,
+    val assignedUserId: UserId? = null,
+    val assignedUserName: String? = null,
+    val lostReason: String? = null,
+    val stagnantAlertSentAt: Instant? = null,
     val createdAt: Instant,
     val updatedAt: Instant
 )
