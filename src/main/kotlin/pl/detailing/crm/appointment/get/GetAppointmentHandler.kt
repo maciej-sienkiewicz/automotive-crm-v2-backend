@@ -7,7 +7,11 @@ import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.appointment.list.*
+import pl.detailing.crm.service.list.PackageItemDto
+import java.util.UUID
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
+import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
@@ -20,7 +24,9 @@ class GetAppointmentHandler(
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
     private val appointmentColorRepository: AppointmentColorRepository,
-    private val smsLogRepository: SmsLogJpaRepository
+    private val smsLogRepository: SmsLogJpaRepository,
+    private val serviceRepository: ServiceRepository,
+    private val packageItemRepository: ServicePackageItemRepository
 ) {
     suspend fun handle(appointmentId: AppointmentId, studioId: StudioId): AppointmentListItem =
         withContext(Dispatchers.IO) {
@@ -55,27 +61,7 @@ class GetAppointmentHandler(
                         licensePlate = it.licensePlate
                     )
                 },
-                services = appointment.lineItems.map { lineItem ->
-                    val adjustmentValue = when (lineItem.adjustmentType) {
-                        AdjustmentType.PERCENT -> lineItem.adjustmentValue / 100.0
-                        else -> lineItem.adjustmentValue.toDouble()
-                    }
-
-                    ServiceLineItemInfo(
-                        id = lineItem.id.toString(),
-                        serviceId = lineItem.serviceId?.toString(),
-                        serviceName = lineItem.serviceName,
-                        basePriceNet = lineItem.basePriceNet,
-                        vatRate = lineItem.vatRate,
-                        adjustment = PriceAdjustmentInfo(
-                            type = lineItem.adjustmentType,
-                            value = adjustmentValue
-                        ),
-                        note = lineItem.customNote,
-                        finalPriceNet = lineItem.finalPriceNet,
-                        finalPriceGross = lineItem.finalPriceGross
-                    )
-                },
+                services = buildServiceLineItems(appointment.lineItems),
                 schedule = ScheduleInfo(
                     isAllDay = appointment.isAllDay,
                     startDateTime = appointment.startDateTime,
@@ -109,4 +95,55 @@ class GetAppointmentHandler(
                 }
             )
         }
+
+    private fun buildServiceLineItems(
+        lineItems: List<pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity>
+    ): List<ServiceLineItemInfo> {
+        val serviceIds = lineItems.mapNotNull { it.serviceId }.distinct()
+        if (serviceIds.isEmpty()) return lineItems.map { mapLineItem(it, false, null) }
+
+        val packageServiceIds = serviceRepository.findAllById(serviceIds)
+            .filter { it.isPackage }
+            .map { it.id }
+            .toSet()
+
+        val packageItemsByServiceId: Map<UUID, List<PackageItemDto>> = if (packageServiceIds.isNotEmpty()) {
+            packageItemRepository.findByPackageIdIn(packageServiceIds.toList())
+                .groupBy({ it.packageId }, { PackageItemDto(it.serviceId.toString(), it.serviceName, it.position) })
+        } else emptyMap()
+
+        return lineItems.map { lineItem ->
+            val sid = lineItem.serviceId
+            val isPkg = sid != null && sid in packageServiceIds
+            val items = if (isPkg && sid != null) packageItemsByServiceId[sid]?.sortedBy { it.position } else null
+            mapLineItem(lineItem, isPkg, items)
+        }
+    }
+
+    private fun mapLineItem(
+        lineItem: pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity,
+        isPackage: Boolean,
+        packageItems: List<PackageItemDto>?
+    ): ServiceLineItemInfo {
+        val adjustmentValue = when (lineItem.adjustmentType) {
+            AdjustmentType.PERCENT -> lineItem.adjustmentValue / 100.0
+            else -> lineItem.adjustmentValue.toDouble()
+        }
+        return ServiceLineItemInfo(
+            id = lineItem.id.toString(),
+            serviceId = lineItem.serviceId?.toString(),
+            serviceName = lineItem.serviceName,
+            basePriceNet = lineItem.basePriceNet,
+            vatRate = lineItem.vatRate,
+            adjustment = PriceAdjustmentInfo(
+                type = lineItem.adjustmentType,
+                value = adjustmentValue
+            ),
+            note = lineItem.customNote,
+            finalPriceNet = lineItem.finalPriceNet,
+            finalPriceGross = lineItem.finalPriceGross,
+            isPackage = isPackage,
+            packageItems = packageItems
+        )
+    }
 }
