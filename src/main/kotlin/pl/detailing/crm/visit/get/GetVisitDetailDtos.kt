@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.get
 
+import pl.detailing.crm.service.list.PackageItemDto
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
@@ -92,11 +93,13 @@ data class ServiceLineItemResponse(
     val status: String,
     val finalPriceNet: Long,
     val finalPriceGross: Long,
-    
+    val isPackage: Boolean,
+    val packageItems: List<PackageItemDto>?,
+
     // Pending operation tracking
     val pendingOperation: String?,  // ADD, EDIT, DELETE or null
     val hasPendingChange: Boolean,
-    
+
     // Previous values for EDIT operations (for displaying changes)
     val previousPriceNet: Long?,
     val previousPriceGross: Long?

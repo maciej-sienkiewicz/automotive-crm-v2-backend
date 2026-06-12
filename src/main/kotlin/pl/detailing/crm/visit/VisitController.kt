@@ -34,6 +34,9 @@ import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
+import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
+import pl.detailing.crm.service.list.PackageItemDto
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -43,6 +46,8 @@ import java.util.UUID
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,
+    private val serviceRepository: ServiceRepository,
+    private val packageItemRepository: ServicePackageItemRepository,
     private val getVisitPhotosHandler: GetVisitPhotosHandler,
     private val addVisitPhotoHandler: AddVisitPhotoHandler,
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
@@ -504,7 +509,7 @@ class VisitController(
                     hexColor = color.hexColor
                 )
             },
-            services = visit.serviceItems.map { mapToServiceLineItemResponse(it) },
+            services = buildServiceLineItems(visit.serviceItems),
             totalCost = MoneyAmountResponse(
                 netAmount = totalNet.amountInCents,
                 grossAmount = totalGross.amountInCents,
@@ -572,9 +577,42 @@ class VisitController(
     }
 
     /**
+     * Batch-load package info for all service items in a visit, then map each item.
+     * Avoids N+1 queries: one query for service metadata, one for package items.
+     */
+    private fun buildServiceLineItems(serviceItems: List<VisitServiceItem>): List<ServiceLineItemResponse> {
+        val serviceIds = serviceItems.mapNotNull { it.serviceId?.value }.distinct()
+        if (serviceIds.isEmpty()) return serviceItems.map { mapToServiceLineItemResponse(it, isPackage = false, packageItems = null) }
+
+        val packageServiceIds = serviceRepository.findAllById(serviceIds)
+            .filter { it.isPackage }
+            .map { it.id }
+            .toSet()
+
+        val packageItemsByServiceId: Map<UUID, List<PackageItemDto>> = if (packageServiceIds.isNotEmpty()) {
+            packageItemRepository.findByPackageIdIn(packageServiceIds.toList())
+                .groupBy({ it.packageId }, { PackageItemDto(it.serviceId.toString(), it.serviceName, it.position) })
+        } else emptyMap()
+
+        return serviceItems.map { item ->
+            val sid = item.serviceId?.value
+            val isPkg = sid != null && sid in packageServiceIds
+            val items = if (isPkg && sid != null) packageItemsByServiceId[sid]?.sortedBy { it.position } else null
+            mapToServiceLineItemResponse(item, isPkg, items)
+        }
+    }
+
+    /**
      * Map VisitServiceItem to ServiceLineItemResponse
      */
-    private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse {
+    private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse =
+        mapToServiceLineItemResponse(serviceItem, isPackage = false, packageItems = null)
+
+    private fun mapToServiceLineItemResponse(
+        serviceItem: VisitServiceItem,
+        isPackage: Boolean,
+        packageItems: List<PackageItemDto>?
+    ): ServiceLineItemResponse {
         // Convert adjustment value based on type:
         // - For PERCENT: convert from basis points back to signed percentage (divide by 100), returned as Double
         // - For monetary types (FIXED_NET, FIXED_GROSS, SET_NET, SET_GROSS): return as Long (integer grosz)
@@ -597,11 +635,13 @@ class VisitController(
             status = mapServiceStatus(serviceItem.status),
             finalPriceNet = serviceItem.finalPriceNet.amountInCents,
             finalPriceGross = serviceItem.finalPriceGross.amountInCents,
-            
+            isPackage = isPackage,
+            packageItems = packageItems,
+
             // Pending operation tracking
             pendingOperation = serviceItem.pendingOperation?.let { mapPendingOperation(it) },
             hasPendingChange = serviceItem.pendingOperation != null,
-            
+
             // Previous values for EDIT operations
             previousPriceNet = serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents,
             previousPriceGross = serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents
