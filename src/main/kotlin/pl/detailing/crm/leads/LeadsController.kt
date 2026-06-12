@@ -18,6 +18,12 @@ import pl.detailing.crm.leads.analytics.GetServiceAnalyticsHandler
 import pl.detailing.crm.leads.analytics.GetServiceAnalyticsQuery
 import pl.detailing.crm.leads.assign.AssignLeadUserCommand
 import pl.detailing.crm.leads.assign.AssignLeadUserHandler
+import pl.detailing.crm.leads.comments.AddLeadCommentCommand
+import pl.detailing.crm.leads.comments.DeleteLeadCommentCommand
+import pl.detailing.crm.leads.comments.LeadCommentHandler
+import pl.detailing.crm.leads.comments.UpdateLeadCommentCommand
+import pl.detailing.crm.leads.history.GetLeadStatusHistoryHandler
+import pl.detailing.crm.leads.history.GetLeadStatusHistoryQuery
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
@@ -71,6 +77,8 @@ class LeadsController(
     private val setServiceTagsHandler: SetServiceTagsHandler,
     private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
     private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
+    private val leadCommentHandler: LeadCommentHandler,
+    private val getLeadStatusHistoryHandler: GetLeadStatusHistoryHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
@@ -730,4 +738,119 @@ class LeadsController(
             )
         })
     }
+
+    /**
+     * List all comments on a lead (sorted oldest first).
+     * GET /api/v1/leads/{id}/comments
+     */
+    @GetMapping("/{id}/comments")
+    fun listComments(@PathVariable id: String): ResponseEntity<List<LeadCommentDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val comments = leadCommentHandler.listComments(LeadId.fromString(id), principal.studioId)
+        ResponseEntity.ok(comments.map { it.toDto() })
+    }
+
+    /**
+     * Add a comment to a lead.
+     * POST /api/v1/leads/{id}/comments
+     */
+    @PostMapping("/{id}/comments")
+    fun addComment(
+        @PathVariable id: String,
+        @RequestBody request: AddLeadCommentRequest
+    ): ResponseEntity<LeadCommentDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val saved = leadCommentHandler.addComment(
+            AddLeadCommentCommand(
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                content = request.content
+            )
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(saved.toDto())
+    }
+
+    /**
+     * Update a comment on a lead.
+     * PATCH /api/v1/leads/{id}/comments/{commentId}
+     */
+    @PatchMapping("/{id}/comments/{commentId}")
+    fun updateComment(
+        @PathVariable id: String,
+        @PathVariable commentId: String,
+        @RequestBody request: UpdateLeadCommentRequest
+    ): ResponseEntity<LeadCommentDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val saved = leadCommentHandler.updateComment(
+            UpdateLeadCommentCommand(
+                commentId = UUID.fromString(commentId),
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                content = request.content
+            )
+        )
+        ResponseEntity.ok(saved.toDto())
+    }
+
+    /**
+     * Soft-delete a comment on a lead.
+     * DELETE /api/v1/leads/{id}/comments/{commentId}
+     */
+    @DeleteMapping("/{id}/comments/{commentId}")
+    fun deleteComment(
+        @PathVariable id: String,
+        @PathVariable commentId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        leadCommentHandler.deleteComment(
+            DeleteLeadCommentCommand(
+                commentId = UUID.fromString(commentId),
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName
+            )
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Get status change history for a lead (chronological).
+     * GET /api/v1/leads/{id}/status-history
+     */
+    @GetMapping("/{id}/status-history")
+    fun getStatusHistory(@PathVariable id: String): ResponseEntity<List<LeadStatusHistoryEntryDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = getLeadStatusHistoryHandler.handle(
+            GetLeadStatusHistoryQuery(
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId
+            )
+        )
+        ResponseEntity.ok(result.map {
+            LeadStatusHistoryEntryDto(
+                changedAt = it.changedAt,
+                action = it.action,
+                changedByUserId = it.changedByUserId,
+                changedByName = it.changedByName,
+                fromStatus = it.fromStatus,
+                toStatus = it.toStatus
+            )
+        })
+    }
 }
+
+private fun pl.detailing.crm.leads.comments.LeadCommentEntity.toDto() = LeadCommentDto(
+    id = id.toString(),
+    content = content,
+    createdBy = createdBy.toString(),
+    createdByName = createdByName,
+    createdAt = createdAt,
+    updatedBy = updatedBy?.toString(),
+    updatedByName = updatedByName,
+    updatedAt = updatedAt
+)

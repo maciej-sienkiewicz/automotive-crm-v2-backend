@@ -411,6 +411,38 @@ data class ServiceAnalyticsItemDto(
     val winRate: Double
 )
 
+// ── Comments ─────────────────────────────────────────────────────────────────
+
+data class LeadCommentDto(
+    val id: String,
+    val content: String,
+    val createdBy: String,
+    val createdByName: String,
+    val createdAt: Instant,
+    val updatedBy: String?,
+    val updatedByName: String?,
+    val updatedAt: Instant?
+)
+
+data class AddLeadCommentRequest(
+    val content: String
+)
+
+data class UpdateLeadCommentRequest(
+    val content: String
+)
+
+// ── Status history ────────────────────────────────────────────────────────────
+
+data class LeadStatusHistoryEntryDto(
+    val changedAt: Instant,
+    val action: String,
+    val changedByUserId: String,
+    val changedByName: String,
+    val fromStatus: String?,
+    val toStatus: String?
+)
+
 // ── Employee stats ───────────────────────────────────────────────────────────
 
 data class EmployeeStatsItemDto(
