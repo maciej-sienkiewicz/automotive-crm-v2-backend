@@ -16,6 +16,11 @@ data class RelatedVisitDto(
     val title: String?
 )
 
+data class AssignedUserDto(
+    val userId: String,
+    val userName: String
+)
+
 data class CustomerSnapshotDto(
     val id: String,
     val firstName: String?,
@@ -40,6 +45,7 @@ data class LeadDto(
     val vehicleModel: String?,
     val relatedVisits: List<RelatedVisitDto>,
     val assignedCustomer: CustomerSnapshotDto?,
+    val assignedUser: AssignedUserDto?,
     val appointmentId: String?,
     val visitId: String?
 )
@@ -47,7 +53,8 @@ data class LeadDto(
 fun Lead.toDto(
     relatedVisits: List<RelatedVisitDto> = emptyList(),
     summary: String? = null,
-    assignedCustomer: CustomerSnapshotDto? = null
+    assignedCustomer: CustomerSnapshotDto? = null,
+    assignedUser: AssignedUserDto? = null
 ): LeadDto = LeadDto(
     id = this.id.toString(),
     source = this.source.name,
@@ -64,6 +71,9 @@ fun Lead.toDto(
     vehicleModel = this.vehicleModel,
     relatedVisits = relatedVisits,
     assignedCustomer = assignedCustomer,
+    assignedUser = if (this.assignedUserId != null && this.assignedUserName != null)
+        AssignedUserDto(userId = this.assignedUserId, userName = this.assignedUserName)
+    else null,
     appointmentId = this.appointmentId?.toString(),
     visitId = this.visitId?.toString()
 )
@@ -71,7 +81,8 @@ fun Lead.toDto(
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
     summary = aiSummary,
-    assignedCustomer = assignedCustomer?.toDto()
+    assignedCustomer = assignedCustomer?.toDto(),
+    assignedUser = assignedUser
 )
 
 fun CustomerSnapshot.toDto() = CustomerSnapshotDto(
@@ -109,6 +120,11 @@ data class AssignCustomerRequest(
     val customerId: String?
 )
 
+data class AssignUserRequest(
+    val userId: String?,
+    val userName: String?
+)
+
 data class PaginationInfo(
     val currentPage: Int,
     val totalPages: Int,
@@ -135,6 +151,7 @@ data class LeadDetailDto(
     val createdAt: Instant,
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshotDto?,
+    val assignedUser: AssignedUserDto?,
     val appointmentId: String?,
     val visitId: String?,
     val estimation: LeadEstimationDto?,
@@ -207,6 +224,7 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     createdAt = createdAt,
     updatedAt = updatedAt,
     assignedCustomer = assignedCustomer?.toDto(),
+    assignedUser = assignedUser,
     appointmentId = appointmentId?.toString(),
     visitId = visitId?.toString(),
     estimation = estimation?.toDto(),

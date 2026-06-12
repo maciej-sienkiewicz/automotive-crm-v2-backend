@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.AssignedUserDto
 import pl.detailing.crm.leads.customer.CustomerSnapshot
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
@@ -82,6 +83,9 @@ class GetLeadHandler(
             createdAt = leadEntity.createdAt,
             updatedAt = leadEntity.updatedAt,
             assignedCustomer = customerSnapshot,
+            assignedUser = if (leadEntity.assignedUserId != null && leadEntity.assignedUserName != null)
+                AssignedUserDto(userId = leadEntity.assignedUserId!!, userName = leadEntity.assignedUserName!!)
+            else null,
             appointmentId = leadEntity.appointmentId?.let { AppointmentId(it) },
             visitId = leadEntity.visitId?.let { VisitId(it) },
             estimation = estimation?.toResult(),
@@ -105,6 +109,7 @@ data class GetLeadResult(
     val createdAt: Instant,
     val updatedAt: Instant,
     val assignedCustomer: CustomerSnapshot?,
+    val assignedUser: AssignedUserDto?,
     val appointmentId: AppointmentId?,
     val visitId: VisitId?,
     val estimation: EstimationResult?,

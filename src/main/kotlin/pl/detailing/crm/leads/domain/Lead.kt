@@ -26,6 +26,8 @@ data class Lead(
     val vehicleBrand: String?,
     val vehicleModel: String?,
     val customerId: CustomerId?,
+    val assignedUserId: String?,
+    val assignedUserName: String?,
     val appointmentId: AppointmentId?,
     val visitId: VisitId?,
     val createdAt: Instant,

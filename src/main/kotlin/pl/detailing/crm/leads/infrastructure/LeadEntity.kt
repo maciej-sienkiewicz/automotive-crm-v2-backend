@@ -62,6 +62,12 @@ class LeadEntity(
     @Column(name = "customer_id", nullable = true, columnDefinition = "uuid")
     var customerId: UUID?,
 
+    @Column(name = "assigned_user_id", nullable = true, columnDefinition = "text")
+    var assignedUserId: String?,
+
+    @Column(name = "assigned_user_name", nullable = true, columnDefinition = "text")
+    var assignedUserName: String?,
+
     @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
     var appointmentId: UUID?,
 
@@ -87,6 +93,8 @@ class LeadEntity(
         vehicleBrand = vehicleBrand,
         vehicleModel = vehicleModel,
         customerId = customerId?.let { CustomerId(it) },
+        assignedUserId = assignedUserId,
+        assignedUserName = assignedUserName,
         appointmentId = appointmentId?.let { AppointmentId(it) },
         visitId = visitId?.let { VisitId(it) },
         createdAt = createdAt,
@@ -107,6 +115,8 @@ class LeadEntity(
             vehicleBrand = lead.vehicleBrand,
             vehicleModel = lead.vehicleModel,
             customerId = lead.customerId?.value,
+            assignedUserId = lead.assignedUserId,
+            assignedUserName = lead.assignedUserName,
             appointmentId = lead.appointmentId?.value,
             visitId = lead.visitId?.value,
             createdAt = lead.createdAt,

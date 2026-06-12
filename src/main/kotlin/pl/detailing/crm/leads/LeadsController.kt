@@ -14,6 +14,8 @@ import pl.detailing.crm.appointment.lead.CreateLeadAppointmentCommand
 import pl.detailing.crm.appointment.lead.CreateLeadAppointmentHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.assign.AssignLeadUserCommand
+import pl.detailing.crm.leads.assign.AssignLeadUserHandler
 import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
 import pl.detailing.crm.leads.customer.AssignLeadCustomerHandler
 import pl.detailing.crm.leads.delete.DeleteLeadCommand
@@ -56,6 +58,7 @@ class LeadsController(
     private val getLeadHandler: GetLeadHandler,
     private val analyzeLeadHandler: AnalyzeLeadHandler,
     private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
+    private val assignLeadUserHandler: AssignLeadUserHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
@@ -383,6 +386,36 @@ class LeadsController(
 
         if (result.customerSnapshot != null) {
             ResponseEntity.ok(result.customerSnapshot.toDto())
+        } else {
+            ResponseEntity.ok(null)
+        }
+    }
+
+    /**
+     * Assign, change, or unassign an employee/user to/from a lead.
+     * Pass userId+userName to assign/change; pass null to unassign.
+     * PATCH /api/v1/leads/{id}/assign
+     */
+    @PatchMapping("/{id}/assign")
+    fun assignUser(
+        @PathVariable id: String,
+        @RequestBody request: AssignUserRequest
+    ): ResponseEntity<AssignedUserDto?> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = AssignLeadUserCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            requestingUserId = principal.userId,
+            requestingUserName = principal.fullName,
+            assignedUserId = request.userId,
+            assignedUserName = request.userName
+        )
+
+        val result = assignLeadUserHandler.handle(command)
+
+        if (result.assignedUserId != null && result.assignedUserName != null) {
+            ResponseEntity.ok(AssignedUserDto(userId = result.assignedUserId, userName = result.assignedUserName))
         } else {
             ResponseEntity.ok(null)
         }

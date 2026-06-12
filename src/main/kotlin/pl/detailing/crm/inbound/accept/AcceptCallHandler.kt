@@ -53,6 +53,8 @@ class AcceptCallHandler(
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = null,
+                assignedUserId = null,
+                assignedUserName = null,
                 appointmentId = null,
                 visitId = null,
                 createdAt = Instant.now(),

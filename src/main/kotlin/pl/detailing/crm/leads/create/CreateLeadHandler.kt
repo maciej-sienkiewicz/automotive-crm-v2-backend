@@ -54,6 +54,8 @@ class CreateLeadHandler(
                 vehicleBrand = null,
                 vehicleModel = null,
                 customerId = command.customerId,
+                assignedUserId = null,
+                assignedUserName = null,
                 appointmentId = null,
                 visitId = null,
                 createdAt = Instant.now(),

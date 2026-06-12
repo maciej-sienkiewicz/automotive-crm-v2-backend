@@ -17,7 +17,8 @@ data class LeadListItem(
     val lead: Lead,
     val relatedVisits: List<RelatedVisit>,
     val aiSummary: String?,
-    val assignedCustomer: CustomerSnapshot?
+    val assignedCustomer: CustomerSnapshot?,
+    val assignedUser: pl.detailing.crm.leads.AssignedUserDto?
 )
 
 @Service
@@ -78,7 +79,10 @@ class ListLeadsHandler(
                             email = it.email,
                             phone = it.phone
                         )
-                    }
+                    },
+                    assignedUser = if (lead.assignedUserId != null && lead.assignedUserName != null)
+                        pl.detailing.crm.leads.AssignedUserDto(userId = lead.assignedUserId, userName = lead.assignedUserName)
+                    else null
                 )
             }
 
