@@ -34,6 +34,7 @@ class CreateServiceHandler(
             vatRate = command.vatRate,
             isActive = true,
             requireManualPrice = command.requireManualPrice,
+            isPackage = false,
             replacesServiceId = null,
             createdBy = command.userId,
             updatedBy = command.userId,

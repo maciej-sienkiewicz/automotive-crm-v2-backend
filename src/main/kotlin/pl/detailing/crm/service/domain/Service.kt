@@ -11,6 +11,7 @@ data class Service(
     val vatRate: VatRate,
     val isActive: Boolean,
     val requireManualPrice: Boolean,
+    val isPackage: Boolean,
     val replacesServiceId: ServiceId?,
     val createdBy: UserId,
     val updatedBy: UserId,

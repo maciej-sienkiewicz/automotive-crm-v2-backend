@@ -40,6 +40,9 @@ class ServiceEntity(
     @Column(name = "require_manual_price", nullable = false)
     var requireManualPrice: Boolean = false,
 
+    @Column(name = "is_package", nullable = false)
+    var isPackage: Boolean = false,
+
     @Column(name = "replaces_service_id", columnDefinition = "uuid")
     var replacesServiceId: UUID?,
 
@@ -63,6 +66,7 @@ class ServiceEntity(
         vatRate = VatRate.fromInt(vatRate),
         isActive = isActive,
         requireManualPrice = requireManualPrice,
+        isPackage = isPackage,
         replacesServiceId = replacesServiceId?.let { ServiceId(it) },
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
@@ -79,6 +83,7 @@ class ServiceEntity(
             vatRate = service.vatRate.rate,
             isActive = service.isActive,
             requireManualPrice = service.requireManualPrice,
+            isPackage = service.isPackage,
             replacesServiceId = service.replacesServiceId?.value,
             createdBy = service.createdBy.value,
             updatedBy = service.updatedBy.value,

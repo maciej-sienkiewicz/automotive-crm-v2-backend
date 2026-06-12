@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.service.domain.Service as ServiceDomain
 import pl.detailing.crm.service.infrastructure.ServiceEntity
+import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -17,6 +18,7 @@ import java.time.Instant
 class UpdateServiceHandler(
     private val validatorComposite: UpdateServiceValidatorComposite,
     private val serviceRepository: ServiceRepository,
+    private val packageItemRepository: ServicePackageItemRepository,
     private val auditService: AuditService
 ) {
 
@@ -45,6 +47,7 @@ class UpdateServiceHandler(
             vatRate = command.vatRate,
             isActive = true,
             requireManualPrice = command.requireManualPrice,
+            isPackage = false,
             replacesServiceId = command.oldServiceId,
             createdBy = UserId(oldServiceEntity.createdBy),
             updatedBy = command.userId,
@@ -81,6 +84,19 @@ class UpdateServiceHandler(
             metadata = mapOf("replacesServiceId" to command.oldServiceId.value.toString())
         ))
 
+        val affectedPackageItems = packageItemRepository.findByServiceIdAndStudioId(
+            command.oldServiceId.value,
+            command.studioId.value
+        )
+        val affectedPackages = if (affectedPackageItems.isNotEmpty()) {
+            val packageIds = affectedPackageItems.map { it.packageId }.distinct()
+            serviceRepository.findAllById(packageIds)
+                .filter { it.isActive }
+                .map { AffectedPackage(packageId = it.id.toString(), packageName = it.name) }
+        } else {
+            emptyList()
+        }
+
         UpdateServiceResult(
             oldServiceId = command.oldServiceId,
             newServiceId = newService.id,
@@ -90,7 +106,8 @@ class UpdateServiceHandler(
             vatAmount = vatAmount.amountInCents,
             priceGross = grossAmount.amountInCents,
             requireManualPrice = newService.requireManualPrice,
-            replacesServiceId = command.oldServiceId
+            replacesServiceId = command.oldServiceId,
+            affectedPackages = affectedPackages
         )
     }
 }
@@ -104,5 +121,11 @@ data class UpdateServiceResult(
     val vatAmount: Long,
     val priceGross: Long,
     val requireManualPrice: Boolean,
-    val replacesServiceId: ServiceId
+    val replacesServiceId: ServiceId,
+    val affectedPackages: List<AffectedPackage> = emptyList()
+)
+
+data class AffectedPackage(
+    val packageId: String,
+    val packageName: String
 )
