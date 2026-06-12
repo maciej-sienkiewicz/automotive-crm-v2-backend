@@ -12,19 +12,23 @@ import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.services.LeadServiceTagEntity
+import pl.detailing.crm.leads.services.LeadServiceTagRepository
 
 data class LeadListItem(
     val lead: Lead,
     val relatedVisits: List<RelatedVisit>,
     val aiSummary: String?,
-    val assignedCustomer: CustomerSnapshot?
+    val assignedCustomer: CustomerSnapshot?,
+    val serviceTags: List<LeadServiceTagEntity> = emptyList()
 )
 
 @Service
 class ListLeadsHandler(
     private val leadRepository: LeadRepository,
     private val leadEstimationRepository: LeadEstimationRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val leadServiceTagRepository: LeadServiceTagRepository
 ) {
     private val log = LoggerFactory.getLogger(ListLeadsHandler::class.java)
 
@@ -33,15 +37,34 @@ class ListLeadsHandler(
         withContext(Dispatchers.IO) {
             val pageable = PageRequest.of(query.page - 1, query.limit)
 
-            val page = leadRepository.findByStudioIdWithFilters(
-                studioId = query.studioId.value,
-                statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
-                sources = query.sources?.takeIf { it.isNotEmpty() }?.map { it.name },
-                search = query.search?.takeIf { it.isNotBlank() },
-                dateFrom = query.dateFrom,
-                dateTo = query.dateTo,
-                pageable = pageable
-            )
+            val hasExtendedFilters = query.valueMin != null || query.valueMax != null
+                || query.assignedUserId != null || !query.serviceIds.isNullOrEmpty()
+
+            val page = if (hasExtendedFilters) {
+                leadRepository.findByStudioIdWithExtendedFilters(
+                    studioId = query.studioId.value,
+                    statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
+                    sources = query.sources?.takeIf { it.isNotEmpty() }?.map { it.name },
+                    search = query.search?.takeIf { it.isNotBlank() },
+                    dateFrom = query.dateFrom,
+                    dateTo = query.dateTo,
+                    valueMin = query.valueMin,
+                    valueMax = query.valueMax,
+                    assignedUserId = query.assignedUserId?.toString(),
+                    serviceIds = query.serviceIds?.takeIf { it.isNotEmpty() },
+                    pageable = pageable
+                )
+            } else {
+                leadRepository.findByStudioIdWithFilters(
+                    studioId = query.studioId.value,
+                    statuses = query.statuses?.takeIf { it.isNotEmpty() }?.map { it.name },
+                    sources = query.sources?.takeIf { it.isNotEmpty() }?.map { it.name },
+                    search = query.search?.takeIf { it.isNotBlank() },
+                    dateFrom = query.dateFrom,
+                    dateTo = query.dateTo,
+                    pageable = pageable
+                )
+            }
 
             val leads = page.content.map { it.toDomain() }
 
@@ -63,6 +86,11 @@ class ListLeadsHandler(
                 ).associateBy { it.id }
             } else emptyMap()
 
+            // Batch-load service tags for current page
+            val serviceTagsByLeadId = if (leadIds.isNotEmpty()) {
+                leadServiceTagRepository.findByLeadIdIn(leadIds).groupBy { it.leadId }
+            } else emptyMap()
+
             val items = leads.map { lead ->
                 val est = estimationsByLeadId[lead.id.value]
                 val customer = lead.customerId?.value?.let { customersById[it] }
@@ -78,7 +106,8 @@ class ListLeadsHandler(
                             email = it.email,
                             phone = it.phone
                         )
-                    }
+                    },
+                    serviceTags = serviceTagsByLeadId[lead.id.value] ?: emptyList()
                 )
             }
 

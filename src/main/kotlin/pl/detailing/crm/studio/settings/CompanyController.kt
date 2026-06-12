@@ -214,6 +214,56 @@ class CompanyController(
         ResponseEntity.noContent().build()
     }
 
+    @GetMapping("/lead-alert-config")
+    fun getLeadAlertConfig(): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        ResponseEntity.ok(
+            LeadAlertConfigResponse(
+                leadStagnantOurThresholdHours = settings?.leadStagnantOurThresholdHours ?: 48,
+                leadStagnantClientThresholdHours = settings?.leadStagnantClientThresholdHours ?: 72
+            )
+        )
+    }
+
+    @PatchMapping("/lead-alert-config")
+    fun updateLeadAlertConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateLeadAlertConfigRequest
+    ): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zmieniać konfigurację alertów")
+        }
+
+        val studioId = principal.studioId.value
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+
+        request.leadStagnantOurThresholdHours?.let {
+            require(it in 1..720) { "Próg musi być między 1 a 720 godzin" }
+            settings.leadStagnantOurThresholdHours = it
+        }
+        request.leadStagnantClientThresholdHours?.let {
+            require(it in 1..720) { "Próg musi być między 1 a 720 godzin" }
+            settings.leadStagnantClientThresholdHours = it
+        }
+        settings.updatedAt = Instant.now()
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+
+        ResponseEntity.ok(
+            LeadAlertConfigResponse(
+                leadStagnantOurThresholdHours = saved.leadStagnantOurThresholdHours,
+                leadStagnantClientThresholdHours = saved.leadStagnantClientThresholdHours
+            )
+        )
+    }
+
     private fun generateLogoPresignedUrl(s3Key: String): String {
         val getObjectRequest = GetObjectRequest.builder()
             .bucket(bucketName)
@@ -262,3 +312,13 @@ data class UpdateCompanySettingsRequest(
 data class UploadLogoResponse(val logoUrl: String)
 
 data class EmailAliasResponse(val emailAlias: String?)
+
+data class LeadAlertConfigResponse(
+    val leadStagnantOurThresholdHours: Int,
+    val leadStagnantClientThresholdHours: Int
+)
+
+data class UpdateLeadAlertConfigRequest(
+    val leadStagnantOurThresholdHours: Int?,
+    val leadStagnantClientThresholdHours: Int?
+)

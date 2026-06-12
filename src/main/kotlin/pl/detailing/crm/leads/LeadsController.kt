@@ -12,6 +12,12 @@ import pl.detailing.crm.appointment.create.ServiceLineItemCommand
 import pl.detailing.crm.appointment.create.VehicleIdentity
 import pl.detailing.crm.appointment.lead.CreateLeadAppointmentCommand
 import pl.detailing.crm.appointment.lead.CreateLeadAppointmentHandler
+import pl.detailing.crm.leads.analytics.GetEmployeeStatsHandler
+import pl.detailing.crm.leads.analytics.GetEmployeeStatsQuery
+import pl.detailing.crm.leads.analytics.GetServiceAnalyticsHandler
+import pl.detailing.crm.leads.analytics.GetServiceAnalyticsQuery
+import pl.detailing.crm.leads.assign.AssignLeadUserCommand
+import pl.detailing.crm.leads.assign.AssignLeadUserHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.customer.AssignLeadCustomerCommand
@@ -23,6 +29,10 @@ import pl.detailing.crm.leads.get.GetLeadHandler
 import pl.detailing.crm.leads.get.GetLeadQuery
 import pl.detailing.crm.leads.list.ListLeadsHandler
 import pl.detailing.crm.leads.list.ListLeadsQuery
+import pl.detailing.crm.leads.lostreason.UpdateLostReasonCommand
+import pl.detailing.crm.leads.lostreason.UpdateLostReasonHandler
+import pl.detailing.crm.leads.servicetags.SetServiceTagsCommand
+import pl.detailing.crm.leads.servicetags.SetServiceTagsHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryQuery
 import pl.detailing.crm.leads.update.UpdateLeadCommand
@@ -56,6 +66,11 @@ class LeadsController(
     private val getLeadHandler: GetLeadHandler,
     private val analyzeLeadHandler: AnalyzeLeadHandler,
     private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
+    private val assignLeadUserHandler: AssignLeadUserHandler,
+    private val updateLostReasonHandler: UpdateLostReasonHandler,
+    private val setServiceTagsHandler: SetServiceTagsHandler,
+    private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
+    private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
@@ -77,7 +92,11 @@ class LeadsController(
         @RequestParam(required = false) sortBy: String?,
         @RequestParam(required = false) sortDirection: String?,
         @RequestParam(required = false) dateFrom: String?,
-        @RequestParam(required = false) dateTo: String?
+        @RequestParam(required = false) dateTo: String?,
+        @RequestParam(required = false) valueMin: Long?,
+        @RequestParam(required = false) valueMax: Long?,
+        @RequestParam(required = false) assignedUserId: String?,
+        @RequestParam(required = false) serviceIds: List<String>?
     ): ResponseEntity<LeadListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val zone = ZoneId.of("Europe/Warsaw")
@@ -90,7 +109,11 @@ class LeadsController(
             page = page,
             limit = limit,
             dateFrom = dateFrom?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant() },
-            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() }
+            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() },
+            valueMin = valueMin,
+            valueMax = valueMax,
+            assignedUserId = assignedUserId?.let { UUID.fromString(it) },
+            serviceIds = serviceIds?.map { UUID.fromString(it) }
         )
 
         val result = listLeadsHandler.handle(query)
@@ -567,5 +590,144 @@ class LeadsController(
 
         val result = generateQuoteReplyHandler.handle(command)
         ResponseEntity.ok(GenerateQuoteReplyResponse(title = result.title, reply = result.reply))
+    }
+
+    /**
+     * Assign or unassign a user (employee) to a lead.
+     * Pass userId to assign; pass null to unassign.
+     * PATCH /api/v1/leads/{id}/assign
+     */
+    @PatchMapping("/{id}/assign")
+    fun assignUser(
+        @PathVariable id: String,
+        @RequestBody request: AssignLeadUserRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = AssignLeadUserCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            requestingUserId = principal.userId,
+            requestingUserName = principal.fullName,
+            assignedUserId = request.userId?.let { UUID.fromString(it) },
+            assignedUserName = request.userName
+        )
+
+        assignLeadUserHandler.handle(command)
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Update or clear the lost reason for a lead.
+     * PATCH /api/v1/leads/{id}/lost-reason
+     */
+    @PatchMapping("/{id}/lost-reason")
+    fun updateLostReason(
+        @PathVariable id: String,
+        @RequestBody request: UpdateLostReasonRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = UpdateLostReasonCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            requestingUserId = principal.userId,
+            requestingUserName = principal.fullName,
+            lostReason = request.lostReason
+        )
+
+        updateLostReasonHandler.handle(command)
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Replace all service tags on a lead.
+     * PUT /api/v1/leads/{id}/service-tags
+     */
+    @PutMapping("/{id}/service-tags")
+    fun setServiceTags(
+        @PathVariable id: String,
+        @RequestBody request: SetServiceTagsRequest
+    ): ResponseEntity<List<LeadServiceTagDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = SetServiceTagsCommand(
+            leadId = LeadId.fromString(id),
+            studioId = principal.studioId,
+            tags = request.tags.map {
+                pl.detailing.crm.leads.servicetags.ServiceTagInput(
+                    serviceId = it.serviceId?.let { sid -> UUID.fromString(sid) },
+                    serviceName = it.serviceName
+                )
+            }
+        )
+
+        val saved = setServiceTagsHandler.handle(command)
+        ResponseEntity.ok(saved.map { LeadServiceTagDto(serviceId = it.serviceId?.toString(), serviceName = it.serviceName) })
+    }
+
+    /**
+     * Get win/loss analytics per service.
+     * GET /api/v1/leads/service-analytics
+     */
+    @GetMapping("/service-analytics")
+    fun getServiceAnalytics(
+        @RequestParam(required = false) source: List<String>?,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
+    ): ResponseEntity<List<ServiceAnalyticsItemDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val zone = ZoneId.of("Europe/Warsaw")
+
+        val query = GetServiceAnalyticsQuery(
+            studioId = principal.studioId,
+            sources = source?.map { LeadSource.valueOf(it) },
+            dateFrom = dateFrom?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant() },
+            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() }
+        )
+
+        val result = getServiceAnalyticsHandler.handle(query)
+        ResponseEntity.ok(result.map {
+            ServiceAnalyticsItemDto(
+                serviceId = it.serviceId,
+                serviceName = it.serviceName,
+                wonCount = it.wonCount,
+                lostCount = it.lostCount,
+                totalCount = it.totalCount,
+                winRate = it.winRate
+            )
+        })
+    }
+
+    /**
+     * Get lead handling statistics per employee.
+     * GET /api/v1/leads/employee-stats
+     */
+    @GetMapping("/employee-stats")
+    fun getEmployeeStats(
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
+    ): ResponseEntity<List<EmployeeStatsItemDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val zone = ZoneId.of("Europe/Warsaw")
+
+        val query = GetEmployeeStatsQuery(
+            studioId = principal.studioId,
+            dateFrom = dateFrom?.let { LocalDate.parse(it).atStartOfDay(zone).toInstant() },
+            dateTo = dateTo?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(zone).toInstant() }
+        )
+
+        val result = getEmployeeStatsHandler.handle(query)
+        ResponseEntity.ok(result.map {
+            EmployeeStatsItemDto(
+                userId = it.userId,
+                userName = it.userName,
+                totalLeads = it.totalLeads,
+                converted = it.converted,
+                lost = it.lost,
+                conversionRate = it.conversionRate,
+                avgLeadValueCents = it.avgLeadValueCents
+            )
+        })
     }
 }

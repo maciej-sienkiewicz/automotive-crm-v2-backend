@@ -9,6 +9,8 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.services.LeadServiceTagEntity
+import pl.detailing.crm.leads.services.LeadServiceTagRepository
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
 import pl.detailing.crm.leads.userquote.save.toResult
@@ -19,6 +21,7 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 import java.util.UUID
@@ -33,7 +36,8 @@ class GetLeadHandler(
     private val leadRepository: LeadRepository,
     private val leadEstimationRepository: LeadEstimationRepository,
     private val customerRepository: CustomerRepository,
-    private val userQuoteRepository: LeadUserQuoteRepository
+    private val userQuoteRepository: LeadUserQuoteRepository,
+    private val leadServiceTagRepository: LeadServiceTagRepository
 ) {
     suspend fun handle(query: GetLeadQuery): GetLeadResult {
         val leadEntity = withContext(Dispatchers.IO) {
@@ -67,6 +71,10 @@ class GetLeadHandler(
             userQuoteRepository.findByLeadId(query.leadId.value)?.toResult()
         }
 
+        val serviceTags = withContext(Dispatchers.IO) {
+            leadServiceTagRepository.findByLeadId(query.leadId.value)
+        }
+
         return GetLeadResult(
             leadId = query.leadId,
             studioId = query.studioId,
@@ -84,6 +92,10 @@ class GetLeadHandler(
             assignedCustomer = customerSnapshot,
             appointmentId = leadEntity.appointmentId?.let { AppointmentId(it) },
             visitId = leadEntity.visitId?.let { VisitId(it) },
+            assignedUserId = leadEntity.assignedUserId?.let { UserId(it) },
+            assignedUserName = leadEntity.assignedUserName,
+            lostReason = leadEntity.lostReason,
+            serviceTags = serviceTags,
             estimation = estimation?.toResult(),
             userQuote = userQuote
         )
@@ -107,6 +119,10 @@ data class GetLeadResult(
     val assignedCustomer: CustomerSnapshot?,
     val appointmentId: AppointmentId?,
     val visitId: VisitId?,
+    val assignedUserId: UserId?,
+    val assignedUserName: String?,
+    val lostReason: String?,
+    val serviceTags: List<LeadServiceTagEntity>,
     val estimation: EstimationResult?,
     val userQuote: SaveUserQuoteResult?
 )

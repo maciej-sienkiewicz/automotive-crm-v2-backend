@@ -44,6 +44,12 @@ class StudioSettingsEntity(
     @Column(name = "logo_s3_key", length = 500)
     var logoS3Key: String? = null,
 
+    @Column(name = "lead_stagnant_our_threshold_hours", nullable = false)
+    var leadStagnantOurThresholdHours: Int = 48,
+
+    @Column(name = "lead_stagnant_client_threshold_hours", nullable = false)
+    var leadStagnantClientThresholdHours: Int = 72,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )

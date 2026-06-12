@@ -4,6 +4,7 @@ import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
+import java.util.UUID
 
 data class ListLeadsQuery(
     val studioId: StudioId,
@@ -13,5 +14,9 @@ data class ListLeadsQuery(
     val page: Int,
     val limit: Int,
     val dateFrom: Instant? = null,
-    val dateTo: Instant? = null
+    val dateTo: Instant? = null,
+    val valueMin: Long? = null,
+    val valueMax: Long? = null,
+    val assignedUserId: UUID? = null,
+    val serviceIds: List<UUID>? = null
 )

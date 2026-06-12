@@ -8,6 +8,7 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 import java.util.*
@@ -68,6 +69,18 @@ class LeadEntity(
     @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
     var visitId: UUID?,
 
+    @Column(name = "assigned_user_id", nullable = true, columnDefinition = "uuid")
+    var assignedUserId: UUID?,
+
+    @Column(name = "assigned_user_name", nullable = true, columnDefinition = "text")
+    var assignedUserName: String?,
+
+    @Column(name = "lost_reason", nullable = true, length = 500)
+    var lostReason: String?,
+
+    @Column(name = "stagnant_alert_sent_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var stagnantAlertSentAt: Instant?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -89,6 +102,10 @@ class LeadEntity(
         customerId = customerId?.let { CustomerId(it) },
         appointmentId = appointmentId?.let { AppointmentId(it) },
         visitId = visitId?.let { VisitId(it) },
+        assignedUserId = assignedUserId?.let { UserId(it) },
+        assignedUserName = assignedUserName,
+        lostReason = lostReason,
+        stagnantAlertSentAt = stagnantAlertSentAt,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -109,6 +126,10 @@ class LeadEntity(
             customerId = lead.customerId?.value,
             appointmentId = lead.appointmentId?.value,
             visitId = lead.visitId?.value,
+            assignedUserId = lead.assignedUserId?.value,
+            assignedUserName = lead.assignedUserName,
+            lostReason = lead.lostReason,
+            stagnantAlertSentAt = lead.stagnantAlertSentAt,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )
