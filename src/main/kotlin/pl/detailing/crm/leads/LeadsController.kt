@@ -264,8 +264,8 @@ class LeadsController(
     fun deleteLead(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role == UserRole.DETAILER) {
-            throw ForbiddenException("Pracownicy nie mogą usuwać leadów.")
+        if (principal.role != UserRole.OWNER) {
+            throw ForbiddenException("Tylko właściciel może usuwać leady.")
         }
 
         val command = DeleteLeadCommand(

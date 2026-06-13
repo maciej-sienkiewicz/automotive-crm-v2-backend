@@ -61,6 +61,11 @@ class UpdateLeadHandler(
                 if (it == LeadStatus.IN_PROGRESS || it == LeadStatus.CONFIRMED) {
                     entity.requiresVerification = false
                 }
+                // Auto-assign to the first person who moves lead out of NEW
+                if (oldStatus == LeadStatus.NEW && it != LeadStatus.NEW && entity.assignedUserId == null) {
+                    entity.assignedUserId = command.userId?.value
+                    entity.assignedUserName = command.userName
+                }
             }
             command.customerName?.let { entity.customerName = it.trim() }
             command.initialMessage?.let { entity.initialMessage = it.trim() }
