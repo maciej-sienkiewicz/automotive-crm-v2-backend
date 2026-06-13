@@ -23,6 +23,18 @@ class QuoteReplyExampleEntity(
     @Column(name = "content", nullable = false, columnDefinition = "text")
     var content: String,
 
+    @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
+    val createdBy: UUID,
+
+    @Column(name = "created_by_name", nullable = true, columnDefinition = "text")
+    val createdByName: String?,
+
+    @Column(name = "updated_by", nullable = true, columnDefinition = "uuid")
+    var updatedBy: UUID?,
+
+    @Column(name = "updated_by_name", nullable = true, columnDefinition = "text")
+    var updatedByName: String?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 

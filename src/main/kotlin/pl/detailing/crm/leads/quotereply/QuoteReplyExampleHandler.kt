@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
@@ -15,6 +16,8 @@ private const val MAX_EXAMPLES = 10
 
 data class SaveQuoteReplyExampleCommand(
     val studioId: StudioId,
+    val userId: UserId,
+    val userName: String?,
     val title: String,
     val content: String
 )
@@ -22,6 +25,8 @@ data class SaveQuoteReplyExampleCommand(
 data class UpdateQuoteReplyExampleCommand(
     val id: UUID,
     val studioId: StudioId,
+    val userId: UserId,
+    val userName: String?,
     val title: String,
     val content: String
 )
@@ -30,6 +35,10 @@ data class QuoteReplyExampleDto(
     val id: String,
     val title: String,
     val content: String,
+    val createdBy: String,
+    val createdByName: String?,
+    val updatedBy: String?,
+    val updatedByName: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -51,7 +60,11 @@ class QuoteReplyExampleHandler(
             val entity = QuoteReplyExampleEntity(
                 studioId = command.studioId.value,
                 title = command.title.trim(),
-                content = command.content.trim()
+                content = command.content.trim(),
+                createdBy = command.userId.value,
+                createdByName = command.userName,
+                updatedBy = null,
+                updatedByName = null
             )
             val saved = repository.save(entity)
             log.info("[QUOTE_REPLY] Saved example: id={}, studioId={}", saved.id, saved.studioId)
@@ -71,6 +84,8 @@ class QuoteReplyExampleHandler(
                 ?: throw EntityNotFoundException("Przykład nie został znaleziony")
             entity.title = command.title.trim()
             entity.content = command.content.trim()
+            entity.updatedBy = command.userId.value
+            entity.updatedByName = command.userName
             entity.updatedAt = Instant.now()
             repository.save(entity).toDto()
         }
@@ -88,6 +103,10 @@ class QuoteReplyExampleHandler(
         id = id.toString(),
         title = title,
         content = content,
+        createdBy = createdBy.toString(),
+        createdByName = createdByName,
+        updatedBy = updatedBy?.toString(),
+        updatedByName = updatedByName,
         createdAt = createdAt,
         updatedAt = updatedAt
     )

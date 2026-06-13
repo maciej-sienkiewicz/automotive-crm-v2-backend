@@ -495,6 +495,10 @@ data class QuoteReplyExampleDto(
     val id: String,
     val title: String,
     val content: String,
+    val createdBy: String,
+    val createdByName: String?,
+    val updatedBy: String?,
+    val updatedByName: String?,
     val createdAt: java.time.Instant,
     val updatedAt: java.time.Instant
 )

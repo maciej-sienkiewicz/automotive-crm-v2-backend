@@ -972,7 +972,7 @@ class LeadsController(
     fun saveQuoteReplyExample(@RequestBody request: SaveQuoteReplyExampleRequest): ResponseEntity<QuoteReplyExampleDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = quoteReplyExampleHandler.save(
-            SaveQuoteReplyExampleCommand(studioId = principal.studioId, title = request.title, content = request.content)
+            SaveQuoteReplyExampleCommand(studioId = principal.studioId, userId = principal.userId, userName = principal.fullName, title = request.title, content = request.content)
         )
         ResponseEntity.status(HttpStatus.CREATED).body(result.toDto())
     }
@@ -990,6 +990,8 @@ class LeadsController(
             UpdateQuoteReplyExampleCommand(
                 id = UUID.fromString(id),
                 studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
                 title = request.title,
                 content = request.content
             )
@@ -1012,6 +1014,10 @@ private fun pl.detailing.crm.leads.quotereply.QuoteReplyExampleDto.toDto() = pl.
     id = id,
     title = title,
     content = content,
+    createdBy = createdBy,
+    createdByName = createdByName,
+    updatedBy = updatedBy,
+    updatedByName = updatedByName,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
