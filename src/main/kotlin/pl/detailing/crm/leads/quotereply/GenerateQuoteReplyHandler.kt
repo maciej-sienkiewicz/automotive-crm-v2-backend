@@ -21,7 +21,9 @@ class GenerateQuoteReplyHandler(
     private val estimationRepository: LeadEstimationRepository,
     private val userQuoteRepository: LeadUserQuoteRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
-    @Qualifier("quoteReplyChatClient") private val chatClient: ChatClient
+    private val exampleRepository: QuoteReplyExampleRepository,
+    @Qualifier("quoteReplyChatClient") private val chatClient: ChatClient,
+    @Qualifier("quoteReplyHumanizerChatClient") private val humanizerChatClient: ChatClient
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -50,9 +52,11 @@ class GenerateQuoteReplyHandler(
                 phone = studioSettings?.phone
             )
 
-            val userPrompt = buildUserPrompt(customerMessage, serviceLines, signatureData)
+            val examples = exampleRepository.findByStudioIdOrderByCreatedAtDesc(command.studioId.value)
+            val userPrompt = buildUserPrompt(customerMessage, serviceLines, signatureData, examples)
 
-            log.info("[QUOTE_REPLY] Generating reply for leadId={}, services={}", command.leadId, serviceLines.size)
+            log.info("[QUOTE_REPLY] Generating reply for leadId={}, services={}, examples={}",
+                command.leadId, serviceLines.size, examples.size)
 
             val response = chatClient.prompt()
                 .user(userPrompt)
@@ -60,9 +64,16 @@ class GenerateQuoteReplyHandler(
                 .entity(QuoteReplyLlmResponse::class.java)
                 ?: throw IllegalStateException("AI returned empty response")
 
+            val humanizedReply = humanizerChatClient.prompt()
+                .user(response.reply.trim())
+                .call()
+                .content()
+                ?.trim()
+                ?: response.reply.trim()
+
             GenerateQuoteReplyResult(
                 title = response.title.trim(),
-                reply = response.reply.trim()
+                reply = humanizedReply
             )
         }
 
@@ -95,8 +106,24 @@ class GenerateQuoteReplyHandler(
     private fun buildUserPrompt(
         customerMessage: String,
         services: List<ServiceLine>,
-        signature: SignatureData
+        signature: SignatureData,
+        examples: List<QuoteReplyExampleEntity>
     ): String = buildString {
+        if (examples.isNotEmpty()) {
+            appendLine("## Przykłady zaakceptowanych odpowiedzi ofertowych")
+            appendLine("Wzoruj się na stylu, tonie i strukturze poniższych przykładów:")
+            appendLine()
+            examples.forEachIndexed { idx, ex ->
+                appendLine("### Przykład ${idx + 1}")
+                appendLine("Temat: ${ex.title}")
+                appendLine("Treść:")
+                appendLine(ex.content.take(2000))
+                appendLine()
+            }
+            appendLine("---")
+            appendLine()
+        }
+
         appendLine("Treść wiadomości od klienta:")
         appendLine("---")
         appendLine(customerMessage.take(3000))
