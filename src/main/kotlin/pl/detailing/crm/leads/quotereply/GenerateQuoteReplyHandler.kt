@@ -22,7 +22,8 @@ class GenerateQuoteReplyHandler(
     private val userQuoteRepository: LeadUserQuoteRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val exampleRepository: QuoteReplyExampleRepository,
-    @Qualifier("quoteReplyChatClient") private val chatClient: ChatClient
+    @Qualifier("quoteReplyChatClient") private val chatClient: ChatClient,
+    @Qualifier("quoteReplyHumanizerChatClient") private val humanizerChatClient: ChatClient
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -63,9 +64,16 @@ class GenerateQuoteReplyHandler(
                 .entity(QuoteReplyLlmResponse::class.java)
                 ?: throw IllegalStateException("AI returned empty response")
 
+            val humanizedReply = humanizerChatClient.prompt()
+                .user(response.reply.trim())
+                .call()
+                .content()
+                ?.trim()
+                ?: response.reply.trim()
+
             GenerateQuoteReplyResult(
                 title = response.title.trim(),
-                reply = response.reply.trim()
+                reply = humanizedReply
             )
         }
 

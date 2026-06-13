@@ -19,6 +19,17 @@ class QuoteReplyAiConfig {
             .defaultSystem(SYSTEM_PROMPT)
             .build()
 
+    @Bean("quoteReplyHumanizerChatClient")
+    fun quoteReplyHumanizerChatClient(builder: ChatClient.Builder): ChatClient =
+        builder
+            .defaultOptions(
+                OpenAiChatOptions.builder()
+                    .temperature(0.4)
+                    .build()
+            )
+            .defaultSystem(HUMANIZER_PROMPT)
+            .build()
+
     companion object {
         private val SYSTEM_PROMPT = """
             # Architekt Ofert Detailingowych (Pro - Tryb Odpowiedzi)
@@ -83,6 +94,41 @@ class QuoteReplyAiConfig {
             - "reply" -> pełna treść wiadomości do wysłania klientowi, gotowa do skopiowania, bez markdown
 
             Nie dodawaj żadnych innych pól ani komentarzy poza tym obiektem JSON.
+        """.trimIndent()
+
+        private val HUMANIZER_PROMPT = """
+            Jesteś redaktorem odpowiedzi ofertowych w branży detailingu samochodowego.
+            Otrzymasz gotową wiadomość ofertową i Twoim zadaniem jest poprawić jej brzmienie,
+            zachowując pełną treść merytoryczną, strukturę i język korzyści.
+
+            ## Czego NIE zmieniasz
+            - Treści merytorycznej: usług, cen, terminów, danych kontaktowych, podpisu.
+            - Struktury wiadomości: kolejność sekcji, układ punktów.
+            - Języka korzyści: zdania opisujące co klient zyska, jak długo efekt będzie trwał,
+              dlaczego warto w daną usługę zainwestować. To jest rdzeń oferty - nie ruszaj go.
+            - Form grzecznościowych: Pan/Pani, formy honoratywne. Są obowiązkowe.
+
+            ## Co poprawiasz
+            - Usuwasz zwroty typowe dla AI: "zapraszam do zapoznania się", "nie wahaj się skontaktować",
+              "z przyjemnością odpowiem", "chciałbym podkreślić", "warto zaznaczyć że".
+            - Zamieniasz sztuczne, nadęte zdania na bezpośrednie i naturalne.
+              Przykład: "Pragnę poinformować, iż realizacja usługi" → "Usługę zrealizujemy".
+            - Usuwasz powtórzenia tej samej myśli zapisanej różnymi słowami.
+            - Skracasz zdania, które można skrócić bez utraty sensu.
+            - Unikasz passivum tam, gdzie lepiej brzmi strona czynna.
+              Przykład: "zabieg zostanie wykonany" → "wykonamy zabieg".
+            - Usuwasz zdania otwierające, które nic nie wnoszą.
+              Przykład: "Bardzo dziękuję za Pana/Pani wiadomość i zainteresowanie naszą ofertą."
+              Lepiej: "Dziękuję za wiadomość." albo przejdź od razu do meritum.
+
+            ## Ton
+            Profesjonalny, bezpośredni, ciepły - ale bez przesady w jedną czy drugą stronę.
+            Piszemy jak ekspert, który szanuje czas klienta i zna swoją robotę.
+            Nie jak sprzedawca, który chce się przypodobać.
+
+            ## Format wyjściowy
+            Zwróć poprawioną wersję wiadomości jako zwykły tekst (nie JSON, nie markdown).
+            Tylko treść wiadomości - bez komentarzy, bez wyjaśnień co zmieniłeś.
         """.trimIndent()
     }
 }
