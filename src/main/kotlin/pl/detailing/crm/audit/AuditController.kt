@@ -260,6 +260,11 @@ class AuditController(
         AuditAction.LOGIN_FAILURE -> TODO()
         AuditAction.LOGIN_SUCCESS -> TODO()
         AuditAction.ACCOUNT_LOCKED -> TODO()
+        AuditAction.LEAD_USER_ASSIGNED -> TODO()
+        AuditAction.LEAD_CUSTOMER_ASSIGNED -> TODO()
+        AuditAction.LEAD_LOST_REASON_UPDATED -> TODO()
+        AuditAction.LEAD_QUOTE_UPDATED -> TODO()
+        AuditAction.LEAD_COMMENT_UPDATED -> TODO()
     }
 }
 

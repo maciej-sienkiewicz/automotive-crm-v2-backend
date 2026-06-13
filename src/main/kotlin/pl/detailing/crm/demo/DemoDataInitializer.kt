@@ -942,7 +942,11 @@ class DemoDataInitializer(
                 appointmentId = null,
                 visitId = null,
                 createdAt = now.minus(spec.daysAgo, ChronoUnit.DAYS),
-                updatedAt = now.minus(spec.daysAgo / 2, ChronoUnit.DAYS)
+                updatedAt = now.minus(spec.daysAgo / 2, ChronoUnit.DAYS),
+                assignedUserId = null,
+                assignedUserName = null,
+                lostReason = null,
+                stagnantAlertSentAt = null,
             )
         }
         leadRepository.saveAll(entities)
