@@ -17,6 +17,5 @@ data class ListLeadsQuery(
     val dateTo: Instant? = null,
     val valueMin: Long? = null,
     val valueMax: Long? = null,
-    val assignedUserId: UUID? = null,
-    val serviceIds: List<UUID>? = null
+    val assignedUserId: UUID? = null
 )
