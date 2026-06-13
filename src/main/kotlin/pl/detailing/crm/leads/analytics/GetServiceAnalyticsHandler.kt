@@ -86,7 +86,7 @@ class GetServiceAnalyticsHandler(
                 val statuses = leadIdsForService.mapNotNull { leadStatusById[it] }
                 val won = statuses.count { it in WON_STATUSES }
                 val lost = statuses.count { it in LOST_STATUSES }
-                val total = statuses.size
+                val total = won + lost
                 ServiceAnalyticsEntry(
                     serviceId = key.serviceId?.toString(),
                     serviceName = key.serviceName,
@@ -102,16 +102,19 @@ class GetServiceAnalyticsHandler(
                 val statuses = noQuoteLeadIds.mapNotNull { leadStatusById[it] }
                 val won = statuses.count { it in WON_STATUSES }
                 val lost = statuses.count { it in LOST_STATUSES }
-                entries.add(
-                    ServiceAnalyticsEntry(
-                        serviceId = null,
-                        serviceName = "Brak wyceny",
-                        wonCount = won,
-                        lostCount = lost,
-                        totalCount = statuses.size,
-                        winRate = if (statuses.isNotEmpty()) won.toDouble() / statuses.size * 100.0 else 0.0
+                val total = won + lost
+                if (total > 0) {
+                    entries.add(
+                        ServiceAnalyticsEntry(
+                            serviceId = null,
+                            serviceName = "Brak wyceny",
+                            wonCount = won,
+                            lostCount = lost,
+                            totalCount = total,
+                            winRate = if (total > 0) won.toDouble() / total * 100.0 else 0.0
+                        )
                     )
-                )
+                }
             }
 
             entries.sortedByDescending { it.totalCount }
