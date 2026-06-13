@@ -199,4 +199,82 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
      */
     @Query(value = "SELECT DISTINCT l.studio_id FROM leads l", nativeQuery = true)
     fun findDistinctStudioIds(): List<UUID>
+
+    /**
+     * Time analytics — incoming leads grouped by hour or day-of-month.
+     * bucket_type: 'hour' | 'day'
+     */
+    @Query(value = """
+        SELECT EXTRACT(:#{#bucketType} FROM created_at AT TIME ZONE :timezone)::int AS bucket,
+               COUNT(*) AS cnt
+        FROM leads
+        WHERE studio_id = :studioId
+          AND (:valueMin::bigint IS NULL OR estimated_value >= :valueMin)
+          AND (:valueMax::bigint IS NULL OR estimated_value <= :valueMax)
+          AND (:dateFrom::date IS NULL OR created_at >= :dateFrom::date)
+          AND (:dateTo::date IS NULL OR created_at < (:dateTo::date + INTERVAL '1 day'))
+        GROUP BY bucket
+        ORDER BY bucket
+    """, nativeQuery = true)
+    fun countIncomingByTimeBucket(
+        @Param("studioId") studioId: UUID,
+        @Param("bucketType") bucketType: String,
+        @Param("timezone") timezone: String,
+        @Param("valueMin") valueMin: Long?,
+        @Param("valueMax") valueMax: Long?,
+        @Param("dateFrom") dateFrom: String?,
+        @Param("dateTo") dateTo: String?
+    ): List<Array<Any>>
+
+    /**
+     * Time analytics — accepted leads (CONFIRMED/COMPLETED) by hour or day-of-month of updated_at.
+     */
+    @Query(value = """
+        SELECT EXTRACT(:#{#bucketType} FROM updated_at AT TIME ZONE :timezone)::int AS bucket,
+               COUNT(*) AS cnt
+        FROM leads
+        WHERE studio_id = :studioId
+          AND status IN ('CONFIRMED', 'COMPLETED')
+          AND (:valueMin::bigint IS NULL OR estimated_value >= :valueMin)
+          AND (:valueMax::bigint IS NULL OR estimated_value <= :valueMax)
+          AND (:dateFrom::date IS NULL OR updated_at >= :dateFrom::date)
+          AND (:dateTo::date IS NULL OR updated_at < (:dateTo::date + INTERVAL '1 day'))
+        GROUP BY bucket
+        ORDER BY bucket
+    """, nativeQuery = true)
+    fun countAcceptedByTimeBucket(
+        @Param("studioId") studioId: UUID,
+        @Param("bucketType") bucketType: String,
+        @Param("timezone") timezone: String,
+        @Param("valueMin") valueMin: Long?,
+        @Param("valueMax") valueMax: Long?,
+        @Param("dateFrom") dateFrom: String?,
+        @Param("dateTo") dateTo: String?
+    ): List<Array<Any>>
+
+    /**
+     * Time analytics — rejected leads (LOST/NO_SHOW) by hour or day-of-month of updated_at.
+     */
+    @Query(value = """
+        SELECT EXTRACT(:#{#bucketType} FROM updated_at AT TIME ZONE :timezone)::int AS bucket,
+               COUNT(*) AS cnt
+        FROM leads
+        WHERE studio_id = :studioId
+          AND status IN ('LOST', 'NO_SHOW')
+          AND (:valueMin::bigint IS NULL OR estimated_value >= :valueMin)
+          AND (:valueMax::bigint IS NULL OR estimated_value <= :valueMax)
+          AND (:dateFrom::date IS NULL OR updated_at >= :dateFrom::date)
+          AND (:dateTo::date IS NULL OR updated_at < (:dateTo::date + INTERVAL '1 day'))
+        GROUP BY bucket
+        ORDER BY bucket
+    """, nativeQuery = true)
+    fun countRejectedByTimeBucket(
+        @Param("studioId") studioId: UUID,
+        @Param("bucketType") bucketType: String,
+        @Param("timezone") timezone: String,
+        @Param("valueMin") valueMin: Long?,
+        @Param("valueMax") valueMax: Long?,
+        @Param("dateFrom") dateFrom: String?,
+        @Param("dateTo") dateTo: String?
+    ): List<Array<Any>>
 }

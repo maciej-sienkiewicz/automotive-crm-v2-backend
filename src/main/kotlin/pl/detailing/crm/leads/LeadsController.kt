@@ -16,6 +16,8 @@ import pl.detailing.crm.leads.analytics.GetEmployeeStatsHandler
 import pl.detailing.crm.leads.analytics.GetEmployeeStatsQuery
 import pl.detailing.crm.leads.analytics.GetServiceAnalyticsHandler
 import pl.detailing.crm.leads.analytics.GetServiceAnalyticsQuery
+import pl.detailing.crm.leads.analytics.GetTimeAnalyticsHandler
+import pl.detailing.crm.leads.analytics.GetTimeAnalyticsQuery
 import pl.detailing.crm.leads.assign.AssignLeadUserCommand
 import pl.detailing.crm.leads.assign.AssignLeadUserHandler
 import pl.detailing.crm.leads.comments.AddLeadCommentCommand
@@ -77,6 +79,7 @@ class LeadsController(
     private val setServiceTagsHandler: SetServiceTagsHandler,
     private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
     private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
+    private val getTimeAnalyticsHandler: GetTimeAnalyticsHandler,
     private val leadCommentHandler: LeadCommentHandler,
     private val getLeadStatusHistoryHandler: GetLeadStatusHistoryHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
@@ -739,6 +742,36 @@ class LeadsController(
                 avgLeadValueCents = it.avgLeadValueCents
             )
         })
+    }
+
+    /**
+     * GET /api/v1/leads/time-analytics
+     */
+    @GetMapping("/time-analytics")
+    fun getTimeAnalytics(
+        @RequestParam(required = false) timezone: String?,
+        @RequestParam(required = false) valueMin: Long?,
+        @RequestParam(required = false) valueMax: Long?,
+        @RequestParam(required = false) dateFrom: String?,
+        @RequestParam(required = false) dateTo: String?
+    ): ResponseEntity<TimeAnalyticsDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = getTimeAnalyticsHandler.handle(
+            GetTimeAnalyticsQuery(
+                studioId = principal.studioId,
+                timezone = timezone ?: "UTC",
+                valueMin = valueMin,
+                valueMax = valueMax,
+                dateFrom = dateFrom,
+                dateTo = dateTo
+            )
+        )
+        ResponseEntity.ok(
+            TimeAnalyticsDto(
+                byHour = result.byHour.map { TimeBucketDto(it.bucket, it.incomingCount, it.acceptedCount, it.rejectedCount) },
+                byDayOfMonth = result.byDayOfMonth.map { TimeBucketDto(it.bucket, it.incomingCount, it.acceptedCount, it.rejectedCount) }
+            )
+        )
     }
 
     /**

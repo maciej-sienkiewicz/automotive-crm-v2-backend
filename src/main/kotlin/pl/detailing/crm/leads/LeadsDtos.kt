@@ -459,3 +459,17 @@ data class EmployeeStatsItemDto(
     val conversionRate: Double,
     val avgLeadValueCents: Long
 )
+
+// ── Time analytics ───────────────────────────────────────────────────────────
+
+data class TimeBucketDto(
+    val bucket: Int,
+    val incomingCount: Long,
+    val acceptedCount: Long,
+    val rejectedCount: Long
+)
+
+data class TimeAnalyticsDto(
+    val byHour: List<TimeBucketDto>,
+    val byDayOfMonth: List<TimeBucketDto>
+)
