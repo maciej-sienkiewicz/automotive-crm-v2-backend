@@ -63,8 +63,8 @@ class GetPipelineSummaryHandler(
                 convertedPreviousMonth.size.toDouble() / leadsCreatedPreviousMonth.size.toDouble() * 100.0
             val conversionRateTrendPp = conversionRateThisMonth - conversionRatePreviousMonth
 
-            // Kafelek 3: Zrealizowane (ten miesiąc) — wartość i liczba (CONFIRMED + COMPLETED)
-            val convertedValueThisMonth = convertedThisMonth.sumOf { it.estimatedValue }
+            // Kafelek 3: Zrealizowane (ten miesiąc) — wartość tylko COMPLETED, liczba CONFIRMED + COMPLETED
+            val convertedValueThisMonth = convertedThisMonth.filter { it.status == LeadStatus.COMPLETED }.sumOf { it.estimatedValue }
             val convertedCountThisMonth = convertedThisMonth.size
 
             // Kafelek 4: Ryzyko utraty — IN_PROGRESS bez interakcji od 3+ dni (wartość) / 24+ h (liczba)
