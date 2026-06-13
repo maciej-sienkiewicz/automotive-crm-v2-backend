@@ -112,6 +112,8 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
      */
     fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 
+    fun findByVisitId(visitId: UUID): LeadEntity?
+
     /**
      * Find leads with extended filters: services, value range, assigned user
      */

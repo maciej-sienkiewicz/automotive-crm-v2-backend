@@ -715,6 +715,11 @@ class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
 class UnprocessableEntityException(message: String) : BusinessException(message)
+class AlreadyLinkedException(
+    val linkedLeadId: String,
+    val linkedLeadName: String?,
+    message: String = "Zasób jest już przypisany do innego leada"
+) : BusinessException(message)
 class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : BusinessException(message)
 class FeatureLockedException(
     val featureKey: FeatureKey,

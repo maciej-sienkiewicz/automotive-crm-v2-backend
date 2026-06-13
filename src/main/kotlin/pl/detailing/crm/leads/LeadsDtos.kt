@@ -500,3 +500,8 @@ data class TimeAnalyticsInterpretationDto(
     val insights: List<TimeAnalysisInsightDto>,
     val recommendations: TimeAnalyticsRecommendationsDto
 )
+
+// ── Link appointment / visit ──────────────────────────────────────────────────
+
+data class LinkAppointmentRequest(val appointmentId: String?)
+data class LinkVisitRequest(val visitId: String?)
