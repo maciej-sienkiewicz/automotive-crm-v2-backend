@@ -104,6 +104,17 @@ class GlobalExceptionHandler(
             ))
     }
 
+    @ExceptionHandler(AlreadyLinkedException::class)
+    fun handleAlreadyLinked(ex: AlreadyLinkedException): ResponseEntity<AlreadyLinkedResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(AlreadyLinkedResponse(
+                code = "ALREADY_LINKED",
+                linkedLeadId = ex.linkedLeadId,
+                linkedLeadName = ex.linkedLeadName
+            ))
+    }
+
     @ExceptionHandler(UnprocessableEntityException::class)
     fun handleUnprocessableEntity(ex: UnprocessableEntityException): ResponseEntity<ErrorResponse> {
         return ResponseEntity
@@ -182,6 +193,12 @@ data class ErrorResponse(
     val error: String,
     val message: String,
     val timestamp: String
+)
+
+data class AlreadyLinkedResponse(
+    val code: String,
+    val linkedLeadId: String,
+    val linkedLeadName: String?
 )
 
 /**

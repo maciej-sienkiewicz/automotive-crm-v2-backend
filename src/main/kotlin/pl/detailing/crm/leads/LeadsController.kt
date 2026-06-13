@@ -25,6 +25,10 @@ import pl.detailing.crm.leads.analytics.TimeAnalyticsBucketType
 import pl.detailing.crm.leads.analytics.TimeAnalyticsActionType
 import pl.detailing.crm.leads.assign.AssignLeadUserCommand
 import pl.detailing.crm.leads.assign.AssignLeadUserHandler
+import pl.detailing.crm.leads.link.LinkAppointmentCommand
+import pl.detailing.crm.leads.link.LinkAppointmentHandler
+import pl.detailing.crm.leads.link.LinkVisitCommand
+import pl.detailing.crm.leads.link.LinkVisitHandler
 import pl.detailing.crm.leads.comments.AddLeadCommentCommand
 import pl.detailing.crm.leads.comments.DeleteLeadCommentCommand
 import pl.detailing.crm.leads.comments.LeadCommentHandler
@@ -81,6 +85,8 @@ class LeadsController(
     private val assignLeadCustomerHandler: AssignLeadCustomerHandler,
     private val assignLeadUserHandler: AssignLeadUserHandler,
     private val updateLostReasonHandler: UpdateLostReasonHandler,
+    private val linkAppointmentHandler: LinkAppointmentHandler,
+    private val linkVisitHandler: LinkVisitHandler,
     private val setServiceTagsHandler: SetServiceTagsHandler,
     private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
     private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
@@ -656,6 +662,44 @@ class LeadsController(
         )
 
         updateLostReasonHandler.handle(command)
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * PATCH /api/v1/leads/{id}/link-appointment
+     */
+    @PatchMapping("/{id}/link-appointment")
+    fun linkAppointment(
+        @PathVariable id: String,
+        @RequestBody request: LinkAppointmentRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        linkAppointmentHandler.handle(
+            LinkAppointmentCommand(
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId,
+                appointmentId = request.appointmentId?.let { UUID.fromString(it) }
+            )
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * PATCH /api/v1/leads/{id}/link-visit
+     */
+    @PatchMapping("/{id}/link-visit")
+    fun linkVisit(
+        @PathVariable id: String,
+        @RequestBody request: LinkVisitRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        linkVisitHandler.handle(
+            LinkVisitCommand(
+                leadId = LeadId.fromString(id),
+                studioId = principal.studioId,
+                visitId = request.visitId?.let { UUID.fromString(it) }
+            )
+        )
         ResponseEntity.noContent().build()
     }
 
