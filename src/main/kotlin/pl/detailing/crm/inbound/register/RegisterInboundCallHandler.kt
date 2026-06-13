@@ -11,6 +11,7 @@ import pl.detailing.crm.inbound.infrastructure.CallLogEntity
 import pl.detailing.crm.inbound.infrastructure.CallLogRepository
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadEntity
+import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -19,7 +20,8 @@ import java.time.Instant
 class RegisterInboundCallHandler(
     private val callLogRepository: CallLogRepository,
     private val leadRepository: LeadRepository,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val soleUserResolver: SoleUserResolver
 ) {
     private val log = LoggerFactory.getLogger(RegisterInboundCallHandler::class.java)
     @Transactional
@@ -48,6 +50,8 @@ class RegisterInboundCallHandler(
             val entity = CallLogEntity.fromDomain(callLog)
             callLogRepository.save(entity)
 
+            val autoAssignee = soleUserResolver.resolveForStudio(command.studioId.value)
+
             // Create Lead from inbound call with requiresVerification=true
             val lead = Lead(
                 id = LeadId.random(),
@@ -64,8 +68,8 @@ class RegisterInboundCallHandler(
                 customerId = null,
                 appointmentId = null,
                 visitId = null,
-                assignedUserId = null,
-                assignedUserName = null,
+                assignedUserId = autoAssignee?.id?.let { UserId(it) },
+                assignedUserName = autoAssignee?.name,
                 lostReason = null,
                 stagnantAlertSentAt = null,
                 createdAt = Instant.now(),

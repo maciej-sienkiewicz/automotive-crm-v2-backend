@@ -30,6 +30,16 @@ class UpdateLeadHandler(
                 throw ForbiddenException("Lead nie należy do tego studia")
             }
 
+            // DETAILER cannot revert a terminal status — would let them erase lost/won history
+            val terminalStatuses = setOf(LeadStatus.LOST, LeadStatus.NO_SHOW, LeadStatus.COMPLETED, LeadStatus.CONFIRMED)
+            if (command.userRole == UserRole.DETAILER
+                && entity.status in terminalStatuses
+                && command.status != null
+                && command.status !in terminalStatuses
+            ) {
+                throw ForbiddenException("Nie możesz cofnąć statusu zamkniętego leada. Skontaktuj się z managerem.")
+            }
+
             // Validate estimated value if provided
             if (command.estimatedValue != null && command.estimatedValue < 0) {
                 throw ValidationException("Szacowana wartość nie może być ujemna")
@@ -50,6 +60,11 @@ class UpdateLeadHandler(
                 // Clear verification flag when an agent picks up the lead
                 if (it == LeadStatus.IN_PROGRESS || it == LeadStatus.CONFIRMED) {
                     entity.requiresVerification = false
+                }
+                // Auto-assign to the first person who moves lead out of NEW
+                if (oldStatus == LeadStatus.NEW && it != LeadStatus.NEW && entity.assignedUserId == null) {
+                    entity.assignedUserId = command.userId?.value
+                    entity.assignedUserName = command.userName
                 }
             }
             command.customerName?.let { entity.customerName = it.trim() }

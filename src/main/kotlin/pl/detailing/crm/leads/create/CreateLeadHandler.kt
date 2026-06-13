@@ -15,7 +15,8 @@ import java.time.Instant
 @Service
 class CreateLeadHandler(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val soleUserResolver: SoleUserResolver
 ) {
     private val log = LoggerFactory.getLogger(CreateLeadHandler::class.java)
 
@@ -40,6 +41,9 @@ class CreateLeadHandler(
                 }
             }
 
+            // Auto-assign when studio has exactly one active user
+            val autoAssignee = soleUserResolver.resolveForStudio(command.studioId.value)
+
             // Create lead
             val lead = Lead(
                 id = LeadId.random(),
@@ -56,8 +60,8 @@ class CreateLeadHandler(
                 customerId = command.customerId,
                 appointmentId = null,
                 visitId = null,
-                assignedUserId = null,
-                assignedUserName = null,
+                assignedUserId = autoAssignee?.id?.let { UserId(it) },
+                assignedUserName = autoAssignee?.name,
                 lostReason = null,
                 stagnantAlertSentAt = null,
                 createdAt = Instant.now(),

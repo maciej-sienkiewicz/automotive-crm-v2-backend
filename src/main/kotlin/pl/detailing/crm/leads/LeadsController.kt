@@ -62,10 +62,12 @@ import pl.detailing.crm.leads.userquote.save.SaveUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.UserQuoteItemInput
 import pl.detailing.crm.shared.AppointmentColorId
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.ServiceId
+import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.shared.VehicleId
 import java.time.LocalDate
 import java.time.ZoneId
@@ -262,6 +264,10 @@ class LeadsController(
     fun deleteLead(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
+        if (principal.role != UserRole.OWNER) {
+            throw ForbiddenException("Tylko właściciel może usuwać leady.")
+        }
+
         val command = DeleteLeadCommand(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId
@@ -324,6 +330,7 @@ class LeadsController(
             leadId = LeadId.fromString(id),
             studioId = principal.studioId,
             userId = principal.userId,
+            userRole = principal.role,
             status = LeadStatus.valueOf(request.status),
             customerName = null,
             initialMessage = null,
@@ -632,6 +639,7 @@ class LeadsController(
             studioId = principal.studioId,
             requestingUserId = principal.userId,
             requestingUserName = principal.fullName,
+            requestingUserRole = principal.role,
             assignedUserId = request.userId?.let { UUID.fromString(it) },
             assignedUserName = request.userName
         )
