@@ -55,6 +55,9 @@ import pl.detailing.crm.leads.update.UpdateLeadCommand
 import pl.detailing.crm.leads.update.UpdateLeadHandler
 import pl.detailing.crm.leads.quotereply.GenerateQuoteReplyCommand
 import pl.detailing.crm.leads.quotereply.GenerateQuoteReplyHandler
+import pl.detailing.crm.leads.quotereply.QuoteReplyExampleHandler
+import pl.detailing.crm.leads.quotereply.SaveQuoteReplyExampleCommand
+import pl.detailing.crm.leads.quotereply.UpdateQuoteReplyExampleCommand
 import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteCommand
 import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteCommand
@@ -98,7 +101,8 @@ class LeadsController(
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
-    private val generateQuoteReplyHandler: GenerateQuoteReplyHandler
+    private val generateQuoteReplyHandler: GenerateQuoteReplyHandler,
+    private val quoteReplyExampleHandler: QuoteReplyExampleHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -951,7 +955,66 @@ class LeadsController(
             )
         })
     }
+
+    /**
+     * GET /api/v1/leads/quote-reply-examples
+     */
+    @GetMapping("/quote-reply-examples")
+    fun listQuoteReplyExamples(): ResponseEntity<List<QuoteReplyExampleDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(quoteReplyExampleHandler.list(principal.studioId).map { it.toDto() })
+    }
+
+    /**
+     * POST /api/v1/leads/quote-reply-examples
+     */
+    @PostMapping("/quote-reply-examples")
+    fun saveQuoteReplyExample(@RequestBody request: SaveQuoteReplyExampleRequest): ResponseEntity<QuoteReplyExampleDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = quoteReplyExampleHandler.save(
+            SaveQuoteReplyExampleCommand(studioId = principal.studioId, title = request.title, content = request.content)
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(result.toDto())
+    }
+
+    /**
+     * PATCH /api/v1/leads/quote-reply-examples/{id}
+     */
+    @PatchMapping("/quote-reply-examples/{id}")
+    fun updateQuoteReplyExample(
+        @PathVariable id: String,
+        @RequestBody request: SaveQuoteReplyExampleRequest
+    ): ResponseEntity<QuoteReplyExampleDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = quoteReplyExampleHandler.update(
+            UpdateQuoteReplyExampleCommand(
+                id = UUID.fromString(id),
+                studioId = principal.studioId,
+                title = request.title,
+                content = request.content
+            )
+        )
+        ResponseEntity.ok(result.toDto())
+    }
+
+    /**
+     * DELETE /api/v1/leads/quote-reply-examples/{id}
+     */
+    @DeleteMapping("/quote-reply-examples/{id}")
+    fun deleteQuoteReplyExample(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        quoteReplyExampleHandler.delete(UUID.fromString(id), principal.studioId)
+        ResponseEntity.noContent().build()
+    }
 }
+
+private fun pl.detailing.crm.leads.quotereply.QuoteReplyExampleDto.toDto() = pl.detailing.crm.leads.QuoteReplyExampleDto(
+    id = id,
+    title = title,
+    content = content,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
 
 private fun pl.detailing.crm.leads.comments.LeadCommentEntity.toDto() = LeadCommentDto(
     id = id.toString(),

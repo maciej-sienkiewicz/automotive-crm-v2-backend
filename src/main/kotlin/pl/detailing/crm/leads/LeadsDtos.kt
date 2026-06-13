@@ -483,3 +483,18 @@ data class TimeAnalyticsInterpretationDto(
 
 data class LinkAppointmentRequest(val appointmentId: String?)
 data class LinkVisitRequest(val visitId: String?)
+
+// ── Quote reply examples ──────────────────────────────────────────────────────
+
+data class SaveQuoteReplyExampleRequest(
+    val title: String,
+    val content: String
+)
+
+data class QuoteReplyExampleDto(
+    val id: String,
+    val title: String,
+    val content: String,
+    val createdAt: java.time.Instant,
+    val updatedAt: java.time.Instant
+)
