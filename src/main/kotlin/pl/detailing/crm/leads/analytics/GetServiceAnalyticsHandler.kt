@@ -63,6 +63,7 @@ class GetServiceAnalyticsHandler(
             data class ServiceKey(val serviceId: UUID?, val serviceName: String)
 
             val serviceToLeadIds = mutableMapOf<ServiceKey, MutableList<UUID>>()
+            val noQuoteLeadIds = mutableListOf<UUID>()
 
             for (lead in allLeads) {
                 val quote = quotesByLeadId[lead.id]
@@ -72,12 +73,16 @@ class GetServiceAnalyticsHandler(
                         ?.map { ServiceKey(it.serviceId, it.serviceName) }
                         ?: emptyList()
                 }
-                for (key in items.distinctBy { it }) {
-                    serviceToLeadIds.getOrPut(key) { mutableListOf() }.add(lead.id)
+                if (items.isEmpty()) {
+                    noQuoteLeadIds.add(lead.id)
+                } else {
+                    for (key in items.distinctBy { it }) {
+                        serviceToLeadIds.getOrPut(key) { mutableListOf() }.add(lead.id)
+                    }
                 }
             }
 
-            serviceToLeadIds.map { (key, leadIdsForService) ->
+            val entries = serviceToLeadIds.map { (key, leadIdsForService) ->
                 val statuses = leadIdsForService.mapNotNull { leadStatusById[it] }
                 val won = statuses.count { it in WON_STATUSES }
                 val lost = statuses.count { it in LOST_STATUSES }
@@ -90,6 +95,25 @@ class GetServiceAnalyticsHandler(
                     totalCount = total,
                     winRate = if (total > 0) won.toDouble() / total * 100.0 else 0.0
                 )
-            }.sortedByDescending { it.totalCount }
+            }.toMutableList()
+
+            // Leads without any quote/estimation — count in totals without service breakdown
+            if (noQuoteLeadIds.isNotEmpty()) {
+                val statuses = noQuoteLeadIds.mapNotNull { leadStatusById[it] }
+                val won = statuses.count { it in WON_STATUSES }
+                val lost = statuses.count { it in LOST_STATUSES }
+                entries.add(
+                    ServiceAnalyticsEntry(
+                        serviceId = null,
+                        serviceName = "Brak wyceny",
+                        wonCount = won,
+                        lostCount = lost,
+                        totalCount = statuses.size,
+                        winRate = if (statuses.isNotEmpty()) won.toDouble() / statuses.size * 100.0 else 0.0
+                    )
+                )
+            }
+
+            entries.sortedByDescending { it.totalCount }
         }
 }
