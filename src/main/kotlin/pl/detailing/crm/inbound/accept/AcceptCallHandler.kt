@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.inbound.infrastructure.CallLogRepository
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadEntity
+import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -16,7 +17,8 @@ import java.time.Instant
 class AcceptCallHandler(
     private val validatorComposite: AcceptCallValidatorComposite,
     private val callLogRepository: CallLogRepository,
-    private val leadRepository: LeadRepository
+    private val leadRepository: LeadRepository,
+    private val soleUserResolver: SoleUserResolver
 ) {
     private val log = LoggerFactory.getLogger(AcceptCallHandler::class.java)
 
@@ -39,6 +41,8 @@ class AcceptCallHandler(
             // Save call log
             callLogRepository.save(callLogEntity)
 
+            val autoAssignee = soleUserResolver.resolveForStudio(callLogEntity.studioId)
+
             // Create Lead from CallLog
             val lead = Lead(
                 id = LeadId.random(),
@@ -55,8 +59,8 @@ class AcceptCallHandler(
                 customerId = null,
                 appointmentId = null,
                 visitId = null,
-                assignedUserId = null,
-                assignedUserName = null,
+                assignedUserId = autoAssignee?.id?.let { UserId(it) },
+                assignedUserName = autoAssignee?.name,
                 lostReason = null,
                 stagnantAlertSentAt = null,
                 createdAt = Instant.now(),
