@@ -18,6 +18,11 @@ import pl.detailing.crm.leads.analytics.GetServiceAnalyticsHandler
 import pl.detailing.crm.leads.analytics.GetServiceAnalyticsQuery
 import pl.detailing.crm.leads.analytics.GetTimeAnalyticsHandler
 import pl.detailing.crm.leads.analytics.GetTimeAnalyticsQuery
+import pl.detailing.crm.leads.analytics.InterpretTimeAnalyticsCommand
+import pl.detailing.crm.leads.analytics.InterpretTimeAnalyticsService
+import pl.detailing.crm.leads.analytics.TimeBucketResult
+import pl.detailing.crm.leads.analytics.TimeAnalyticsBucketType
+import pl.detailing.crm.leads.analytics.TimeAnalyticsActionType
 import pl.detailing.crm.leads.assign.AssignLeadUserCommand
 import pl.detailing.crm.leads.assign.AssignLeadUserHandler
 import pl.detailing.crm.leads.comments.AddLeadCommentCommand
@@ -80,6 +85,7 @@ class LeadsController(
     private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
     private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
     private val getTimeAnalyticsHandler: GetTimeAnalyticsHandler,
+    private val interpretTimeAnalyticsService: InterpretTimeAnalyticsService,
     private val leadCommentHandler: LeadCommentHandler,
     private val getLeadStatusHistoryHandler: GetLeadStatusHistoryHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
@@ -770,6 +776,51 @@ class LeadsController(
             TimeAnalyticsDto(
                 byHour = result.byHour.map { TimeBucketDto(it.bucket, it.incomingCount, it.acceptedCount, it.rejectedCount) },
                 byDayOfMonth = result.byDayOfMonth.map { TimeBucketDto(it.bucket, it.incomingCount, it.acceptedCount, it.rejectedCount) }
+            )
+        )
+    }
+
+    /**
+     * POST /api/v1/leads/time-analytics/interpret
+     */
+    @PostMapping("/time-analytics/interpret")
+    fun interpretTimeAnalytics(
+        @RequestBody request: InterpretTimeAnalyticsRequest
+    ): ResponseEntity<TimeAnalyticsInterpretationDto> = runBlocking {
+        val bucketType = when (request.bucketType.uppercase()) {
+            "BY_HOUR" -> TimeAnalyticsBucketType.BY_HOUR
+            "BY_DAY_OF_MONTH" -> TimeAnalyticsBucketType.BY_DAY_OF_MONTH
+            else -> throw IllegalArgumentException("bucketType must be BY_HOUR or BY_DAY_OF_MONTH")
+        }
+        val actionTypes = request.actionTypes.map {
+            when (it.uppercase()) {
+                "INCOMING" -> TimeAnalyticsActionType.INCOMING
+                "ACCEPTED" -> TimeAnalyticsActionType.ACCEPTED
+                "REJECTED" -> TimeAnalyticsActionType.REJECTED
+                else -> throw IllegalArgumentException("actionType '$it' unknown")
+            }
+        }.toSet()
+        require(actionTypes.isNotEmpty()) { "actionTypes must not be empty" }
+
+        val result = interpretTimeAnalyticsService.interpret(
+            InterpretTimeAnalyticsCommand(
+                bucketType = bucketType,
+                actionTypes = actionTypes,
+                buckets = request.buckets.map {
+                    TimeBucketResult(it.bucket, it.incomingCount, it.acceptedCount, it.rejectedCount)
+                }
+            )
+        )
+        ResponseEntity.ok(
+            TimeAnalyticsInterpretationDto(
+                summary = result.summary,
+                insights = result.insights.map { TimeAnalysisInsightDto(it.bucketLabel, it.observation, it.causalExplanation) },
+                recommendations = TimeAnalyticsRecommendationsDto(
+                    bestTimeToCall = result.recommendations.bestTimeToCall,
+                    bestTimeToRemind = result.recommendations.bestTimeToRemind,
+                    adCampaignTiming = result.recommendations.adCampaignTiming,
+                    socialMediaTiming = result.recommendations.socialMediaTiming
+                )
             )
         )
     }

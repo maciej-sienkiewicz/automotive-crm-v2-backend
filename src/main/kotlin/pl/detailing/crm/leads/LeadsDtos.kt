@@ -473,3 +473,30 @@ data class TimeAnalyticsDto(
     val byHour: List<TimeBucketDto>,
     val byDayOfMonth: List<TimeBucketDto>
 )
+
+// ── Time analytics interpretation ─────────────────────────────────────────────
+
+data class InterpretTimeAnalyticsRequest(
+    val bucketType: String,
+    val actionTypes: List<String>,
+    val buckets: List<TimeBucketDto>
+)
+
+data class TimeAnalysisInsightDto(
+    val bucketLabel: String,
+    val observation: String,
+    val causalExplanation: String
+)
+
+data class TimeAnalyticsRecommendationsDto(
+    val bestTimeToCall: String,
+    val bestTimeToRemind: String,
+    val adCampaignTiming: String,
+    val socialMediaTiming: String
+)
+
+data class TimeAnalyticsInterpretationDto(
+    val summary: String,
+    val insights: List<TimeAnalysisInsightDto>,
+    val recommendations: TimeAnalyticsRecommendationsDto
+)
