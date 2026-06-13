@@ -9,8 +9,6 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.services.LeadServiceTagEntity
-import pl.detailing.crm.leads.services.LeadServiceTagRepository
 import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteResult
 import pl.detailing.crm.leads.userquote.save.toResult
@@ -36,8 +34,7 @@ class GetLeadHandler(
     private val leadRepository: LeadRepository,
     private val leadEstimationRepository: LeadEstimationRepository,
     private val customerRepository: CustomerRepository,
-    private val userQuoteRepository: LeadUserQuoteRepository,
-    private val leadServiceTagRepository: LeadServiceTagRepository
+    private val userQuoteRepository: LeadUserQuoteRepository
 ) {
     suspend fun handle(query: GetLeadQuery): GetLeadResult {
         val leadEntity = withContext(Dispatchers.IO) {
@@ -71,10 +68,6 @@ class GetLeadHandler(
             userQuoteRepository.findByLeadId(query.leadId.value)?.toResult()
         }
 
-        val serviceTags = withContext(Dispatchers.IO) {
-            leadServiceTagRepository.findByLeadId(query.leadId.value)
-        }
-
         return GetLeadResult(
             leadId = query.leadId,
             studioId = query.studioId,
@@ -95,7 +88,6 @@ class GetLeadHandler(
             assignedUserId = leadEntity.assignedUserId?.let { UserId(it) },
             assignedUserName = leadEntity.assignedUserName,
             lostReason = leadEntity.lostReason,
-            serviceTags = serviceTags,
             estimation = estimation?.toResult(),
             userQuote = userQuote
         )
@@ -122,7 +114,6 @@ data class GetLeadResult(
     val assignedUserId: UserId?,
     val assignedUserName: String?,
     val lostReason: String?,
-    val serviceTags: List<LeadServiceTagEntity>,
     val estimation: EstimationResult?,
     val userQuote: SaveUserQuoteResult?
 )

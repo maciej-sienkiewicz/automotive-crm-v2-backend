@@ -4,12 +4,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.services.LeadServiceTagRepository
+import pl.detailing.crm.leads.userquote.infrastructure.LeadUserQuoteRepository
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
+import java.util.UUID
 
 data class GetServiceAnalyticsQuery(
     val studioId: StudioId,
@@ -30,7 +32,8 @@ data class ServiceAnalyticsEntry(
 @Service
 class GetServiceAnalyticsHandler(
     private val leadRepository: LeadRepository,
-    private val leadServiceTagRepository: LeadServiceTagRepository
+    private val userQuoteRepository: LeadUserQuoteRepository,
+    private val estimationRepository: LeadEstimationRepository
 ) {
     private val WON_STATUSES = setOf(LeadStatus.CONFIRMED, LeadStatus.COMPLETED)
     private val LOST_STATUSES = setOf(LeadStatus.LOST, LeadStatus.NO_SHOW)
@@ -47,25 +50,40 @@ class GetServiceAnalyticsHandler(
 
             if (allLeads.isEmpty()) return@withContext emptyList()
 
-            val leadStatusById = allLeads.associate { it.id to it.status }
             val leadIds = allLeads.map { it.id }
+            val leadStatusById = allLeads.associate { it.id to it.status }
 
-            val tags = leadServiceTagRepository.findByLeadIdIn(leadIds)
+            // Batch-load user quotes and estimations
+            val quotesByLeadId = userQuoteRepository.findByLeadIdIn(leadIds).associateBy { it.leadId }
+            val estimationsByLeadId = estimationRepository
+                .findByStudioIdAndLeadIdIn(query.studioId.value, leadIds)
+                .associateBy { it.leadId }
 
-            // Group by service (serviceId + serviceName as key)
-            data class ServiceKey(val serviceId: String?, val serviceName: String)
+            // Per-lead: pick userQuote if exists, else estimation items
+            data class ServiceKey(val serviceId: UUID?, val serviceName: String)
 
-            val byService = tags.groupBy { tag ->
-                ServiceKey(tag.serviceId?.toString(), tag.serviceName)
+            val serviceToLeadIds = mutableMapOf<ServiceKey, MutableList<UUID>>()
+
+            for (lead in allLeads) {
+                val quote = quotesByLeadId[lead.id]
+                val items = when {
+                    quote != null -> quote.items.map { ServiceKey(it.serviceId, it.serviceName) }
+                    else -> estimationsByLeadId[lead.id]?.items
+                        ?.map { ServiceKey(it.serviceId, it.serviceName) }
+                        ?: emptyList()
+                }
+                for (key in items.distinctBy { it }) {
+                    serviceToLeadIds.getOrPut(key) { mutableListOf() }.add(lead.id)
+                }
             }
 
-            byService.map { (key, tagsForService) ->
-                val statuses = tagsForService.mapNotNull { leadStatusById[it.leadId] }
+            serviceToLeadIds.map { (key, leadIdsForService) ->
+                val statuses = leadIdsForService.mapNotNull { leadStatusById[it] }
                 val won = statuses.count { it in WON_STATUSES }
                 val lost = statuses.count { it in LOST_STATUSES }
                 val total = statuses.size
                 ServiceAnalyticsEntry(
-                    serviceId = key.serviceId,
+                    serviceId = key.serviceId?.toString(),
                     serviceName = key.serviceName,
                     wonCount = won,
                     lostCount = lost,

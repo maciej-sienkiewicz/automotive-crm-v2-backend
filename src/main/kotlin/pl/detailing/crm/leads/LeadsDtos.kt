@@ -24,11 +24,6 @@ data class CustomerSnapshotDto(
     val phone: String?
 )
 
-data class LeadServiceTagDto(
-    val serviceId: String?,
-    val serviceName: String
-)
-
 data class LeadDto(
     val id: String,
     val source: String?,
@@ -49,15 +44,13 @@ data class LeadDto(
     val visitId: String?,
     val assignedUserId: String? = null,
     val assignedUserName: String? = null,
-    val lostReason: String? = null,
-    val serviceTags: List<LeadServiceTagDto> = emptyList()
+    val lostReason: String? = null
 )
 
 fun Lead.toDto(
     relatedVisits: List<RelatedVisitDto> = emptyList(),
     summary: String? = null,
-    assignedCustomer: CustomerSnapshotDto? = null,
-    serviceTags: List<LeadServiceTagDto> = emptyList()
+    assignedCustomer: CustomerSnapshotDto? = null
 ): LeadDto = LeadDto(
     id = this.id.toString(),
     source = this.source.name,
@@ -78,15 +71,13 @@ fun Lead.toDto(
     visitId = this.visitId?.toString(),
     assignedUserId = this.assignedUserId?.toString(),
     assignedUserName = this.assignedUserName,
-    lostReason = this.lostReason,
-    serviceTags = serviceTags
+    lostReason = this.lostReason
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
     summary = aiSummary,
-    assignedCustomer = assignedCustomer?.toDto(),
-    serviceTags = serviceTags.map { LeadServiceTagDto(serviceId = it.serviceId?.toString(), serviceName = it.serviceName) }
+    assignedCustomer = assignedCustomer?.toDto()
 )
 
 fun CustomerSnapshot.toDto() = CustomerSnapshotDto(
@@ -155,7 +146,6 @@ data class LeadDetailDto(
     val assignedUserId: String?,
     val assignedUserName: String?,
     val lostReason: String?,
-    val serviceTags: List<LeadServiceTagDto>,
     val estimation: LeadEstimationDto?,
     val userQuote: LeadUserQuoteDto?
 )
@@ -231,7 +221,6 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     assignedUserId = assignedUserId?.toString(),
     assignedUserName = assignedUserName,
     lostReason = lostReason,
-    serviceTags = serviceTags.map { LeadServiceTagDto(serviceId = it.serviceId?.toString(), serviceName = it.serviceName) },
     estimation = estimation?.toDto(),
     userQuote = userQuote?.toDto()
 )
@@ -387,17 +376,6 @@ data class AssignLeadUserRequest(
 
 data class UpdateLostReasonRequest(
     val lostReason: String?
-)
-
-// ── Service tags ─────────────────────────────────────────────────────────────
-
-data class SetServiceTagsRequest(
-    val tags: List<ServiceTagInput>
-)
-
-data class ServiceTagInput(
-    val serviceId: String?,
-    val serviceName: String
 )
 
 // ── Service analytics ────────────────────────────────────────────────────────

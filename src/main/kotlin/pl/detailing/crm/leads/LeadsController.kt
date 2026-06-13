@@ -48,8 +48,7 @@ import pl.detailing.crm.leads.list.ListLeadsHandler
 import pl.detailing.crm.leads.list.ListLeadsQuery
 import pl.detailing.crm.leads.lostreason.UpdateLostReasonCommand
 import pl.detailing.crm.leads.lostreason.UpdateLostReasonHandler
-import pl.detailing.crm.leads.servicetags.SetServiceTagsCommand
-import pl.detailing.crm.leads.servicetags.SetServiceTagsHandler
+
 import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryQuery
 import pl.detailing.crm.leads.update.UpdateLeadCommand
@@ -87,7 +86,7 @@ class LeadsController(
     private val updateLostReasonHandler: UpdateLostReasonHandler,
     private val linkAppointmentHandler: LinkAppointmentHandler,
     private val linkVisitHandler: LinkVisitHandler,
-    private val setServiceTagsHandler: SetServiceTagsHandler,
+
     private val getServiceAnalyticsHandler: GetServiceAnalyticsHandler,
     private val getEmployeeStatsHandler: GetEmployeeStatsHandler,
     private val getTimeAnalyticsHandler: GetTimeAnalyticsHandler,
@@ -119,7 +118,6 @@ class LeadsController(
         @RequestParam(required = false) valueMin: Long?,
         @RequestParam(required = false) valueMax: Long?,
         @RequestParam(required = false) assignedUserId: String?,
-        @RequestParam(required = false) serviceIds: List<String>?
     ): ResponseEntity<LeadListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val zone = ZoneId.of("Europe/Warsaw")
@@ -136,7 +134,7 @@ class LeadsController(
             valueMin = valueMin,
             valueMax = valueMax,
             assignedUserId = assignedUserId?.let { UUID.fromString(it) },
-            serviceIds = serviceIds?.map { UUID.fromString(it) }
+
         )
 
         val result = listLeadsHandler.handle(query)
@@ -701,32 +699,6 @@ class LeadsController(
             )
         )
         ResponseEntity.noContent().build()
-    }
-
-    /**
-     * Replace all service tags on a lead.
-     * PUT /api/v1/leads/{id}/service-tags
-     */
-    @PutMapping("/{id}/service-tags")
-    fun setServiceTags(
-        @PathVariable id: String,
-        @RequestBody request: SetServiceTagsRequest
-    ): ResponseEntity<List<LeadServiceTagDto>> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = SetServiceTagsCommand(
-            leadId = LeadId.fromString(id),
-            studioId = principal.studioId,
-            tags = request.tags.map {
-                pl.detailing.crm.leads.servicetags.ServiceTagInput(
-                    serviceId = it.serviceId?.let { sid -> UUID.fromString(sid) },
-                    serviceName = it.serviceName
-                )
-            }
-        )
-
-        val saved = setServiceTagsHandler.handle(command)
-        ResponseEntity.ok(saved.map { LeadServiceTagDto(serviceId = it.serviceId?.toString(), serviceName = it.serviceName) })
     }
 
     /**
