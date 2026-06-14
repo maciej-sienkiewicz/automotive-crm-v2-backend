@@ -65,8 +65,9 @@ class VehicleController(
 
         // Filter by search
         if (search.isNotBlank()) {
+            val normalizedSearch = search.replace("\\s".toRegex(), "")
             vehicles = vehicles.filter {
-                it.licensePlate.contains(search, ignoreCase = true) ||
+                it.licensePlate.replace("\\s".toRegex(), "").contains(normalizedSearch, ignoreCase = true) ||
                 it.brand.contains(search, ignoreCase = true) ||
                 it.model.contains(search, ignoreCase = true) ||
                 it.owners.any { owner -> owner.customerName.contains(search, ignoreCase = true) }
