@@ -1,32 +1,14 @@
 package pl.detailing.crm.auth.signup.validators
 
 import org.springframework.stereotype.Component
+import pl.detailing.crm.auth.PasswordPolicy
 import pl.detailing.crm.auth.signup.SignupValidationContext
-import pl.detailing.crm.shared.ValidationException
 
 @Component
-class PasswordValidator {
+class PasswordValidator(
+    private val passwordPolicy: PasswordPolicy
+) {
     fun validate(context: SignupValidationContext) {
-        val password = context.password
-
-        if (password != context.confirmPassword) {
-            throw ValidationException("Hasła nie są zgodne")
-        }
-
-        if (password.length < 8) {
-            throw ValidationException("Hasło musi mieć co najmniej 8 znaków")
-        }
-
-        if (!password.any { it.isUpperCase() }) {
-            throw ValidationException("Hasło musi zawierać co najmniej jedną wielką literę")
-        }
-
-        if (!password.any { it.isLowerCase() }) {
-            throw ValidationException("Hasło musi zawierać co najmniej jedną małą literę")
-        }
-
-        if (!password.any { it.isDigit() }) {
-            throw ValidationException("Hasło musi zawierać co najmniej jedną cyfrę")
-        }
+        passwordPolicy.validate(context.password, context.confirmPassword)
     }
 }
