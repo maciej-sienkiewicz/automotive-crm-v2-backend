@@ -81,13 +81,14 @@ class CustomerController(
         var customers = listCustomersHandler.handle(principal.studioId, query)
 
         if (search.isNotBlank()) {
+            val normalizedSearch = search.replace("\\s".toRegex(), "")
             customers = customers.filter {
                 (it.firstName?.contains(search, ignoreCase = true) ?: false) ||
                 (it.lastName?.contains(search, ignoreCase = true) ?: false) ||
                 (it.contact.email?.contains(search, ignoreCase = true) ?: false) ||
-                (it.contact.phone?.contains(search, ignoreCase = true) ?: false) ||
+                (it.contact.phone?.replace("\\s".toRegex(), "")?.contains(normalizedSearch, ignoreCase = true) ?: false) ||
                 (it.company?.name?.contains(search, ignoreCase = true) ?: false) ||
-                (it.company?.nip?.contains(search, ignoreCase = true) ?: false)
+                (it.company?.nip?.replace("\\s".toRegex(), "")?.contains(normalizedSearch, ignoreCase = true) ?: false)
             }
         }
 
