@@ -95,7 +95,7 @@ class UpdateAppointmentHandler(
                     serviceId = service.id,
                     serviceName = service.name,
                     basePriceNet = service.basePriceNet,
-                    vatRate = service.vatRate,
+                    vatRate = VatRate.fromInt(serviceLineItem.vatRate),
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote
