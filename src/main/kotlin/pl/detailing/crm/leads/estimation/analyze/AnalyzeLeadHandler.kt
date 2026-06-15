@@ -4,6 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.estimation.domain.CatalogService
 import pl.detailing.crm.leads.estimation.domain.LeadAnalyzer
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationEntity
@@ -13,6 +18,7 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationStatusJpa
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 import java.util.UUID
@@ -23,7 +29,8 @@ class AnalyzeLeadHandler(
     private val serviceRepository: ServiceRepository,
     private val leadEstimationRepository: LeadEstimationRepository,
     private val visitRepository: VisitRepository,
-    private val leadAnalyzer: LeadAnalyzer
+    private val leadAnalyzer: LeadAnalyzer,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -155,6 +162,21 @@ class AnalyzeLeadHandler(
                 if (leadDirty) {
                     leadRepository.save(leadEntity)
                 }
+
+                // Audit log entry with estimated value after LLM processing completes
+                val totalGross = est.totalGross
+                auditService.log(LogAuditCommand(
+                    studioId = command.studioId,
+                    userId = UserId(UUID.fromString("00000000-0000-0000-0000-000000000000")),
+                    userDisplayName = "System",
+                    module = AuditModule.LEAD,
+                    entityId = command.leadId.value.toString(),
+                    entityDisplayName = leadEntity.customerName ?: leadEntity.contactIdentifier,
+                    action = AuditAction.LEAD_ESTIMATION_COMPLETED,
+                    changes = listOf(
+                        FieldChange("estimatedValue", null, totalGross.toString())
+                    )
+                ))
             }
         }
 

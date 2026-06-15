@@ -87,8 +87,7 @@ class CreateLeadHandler(
                     FieldChange("source", null, lead.source.name),
                     FieldChange("contactIdentifier", null, lead.contactIdentifier),
                     lead.customerName?.let { FieldChange("customerName", null, it) },
-                    lead.initialMessage?.let { FieldChange("initialMessage", null, it) },
-                    FieldChange("estimatedValue", null, lead.estimatedValue.toString())
+                    lead.initialMessage?.let { FieldChange("initialMessage", null, it) }
                 )
             ))
 

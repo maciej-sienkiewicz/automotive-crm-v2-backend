@@ -93,6 +93,7 @@ enum class AuditAction {
     LEAD_LOST_REASON_UPDATED,
     LEAD_QUOTE_UPDATED,
     LEAD_COMMENT_UPDATED,
+    LEAD_ESTIMATION_COMPLETED,
 
     // Inbound-specific
     CALL_ACCEPTED,
