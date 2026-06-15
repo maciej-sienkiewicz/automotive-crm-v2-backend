@@ -35,6 +35,7 @@ data class LeadDto(
     val createdAt: Instant?,
     val updatedAt: Instant?,
     val estimatedValue: Long,
+    val estimationStatus: String?,
     val requiresVerification: Boolean,
     val vehicleBrand: String?,
     val vehicleModel: String?,
@@ -48,6 +49,7 @@ data class LeadDto(
 )
 
 fun Lead.toDto(
+    estimationStatus: String? = null,
     relatedVisits: List<RelatedVisitDto> = emptyList(),
     summary: String? = null,
     assignedCustomer: CustomerSnapshotDto? = null
@@ -62,6 +64,7 @@ fun Lead.toDto(
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
     estimatedValue = this.estimatedValue,
+    estimationStatus = estimationStatus,
     requiresVerification = this.requiresVerification,
     vehicleBrand = this.vehicleBrand,
     vehicleModel = this.vehicleModel,
@@ -75,6 +78,7 @@ fun Lead.toDto(
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
+    estimationStatus = estimationStatus,
     relatedVisits = relatedVisits.map { RelatedVisitDto(id = it.id, title = it.title) },
     summary = aiSummary,
     assignedCustomer = assignedCustomer?.toDto()
