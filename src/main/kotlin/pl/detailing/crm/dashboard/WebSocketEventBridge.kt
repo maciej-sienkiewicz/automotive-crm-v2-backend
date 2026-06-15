@@ -1,9 +1,11 @@
 package pl.detailing.crm.dashboard
 
 import org.slf4j.LoggerFactory
-import org.springframework.context.event.EventListener
 import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
+import org.springframework.transaction.event.TransactionalEventListener
+import org.springframework.transaction.event.TransactionPhase
 import pl.detailing.crm.shared.*
 
 /**
@@ -17,7 +19,8 @@ class WebSocketEventBridge(
 ) {
     private val log = LoggerFactory.getLogger(WebSocketEventBridge::class.java)
 
-    @EventListener
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun handleNewCallReceived(event: NewCallReceivedEvent) {
         log.debug("[WS-BRIDGE] Received NewCallReceivedEvent: callId={}, leadId={}, studioId={}, phone={}",
             event.callId.value, event.leadId.value, event.studioId.value, event.phoneNumber)
