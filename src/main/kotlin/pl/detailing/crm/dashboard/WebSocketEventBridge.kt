@@ -45,4 +45,32 @@ class WebSocketEventBridge(
         messagingTemplate.convertAndSend(destination, dashboardEvent)
         log.debug("[WS-BRIDGE] Message sent successfully to {}", destination)
     }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    fun handleNewLeadCreated(event: NewLeadCreatedEvent) {
+        log.debug("[WS-BRIDGE] Received NewLeadCreatedEvent: leadId={}, studioId={}, source={}",
+            event.leadId.value, event.studioId.value, event.leadSource)
+
+        val payload = NewLeadPayload(
+            id = event.leadId.value.toString(),
+            source = event.leadSource.name,
+            contactIdentifier = event.contactIdentifier,
+            customerName = event.customerName,
+            estimatedValue = event.estimatedValue,
+            createdAt = event.createdAt
+        )
+
+        val dashboardEvent = DashboardEvent(
+            type = DashboardEventType.NEW_LEAD,
+            payload = payload,
+            timestamp = event.createdAt
+        )
+
+        val destination = "/topic/studio.${event.studioId.value}.dashboard"
+        log.info("[WS-BRIDGE] Sending DashboardEvent to destination={}, type={}, leadId={}",
+            destination, dashboardEvent.type, event.leadId.value)
+        messagingTemplate.convertAndSend(destination, dashboardEvent)
+        log.debug("[WS-BRIDGE] Message sent successfully to {}", destination)
+    }
 }

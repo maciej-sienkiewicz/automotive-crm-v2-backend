@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.create
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
@@ -16,7 +17,8 @@ import java.time.Instant
 class CreateLeadHandler(
     private val leadRepository: LeadRepository,
     private val auditService: AuditService,
-    private val soleUserResolver: SoleUserResolver
+    private val soleUserResolver: SoleUserResolver,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(CreateLeadHandler::class.java)
 
@@ -74,6 +76,19 @@ class CreateLeadHandler(
 
             log.info("[LEADS] Created lead: leadId={}, studioId={}, source={}, contact={}",
                 lead.id.value, lead.studioId.value, lead.source, lead.contactIdentifier)
+
+            eventPublisher.publishEvent(
+                NewLeadCreatedEvent(
+                    source = this@CreateLeadHandler,
+                    studioId = lead.studioId,
+                    leadId = lead.id,
+                    leadSource = lead.source,
+                    contactIdentifier = lead.contactIdentifier,
+                    customerName = lead.customerName,
+                    estimatedValue = lead.estimatedValue,
+                    createdAt = lead.createdAt
+                )
+            )
 
             auditService.log(LogAuditCommand(
                 studioId = command.studioId,

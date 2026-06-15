@@ -7,7 +7,8 @@ import java.time.Instant
  * Types of real-time dashboard events sent via WebSocket
  */
 enum class DashboardEventType {
-    NEW_INBOUND_CALL
+    NEW_INBOUND_CALL,
+    NEW_LEAD
 }
 
 /**
@@ -32,6 +33,18 @@ data class NewCallPayload(
 )
 
 /**
+ * Payload for NEW_LEAD event (email, voice and other non-call sources)
+ */
+data class NewLeadPayload(
+    val id: String,
+    val source: String,
+    val contactIdentifier: String,
+    val customerName: String?,
+    val estimatedValue: Long,
+    val createdAt: Instant
+)
+
+/**
  * Internal Spring ApplicationEvent published when a new inbound call is registered.
  * Used to decouple the inbound slice from the dashboard/WebSocket slice.
  */
@@ -45,3 +58,18 @@ class NewCallReceivedEvent(
     val receivedAt: Instant,
     val estimatedValue: Long
 ) : ApplicationEvent(source)
+
+/**
+ * Internal Spring ApplicationEvent published when a lead is created from any non-call source.
+ */
+class NewLeadCreatedEvent(
+    source: Any,
+    val studioId: StudioId,
+    val leadId: LeadId,
+    val leadSource: LeadSource,
+    val contactIdentifier: String,
+    val customerName: String?,
+    val estimatedValue: Long,
+    val createdAt: Instant
+) : ApplicationEvent(source)
+
