@@ -165,7 +165,7 @@ class AnalyzeLeadHandler(
 
                 // Audit log entry with estimated value after LLM processing completes
                 val totalGross = est.totalGross
-                auditService.log(LogAuditCommand(
+                auditService.logSync(LogAuditCommand(
                     studioId = command.studioId,
                     userId = UserId(UUID.fromString("00000000-0000-0000-0000-000000000000")),
                     userDisplayName = "System",
