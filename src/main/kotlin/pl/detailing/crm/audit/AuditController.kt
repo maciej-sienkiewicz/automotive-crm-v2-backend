@@ -265,6 +265,7 @@ class AuditController(
         AuditAction.LEAD_LOST_REASON_UPDATED -> TODO()
         AuditAction.LEAD_QUOTE_UPDATED -> TODO()
         AuditAction.LEAD_COMMENT_UPDATED -> TODO()
+        AuditAction.LEAD_ESTIMATION_COMPLETED -> TODO()
     }
 }
 
