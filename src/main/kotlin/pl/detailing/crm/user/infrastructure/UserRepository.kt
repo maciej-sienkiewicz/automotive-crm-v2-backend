@@ -37,4 +37,10 @@ interface UserRepository : JpaRepository<UserEntity, UUID> {
 
     @Query("SELECT u FROM UserEntity u WHERE u.mobileToken = :mobileToken")
     fun findByMobileToken(@Param("mobileToken") mobileToken: String): UserEntity?
+
+    @Query("SELECT u FROM UserEntity u WHERE u.customRoleId = :roleId AND u.studioId = :studioId")
+    fun findByCustomRoleIdAndStudioId(
+        @Param("roleId") roleId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<UserEntity>
 }

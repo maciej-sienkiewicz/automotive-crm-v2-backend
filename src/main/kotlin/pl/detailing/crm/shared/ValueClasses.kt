@@ -867,6 +867,15 @@ value class EmployeeId(val value: UUID) : Serializable {
 }
 
 @JvmInline
+value class RoleId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = RoleId(UUID.randomUUID())
+        fun fromString(value: String) = RoleId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
+@JvmInline
 value class EmploymentContractId(val value: UUID) : Serializable {
     companion object {
         fun random() = EmploymentContractId(UUID.randomUUID())

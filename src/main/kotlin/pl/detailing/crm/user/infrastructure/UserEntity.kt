@@ -53,7 +53,11 @@ class UserEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "mobile_token", nullable = true, unique = true, length = 64)
-    var mobileToken: String? = null
+    var mobileToken: String? = null,
+
+    /** References a custom [pl.detailing.crm.role.infrastructure.RoleEntity] within the same studio. Null = no custom role. */
+    @Column(name = "custom_role_id", nullable = true, columnDefinition = "uuid")
+    var customRoleId: UUID? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),
