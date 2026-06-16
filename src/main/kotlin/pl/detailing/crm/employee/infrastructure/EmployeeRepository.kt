@@ -18,36 +18,25 @@ interface EmployeeRepository : JpaRepository<EmployeeEntity, UUID> {
     @Query("SELECT e FROM EmployeeEntity e WHERE e.studioId = :studioId ORDER BY e.lastName, e.firstName")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<EmployeeEntity>
 
-    @Query("SELECT e FROM EmployeeEntity e WHERE e.studioId = :studioId AND e.status = 'ACTIVE' ORDER BY e.lastName, e.firstName")
-    fun findActiveByStudioId(@Param("studioId") studioId: UUID): List<EmployeeEntity>
-
     @Query("""
         SELECT COUNT(e) > 0 FROM EmployeeEntity e
-        WHERE e.studioId = :studioId
-        AND e.email = :email
-        AND e.status != 'TERMINATED'
+        WHERE e.studioId = :studioId AND e.email = :email
     """)
-    fun existsActiveByStudioIdAndEmail(
+    fun existsByStudioIdAndEmail(
         @Param("studioId") studioId: UUID,
         @Param("email") email: String
     ): Boolean
 
     @Query("""
         SELECT COUNT(e) > 0 FROM EmployeeEntity e
-        WHERE e.studioId = :studioId
-        AND e.userId = :userId
-        AND e.status != 'TERMINATED'
+        WHERE e.studioId = :studioId AND e.userId = :userId
     """)
-    fun existsActiveByStudioIdAndUserId(
+    fun existsByStudioIdAndUserId(
         @Param("studioId") studioId: UUID,
         @Param("userId") userId: UUID
     ): Boolean
 
-    @Query("""
-        SELECT e FROM EmployeeEntity e
-        WHERE e.studioId = :studioId
-        AND e.userId = :userId
-    """)
+    @Query("SELECT e FROM EmployeeEntity e WHERE e.studioId = :studioId AND e.userId = :userId")
     fun findByStudioIdAndUserId(
         @Param("studioId") studioId: UUID,
         @Param("userId") userId: UUID

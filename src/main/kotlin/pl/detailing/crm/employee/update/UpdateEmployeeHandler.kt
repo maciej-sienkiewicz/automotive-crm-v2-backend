@@ -19,33 +19,17 @@ class UpdateEmployeeHandler(
         val entity = employeeRepository.findByIdAndStudioId(command.employeeId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Pracownik '${command.employeeId}' nie został znaleziony")
 
-        if (entity.status == EmployeeStatus.TERMINATED) {
-            throw ValidationException("Nie można aktualizować danych zwolnionego pracownika")
-        }
-
         val oldValues = mapOf(
             "firstName" to entity.firstName,
             "lastName" to entity.lastName,
-            "position" to entity.position,
             "email" to entity.email,
-            "phone" to entity.phone,
-            "linkedUserId" to entity.userId?.toString()
+            "phone" to entity.phone
         )
 
-        entity.userId = command.linkedUserId?.value
         entity.firstName = command.firstName.trim()
         entity.lastName = command.lastName.trim()
         entity.phone = command.phone?.trim()
         entity.email = command.email?.trim()?.lowercase()
-        entity.personalEmail = command.personalEmail?.trim()?.lowercase()
-        entity.pesel = command.pesel?.trim()
-        entity.nip = command.nip?.trim()
-        entity.addressStreet = command.addressStreet?.trim()
-        entity.addressCity = command.addressCity?.trim()
-        entity.addressPostalCode = command.addressPostalCode?.trim()
-        entity.position = command.position.trim()
-        entity.hireDate = command.hireDate
-        entity.notes = command.notes?.trim()
         entity.updatedBy = command.userId.value
         entity.updatedAt = Instant.now()
 
@@ -54,10 +38,8 @@ class UpdateEmployeeHandler(
         val newValues = mapOf(
             "firstName" to entity.firstName,
             "lastName" to entity.lastName,
-            "position" to entity.position,
             "email" to entity.email,
-            "phone" to entity.phone,
-            "linkedUserId" to entity.userId?.toString()
+            "phone" to entity.phone
         )
 
         auditService.log(LogAuditCommand(

@@ -11,13 +11,8 @@ import pl.detailing.crm.shared.*
 class ListEmployeesHandler(
     private val employeeRepository: EmployeeRepository
 ) {
-    suspend fun handle(studioId: StudioId, includeTerminated: Boolean = false): List<Employee> =
+    suspend fun handle(studioId: StudioId): List<Employee> =
         withContext(Dispatchers.IO) {
-            val entities = if (includeTerminated) {
-                employeeRepository.findByStudioId(studioId.value)
-            } else {
-                employeeRepository.findActiveByStudioId(studioId.value)
-            }
-            entities.map { it.toDomain() }
+            employeeRepository.findByStudioId(studioId.value).map { it.toDomain() }
         }
 }

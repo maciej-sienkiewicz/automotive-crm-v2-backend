@@ -2,10 +2,8 @@ package pl.detailing.crm.employee.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.employee.domain.Employee
-import pl.detailing.crm.employee.domain.EmployeeAddress
 import pl.detailing.crm.shared.*
 import java.time.Instant
-import java.time.LocalDate
 import java.util.UUID
 
 @Entity
@@ -13,11 +11,9 @@ import java.util.UUID
     name = "employees",
     indexes = [
         Index(name = "idx_employees_studio_id", columnList = "studio_id"),
-        Index(name = "idx_employees_studio_status", columnList = "studio_id, status"),
         Index(name = "idx_employees_studio_user", columnList = "studio_id, user_id"),
         Index(name = "idx_employees_studio_email", columnList = "studio_id, email"),
-        Index(name = "idx_employees_created_by", columnList = "created_by"),
-        Index(name = "idx_employees_updated_by", columnList = "updated_by")
+        Index(name = "idx_employees_created_by", columnList = "created_by")
     ]
 )
 class EmployeeEntity(
@@ -43,40 +39,6 @@ class EmployeeEntity(
     @Column(name = "email", length = 255)
     var email: String?,
 
-    @Column(name = "personal_email", length = 255)
-    var personalEmail: String?,
-
-    @Column(name = "pesel", length = 11)
-    var pesel: String?,
-
-    @Column(name = "nip", length = 10)
-    var nip: String?,
-
-    @Column(name = "address_street", length = 200)
-    var addressStreet: String?,
-
-    @Column(name = "address_city", length = 100)
-    var addressCity: String?,
-
-    @Column(name = "address_postal_code", length = 10)
-    var addressPostalCode: String?,
-
-    @Column(name = "position", nullable = false, length = 100)
-    var position: String,
-
-    @Column(name = "hire_date", nullable = false)
-    var hireDate: LocalDate,
-
-    @Column(name = "termination_date")
-    var terminationDate: LocalDate?,
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
-    var status: EmployeeStatus,
-
-    @Column(name = "notes", columnDefinition = "text")
-    var notes: String?,
-
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
@@ -97,21 +59,6 @@ class EmployeeEntity(
         lastName = lastName,
         phone = phone,
         email = email,
-        personalEmail = personalEmail,
-        pesel = pesel,
-        nip = nip,
-        address = if (addressStreet != null || addressCity != null || addressPostalCode != null) {
-            EmployeeAddress(
-                street = addressStreet ?: "",
-                city = addressCity ?: "",
-                postalCode = addressPostalCode ?: ""
-            )
-        } else null,
-        position = position,
-        hireDate = hireDate,
-        terminationDate = terminationDate,
-        status = status,
-        notes = notes,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -127,17 +74,6 @@ class EmployeeEntity(
             lastName = employee.lastName,
             phone = employee.phone,
             email = employee.email,
-            personalEmail = employee.personalEmail,
-            pesel = employee.pesel,
-            nip = employee.nip,
-            addressStreet = employee.address?.street,
-            addressCity = employee.address?.city,
-            addressPostalCode = employee.address?.postalCode,
-            position = employee.position,
-            hireDate = employee.hireDate,
-            terminationDate = employee.terminationDate,
-            status = employee.status,
-            notes = employee.notes,
             createdBy = employee.createdBy.value,
             updatedBy = employee.updatedBy.value,
             createdAt = employee.createdAt,
@@ -145,4 +81,3 @@ class EmployeeEntity(
         )
     }
 }
-
