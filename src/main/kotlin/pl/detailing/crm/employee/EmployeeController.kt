@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.employee.account.*
 import pl.detailing.crm.employee.compensation.GetCompensationHandler
 import pl.detailing.crm.employee.compensation.SetCompensationCommand
 import pl.detailing.crm.employee.compensation.SetCompensationHandler
@@ -24,6 +25,7 @@ import pl.detailing.crm.employee.update.UpdateEmployeeHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeRequest
 import pl.detailing.crm.employee.worktime.*
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.user.infrastructure.UserRepository
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -62,7 +64,12 @@ class EmployeeController(
     private val listPayrollHandler: ListPayrollHandler,
     private val addBonusHandler: AddBonusHandler,
     private val listBonusesHandler: ListBonusesHandler,
-    private val deleteBonusHandler: DeleteBonusHandler
+    private val deleteBonusHandler: DeleteBonusHandler,
+    private val provisionEmployeeAccountHandler: ProvisionEmployeeAccountHandler,
+    private val blockEmployeeAccountHandler: BlockEmployeeAccountHandler,
+    private val deleteEmployeeAccountHandler: DeleteEmployeeAccountHandler,
+    private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
+    private val userRepository: UserRepository
 ) {
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -108,7 +115,11 @@ class EmployeeController(
     fun getEmployee(@PathVariable employeeId: String): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
-        ResponseEntity.ok(employee.toDetailResponse())
+        val accountInfo = employee.userId?.let {
+            userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+        }
+        ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
 
     @PostMapping
@@ -135,12 +146,19 @@ class EmployeeController(
             addressPostalCode = request.addressPostalCode,
             position = request.position,
             hireDate = request.hireDate,
-            notes = request.notes
+            notes = request.notes,
+            createAccount = request.createAccount,
+            accountEmail = request.accountEmail,
+            accountRole = request.accountRole
         )
 
         val result = createEmployeeHandler.handle(command)
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)
-        ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse())
+        val accountInfo = employee.userId?.let {
+            userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+        }
+        ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse(accountInfo))
     }
 
     @PutMapping("/{employeeId}")
@@ -175,7 +193,11 @@ class EmployeeController(
         ))
 
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
-        ResponseEntity.ok(employee.toDetailResponse())
+        val accountInfo = employee.userId?.let {
+            userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+        }
+        ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
 
     @PostMapping("/{employeeId}/terminate")
@@ -196,6 +218,93 @@ class EmployeeController(
             terminationDate = request.terminationDate,
             reason = request.reason
         ))
+        ResponseEntity.noContent().build()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Employee Account Management
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @PostMapping("/{employeeId}/account")
+    fun provisionAccount(
+        @PathVariable employeeId: String,
+        @RequestBody request: ProvisionAccountRequest
+    ): ResponseEntity<Map<String, String>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć konta dla pracowników")
+        }
+        if (request.role == UserRole.OWNER) {
+            throw ForbiddenException("Nie można nadać roli właściciela kontu pracownika")
+        }
+
+        val userId = provisionEmployeeAccountHandler.handle(
+            ProvisionEmployeeAccountCommand(
+                studioId = principal.studioId,
+                requestedBy = principal.userId,
+                requestedByName = principal.fullName,
+                employeeId = EmployeeId.fromString(employeeId),
+                email = request.email,
+                role = request.role
+            )
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(mapOf("userId" to userId.toString()))
+    }
+
+    @PatchMapping("/{employeeId}/account/block")
+    fun blockAccount(
+        @PathVariable employeeId: String,
+        @RequestBody request: BlockAccountRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą blokować konta pracowników")
+        }
+
+        blockEmployeeAccountHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            block = request.block,
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/{employeeId}/account")
+    fun deleteAccount(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER) {
+            throw ForbiddenException("Tylko właściciel może usunąć konto pracownika")
+        }
+
+        deleteEmployeeAccountHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
+        ResponseEntity.noContent().build()
+    }
+
+    @PostMapping("/{employeeId}/account/change-password")
+    fun changeAccountPassword(
+        @PathVariable employeeId: String,
+        @RequestBody request: ChangeAccountPasswordRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+            throw ForbiddenException("Tylko właściciel i menedżer mogą zmieniać hasła kont pracowników")
+        }
+
+        changeEmployeeAccountPasswordHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            newPassword = request.newPassword,
+            confirmPassword = request.confirmPassword,
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
         ResponseEntity.noContent().build()
     }
 
@@ -788,6 +897,10 @@ class EmployeeController(
 
 data class TerminateEmployeeRequest(val terminationDate: LocalDate, val reason: String?)
 
+data class ProvisionAccountRequest(val email: String, val role: UserRole)
+data class BlockAccountRequest(val block: Boolean)
+data class ChangeAccountPasswordRequest(val newPassword: String, val confirmPassword: String)
+
 /**
  * Compensation block inside contract-creation and amendment requests.
  * Mirrors the frontend discriminated union InitialCompensation.
@@ -961,12 +1074,20 @@ data class EmployeePaginationInfo(
     val itemsPerPage: Int
 )
 
+data class EmployeeAccountInfo(
+    val userId: String,
+    val email: String,
+    val role: String,
+    val isActive: Boolean
+)
+
 data class EmployeeDetailResponse(
     val id: String,
     val firstName: String,
     val lastName: String,
     val fullName: String,
     val linkedUserId: String?,
+    val account: EmployeeAccountInfo?,
     val phone: String?,
     val email: String?,
     val personalEmail: String?,
@@ -1165,12 +1286,13 @@ private fun Employee.toListItem() = EmployeeListItem(
     linkedUserId = userId?.toString()
 )
 
-private fun Employee.toDetailResponse() = EmployeeDetailResponse(
+private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) = EmployeeDetailResponse(
     id = id.toString(),
     firstName = firstName,
     lastName = lastName,
     fullName = fullName(),
     linkedUserId = userId?.toString(),
+    account = accountInfo,
     phone = phone,
     email = email,
     personalEmail = personalEmail,

@@ -20,5 +20,8 @@ data class CreateEmployeeCommand(
     val addressPostalCode: String?,
     val position: String,
     val hireDate: LocalDate,
-    val notes: String?
+    val notes: String?,
+    val createAccount: Boolean = false,
+    val accountEmail: String? = null,
+    val accountRole: UserRole? = null
 )

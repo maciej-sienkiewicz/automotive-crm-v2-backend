@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.employee.account.ProvisionEmployeeAccountCommand
+import pl.detailing.crm.employee.account.ProvisionEmployeeAccountHandler
 import pl.detailing.crm.employee.domain.Employee
 import pl.detailing.crm.employee.domain.EmployeeAddress
 import pl.detailing.crm.employee.infrastructure.EmployeeEntity
@@ -16,7 +18,8 @@ import java.time.Instant
 class CreateEmployeeHandler(
     private val validatorComposite: CreateEmployeeValidatorComposite,
     private val employeeRepository: EmployeeRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val provisionEmployeeAccountHandler: ProvisionEmployeeAccountHandler
 ) {
     @Transactional
     suspend fun handle(command: CreateEmployeeCommand): CreateEmployeeResult = withContext(Dispatchers.IO) {
@@ -73,6 +76,26 @@ class CreateEmployeeHandler(
                 FieldChange("linkedUserId", null, employee.userId?.toString())
             )
         ))
+
+        if (command.createAccount) {
+            val accountEmail = command.accountEmail?.trim()?.lowercase()
+                ?: throw ValidationException("Adres e-mail konta jest wymagany przy tworzeniu konta użytkownika")
+            val accountRole = command.accountRole
+                ?: throw ValidationException("Rola konta jest wymagana przy tworzeniu konta użytkownika")
+            if (accountRole == UserRole.OWNER) {
+                throw ValidationException("Nie można nadać roli właściciela nowemu kontu pracownika")
+            }
+            provisionEmployeeAccountHandler.handle(
+                ProvisionEmployeeAccountCommand(
+                    studioId = command.studioId,
+                    requestedBy = command.userId,
+                    requestedByName = command.userName,
+                    employeeId = employee.id,
+                    email = accountEmail,
+                    role = accountRole
+                )
+            )
+        }
 
         CreateEmployeeResult(employeeId = employee.id, fullName = employee.fullName())
     }
