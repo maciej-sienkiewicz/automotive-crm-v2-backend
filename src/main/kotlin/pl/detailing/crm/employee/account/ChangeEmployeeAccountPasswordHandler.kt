@@ -34,7 +34,7 @@ class ChangeEmployeeAccountPasswordHandler(
             ?: throw EntityNotFoundException("Pracownik nie istnieje")
 
         val userId = employeeEntity.userId
-            ?: throw BusinessException("Pracownik nie ma powiązanego konta użytkownika")
+            ?: throw ValidationException("Pracownik nie ma powiązanego konta użytkownika")
 
         val userEntity = userRepository.findByIdAndStudioId(userId, studioId.value)
             ?: throw EntityNotFoundException("Konto użytkownika nie istnieje")

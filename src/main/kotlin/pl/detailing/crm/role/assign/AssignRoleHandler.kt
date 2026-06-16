@@ -31,7 +31,7 @@ class AssignRoleHandler(
             ?: throw EntityNotFoundException("Użytkownik nie istnieje")
 
         if (userEntity.role == UserRole.OWNER) {
-            throw BusinessException("Właściciel firmy nie może mieć przypisanej roli — ma pełne uprawnienia")
+            throw ValidationException("Właściciel firmy nie może mieć przypisanej roli — ma pełne uprawnienia")
         }
 
         if (roleId != null) {

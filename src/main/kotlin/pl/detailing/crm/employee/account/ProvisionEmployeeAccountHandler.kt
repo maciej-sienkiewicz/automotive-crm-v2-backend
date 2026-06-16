@@ -35,7 +35,7 @@ class ProvisionEmployeeAccountHandler(
             ?: throw EntityNotFoundException("Pracownik nie istnieje")
 
         if (employeeEntity.userId != null) {
-            throw BusinessException("Pracownik posiada już powiązane konto użytkownika")
+            throw ConflictException("Pracownik posiada już powiązane konto użytkownika")
         }
 
         val email = command.email.trim().lowercase()

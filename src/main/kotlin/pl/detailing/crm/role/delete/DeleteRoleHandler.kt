@@ -23,7 +23,7 @@ class DeleteRoleHandler(
 
             val assignedUsers = userRepository.findByCustomRoleIdAndStudioId(roleId.value, studioId.value)
             if (assignedUsers.isNotEmpty()) {
-                throw BusinessException(
+                throw ValidationException(
                     "Nie można usunąć roli '${entity.name}' — jest przypisana do ${assignedUsers.size} użytkownika(-ów). " +
                         "Najpierw zmień lub usuń przypisania."
                 )
