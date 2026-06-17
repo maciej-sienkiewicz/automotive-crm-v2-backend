@@ -122,20 +122,10 @@ class EmployeeController(
             studioId = principal.studioId,
             userId = principal.userId,
             userName = principal.fullName,
-            linkedUserId = request.linkedUserId?.let { UserId.fromString(it) },
             firstName = request.firstName,
             lastName = request.lastName,
             phone = request.phone,
-            email = request.email,
-            personalEmail = request.personalEmail,
-            pesel = request.pesel,
-            nip = request.nip,
-            addressStreet = request.addressStreet,
-            addressCity = request.addressCity,
-            addressPostalCode = request.addressPostalCode,
-            position = request.position,
-            hireDate = request.hireDate,
-            notes = request.notes
+            email = request.email
         )
 
         val result = createEmployeeHandler.handle(command)

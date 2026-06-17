@@ -24,7 +24,7 @@ class CreateEmployeeHandler(
         val employee = Employee(
             id = EmployeeId.random(),
             studioId = command.studioId,
-            userId = command.linkedUserId,
+            userId = null,
             firstName = command.firstName.trim(),
             lastName = command.lastName.trim(),
             phone = command.phone?.trim(),
