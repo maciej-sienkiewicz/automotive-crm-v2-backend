@@ -223,7 +223,7 @@ class UpdateAppointmentRecurrenceScopeE2ETest {
         val principal = UserPrincipal(
             userId = userId,
             studioId = studioId,
-            role = UserRole.OWNER,
+            isOwner = true,
             email = "owner@detailboost.pl",
             fullName = "Jan Właściciel",
             phoneNumber = "+48600000000"

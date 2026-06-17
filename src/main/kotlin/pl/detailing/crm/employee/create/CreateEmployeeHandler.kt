@@ -10,7 +10,8 @@ import pl.detailing.crm.employee.account.ProvisionEmployeeAccountHandler
 import pl.detailing.crm.employee.domain.Employee
 import pl.detailing.crm.employee.infrastructure.EmployeeEntity
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.EmployeeId
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 
 @Service
@@ -59,19 +60,13 @@ class CreateEmployeeHandler(
         if (command.createAccount) {
             val accountEmail = command.accountEmail?.trim()?.lowercase()
                 ?: throw ValidationException("Adres e-mail konta jest wymagany przy tworzeniu konta użytkownika")
-            val accountRole = command.accountRole
-                ?: throw ValidationException("Rola konta jest wymagana przy tworzeniu konta użytkownika")
-            if (accountRole == UserRole.OWNER) {
-                throw ValidationException("Nie można nadać roli właściciela nowemu kontu pracownika")
-            }
             provisionEmployeeAccountHandler.handle(
                 ProvisionEmployeeAccountCommand(
                     studioId = command.studioId,
                     requestedBy = command.userId,
                     requestedByName = command.userName,
                     employeeId = employee.id,
-                    email = accountEmail,
-                    role = accountRole
+                    email = accountEmail
                 )
             )
         }

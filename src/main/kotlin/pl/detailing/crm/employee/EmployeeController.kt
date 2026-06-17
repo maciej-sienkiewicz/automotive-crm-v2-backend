@@ -15,7 +15,8 @@ import pl.detailing.crm.employee.list.ListEmployeesHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeCommand
 import pl.detailing.crm.employee.update.UpdateEmployeeHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeRequest
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.EmployeeId
+import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
 
@@ -72,7 +73,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -80,9 +81,6 @@ class EmployeeController(
     @PostMapping
     fun createEmployee(@RequestBody request: CreateEmployeeRequest): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pracowników")
-        }
 
         val result = createEmployeeHandler.handle(CreateEmployeeCommand(
             studioId = principal.studioId,
@@ -93,14 +91,13 @@ class EmployeeController(
             phone = request.phone,
             email = request.email,
             createAccount = request.createAccount,
-            accountEmail = request.accountEmail,
-            accountRole = request.accountRole
+            accountEmail = request.accountEmail
         ))
 
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
         }
         ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse(accountInfo))
     }
@@ -111,9 +108,6 @@ class EmployeeController(
         @RequestBody request: UpdateEmployeeRequest
     ): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować dane pracowników")
-        }
 
         updateEmployeeHandler.handle(UpdateEmployeeCommand(
             studioId = principal.studioId,
@@ -129,7 +123,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, u.role.name, u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -137,7 +131,7 @@ class EmployeeController(
     @DeleteMapping("/{employeeId}")
     fun deleteEmployee(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usunąć pracownika")
         }
         val entity = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
@@ -162,12 +156,6 @@ class EmployeeController(
         @RequestBody request: ProvisionAccountRequest
     ): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć konta dla pracowników")
-        }
-        if (request.role == UserRole.OWNER) {
-            throw ForbiddenException("Nie można nadać roli właściciela kontu pracownika")
-        }
 
         val userId = provisionEmployeeAccountHandler.handle(
             ProvisionEmployeeAccountCommand(
@@ -175,8 +163,7 @@ class EmployeeController(
                 requestedBy = principal.userId,
                 requestedByName = principal.fullName,
                 employeeId = EmployeeId.fromString(employeeId),
-                email = request.email,
-                role = request.role
+                email = request.email
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(mapOf("userId" to userId.toString()))
@@ -188,9 +175,6 @@ class EmployeeController(
         @RequestBody request: BlockAccountRequest
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą blokować konta pracowników")
-        }
 
         blockEmployeeAccountHandler.handle(
             studioId = principal.studioId,
@@ -205,7 +189,7 @@ class EmployeeController(
     @DeleteMapping("/{employeeId}/account")
     fun deleteAccount(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usunąć konto pracownika")
         }
 
@@ -224,9 +208,6 @@ class EmployeeController(
         @RequestBody request: ChangeAccountPasswordRequest
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą zmieniać hasła kont pracowników")
-        }
 
         changeEmployeeAccountPasswordHandler.handle(
             studioId = principal.studioId,
@@ -244,7 +225,7 @@ class EmployeeController(
 // Request DTOs
 // ─────────────────────────────────────────────────────────────────────────────
 
-data class ProvisionAccountRequest(val email: String, val role: UserRole)
+data class ProvisionAccountRequest(val email: String)
 data class BlockAccountRequest(val block: Boolean)
 data class ChangeAccountPasswordRequest(val newPassword: String, val confirmPassword: String)
 

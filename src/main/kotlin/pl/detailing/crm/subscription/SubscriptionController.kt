@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.SubscriptionStatus
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.subscription.domain.SubscriptionPlan
 import pl.detailing.crm.subscription.domain.SubscriptionPlanType
 import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository
@@ -118,7 +117,7 @@ class SubscriptionController(
     @PostMapping("/start-trial")
     fun startTrial(): ResponseEntity<SubscriptionStatusResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Uruchomienie trialu jest dostępne wyłącznie dla właściciela studia")
         }
         val info = subscriptionService.startTrial(principal.studioId)
@@ -131,7 +130,7 @@ class SubscriptionController(
     ): ResponseEntity<SubscriptionStatusResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Zakup subskrypcji jest dostępny wyłącznie dla właściciela studia")
         }
 
@@ -159,7 +158,7 @@ class SubscriptionController(
         @RequestParam(defaultValue = "20") pageSize: Int
     ): ResponseEntity<PaymentHistoryResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Historia płatności dostępna wyłącznie dla właściciela studia")
         }
 

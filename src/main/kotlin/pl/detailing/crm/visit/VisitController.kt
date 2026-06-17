@@ -309,10 +309,6 @@ class VisitController(
     ): ResponseEntity<ConfirmVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą potwierdzać wizyty")
-        }
-
         val command = ConfirmVisitCommand(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
@@ -414,10 +410,6 @@ class VisitController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą anulować wizyty")
-        }
-
         val command = CancelDraftVisitCommand(
             visitId = VisitId.fromString(visitId),
             studioId = principal.studioId,
@@ -450,10 +442,6 @@ class VisitController(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać wizyty")
-        }
 
         val command = DeleteVisitCommand(
             visitId = VisitId.fromString(visitId),

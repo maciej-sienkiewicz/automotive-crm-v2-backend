@@ -67,9 +67,6 @@ class ProtocolController(
         @RequestBody request: CreateProtocolTemplateRequest
     ): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć szablony protokołów")
-        }
         val result = createProtocolTemplateHandler.handle(
             CreateProtocolTemplateCommand(
                 studioId = principal.studioId,
@@ -88,9 +85,6 @@ class ProtocolController(
         @RequestBody request: UpdateProtocolTemplateRequest
     ): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować szablony protokołów")
-        }
         val template = protocolTemplateRepository.findByIdAndStudioId(
             UUID.fromString(id), principal.studioId.value
         )?.toDomain() ?: throw NotFoundException("Szablon protokołu nie został znaleziony")
@@ -111,9 +105,6 @@ class ProtocolController(
     @DeleteMapping("/protocol-templates/{id}")
     fun deleteProtocolTemplate(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać szablony protokołów")
-        }
         val template = protocolTemplateRepository.findByIdAndStudioId(
             UUID.fromString(id), principal.studioId.value
         ) ?: throw NotFoundException("Szablon protokołu nie został znaleziony")
@@ -138,9 +129,6 @@ class ProtocolController(
         @RequestBody request: CreateProtocolRuleRequest
     ): ResponseEntity<ProtocolRuleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć reguły protokołów")
-        }
         val result = createProtocolRuleHandler.handle(
             CreateProtocolRuleCommand(
                 studioId = principal.studioId,
@@ -159,9 +147,6 @@ class ProtocolController(
     @DeleteMapping("/protocol-rules/{id}")
     fun deleteProtocolRule(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać reguły protokołów")
-        }
         deleteProtocolRuleHandler.handle(
             DeleteProtocolRuleCommand(ruleId = ProtocolRuleId.fromString(id), studioId = principal.studioId)
         )

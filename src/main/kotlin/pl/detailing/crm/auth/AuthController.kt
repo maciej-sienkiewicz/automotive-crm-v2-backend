@@ -152,7 +152,7 @@ class AuthController(
                     studioId = principal.studioId.toString(),
                     email = principal.email,
                     phoneNumber = principal.phoneNumber,
-                    role = principal.role.name,
+                    role = if (principal.isOwner) "OWNER" else "USER",
                     subscriptionStatus = subscriptionInfo.status,
                     daysRemaining = subscriptionInfo.daysRemaining,
                     subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),

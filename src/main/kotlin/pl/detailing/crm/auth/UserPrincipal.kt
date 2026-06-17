@@ -10,7 +10,7 @@ import java.io.Serializable
 data class UserPrincipal(
     val userId: UserId,
     val studioId: StudioId,
-    val role: UserRole,
+    val isOwner: Boolean,
     val email: String,
     val fullName: String,
     val phoneNumber: String,
@@ -19,7 +19,7 @@ data class UserPrincipal(
     override fun getName(): String = fullName
 
     override fun getAuthorities(): Collection<GrantedAuthority> {
-        return listOf(SimpleGrantedAuthority("ROLE_${role.name}"))
+        return listOf(SimpleGrantedAuthority(if (isOwner) "ROLE_OWNER" else "ROLE_USER"))
     }
 
     override fun getCredentials(): Any? = null
@@ -55,12 +55,7 @@ object SecurityContextHelper {
 
     fun getCurrentStudioId(): StudioId = getCurrentUser().studioId
 
-    fun getCurrentUserRole(): UserRole = getCurrentUser().role
+    fun isOwner(): Boolean = getCurrentUser().isOwner
 
-    fun isOwner(): Boolean = getCurrentUserRole() == UserRole.OWNER
-
-    fun isManagerOrOwner(): Boolean {
-        val role = getCurrentUserRole()
-        return role == UserRole.OWNER || role == UserRole.MANAGER
-    }
+    fun isManagerOrOwner(): Boolean = getCurrentUser().isOwner
 }

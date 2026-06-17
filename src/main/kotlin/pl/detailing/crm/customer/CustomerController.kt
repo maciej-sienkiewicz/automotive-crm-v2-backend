@@ -23,7 +23,6 @@ import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.vehicle.VehicleDataResponse
 import pl.detailing.crm.vehicle.VehicleResponse as VehicleCreateResponse
 import pl.detailing.crm.vehicle.create.CreateVehicleCommand
@@ -249,10 +248,6 @@ class CustomerController(
     fun createCustomer(@RequestBody request: CreateCustomerRequest): ResponseEntity<CustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć klientów")
-        }
-
         val command = CreateCustomerCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -419,10 +414,6 @@ class CustomerController(
     ): ResponseEntity<VehicleCreateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
-        }
-
         val command = CreateVehicleCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -550,10 +541,6 @@ class CustomerController(
     ): ResponseEntity<UpdateCustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować klientów")
-        }
-
         val command = pl.detailing.crm.customer.update.UpdateCustomerCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
@@ -602,10 +589,6 @@ class CustomerController(
     ): ResponseEntity<UpdateCompanyResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować dane firmy")
-        }
-
         val command = pl.detailing.crm.customer.update.UpdateCompanyCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
@@ -641,10 +624,6 @@ class CustomerController(
     @DeleteMapping("/{customerId}/company")
     fun deleteCompany(@PathVariable customerId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać dane firmy")
-        }
 
         val command = pl.detailing.crm.customer.update.DeleteCompanyCommand(
             customerId = CustomerId(UUID.fromString(customerId)),

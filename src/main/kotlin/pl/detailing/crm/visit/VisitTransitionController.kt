@@ -46,10 +46,6 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą oznaczyć wizytę jako gotową do odbioru")
-        }
-
         val command = MarkVisitReadyForPickupCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -87,10 +83,6 @@ class VisitTransitionController(
         @RequestBody request: CompleteVisitRequest
     ): ResponseEntity<CompleteVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą zakończyć wizytę")
-        }
 
         val paymentMethod = parsePaymentMethod(request.payment.method)
         val documentType  = request.payment.invoiceType
@@ -135,10 +127,6 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą odrzucić wizytę")
-        }
-
         val command = RejectVisitCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -169,7 +157,7 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może archiwizować wizyty")
         }
 

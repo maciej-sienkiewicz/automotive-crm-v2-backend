@@ -53,7 +53,7 @@ class ProvisionEmployeeAccountHandler(
             passwordHash = passwordEncoder.encode(UUID.randomUUID().toString()),
             firstName = employeeEntity.firstName,
             lastName = employeeEntity.lastName,
-            role = command.role,
+            isOwner = false,
             isActive = true,
             createdAt = Instant.now()
         )
@@ -96,7 +96,7 @@ class ProvisionEmployeeAccountHandler(
             changes = listOf(
                 FieldChange("account", null, "created"),
                 FieldChange("accountEmail", null, email),
-                FieldChange("accountRole", null, command.role.name)
+                FieldChange("accountRole", null, "USER")
             )
         ))
 

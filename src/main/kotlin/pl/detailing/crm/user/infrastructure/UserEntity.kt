@@ -1,9 +1,12 @@
 package pl.detailing.crm.user.infrastructure
 
-import jakarta.persistence.*
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.Id
+import jakarta.persistence.Index
+import jakarta.persistence.Table
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.user.domain.User
 import java.time.Instant
 import java.util.UUID
@@ -42,9 +45,8 @@ class UserEntity(
     @Column(name = "last_name", nullable = false, length = 100)
     var lastName: String,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false, length = 20)
-    var role: UserRole,
+    @Column(name = "is_owner", nullable = false)
+    var isOwner: Boolean,
 
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
@@ -66,7 +68,7 @@ class UserEntity(
         passwordHash = passwordHash,
         firstName = firstName,
         lastName = lastName,
-        role = role,
+        isOwner = isOwner,
         phoneNumber = phoneNumber,
         isActive = isActive,
         createdAt = createdAt,
@@ -82,7 +84,7 @@ class UserEntity(
             passwordHash = user.passwordHash,
             firstName = user.firstName,
             lastName = user.lastName,
-            role = user.role,
+            isOwner = user.isOwner,
             isActive = user.isActive,
             createdAt = user.createdAt,
             mobileToken = user.mobileToken

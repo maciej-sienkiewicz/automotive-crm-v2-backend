@@ -17,7 +17,11 @@ import pl.detailing.crm.customer.consent.get.GetConsentsHandler
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.consent.update.UpdateConsentCommand
 import pl.detailing.crm.customer.consent.update.UpdateConsentHandler
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.ConsentDefinitionId
+import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.MarketingChannel
+import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.shared.ProtocolStage
 import java.time.Instant
 import java.util.*
 
@@ -172,9 +176,6 @@ class ConsentController(
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private fun requireOwnerOrManager(principal: pl.detailing.crm.auth.UserPrincipal) {
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą zarządzać zgodami")
-        }
     }
 
     private fun toConsentResponse(result: CreateConsentResult): ConsentResponse =

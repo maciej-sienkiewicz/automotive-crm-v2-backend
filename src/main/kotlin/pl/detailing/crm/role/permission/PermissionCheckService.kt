@@ -5,7 +5,6 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import pl.detailing.crm.user.infrastructure.UserRepository
 
@@ -13,7 +12,7 @@ import pl.detailing.crm.user.infrastructure.UserRepository
  * Single source of truth for "does user X have permission Y in studio Z?"
  *
  * Decision logic:
- * 1. OWNER always returns true (full access, no custom role needed).
+ * 1. Studio owner always returns true (full access, no custom role needed).
  * 2. User must have a custom role assigned.
  * 3. That role must include the requested permission.
  * 4. If the permission's module maps to a [FeatureKey], the studio must have
@@ -29,7 +28,7 @@ class PermissionCheckService(
         val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
             ?: return false
 
-        if (userEntity.role == UserRole.OWNER) return true
+        if (userEntity.isOwner) return true
 
         val customRoleId = userEntity.customRoleId ?: return false
 

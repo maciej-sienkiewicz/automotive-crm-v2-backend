@@ -6,7 +6,6 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.domain.User
 import pl.detailing.crm.user.infrastructure.UserEntity
@@ -48,7 +47,7 @@ class SignupHandler(
             passwordHash = command.passwordHash,
             firstName = command.firstName,
             lastName = command.lastName,
-            role = UserRole.OWNER,
+            isOwner = true,
             isActive = true,
             createdAt = Instant.now(),
             mobileToken = mobileTokenService.generateSecureToken()

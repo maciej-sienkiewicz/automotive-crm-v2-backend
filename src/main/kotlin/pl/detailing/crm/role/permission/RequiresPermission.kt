@@ -11,7 +11,7 @@ import pl.detailing.crm.role.domain.Permission
  * 2. Feature gating — the studio must have the corresponding [pl.detailing.crm.subscription.entitlement.FeatureKey]
  *    enabled (when the permission's module requires one).
  *
- * [pl.detailing.crm.shared.UserRole.OWNER] always bypasses this check.
+ * Studio owners always bypass this check.
  *
  * Usage:
  * ```kotlin

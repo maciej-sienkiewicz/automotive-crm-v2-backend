@@ -72,9 +72,6 @@ class RoleController(
     @PostMapping
     fun createRole(@RequestBody request: CreateRoleRequest): ResponseEntity<Map<String, String>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć role")
-        }
 
         val permissions = request.permissions.map { code ->
             runCatching { Permission.valueOf(code) }.getOrElse {
@@ -101,9 +98,6 @@ class RoleController(
         @RequestBody request: UpdateRoleRequest
     ): ResponseEntity<RoleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą edytować role")
-        }
 
         val permissions = request.permissions.map { code ->
             runCatching { Permission.valueOf(code) }.getOrElse {
@@ -130,7 +124,7 @@ class RoleController(
     @DeleteMapping("/{roleId}")
     fun deleteRole(@PathVariable roleId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usuwać role")
         }
 
@@ -155,9 +149,6 @@ class RoleController(
         @RequestBody request: AssignRoleRequest
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą przypisywać role")
-        }
 
         assignRoleHandler.handle(
             studioId = principal.studioId,

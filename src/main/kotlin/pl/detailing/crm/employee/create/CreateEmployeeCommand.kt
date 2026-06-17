@@ -1,6 +1,8 @@
 package pl.detailing.crm.employee.create
 
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.EmployeeId
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 
 data class CreateEmployeeCommand(
     val studioId: StudioId,
@@ -11,6 +13,5 @@ data class CreateEmployeeCommand(
     val phone: String?,
     val email: String?,
     val createAccount: Boolean = false,
-    val accountEmail: String? = null,
-    val accountRole: UserRole? = null
+    val accountEmail: String? = null
 )

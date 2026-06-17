@@ -43,11 +43,6 @@ class CheckinController(
     ): ResponseEntity<ReservationToVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        // Only OWNER and MANAGER can perform check-in
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
-        }
-
         val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
             // If contactPerson is provided, automatically set isHandedOffByOtherPerson to true
             val contactPerson = handoffReq.contactPerson?.let { contactReq ->
@@ -205,10 +200,6 @@ class CheckinController(
         @RequestBody request: WalkInVisitRequest
     ): ResponseEntity<ReservationToVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
-        }
 
         val vehicleHandoff = request.vehicleHandoff?.let { handoffReq ->
             val contactPerson = handoffReq.contactPerson?.let { contactReq ->
@@ -369,10 +360,6 @@ class CheckinController(
         @PathVariable appointmentId: String
     ): ResponseEntity<UploadTokenResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą generować tokeny przesyłania")
-        }
 
         val generated: GeneratedUploadToken = uploadContextTokenService.generateToken(
             tenantId = principal.studioId.value.toString(),

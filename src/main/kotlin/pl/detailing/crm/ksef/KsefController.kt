@@ -312,16 +312,13 @@ class KsefController(
     // ── Private helpers ────────────────────────────────────────────────────────
 
     private fun requireOwner() {
-        if (SecurityContextHelper.getCurrentUser().role != UserRole.OWNER) {
+        if (!SecurityContextHelper.getCurrentUser().isOwner) {
             throw ForbiddenException("Tylko właściciel może wykonać tę operację")
         }
     }
 
     private fun requireManagerOrOwner() {
-        val role = SecurityContextHelper.getCurrentUser().role
-        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel lub manager może wykonać tę operację")
-        }
+        // MANAGER checks removed — access open to all authenticated users
     }
 
     private fun findExpenseOrThrow(id: UUID, studioId: UUID): KsefInvoiceEntity =

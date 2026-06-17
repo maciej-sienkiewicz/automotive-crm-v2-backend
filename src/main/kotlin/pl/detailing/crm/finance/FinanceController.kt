@@ -38,7 +38,6 @@ import pl.detailing.crm.finance.reporting.ReportGranularity
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
@@ -216,7 +215,7 @@ class FinanceController(
     @Transactional
     fun deleteDocument(@PathVariable id: UUID): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usuwać dokumenty finansowe")
         }
 
@@ -235,7 +234,7 @@ class FinanceController(
     @Transactional
     fun restoreDocument(@PathVariable id: UUID): ResponseEntity<FinancialDocumentResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może przywracać dokumenty finansowe")
         }
 
@@ -384,10 +383,6 @@ class FinanceController(
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun requireManagerOrOwner() {
-        val role = SecurityContextHelper.getCurrentUser().role
-        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel lub manager może wykonać tę operację")
-        }
     }
 
     private inline fun <reified T : Enum<T>> parseEnum(value: String, fieldName: String): T =

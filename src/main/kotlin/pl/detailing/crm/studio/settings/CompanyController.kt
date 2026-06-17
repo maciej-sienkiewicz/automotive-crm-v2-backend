@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
@@ -89,9 +88,6 @@ class CompanyController(
     ): ResponseEntity<CompanySettingsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować ustawienia firmy")
-        }
 
         val studioId = principal.studioId.value
 
@@ -143,9 +139,6 @@ class CompanyController(
     fun uploadLogo(@RequestPart("file") file: MultipartFile): ResponseEntity<UploadLogoResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą przesyłać logo firmy")
-        }
 
         val contentType = file.contentType ?: "application/octet-stream"
         if (contentType !in ALLOWED_LOGO_CONTENT_TYPES) {
@@ -186,9 +179,6 @@ class CompanyController(
     fun deleteLogo(): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać logo firmy")
-        }
 
         val studioId = principal.studioId.value
 
@@ -234,9 +224,6 @@ class CompanyController(
     ): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą zmieniać konfigurację alertów")
-        }
 
         val studioId = principal.studioId.value
         val settings = withContext(Dispatchers.IO) {

@@ -96,10 +96,6 @@ class ServiceController(
     fun createService(@RequestBody request: CreateServiceRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć usługi")
-        }
-
         val command = CreateServiceCommand(
             studioId = principal.studioId,
             userId = principal.userId,
@@ -136,9 +132,6 @@ class ServiceController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą archiwizować usługi")
-        }
 
         archiveServiceHandler.handle(
             ArchiveServiceCommand(
@@ -155,9 +148,6 @@ class ServiceController(
     fun createPackage(@RequestBody request: CreatePackageRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pakiety")
-        }
 
         val command = CreatePackageCommand(
             studioId = principal.studioId,
@@ -196,9 +186,6 @@ class ServiceController(
     fun updatePackage(@RequestBody request: UpdatePackageRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować pakiety")
-        }
 
         val command = UpdatePackageCommand(
             studioId = principal.studioId,
@@ -241,9 +228,6 @@ class ServiceController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą synchronizować pakiety")
-        }
 
         val pkgId = ServiceId.fromString(packageId)
         serviceRepository.findByIdAndStudioId(pkgId.value, principal.studioId.value)
@@ -264,9 +248,6 @@ class ServiceController(
     fun updateService(@RequestBody request: UpdateServiceRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować usługi")
-        }
 
         val command = UpdateServiceCommand(
             studioId = principal.studioId,

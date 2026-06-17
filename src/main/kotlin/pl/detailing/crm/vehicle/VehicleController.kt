@@ -219,9 +219,6 @@ class VehicleController(
     fun createVehicle(@RequestBody request: CreateVehicleRequest): ResponseEntity<VehicleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
-        }
 
         val command = CreateVehicleCommand(
             studioId = principal.studioId,
@@ -266,9 +263,6 @@ class VehicleController(
     ): ResponseEntity<UpdateVehicleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować pojazdy")
-        }
 
         val command = UpdateVehicleCommand(
             vehicleId = VehicleId.fromString(vehicleId),
@@ -307,9 +301,6 @@ class VehicleController(
     fun deleteVehicle(@PathVariable vehicleId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać pojazdy")
-        }
 
         val command = DeleteVehicleCommand(
             vehicleId = VehicleId.fromString(vehicleId),
@@ -330,9 +321,6 @@ class VehicleController(
     ): ResponseEntity<AssignOwnerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą przypisywać właścicieli")
-        }
 
         val command = AssignOwnerCommand(
             vehicleId = VehicleId.fromString(vehicleId),
@@ -362,9 +350,6 @@ class VehicleController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać właścicieli")
-        }
 
         val command = RemoveOwnerCommand(
             vehicleId = VehicleId.fromString(vehicleId),

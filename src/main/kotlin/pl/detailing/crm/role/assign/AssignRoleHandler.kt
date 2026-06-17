@@ -6,7 +6,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.role.infrastructure.RoleRepository
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.RoleId
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.user.infrastructure.UserRepository
 
 @Service
@@ -30,7 +34,7 @@ class AssignRoleHandler(
         val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
             ?: throw EntityNotFoundException("Użytkownik nie istnieje")
 
-        if (userEntity.role == UserRole.OWNER) {
+        if (userEntity.isOwner) {
             throw ValidationException("Właściciel firmy nie może mieć przypisanej roli — ma pełne uprawnienia")
         }
 

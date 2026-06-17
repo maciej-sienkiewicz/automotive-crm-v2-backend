@@ -31,15 +31,6 @@ value class UserId(val value: UUID) : Serializable {
 }
 
 /**
- * User roles within the multi-tenant system
- */
-enum class UserRole {
-    OWNER,      // Full access to studio data, team management, and billing
-    MANAGER,    // Full operational access (visits, services, customers)
-    DETAILER    // Limited access to assigned visits only
-}
-
-/**
  * Subscription status for studio billing
  */
 enum class SubscriptionStatus {

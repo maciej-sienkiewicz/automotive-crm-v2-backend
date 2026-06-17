@@ -1,6 +1,7 @@
 package pl.detailing.crm.user.domain
 
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import jakarta.persistence.*
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
@@ -21,7 +22,7 @@ data class User(
     val passwordHash: String,
     val firstName: String,
     val lastName: String,
-    val role: UserRole,
+    val isOwner: Boolean,
     val isActive: Boolean,
     val createdAt: Instant,
     val mobileToken: String? = null
