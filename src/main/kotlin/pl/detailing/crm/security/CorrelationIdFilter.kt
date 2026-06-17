@@ -61,7 +61,7 @@ class CorrelationIdFilter : OncePerRequestFilter() {
             if (principal != null) {
                 MDC.put(MDC_STUDIO_ID, principal.studioId.toString())
                 MDC.put(MDC_USER_ID, principal.userId.toString())
-                MDC.put(MDC_USER_ROLE, principal.role.name)
+                MDC.put(MDC_USER_ROLE, if (principal.isOwner) "OWNER" else "USER")
             }
 
             response.addHeader(HEADER_CORRELATION_ID, correlationId)

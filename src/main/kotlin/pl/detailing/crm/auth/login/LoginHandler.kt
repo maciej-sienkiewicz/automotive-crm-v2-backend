@@ -72,7 +72,7 @@ class LoginHandler(
             val userPrincipal = UserPrincipal(
                 userId = user.id,
                 studioId = user.studioId,
-                role = user.role,
+                isOwner = user.isOwner,
                 email = user.email,
                 phoneNumber = user.phoneNumber,
                 fullName = "${user.firstName} ${user.lastName}"
@@ -87,7 +87,7 @@ class LoginHandler(
                     studioId = user.studioId.toString(),
                     email = user.email,
                     phoneNumber = user.phoneNumber,
-                    role = user.role.name,
+                    role = if (user.isOwner) "OWNER" else "USER",
                     subscriptionStatus = subscriptionInfo.status,
                     daysRemaining = subscriptionInfo.daysRemaining,
                     subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),

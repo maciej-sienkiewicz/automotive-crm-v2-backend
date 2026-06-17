@@ -82,7 +82,7 @@ class InstagramController(
     fun approveProfile(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (!SecurityContextHelper.isManagerOrOwner()) {
+        if (!SecurityContextHelper.isOwner()) {
             throw ForbiddenException("Tylko manager lub właściciel może zatwierdzać profile.")
         }
 
@@ -100,7 +100,7 @@ class InstagramController(
     fun rejectProfile(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (!SecurityContextHelper.isManagerOrOwner()) {
+        if (!SecurityContextHelper.isOwner()) {
             throw ForbiddenException("Tylko manager lub właściciel może odrzucać profile.")
         }
 

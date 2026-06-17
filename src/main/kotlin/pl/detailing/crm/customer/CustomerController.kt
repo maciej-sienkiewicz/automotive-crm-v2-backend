@@ -23,7 +23,6 @@ import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.vehicle.VehicleDataResponse
 import pl.detailing.crm.vehicle.VehicleResponse as VehicleCreateResponse
 import pl.detailing.crm.vehicle.create.CreateVehicleCommand
@@ -81,14 +80,13 @@ class CustomerController(
         var customers = listCustomersHandler.handle(principal.studioId, query)
 
         if (search.isNotBlank()) {
-            val normalizedSearch = search.replace("\\s".toRegex(), "")
             customers = customers.filter {
                 (it.firstName?.contains(search, ignoreCase = true) ?: false) ||
                 (it.lastName?.contains(search, ignoreCase = true) ?: false) ||
                 (it.contact.email?.contains(search, ignoreCase = true) ?: false) ||
-                (it.contact.phone?.replace("\\s".toRegex(), "")?.contains(normalizedSearch, ignoreCase = true) ?: false) ||
+                (it.contact.phone?.contains(search, ignoreCase = true) ?: false) ||
                 (it.company?.name?.contains(search, ignoreCase = true) ?: false) ||
-                (it.company?.nip?.replace("\\s".toRegex(), "")?.contains(normalizedSearch, ignoreCase = true) ?: false)
+                (it.company?.nip?.contains(search, ignoreCase = true) ?: false)
             }
         }
 
@@ -249,7 +247,7 @@ class CustomerController(
     fun createCustomer(@RequestBody request: CreateCustomerRequest): ResponseEntity<CustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć klientów")
         }
 
@@ -419,7 +417,7 @@ class CustomerController(
     ): ResponseEntity<VehicleCreateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
         }
 
@@ -463,8 +461,7 @@ class CustomerController(
     fun getCustomerVisits(
         @PathVariable customerId: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
-        @RequestParam(required = false, defaultValue = "10") limit: Int,
-        @RequestParam(defaultValue = "false") includeDeleted: Boolean
+        @RequestParam(required = false, defaultValue = "10") limit: Int
     ): ResponseEntity<CustomerVisitsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -472,8 +469,7 @@ class CustomerController(
             customerId = CustomerId(UUID.fromString(customerId)),
             studioId = principal.studioId,
             page = page,
-            limit = limit,
-            includeDeleted = includeDeleted
+            limit = limit
         )
 
         val result = getCustomerVisitsHandler.handle(command)
@@ -550,7 +546,7 @@ class CustomerController(
     ): ResponseEntity<UpdateCustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować klientów")
         }
 
@@ -602,7 +598,7 @@ class CustomerController(
     ): ResponseEntity<UpdateCompanyResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować dane firmy")
         }
 
@@ -642,7 +638,7 @@ class CustomerController(
     fun deleteCompany(@PathVariable customerId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać dane firmy")
         }
 

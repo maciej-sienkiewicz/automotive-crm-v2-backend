@@ -4,7 +4,6 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.smscredits.domain.SmsCreditBalance
 import pl.detailing.crm.smscredits.domain.SmsCreditPackage
 import pl.detailing.crm.smscredits.domain.SmsCreditPackageRepository
@@ -108,7 +107,7 @@ class SmsCreditController(
     fun getBalance(): ResponseEntity<SmsCreditBalanceDto> {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role == UserRole.DETAILER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Brak uprawnień do podglądu salda kredytów SMS")
         }
 
@@ -120,7 +119,7 @@ class SmsCreditController(
     fun getPackages(): ResponseEntity<List<SmsCreditPackageDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role == UserRole.DETAILER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Brak uprawnień do podglądu cennika kredytów SMS")
         }
 
@@ -134,7 +133,7 @@ class SmsCreditController(
     ): ResponseEntity<PurchaseCreditsResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Zakup kredytów SMS jest dostępny wyłącznie dla właściciela studia")
         }
 
@@ -155,7 +154,7 @@ class SmsCreditController(
     ): ResponseEntity<SmsCreditTransactionPageDto> {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role == UserRole.DETAILER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Brak uprawnień do podglądu historii kredytów SMS")
         }
 

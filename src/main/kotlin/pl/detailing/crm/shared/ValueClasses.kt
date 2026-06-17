@@ -31,15 +31,6 @@ value class UserId(val value: UUID) : Serializable {
 }
 
 /**
- * User roles within the multi-tenant system
- */
-enum class UserRole {
-    OWNER,      // Full access to studio data, team management, and billing
-    MANAGER,    // Full operational access (visits, services, customers)
-    DETAILER    // Limited access to assigned visits only
-}
-
-/**
  * Subscription status for studio billing
  */
 enum class SubscriptionStatus {
@@ -715,11 +706,6 @@ class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)
 class UnprocessableEntityException(message: String) : BusinessException(message)
-class AlreadyLinkedException(
-    val linkedLeadId: String,
-    val linkedLeadName: String?,
-    message: String = "Zasób jest już przypisany do innego leada"
-) : BusinessException(message)
 class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : BusinessException(message)
 class FeatureLockedException(
     val featureKey: FeatureKey,
@@ -862,15 +848,6 @@ value class EmployeeId(val value: UUID) : Serializable {
     companion object {
         fun random() = EmployeeId(UUID.randomUUID())
         fun fromString(value: String) = EmployeeId(UUID.fromString(value))
-    }
-    override fun toString(): String = value.toString()
-}
-
-@JvmInline
-value class RoleId(val value: UUID) : Serializable {
-    companion object {
-        fun random() = RoleId(UUID.randomUUID())
-        fun fromString(value: String) = RoleId(UUID.fromString(value))
     }
     override fun toString(): String = value.toString()
 }

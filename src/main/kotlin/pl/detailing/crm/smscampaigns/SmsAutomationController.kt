@@ -5,7 +5,6 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.smscampaigns.automation.GetAutomationConfigHandler
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationConfigCommand
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationConfigHandler
@@ -71,7 +70,7 @@ class SmsAutomationController(
     ): ResponseEntity<SmsAutomationConfigDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować konfigurację automatyzacji SMS")
         }
 

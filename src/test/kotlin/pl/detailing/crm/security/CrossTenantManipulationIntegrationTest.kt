@@ -149,7 +149,7 @@ class CrossTenantManipulationIntegrationTest {
         val principal = UserPrincipal(
             userId      = UserId.random(),
             studioId    = studioId,
-            role        = UserRole.MANAGER,
+            isOwner      = false,
             email       = "attacker@evil.com",
             fullName    = "Attacker User",
             phoneNumber = "+48000000000"

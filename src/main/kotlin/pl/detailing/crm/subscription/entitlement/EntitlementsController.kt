@@ -4,7 +4,6 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.subscription.entitlement.domain.AddOn
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.Plan
@@ -363,7 +362,7 @@ class EntitlementsController(
 
     private fun requireOwner() {
         val principal = SecurityContextHelper.getCurrentUser()
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel studia może zarządzać subskrypcją")
         }
     }

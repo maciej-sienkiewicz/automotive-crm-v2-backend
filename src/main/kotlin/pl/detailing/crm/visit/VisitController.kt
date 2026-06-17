@@ -16,8 +16,6 @@ import pl.detailing.crm.email.visitwelcome.SendVisitWelcomeEmailCommand
 import pl.detailing.crm.email.visitwelcome.WelcomeEmailOptions
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitCommand
 import pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler
-import pl.detailing.crm.visit.delete.DeleteVisitCommand
-import pl.detailing.crm.visit.delete.DeleteVisitHandler
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.domain.AdjustmentType
@@ -34,9 +32,6 @@ import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
-import pl.detailing.crm.service.infrastructure.ServiceRepository
-import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
-import pl.detailing.crm.service.list.PackageItemDto
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -46,8 +41,6 @@ import java.util.UUID
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,
-    private val serviceRepository: ServiceRepository,
-    private val packageItemRepository: ServicePackageItemRepository,
     private val getVisitPhotosHandler: GetVisitPhotosHandler,
     private val addVisitPhotoHandler: AddVisitPhotoHandler,
     private val deleteVisitPhotoHandler: DeleteVisitPhotoHandler,
@@ -55,7 +48,6 @@ class VisitController(
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
-    private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
 ) {
@@ -72,8 +64,7 @@ class VisitController(
         @RequestParam(defaultValue = "20") size: Int,
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) search: String?,
-        @RequestParam(required = false) scheduledDate: String?,
-        @RequestParam(defaultValue = "false") includeDeleted: Boolean
+        @RequestParam(required = false) scheduledDate: String?
     ): ResponseEntity<VisitListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -96,56 +87,10 @@ class VisitController(
         val command = pl.detailing.crm.visit.list.ListVisitsCommand(
             studioId = principal.studioId,
             page = maxOf(1, page),
-            pageSize = maxOf(1, minOf(100, size)),
+            pageSize = maxOf(1, minOf(100, size)), // Limit page size to 100
             status = visitStatus,
             searchTerm = search,
-            scheduledDate = scheduledDateFilter,
-            includeDeleted = includeDeleted
-        )
-
-        val result = listVisitsHandler.handle(command)
-
-        ResponseEntity.ok(VisitListResponse(
-            visits = result.items,
-            pagination = PaginationMetadata(
-                total = result.total,
-                page = result.page,
-                pageSize = result.pageSize,
-                totalPages = result.totalPages
-            )
-        ))
-    }
-
-    /**
-     * Get only soft-deleted visits with pagination and filtering
-     * GET /api/visits/deleted
-     */
-    @GetMapping("/deleted")
-    fun getDeletedVisits(
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int,
-        @RequestParam(required = false) status: String?,
-        @RequestParam(required = false) search: String?,
-        @RequestParam(required = false) scheduledDate: String?
-    ): ResponseEntity<VisitListResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val visitStatus = status?.let {
-            try { VisitStatus.valueOf(it.uppercase()) } catch (e: IllegalArgumentException) { null }
-        }
-
-        val scheduledDateFilter = scheduledDate?.let {
-            try { LocalDate.parse(it) } catch (e: Exception) { null }
-        }
-
-        val command = pl.detailing.crm.visit.list.ListVisitsCommand(
-            studioId = principal.studioId,
-            page = maxOf(1, page),
-            pageSize = maxOf(1, minOf(100, size)),
-            status = visitStatus,
-            searchTerm = search,
-            scheduledDate = scheduledDateFilter,
-            includeDeleted = true
+            scheduledDate = scheduledDateFilter
         )
 
         val result = listVisitsHandler.handle(command)
@@ -309,7 +254,7 @@ class VisitController(
     ): ResponseEntity<ConfirmVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą potwierdzać wizyty")
         }
 
@@ -403,18 +348,26 @@ class VisitController(
 
     /**
      * Cancel a DRAFT visit
-     * DELETE /api/visits/{visitId}/cancel
+     * DELETE /api/visits/{visitId}
      *
-     * Validates visit is in DRAFT status and cancels it.
-     * Appointment remains in CONFIRMED status (ready to be converted again).
+     * This endpoint:
+     * - Validates visit is in DRAFT status (only DRAFT visits can be cancelled)
+     * - Deletes all associated protocols from database and S3
+     * - Deletes damage map from S3 if exists
+     * - Deletes all documents associated with the visit
+     * - Deletes the visit from database
+     * - Appointment remains in CONFIRMED status (ready to be converted again)
+     *
+     * Note: Only DRAFT visits can be cancelled. Confirmed visits should use rejection flow.
      */
-    @DeleteMapping("/{visitId}/cancel")
+    @DeleteMapping("/{visitId}")
     fun cancelDraftVisit(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        // Only OWNER and MANAGER can cancel visits
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą anulować wizyty")
         }
 
@@ -426,43 +379,6 @@ class VisitController(
         )
 
         cancelDraftVisitHandler.handle(command)
-
-        ResponseEntity.noContent().build()
-    }
-
-    /**
-     * Permanently delete a visit regardless of its status
-     * DELETE /api/visits/{visitId}
-     *
-     * Deletes the visit and all associated data:
-     * - Photos (DB records + S3 files)
-     * - Protocols (DB records + S3 files)
-     * - Damage map (S3 file)
-     * - Documents (DB records + S3 files)
-     * - Comments and notes (hard delete from DB)
-     * - Visit entity itself (cascades to service items, journal entries)
-     *
-     * Appointment remains unchanged.
-     * Only OWNER and MANAGER roles are allowed.
-     */
-    @DeleteMapping("/{visitId}")
-    fun deleteVisit(
-        @PathVariable visitId: String
-    ): ResponseEntity<Void> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać wizyty")
-        }
-
-        val command = DeleteVisitCommand(
-            visitId = VisitId.fromString(visitId),
-            studioId = principal.studioId,
-            userId = principal.userId,
-            userName = principal.fullName
-        )
-
-        deleteVisitHandler.handle(command)
 
         ResponseEntity.noContent().build()
     }
@@ -509,7 +425,7 @@ class VisitController(
                     hexColor = color.hexColor
                 )
             },
-            services = buildServiceLineItems(visit.serviceItems),
+            services = visit.serviceItems.map { mapToServiceLineItemResponse(it) },
             totalCost = MoneyAmountResponse(
                 netAmount = totalNet.amountInCents,
                 grossAmount = totalGross.amountInCents,
@@ -577,42 +493,9 @@ class VisitController(
     }
 
     /**
-     * Batch-load package info for all service items in a visit, then map each item.
-     * Avoids N+1 queries: one query for service metadata, one for package items.
-     */
-    private fun buildServiceLineItems(serviceItems: List<VisitServiceItem>): List<ServiceLineItemResponse> {
-        val serviceIds = serviceItems.mapNotNull { it.serviceId?.value }.distinct()
-        if (serviceIds.isEmpty()) return serviceItems.map { mapToServiceLineItemResponse(it, isPackage = false, packageItems = null) }
-
-        val packageServiceIds = serviceRepository.findAllById(serviceIds)
-            .filter { it.isPackage }
-            .map { it.id }
-            .toSet()
-
-        val packageItemsByServiceId: Map<UUID, List<PackageItemDto>> = if (packageServiceIds.isNotEmpty()) {
-            packageItemRepository.findByPackageIdIn(packageServiceIds.toList())
-                .groupBy({ it.packageId }, { PackageItemDto(it.serviceId.toString(), it.serviceName, it.position) })
-        } else emptyMap()
-
-        return serviceItems.map { item ->
-            val sid = item.serviceId?.value
-            val isPkg = sid != null && sid in packageServiceIds
-            val items = if (isPkg && sid != null) packageItemsByServiceId[sid]?.sortedBy { it.position } else null
-            mapToServiceLineItemResponse(item, isPkg, items)
-        }
-    }
-
-    /**
      * Map VisitServiceItem to ServiceLineItemResponse
      */
-    private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse =
-        mapToServiceLineItemResponse(serviceItem, isPackage = false, packageItems = null)
-
-    private fun mapToServiceLineItemResponse(
-        serviceItem: VisitServiceItem,
-        isPackage: Boolean,
-        packageItems: List<PackageItemDto>?
-    ): ServiceLineItemResponse {
+    private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse {
         // Convert adjustment value based on type:
         // - For PERCENT: convert from basis points back to signed percentage (divide by 100), returned as Double
         // - For monetary types (FIXED_NET, FIXED_GROSS, SET_NET, SET_GROSS): return as Long (integer grosz)
@@ -635,13 +518,11 @@ class VisitController(
             status = mapServiceStatus(serviceItem.status),
             finalPriceNet = serviceItem.finalPriceNet.amountInCents,
             finalPriceGross = serviceItem.finalPriceGross.amountInCents,
-            isPackage = isPackage,
-            packageItems = packageItems,
-
+            
             // Pending operation tracking
             pendingOperation = serviceItem.pendingOperation?.let { mapPendingOperation(it) },
             hasPendingChange = serviceItem.pendingOperation != null,
-
+            
             // Previous values for EDIT operations
             previousPriceNet = serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents,
             previousPriceGross = serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents

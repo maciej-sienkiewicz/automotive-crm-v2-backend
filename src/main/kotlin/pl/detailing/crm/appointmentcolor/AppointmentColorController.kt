@@ -19,7 +19,6 @@ import pl.detailing.crm.appointmentcolor.update.UpdateAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.update.UpdateAppointmentColorRequest
 import pl.detailing.crm.shared.AppointmentColorId
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 
 @RestController
 @RequestMapping("/api/v1/appointment-colors")
@@ -82,7 +81,7 @@ class AppointmentColorController(
     fun createColor(@RequestBody request: CreateAppointmentColorRequest): ResponseEntity<AppointmentColorResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć kolory rezerwacji")
         }
 
@@ -109,7 +108,7 @@ class AppointmentColorController(
     ): ResponseEntity<AppointmentColorResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować kolory rezerwacji")
         }
 
@@ -134,7 +133,7 @@ class AppointmentColorController(
     fun deleteColor(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać kolory rezerwacji")
         }
 

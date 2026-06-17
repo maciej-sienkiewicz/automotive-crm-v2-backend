@@ -1,6 +1,7 @@
 package pl.detailing.crm.employee.create
 
 import pl.detailing.crm.shared.*
+import java.time.LocalDate
 
 data class CreateEmployeeCommand(
     val studioId: StudioId,
@@ -10,7 +11,14 @@ data class CreateEmployeeCommand(
     val lastName: String,
     val phone: String?,
     val email: String?,
-    val createAccount: Boolean = false,
-    val accountEmail: String? = null,
-    val accountRole: UserRole? = null
+    val personalEmail: String? = null,
+    val pesel: String? = null,
+    val nip: String? = null,
+    val addressStreet: String? = null,
+    val addressCity: String? = null,
+    val addressPostalCode: String? = null,
+    val position: String = "",
+    val hireDate: LocalDate? = null,
+    val notes: String? = null,
+    val linkedUserId: UserId? = null
 )

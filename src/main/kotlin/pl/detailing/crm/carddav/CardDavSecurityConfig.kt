@@ -70,7 +70,7 @@ class CardDavUserDetailsService(
             studioId = entity.studioId,
             username = entity.email,
             passwordHash = entity.passwordHash,
-            role = entity.role.name
+            role = if (entity.isOwner) "OWNER" else "USER"
         )
     }
 }

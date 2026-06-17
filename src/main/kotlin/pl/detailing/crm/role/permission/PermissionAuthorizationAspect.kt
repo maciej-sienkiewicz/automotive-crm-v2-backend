@@ -16,7 +16,7 @@ import pl.detailing.crm.shared.UnauthorizedException
  * billing status) and after [pl.detailing.crm.subscription.entitlement.FeatureAuthorizationAspect]
  * (which guards module-level access). This aspect handles fine-grained action-level control.
  *
- * [pl.detailing.crm.shared.UserRole.OWNER] is always granted access without a DB lookup.
+ * Studio owners are always granted access without a DB lookup.
  */
 @Aspect
 @Component

@@ -8,7 +8,6 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.ServiceCategoryId
 import pl.detailing.crm.shared.ServiceId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesCommand
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesHandler
 import pl.detailing.crm.statistics.category.assignservices.AssignSingleServiceHandler
@@ -105,7 +104,7 @@ class CategoryController(
         @RequestBody request: CreateCategoryRequest
     ): ResponseEntity<CreateCategoryResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         val command = CreateCategoryCommand(
             studioId = principal.studioId,
@@ -135,7 +134,7 @@ class CategoryController(
         @RequestBody request: UpdateCategoryRequest
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         val command = UpdateCategoryCommand(
             categoryId = ServiceCategoryId.fromString(categoryId),
@@ -157,7 +156,7 @@ class CategoryController(
     @DeleteMapping("/{categoryId}")
     fun deleteCategory(@PathVariable categoryId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         deleteCategoryHandler.handle(
             categoryId = ServiceCategoryId.fromString(categoryId),
@@ -179,7 +178,7 @@ class CategoryController(
         @RequestBody request: AssignServicesRequest
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         val command = AssignServicesCommand(
             categoryId = ServiceCategoryId.fromString(categoryId),
@@ -205,7 +204,7 @@ class CategoryController(
         @PathVariable serviceId: String
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         assignSingleServiceHandler.handle(
             categoryId = ServiceCategoryId.fromString(categoryId),
@@ -226,7 +225,7 @@ class CategoryController(
         @PathVariable serviceId: String
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        requireManagerOrOwner(principal.role)
+        requireManagerOrOwner(principal.isOwner)
 
         unassignSingleServiceHandler.handle(
             categoryId = ServiceCategoryId.fromString(categoryId),
@@ -236,8 +235,8 @@ class CategoryController(
         ResponseEntity.noContent().build()
     }
 
-    private fun requireManagerOrOwner(role: UserRole) {
-        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
+    private fun requireManagerOrOwner(isOwner: Boolean) {
+        if (!isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą zarządzać kategoriami usług")
         }
     }

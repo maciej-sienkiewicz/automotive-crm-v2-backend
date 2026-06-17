@@ -312,14 +312,14 @@ class KsefController(
     // ── Private helpers ────────────────────────────────────────────────────────
 
     private fun requireOwner() {
-        if (SecurityContextHelper.getCurrentUser().role != UserRole.OWNER) {
+        if (!SecurityContextHelper.getCurrentUser().isOwner) {
             throw ForbiddenException("Tylko właściciel może wykonać tę operację")
         }
     }
 
     private fun requireManagerOrOwner() {
-        val role = SecurityContextHelper.getCurrentUser().role
-        if (role != UserRole.OWNER && role != UserRole.MANAGER) {
+        val isOwner = SecurityContextHelper.getCurrentUser().isOwner
+        if (!isOwner) {
             throw ForbiddenException("Tylko właściciel lub manager może wykonać tę operację")
         }
     }

@@ -3,7 +3,6 @@ package pl.detailing.crm.user.infrastructure
 import jakarta.persistence.*
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.user.domain.User
 import java.time.Instant
 import java.util.UUID
@@ -42,9 +41,8 @@ class UserEntity(
     @Column(name = "last_name", nullable = false, length = 100)
     var lastName: String,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false, length = 20)
-    var role: UserRole,
+    @Column(name = "is_owner", nullable = false)
+    var isOwner: Boolean,
 
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
@@ -53,11 +51,7 @@ class UserEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "mobile_token", nullable = true, unique = true, length = 64)
-    var mobileToken: String? = null,
-
-    /** References a custom [pl.detailing.crm.role.infrastructure.RoleEntity] within the same studio. Null = no custom role. */
-    @Column(name = "custom_role_id", nullable = true, columnDefinition = "uuid")
-    var customRoleId: UUID? = null
+    var mobileToken: String? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),
@@ -66,7 +60,7 @@ class UserEntity(
         passwordHash = passwordHash,
         firstName = firstName,
         lastName = lastName,
-        role = role,
+        isOwner = isOwner,
         phoneNumber = phoneNumber,
         isActive = isActive,
         createdAt = createdAt,
@@ -82,7 +76,7 @@ class UserEntity(
             passwordHash = user.passwordHash,
             firstName = user.firstName,
             lastName = user.lastName,
-            role = user.role,
+            isOwner = user.isOwner,
             isActive = user.isActive,
             createdAt = user.createdAt,
             mobileToken = user.mobileToken

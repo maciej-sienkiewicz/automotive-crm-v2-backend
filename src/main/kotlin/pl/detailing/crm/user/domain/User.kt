@@ -21,7 +21,7 @@ data class User(
     val passwordHash: String,
     val firstName: String,
     val lastName: String,
-    val role: UserRole,
+    val isOwner: Boolean,
     val isActive: Boolean,
     val createdAt: Instant,
     val mobileToken: String? = null

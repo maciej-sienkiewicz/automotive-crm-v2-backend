@@ -46,7 +46,7 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą oznaczyć wizytę jako gotową do odbioru")
         }
 
@@ -88,7 +88,7 @@ class VisitTransitionController(
     ): ResponseEntity<CompleteVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą zakończyć wizytę")
         }
 
@@ -135,7 +135,7 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą odrzucić wizytę")
         }
 
@@ -169,7 +169,7 @@ class VisitTransitionController(
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może archiwizować wizyty")
         }
 
@@ -253,7 +253,7 @@ data class CompleteVisitRequest(
 )
 
 data class PaymentRequest(
-    /** CASH | CARD | TRANSFER | BLIK_NA_NUMER | BLIK_TERMINAL */
+    /** CASH | CARD | TRANSFER */
     val method: String,
 
     /** RECEIPT | INVOICE (default: RECEIPT when absent) */

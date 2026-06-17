@@ -18,7 +18,6 @@ import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.observability.MetricsTags
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import java.util.UUID
 
 /**
@@ -161,7 +160,7 @@ class TenantIsolationAuditServiceTest {
     private fun buildUser(studioId: StudioId) = UserPrincipal(
         userId      = UserId.random(),
         studioId    = studioId,
-        role        = UserRole.MANAGER,
+        isOwner      = false,
         email       = "attacker@test.com",
         fullName    = "Test User",
         phoneNumber = "+48111222333"

@@ -12,12 +12,6 @@ import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.login.LoginHandler
 import pl.detailing.crm.auth.login.LoginRequest
-import pl.detailing.crm.auth.passwordreset.ForgotPasswordRequest
-import pl.detailing.crm.auth.passwordreset.PasswordResetTokenService
-import pl.detailing.crm.auth.passwordreset.RequestPasswordResetHandler
-import pl.detailing.crm.auth.passwordreset.ResetPasswordHandler
-import pl.detailing.crm.auth.passwordreset.ResetPasswordRequest
-import pl.detailing.crm.auth.passwordreset.ValidateResetTokenResponse
 import pl.detailing.crm.auth.signup.SignupHandler
 import pl.detailing.crm.auth.signup.SignupRequest
 import pl.detailing.crm.subscription.SubscriptionService
@@ -29,9 +23,6 @@ import pl.detailing.crm.voice.MobileTokenService
 class AuthController(
     private val signupHandler: SignupHandler,
     private val loginHandler: LoginHandler,
-    private val requestPasswordResetHandler: RequestPasswordResetHandler,
-    private val resetPasswordHandler: ResetPasswordHandler,
-    private val passwordResetTokenService: PasswordResetTokenService,
     private val subscriptionService: SubscriptionService,
     private val securityContextRepository: SecurityContextRepository,
     private val userRepository: UserRepository,
@@ -98,44 +89,6 @@ class AuthController(
         ))
     }
 
-    /**
-     * Initiates a password reset. Always responds with the same generic message,
-     * regardless of whether the email belongs to an existing account, to avoid
-     * leaking which addresses are registered. When the account exists, an email
-     * with a time-limited reset link is dispatched.
-     */
-    @PostMapping("/forgot-password")
-    fun forgotPassword(@RequestBody request: ForgotPasswordRequest): ResponseEntity<UnifiedAuthResponse> = runBlocking {
-        requestPasswordResetHandler.handle(request)
-
-        ResponseEntity.ok(UnifiedAuthResponse(
-            success = true,
-            message = "Jeśli konto o podanym adresie e-mail istnieje, wyślemy na nie wiadomość z linkiem do zresetowania hasła."
-        ))
-    }
-
-    /**
-     * Lets the frontend check whether a reset link is still valid before rendering
-     * the new-password form. Does not consume the token.
-     */
-    @GetMapping("/reset-password/validate")
-    fun validateResetToken(@RequestParam("token") token: String): ResponseEntity<ValidateResetTokenResponse> {
-        return ResponseEntity.ok(ValidateResetTokenResponse(valid = passwordResetTokenService.isValid(token)))
-    }
-
-    /**
-     * Completes the reset by consuming the token and storing the new password.
-     */
-    @PostMapping("/reset-password")
-    fun resetPassword(@RequestBody request: ResetPasswordRequest): ResponseEntity<UnifiedAuthResponse> = runBlocking {
-        resetPasswordHandler.handle(request)
-
-        ResponseEntity.ok(UnifiedAuthResponse(
-            success = true,
-            message = "Hasło zostało zmienione. Możesz teraz zalogować się przy użyciu nowego hasła."
-        ))
-    }
-
     @GetMapping("/me")
     fun getCurrentUser(): ResponseEntity<UnifiedAuthResponse> = runBlocking {
         try {
@@ -152,7 +105,7 @@ class AuthController(
                     studioId = principal.studioId.toString(),
                     email = principal.email,
                     phoneNumber = principal.phoneNumber,
-                    role = principal.role.name,
+                    role = if (principal.isOwner) "OWNER" else "USER",
                     subscriptionStatus = subscriptionInfo.status,
                     daysRemaining = subscriptionInfo.daysRemaining,
                     subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),

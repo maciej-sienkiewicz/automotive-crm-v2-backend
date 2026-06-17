@@ -8,7 +8,13 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadId
+import pl.detailing.crm.shared.LeadStatus
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 
 @Service
@@ -28,16 +34,6 @@ class UpdateLeadHandler(
             // Verify studio ownership
             if (entity.studioId != command.studioId.value) {
                 throw ForbiddenException("Lead nie należy do tego studia")
-            }
-
-            // DETAILER cannot revert a terminal status — would let them erase lost/won history
-            val terminalStatuses = setOf(LeadStatus.LOST, LeadStatus.NO_SHOW, LeadStatus.COMPLETED, LeadStatus.CONFIRMED)
-            if (command.userRole == UserRole.DETAILER
-                && entity.status in terminalStatuses
-                && command.status != null
-                && command.status !in terminalStatuses
-            ) {
-                throw ForbiddenException("Nie możesz cofnąć statusu zamkniętego leada. Skontaktuj się z managerem.")
             }
 
             // Validate estimated value if provided

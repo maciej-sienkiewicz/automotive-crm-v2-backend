@@ -10,7 +10,6 @@ import pl.detailing.crm.email.automation.UpdateEmailTemplateConfigCommand
 import pl.detailing.crm.email.automation.UpdateEmailTemplateConfigHandler
 import pl.detailing.crm.email.domain.EmailAutomationConfig
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 
 // ── Request / Response DTOs ──────────────────────────────────────────────────
 
@@ -68,7 +67,7 @@ class EmailAutomationController(
     ): ResponseEntity<EmailAutomationConfigDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Only OWNER and MANAGER can update email automation config")
         }
 

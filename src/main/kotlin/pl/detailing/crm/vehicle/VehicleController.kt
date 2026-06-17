@@ -65,9 +65,8 @@ class VehicleController(
 
         // Filter by search
         if (search.isNotBlank()) {
-            val normalizedSearch = search.replace("\\s".toRegex(), "")
             vehicles = vehicles.filter {
-                it.licensePlate.replace("\\s".toRegex(), "").contains(normalizedSearch, ignoreCase = true) ||
+                it.licensePlate.contains(search, ignoreCase = true) ||
                 it.brand.contains(search, ignoreCase = true) ||
                 it.model.contains(search, ignoreCase = true) ||
                 it.owners.any { owner -> owner.customerName.contains(search, ignoreCase = true) }
@@ -219,7 +218,7 @@ class VehicleController(
     fun createVehicle(@RequestBody request: CreateVehicleRequest): ResponseEntity<VehicleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą tworzyć pojazdy")
         }
 
@@ -266,7 +265,7 @@ class VehicleController(
     ): ResponseEntity<UpdateVehicleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować pojazdy")
         }
 
@@ -307,7 +306,7 @@ class VehicleController(
     fun deleteVehicle(@PathVariable vehicleId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać pojazdy")
         }
 
@@ -330,7 +329,7 @@ class VehicleController(
     ): ResponseEntity<AssignOwnerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą przypisywać właścicieli")
         }
 
@@ -362,7 +361,7 @@ class VehicleController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać właścicieli")
         }
 
@@ -383,8 +382,7 @@ class VehicleController(
     fun getVehicleVisits(
         @PathVariable vehicleId: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
-        @RequestParam(required = false, defaultValue = "10") limit: Int,
-        @RequestParam(defaultValue = "false") includeDeleted: Boolean
+        @RequestParam(required = false, defaultValue = "10") limit: Int
     ): ResponseEntity<VehicleVisitsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -392,8 +390,7 @@ class VehicleController(
             vehicleId = VehicleId.fromString(vehicleId),
             studioId = principal.studioId,
             page = page,
-            limit = limit,
-            includeDeleted = includeDeleted
+            limit = limit
         )
 
         val result = getVehicleVisitsHandler.handle(command)

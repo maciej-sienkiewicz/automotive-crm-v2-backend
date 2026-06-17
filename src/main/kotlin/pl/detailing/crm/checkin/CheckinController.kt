@@ -44,7 +44,7 @@ class CheckinController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         // Only OWNER and MANAGER can perform check-in
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
         }
 
@@ -206,7 +206,7 @@ class CheckinController(
     ): ResponseEntity<ReservationToVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą przeprowadzać przyjęcie pojazdu")
         }
 
@@ -370,7 +370,7 @@ class CheckinController(
     ): ResponseEntity<UploadTokenResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą generować tokeny przesyłania")
         }
 

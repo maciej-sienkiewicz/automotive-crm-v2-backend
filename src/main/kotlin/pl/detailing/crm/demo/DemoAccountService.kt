@@ -68,7 +68,7 @@ class DemoAccountService(
             passwordHash = passwordEncoder.encode(DEMO_PASSWORD),
             firstName = "Demo",
             lastName = "User",
-            role = UserRole.OWNER,
+            isOwner = true,
             isActive = true,
             createdAt = now,
             mobileToken = mobileTokenService.generateSecureToken()
@@ -91,7 +91,7 @@ class DemoAccountService(
         val userPrincipal = UserPrincipal(
             userId = userId,
             studioId = studioId,
-            role = UserRole.OWNER,
+            isOwner = true,
             email = email,
             phoneNumber = "+48000000000",
             fullName = "Demo User"

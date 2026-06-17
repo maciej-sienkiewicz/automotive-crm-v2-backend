@@ -5,7 +5,6 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import pl.detailing.crm.user.infrastructure.UserRepository
 
@@ -29,7 +28,7 @@ class PermissionCheckService(
         val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
             ?: return false
 
-        if (userEntity.role == UserRole.OWNER) return true
+        if (userEntity.isOwner) return true
 
         val customRoleId = userEntity.customRoleId ?: return false
 

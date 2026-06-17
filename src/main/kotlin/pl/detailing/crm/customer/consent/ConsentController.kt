@@ -172,7 +172,7 @@ class ConsentController(
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private fun requireOwnerOrManager(principal: pl.detailing.crm.auth.UserPrincipal) {
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą zarządzać zgodami")
         }
     }

@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.UserRole
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
@@ -89,7 +88,7 @@ class CompanyController(
     ): ResponseEntity<CompanySettingsResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą aktualizować ustawienia firmy")
         }
 
@@ -143,7 +142,7 @@ class CompanyController(
     fun uploadLogo(@RequestPart("file") file: MultipartFile): ResponseEntity<UploadLogoResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą przesyłać logo firmy")
         }
 
@@ -186,7 +185,7 @@ class CompanyController(
     fun deleteLogo(): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
+        if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel i menedżer mogą usuwać logo firmy")
         }
 
@@ -212,56 +211,6 @@ class CompanyController(
         }
 
         ResponseEntity.noContent().build()
-    }
-
-    @GetMapping("/lead-alert-config")
-    fun getLeadAlertConfig(): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val settings = withContext(Dispatchers.IO) {
-            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
-        }
-        ResponseEntity.ok(
-            LeadAlertConfigResponse(
-                leadStagnantOurThresholdHours = settings?.leadStagnantOurThresholdHours ?: 48,
-                leadStagnantClientThresholdHours = settings?.leadStagnantClientThresholdHours ?: 72
-            )
-        )
-    }
-
-    @PatchMapping("/lead-alert-config")
-    fun updateLeadAlertConfig(
-        @org.springframework.web.bind.annotation.RequestBody request: UpdateLeadAlertConfigRequest
-    ): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        if (principal.role != UserRole.OWNER && principal.role != UserRole.MANAGER) {
-            throw ForbiddenException("Tylko właściciel i menedżer mogą zmieniać konfigurację alertów")
-        }
-
-        val studioId = principal.studioId.value
-        val settings = withContext(Dispatchers.IO) {
-            studioSettingsRepository.findById(studioId).orElse(null)
-                ?: StudioSettingsEntity(studioId = studioId)
-        }
-
-        request.leadStagnantOurThresholdHours?.let {
-            require(it in 1..720) { "Próg musi być między 1 a 720 godzin" }
-            settings.leadStagnantOurThresholdHours = it
-        }
-        request.leadStagnantClientThresholdHours?.let {
-            require(it in 1..720) { "Próg musi być między 1 a 720 godzin" }
-            settings.leadStagnantClientThresholdHours = it
-        }
-        settings.updatedAt = Instant.now()
-
-        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
-
-        ResponseEntity.ok(
-            LeadAlertConfigResponse(
-                leadStagnantOurThresholdHours = saved.leadStagnantOurThresholdHours,
-                leadStagnantClientThresholdHours = saved.leadStagnantClientThresholdHours
-            )
-        )
     }
 
     private fun generateLogoPresignedUrl(s3Key: String): String {
@@ -312,13 +261,3 @@ data class UpdateCompanySettingsRequest(
 data class UploadLogoResponse(val logoUrl: String)
 
 data class EmailAliasResponse(val emailAlias: String?)
-
-data class LeadAlertConfigResponse(
-    val leadStagnantOurThresholdHours: Int,
-    val leadStagnantClientThresholdHours: Int
-)
-
-data class UpdateLeadAlertConfigRequest(
-    val leadStagnantOurThresholdHours: Int?,
-    val leadStagnantClientThresholdHours: Int?
-)
