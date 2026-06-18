@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.role.domain.PermissionDependencies
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ValidationException
@@ -30,10 +31,14 @@ class UpdateRoleHandler(
         val oldName = entity.name
         val oldPermissionsCount = entity.permissions.size
 
+        // Auto-complete the set with every hard prerequisite so the stored role is always
+        // internally consistent (e.g. EDIT implies VIEW). Runtime checks stay trivial.
+        val effectivePermissions = PermissionDependencies.close(command.permissions)
+
         entity.name = name
         entity.description = command.description?.trim()
         entity.permissions.clear()
-        entity.permissions.addAll(command.permissions)
+        entity.permissions.addAll(effectivePermissions)
         entity.updatedAt = Instant.now()
 
         roleRepository.save(entity)
@@ -48,7 +53,7 @@ class UpdateRoleHandler(
             action = AuditAction.UPDATE,
             changes = listOf(
                 FieldChange("name", oldName, name),
-                FieldChange("permissions", oldPermissionsCount.toString(), command.permissions.size.toString())
+                FieldChange("permissions", oldPermissionsCount.toString(), effectivePermissions.size.toString())
             )
         ))
     }

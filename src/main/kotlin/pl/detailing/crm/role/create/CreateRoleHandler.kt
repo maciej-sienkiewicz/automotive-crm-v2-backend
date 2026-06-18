@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.role.domain.PermissionDependencies
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.infrastructure.RoleEntity
 import pl.detailing.crm.role.infrastructure.RoleRepository
@@ -31,7 +32,9 @@ class CreateRoleHandler(
             studioId = command.studioId,
             name = name,
             description = command.description?.trim(),
-            permissions = command.permissions,
+            // Auto-complete the set with every hard prerequisite so the stored role is always
+            // internally consistent (e.g. EDIT implies VIEW). Runtime checks stay trivial.
+            permissions = PermissionDependencies.close(command.permissions),
             createdBy = command.requestedBy,
             createdAt = Instant.now(),
             updatedAt = Instant.now()

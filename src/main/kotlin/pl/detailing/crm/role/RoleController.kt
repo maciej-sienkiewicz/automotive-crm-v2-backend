@@ -10,6 +10,7 @@ import pl.detailing.crm.role.create.CreateRoleCommand
 import pl.detailing.crm.role.create.CreateRoleHandler
 import pl.detailing.crm.role.delete.DeleteRoleHandler
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.domain.PermissionDependencies
 import pl.detailing.crm.role.domain.PermissionModule
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.get.GetRoleHandler
@@ -46,7 +47,13 @@ class RoleController(
                     displayName = module.displayName,
                     featureKey = module.featureKey?.name,
                     permissions = perms.map { p ->
-                        PermissionEntryResponse(code = p.name, displayName = p.displayName)
+                        PermissionEntryResponse(
+                            code = p.name,
+                            displayName = p.displayName,
+                            requires = PermissionDependencies.directDependenciesOf(p)
+                                .map { it.name }
+                                .sorted()
+                        )
                     }
                 )
             }
@@ -192,7 +199,9 @@ data class PermissionModuleResponse(
 
 data class PermissionEntryResponse(
     val code: String,
-    val displayName: String
+    val displayName: String,
+    /** Codes of permissions this one directly requires. Frontend locks/cascades checkboxes from this. */
+    val requires: List<String>
 )
 
 data class RoleResponse(
