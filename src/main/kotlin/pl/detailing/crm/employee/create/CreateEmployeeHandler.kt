@@ -66,7 +66,8 @@ class CreateEmployeeHandler(
                     requestedBy = command.userId,
                     requestedByName = command.userName,
                     employeeId = employee.id,
-                    email = accountEmail
+                    email = accountEmail,
+                    roleId = command.roleId
                 )
             )
         }

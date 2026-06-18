@@ -17,6 +17,7 @@ import pl.detailing.crm.employee.update.UpdateEmployeeHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeRequest
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
 
@@ -90,7 +91,8 @@ class EmployeeController(
             lastName = request.lastName,
             phone = request.phone,
             email = request.email,
-            createAccount = request.createAccount
+            createAccount = request.createAccount,
+            roleId = request.roleId?.let { RoleId.fromString(it) }
         ))
 
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)

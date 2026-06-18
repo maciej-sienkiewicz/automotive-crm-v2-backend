@@ -55,7 +55,8 @@ class ProvisionEmployeeAccountHandler(
             lastName = employeeEntity.lastName,
             isOwner = false,
             isActive = true,
-            createdAt = Instant.now()
+            createdAt = Instant.now(),
+            customRoleId = command.roleId?.value
         )
         userRepository.save(userEntity)
 
@@ -96,7 +97,7 @@ class ProvisionEmployeeAccountHandler(
             changes = listOf(
                 FieldChange("account", null, "created"),
                 FieldChange("accountEmail", null, email),
-                FieldChange("accountRole", null, "USER")
+                FieldChange("accountRole", null, command.roleId?.toString() ?: "USER")
             )
         ))
 
