@@ -90,8 +90,7 @@ class EmployeeController(
             lastName = request.lastName,
             phone = request.phone,
             email = request.email,
-            createAccount = request.createAccount,
-            accountEmail = request.accountEmail
+            createAccount = request.createAccount
         ))
 
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)

@@ -5,6 +5,5 @@ data class CreateEmployeeRequest(
     val lastName: String,
     val phone: String?,
     val email: String?,
-    val createAccount: Boolean = false,
-    val accountEmail: String? = null
+    val createAccount: Boolean = false
 )

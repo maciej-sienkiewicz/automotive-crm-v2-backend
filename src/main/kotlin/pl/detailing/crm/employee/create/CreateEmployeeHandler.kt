@@ -58,8 +58,8 @@ class CreateEmployeeHandler(
         ))
 
         if (command.createAccount) {
-            val accountEmail = command.accountEmail?.trim()?.lowercase()
-                ?: throw ValidationException("Adres e-mail konta jest wymagany przy tworzeniu konta użytkownika")
+            val accountEmail = employee.email?.trim()?.lowercase()
+                ?: throw ValidationException("Adres e-mail pracownika jest wymagany przy tworzeniu konta użytkownika")
             provisionEmployeeAccountHandler.handle(
                 ProvisionEmployeeAccountCommand(
                     studioId = command.studioId,
