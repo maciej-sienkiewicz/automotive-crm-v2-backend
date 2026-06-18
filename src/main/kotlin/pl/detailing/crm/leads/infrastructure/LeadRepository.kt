@@ -118,7 +118,6 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         SELECT * FROM leads l
         WHERE l.studio_id = CAST(:studioId AS uuid)
         AND l.contact_identifier = :contactIdentifier
-        AND l.status NOT IN ('LOST', 'NO_SHOW', 'COMPLETED')
         AND l.created_at >= CAST(:since AS timestamptz)
         ORDER BY l.created_at DESC
         LIMIT 1
