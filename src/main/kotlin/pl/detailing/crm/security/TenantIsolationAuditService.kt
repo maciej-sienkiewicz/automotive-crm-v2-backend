@@ -105,7 +105,7 @@ class TenantIsolationAuditService(
                         "request_path"      to request.requestURI,
                         "request_method"    to request.method,
                         "user_email"        to user.email,
-                        "user_role"         to user.role.name
+                        "user_role"         to if (user.isOwner) "OWNER" else "USER"
                     )
                 )
             )

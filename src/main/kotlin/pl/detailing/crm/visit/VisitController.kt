@@ -113,12 +113,14 @@ class VisitController(
 
         ResponseEntity.ok(VisitListResponse(
             visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer?.copy(
-                    firstName = if (item.customer.firstName != null) pl.detailing.crm.shared.PII_MASK else null,
-                    lastName = if (item.customer.lastName != null) pl.detailing.crm.shared.PII_MASK else null,
-                    phone = if (item.customer.phone != null) pl.detailing.crm.shared.PII_MASK else null,
-                    email = if (item.customer.email != null) pl.detailing.crm.shared.PII_MASK else null
-                ))
+                item.copy(customer = item.customer?.let { c ->
+                    c.copy(
+                        firstName = c.firstName.maskIf(true),
+                        lastName = c.lastName.maskIf(true),
+                        phone = c.phone.maskIf(true),
+                        email = c.email.maskIf(true)
+                    )
+                })
             } else result.items,
             pagination = PaginationMetadata(
                 total = result.total,
@@ -166,12 +168,14 @@ class VisitController(
 
         ResponseEntity.ok(VisitListResponse(
             visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer?.copy(
-                    firstName = if (item.customer.firstName != null) pl.detailing.crm.shared.PII_MASK else null,
-                    lastName = if (item.customer.lastName != null) pl.detailing.crm.shared.PII_MASK else null,
-                    phone = if (item.customer.phone != null) pl.detailing.crm.shared.PII_MASK else null,
-                    email = if (item.customer.email != null) pl.detailing.crm.shared.PII_MASK else null
-                ))
+                item.copy(customer = item.customer?.let { c ->
+                    c.copy(
+                        firstName = c.firstName.maskIf(true),
+                        lastName = c.lastName.maskIf(true),
+                        phone = c.phone.maskIf(true),
+                        email = c.email.maskIf(true)
+                    )
+                })
             } else result.items,
             pagination = PaginationMetadata(
                 total = result.total,

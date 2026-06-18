@@ -13,6 +13,7 @@ import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 
