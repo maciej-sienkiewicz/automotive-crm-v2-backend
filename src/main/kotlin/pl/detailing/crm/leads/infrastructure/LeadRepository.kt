@@ -110,6 +110,25 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
     /**
      * Find a lead linked to a specific appointment (used for lead status sync on appointment events)
      */
+    /**
+     * Find active (non-terminal) leads from a given contact address within a time window.
+     * Used to detect email reply threads instead of creating duplicate leads.
+     */
+    @Query(value = """
+        SELECT * FROM leads l
+        WHERE l.studio_id = CAST(:studioId AS uuid)
+        AND l.contact_identifier = :contactIdentifier
+        AND l.status NOT IN ('LOST', 'NO_SHOW', 'COMPLETED')
+        AND l.created_at >= CAST(:since AS timestamptz)
+        ORDER BY l.created_at DESC
+        LIMIT 1
+    """, nativeQuery = true)
+    fun findLatestActiveByContactIdentifier(
+        @Param("studioId") studioId: UUID,
+        @Param("contactIdentifier") contactIdentifier: String,
+        @Param("since") since: Instant
+    ): LeadEntity?
+
     fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 
     fun findByVisitId(visitId: UUID): LeadEntity?

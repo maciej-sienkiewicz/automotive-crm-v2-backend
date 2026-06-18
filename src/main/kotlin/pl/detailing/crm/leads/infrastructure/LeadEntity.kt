@@ -81,6 +81,9 @@ class LeadEntity(
     @Column(name = "stagnant_alert_sent_at", nullable = true, columnDefinition = "timestamp with time zone")
     var stagnantAlertSentAt: Instant?,
 
+    @Column(name = "new_activity_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var newActivityAt: Instant?,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -106,6 +109,7 @@ class LeadEntity(
         assignedUserName = assignedUserName,
         lostReason = lostReason,
         stagnantAlertSentAt = stagnantAlertSentAt,
+        newActivityAt = newActivityAt,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -130,6 +134,7 @@ class LeadEntity(
             assignedUserName = lead.assignedUserName,
             lostReason = lead.lostReason,
             stagnantAlertSentAt = lead.stagnantAlertSentAt,
+            newActivityAt = lead.newActivityAt,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )

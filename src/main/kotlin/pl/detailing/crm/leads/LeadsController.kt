@@ -104,7 +104,8 @@ class LeadsController(
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
     private val generateQuoteReplyHandler: GenerateQuoteReplyHandler,
     private val quoteReplyExampleHandler: QuoteReplyExampleHandler,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val acknowledgeLeadActivityHandler: pl.detailing.crm.leads.acknowledge.AcknowledgeLeadActivityHandler
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -1015,6 +1016,17 @@ class LeadsController(
     fun deleteQuoteReplyExample(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         quoteReplyExampleHandler.delete(UUID.fromString(id), principal.studioId)
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Clears the newActivityAt flag — marks the new-activity alert as seen.
+     * POST /api/v1/leads/{leadId}/acknowledge
+     */
+    @PostMapping("/{leadId}/acknowledge")
+    fun acknowledgeActivity(@PathVariable leadId: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        acknowledgeLeadActivityHandler.handle(LeadId.fromString(leadId), principal.studioId)
         ResponseEntity.noContent().build()
     }
 }

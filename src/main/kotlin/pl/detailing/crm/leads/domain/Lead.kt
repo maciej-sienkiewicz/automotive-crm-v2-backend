@@ -33,6 +33,7 @@ data class Lead(
     val assignedUserName: String? = null,
     val lostReason: String? = null,
     val stagnantAlertSentAt: Instant? = null,
+    val newActivityAt: Instant? = null,
     val createdAt: Instant,
     val updatedAt: Instant
 )

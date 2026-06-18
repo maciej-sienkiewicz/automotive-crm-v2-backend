@@ -46,7 +46,8 @@ data class LeadDto(
     val visitId: String?,
     val assignedUserId: String? = null,
     val assignedUserName: String? = null,
-    val lostReason: String? = null
+    val lostReason: String? = null,
+    val newActivityAt: Instant? = null
 )
 
 fun Lead.toDto(
@@ -75,7 +76,8 @@ fun Lead.toDto(
     visitId = this.visitId?.toString(),
     assignedUserId = this.assignedUserId?.toString(),
     assignedUserName = this.assignedUserName,
-    lostReason = this.lostReason
+    lostReason = this.lostReason,
+    newActivityAt = this.newActivityAt
 )
 
 fun LeadListItem.toDto(): LeadDto = lead.toDto(
