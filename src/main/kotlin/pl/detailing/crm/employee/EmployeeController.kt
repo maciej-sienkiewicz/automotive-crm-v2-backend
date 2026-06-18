@@ -9,6 +9,7 @@ import pl.detailing.crm.employee.account.*
 import pl.detailing.crm.employee.create.CreateEmployeeCommand
 import pl.detailing.crm.employee.create.CreateEmployeeHandler
 import pl.detailing.crm.employee.create.CreateEmployeeRequest
+import pl.detailing.crm.employee.delete.DeleteEmployeeHandler
 import pl.detailing.crm.employee.domain.Employee
 import pl.detailing.crm.employee.get.GetEmployeeHandler
 import pl.detailing.crm.employee.list.ListEmployeesHandler
@@ -31,6 +32,7 @@ class EmployeeController(
     private val provisionEmployeeAccountHandler: ProvisionEmployeeAccountHandler,
     private val blockEmployeeAccountHandler: BlockEmployeeAccountHandler,
     private val deleteEmployeeAccountHandler: DeleteEmployeeAccountHandler,
+    private val deleteEmployeeHandler: DeleteEmployeeHandler,
     private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
     private val userRepository: UserRepository
 ) {
@@ -135,15 +137,12 @@ class EmployeeController(
         if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usunąć pracownika")
         }
-        val entity = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
-        if (entity.userId != null) {
-            deleteEmployeeAccountHandler.handle(
-                studioId = principal.studioId,
-                employeeId = EmployeeId.fromString(employeeId),
-                requestedBy = principal.userId,
-                requestedByName = principal.fullName
-            )
-        }
+        deleteEmployeeHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
         ResponseEntity.noContent().build()
     }
 
