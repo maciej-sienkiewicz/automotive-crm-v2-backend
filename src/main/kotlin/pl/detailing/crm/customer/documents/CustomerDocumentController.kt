@@ -5,20 +5,31 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.shared.ForbiddenException
 import java.time.Instant
 import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/documents")
 class CustomerDocumentController(
-    private val customerDocumentService: CustomerDocumentService
+    private val customerDocumentService: CustomerDocumentService,
+    private val permissionCheckService: PermissionCheckService
 ) {
+
+    private fun requirePii(principal: pl.detailing.crm.auth.UserPrincipal) {
+        if (!permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)) {
+            throw ForbiddenException("Brak uprawnień do przeglądania dokumentów klientów")
+        }
+    }
 
     @GetMapping
     fun listDocuments(
         @PathVariable customerId: String
     ): ResponseEntity<List<CustomerDocumentResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        requirePii(principal)
 
         val documents = customerDocumentService.listDocuments(
             customerId = UUID.fromString(customerId),
@@ -38,6 +49,7 @@ class CustomerDocumentController(
         @RequestBody request: InitiateDocumentUploadRequest
     ): ResponseEntity<InitiateDocumentUploadResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        requirePii(principal)
 
         val result = customerDocumentService.initiateUpload(
             studioId = principal.studioId.value,

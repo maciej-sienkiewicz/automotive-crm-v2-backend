@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import java.time.Instant
@@ -24,8 +26,14 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api")
 class DocumentController(
-    private val documentService: DocumentService
+    private val documentService: DocumentService,
+    private val permissionCheckService: PermissionCheckService
 ) {
+    private fun requirePii(principal: pl.detailing.crm.auth.UserPrincipal) {
+        if (!permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)) {
+            throw ForbiddenException("Brak uprawnień do przeglądania dokumentów")
+        }
+    }
 
     /**
      * Get all documents for a specific visit
@@ -38,6 +46,7 @@ class DocumentController(
         @PathVariable visitId: String
     ): ResponseEntity<List<DocumentResponse>> {
         val principal = SecurityContextHelper.getCurrentUser()
+        requirePii(principal)
 
         val documents = documentService.getDocumentsByVisit(
             visitId = UUID.fromString(visitId),
@@ -74,6 +83,7 @@ class DocumentController(
         @PathVariable customerId: String
     ): ResponseEntity<List<DocumentResponse>> {
         val principal = SecurityContextHelper.getCurrentUser()
+        requirePii(principal)
 
         val documents = documentService.getDocumentsByCustomer(
             customerId = UUID.fromString(customerId),
@@ -185,6 +195,7 @@ class DocumentController(
         @PathVariable id: String
     ): ResponseEntity<DownloadUrlResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        requirePii(principal)
 
         val downloadUrl = documentService.generateDocumentDownloadUrl(
             documentId = UUID.fromString(id),

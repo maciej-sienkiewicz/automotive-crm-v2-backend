@@ -23,6 +23,8 @@ import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.GetVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolCommand
 import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolHandler
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.util.*
@@ -43,7 +45,8 @@ class ProtocolController(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val s3StorageService: S3ProtocolStorageService,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     // ==================== Protocol Templates ====================
@@ -167,8 +170,9 @@ class ProtocolController(
     @GetMapping("/visits/{visitId}/protocols")
     fun getVisitProtocols(@PathVariable visitId: String): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
         val result = getVisitProtocolsHandler.handle(VisitId.fromString(visitId), principal.studioId)
-        ResponseEntity.ok(result.protocols.map { toVisitProtocolResponse(it, principal.studioId) })
+        ResponseEntity.ok(result.protocols.map { toVisitProtocolResponse(it, principal.studioId, mask) })
     }
 
     @PostMapping("/visits/{visitId}/protocols/generate")
@@ -177,6 +181,7 @@ class ProtocolController(
         @RequestParam(required = false, defaultValue = "CHECK_IN") stage: String
     ): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
         val result = generateVisitProtocolsHandler.handle(
             GenerateVisitProtocolsCommand(
                 visitId = VisitId.fromString(visitId),
@@ -185,7 +190,7 @@ class ProtocolController(
             )
         )
         ResponseEntity.status(HttpStatus.CREATED)
-            .body(result.protocols.map { toVisitProtocolResponse(it, principal.studioId) })
+            .body(result.protocols.map { toVisitProtocolResponse(it, principal.studioId, mask) })
     }
 
     @PostMapping("/visits/{visitId}/protocols/{protocolId}/sign")
@@ -195,6 +200,7 @@ class ProtocolController(
         @RequestBody request: SignProtocolRequest
     ): ResponseEntity<VisitProtocolResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
         val result = signVisitProtocolHandler.handle(
             SignVisitProtocolCommand(
                 visitId = VisitId.fromString(visitId),
@@ -206,7 +212,7 @@ class ProtocolController(
                 notes = request.notes
             )
         )
-        ResponseEntity.ok(toVisitProtocolResponse(result.protocol, principal.studioId))
+        ResponseEntity.ok(toVisitProtocolResponse(result.protocol, principal.studioId, mask))
     }
 
     // ==================== Helpers ====================
@@ -256,7 +262,8 @@ class ProtocolController(
 
     private fun toVisitProtocolResponse(
         protocol: pl.detailing.crm.protocol.domain.VisitProtocol,
-        studioId: StudioId
+        studioId: StudioId,
+        mask: Boolean = false
     ): VisitProtocolResponse {
         val protocolTemplate = protocol.templateId?.let { templateId ->
             protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)?.toDomain()
@@ -265,8 +272,8 @@ class ProtocolController(
 
         // For consent protocols, generate a download URL from the consent template S3 key
         val pdfS3Key = protocol.filledPdfS3Key
-        val filledPdfUrl = pdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
-        val signatureUrl = protocol.signedPdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
+        val filledPdfUrl = if (mask) null else pdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
+        val signatureUrl = if (mask) null else protocol.signedPdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
 
         return VisitProtocolResponse(
             id = protocol.id.toString(),

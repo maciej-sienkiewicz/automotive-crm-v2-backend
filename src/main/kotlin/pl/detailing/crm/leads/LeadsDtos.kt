@@ -2,6 +2,7 @@ package pl.detailing.crm.leads
 
 import java.time.Instant
 import pl.detailing.crm.leads.customer.CustomerSnapshot
+import pl.detailing.crm.shared.PII_MASK
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
@@ -90,6 +91,13 @@ fun CustomerSnapshot.toDto() = CustomerSnapshotDto(
     lastName = lastName,
     email = email,
     phone = phone
+)
+
+fun CustomerSnapshotDto.maskPii() = copy(
+    firstName = if (firstName != null) PII_MASK else null,
+    lastName = if (lastName != null) PII_MASK else null,
+    email = if (email != null) PII_MASK else null,
+    phone = if (phone != null) PII_MASK else null
 )
 
 data class CreateLeadRequest(

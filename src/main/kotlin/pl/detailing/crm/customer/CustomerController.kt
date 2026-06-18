@@ -21,8 +21,12 @@ import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryCommand
 import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryHandler
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.PII_MASK
+import pl.detailing.crm.shared.maskIf
 import pl.detailing.crm.vehicle.VehicleDataResponse
 import pl.detailing.crm.vehicle.VehicleResponse as VehicleCreateResponse
 import pl.detailing.crm.vehicle.create.CreateVehicleCommand
@@ -44,8 +48,11 @@ class CustomerController(
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
     private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler,
-    private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler
+    private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
+    private fun hasPii(principal: pl.detailing.crm.auth.UserPrincipal) =
+        permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
     @GetMapping
     fun getCustomers(
@@ -77,6 +84,7 @@ class CustomerController(
             serviceIds = serviceIds
         )
 
+        val canViewPii = hasPii(principal)
         var customers = listCustomersHandler.handle(principal.studioId, query)
 
         if (search.isNotBlank()) {
@@ -176,8 +184,9 @@ class CustomerController(
             emptyList()
         }
 
+        val mask = !canViewPii
         ResponseEntity.ok(CustomerListResponse(
-            data = paginatedCustomers,
+            data = paginatedCustomers.map { it.maskPii(mask) },
             pagination = PaginationMeta(
                 currentPage = page,
                 totalPages = (totalItems + limit - 1) / limit,
@@ -190,6 +199,7 @@ class CustomerController(
     @GetMapping("/{customerId}")
     fun getCustomerById(@PathVariable customerId: String): ResponseEntity<CustomerDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !hasPii(principal)
 
         val command = GetCustomerByIdCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
@@ -200,33 +210,23 @@ class CustomerController(
 
         ResponseEntity.ok(CustomerDetailResponse(
             id = result.id,
-            firstName = result.firstName,
-            lastName = result.lastName,
+            firstName = result.firstName.maskIf(mask),
+            lastName = result.lastName.maskIf(mask),
             contact = CustomerContactResponse(
-                email = result.contact.email,
-                phone = result.contact.phone
+                email = result.contact.email.maskIf(mask),
+                phone = result.contact.phone.maskIf(mask)
             ),
-            homeAddress = result.homeAddress?.let {
-                HomeAddressResponse(
-                    street = it.street,
-                    city = it.city,
-                    postalCode = it.postalCode,
-                    country = it.country
-                )
+            homeAddress = if (mask) null else result.homeAddress?.let {
+                HomeAddressResponse(street = it.street, city = it.city, postalCode = it.postalCode, country = it.country)
             },
             company = result.company?.let {
                 CompanyDetailsResponse(
                     id = it.id,
                     name = it.name,
-                    nip = it.nip,
+                    nip = it.nip.maskIf(mask),
                     regon = it.regon,
-                    address = it.address?.let { addr ->
-                        CompanyAddressResponse(
-                            street = addr.street,
-                            city = addr.city,
-                            postalCode = addr.postalCode,
-                            country = addr.country
-                        )
+                    address = if (mask) null else it.address?.let { addr ->
+                        CompanyAddressResponse(street = addr.street, city = addr.city, postalCode = addr.postalCode, country = addr.country)
                     }
                 )
             },
@@ -247,6 +247,7 @@ class CustomerController(
     @PostMapping
     fun createCustomer(@RequestBody request: CreateCustomerRequest): ResponseEntity<CustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !hasPii(principal)
 
         val command = CreateCustomerCommand(
             studioId = principal.studioId,
@@ -287,30 +288,20 @@ class CustomerController(
             .status(HttpStatus.CREATED)
             .body(CustomerResponse(
                 id = result.customerId.toString(),
-                firstName = result.firstName,
-                lastName = result.lastName,
-                email = result.email,
-                phone = result.phone,
-                homeAddress = request.homeAddress?.let {
-                    HomeAddressResponse(
-                        street = it.street,
-                        city = it.city,
-                        postalCode = it.postalCode,
-                        country = it.country
-                    )
+                firstName = result.firstName.maskIf(mask),
+                lastName = result.lastName.maskIf(mask),
+                email = result.email.maskIf(mask),
+                phone = result.phone.maskIf(mask),
+                homeAddress = if (mask) null else request.homeAddress?.let {
+                    HomeAddressResponse(street = it.street, city = it.city, postalCode = it.postalCode, country = it.country)
                 },
                 companyData = request.companyData?.let {
                     CompanyDataResponse(
                         name = it.name,
-                        nip = it.nip,
+                        nip = it.nip.maskIf(mask),
                         regon = it.regon,
-                        address = it.address?.let { addr ->
-                            CompanyAddressResponse(
-                                street = addr.street,
-                                city = addr.city,
-                                postalCode = addr.postalCode,
-                                country = addr.country
-                            )
+                        address = if (mask) null else it.address?.let { addr ->
+                            CompanyAddressResponse(street = addr.street, city = addr.city, postalCode = addr.postalCode, country = addr.country)
                         }
                     )
                 },
@@ -323,6 +314,7 @@ class CustomerController(
     @GetMapping("/{customerId}/detail")
     fun getCustomerDetail(@PathVariable customerId: String): ResponseEntity<CustomerDetailFullResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !hasPii(principal)
 
         val command = pl.detailing.crm.customer.detail.GetCustomerDetailCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
@@ -334,33 +326,23 @@ class CustomerController(
         ResponseEntity.ok(CustomerDetailFullResponse(
             customer = CustomerDetailResponse(
                 id = result.customer.id,
-                firstName = result.customer.firstName,
-                lastName = result.customer.lastName,
+                firstName = result.customer.firstName.maskIf(mask),
+                lastName = result.customer.lastName.maskIf(mask),
                 contact = CustomerContactResponse(
-                    email = result.customer.contact.email,
-                    phone = result.customer.contact.phone
+                    email = result.customer.contact.email.maskIf(mask),
+                    phone = result.customer.contact.phone.maskIf(mask)
                 ),
-                homeAddress = result.customer.homeAddress?.let {
-                    HomeAddressResponse(
-                        street = it.street,
-                        city = it.city,
-                        postalCode = it.postalCode,
-                        country = it.country
-                    )
+                homeAddress = if (mask) null else result.customer.homeAddress?.let {
+                    HomeAddressResponse(street = it.street, city = it.city, postalCode = it.postalCode, country = it.country)
                 },
                 company = result.customer.company?.let {
                     CompanyDetailsResponse(
                         id = it.id,
                         name = it.name,
-                        nip = it.nip,
+                        nip = it.nip.maskIf(mask),
                         regon = it.regon,
-                        address = it.address?.let { addr ->
-                            CompanyAddressResponse(
-                                street = addr.street,
-                                city = addr.city,
-                                postalCode = addr.postalCode,
-                                country = addr.country
-                            )
+                        address = if (mask) null else it.address?.let { addr ->
+                            CompanyAddressResponse(street = addr.street, city = addr.city, postalCode = addr.postalCode, country = addr.country)
                         }
                     )
                 },
@@ -540,6 +522,7 @@ class CustomerController(
         @RequestBody request: UpdateCustomerRequest
     ): ResponseEntity<UpdateCustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !hasPii(principal)
 
         val command = pl.detailing.crm.customer.update.UpdateCustomerCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
@@ -564,19 +547,14 @@ class CustomerController(
 
         ResponseEntity.ok(UpdateCustomerResponse(
             id = result.id,
-            firstName = result.firstName,
-            lastName = result.lastName,
+            firstName = result.firstName.maskIf(mask),
+            lastName = result.lastName.maskIf(mask),
             contact = CustomerContactResponse(
-                email = result.email,
-                phone = result.phone
+                email = result.email.maskIf(mask),
+                phone = result.phone.maskIf(mask)
             ),
-            homeAddress = result.homeAddress?.let {
-                HomeAddressResponse(
-                    street = it.street,
-                    city = it.city,
-                    postalCode = it.postalCode,
-                    country = it.country
-                )
+            homeAddress = if (mask) null else result.homeAddress?.let {
+                HomeAddressResponse(street = it.street, city = it.city, postalCode = it.postalCode, country = it.country)
             },
             updatedAt = result.updatedAt
         ))
@@ -588,6 +566,7 @@ class CustomerController(
         @RequestBody request: UpdateCompanyRequest
     ): ResponseEntity<UpdateCompanyResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !hasPii(principal)
 
         val command = pl.detailing.crm.customer.update.UpdateCompanyCommand(
             customerId = CustomerId(UUID.fromString(customerId)),
@@ -610,13 +589,13 @@ class CustomerController(
         ResponseEntity.ok(UpdateCompanyResponse(
             id = result.id,
             name = result.name,
-            nip = result.nip,
+            nip = if (mask) PII_MASK else result.nip,
             regon = result.regon,
             address = CompanyAddressResponse(
-                street = result.address.street,
-                city = result.address.city,
-                postalCode = result.address.postalCode,
-                country = result.address.country
+                street = if (mask) PII_MASK else result.address.street,
+                city = if (mask) PII_MASK else result.address.city,
+                postalCode = if (mask) PII_MASK else result.address.postalCode,
+                country = if (mask) PII_MASK else result.address.country
             )
         ))
     }
@@ -854,6 +833,14 @@ data class RevenueTotalResponse(
 data class RevenuePeriodResponse(
     val from: String,
     val to: String
+)
+
+private fun CustomerListItem.maskPii(mask: Boolean): CustomerListItem = if (!mask) this else copy(
+    firstName = firstName.maskIf(mask),
+    lastName = lastName.maskIf(mask),
+    contact = contact.copy(email = contact.email.maskIf(mask), phone = contact.phone.maskIf(mask)),
+    homeAddress = null,
+    company = company?.copy(nip = company.nip.maskIf(mask), address = null)
 )
 
 data class CreateCustomerVehicleRequest(

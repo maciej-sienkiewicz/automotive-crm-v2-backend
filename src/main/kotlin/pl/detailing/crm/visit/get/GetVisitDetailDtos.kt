@@ -141,7 +141,7 @@ data class VisitDocumentResponse(
     val id: String,
     val type: String,
     val fileName: String,
-    val fileUrl: String,
+    val fileUrl: String?,
     val uploadedAt: Instant,
     val uploadedBy: String,
     val category: String?

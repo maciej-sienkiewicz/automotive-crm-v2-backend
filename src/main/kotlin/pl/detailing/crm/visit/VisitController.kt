@@ -37,6 +37,10 @@ import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.shared.maskIf
+import pl.detailing.crm.shared.maskNonNullIf
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -57,7 +61,8 @@ class VisitController(
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
-    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
+    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -104,9 +109,17 @@ class VisitController(
         )
 
         val result = listVisitsHandler.handle(command)
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         ResponseEntity.ok(VisitListResponse(
-            visits = result.items,
+            visits = if (mask) result.items.map { item ->
+                item.copy(customer = item.customer?.copy(
+                    firstName = if (item.customer.firstName != null) pl.detailing.crm.shared.PII_MASK else null,
+                    lastName = if (item.customer.lastName != null) pl.detailing.crm.shared.PII_MASK else null,
+                    phone = if (item.customer.phone != null) pl.detailing.crm.shared.PII_MASK else null,
+                    email = if (item.customer.email != null) pl.detailing.crm.shared.PII_MASK else null
+                ))
+            } else result.items,
             pagination = PaginationMetadata(
                 total = result.total,
                 page = result.page,
@@ -149,9 +162,17 @@ class VisitController(
         )
 
         val result = listVisitsHandler.handle(command)
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         ResponseEntity.ok(VisitListResponse(
-            visits = result.items,
+            visits = if (mask) result.items.map { item ->
+                item.copy(customer = item.customer?.copy(
+                    firstName = if (item.customer.firstName != null) pl.detailing.crm.shared.PII_MASK else null,
+                    lastName = if (item.customer.lastName != null) pl.detailing.crm.shared.PII_MASK else null,
+                    phone = if (item.customer.phone != null) pl.detailing.crm.shared.PII_MASK else null,
+                    email = if (item.customer.email != null) pl.detailing.crm.shared.PII_MASK else null
+                ))
+            } else result.items,
             pagination = PaginationMetadata(
                 total = result.total,
                 page = result.page,
@@ -178,9 +199,9 @@ class VisitController(
         )
 
         val result = getVisitDetailHandler.handle(command)
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
-
-        val response = mapToVisitDetailResponse(result)
+        val response = mapToVisitDetailResponse(result, mask)
 
         ResponseEntity.ok(response)
     }
@@ -458,11 +479,11 @@ class VisitController(
     /**
      * Map domain result to API response
      */
-    private fun mapToVisitDetailResponse(result: GetVisitDetailResult): VisitDetailResponse {
+    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, mask: Boolean = false): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, mask),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
-            documents = result.documents.map { mapToDocumentResponse(it) }
+            documents = result.documents.map { mapToDocumentResponse(it, mask) }
         )
     }
 
@@ -474,7 +495,8 @@ class VisitController(
         vehicle: Vehicle,
         customer: Customer,
         customerStats: CustomerStats,
-        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?
+        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
+        mask: Boolean = false
     ): VisitResponse {
         val totalNet = visit.calculateTotalNet()
         val totalGross = visit.calculateTotalGross()
@@ -489,7 +511,7 @@ class VisitController(
             actualCompletionDate = visit.actualCompletionDate,
             pickupDate = visit.pickupDate,
             vehicle = mapToVehicleInfoResponse(vehicle),
-            customer = mapToCustomerInfoResponse(customer, customerStats),
+            customer = mapToCustomerInfoResponse(customer, customerStats, mask),
             appointmentColor = appointmentColor?.let { color ->
                 AppointmentColorResponse(
                     id = color.id.value.toString(),
@@ -511,10 +533,10 @@ class VisitController(
                     isHandedOffByOtherPerson = handoff.isHandedOffByOtherPerson,
                     contactPerson = handoff.contactPerson?.let { contact ->
                         ContactPersonResponse(
-                            firstName = contact.firstName,
-                            lastName = contact.lastName,
-                            phone = contact.phone,
-                            email = contact.email
+                            firstName = contact.firstName.maskNonNullIf(mask),
+                            lastName = contact.lastName.maskNonNullIf(mask),
+                            phone = contact.phone.maskNonNullIf(mask),
+                            email = contact.email.maskNonNullIf(mask)
                         )
                     }
                 )
@@ -544,13 +566,13 @@ class VisitController(
     /**
      * Map Customer domain to CustomerInfoResponse
      */
-    private fun mapToCustomerInfoResponse(customer: Customer, stats: CustomerStats): CustomerInfoResponse {
+    private fun mapToCustomerInfoResponse(customer: Customer, stats: CustomerStats, mask: Boolean = false): CustomerInfoResponse {
         return CustomerInfoResponse(
             id = customer.id.value.toString(),
-            firstName = customer.firstName,
-            lastName = customer.lastName,
-            email = customer.email,
-            phone = customer.phone,
+            firstName = customer.firstName.maskIf(mask),
+            lastName = customer.lastName.maskIf(mask),
+            email = customer.email.maskIf(mask),
+            phone = customer.phone.maskIf(mask),
             companyName = customer.companyData?.name,
             stats = CustomerStatsResponse(
                 totalVisits = stats.totalVisits,
@@ -653,12 +675,12 @@ class VisitController(
     /**
      * Map VisitDocument to VisitDocumentResponse
      */
-    private fun mapToDocumentResponse(document: VisitDocument): VisitDocumentResponse {
+    private fun mapToDocumentResponse(document: VisitDocument, mask: Boolean = false): VisitDocumentResponse {
         return VisitDocumentResponse(
             id = document.id.value.toString(),
             type = mapDocumentType(document.type),
             fileName = document.fileName,
-            fileUrl = document.fileUrl,
+            fileUrl = if (mask) null else document.fileUrl,
             uploadedAt = document.uploadedAt,
             uploadedBy = document.uploadedByName,
             category = document.category

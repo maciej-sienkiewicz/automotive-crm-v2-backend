@@ -5,6 +5,9 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.shared.PII_MASK
 import pl.detailing.crm.shared.VisitStatus
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -14,7 +17,8 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/v1/calendar")
 class CalendarController(
-    private val getCalendarEventsHandler: GetCalendarEventsHandler
+    private val getCalendarEventsHandler: GetCalendarEventsHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     @GetMapping("/events")
@@ -102,10 +106,19 @@ class CalendarController(
         )
 
         val result = getCalendarEventsHandler.handle(query)
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
+
+        val appointments = if (mask) result.appointments.map {
+            it.copy(customer = it.customer.copy(firstName = PII_MASK, lastName = PII_MASK, phone = PII_MASK, email = PII_MASK))
+        } else result.appointments
+
+        val visits = if (mask) result.visits.map {
+            it.copy(customer = it.customer.copy(firstName = PII_MASK, lastName = PII_MASK, phone = PII_MASK))
+        } else result.visits
 
         ResponseEntity.ok<Any>(CalendarEventsResponse(
-            appointments = result.appointments,
-            visits = result.visits
+            appointments = appointments,
+            visits = visits
         ))
     }
 

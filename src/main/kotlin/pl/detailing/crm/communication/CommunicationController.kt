@@ -5,7 +5,10 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.CommunicationChannel
+import pl.detailing.crm.shared.PII_MASK
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
@@ -76,7 +79,8 @@ data class CustomerCommunicationResponse(
 @RestController
 class CommunicationController(
     private val getVisitCommunicationHandler: GetVisitCommunicationHandler,
-    private val getCustomerCommunicationHandler: GetCustomerCommunicationHandler
+    private val getCustomerCommunicationHandler: GetCustomerCommunicationHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     /**
@@ -90,6 +94,7 @@ class CommunicationController(
         @PathVariable visitId: String
     ): ResponseEntity<VisitCommunicationResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         val result = getVisitCommunicationHandler.handle(
             GetVisitCommunicationCommand(
@@ -101,7 +106,7 @@ class CommunicationController(
         return ResponseEntity.ok(
             VisitCommunicationResponse(
                 visitId = result.visitId,
-                entries = result.entries.map { it.toResponse(includeVisitId = false) }
+                entries = result.entries.map { it.toResponse(includeVisitId = false, mask = mask) }
             )
         )
     }
@@ -119,6 +124,7 @@ class CommunicationController(
         @PathVariable customerId: String
     ): ResponseEntity<CustomerCommunicationResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         val result = getCustomerCommunicationHandler.handle(
             GetCustomerCommunicationCommand(
@@ -130,7 +136,7 @@ class CommunicationController(
         return ResponseEntity.ok(
             CustomerCommunicationResponse(
                 customerId = result.customerId,
-                entries = result.entries.map { it.toResponse() }
+                entries = result.entries.map { it.toResponse(mask = mask) }
             )
         )
     }
@@ -140,14 +146,14 @@ class CommunicationController(
 // Mapping helpers
 // ---------------------------------------------------------------------------
 
-private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false) =
+private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false, mask: Boolean = false) =
     CommunicationEntryResponse(
         id = id,
         visitId = null,
         channel = channel.name,
         messageType = messageType.name,
         messageTypeLabel = messageTypeLabel,
-        recipientAddress = recipientAddress,
+        recipientAddress = if (mask) PII_MASK else recipientAddress,
         subject = subject,
         bodyContent = bodyContent,
         status = status.name,
@@ -155,14 +161,14 @@ private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false) =
         sentAt = sentAt
     )
 
-private fun CustomerCommunicationLogItem.toResponse() =
+private fun CustomerCommunicationLogItem.toResponse(mask: Boolean = false) =
     CommunicationEntryResponse(
         id = id,
         visitId = visitId,
         channel = channel.name,
         messageType = messageType.name,
         messageTypeLabel = messageTypeLabel,
-        recipientAddress = recipientAddress,
+        recipientAddress = if (mask) PII_MASK else recipientAddress,
         subject = subject,
         bodyContent = bodyContent,
         status = status.name,

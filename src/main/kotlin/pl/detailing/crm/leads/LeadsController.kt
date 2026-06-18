@@ -63,6 +63,8 @@ import pl.detailing.crm.leads.userquote.delete.DeleteUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteCommand
 import pl.detailing.crm.leads.userquote.save.SaveUserQuoteHandler
 import pl.detailing.crm.leads.userquote.save.UserQuoteItemInput
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.AppointmentColorId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.ForbiddenException
@@ -101,7 +103,8 @@ class LeadsController(
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
     private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
     private val generateQuoteReplyHandler: GenerateQuoteReplyHandler,
-    private val quoteReplyExampleHandler: QuoteReplyExampleHandler
+    private val quoteReplyExampleHandler: QuoteReplyExampleHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -125,6 +128,7 @@ class LeadsController(
         @RequestParam(required = false) assignedUserId: String?,
     ): ResponseEntity<LeadListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
         val zone = ZoneId.of("Europe/Warsaw")
 
         val query = ListLeadsQuery(
@@ -146,7 +150,9 @@ class LeadsController(
 
         ResponseEntity.ok(
             LeadListResponse(
-                leads = result.items.map { it.toDto() },
+                leads = result.items.map { dto ->
+                    dto.toDto().let { if (mask) it.copy(assignedCustomer = it.assignedCustomer?.maskPii()) else it }
+                },
                 pagination = PaginationInfo(
                     currentPage = result.currentPage,
                     totalPages = result.totalPages,
@@ -164,8 +170,10 @@ class LeadsController(
     @GetMapping("/{id}")
     fun getLead(@PathVariable id: String): ResponseEntity<LeadDetailDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
         val result = getLeadHandler.handle(GetLeadQuery(LeadId.fromString(id), principal.studioId))
-        ResponseEntity.ok(result.toDetailDto())
+        val dto = result.toDetailDto()
+        ResponseEntity.ok(if (mask) dto.copy(assignedCustomer = dto.assignedCustomer?.maskPii()) else dto)
     }
 
     /**
