@@ -76,7 +76,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -100,7 +100,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
         }
         ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse(accountInfo))
     }
@@ -126,7 +126,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.email, if (u.isOwner) "OWNER" else "USER", u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -257,8 +257,7 @@ data class EmployeePaginationInfo(
 
 data class EmployeeAccountInfo(
     val userId: String,
-    val email: String,
-    val role: String,
+    val roleId: String?,
     val isActive: Boolean
 )
 
