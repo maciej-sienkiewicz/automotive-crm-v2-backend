@@ -113,7 +113,7 @@ class VisitController(
 
         ResponseEntity.ok(VisitListResponse(
             visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer?.let { c ->
+                item.copy(customer = item.customer.let { c ->
                     c.copy(
                         firstName = c.firstName.maskIf(true),
                         lastName = c.lastName.maskIf(true),
@@ -168,7 +168,7 @@ class VisitController(
 
         ResponseEntity.ok(VisitListResponse(
             visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer?.let { c ->
+                item.copy(customer = item.customer.let { c ->
                     c.copy(
                         firstName = c.firstName.maskIf(true),
                         lastName = c.lastName.maskIf(true),
