@@ -46,7 +46,12 @@ private val HISTORY_ACTIONS = setOf(
     AuditAction.LEAD_CUSTOMER_ASSIGNED,
     AuditAction.LEAD_LOST_REASON_UPDATED,
     AuditAction.LEAD_QUOTE_UPDATED,
-    AuditAction.LEAD_COMMENT_UPDATED
+    AuditAction.LEAD_COMMENT_ADDED,
+    AuditAction.LEAD_COMMENT_UPDATED,
+    AuditAction.LEAD_COMMENT_DELETED,
+    AuditAction.LEAD_ESTIMATION_COMPLETED,
+    AuditAction.LEAD_SPLIT,
+    AuditAction.LEAD_MERGED
 )
 
 @Service
