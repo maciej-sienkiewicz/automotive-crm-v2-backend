@@ -86,6 +86,18 @@ class LeadCommentHandler(
 
             val saved = commentRepository.save(entity)
             log.info("[LEADS] Added comment: commentId={}, leadId={}", saved.id, command.leadId.value)
+
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.LEAD,
+                entityId = command.leadId.value.toString(),
+                entityDisplayName = null,
+                action = AuditAction.LEAD_COMMENT_ADDED,
+                changes = emptyList()
+            ))
+
             saved
         }
 
@@ -142,6 +154,17 @@ class LeadCommentHandler(
 
             commentRepository.save(entity)
             log.info("[LEADS] Deleted comment: commentId={}", command.commentId)
+
+            auditService.log(LogAuditCommand(
+                studioId = command.studioId,
+                userId = command.userId,
+                userDisplayName = command.userName,
+                module = AuditModule.LEAD,
+                entityId = command.leadId.value.toString(),
+                entityDisplayName = null,
+                action = AuditAction.LEAD_COMMENT_DELETED,
+                changes = emptyList()
+            ))
         }
 
     private fun verifyLeadAccess(leadId: LeadId, studioId: StudioId) {
