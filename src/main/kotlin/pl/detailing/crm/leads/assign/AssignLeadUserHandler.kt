@@ -63,7 +63,6 @@ class AssignLeadUserHandler(
             entityDisplayName = entity.customerName,
             action = AuditAction.LEAD_USER_ASSIGNED,
             changes = listOf(
-                FieldChange("assignedUserId", oldAssignedUserId, command.assignedUserId?.toString()),
                 FieldChange("assignedUserName", oldAssignedUserName, command.assignedUserName)
             )
         ))

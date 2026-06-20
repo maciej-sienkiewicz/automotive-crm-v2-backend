@@ -268,6 +268,8 @@ class AuditController(
         AuditAction.LEAD_ESTIMATION_COMPLETED -> TODO()
         AuditAction.LEAD_SPLIT -> TODO()
         AuditAction.LEAD_MERGED -> TODO()
+        AuditAction.LEAD_COMMENT_ADDED -> TODO()
+        AuditAction.LEAD_COMMENT_DELETED -> TODO()
     }
 }
 
