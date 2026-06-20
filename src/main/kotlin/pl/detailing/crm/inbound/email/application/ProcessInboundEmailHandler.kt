@@ -18,6 +18,7 @@ import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
+import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -35,8 +36,16 @@ class ProcessInboundEmailHandler(
     private val leadCommentHandler: LeadCommentHandler
 ) {
     companion object {
-        // Window for dedup: reply from the same address within 60 days reuses existing lead
+        // Window for dedup: reply from the same address within 60 days may reuse an open lead
         private const val DEDUP_DAYS = 60L
+        // Only OPEN leads accept follow-up emails as comments. A closed lead (COMPLETED/LOST/
+        // NO_SHOW) means the previous matter is done, so a new email starts a fresh lead — the
+        // same client can be interested in several independent services over time.
+        private val OPEN_STATUSES = listOf(
+            LeadStatus.NEW.name,
+            LeadStatus.IN_PROGRESS.name,
+            LeadStatus.CONFIRMED.name
+        )
         private val SYSTEM_USER_ID = UserId(UUID(0, 0))
         private const val SYSTEM_USER_NAME = "System"
     }
@@ -70,11 +79,13 @@ class ProcessInboundEmailHandler(
             return ProcessInboundEmailResult.Ignored("Not a lead inquiry")
         }
 
-        // Dedup: if an active lead from this address exists within the window, add a reply comment instead
+        // Dedup: if an OPEN lead from this address exists within the window, add a reply comment
+        // instead. Closed leads are ignored so a new inquiry becomes its own lead.
         val since = Instant.now().minus(DEDUP_DAYS, ChronoUnit.DAYS)
-        val existingLead = leadRepository.findLatestActiveByContactIdentifier(
+        val existingLead = leadRepository.findLatestOpenByContactIdentifier(
             studioId = studioId.value,
             contactIdentifier = command.from,
+            statuses = OPEN_STATUSES,
             since = since
         )
 

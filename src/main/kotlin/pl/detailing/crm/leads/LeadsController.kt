@@ -48,6 +48,10 @@ import pl.detailing.crm.leads.list.ListLeadsHandler
 import pl.detailing.crm.leads.list.ListLeadsQuery
 import pl.detailing.crm.leads.lostreason.UpdateLostReasonCommand
 import pl.detailing.crm.leads.lostreason.UpdateLostReasonHandler
+import pl.detailing.crm.leads.split.SplitLeadCommand
+import pl.detailing.crm.leads.split.SplitLeadHandler
+import pl.detailing.crm.leads.merge.MergeLeadsCommand
+import pl.detailing.crm.leads.merge.MergeLeadsHandler
 
 import pl.detailing.crm.leads.summary.GetPipelineSummaryHandler
 import pl.detailing.crm.leads.summary.GetPipelineSummaryQuery
@@ -98,6 +102,8 @@ class LeadsController(
     private val getTimeAnalyticsHandler: GetTimeAnalyticsHandler,
     private val interpretTimeAnalyticsService: InterpretTimeAnalyticsService,
     private val leadCommentHandler: LeadCommentHandler,
+    private val splitLeadHandler: SplitLeadHandler,
+    private val mergeLeadsHandler: MergeLeadsHandler,
     private val getLeadStatusHistoryHandler: GetLeadStatusHistoryHandler,
     private val saveUserQuoteHandler: SaveUserQuoteHandler,
     private val deleteUserQuoteHandler: DeleteUserQuoteHandler,
@@ -940,6 +946,57 @@ class LeadsController(
             )
         )
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Split a comment out of a lead into its own, independent lead.
+     * POST /api/v1/leads/{id}/comments/{commentId}/split
+     */
+    @PostMapping("/{id}/comments/{commentId}/split")
+    fun splitComment(
+        @PathVariable id: String,
+        @PathVariable commentId: String
+    ): ResponseEntity<SplitLeadResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = splitLeadHandler.handle(
+            SplitLeadCommand(
+                sourceLeadId = LeadId.fromString(id),
+                commentId = UUID.fromString(commentId),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName
+            )
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(
+            SplitLeadResponse(
+                newLeadId = result.newLeadId.value.toString(),
+                sourceLeadId = result.sourceLeadId.value.toString()
+            )
+        )
+    }
+
+    /**
+     * Merge this lead (source) into another lead (target) of the same client.
+     * POST /api/v1/leads/{id}/merge
+     */
+    @PostMapping("/{id}/merge")
+    fun mergeLead(
+        @PathVariable id: String,
+        @RequestBody request: MergeLeadsRequest
+    ): ResponseEntity<MergeLeadsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = mergeLeadsHandler.handle(
+            MergeLeadsCommand(
+                sourceLeadId = LeadId.fromString(id),
+                targetLeadId = LeadId.fromString(request.targetLeadId),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName
+            )
+        )
+        ResponseEntity.ok(
+            MergeLeadsResponse(targetLeadId = result.targetLeadId.value.toString())
+        )
     }
 
     /**

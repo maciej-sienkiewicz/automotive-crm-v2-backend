@@ -424,6 +424,21 @@ data class UpdateLeadCommentRequest(
     val content: String
 )
 
+// ── Split / Merge ─────────────────────────────────────────────────────────────
+
+data class SplitLeadResponse(
+    val newLeadId: String,
+    val sourceLeadId: String
+)
+
+data class MergeLeadsRequest(
+    val targetLeadId: String
+)
+
+data class MergeLeadsResponse(
+    val targetLeadId: String
+)
+
 // ── Status history ────────────────────────────────────────────────────────────
 
 data class HistoryFieldChangeDto(
