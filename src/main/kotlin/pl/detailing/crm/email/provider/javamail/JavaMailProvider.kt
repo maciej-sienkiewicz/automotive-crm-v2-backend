@@ -31,7 +31,7 @@ class JavaMailProvider(
 ) : EmailProvider {
 
     private val logger = LoggerFactory.getLogger(JavaMailProvider::class.java)
-    private val allowedMails = listOf<String>("kontakt@sienkiewicz-maciej.pl", "mikolajblaszczak@o2.pl")
+    private val allowedMails = listOf("kontakt@sienkiewicz-maciej.pl", "mikolajblaszczak@o2.pl", "biuro@carslab.pl", "mikolajblaszczak@carslab.pl")
 
     override fun send(
         to: String,
