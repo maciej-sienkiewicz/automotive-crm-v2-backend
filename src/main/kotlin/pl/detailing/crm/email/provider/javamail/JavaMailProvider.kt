@@ -80,7 +80,7 @@ class JavaMailProvider(
         attachments: List<EmailAttachment>
     ): MimeMessage {
         val message = MimeMessage(session)
-        message.setFrom(InternetAddress(FROM_ADDRESS, FROM_DISPLAY_NAME, UTF8))
+        message.setFrom(InternetAddress(properties.username, FROM_DISPLAY_NAME, UTF8))
         message.setRecipient(Message.RecipientType.TO, InternetAddress(to))
         message.subject = MimeUtility.encodeText(subject, UTF8, "B")
 
@@ -109,7 +109,6 @@ class JavaMailProvider(
     }
 
     companion object {
-        private const val FROM_ADDRESS = "crm1@sienkiewicz-maciej.pl"
         private const val FROM_DISPLAY_NAME = "DetailBoost"
         private const val UTF8 = "UTF-8"
     }
