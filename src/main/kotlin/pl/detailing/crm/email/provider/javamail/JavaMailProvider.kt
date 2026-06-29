@@ -109,7 +109,7 @@ class JavaMailProvider(
     }
 
     companion object {
-        private const val FROM_ADDRESS = "crm1@sienkiewicz-maciej.pl"
+        private const val FROM_ADDRESS = "kontakt@sienkiewicz-maciej.pl"
         private const val FROM_DISPLAY_NAME = "DetailBoost"
         private const val UTF8 = "UTF-8"
     }
