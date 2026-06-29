@@ -24,6 +24,8 @@ services:
       APP_ENV: ${ENV_APP_ENV:-production}
       GUS_API_KEY: ${ENV_GUS_API_KEY}
       ENV_GUS_ENDPOINT_URL: ${ENV_GUS_ENDPOINT_URL}
+      MAIL_USERNAME: ${ENV_MAIL_USERNAME}
+      MAIL_PASSWORD: ${ENV_MAIL_PASSWORD}
     depends_on:
       - redis
     networks:
