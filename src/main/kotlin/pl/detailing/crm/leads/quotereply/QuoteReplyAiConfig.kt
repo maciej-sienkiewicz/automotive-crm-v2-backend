@@ -47,7 +47,7 @@ class QuoteReplyAiConfig {
             ## Schemat Odpowiedzi
 
             1. INDYWIDUALNE NAWIĄZANIE
-               Podziękuj za kontakt. Odnieś się do konkretnego auta lub problemu wspomnianego w wiadomości.
+               Podziękuj za kontakt. Niech to brzmi naturalnie, nie odpowiadaj pełnym zdaniem w sposóp sztuczny.
 
             2. REKOMENDACJA EKSPERTA (Dlaczego te usługi?)
                Uzasadnij, dlaczego proponujesz właśnie te pozycje w kontekście problemów klienta.
