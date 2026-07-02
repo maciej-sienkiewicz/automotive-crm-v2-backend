@@ -21,6 +21,7 @@ import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryCommand
 import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryHandler
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
+
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.CustomerId
@@ -47,7 +48,6 @@ class CustomerController(
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
-    private val getCustomerVisitsHandler: pl.detailing.crm.customer.visits.GetCustomerVisitsHandler,
     private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler,
     private val permissionCheckService: PermissionCheckService
 ) {
@@ -432,52 +432,6 @@ class CustomerController(
             ))
     }
 
-    @GetMapping("/{customerId}/visits")
-    fun getCustomerVisits(
-        @PathVariable customerId: String,
-        @RequestParam(required = false, defaultValue = "1") page: Int,
-        @RequestParam(required = false, defaultValue = "10") limit: Int,
-        @RequestParam(defaultValue = "false") includeDeleted: Boolean
-    ): ResponseEntity<CustomerVisitsResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = pl.detailing.crm.customer.visits.GetCustomerVisitsCommand(
-            customerId = CustomerId(UUID.fromString(customerId)),
-            studioId = principal.studioId,
-            page = page,
-            limit = limit,
-            includeDeleted = includeDeleted
-        )
-
-        val result = getCustomerVisitsHandler.handle(command)
-
-        ResponseEntity.ok(CustomerVisitsResponse(
-            visits = result.visits.map { visit ->
-                VisitResponse(
-                    id = visit.id,
-                    date = visit.date,
-                    vehicleId = visit.vehicleId,
-                    vehicleName = visit.vehicleName,
-                    description = visit.description,
-                    totalCost = VisitCostResponse(
-                        netAmount = visit.totalCost.netAmount.toDouble(),
-                        grossAmount = visit.totalCost.grossAmount.toDouble(),
-                        currency = visit.totalCost.currency
-                    ),
-                    status = visit.status,
-                    createdBy = visit.createdBy,
-                    notes = visit.notes
-                )
-            },
-            pagination = PaginationMeta(
-                currentPage = result.pagination.currentPage,
-                totalPages = result.pagination.totalPages,
-                totalItems = result.pagination.totalItems,
-                itemsPerPage = result.pagination.itemsPerPage
-            )
-        ))
-    }
-
     @GetMapping("/{customerId}/revenue-summary")
     fun getCustomerRevenueSummary(
         @PathVariable customerId: String,
@@ -782,30 +736,6 @@ data class UpdateCompanyResponse(
     val nip: String,
     val regon: String,
     val address: CompanyAddressResponse
-)
-
-// Customer Visits DTOs
-data class CustomerVisitsResponse(
-    val visits: List<VisitResponse>,
-    val pagination: PaginationMeta
-)
-
-data class VisitResponse(
-    val id: String,
-    val date: Instant,
-    val vehicleId: String,
-    val vehicleName: String,
-    val description: String,
-    val totalCost: VisitCostResponse,
-    val status: String,
-    val createdBy: String,
-    val notes: String
-)
-
-data class VisitCostResponse(
-    val netAmount: Double,
-    val grossAmount: Double,
-    val currency: String
 )
 
 // Revenue Summary DTOs
