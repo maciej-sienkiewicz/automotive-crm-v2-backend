@@ -9,6 +9,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
+import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.VisitServiceItemEntity
@@ -22,7 +23,8 @@ data class GetCalendarEventsQuery(
     val appointmentStatuses: List<AppointmentStatus>,
     val visitStatuses: List<VisitStatus>,
     val customerId: UUID? = null,
-    val vehicleId: UUID? = null
+    val vehicleId: UUID? = null,
+    val includeDeleted: Boolean = false
 )
 
 data class CalendarEventsResult(
@@ -36,7 +38,8 @@ class GetCalendarEventsHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val userRepository: UserRepository
 ) {
     suspend fun handle(query: GetCalendarEventsQuery): CalendarEventsResult = withContext(Dispatchers.IO) {
         val appointments = if (query.appointmentStatuses.isEmpty()) emptyList()
@@ -50,7 +53,14 @@ class GetCalendarEventsHandler(
         )
 
         val visits = if (query.visitStatuses.isEmpty()) emptyList()
-        else visitRepository.findForCalendar(
+        else if (query.includeDeleted) visitRepository.findDeletedForCalendar(
+            studioId = query.studioId.value,
+            statuses = query.visitStatuses,
+            startDate = query.startDate,
+            endDate = query.endDate,
+            customerId = query.customerId,
+            vehicleId = query.vehicleId
+        ) else visitRepository.findForCalendar(
             studioId = query.studioId.value,
             statuses = query.visitStatuses,
             startDate = query.startDate,
@@ -63,6 +73,7 @@ class GetCalendarEventsHandler(
         val allCustomerIds = (appointments.map { it.customerId } + visits.map { it.customerId }).distinct()
         val allVehicleIds = (appointments.mapNotNull { it.vehicleId } + visits.map { it.vehicleId }).distinct()
         val allColorIds = (appointments.map { it.appointmentColorId } + visits.mapNotNull { it.appointmentColorId }).distinct()
+        val allCreatorIds = visits.map { it.createdBy }.distinct()
 
         val customers = if (allCustomerIds.isEmpty()) emptyMap()
                         else customerRepository.findAllById(allCustomerIds).associateBy { it.id }
@@ -70,6 +81,8 @@ class GetCalendarEventsHandler(
                        else vehicleRepository.findAllById(allVehicleIds).associateBy { it.id }
         val colors = if (allColorIds.isEmpty()) emptyMap()
                      else appointmentColorRepository.findAllById(allColorIds).associateBy { it.id }
+        val creators = if (allCreatorIds.isEmpty()) emptyMap()
+                       else userRepository.findAllById(allCreatorIds).associateBy { it.id }
 
         val appointmentItems = appointments.map { appointment ->
             val customer = customers[appointment.customerId]
@@ -133,6 +146,11 @@ class GetCalendarEventsHandler(
             val vehicle = vehicles[visit.vehicleId]
             val color = visit.appointmentColorId?.let { colors[it] }
             val (totalNet, totalGross) = calculateVisitTotals(visit.serviceItems)
+            val creator = creators[visit.createdBy]
+            val descriptionParts = listOfNotNull(
+                visit.inspectionNotes?.takeIf { it.isNotBlank() },
+                visit.technicalNotes?.takeIf { it.isNotBlank() }
+            )
 
             VisitCalendarItem(
                 id = visit.id.toString(),
@@ -164,7 +182,11 @@ class GetCalendarEventsHandler(
                 },
                 totalNet = totalNet,
                 totalGross = totalGross,
-                technicalNotes = visit.technicalNotes
+                currency = "PLN",
+                technicalNotes = visit.technicalNotes,
+                description = descriptionParts.joinToString("; ").ifEmpty { null },
+                createdBy = creator?.let { "${it.firstName} ${it.lastName}" },
+                deletedAt = visit.deletedAt
             )
         }
 

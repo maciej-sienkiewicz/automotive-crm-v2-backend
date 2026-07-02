@@ -28,7 +28,8 @@ class CalendarController(
         @RequestParam(required = false) appointmentStatuses: String?,
         @RequestParam(required = false) visitStatuses: String?,
         @RequestParam(required = false) customerId: String?,
-        @RequestParam(required = false) vehicleId: String?
+        @RequestParam(required = false) vehicleId: String?,
+        @RequestParam(required = false, defaultValue = "false") includeDeleted: Boolean
     ): ResponseEntity<Any> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -102,7 +103,8 @@ class CalendarController(
             appointmentStatuses = parsedAppointmentStatuses,
             visitStatuses = parsedVisitStatuses,
             customerId = parsedCustomerId,
-            vehicleId = parsedVehicleId
+            vehicleId = parsedVehicleId,
+            includeDeleted = includeDeleted
         )
 
         val result = getCalendarEventsHandler.handle(query)
@@ -216,7 +218,11 @@ data class VisitCalendarItem(
     val appointmentColor: AppointmentColorInfo?,
     val totalNet: Long,
     val totalGross: Long,
-    val technicalNotes: String?
+    val currency: String,
+    val technicalNotes: String?,
+    val description: String?,
+    val createdBy: String?,
+    val deletedAt: Instant?
 )
 
 data class VisitCustomerInfo(

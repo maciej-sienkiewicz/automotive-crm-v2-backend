@@ -342,6 +342,32 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<VisitEntity>
 
     /**
+     * Find soft-deleted visits for the unified calendar view (includeDeleted=true).
+     * Mirror of findForCalendar but with deletedAt IS NOT NULL — ordered by deletedAt DESC
+     * so the most recently deleted appear first in the customer's deleted-visits tab.
+     */
+    @Query("""
+        SELECT DISTINCT v FROM VisitEntity v
+        LEFT JOIN FETCH v.serviceItems
+        WHERE v.studioId = :studioId
+        AND v.status IN :statuses
+        AND v.scheduledDate < :endDate
+        AND COALESCE(v.estimatedCompletionDate, v.scheduledDate) >= :startDate
+        AND v.deletedAt IS NOT NULL
+        AND (:customerId IS NULL OR v.customerId = :customerId)
+        AND (:vehicleId IS NULL OR v.vehicleId = :vehicleId)
+        ORDER BY v.deletedAt DESC
+    """)
+    fun findDeletedForCalendar(
+        @Param("studioId") studioId: UUID,
+        @Param("statuses") statuses: List<pl.detailing.crm.shared.VisitStatus>,
+        @Param("startDate") startDate: Instant,
+        @Param("endDate") endDate: Instant,
+        @Param("customerId") customerId: UUID?,
+        @Param("vehicleId") vehicleId: UUID?
+    ): List<VisitEntity>
+
+    /**
      * Calculate total revenue for visits within a date range
      * Uses service items' finalPriceGross for historical accuracy
      */
