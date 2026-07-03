@@ -12,8 +12,7 @@ import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
 
 @Service
 class OpenAiEmailLeadClassifier(
-    @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient,
-    private val vehicleModelNormalizer: VehicleModelNormalizer
+    @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient
 ) : EmailLeadClassifier {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -50,25 +49,14 @@ class OpenAiEmailLeadClassifier(
                 return@withContext EmailClassificationResult.NotALead
             }
 
-            val rawMake = response.vehicleMake?.takeIf { it.isNotBlank() }
-            val rawModel = response.vehicleModel?.takeIf { it.isNotBlank() }
-
-            val canonicalMake = rawMake?.let { vehicleModelNormalizer.normalizeMake(it) } ?: rawMake
-            val canonicalModel = if (canonicalMake != null && rawModel != null) {
-                vehicleModelNormalizer.normalizeModel(canonicalMake, rawModel)
-            } else {
-                rawModel
-            }
-
-            if (rawMake != canonicalMake || rawModel != canonicalModel) {
-                log.debug("[EMAIL_CLASSIFIER] Vehicle normalized: make='{}'->'{}' model='{}'->'{}'", rawMake, canonicalMake, rawModel, canonicalModel)
-            }
-
+            // Vehicle make/model are extracted raw here (as the customer wrote them).
+            // Canonicalization against the catalog is centralized in VehicleCatalogMatcher,
+            // invoked downstream during lead analysis (single source of truth).
             EmailClassificationResult.LeadDetected(
                 extractedName = response.extractedName?.takeIf { it.isNotBlank() },
                 summary = response.summary?.takeIf { it.isNotBlank() } ?: "Zapytanie ofertowe",
-                vehicleMake = canonicalMake,
-                vehicleModel = canonicalModel,
+                vehicleMake = response.vehicleMake?.takeIf { it.isNotBlank() },
+                vehicleModel = response.vehicleModel?.takeIf { it.isNotBlank() },
                 vehicleYear = response.vehicleYear,
                 requestedServices = response.requestedServices ?: emptyList()
             )

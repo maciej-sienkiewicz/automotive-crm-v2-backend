@@ -57,13 +57,13 @@ class LeadAnalysisAiConfig {
             - unmatchedNeeds + [potrzeby z matchedServices] = extractedNeeds (zbiory rozłączne)
 
             # Zasady identyfikacji pojazdu — KRYTYCZNE
-            - vehicleBrand: wybierz DOKŁADNIE jedną markę z dostarczonej listy dozwolonych marek.
-              Użyj dokładnie tej samej pisowni co na liście (np. "Bmw", "Volkswagen", "Mercedes-Benz").
-              Jeśli marka nie jest wspomniana w wiadomości lub nie ma jej na liście — zwróć null.
-            - vehicleModel: wpisz model pojazdu dokładnie tak jak jest podany w wiadomości lub
+            - vehicleBrand: markę pojazdu wpisz DOKŁADNIE tak, jak wynika z wiadomości lub
+              wstępnie zidentyfikowanych danych (np. "BMW", "g-wagon", "mercedes"). NIE normalizuj
+              ani nie poprawiaj pisowni — kanonizacja odbywa się w osobnym kroku.
+              Jeśli marka nie jest wspomniana — zwróć null.
+            - vehicleModel: model pojazdu wpisz DOKŁADNIE tak, jak jest podany w wiadomości lub
               wstępnie zidentyfikowanych danych. Jeśli model jest nieznany — zwróć null.
-            - Jeśli dostarczone są wstępnie zidentyfikowane dane pojazdu, traktuj je priorytetowo,
-              ale marka MUSI być na liście dozwolonych marek.
+            - Jeśli dostarczone są wstępnie zidentyfikowane dane pojazdu, traktuj je priorytetowo.
 
             # Format odpowiedzi
             - reasoning        → Wewnętrzny tok rozumowania (CoT) — 2–3 zdania po polsku.

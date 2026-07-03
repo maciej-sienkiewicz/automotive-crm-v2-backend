@@ -10,12 +10,12 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.leads.estimation.domain.CatalogService
 import pl.detailing.crm.leads.estimation.domain.LeadAnalysisResult
 import pl.detailing.crm.leads.estimation.domain.LeadAnalyzer
-import pl.detailing.crm.vehicle.VehicleMetadataService
+import pl.detailing.crm.vehicle.VehicleCatalogMatcher
 
 @Service
 class OpenAiLeadAnalyzer(
     @Qualifier("leadAnalysisChatClient") private val chatClient: ChatClient,
-    private val vehicleMetadataService: VehicleMetadataService
+    private val vehicleCatalogMatcher: VehicleCatalogMatcher
 ) : LeadAnalyzer {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -27,11 +27,9 @@ class OpenAiLeadAnalyzer(
         preExtractedVehicleMake: String?,
         preExtractedVehicleModel: String?
     ): LeadAnalysisResult = withContext(Dispatchers.IO) {
-        val brands = vehicleMetadataService.getBrands()
-
         val response = try {
             chatClient.prompt()
-                .user(buildUserPrompt(leadMessage, preExtractedNeeds, catalogServices, brands, preExtractedVehicleMake, preExtractedVehicleModel))
+                .user(buildUserPrompt(leadMessage, preExtractedNeeds, catalogServices, preExtractedVehicleMake, preExtractedVehicleModel))
                 .call()
                 .entity(AnalysisLlmResponse::class.java)
         } catch (e: Exception) {
@@ -54,25 +52,11 @@ class OpenAiLeadAnalyzer(
                 valid
             }
 
-        // Normalize brand: case-insensitive exact match against known brands list
-        val normalizedBrand = response.vehicleBrand
-            ?.takeIf { it.isNotBlank() }
-            ?.let { llmBrand -> brands.find { it.equals(llmBrand, ignoreCase = true) } }
-
-        // Normalize model: exact case-insensitive match first, then token-normalized fallback
-        val normalizedModel = normalizedBrand?.let { brand ->
-            val models = vehicleMetadataService.getModelsForBrand(brand)
-            val llmModel = response.vehicleModel?.takeIf { it.isNotBlank() } ?: return@let null
-            models.find { it.equals(llmModel, ignoreCase = true) }
-                ?: models.find { tokenNormalize(it) == tokenNormalize(llmModel) }
-        }
-
-        if (response.vehicleBrand != null && normalizedBrand == null) {
-            log.warn("[LEAD_ANALYZER] LLM returned unknown vehicleBrand='{}', ignoring", response.vehicleBrand)
-        }
-        if (normalizedBrand != null && response.vehicleModel != null && normalizedModel == null) {
-            log.warn("[LEAD_ANALYZER] Could not normalize vehicleModel='{}' for brand='{}', ignoring", response.vehicleModel, normalizedBrand)
-        }
+        // Canonicalize the LLM's raw vehicle mention against the catalog (single source of truth).
+        // Deterministic-first with LLM fallback handles colloquial models, e.g. "g-wagon" → "Klasa G".
+        val vehicleMatch = vehicleCatalogMatcher.resolve(response.vehicleBrand, response.vehicleModel)
+        val normalizedBrand = vehicleMatch.brand
+        val normalizedModel = vehicleMatch.model
 
         log.info(
             "[LEAD_ANALYZER] extracted={} matched={} unmatched={} vehicle='{} {}' | summary='{}'",
@@ -91,22 +75,15 @@ class OpenAiLeadAnalyzer(
     }
 
     /**
-     * Strips non-alphanumeric characters and lowercases for fuzzy model comparison.
-     * "3-Series" and "3 Series" both become "3series".
-     */
-    private fun tokenNormalize(s: String): String =
-        s.lowercase().replace(Regex("[^a-z0-9]"), "")
-
-    /**
      * Single combined prompt: extraction + matching + vehicle identification in one LLM call.
      * Pre-extracted needs and vehicle hints (from email classifier) improve accuracy.
-     * Brands list is compact (~1 KB) — included verbatim so LLM returns exact canonical string.
+     * Vehicle make/model are returned raw (as the customer wrote them) — canonicalization
+     * against the catalog is done afterwards by VehicleCatalogMatcher.
      */
     private fun buildUserPrompt(
         leadMessage: String,
         preExtractedNeeds: List<String>,
         catalogServices: List<CatalogService>,
-        brands: List<String>,
         preExtractedVehicleMake: String?,
         preExtractedVehicleModel: String?
     ): String = buildString {
@@ -133,10 +110,6 @@ class OpenAiLeadAnalyzer(
         catalogServices.forEach { service ->
             appendLine("  ID: ${service.id} | Nazwa: ${service.name}")
         }
-        appendLine()
-
-        appendLine("Lista dozwolonych marek pojazdów (wybierz DOKŁADNIE jedną z poniższej listy lub null):")
-        appendLine(brands.joinToString(", "))
     }
 
     /**
