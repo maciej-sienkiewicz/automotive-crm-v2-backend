@@ -55,7 +55,7 @@ class OpenAiEmailLeadClassifier(
 
             val canonicalMake = rawMake?.let { vehicleModelNormalizer.normalizeMake(it) } ?: rawMake
             val canonicalModel = if (canonicalMake != null && rawModel != null) {
-                vehicleModelNormalizer.normalizeModel(canonicalMake, rawModel)
+                vehicleModelNormalizer.normalizeModel(canonicalMake, rawModel, body)
             } else {
                 rawModel
             }
