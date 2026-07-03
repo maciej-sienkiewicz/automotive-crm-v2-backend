@@ -11,11 +11,13 @@ import pl.detailing.crm.leads.estimation.domain.CatalogService
 import pl.detailing.crm.leads.estimation.domain.LeadAnalysisResult
 import pl.detailing.crm.leads.estimation.domain.LeadAnalyzer
 import pl.detailing.crm.vehicle.VehicleMetadataService
+import pl.detailing.crm.vehicle.VehicleModelNormalizer
 
 @Service
 class OpenAiLeadAnalyzer(
     @Qualifier("leadAnalysisChatClient") private val chatClient: ChatClient,
-    private val vehicleMetadataService: VehicleMetadataService
+    private val vehicleMetadataService: VehicleMetadataService,
+    private val vehicleModelNormalizer: VehicleModelNormalizer
 ) : LeadAnalyzer {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -70,8 +72,19 @@ class OpenAiLeadAnalyzer(
         if (response.vehicleBrand != null && normalizedBrand == null) {
             log.warn("[LEAD_ANALYZER] LLM returned unknown vehicleBrand='{}', ignoring", response.vehicleBrand)
         }
-        if (normalizedBrand != null && response.vehicleModel != null && normalizedModel == null) {
-            log.warn("[LEAD_ANALYZER] Could not normalize vehicleModel='{}' for brand='{}', ignoring", response.vehicleModel, normalizedBrand)
+
+        val finalModel = if (normalizedBrand != null && response.vehicleModel != null && normalizedModel == null) {
+            log.debug("[LEAD_ANALYZER] String match failed for vehicleModel='{}', brand='{}' — falling back to LLM normalizer", response.vehicleModel, normalizedBrand)
+            vehicleModelNormalizer.normalizeModel(normalizedBrand, response.vehicleModel, leadMessage)
+                .also { result ->
+                    if (result == response.vehicleModel) {
+                        log.warn("[LEAD_ANALYZER] Could not normalize vehicleModel='{}' for brand='{}', keeping raw value", response.vehicleModel, normalizedBrand)
+                    } else {
+                        log.debug("[LEAD_ANALYZER] LLM normalizer: vehicleModel='{}' → '{}'", response.vehicleModel, result)
+                    }
+                }
+        } else {
+            normalizedModel
         }
 
         log.info(
@@ -85,7 +98,7 @@ class OpenAiLeadAnalyzer(
             matchedServiceIds = safeMatchedIds,
             unmatchedNeeds = response.unmatchedNeeds,
             vehicleBrand = normalizedBrand,
-            vehicleModel = normalizedModel,
+            vehicleModel = finalModel,
             summary = response.summary.takeIf { it.isNotBlank() }
         )
     }

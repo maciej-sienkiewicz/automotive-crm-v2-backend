@@ -1,4 +1,4 @@
-package pl.detailing.crm.inbound.email.infrastructure
+package pl.detailing.crm.vehicle
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import kotlinx.coroutines.Dispatchers
@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
-import pl.detailing.crm.vehicle.VehicleMetadataService
 
 @Component
 class VehicleModelNormalizer(
@@ -29,30 +28,26 @@ class VehicleModelNormalizer(
     }
 
     /**
-     * Normalizes vehicle model using the original email body as context.
+     * Normalizes vehicle model using the original message as context.
      * Sends only this brand's model list (~50 items) — never the full 3600-line catalog.
      * Returns rawModel unchanged if the brand is unknown or LLM call fails.
      */
-    suspend fun normalizeModel(canonicalMake: String, rawModel: String, emailBody: String): String? =
+    suspend fun normalizeModel(canonicalMake: String, rawModel: String, messageBody: String): String? =
         withContext(Dispatchers.IO) {
             val models = vehicleMetadataService.getModelsForBrand(canonicalMake)
             if (models.isEmpty()) return@withContext rawModel
 
             val modelList = models.joinToString("\n") { "- $it" }
             val prompt = """
-                Klient napisał e-mail z zapytaniem o usługę detailingu. Zidentyfikowano markę pojazdu: $canonicalMake.
-
-                Treść e-maila:
-                ---
-                ${emailBody.take(1000)}
-                ---
+                Marka pojazdu: $canonicalMake
+                Klient napisał: "${messageBody.take(1000)}"
 
                 Dostępne modele $canonicalMake w naszym systemie:
                 $modelList
 
-                Zadanie: Wskaż, który model z powyższej listy odpowiada pojazdowi wymienionemu w e-mailu.
+                Wskaż, który model z powyższej listy odpowiada pojazdowi wymienionemu przez klienta.
                 Zwróć DOKŁADNĄ nazwę modelu z listy (wielkość liter musi się zgadzać).
-                Jeśli nie jesteś pewien lub żaden model nie pasuje, zwróć null.
+                Jeśli żaden model nie pasuje, zwróć null.
             """.trimIndent()
 
             val response = try {

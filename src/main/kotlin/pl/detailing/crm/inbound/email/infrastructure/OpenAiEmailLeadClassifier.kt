@@ -9,11 +9,14 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import pl.detailing.crm.inbound.email.domain.EmailClassificationResult
 import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
+import pl.detailing.crm.vehicle.VehicleMetadataService
+import pl.detailing.crm.vehicle.VehicleModelNormalizer
 
 @Service
 class OpenAiEmailLeadClassifier(
     @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient,
-    private val vehicleModelNormalizer: VehicleModelNormalizer
+    private val vehicleModelNormalizer: VehicleModelNormalizer,
+    private val vehicleMetadataService: VehicleMetadataService
 ) : EmailLeadClassifier {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -79,13 +82,20 @@ class OpenAiEmailLeadClassifier(
      * All instructions and rules live in the system prompt (InboundEmailAiConfig).
      * This separation improves instruction-following on gpt-4o-mini.
      */
-    private fun buildUserPrompt(from: String, subject: String?, body: String): String = """
-        Nadawca: $from
-        Temat: ${subject?.take(500) ?: "(brak tematu)"}
+    private fun buildUserPrompt(from: String, subject: String?, body: String): String {
+        val brands = vehicleMetadataService.getBrands().joinToString(", ")
+        return """
+            Nadawca: $from
+            Temat: ${subject?.take(500) ?: "(brak tematu)"}
 
-        ---
-        ${body.take(3000)}
-    """.trimIndent()
+            ---
+            ${body.take(3000)}
+            ---
+
+            Lista dozwolonych marek pojazdów — vehicleMake musi być DOKŁADNIE jedną z poniższych lub null:
+            $brands
+        """.trimIndent()
+    }
 
     /**
      * Schema for OpenAI Structured Outputs.
