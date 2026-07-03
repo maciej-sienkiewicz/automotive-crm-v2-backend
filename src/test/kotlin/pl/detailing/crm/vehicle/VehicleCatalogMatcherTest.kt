@@ -106,6 +106,36 @@ class VehicleCatalogMatcherTest {
     }
 
     @Test
+    fun `resolve derives model from a slang token misclassified as brand (g-wagon)`() = runBlocking {
+        // Extraction gives brand="g-wagon", model=null. Brand resolves fuzzily to Mercedes-benz;
+        // the same token is then matched as a model within that brand -> "Klasa G".
+        stubLlm("Mercedes-benz") // first LLM call: brand fallback
+        val match1 = matcher.matchBrand("g-wagon")
+        assertEquals("Mercedes-benz", match1)
+
+        // Re-stub for the model fallback call inside resolve()
+        every { callSpec.entity(VehicleCatalogMatcher.MatchResponse::class.java) } returnsMany
+            listOf(VehicleCatalogMatcher.MatchResponse("Mercedes-benz"), VehicleCatalogMatcher.MatchResponse("Klasa G"))
+
+        val match = matcher.resolve("g-wagon", null)
+
+        assertEquals("Mercedes-benz", match.brand)
+        assertEquals("Klasa G", match.model)
+    }
+
+    @Test
+    fun `resolve does not attempt brand-as-model fallback for an exact brand`() = runBlocking {
+        // "bmw" matches a brand exactly; with no model mentioned we must not spend an LLM call.
+        every { metadata.getModelsForBrand("Bmw") } returns listOf("Seria 3", "X5")
+
+        val match = matcher.resolve("bmw", null)
+
+        assertEquals("Bmw", match.brand)
+        assertNull(match.model)
+        verify(exactly = 0) { chatClient.prompt() }
+    }
+
+    @Test
     fun `resolve returns canonical brand and model for a colloquial mention`() = runBlocking {
         // brand resolves deterministically (exact), model needs the LLM
         stubLlm("Klasa G")

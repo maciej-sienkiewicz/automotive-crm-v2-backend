@@ -32,10 +32,19 @@ class VehicleCatalogMatcher(
      * Model dopasowujemy tylko jeśli udało się rozpoznać markę (modele są per-marka).
      */
     suspend fun resolve(rawBrand: String?, rawModel: String?): Match {
-        val brand = rawBrand?.takeIf { it.isNotBlank() }?.let { matchBrand(it) }
-        val model = if (brand != null) {
+        val cleanBrand = rawBrand?.takeIf { it.isNotBlank() }
+        val brand = cleanBrand?.let { matchBrand(it) }
+        var model = if (brand != null) {
             rawModel?.takeIf { it.isNotBlank() }?.let { matchModel(brand, it) }
         } else null
+
+        // Potoczne, jednowyrazowe określenia (np. "g-wagon") często kodują MODEL, nie markę,
+        // i ekstrakcja zapisuje je jako markę. Jeśli markę rozpoznaliśmy ROZMYTO (surowy token
+        // nie był kanoniczną marką), a modelu wciąż brak — spróbuj dopasować ten sam token jako
+        // model w obrębie marki. Dla poprawnie podanej marki (dopasowanie dokładne) tego nie robimy.
+        if (brand != null && model == null && cleanBrand != null && !brand.equals(cleanBrand, ignoreCase = true)) {
+            model = matchModel(brand, cleanBrand)
+        }
         return Match(brand, model)
     }
 
