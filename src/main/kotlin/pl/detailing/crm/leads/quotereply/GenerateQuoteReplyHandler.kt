@@ -22,6 +22,7 @@ class GenerateQuoteReplyHandler(
     private val userQuoteRepository: LeadUserQuoteRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val exampleRepository: QuoteReplyExampleRepository,
+    private val quoteStyleAnalyzer: QuoteStyleAnalyzer,
     @Qualifier("quoteReplyChatClient") private val chatClient: ChatClient
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -52,10 +53,11 @@ class GenerateQuoteReplyHandler(
             )
 
             val examples = exampleRepository.findByStudioIdOrderByCreatedAtDesc(command.studioId.value)
-            val userPrompt = buildUserPrompt(customerMessage, serviceLines, signatureData, examples)
+            val styleGuide = quoteStyleAnalyzer.deriveStyleGuide(command.studioId.value, examples)
+            val userPrompt = buildUserPrompt(customerMessage, serviceLines, signatureData, examples, styleGuide)
 
-            log.info("[QUOTE_REPLY] Generating reply for leadId={}, services={}, examples={}",
-                command.leadId, serviceLines.size, examples.size)
+            log.info("[QUOTE_REPLY] Generating reply for leadId={}, services={}, examples={}, styleGuide={}",
+                command.leadId, serviceLines.size, examples.size, styleGuide != null)
 
             val response = chatClient.prompt()
                 .user(userPrompt)
@@ -99,8 +101,22 @@ class GenerateQuoteReplyHandler(
         customerMessage: String,
         services: List<ServiceLine>,
         signature: SignatureData,
-        examples: List<QuoteReplyExampleEntity>
+        examples: List<QuoteReplyExampleEntity>,
+        styleGuide: String?
     ): String = buildString {
+        if (!styleGuide.isNullOrBlank()) {
+            appendLine("## Wytyczne stylu studia (NADRZĘDNE)")
+            appendLine("Poniższe wytyczne wyodrębniono z zaakceptowanych ofert tego studia.")
+            appendLine("Mają BEZWZGLĘDNY priorytet nad domyślnymi zasadami stylu z instrukcji systemowej")
+            appendLine("(w tym nad ramowaniem cen jako inwestycji, interpunkcją i formą podpisu).")
+            appendLine("Zastosuj je wiernie:")
+            appendLine()
+            appendLine(styleGuide)
+            appendLine()
+            appendLine("---")
+            appendLine()
+        }
+
         if (examples.isNotEmpty()) {
             appendLine("## Przykłady zaakceptowanych odpowiedzi ofertowych")
             appendLine("Wzoruj się na stylu, tonie i strukturze poniższych przykładów:")
