@@ -160,6 +160,7 @@ data class LeadDetailDto(
     val assignedUserId: String?,
     val assignedUserName: String?,
     val lostReason: String?,
+    val newActivityAt: Instant? = null,
     val estimation: LeadEstimationDto?,
     val userQuote: LeadUserQuoteDto?
 )
@@ -235,6 +236,7 @@ fun GetLeadResult.toDetailDto() = LeadDetailDto(
     assignedUserId = assignedUserId?.toString(),
     assignedUserName = assignedUserName,
     lostReason = lostReason,
+    newActivityAt = newActivityAt,
     estimation = estimation?.toDto(),
     userQuote = userQuote?.toDto()
 )

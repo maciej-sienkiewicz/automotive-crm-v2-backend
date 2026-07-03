@@ -88,6 +88,7 @@ class GetLeadHandler(
             assignedUserId = leadEntity.assignedUserId?.let { UserId(it) },
             assignedUserName = leadEntity.assignedUserName,
             lostReason = leadEntity.lostReason,
+            newActivityAt = leadEntity.newActivityAt,
             estimation = estimation?.toResult(),
             userQuote = userQuote
         )
@@ -114,6 +115,7 @@ data class GetLeadResult(
     val assignedUserId: UserId?,
     val assignedUserName: String?,
     val lostReason: String?,
+    val newActivityAt: Instant?,
     val estimation: EstimationResult?,
     val userQuote: SaveUserQuoteResult?
 )
