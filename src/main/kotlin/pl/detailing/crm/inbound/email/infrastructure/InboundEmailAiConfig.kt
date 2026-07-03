@@ -20,16 +20,6 @@ class InboundEmailAiConfig {
             .defaultSystem(SYSTEM_PROMPT)
             .build()
 
-    @Bean("vehicleNormalizerChatClient")
-    fun vehicleNormalizerChatClient(builder: ChatClient.Builder): ChatClient =
-        builder
-            .defaultOptions(
-                OpenAiChatOptions.builder()
-                    .temperature(0.0)
-                    .build()
-            )
-            .build()
-
     companion object {
         private val SYSTEM_PROMPT = """
             # Rola
