@@ -12,7 +12,7 @@ import pl.detailing.crm.vehicle.VehicleMetadataService
 @Component
 class VehicleModelNormalizer(
     private val vehicleMetadataService: VehicleMetadataService,
-    @Qualifier("inboundEmailChatClient") private val chatClient: ChatClient
+    @Qualifier("vehicleNormalizerChatClient") private val chatClient: ChatClient
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -29,24 +29,30 @@ class VehicleModelNormalizer(
     }
 
     /**
-     * Normalizes raw LLM-extracted model to a canonical name from our catalog for the given make.
-     * Makes a small LLM call with only that brand's model list (~50 items max).
-     * Returns null if model can't be mapped or make is unknown.
+     * Normalizes vehicle model using the original email body as context.
+     * Sends only this brand's model list (~50 items) — never the full 3600-line catalog.
+     * Returns rawModel unchanged if the brand is unknown or LLM call fails.
      */
-    suspend fun normalizeModel(canonicalMake: String, rawModel: String): String? =
+    suspend fun normalizeModel(canonicalMake: String, rawModel: String, emailBody: String): String? =
         withContext(Dispatchers.IO) {
             val models = vehicleMetadataService.getModelsForBrand(canonicalMake)
             if (models.isEmpty()) return@withContext rawModel
 
-            val modelList = models.joinToString(", ")
+            val modelList = models.joinToString("\n") { "- $it" }
             val prompt = """
-                Marka: $canonicalMake
-                Dostępne modele: $modelList
+                Klient napisał e-mail z zapytaniem o usługę detailingu. Zidentyfikowano markę pojazdu: $canonicalMake.
 
-                Klient napisał: "$rawModel"
+                Treść e-maila:
+                ---
+                ${emailBody.take(1000)}
+                ---
 
-                Zwróć DOKŁADNĄ nazwę modelu z listy powyżej, która najlepiej odpowiada temu co napisał klient.
-                Jeśli żaden model nie pasuje, zwróć null.
+                Dostępne modele $canonicalMake w naszym systemie:
+                $modelList
+
+                Zadanie: Wskaż, który model z powyższej listy odpowiada pojazdowi wymienionemu w e-mailu.
+                Zwróć DOKŁADNĄ nazwę modelu z listy (wielkość liter musi się zgadzać).
+                Jeśli nie jesteś pewien lub żaden model nie pasuje, zwróć null.
             """.trimIndent()
 
             val response = try {
@@ -59,7 +65,7 @@ class VehicleModelNormalizer(
                 return@withContext rawModel
             }
 
-            val normalized = response?.normalizedModel
+            val normalized = response?.normalizedModel?.takeIf { it.isNotBlank() }
             log.debug("[VEHICLE_NORMALIZER] make='{}' rawModel='{}' → normalizedModel='{}'", canonicalMake, rawModel, normalized)
             normalized ?: rawModel
         }
