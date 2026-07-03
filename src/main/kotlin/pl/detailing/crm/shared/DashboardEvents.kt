@@ -8,7 +8,8 @@ import java.time.Instant
  */
 enum class DashboardEventType {
     NEW_INBOUND_CALL,
-    NEW_LEAD
+    NEW_LEAD,
+    LEAD_CLIENT_REPLIED
 }
 
 /**
@@ -57,6 +58,25 @@ class NewCallReceivedEvent(
     val callerName: String?,
     val receivedAt: Instant,
     val estimatedValue: Long
+) : ApplicationEvent(source)
+
+/**
+ * Payload for LEAD_CLIENT_REPLIED event — a follow-up email was appended as a comment.
+ */
+data class LeadClientRepliedPayload(
+    val leadId: String,
+    val activityAt: Instant
+)
+
+/**
+ * Internal Spring ApplicationEvent published when a client's follow-up email is appended
+ * as a comment to an existing open lead (dedup path).
+ */
+class LeadClientRepliedEvent(
+    source: Any,
+    val studioId: StudioId,
+    val leadId: LeadId,
+    val activityAt: Instant
 ) : ApplicationEvent(source)
 
 /**

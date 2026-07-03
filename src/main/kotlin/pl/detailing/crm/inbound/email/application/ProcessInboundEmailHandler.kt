@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.inbound.email.domain.EmailClassificationResult
@@ -16,6 +17,7 @@ import pl.detailing.crm.leads.create.CreateLeadHandler
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
 import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.shared.LeadClientRepliedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -33,7 +35,8 @@ class ProcessInboundEmailHandler(
     private val createLeadHandler: CreateLeadHandler,
     private val analyzeLeadHandler: AnalyzeLeadHandler,
     private val leadRepository: LeadRepository,
-    private val leadCommentHandler: LeadCommentHandler
+    private val leadCommentHandler: LeadCommentHandler,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     companion object {
         // Window for dedup: reply from the same address within 60 days may reuse an open lead
@@ -101,8 +104,18 @@ class ProcessInboundEmailHandler(
                 content = commentContent
             ))
 
-            existingLead.newActivityAt = Instant.now()
+            val activityAt = Instant.now()
+            existingLead.newActivityAt = activityAt
             leadRepository.save(existingLead)
+
+            eventPublisher.publishEvent(
+                LeadClientRepliedEvent(
+                    source = this,
+                    studioId = studioId,
+                    leadId = leadId,
+                    activityAt = activityAt
+                )
+            )
 
             log.info(
                 "[INBOUND_EMAIL] Email reply appended as comment to existing lead: leadId={}, studioId={}, from='{}'",

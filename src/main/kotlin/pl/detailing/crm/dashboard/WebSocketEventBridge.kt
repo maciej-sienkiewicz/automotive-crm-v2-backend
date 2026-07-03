@@ -47,6 +47,26 @@ class WebSocketEventBridge(
 
     @Async
     @EventListener
+    fun handleLeadClientReplied(event: LeadClientRepliedEvent) {
+        val payload = LeadClientRepliedPayload(
+            leadId = event.leadId.value.toString(),
+            activityAt = event.activityAt
+        )
+
+        val dashboardEvent = DashboardEvent(
+            type = DashboardEventType.LEAD_CLIENT_REPLIED,
+            payload = payload,
+            timestamp = event.activityAt
+        )
+
+        val destination = "/topic/studio.${event.studioId.value}.dashboard"
+        log.info("[WS-BRIDGE] Sending DashboardEvent to destination={}, type={}, leadId={}",
+            destination, dashboardEvent.type, event.leadId.value)
+        messagingTemplate.convertAndSend(destination, dashboardEvent)
+    }
+
+    @Async
+    @EventListener
     fun handleNewLeadCreated(event: NewLeadCreatedEvent) {
         log.debug("[WS-BRIDGE] Received NewLeadCreatedEvent: leadId={}, studioId={}, source={}",
             event.leadId.value, event.studioId.value, event.leadSource)
