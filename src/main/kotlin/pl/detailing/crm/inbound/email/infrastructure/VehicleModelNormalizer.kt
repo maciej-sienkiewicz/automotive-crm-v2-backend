@@ -46,6 +46,7 @@ class VehicleModelNormalizer(
                 Klient napisał: "$rawModel"
 
                 Zwróć DOKŁADNĄ nazwę modelu z listy powyżej, która najlepiej odpowiada temu co napisał klient.
+                Uwzględnij mowę potoczną, potencjalne literówki. 
                 Jeśli żaden model nie pasuje, zwróć null.
             """.trimIndent()
 
