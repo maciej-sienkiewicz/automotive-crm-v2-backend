@@ -67,7 +67,7 @@ class GetVisitDetailHandler(
             .map { it.toDomain() }
 
         // 7. Calculate customer statistics
-        val customerVisits = visitRepository.findByCustomerIdAndStudioId(
+        val customerVisits = visitRepository.findByCustomerIdAndStudioIdExcludingDraft(
             customerId = customer.id.value,
             studioId = command.studioId.value
         )
