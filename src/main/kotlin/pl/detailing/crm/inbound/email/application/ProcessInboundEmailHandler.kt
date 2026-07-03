@@ -8,6 +8,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.inbound.email.domain.EmailClassificationResult
 import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
 import pl.detailing.crm.leads.comments.AddLeadCommentCommand
@@ -36,7 +41,8 @@ class ProcessInboundEmailHandler(
     private val analyzeLeadHandler: AnalyzeLeadHandler,
     private val leadRepository: LeadRepository,
     private val leadCommentHandler: LeadCommentHandler,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val auditService: AuditService,
 ) {
     companion object {
         // Window for dedup: reply from the same address within 60 days may reuse an open lead
@@ -116,6 +122,15 @@ class ProcessInboundEmailHandler(
                     activityAt = activityAt
                 )
             )
+            auditService.logSync(LogAuditCommand(
+                studioId = studioId,
+                userId = UserId(UUID.fromString("00000000-0000-0000-0000-000000000000")),
+                userDisplayName = "System",
+                module = AuditModule.LEAD,
+                entityId = existingLead.id.toString(),
+                entityDisplayName = existingLead.customerName ?: existingLead.contactIdentifier,
+                action = AuditAction.LEAD_CUSTOMER_ANSWERED,
+            ))
 
             log.info(
                 "[INBOUND_EMAIL] Email reply appended as comment to existing lead: leadId={}, studioId={}, from='{}'",

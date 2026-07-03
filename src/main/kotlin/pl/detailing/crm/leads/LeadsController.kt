@@ -1083,7 +1083,7 @@ class LeadsController(
     @PostMapping("/{leadId}/acknowledge")
     fun acknowledgeActivity(@PathVariable leadId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        acknowledgeLeadActivityHandler.handle(LeadId.fromString(leadId), principal.studioId)
+        acknowledgeLeadActivityHandler.handle(LeadId.fromString(leadId), principal.studioId, principal)
         ResponseEntity.noContent().build()
     }
 }

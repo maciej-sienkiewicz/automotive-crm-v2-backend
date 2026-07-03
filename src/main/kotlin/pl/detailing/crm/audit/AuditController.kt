@@ -270,6 +270,8 @@ class AuditController(
         AuditAction.LEAD_MERGED -> TODO()
         AuditAction.LEAD_COMMENT_ADDED -> TODO()
         AuditAction.LEAD_COMMENT_DELETED -> TODO()
+        AuditAction.LEAD_CUSTOMER_ANSWERED -> TODO()
+        AuditAction.LEAD_ACKNOWLEDGED -> TODO()
     }
 }
 
