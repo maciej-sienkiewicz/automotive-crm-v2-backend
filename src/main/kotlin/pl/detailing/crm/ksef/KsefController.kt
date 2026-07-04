@@ -257,6 +257,41 @@ class KsefController(
         )
     }
 
+    /** Add or edit the free-text note on an expense document. */
+    @PatchMapping("/expenses/{id}/note")
+    @Transactional
+    fun upsertExpenseNote(
+        @PathVariable id: UUID,
+        @RequestBody req: UpsertNoteRequest
+    ): ResponseEntity<ExpenseResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        findExpenseOrThrow(id, principal.studioId.value)
+
+        val note = req.note.trim()
+        if (note.isEmpty()) {
+            throw ValidationException("Notatka nie może być pusta")
+        }
+
+        invoiceRepository.updateNote(id, principal.studioId.value, note)
+
+        return ResponseEntity.ok(
+            invoiceRepository.findByIdAndStudioId(id, principal.studioId.value)!!.toResponse()
+        )
+    }
+
+    /** Delete the note on an expense document. */
+    @DeleteMapping("/expenses/{id}/note")
+    @Transactional
+    fun deleteExpenseNote(@PathVariable id: UUID): ResponseEntity<Void> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        findExpenseOrThrow(id, principal.studioId.value)
+
+        invoiceRepository.updateNote(id, principal.studioId.value, null)
+        return ResponseEntity.noContent().build()
+    }
+
     /** Delete a MANUAL expense document (KSeF invoices cannot be deleted — only excluded). */
     @DeleteMapping("/expenses/{id}")
     @Transactional
@@ -352,7 +387,8 @@ class KsefController(
         paymentStatus  = paymentStatus,
         status         = status,
         isCorrection   = isCorrection,
-        fetchedAt      = fetchedAt
+        fetchedAt      = fetchedAt,
+        note           = note
     )
 }
 
@@ -374,6 +410,8 @@ data class CreateManualExpenseRequest(
 )
 
 data class UpdatePaymentStatusRequest(val paymentStatus: String)
+
+data class UpsertNoteRequest(val note: String)
 
 // ── Response DTOs ──────────────────────────────────────────────────────────────
 
@@ -410,7 +448,8 @@ data class ExpenseResponse(
     val paymentStatus: String,          // PAID | PENDING
     val status: String,                 // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
     val isCorrection: Boolean,
-    val fetchedAt: Instant
+    val fetchedAt: Instant,
+    val note: String?
 )
 
 data class ExpenseListResponse(

@@ -42,6 +42,8 @@
    - [PATCH /ksef/expenses/{id}/exclude](#patch-ksefexpensesidexclude)
    - [PATCH /ksef/expenses/{id}/restore](#patch-ksefexpensesidrestore)
    - [PATCH /ksef/expenses/{id}/payment-status](#patch-ksefexpensesidpayment-status)
+   - [PATCH /ksef/expenses/{id}/note](#patch-ksefexpensesidnote)
+   - [DELETE /ksef/expenses/{id}/note](#delete-ksefexpensesidnote)
    - [DELETE /ksef/expenses/{id}](#delete-ksefexpensesid)
 10. [Moduł KSeF — Statystyki kosztowe](#10-moduł-ksef--statystyki-kosztowe)
     - [GET /ksef/statistics](#get-ksefstatistics)
@@ -612,7 +614,8 @@ Zunifikowany widok kosztów — zarówno pobranych automatycznie z KSeF (`source
       "paymentStatus": "PENDING",
       "status": "ACTIVE",
       "isCorrection": false,
-      "fetchedAt": "2024-03-15T09:00:05Z"
+      "fetchedAt": "2024-03-15T09:00:05Z",
+      "note": "Zapłacone kartą firmową, do rozliczenia z klientem X"
     }
   ],
   "total": 37,
@@ -642,6 +645,7 @@ Zunifikowany widok kosztów — zarówno pobranych automatycznie z KSeF (`source
 | `status` | string | `ACTIVE` \| `CORRECTED` \| `CANCELLED` \| `EXCLUDED` |
 | `isCorrection` | boolean | `true` jeśli to faktura korygująca |
 | `fetchedAt` | ISO datetime | Kiedy dokument trafił do CRM |
+| `note` | string \| null | Notatka dodana przez admina. `null` gdy brak notatki |
 
 **Znaczenie `status`:**
 - `ACTIVE` — aktywna faktura (widoczna i liczona)
@@ -751,6 +755,36 @@ Błędy:
 Dozwolone wartości: `PAID` | `PENDING`
 
 **Response `200 OK`:** zaktualizowany `ExpenseResponse`
+
+---
+
+### PATCH /ksef/expenses/{id}/note
+
+**Kiedy używać:** Dodanie lub edycja notatki na dokumencie kosztowym (dowolny tekst — kontekst dla admina/księgowości).
+
+**Uprawnienia:** MANAGER, OWNER
+
+**Request:**
+```json
+{ "note": "Zapłacone kartą firmową, do rozliczenia z klientem X" }
+```
+
+`note` nie może być pusta ani składać się wyłącznie z białych znaków.
+
+**Response `200 OK`:** zaktualizowany `ExpenseResponse`
+
+Błędy:
+- `400` gdy `note` jest puste
+
+---
+
+### DELETE /ksef/expenses/{id}/note
+
+**Kiedy używać:** Usunięcie notatki z dokumentu kosztowego.
+
+**Uprawnienia:** MANAGER, OWNER
+
+**Response `204 No Content`**
 
 ---
 

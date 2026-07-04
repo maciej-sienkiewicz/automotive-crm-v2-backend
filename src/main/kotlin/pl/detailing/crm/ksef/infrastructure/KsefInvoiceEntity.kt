@@ -118,11 +118,16 @@ class KsefInvoiceEntity(
 
     /** Payment method from KSeF XML or manually specified. Stored as PaymentForm.name. */
     @Column(name = "payment_form", length = 20)
-    val paymentForm: String? = null
+    val paymentForm: String? = null,
+
+    /** Free-text note added by the admin (e.g. context on the expense). Null when no note set. */
+    @Column(name = "note", columnDefinition = "TEXT")
+    val note: String? = null
 
 ) {
     fun withStatus(newStatus: String) = copy(status = newStatus)
     fun withPaymentStatus(newPaymentStatus: String) = copy(paymentStatus = newPaymentStatus)
+    fun withNote(newNote: String?) = copy(note = newNote)
 
     private fun copy(
         source: String = this.source,
@@ -145,7 +150,8 @@ class KsefInvoiceEntity(
         originalKsefNumber: String? = this.originalKsefNumber,
         status: String = this.status,
         paymentStatus: String = this.paymentStatus,
-        paymentForm: String? = this.paymentForm
+        paymentForm: String? = this.paymentForm,
+        note: String? = this.note
     ) = KsefInvoiceEntity(
         id = id, studioId = studioId,
         source = source, ksefNumber = ksefNumber, invoiceNumber = invoiceNumber,
@@ -156,6 +162,6 @@ class KsefInvoiceEntity(
         currency = currency, invoiceType = invoiceType, fetchedAt = fetchedAt,
         direction = direction, isCorrection = isCorrection,
         originalKsefNumber = originalKsefNumber, status = status,
-        paymentStatus = paymentStatus, paymentForm = paymentForm
+        paymentStatus = paymentStatus, paymentForm = paymentForm, note = note
     )
 }

@@ -70,6 +70,14 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("paymentStatus") paymentStatus: String
     ): Int
 
+    @Modifying
+    @Query("UPDATE KsefInvoiceEntity i SET i.note = :note WHERE i.id = :id AND i.studioId = :studioId")
+    fun updateNote(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("note") note: String?
+    ): Int
+
     // ── Finance summary aggregates ────────────────────────────────────────────
 
     /**
