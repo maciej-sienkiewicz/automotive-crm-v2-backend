@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.customer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
@@ -37,7 +38,8 @@ data class CustomerSnapshot(
 class AssignLeadCustomerHandler(
     private val leadRepository: LeadRepository,
     private val customerRepository: CustomerRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -94,6 +96,14 @@ class AssignLeadCustomerHandler(
                     changes = changes
                 ))
             }
+
+            eventPublisher.publishEvent(
+                LeadChangedEvent(
+                    source = this@AssignLeadCustomerHandler,
+                    studioId = command.studioId,
+                    leadId = command.leadId
+                )
+            )
 
             AssignLeadCustomerResult(
                 leadId = command.leadId,

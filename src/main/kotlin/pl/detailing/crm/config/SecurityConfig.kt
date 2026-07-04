@@ -90,7 +90,10 @@ class SecurityConfig {
     fun corsConfigurationSource(): CorsConfigurationSource {
         val configuration = CorsConfiguration()
         configuration.allowedOriginPatterns = listOf(
-            "https://detailboost.pl/",
+            // No trailing slash — the Origin header never carries one, so
+            // "https://detailboost.pl/" would never match.
+            "https://detailboost.pl",
+            "https://*.detailboost.pl",
             "http://localhost:*",
             "http://192.168.*.*:*"
         )

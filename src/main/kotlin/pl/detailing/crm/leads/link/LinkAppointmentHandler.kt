@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.link
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
@@ -10,6 +11,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.AlreadyLinkedException
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UnprocessableEntityException
@@ -25,7 +27,8 @@ data class LinkAppointmentCommand(
 @Service
 class LinkAppointmentHandler(
     private val leadRepository: LeadRepository,
-    private val appointmentRepository: AppointmentRepository
+    private val appointmentRepository: AppointmentRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -43,6 +46,9 @@ class LinkAppointmentHandler(
             entity.updatedAt = Instant.now()
             leadRepository.save(entity)
             log.info("[LEADS] Unlinked appointment from leadId={}", command.leadId.value)
+            eventPublisher.publishEvent(
+                LeadChangedEvent(source = this@LinkAppointmentHandler, studioId = command.studioId, leadId = command.leadId)
+            )
             return@withContext
         }
 
@@ -66,5 +72,8 @@ class LinkAppointmentHandler(
         entity.updatedAt = Instant.now()
         leadRepository.save(entity)
         log.info("[LEADS] Linked appointmentId={} to leadId={}", command.appointmentId, command.leadId.value)
+        eventPublisher.publishEvent(
+            LeadChangedEvent(source = this@LinkAppointmentHandler, studioId = command.studioId, leadId = command.leadId)
+        )
     }
 }

@@ -1,11 +1,14 @@
 package pl.detailing.crm.leads.appointment
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.shared.LeadChangedEvent
+import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -19,7 +22,8 @@ import java.util.UUID
 @Service
 class LeadSyncService(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(LeadSyncService::class.java)
 
@@ -37,6 +41,15 @@ class LeadSyncService(
         leadEntity.requiresVerification = false
         leadEntity.updatedAt = Instant.now()
         leadRepository.save(leadEntity)
+
+        eventPublisher.publishEvent(
+            LeadChangedEvent(
+                source = this,
+                studioId = StudioId(studioId),
+                leadId = LeadId(leadEntity.id),
+                statusChanged = true
+            )
+        )
     }
 
     /** Called when an appointment is cancelled or abandoned — the client didn't show up. */
@@ -101,6 +114,15 @@ class LeadSyncService(
                     put("appointmentId", appointmentId.toString())
                     if (visitId != null) put("visitId", visitId.toString())
                 }
+            )
+        )
+
+        eventPublisher.publishEvent(
+            LeadChangedEvent(
+                source = this,
+                studioId = StudioId(studioId),
+                leadId = LeadId(lead.id),
+                statusChanged = true
             )
         )
     }

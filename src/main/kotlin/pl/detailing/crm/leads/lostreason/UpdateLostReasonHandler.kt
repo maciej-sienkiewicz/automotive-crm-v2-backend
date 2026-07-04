@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.lostreason
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
@@ -13,6 +14,7 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -29,7 +31,8 @@ data class UpdateLostReasonCommand(
 @Service
 class UpdateLostReasonHandler(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(UpdateLostReasonHandler::class.java)
 
@@ -64,5 +67,13 @@ class UpdateLostReasonHandler(
             action = AuditAction.LEAD_LOST_REASON_UPDATED,
             changes = listOf(FieldChange("lostReason", old, trimmed))
         ))
+
+        eventPublisher.publishEvent(
+            LeadChangedEvent(
+                source = this@UpdateLostReasonHandler,
+                studioId = command.studioId,
+                leadId = command.leadId
+            )
+        )
     }
 }

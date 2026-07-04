@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
@@ -10,6 +11,7 @@ import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
@@ -20,7 +22,8 @@ import java.time.Instant
 @Service
 class UpdateLeadHandler(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(UpdateLeadHandler::class.java)
 
@@ -104,6 +107,15 @@ class UpdateLeadHandler(
                     changes = changes
                 ))
             }
+
+            eventPublisher.publishEvent(
+                LeadChangedEvent(
+                    source = this@UpdateLeadHandler,
+                    studioId = command.studioId,
+                    leadId = command.leadId,
+                    statusChanged = command.status != null && command.status != oldStatus
+                )
+            )
 
             UpdateLeadResult(
                 leadId = LeadId(updated.id),

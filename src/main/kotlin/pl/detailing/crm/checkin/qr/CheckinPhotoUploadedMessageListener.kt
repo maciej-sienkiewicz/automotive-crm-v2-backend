@@ -45,7 +45,9 @@ class CheckinPhotoUploadedMessageListener(
             }
             val photoId = payload["photoId"] as? String ?: ""
             val fileName = payload["fileName"] as? String ?: ""
-            val thumbnailUrl = payload["thumbnailUrl"] as? String ?: ""
+            // Contract: thumbnailUrl is optional — omit it (null) rather than sending "",
+            // which the frontend could try to render as a broken image URL.
+            val thumbnailUrl = (payload["thumbnailUrl"] as? String)?.ifBlank { null }
 
             val wsMessage = CheckinPhotoUploadedWsMessage(
                 type = "CHECKIN_PHOTO_UPLOADED",
@@ -74,6 +76,6 @@ data class CheckinPhotoUploadedWsMessage(
     val checkinId: String,
     val photoId: String,
     val fileName: String,
-    val thumbnailUrl: String,
+    val thumbnailUrl: String?,
     val timestamp: Instant
 )

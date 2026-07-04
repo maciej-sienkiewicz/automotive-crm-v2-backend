@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.estimation.analyze
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditModule
@@ -18,6 +19,9 @@ import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationStatusJpa
 import pl.detailing.crm.leads.estimation.infrastructure.RelatedVisit
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.shared.LeadChangedEvent
+import pl.detailing.crm.shared.LeadId
+import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -30,7 +34,8 @@ class AnalyzeLeadHandler(
     private val leadEstimationRepository: LeadEstimationRepository,
     private val visitRepository: VisitRepository,
     private val leadAnalyzer: LeadAnalyzer,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -105,6 +110,7 @@ class AnalyzeLeadHandler(
                     leadEstimationRepository.save(est)
                 }
             }
+            publishLeadChanged(command.studioId, command.leadId.value)
             return
         }
 
@@ -180,11 +186,21 @@ class AnalyzeLeadHandler(
             }
         }
 
+        // Estimation runs in the background — without this event the new estimationStatus,
+        // estimatedValue and vehicle data show up only after a manual page refresh.
+        publishLeadChanged(command.studioId, command.leadId.value)
+
         log.info(
             "[LEAD_ANALYSIS] Completed for leadId={}: matched={} unmatched={} vehicle='{} {}' relatedVisits={}",
             command.leadId, analysisResult.matchedServiceIds.size, analysisResult.unmatchedNeeds.size,
             analysisResult.vehicleBrand, analysisResult.vehicleModel,
             "(see estimation)"
+        )
+    }
+
+    private fun publishLeadChanged(studioId: StudioId, leadId: UUID) {
+        eventPublisher.publishEvent(
+            LeadChangedEvent(source = this, studioId = studioId, leadId = LeadId(leadId))
         )
     }
 

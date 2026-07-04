@@ -2,6 +2,7 @@ package pl.detailing.crm.leads.acknowledge
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
@@ -13,6 +14,7 @@ import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -21,7 +23,8 @@ import java.util.UUID
 @Service
 class AcknowledgeLeadActivityHandler(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     @Transactional
     suspend fun handle(leadId: LeadId, studioId: StudioId, principal: UserPrincipal) = withContext(Dispatchers.IO) {
@@ -44,5 +47,9 @@ class AcknowledgeLeadActivityHandler(
 
         entity.newActivityAt = null
         leadRepository.save(entity)
+
+        eventPublisher.publishEvent(
+            LeadChangedEvent(source = this@AcknowledgeLeadActivityHandler, studioId = studioId, leadId = leadId)
+        )
     }
 }

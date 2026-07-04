@@ -4,11 +4,14 @@ import org.springframework.context.ApplicationEvent
 import java.time.Instant
 
 /**
- * Types of real-time dashboard events sent via WebSocket
+ * Types of real-time dashboard events sent via WebSocket.
+ * These names are part of the frontend contract — the frontend ignores unknown
+ * types, so renaming a value here silently breaks notifications in the browser.
  */
 enum class DashboardEventType {
-    NEW_INBOUND_CALL,
     NEW_LEAD,
+    LEAD_UPDATED,
+    LEAD_STATUS_CHANGED,
     LEAD_CLIENT_REPLIED
 }
 
@@ -23,18 +26,9 @@ data class DashboardEvent<T>(
 )
 
 /**
- * Payload for NEW_INBOUND_CALL event
- */
-data class NewCallPayload(
-    val id: String,
-    val phoneNumber: String,
-    val callerName: String?,
-    val receivedAt: Instant,
-    val estimatedValue: Long
-)
-
-/**
- * Payload for NEW_LEAD event (email, voice and other non-call sources)
+ * Payload for NEW_LEAD event — canonical shape expected by the frontend
+ * (contactIdentifier / customerName / createdAt), used for every lead source
+ * including inbound phone calls.
  */
 data class NewLeadPayload(
     val id: String,
@@ -96,3 +90,16 @@ class NewLeadCreatedEvent(
     val createdAt: Instant
 ) : ApplicationEvent(source)
 
+/**
+ * Internal Spring ApplicationEvent published whenever an existing lead is mutated
+ * (status, assignment, customer, links, estimation results, …). The WebSocket bridge
+ * loads the full lead DTO after commit and broadcasts LEAD_UPDATED or
+ * LEAD_STATUS_CHANGED to the studio's dashboard topic, so every logged-in user of the
+ * studio sees the change without refreshing.
+ */
+class LeadChangedEvent(
+    source: Any,
+    val studioId: StudioId,
+    val leadId: LeadId,
+    val statusChanged: Boolean = false
+) : ApplicationEvent(source)
