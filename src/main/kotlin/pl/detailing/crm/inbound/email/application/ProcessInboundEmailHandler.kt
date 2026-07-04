@@ -119,6 +119,7 @@ class ProcessInboundEmailHandler(
                     source = this,
                     studioId = studioId,
                     leadId = leadId,
+                    customerName = existingLead.customerName ?: existingLead.contactIdentifier,
                     activityAt = activityAt
                 )
             )
