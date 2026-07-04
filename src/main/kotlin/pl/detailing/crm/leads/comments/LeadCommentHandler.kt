@@ -24,7 +24,8 @@ data class AddLeadCommentCommand(
     val studioId: StudioId,
     val userId: UserId,
     val userName: String,
-    val content: String
+    val content: String,
+    val skipAuditEntry: Boolean = false
 )
 
 data class UpdateLeadCommentCommand(
@@ -87,16 +88,18 @@ class LeadCommentHandler(
             val saved = commentRepository.save(entity)
             log.info("[LEADS] Added comment: commentId={}, leadId={}", saved.id, command.leadId.value)
 
-            auditService.log(LogAuditCommand(
-                studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userName,
-                module = AuditModule.LEAD,
-                entityId = command.leadId.value.toString(),
-                entityDisplayName = null,
-                action = AuditAction.LEAD_COMMENT_ADDED,
-                changes = emptyList()
-            ))
+            if (!command.skipAuditEntry) {
+                auditService.log(LogAuditCommand(
+                    studioId = command.studioId,
+                    userId = command.userId,
+                    userDisplayName = command.userName,
+                    module = AuditModule.LEAD,
+                    entityId = command.leadId.value.toString(),
+                    entityDisplayName = null,
+                    action = AuditAction.LEAD_COMMENT_ADDED,
+                    changes = emptyList()
+                ))
+            }
 
             saved
         }

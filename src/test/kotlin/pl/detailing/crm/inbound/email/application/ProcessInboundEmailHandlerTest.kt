@@ -5,6 +5,8 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
+import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.inbound.email.domain.EmailClassificationResult
 import pl.detailing.crm.inbound.email.domain.EmailLeadClassifier
 import pl.detailing.crm.leads.comments.LeadCommentHandler
@@ -29,6 +31,8 @@ class ProcessInboundEmailHandlerTest {
     private val analyzeLeadHandler = mockk<AnalyzeLeadHandler>(relaxed = true)
     private val leadRepository = mockk<LeadRepository>(relaxed = true)
     private val leadCommentHandler = mockk<LeadCommentHandler>(relaxed = true)
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val auditService = mockk<AuditService>(relaxed = true)
 
     private val handler = ProcessInboundEmailHandler(
         studioRepository,
@@ -36,7 +40,9 @@ class ProcessInboundEmailHandlerTest {
         createLeadHandler,
         analyzeLeadHandler,
         leadRepository,
-        leadCommentHandler
+        leadCommentHandler,
+        eventPublisher,
+        auditService
     )
 
     private val studioId = UUID.randomUUID()

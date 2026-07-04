@@ -167,19 +167,19 @@ class AuditController(
         VEHICLE -> "Pojazdy"
         VISIT -> "Wizyty"
         APPOINTMENT -> "Rezerwacje"
-        SERVICE -> "Uslugi"
+        SERVICE -> "Usługi"
         LEAD -> "Leady"
-        PROTOCOL -> "Protokoly"
+        PROTOCOL -> "Protokoły"
         CONSENT -> "Zgody"
-        INBOUND_CALL -> "Polaczenia przychodzace"
+        INBOUND_CALL -> "Połączenia przychodzące"
         APPOINTMENT_COLOR -> "Kolory rezerwacji"
         STUDIO -> "Studio"
-        USER -> "Uzytkownicy"
+        USER -> "Użytkownicy"
         CASH_REGISTER -> "Kasa"
         FINANCE -> "Finanse"
-        EMPLOYEE -> TODO()
-        AuditModule.TASK -> TODO()
-        AuditModule.SECURITY -> TODO()
+        EMPLOYEE -> "Pracownicy"
+        AuditModule.TASK -> "Zadania"
+        AuditModule.SECURITY -> "Bezpieczeństwo"
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
@@ -233,45 +233,45 @@ class AuditController(
         DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
         CASH_ADJUSTED -> "Dostosowanie kasy"
         APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
-        EMPLOYEE_TERMINATED -> TODO()
-        CONTRACT_CREATED -> TODO()
-        CONTRACT_ENDED -> TODO()
-        COMPENSATION_SET -> TODO()
-        WORK_TIME_LOGGED -> TODO()
-        WORK_TIME_APPROVED -> TODO()
-        WORK_TIME_REJECTED -> TODO()
-        LEAVE_REQUESTED -> TODO()
-        LEAVE_APPROVED -> TODO()
-        LEAVE_REJECTED -> TODO()
-        LEAVE_CANCELLED -> TODO()
-        PAYROLL_GENERATED -> TODO()
-        PAYROLL_CONFIRMED -> TODO()
-        PAYROLL_PAID -> TODO()
+        EMPLOYEE_TERMINATED -> "Zakończenie zatrudnienia"
+        CONTRACT_CREATED -> "Utworzenie umowy"
+        CONTRACT_ENDED -> "Zakończenie umowy"
+        COMPENSATION_SET -> "Ustawienie wynagrodzenia"
+        WORK_TIME_LOGGED -> "Zapis czasu pracy"
+        WORK_TIME_APPROVED -> "Zatwierdzenie czasu pracy"
+        WORK_TIME_REJECTED -> "Odrzucenie czasu pracy"
+        LEAVE_REQUESTED -> "Wniosek urlopowy"
+        LEAVE_APPROVED -> "Zatwierdzenie urlopu"
+        LEAVE_REJECTED -> "Odrzucenie urlopu"
+        LEAVE_CANCELLED -> "Anulowanie urlopu"
+        PAYROLL_GENERATED -> "Generowanie listy płac"
+        PAYROLL_CONFIRMED -> "Potwierdzenie listy płac"
+        PAYROLL_PAID -> "Wypłata wynagrodzenia"
         BONUS_ADDED -> "Dodanie bonusu/dodatku"
         BONUS_DELETED -> "Usunięcie bonusu/dodatku"
-        WORK_TIME_PERIOD_SAVED -> TODO()
-        WORK_TIME_ENTRY_DELETED -> TODO()
-        AuditAction.LEAD_CONFIRMED -> TODO()
-        AuditAction.LEAD_COMPLETED -> TODO()
-        AuditAction.LEAD_LOST -> TODO()
-        AuditAction.LEAD_NO_SHOW -> TODO()
-        AuditAction.LEAD_APPOINTMENT_CREATED -> TODO()
-        AuditAction.CROSS_TENANT_ACCESS_ATTEMPT -> TODO()
-        AuditAction.LOGIN_FAILURE -> TODO()
-        AuditAction.LOGIN_SUCCESS -> TODO()
-        AuditAction.ACCOUNT_LOCKED -> TODO()
-        AuditAction.LEAD_USER_ASSIGNED -> TODO()
-        AuditAction.LEAD_CUSTOMER_ASSIGNED -> TODO()
-        AuditAction.LEAD_LOST_REASON_UPDATED -> TODO()
-        AuditAction.LEAD_QUOTE_UPDATED -> TODO()
-        AuditAction.LEAD_COMMENT_UPDATED -> TODO()
-        AuditAction.LEAD_ESTIMATION_COMPLETED -> TODO()
-        AuditAction.LEAD_SPLIT -> TODO()
-        AuditAction.LEAD_MERGED -> TODO()
-        AuditAction.LEAD_COMMENT_ADDED -> TODO()
-        AuditAction.LEAD_COMMENT_DELETED -> TODO()
-        AuditAction.LEAD_CUSTOMER_ANSWERED -> TODO()
-        AuditAction.LEAD_ACKNOWLEDGED -> TODO()
+        WORK_TIME_PERIOD_SAVED -> "Zapis okresu rozliczeniowego"
+        WORK_TIME_ENTRY_DELETED -> "Usunięcie wpisu czasu pracy"
+        AuditAction.LEAD_CONFIRMED -> "Potwierdzenie leada"
+        AuditAction.LEAD_COMPLETED -> "Zakończenie leada"
+        AuditAction.LEAD_LOST -> "Utrata leada"
+        AuditAction.LEAD_NO_SHOW -> "Brak kontaktu"
+        AuditAction.LEAD_APPOINTMENT_CREATED -> "Utworzenie rezerwacji z leada"
+        AuditAction.CROSS_TENANT_ACCESS_ATTEMPT -> "Próba nieautoryzowanego dostępu"
+        AuditAction.LOGIN_FAILURE -> "Nieudane logowanie"
+        AuditAction.LOGIN_SUCCESS -> "Zalogowanie"
+        AuditAction.ACCOUNT_LOCKED -> "Zablokowanie konta"
+        AuditAction.LEAD_USER_ASSIGNED -> "Przypisanie pracownika"
+        AuditAction.LEAD_CUSTOMER_ASSIGNED -> "Przypisanie klienta"
+        AuditAction.LEAD_LOST_REASON_UPDATED -> "Aktualizacja powodu utraty"
+        AuditAction.LEAD_QUOTE_UPDATED -> "Aktualizacja wyceny"
+        AuditAction.LEAD_COMMENT_UPDATED -> "Edycja komentarza"
+        AuditAction.LEAD_ESTIMATION_COMPLETED -> "Zakończenie wyceny AI"
+        AuditAction.LEAD_SPLIT -> "Podział leada"
+        AuditAction.LEAD_MERGED -> "Scalenie leada"
+        AuditAction.LEAD_COMMENT_ADDED -> "Dodanie komentarza"
+        AuditAction.LEAD_COMMENT_DELETED -> "Usunięcie komentarza"
+        AuditAction.LEAD_CUSTOMER_ANSWERED -> "Odpowiedź klienta (e-mail)"
+        AuditAction.LEAD_ACKNOWLEDGED -> "Potwierdzenie aktywności"
     }
 }
 

@@ -107,7 +107,8 @@ class ProcessInboundEmailHandler(
                 studioId = studioId,
                 userId = SYSTEM_USER_ID,
                 userName = SYSTEM_USER_NAME,
-                content = commentContent
+                content = commentContent,
+                skipAuditEntry = true
             ))
 
             val activityAt = Instant.now()
