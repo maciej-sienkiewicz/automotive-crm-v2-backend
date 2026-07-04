@@ -10,6 +10,7 @@ import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryFilters
 import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
+import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
@@ -83,7 +84,7 @@ class FetchKsefInvoicesHandler(
                     direction      = "EXPENSE",
                     isCorrection   = isCorrection,
                     status         = "ACTIVE",
-                    paymentStatus  = "PENDING",
+                    paymentStatus  = PaymentForm.defaultPaymentStatus(xmlData.paymentForm),
                     paymentForm    = xmlData.paymentForm?.name
                 )
             )
