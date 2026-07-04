@@ -50,6 +50,7 @@ class WebSocketEventBridge(
     fun handleLeadClientReplied(event: LeadClientRepliedEvent) {
         val payload = LeadClientRepliedPayload(
             leadId = event.leadId.value.toString(),
+            customerName = event.customerName,
             activityAt = event.activityAt
         )
 

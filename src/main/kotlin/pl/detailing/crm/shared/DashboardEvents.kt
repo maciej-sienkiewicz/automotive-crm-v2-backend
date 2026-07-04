@@ -62,9 +62,11 @@ class NewCallReceivedEvent(
 
 /**
  * Payload for LEAD_CLIENT_REPLIED event — a follow-up email was appended as a comment.
+ * [customerName] is the assigned customer name if known, otherwise the raw contactIdentifier (e-mail).
  */
 data class LeadClientRepliedPayload(
     val leadId: String,
+    val customerName: String,
     val activityAt: Instant
 )
 
@@ -76,6 +78,7 @@ class LeadClientRepliedEvent(
     source: Any,
     val studioId: StudioId,
     val leadId: LeadId,
+    val customerName: String,
     val activityAt: Instant
 ) : ApplicationEvent(source)
 
