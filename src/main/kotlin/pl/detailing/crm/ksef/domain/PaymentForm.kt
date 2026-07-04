@@ -24,6 +24,16 @@ enum class PaymentForm(val ksefCode: String, val displayName: String) {
     PRZELEW("6",  "Przelew"),
     MOBILNA("7",  "Mobilna");
 
+    /**
+     * Płatności odroczone (przelew, kredyt) zaczynają jako PENDING — kontrahent jeszcze nie zapłacił.
+     * Płatności natychmiastowe (gotówka, karta, BLIK, czek, bon) → od razu PAID.
+     * Gdy forma płatności jest nieznana (null) zwraca PENDING jako bezpieczny domyślny.
+     */
+    fun defaultPaymentStatus(): String = when (this) {
+        PRZELEW, KREDYT -> "PENDING"
+        else            -> "PAID"
+    }
+
     companion object {
         /**
          * Mapuje kod z XML KSeF na enum.
@@ -31,5 +41,8 @@ enum class PaymentForm(val ksefCode: String, val displayName: String) {
          */
         fun fromKsefCode(code: String?): PaymentForm? =
             code?.trim()?.let { c -> entries.firstOrNull { it.ksefCode == c } }
+
+        fun defaultPaymentStatus(form: PaymentForm?): String =
+            form?.defaultPaymentStatus() ?: "PENDING"
     }
 }
