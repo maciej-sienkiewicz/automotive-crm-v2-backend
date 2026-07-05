@@ -122,6 +122,21 @@ data class TabletSession(
     val pairedAt: Instant
 )
 
+/**
+ * STOMP principal for a paired signing tablet.
+ *
+ * Tablets have no HTTP session — they authenticate the WebSocket CONNECT frame with
+ * the X-Tablet-Token native header, which [pl.detailing.crm.config.WebSocketSecurityInterceptor]
+ * exchanges for this principal. Subscriptions are restricted to the studio's tablet topic.
+ */
+data class TabletPrincipal(
+    val tenantId: String,
+    val tabletId: String,
+    val deviceName: String
+) : java.security.Principal {
+    override fun getName(): String = "tablet:$tabletId"
+}
+
 data class GeneratedPairingCode(
     val code: String,
     val expiresAt: Instant

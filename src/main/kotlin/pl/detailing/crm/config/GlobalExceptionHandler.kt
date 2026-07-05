@@ -93,6 +93,17 @@ class GlobalExceptionHandler(
             ))
     }
 
+    @ExceptionHandler(NotFoundException::class)
+    fun handleNotFoundBusiness(ex: NotFoundException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(ErrorResponse(
+                error = "Nie znaleziono",
+                message = ex.message ?: "Żądany zasób nie istnieje",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
     @ExceptionHandler(ConflictException::class)
     fun handleConflict(ex: ConflictException): ResponseEntity<ErrorResponse> {
         return ResponseEntity

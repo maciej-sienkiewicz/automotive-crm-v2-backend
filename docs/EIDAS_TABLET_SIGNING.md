@@ -146,11 +146,15 @@ CRM (sesja):
 
 Tablet (`X-Tablet-Token`):
 * `POST /api/tablet/pair`
+* `GET /api/tablet/context` — walidacja zapisanego tokenu przy starcie aplikacji (auto-reconnect)
 * `GET /api/tablet/signature-requests/pending`
 * `GET /api/tablet/signature-requests/{id}/document`
 * `POST /api/tablet/signature-requests/{id}/submit`
 * `POST /api/tablet/signature-requests/{id}/decline`
 
-WebSocket (STOMP):
+WebSocket (STOMP, endpoint `/ws-registry` przez SockJS):
+* CONNECT tabletu uwierzytelniany nagłówkiem STOMP `X-Tablet-Token`
+  (`WebSocketSecurityInterceptor` wymienia token na `TabletPrincipal`; tablet może
+  subskrybować WYŁĄCZNIE własny temat podpisów)
 * `/topic/studio.{studioId}.tablet.signature` — powiadomienie tabletów o oczekującym dokumencie
 * `/topic/studio.{studioId}.signature.{requestId}` — status na żywo dla CRM

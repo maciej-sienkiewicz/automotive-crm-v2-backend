@@ -59,7 +59,29 @@ class TabletSignatureController(
             ?: throw ForbiddenException("Nieprawidłowy lub wygasły kod parowania")
 
         return ResponseEntity.status(HttpStatus.CREATED).body(
-            TabletPairResponse(tabletId = paired.tabletId, token = paired.token)
+            TabletPairResponse(tabletId = paired.tabletId, token = paired.token, studioId = paired.tenantId)
+        )
+    }
+
+    /**
+     * Validate the stored device token and return the tablet's context.
+     * Called on app start (day-2 auto-reconnect): a 200 means the token is still valid
+     * (its TTL was just refreshed); a 403 means the tablet must be paired again.
+     *
+     * GET /api/tablet/context
+     * X-Tablet-Token: <token>
+     */
+    @GetMapping("/context")
+    fun getContext(
+        @RequestHeader("X-Tablet-Token") token: String
+    ): ResponseEntity<TabletContextResponse> {
+        val session = authenticate(token)
+        return ResponseEntity.ok(
+            TabletContextResponse(
+                tabletId = session.tabletId,
+                studioId = session.tenantId,
+                deviceName = session.deviceName
+            )
         )
     }
 
@@ -267,7 +289,15 @@ data class TabletPairRequest(
 
 data class TabletPairResponse(
     val tabletId: String,
-    val token: String
+    val token: String,
+    /** Needed by the tablet to subscribe to /topic/studio.{studioId}.tablet.signature */
+    val studioId: String
+)
+
+data class TabletContextResponse(
+    val tabletId: String,
+    val studioId: String,
+    val deviceName: String
 )
 
 data class TabletSignatureRequestDto(
