@@ -104,6 +104,21 @@ class SignatureRequestController(
         )
     }
 
+    /** List all tablets currently paired to this studio. */
+    @GetMapping("/tablets")
+    fun listTablets(): ResponseEntity<List<TabletDto>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val tablets = tabletSessionService.listTablets(principal.studioId.value.toString())
+        return ResponseEntity.ok(tablets.map {
+            TabletDto(
+                tabletId = it.tabletId,
+                deviceName = it.deviceName,
+                pairedAt = it.pairedAt,
+                tokenExpiresAt = it.tokenExpiresAt
+            )
+        })
+    }
+
     /** Revoke a paired tablet (lost/replaced device). */
     @DeleteMapping("/tablets/{tabletId}")
     fun revokeTablet(@PathVariable tabletId: String): ResponseEntity<Void> {
@@ -130,6 +145,14 @@ data class CreateSignatureRequestBody(
 data class PairingCodeResponse(
     val code: String,
     val expiresAt: Instant
+)
+
+data class TabletDto(
+    val tabletId: String,
+    val deviceName: String,
+    val pairedAt: Instant,
+    /** null when the TTL cannot be determined (e.g. key has no expiry set) */
+    val tokenExpiresAt: Instant?
 )
 
 data class SignatureRequestDto(

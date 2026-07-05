@@ -97,6 +97,38 @@ class TabletSessionService(
         }
     }
 
+    /**
+     * List all paired tablets for a tenant. Scans the device reverse-lookup keys
+     * (signing:tablet-device:{tenantId}:*) and joins with session data from token keys.
+     * Tablets whose token has already expired are excluded automatically.
+     */
+    fun listTablets(tenantId: String): List<TabletInfo> {
+        val pattern = "$DEVICE_KEY_PREFIX$tenantId:*"
+        val deviceKeys = redisTemplate.keys(pattern) ?: return emptyList()
+
+        return deviceKeys.mapNotNull { deviceKey ->
+            try {
+                val token = redisTemplate.opsForValue().get(deviceKey) ?: return@mapNotNull null
+                val sessionJson = redisTemplate.opsForValue().get(TOKEN_KEY_PREFIX + token) ?: return@mapNotNull null
+                val session = objectMapper.readValue(sessionJson, TabletSession::class.java)
+                val ttlSeconds = redisTemplate.getExpire(TOKEN_KEY_PREFIX + token)
+                val tokenExpiresAt = if (ttlSeconds != null && ttlSeconds > 0)
+                    java.time.Instant.now().plusSeconds(ttlSeconds)
+                else
+                    null
+                TabletInfo(
+                    tabletId = session.tabletId,
+                    deviceName = session.deviceName,
+                    pairedAt = session.pairedAt,
+                    tokenExpiresAt = tokenExpiresAt
+                )
+            } catch (e: Exception) {
+                logger.warn("Skipping malformed tablet entry for key {}: {}", deviceKey, e.message)
+                null
+            }
+        }.sortedBy { it.pairedAt }
+    }
+
     /** Revoke a paired tablet (e.g. lost device). */
     fun revokeTablet(tenantId: String, tabletId: String) {
         val deviceKey = "$DEVICE_KEY_PREFIX$tenantId:$tabletId"
@@ -136,6 +168,13 @@ data class TabletPrincipal(
 ) : java.security.Principal {
     override fun getName(): String = "tablet:$tabletId"
 }
+
+data class TabletInfo(
+    val tabletId: String,
+    val deviceName: String,
+    val pairedAt: Instant,
+    val tokenExpiresAt: Instant?
+)
 
 data class GeneratedPairingCode(
     val code: String,
