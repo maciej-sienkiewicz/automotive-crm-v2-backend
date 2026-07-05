@@ -298,6 +298,21 @@ class DocumentService(
     }
 
     /**
+     * Replace the S3 key of a document after signing.
+     * The filledPdf key becomes the signedPdf key so that subsequent URL generation
+     * always returns the sealed, audit-page-bearing document.
+     */
+    @Transactional
+    fun replaceS3Key(oldS3Key: String, newS3Key: String) {
+        val updated = visitDocumentRepository.updateFileIdByFileId(oldS3Key, newS3Key)
+        if (updated == 0) {
+            logger.warn("replaceS3Key: no document record found with fileId={} — signed PDF key not updated", oldS3Key)
+        } else {
+            logger.info("replaceS3Key: updated {} document record(s) from {} → {}", updated, oldS3Key, newS3Key)
+        }
+    }
+
+    /**
      * Delete all documents for a visit (used when cancelling a draft visit)
      * Removes documents from database and S3
      *

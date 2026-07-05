@@ -20,6 +20,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
 import pl.detailing.crm.signing.infrastructure.*
+import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 import java.util.Base64
@@ -43,6 +44,7 @@ class SubmitSignatureHandler(
     private val signatureRequestRepository: SignatureRequestRepository,
     private val visitProtocolRepository: VisitProtocolRepository,
     private val visitRepository: VisitRepository,
+    private val documentService: DocumentService,
     private val s3StorageService: S3ProtocolStorageService,
     private val documentIntegrityService: DocumentIntegrityService,
     private val signatureImageProcessor: SignatureImageProcessor,
@@ -210,6 +212,9 @@ class SubmitSignatureHandler(
                 )
                 s3StorageService.uploadBytes(signedPdfS3Key, sealResult.pdfBytes)
                 logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
+
+                // Update the document record so the /documents endpoint serves the signed PDF
+                documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
 
                 val signedProtocol = protocol.sign(
                     signedPdfS3Key = signedPdfS3Key,

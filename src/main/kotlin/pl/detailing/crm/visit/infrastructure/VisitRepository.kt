@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.infrastructure
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -512,6 +513,17 @@ interface VisitDocumentRepository : JpaRepository<VisitDocumentEntity, UUID> {
      * Check if a document exists for a visit
      */
     fun existsByVisit_Id(visitId: UUID): Boolean
+
+    /**
+     * Replace the S3 key for a document (e.g. after signing: filled → signed PDF).
+     * Returns the number of rows updated (0 when no document matches oldKey).
+     */
+    @Modifying
+    @Query("UPDATE VisitDocumentEntity vd SET vd.fileId = :newKey WHERE vd.fileId = :oldKey")
+    fun updateFileIdByFileId(
+        @Param("oldKey") oldKey: String,
+        @Param("newKey") newKey: String
+    ): Int
 
     /**
      * Delete all documents for a specific visit
