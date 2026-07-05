@@ -9,15 +9,18 @@ import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.CheckinDamageUpdatedMessageListener
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.CheckinPhotoUploadedMessageListener
+import pl.detailing.crm.signing.infrastructure.SignatureEventPublisher
+import pl.detailing.crm.signing.infrastructure.SignatureRequestMessageListener
 
 /**
  * Redis Pub/Sub configuration.
  *
  * Registers a [RedisMessageListenerContainer] with listeners for:
- * - "checkin:photo-uploaded"  → [CheckinPhotoUploadedMessageListener]
- * - "checkin:damage-updated"  → [CheckinDamageUpdatedMessageListener]
+ * - "checkin:photo-uploaded"   → [CheckinPhotoUploadedMessageListener]
+ * - "checkin:damage-updated"   → [CheckinDamageUpdatedMessageListener]
+ * - "signing:request-events"   → [SignatureRequestMessageListener]
  *
- * Both listeners forward their messages to the appropriate WebSocket STOMP topic.
+ * All listeners forward their messages to the appropriate WebSocket STOMP topic.
  */
 @Configuration
 class RedisConfig {
@@ -26,7 +29,8 @@ class RedisConfig {
     fun redisMessageListenerContainer(
         connectionFactory: RedisConnectionFactory,
         photoListener: CheckinPhotoUploadedMessageListener,
-        damageListener: CheckinDamageUpdatedMessageListener
+        damageListener: CheckinDamageUpdatedMessageListener,
+        signatureListener: SignatureRequestMessageListener
     ): RedisMessageListenerContainer {
         val container = RedisMessageListenerContainer()
         container.setConnectionFactory(connectionFactory)
@@ -37,6 +41,10 @@ class RedisConfig {
         container.addMessageListener(
             damageListener,
             ChannelTopic(CheckinDamagePointsService.REDIS_DAMAGE_UPDATED_CHANNEL)
+        )
+        container.addMessageListener(
+            signatureListener,
+            ChannelTopic(SignatureEventPublisher.REDIS_CHANNEL)
         )
         return container
     }

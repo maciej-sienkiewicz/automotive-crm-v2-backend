@@ -57,10 +57,15 @@ data class VisitProtocol(
         )
     }
 
+    /**
+     * [signatureImageS3Key] is null for the eIDAS tablet flow: the signature bitmap is
+     * processed exclusively in RAM and destroyed after being merged into the sealed PDF —
+     * no standalone signature image is ever persisted.
+     */
     fun sign(
         signedPdfS3Key: String,
         signedBy: String,
-        signatureImageS3Key: String,
+        signatureImageS3Key: String?,
         notes: String?
     ): VisitProtocol {
         require(status == VisitProtocolStatus.READY_FOR_SIGNATURE) {

@@ -147,6 +147,19 @@ class S3ProtocolStorageService(
     }
 
     /**
+     * Upload raw PDF bytes to S3.
+     * Used by the tablet signing flow to store the sealed, signed protocol.
+     */
+    fun uploadBytes(s3Key: String, data: ByteArray, contentType: String = "application/pdf") {
+        val putObjectRequest = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .contentType(contentType)
+            .build()
+        s3Client.putObject(putObjectRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data))
+    }
+
+    /**
      * Download the raw bytes of a file stored in S3.
      * Used by the email module to attach protocol PDFs to outgoing messages.
      */

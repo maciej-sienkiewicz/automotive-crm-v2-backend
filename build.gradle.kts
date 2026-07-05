@@ -70,6 +70,11 @@ dependencies {
     implementation("org.apache.pdfbox:pdfbox:3.0.1")
     implementation("org.apache.pdfbox:fontbox:3.0.1")
 
+    // BouncyCastle – PAdES qualified electronic seal (CMS/CAdES) + RFC 3161 qualified timestamps
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.78.1")
+
     // KSeF SDK – official Java client for the Polish National e-Invoicing System
     implementation("pl.akmf.ksef-sdk:ksef-client:3.0.17")
 

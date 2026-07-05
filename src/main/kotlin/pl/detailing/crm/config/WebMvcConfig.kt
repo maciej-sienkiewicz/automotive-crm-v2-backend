@@ -19,6 +19,8 @@ class WebMvcConfig(
                 "/api/v1/vehicle-metadata/**",
                 "/api/v1/inbound/email",
                 "/api/mobile/**",
+                // Signing tablet uses X-Tablet-Token (Redis), not session auth
+                "/api/tablet/**",
                 // CardDAV uses HTTP Basic auth (stateless), not session-based auth.
                 // SecurityContextHelper.getCurrentStudioId() is incompatible with CardDavUserDetails.
                 "/api/v1/carddav/**",

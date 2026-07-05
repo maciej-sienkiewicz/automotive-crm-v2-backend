@@ -507,6 +507,19 @@ value class VisitProtocolId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for tablet SignatureRequest entities (eIDAS signing sessions)
+ */
+@JvmInline
+value class SignatureRequestId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = SignatureRequestId(UUID.randomUUID())
+        fun fromString(value: String) = SignatureRequestId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Protocol stage in the visit workflow
  */
 enum class ProtocolStage {
