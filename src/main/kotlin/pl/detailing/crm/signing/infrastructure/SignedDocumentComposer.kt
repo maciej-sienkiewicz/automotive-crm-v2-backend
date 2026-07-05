@@ -45,16 +45,35 @@ class SignedDocumentComposer(
         visitNumber: String,
         sealInfo: String
     ): ByteArray {
+        logger.info(
+            "[Composer] requestId={} protocolId={} — composing signed PDF: " +
+                "filledPdf={}B signaturePng={}B auditEvents={}",
+            request.id, request.protocolId,
+            filledPdfBytes.size, signaturePngBytes.size, auditEvents.size
+        )
+
         Loader.loadPDF(filledPdfBytes).use { document ->
             if (document.numberOfPages == 0) {
                 throw IllegalArgumentException("Dokument PDF nie zawiera stron")
             }
+
+            logger.debug(
+                "[Composer] requestId={} — source PDF loaded: {} page(s)",
+                request.id, document.numberOfPages
+            )
 
             val signatureImage = PDImageXObject.createFromByteArray(
                 document, signaturePngBytes, "signature"
             )
 
             val placement = findSignaturePlacement(document)
+            logger.debug(
+                "[Composer] requestId={} — signature placement: page={}, x={}, y={}, maxW={}, maxH={}",
+                request.id,
+                document.pages.indexOf(placement.page),
+                placement.x, placement.y, placement.maxWidth, placement.maxHeight
+            )
+
             val (width, height) = fitPreservingAspect(
                 signatureImage.width.toFloat(), signatureImage.height.toFloat(),
                 placement.maxWidth, placement.maxHeight
@@ -69,11 +88,22 @@ class SignedDocumentComposer(
             // Flatten AcroForm fields so the visual state is frozen before sealing
             document.documentCatalog.acroForm?.flatten()
 
+            val pagesBeforeAudit = document.numberOfPages
             auditTrailPageGenerator.appendAuditPage(document, request, auditEvents, visitNumber, sealInfo)
+            val pagesAfterAudit = document.numberOfPages
+            logger.info(
+                "[Composer] requestId={} — after appendAuditPage: pages {} → {}",
+                request.id, pagesBeforeAudit, pagesAfterAudit
+            )
 
             return ByteArrayOutputStream().use { output ->
                 document.save(output)
-                output.toByteArray()
+                val composedBytes = output.toByteArray()
+                logger.info(
+                    "[Composer] requestId={} — composed PDF ready: {}B, {} page(s)",
+                    request.id, composedBytes.size, pagesAfterAudit
+                )
+                composedBytes
             }
         }
     }

@@ -152,6 +152,12 @@ class SubmitSignatureHandler(
 
                 // ── 4. Compose: PDF + signature strokes + audit page, then seal ─────
                 val auditEvents = auditTrailService.eventsFor(request.id.value)
+                logger.info(
+                    "Composing signed document: requestId={} protocolId={} " +
+                        "filledPdfS3Key={} filledPdfBytes={}B auditEvents={}",
+                    request.id, request.protocolId,
+                    request.documentS3Key, filledPdfBytes.size, auditEvents.size
+                )
                 val composedPdf = signedDocumentComposer.compose(
                     filledPdfBytes = filledPdfBytes,
                     signaturePngBytes = normalizedSignature,
@@ -164,8 +170,16 @@ class SubmitSignatureHandler(
                     visitNumber = visitEntity.visitNumber,
                     sealInfo = qualifiedSealService.describe()
                 )
+                logger.info(
+                    "Composed PDF ready: requestId={} composedBytes={}B — applying qualified seal",
+                    request.id, composedPdf.size
+                )
 
                 val sealResult = qualifiedSealService.seal(composedPdf)
+                logger.info(
+                    "Seal result: requestId={} sealedBytes={}B sealApplied={} timestampApplied={}",
+                    request.id, sealResult.pdfBytes.size, sealResult.sealApplied, sealResult.timestampApplied
+                )
                 val sealedAt = if (sealResult.sealApplied) Instant.now() else null
                 if (sealResult.sealApplied) {
                     auditTrailService.append(
@@ -190,7 +204,12 @@ class SubmitSignatureHandler(
                 val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
                     request.studioId.value, request.visitId.value, visitEntity.visitNumber, protocol.version
                 )
+                logger.info(
+                    "Uploading signed PDF to S3: requestId={} key={} size={}B",
+                    request.id, signedPdfS3Key, sealResult.pdfBytes.size
+                )
                 s3StorageService.uploadBytes(signedPdfS3Key, sealResult.pdfBytes)
+                logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
 
                 val signedProtocol = protocol.sign(
                     signedPdfS3Key = signedPdfS3Key,

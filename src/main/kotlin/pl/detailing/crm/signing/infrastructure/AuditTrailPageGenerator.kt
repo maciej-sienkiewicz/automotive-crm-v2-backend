@@ -6,6 +6,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.pdmodel.font.PDFont
 import org.apache.pdfbox.pdmodel.font.PDType0Font
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.signing.domain.SignatureRequest
 import java.time.Instant
@@ -24,6 +25,8 @@ import java.time.format.DateTimeFormatter
  */
 @Service
 class AuditTrailPageGenerator {
+
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
@@ -47,8 +50,27 @@ class AuditTrailPageGenerator {
         visitNumber: String,
         sealInfo: String
     ) {
+        val pagesBefore = document.numberOfPages
+        logger.info(
+            "[AuditPage] requestId={} protocolId={} — starting audit page generation, " +
+                "document currently has {} page(s), auditEvents={}",
+            request.id, request.protocolId, pagesBefore, auditEvents.size
+        )
+
         val regular = loadFont(document, "/fonts/LiberationSans-Regular.ttf")
         val bold = loadFont(document, "/fonts/LiberationSans-Bold.ttf") ?: regular
+
+        if (regular == null) {
+            logger.warn(
+                "[AuditPage] requestId={} — LiberationSans-Regular.ttf could not be loaded from classpath; " +
+                    "audit page will be appended but ALL TEXT will be invisible (font=null guard in writeLine). " +
+                    "Check that /fonts/LiberationSans-Regular.ttf exists in resources.",
+                request.id
+            )
+        }
+        if (bold == null) {
+            logger.warn("[AuditPage] requestId={} — bold font also null, falling back to null", request.id)
+        }
 
         val page = PDPage(PDRectangle.A4)
         document.addPage(page)
@@ -115,6 +137,21 @@ class AuditTrailPageGenerator {
                     "dokumentu opieczętowanego kwalifikowaną pieczęcią elektroniczną korzysta z domniemania " +
                     "z art. 35 ust. 2 rozporządzenia eIDAS (UE) nr 910/2014.",
                 page
+            )
+        }
+
+        val pagesAfter = document.numberOfPages
+        if (pagesAfter > pagesBefore) {
+            logger.info(
+                "[AuditPage] requestId={} — audit page appended successfully, " +
+                    "document now has {} page(s) (was {}), fontLoaded={}",
+                request.id, pagesAfter, pagesBefore, regular != null
+            )
+        } else {
+            logger.error(
+                "[AuditPage] requestId={} — page count unchanged after appendAuditPage! " +
+                    "before={}, after={} — audit page was NOT added to the document",
+                request.id, pagesBefore, pagesAfter
             )
         }
     }
