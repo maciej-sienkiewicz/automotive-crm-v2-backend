@@ -29,8 +29,8 @@ import javax.imageio.ImageIO
 class SignatureImageProcessor {
 
     companion object {
-        private const val MAX_IMAGE_BYTES = 2 * 1024 * 1024      // 2 MB raw upload cap
-        private const val MAX_DIMENSION = 2000                    // px, either axis
+        private const val MAX_IMAGE_BYTES = 10 * 1024 * 1024     // 10 MB raw upload cap
+        private const val MAX_DIMENSION = 5000                    // px, either axis
         private const val MIN_INK_PIXELS = 60                     // reject empty/accidental taps
         private const val WHITE_THRESHOLD = 245                   // R,G,B above this = background
         private const val ALPHA_TRANSPARENT_THRESHOLD = 16        // alpha below this = already transparent
