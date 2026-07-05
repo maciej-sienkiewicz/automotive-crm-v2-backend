@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureRequest
+import pl.detailing.crm.signing.infrastructure.SignatureEventPublisher
 import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
 import pl.detailing.crm.signing.infrastructure.TabletSessionService
 import java.time.Instant
@@ -24,7 +25,8 @@ class SignatureRequestController(
     private val requestSignatureHandler: RequestSignatureHandler,
     private val lifecycleService: SignatureRequestLifecycleService,
     private val signatureRequestRepository: SignatureRequestRepository,
-    private val tabletSessionService: TabletSessionService
+    private val tabletSessionService: TabletSessionService,
+    private val eventPublisher: SignatureEventPublisher
 ) {
 
     /** Employee clicks "Poproś o podpis" — creates the signing session for the tablet. */
@@ -123,7 +125,17 @@ class SignatureRequestController(
     @DeleteMapping("/tablets/{tabletId}")
     fun revokeTablet(@PathVariable tabletId: String): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
-        tabletSessionService.revokeTablet(principal.studioId.value.toString(), tabletId)
+        val tenantId = principal.studioId.value.toString()
+        // Resolve deviceName before revoking so it can be included in the WS event
+        val deviceName = tabletSessionService.listTablets(tenantId)
+            .firstOrNull { it.tabletId == tabletId }?.deviceName ?: tabletId
+        tabletSessionService.revokeTablet(tenantId, tabletId)
+        eventPublisher.publishTabletEvent(
+            tenantId = tenantId,
+            tabletId = tabletId,
+            deviceName = deviceName,
+            eventType = "TABLET_REVOKED"
+        )
         return ResponseEntity.noContent().build()
     }
 

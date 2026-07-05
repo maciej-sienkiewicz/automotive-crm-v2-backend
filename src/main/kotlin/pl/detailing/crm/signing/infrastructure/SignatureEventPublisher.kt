@@ -51,6 +51,24 @@ class SignatureEventPublisher(
         )
         redisTemplate.convertAndSend(REDIS_CHANNEL, payload)
     }
+
+    /**
+     * Publish a tablet management event (TABLET_PAIRED / TABLET_REVOKED).
+     * These are routed exclusively to /topic/studio.{tenantId}.tablets (CRM desktop),
+     * not to the tablet's own signature topic.
+     */
+    fun publishTabletEvent(tenantId: String, tabletId: String, deviceName: String, eventType: String) {
+        val payload = objectMapper.writeValueAsString(
+            mapOf(
+                "tenantId" to tenantId,
+                "eventType" to eventType,
+                "tabletId" to tabletId,
+                "deviceName" to deviceName,
+                "occurredAt" to Instant.now().toString()
+            )
+        )
+        redisTemplate.convertAndSend(REDIS_CHANNEL, payload)
+    }
 }
 
 /**
@@ -65,6 +83,8 @@ class SignatureRequestMessageListener(
 
     private val logger = LoggerFactory.getLogger(SignatureRequestMessageListener::class.java)
 
+    private val tabletManagementEvents = setOf("TABLET_PAIRED", "TABLET_REVOKED")
+
     override fun onMessage(message: Message, pattern: ByteArray?) {
         try {
             val body = message.body.toString(Charsets.UTF_8)
@@ -73,9 +93,24 @@ class SignatureRequestMessageListener(
             val payload = objectMapper.readValue(body, Map::class.java) as Map<String, Any?>
 
             val tenantId = payload["tenantId"] as? String ?: return
-            val requestId = payload["requestId"] as? String ?: return
             val eventType = payload["eventType"] as? String ?: return
+            val occurredAt = (payload["occurredAt"] as? String)
+                ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                ?: Instant.now()
 
+            if (eventType in tabletManagementEvents) {
+                // Tablet pairing/revocation events: only the CRM "Tablety" tab cares.
+                val wsMessage = TabletManagementWsMessage(
+                    type = eventType,
+                    tabletId = payload["tabletId"] as? String ?: return,
+                    deviceName = payload["deviceName"] as? String ?: "",
+                    occurredAt = occurredAt
+                )
+                messagingTemplate.convertAndSend("/topic/studio.$tenantId.tablets", wsMessage)
+                return
+            }
+
+            val requestId = payload["requestId"] as? String ?: return
             val wsMessage = SignatureRequestWsMessage(
                 type = eventType,
                 requestId = requestId,
@@ -83,9 +118,7 @@ class SignatureRequestMessageListener(
                 documentName = payload["documentName"] as? String,
                 signerName = payload["signerName"] as? String,
                 status = payload["status"] as? String,
-                occurredAt = (payload["occurredAt"] as? String)
-                    ?.let { runCatching { Instant.parse(it) }.getOrNull() }
-                    ?: Instant.now()
+                occurredAt = occurredAt
             )
 
             // Tablets listen on the studio-wide tablet topic
@@ -105,5 +138,12 @@ data class SignatureRequestWsMessage(
     val documentName: String?,
     val signerName: String?,
     val status: String?,
+    val occurredAt: Instant
+)
+
+data class TabletManagementWsMessage(
+    val type: String,
+    val tabletId: String,
+    val deviceName: String,
     val occurredAt: Instant
 )

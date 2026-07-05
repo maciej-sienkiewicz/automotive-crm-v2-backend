@@ -58,6 +58,13 @@ class TabletSignatureController(
         val paired = tabletSessionService.pairTablet(request.pairingCode.trim(), request.deviceName.trim())
             ?: throw ForbiddenException("Nieprawidłowy lub wygasły kod parowania")
 
+        eventPublisher.publishTabletEvent(
+            tenantId = paired.tenantId,
+            tabletId = paired.tabletId,
+            deviceName = request.deviceName.trim(),
+            eventType = "TABLET_PAIRED"
+        )
+
         return ResponseEntity.status(HttpStatus.CREATED).body(
             TabletPairResponse(tabletId = paired.tabletId, token = paired.token, studioId = paired.tenantId)
         )
