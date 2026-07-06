@@ -32,7 +32,7 @@ import java.time.Instant
  *     signature bitmap and document from its local cache.
  */
 @RestController
-@RequestMapping("/api/tablet")
+@RequestMapping("/api/tablet", produces = ["application/json;charset=UTF-8"])
 class TabletSignatureController(
     private val tabletSessionService: TabletSessionService,
     private val signatureRequestRepository: SignatureRequestRepository,
