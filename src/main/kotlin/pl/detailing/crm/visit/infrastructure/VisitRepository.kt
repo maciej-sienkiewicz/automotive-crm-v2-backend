@@ -290,6 +290,18 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("serviceIds") serviceIds: List<UUID>
     ): List<UUID>
 
+    @Query("""
+        SELECT DISTINCT v.vehicleId FROM VisitEntity v
+        JOIN v.serviceItems si
+        WHERE v.studioId = :studioId
+        AND si.serviceId IN :serviceIds
+        AND v.vehicleId IS NOT NULL
+    """)
+    fun findVehicleIdsByServiceIds(
+        @Param("studioId") studioId: UUID,
+        @Param("serviceIds") serviceIds: List<UUID>
+    ): List<UUID>
+
     /**
      * Find visits for a studio where the vehicle brand and model match exactly (case-sensitive,
      * since both values come from the same canonical vehicle-metadata source) and at least one

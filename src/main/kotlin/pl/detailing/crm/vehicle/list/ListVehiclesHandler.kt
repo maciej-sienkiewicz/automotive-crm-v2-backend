@@ -10,6 +10,11 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
+import java.util.UUID
+
+data class VehicleListQuery(
+    val serviceIds: List<UUID>? = null
+)
 
 @Service
 class ListVehiclesHandler(
@@ -18,9 +23,9 @@ class ListVehiclesHandler(
     private val customerRepository: CustomerRepository,
     private val visitRepository: VisitRepository
 ) {
-    suspend fun handle(studioId: StudioId): List<VehicleListItem> =
+    suspend fun handle(studioId: StudioId, query: VehicleListQuery = VehicleListQuery()): List<VehicleListItem> =
         withContext(Dispatchers.IO) {
-            val vehicles = vehicleRepository.findByStudioId(studioId.value)
+            val vehicles = resolveVehicleEntities(studioId, query)
 
             vehicles.map { vehicleEntity ->
                 val owners = vehicleOwnerRepository.findByVehicleId(vehicleEntity.id)
@@ -71,6 +76,21 @@ class ListVehiclesHandler(
                     status = vehicleEntity.status.name.lowercase()
                 )
             }
+        }
+
+    private fun resolveVehicleEntities(studioId: StudioId, query: VehicleListQuery) =
+        with(query) {
+            if (serviceIds.isNullOrEmpty()) {
+                return@with vehicleRepository.findByStudioId(studioId.value)
+            }
+
+            val allowedVehicleIds = visitRepository.findVehicleIdsByServiceIds(
+                studioId = studioId.value,
+                serviceIds = serviceIds
+            ).toSet()
+
+            if (allowedVehicleIds.isEmpty()) emptyList()
+            else vehicleRepository.findByStudioId(studioId.value).filter { it.id in allowedVehicleIds }
         }
 }
 

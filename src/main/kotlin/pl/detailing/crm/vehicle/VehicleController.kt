@@ -13,6 +13,7 @@ import pl.detailing.crm.vehicle.get.GetVehicleDetailCommand
 import pl.detailing.crm.vehicle.get.GetVehicleDetailHandler
 import pl.detailing.crm.vehicle.list.ListVehiclesHandler
 import pl.detailing.crm.vehicle.list.VehicleListItem
+import pl.detailing.crm.vehicle.list.VehicleListQuery
 import pl.detailing.crm.vehicle.owner.AssignOwnerCommand
 import pl.detailing.crm.vehicle.owner.AssignOwnerHandler
 import pl.detailing.crm.vehicle.owner.RemoveOwnerCommand
@@ -32,6 +33,8 @@ import pl.detailing.crm.vehicle.documents.GetVehicleDocumentsCommand
 import pl.detailing.crm.vehicle.documents.VehicleDocumentItem
 import pl.detailing.crm.vehicle.documents.VehicleDocumentService
 import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/vehicles")
@@ -57,11 +60,27 @@ class VehicleController(
         @RequestParam(required = false, defaultValue = "10") limit: Int,
         @RequestParam(required = false) sortBy: String?,
         @RequestParam(required = false, defaultValue = "asc") sortDirection: String,
-        @RequestParam(required = false) status: String?
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) brand: String?,
+        @RequestParam(required = false) model: String?,
+        @RequestParam(required = false) yearFrom: Int?,
+        @RequestParam(required = false) yearTo: Int?,
+        @RequestParam(required = false) minVisits: Int?,
+        @RequestParam(required = false) maxVisits: Int?,
+        @RequestParam(required = false) minRevenue: Double?,
+        @RequestParam(required = false) maxRevenue: Double?,
+        @RequestParam(required = false) services: List<String>?,
+        @RequestParam(required = false) lastServiceWithinDays: Int?,
+        @RequestParam(required = false) notServicedSinceDays: Int?
     ): ResponseEntity<VehicleListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        var vehicles = listVehiclesHandler.handle(principal.studioId)
+        val serviceIds = services
+            ?.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() }
+
+        val query = VehicleListQuery(serviceIds = serviceIds)
+        var vehicles = listVehiclesHandler.handle(principal.studioId, query)
 
         // Filter by search
         if (search.isNotBlank()) {
@@ -77,6 +96,60 @@ class VehicleController(
         // Filter by status
         if (!status.isNullOrBlank()) {
             vehicles = vehicles.filter { it.status == status.lowercase() }
+        }
+
+        // Filter by brand (partial, case-insensitive)
+        if (!brand.isNullOrBlank()) {
+            vehicles = vehicles.filter { it.brand.contains(brand, ignoreCase = true) }
+        }
+
+        // Filter by model (partial, case-insensitive)
+        if (!model.isNullOrBlank()) {
+            vehicles = vehicles.filter { it.model.contains(model, ignoreCase = true) }
+        }
+
+        // Filter by year range
+        if (yearFrom != null) {
+            vehicles = vehicles.filter { it.yearOfProduction != null && it.yearOfProduction >= yearFrom }
+        }
+
+        if (yearTo != null) {
+            vehicles = vehicles.filter { it.yearOfProduction != null && it.yearOfProduction <= yearTo }
+        }
+
+        // Filter by visit count
+        if (minVisits != null) {
+            vehicles = vehicles.filter { it.stats.totalVisits >= minVisits }
+        }
+
+        if (maxVisits != null) {
+            vehicles = vehicles.filter { it.stats.totalVisits <= maxVisits }
+        }
+
+        // Filter by revenue
+        if (minRevenue != null) {
+            vehicles = vehicles.filter { it.stats.totalSpent.grossAmount.toDouble() >= minRevenue }
+        }
+
+        if (maxRevenue != null) {
+            vehicles = vehicles.filter { it.stats.totalSpent.grossAmount.toDouble() <= maxRevenue }
+        }
+
+        // Filter by last service date
+        if (lastServiceWithinDays != null) {
+            val cutoff = Instant.now().minus(lastServiceWithinDays.toLong(), ChronoUnit.DAYS)
+            vehicles = vehicles.filter { vehicle ->
+                val lastDate = vehicle.stats.lastVisitDate?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                lastDate != null && lastDate.isAfter(cutoff)
+            }
+        }
+
+        if (notServicedSinceDays != null) {
+            val cutoff = Instant.now().minus(notServicedSinceDays.toLong(), ChronoUnit.DAYS)
+            vehicles = vehicles.filter { vehicle ->
+                val lastDate = vehicle.stats.lastVisitDate?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                lastDate == null || lastDate.isBefore(cutoff)
+            }
         }
 
         // Sort
