@@ -38,6 +38,10 @@ class LeadAnalysisAiConfig {
             - Zachowaj oryginalną polską nazwę z pełnym zakresem
             - NIGDY nie zgaduj, nie dopisuj ani nie rozszerzaj potrzeb niewymienionych wprost
             - "folia PPF na całości" to JEDNA potrzeba — nie skracaj do "PPF"
+            - Warianty/opcje TEJ SAMEJ usługi to JEDNA potrzeba, nie osobne potrzeby:
+              "korekta lakieru: opcja A one step, opcja B two step" → jedna potrzeba
+              "powłoka ceramiczna: 3 lata lub 5 lat/dożywotnia" → jedna potrzeba
+              Klient prosi o wycenę wariantów tej samej pracy — zapisz warianty w treści potrzeby.
             - Jeśli wiadomość nie zawiera żadnych potrzeb: extractedNeeds = []
 
             # Zasady dopasowania do katalogu — KRYTYCZNE
@@ -47,6 +51,12 @@ class LeadAnalysisAiConfig {
               "detailing = usługa detailingu", "czyszczenie = mycie"
             - Dopasuj nawet przy częściowym zakresie (np. "PPF na masce" może pasować do "Folia PPF")
             - NIE dopasowuj jeśli usługi są fundamentalnie różne
+            - NIE dopasowuj usługi dotyczącej INNEGO elementu pojazdu niż potrzeba klienta:
+              "folia na lampy/reflektory" NIE pasuje do "oklejanie szyb",
+              "czyszczenie kierownicy" NIE pasuje do "renowacja kierownicy" —
+              takie potrzeby wpisz do unmatchedNeeds
+            - Każda usługa z katalogu może wystąpić w matchedServices co najwyżej RAZ —
+              jeśli kilka potrzeb pasuje do tej samej usługi, zwróć jedno dopasowanie
             - Zwróć WYŁĄCZNIE ID z dostarczonego katalogu — zakaz wymyślania nowych ID
             - Każdą potrzebę dopasuj do co najwyżej JEDNEJ usługi z katalogu
             - Jeśli wstępnie wyodrębnione potrzeby są dostarczone, traktuj je priorytetowo

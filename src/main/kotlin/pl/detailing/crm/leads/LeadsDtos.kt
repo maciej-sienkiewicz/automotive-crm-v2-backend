@@ -184,7 +184,8 @@ data class LeadEstimationItemDto(
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
-    val priceGross: Long
+    val priceGross: Long,
+    val requiresManualPrice: Boolean
 )
 
 data class LeadUserQuoteDto(
@@ -260,7 +261,8 @@ fun EstimationItemResult.toDto() = LeadEstimationItemDto(
     serviceName = serviceName,
     priceNet = priceNet,
     vatRate = vatRate,
-    priceGross = priceGross
+    priceGross = priceGross,
+    requiresManualPrice = requiresManualPrice
 )
 
 fun SaveUserQuoteResult.toDto() = LeadUserQuoteDto(

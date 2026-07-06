@@ -42,7 +42,9 @@ class OpenAiLeadAnalyzer(
             return@withContext LeadAnalysisResult(emptyList(), emptyList(), emptyList())
         }
 
-        // Validate returned service IDs — reject hallucinated IDs not in catalog
+        // Validate returned service IDs — reject hallucinated IDs not in catalog.
+        // Deduplicate: several needs (e.g. option A/B of one treatment) may legitimately
+        // point at the same service, but the estimation must contain it only once.
         val validIds = catalogServices.map { it.id }.toSet()
         val safeMatchedIds = response.matchedServices
             .map { it.serviceId }
@@ -51,6 +53,7 @@ class OpenAiLeadAnalyzer(
                 if (!valid) log.warn("[LEAD_ANALYZER] LLM returned unknown serviceId='{}', ignoring", id)
                 valid
             }
+            .distinct()
 
         // Canonicalize the LLM's raw vehicle mention against the catalog (single source of truth).
         // Deterministic-first with LLM fallback handles colloquial models, e.g. "g-wagon" → "Klasa G".

@@ -14,7 +14,8 @@ data class CatalogService(
     val id: String,
     val name: String,
     val priceNet: Long,
-    val vatRate: Int
+    val vatRate: Int,
+    val requireManualPrice: Boolean = false
 )
 
 data class LeadAnalysisResult(

@@ -89,5 +89,9 @@ class LeadEstimationItemEntity(
     val vatRate: Int,
 
     @Column(name = "price_gross", nullable = false)
-    val priceGross: Long
+    val priceGross: Long,
+
+    // Usługa wymaga ręcznej wyceny — priceNet/priceGross to 0, nie cena z katalogu
+    @Column(name = "requires_manual_price", nullable = false, columnDefinition = "boolean not null default false")
+    val requiresManualPrice: Boolean = false
 )

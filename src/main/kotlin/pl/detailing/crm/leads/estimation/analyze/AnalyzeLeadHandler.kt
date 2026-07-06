@@ -83,7 +83,8 @@ class AnalyzeLeadHandler(
                 id = s.id.toString(),
                 name = s.name,
                 priceNet = s.basePriceNet,
-                vatRate = s.vatRate
+                vatRate = s.vatRate,
+                requireManualPrice = s.requireManualPrice
             )
         }
 
@@ -118,16 +119,24 @@ class AnalyzeLeadHandler(
 
         withContext(Dispatchers.IO) {
             leadEstimationRepository.findById(estimationId).ifPresent { est ->
-                val matchedServices = analysisResult.matchedServiceIds.mapNotNull { id -> catalogById[id] }
+                // Multiple needs can map to the same catalog service (e.g. option A/B of
+                // the same treatment) — the estimation must list each service only once
+                val matchedServices = analysisResult.matchedServiceIds
+                    .distinct()
+                    .mapNotNull { id -> catalogById[id] }
                 val items = matchedServices.map { service ->
+                    // Placeholder basePriceNet of manual-price services must not be
+                    // presented as a real quote nor counted into estimatedValue
+                    val priceNet = if (service.requireManualPrice) 0L else service.priceNet
                     LeadEstimationItemEntity(
                         id = UUID.randomUUID(),
                         estimation = est,
                         serviceId = UUID.fromString(service.id),
                         serviceName = service.name,
-                        priceNet = service.priceNet,
+                        priceNet = priceNet,
                         vatRate = service.vatRate,
-                        priceGross = grossFromNet(service.priceNet, service.vatRate)
+                        priceGross = grossFromNet(priceNet, service.vatRate),
+                        requiresManualPrice = service.requireManualPrice
                     )
                 }
 

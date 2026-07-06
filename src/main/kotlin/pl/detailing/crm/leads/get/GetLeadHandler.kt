@@ -139,7 +139,8 @@ data class EstimationItemResult(
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
-    val priceGross: Long
+    val priceGross: Long,
+    val requiresManualPrice: Boolean
 )
 
 private fun LeadEstimationEntity.toResult() = EstimationResult(
@@ -152,7 +153,8 @@ private fun LeadEstimationEntity.toResult() = EstimationResult(
             serviceName = item.serviceName,
             priceNet = item.priceNet,
             vatRate = item.vatRate,
-            priceGross = item.priceGross
+            priceGross = item.priceGross,
+            requiresManualPrice = item.requiresManualPrice
         )
     },
     unmatchedNeeds = unmatchedNeeds,
