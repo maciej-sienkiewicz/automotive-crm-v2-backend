@@ -37,7 +37,7 @@ class RequestSignatureHandler(
     private val auditTrailService: SignatureAuditTrailService,
     private val eventPublisher: SignatureEventPublisher,
     @Value("\${signing.request.ttl-minutes:15}") private val requestTtlMinutes: Long,
-    @Value("\${signing.request.default-declaration:Oświadczam, że zapoznałem/zapoznałam się z treścią niniejszego dokumentu, rozumiem jego treść i akceptuję zawarte w nim ustalenia.}")
+    @Value("\${signing.request.default-declaration:O\u015Bwiadczam, \u017Ce zapozna\u0142em/zapozna\u0142am si\u0119 z tre\u015Bci\u0105 niniejszego dokumentu, rozumiem jego tre\u015B\u0107 i akceptuj\u0119 zawarte w nim ustalenia.}")
     private val defaultDeclaration: String
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
