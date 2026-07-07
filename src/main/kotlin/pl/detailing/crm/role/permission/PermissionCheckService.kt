@@ -15,8 +15,8 @@ import pl.detailing.crm.user.infrastructure.UserRepository
  * 1. Studio owner always returns true (full access, no custom role needed).
  * 2. User must have a custom role assigned.
  * 3. That role must include the requested permission.
- * 4. If the permission's module maps to a [FeatureKey], the studio must have
- *    that feature enabled in its active entitlements.
+ * 4. If the permission maps to a feature key ([Permission.effectiveFeatureKey]),
+ *    the studio must have that feature enabled in its active entitlements.
  */
 @Service
 class PermissionCheckService(
@@ -35,9 +35,10 @@ class PermissionCheckService(
         val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
             ?: return false
 
-        if (!roleEntity.permissions.contains(permission)) return false
+        // toDomain remaps legacy codes and closes the set over the permission tree.
+        if (!roleEntity.toDomain().permissions.contains(permission)) return false
 
-        val requiredFeature = permission.module.featureKey ?: return true
+        val requiredFeature = permission.effectiveFeatureKey ?: return true
         return entitlementService.hasFeature(studioId, requiredFeature)
     }
 }

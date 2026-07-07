@@ -13,11 +13,11 @@ enum class PermissionModule(
     val featureKey: FeatureKey?
 ) {
     CALENDAR("Kalendarz", FeatureKey.CALENDAR),
+    // Photos and documents live inside the VISITS permission tree (sections of the visit
+    // details node); they keep their own feature gating via Permission.effectiveFeatureKey.
     VISITS("Wizyty", FeatureKey.VISITS),
     CUSTOMERS("Klienci", FeatureKey.CUSTOMERS),
     VEHICLES("Pojazdy", FeatureKey.VEHICLES),
-    DOCUMENTS("Dokumenty", FeatureKey.DOCUMENTS),
-    GALLERY("Galeria", FeatureKey.GALLERY),
     FINANCE("Finanse", FeatureKey.FINANCE),
     EMPLOYEES("Pracownicy", FeatureKey.EMPLOYEES),
     COMMUNICATION("Komunikacja", FeatureKey.SMS_EMAIL),

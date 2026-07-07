@@ -10,7 +10,7 @@ import pl.detailing.crm.role.create.CreateRoleCommand
 import pl.detailing.crm.role.create.CreateRoleHandler
 import pl.detailing.crm.role.delete.DeleteRoleHandler
 import pl.detailing.crm.role.domain.Permission
-import pl.detailing.crm.role.domain.PermissionDependencies
+import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.domain.PermissionModule
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.get.GetRoleHandler
@@ -34,30 +34,23 @@ class RoleController(
     // ── Permission catalog ────────────────────────────────────────────────────
 
     /**
-     * Returns the full hardcoded permission catalog grouped by module.
-     * Frontend uses this to render the role editor with module sections and checkboxes.
+     * Returns the full hardcoded permission catalog as a **tree**, grouped by module.
+     * A node's children require the node itself; the frontend renders this hierarchy
+     * directly and cascades checkbox selection along the parent chain.
      */
     @GetMapping("/permissions")
-    fun getPermissionCatalog(): ResponseEntity<List<PermissionModuleResponse>> {
-        val grouped = Permission.entries
-            .groupBy { it.module }
-            .map { (module, perms) ->
-                PermissionModuleResponse(
-                    module = module.name,
-                    displayName = module.displayName,
-                    featureKey = module.featureKey?.name,
-                    permissions = perms.map { p ->
-                        PermissionEntryResponse(
-                            code = p.name,
-                            displayName = p.displayName,
-                            requires = PermissionDependencies.directDependenciesOf(p)
-                                .map { it.name }
-                                .sorted()
-                        )
-                    }
-                )
-            }
-        return ResponseEntity.ok(grouped)
+    fun getPermissionCatalog(): ResponseEntity<List<PermissionModuleTreeResponse>> {
+        val modules = PermissionModule.entries.mapNotNull { module ->
+            val roots = PermissionHierarchy.rootsOf(module)
+            if (roots.isEmpty()) return@mapNotNull null
+            PermissionModuleTreeResponse(
+                module = module.name,
+                displayName = module.displayName,
+                featureKey = module.featureKey?.name,
+                nodes = roots.map { it.toNodeResponse() }
+            )
+        }
+        return ResponseEntity.ok(modules)
     }
 
     // ── Role CRUD ─────────────────────────────────────────────────────────────
@@ -81,9 +74,7 @@ class RoleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         val permissions = request.permissions.map { code ->
-            runCatching { Permission.valueOf(code) }.getOrElse {
-                throw ValidationException("Nieznane uprawnienie: '$code'")
-            }
+            Permission.fromApiCode(code) ?: throw ValidationException("Nieznane uprawnienie: '$code'")
         }.toSet()
 
         val roleId = createRoleHandler.handle(
@@ -107,9 +98,7 @@ class RoleController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         val permissions = request.permissions.map { code ->
-            runCatching { Permission.valueOf(code) }.getOrElse {
-                throw ValidationException("Nieznane uprawnienie: '$code'")
-            }
+            Permission.fromApiCode(code) ?: throw ValidationException("Nieznane uprawnienie: '$code'")
         }.toSet()
 
         updateRoleHandler.handle(
@@ -189,19 +178,34 @@ data class AssignRoleRequest(
 
 // ── Response DTOs ─────────────────────────────────────────────────────────────
 
-data class PermissionModuleResponse(
+data class PermissionModuleTreeResponse(
     val module: String,
     val displayName: String,
     /** When non-null, this module requires the studio to have this feature key enabled. */
     val featureKey: String?,
-    val permissions: List<PermissionEntryResponse>
+    /** Root permissions of the module; each node nests its dependents in [PermissionNodeResponse.children]. */
+    val nodes: List<PermissionNodeResponse>
 )
 
-data class PermissionEntryResponse(
+data class PermissionNodeResponse(
     val code: String,
     val displayName: String,
-    /** Codes of permissions this one directly requires. Frontend locks/cascades checkboxes from this. */
-    val requires: List<String>
+    val description: String?,
+    /** Presentational group header among siblings (e.g. "Usługi"); null = ungrouped. */
+    val section: String?,
+    /** When non-null, this permission is gated by a different feature than its module. */
+    val featureKey: String?,
+    /** Permissions that require this one. Selecting a child must select the whole ancestor chain. */
+    val children: List<PermissionNodeResponse>
+)
+
+private fun Permission.toNodeResponse(): PermissionNodeResponse = PermissionNodeResponse(
+    code = name,
+    displayName = displayName,
+    description = description,
+    section = section,
+    featureKey = effectiveFeatureKey?.takeIf { it != module.featureKey }?.name,
+    children = PermissionHierarchy.childrenOf(this).map { it.toNodeResponse() }
 )
 
 data class RoleResponse(

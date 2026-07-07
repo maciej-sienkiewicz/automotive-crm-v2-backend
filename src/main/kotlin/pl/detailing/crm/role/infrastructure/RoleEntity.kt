@@ -2,6 +2,7 @@ package pl.detailing.crm.role.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.shared.StudioId
@@ -31,6 +32,8 @@ class RoleEntity(
     @Column(name = "description", length = 500)
     var description: String?,
 
+    // Stored as raw codes (not @Enumerated) so rows written before the catalog became a
+    // tree don't break entity loading; Permission.fromStoredCode maps legacy codes on read.
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
         name = "role_permissions",
@@ -38,8 +41,7 @@ class RoleEntity(
         indexes = [Index(name = "idx_role_permissions_role_id", columnList = "role_id")]
     )
     @Column(name = "permission", nullable = false, length = 100)
-    @Enumerated(EnumType.STRING)
-    var permissions: MutableSet<Permission>,
+    var permissions: MutableSet<String>,
 
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
@@ -55,7 +57,11 @@ class RoleEntity(
         studioId = StudioId(studioId),
         name = name,
         description = description,
-        permissions = permissions.toSet(),
+        // Legacy codes are remapped and the set re-closed over the tree, so roles saved
+        // under the old flat catalog stay internally consistent without a data migration.
+        permissions = PermissionHierarchy.close(
+            permissions.mapNotNull { Permission.fromStoredCode(it) }.toSet()
+        ),
         createdBy = UserId(createdBy),
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -67,7 +73,7 @@ class RoleEntity(
             studioId = role.studioId.value,
             name = role.name,
             description = role.description,
-            permissions = role.permissions.toMutableSet(),
+            permissions = role.permissions.map { it.name }.toMutableSet(),
             createdBy = role.createdBy.value,
             createdAt = role.createdAt,
             updatedAt = role.updatedAt
