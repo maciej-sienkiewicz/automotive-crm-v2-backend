@@ -5,10 +5,8 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
-import pl.detailing.crm.role.domain.Permission
-import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.CommunicationChannel
-import pl.detailing.crm.shared.PII_MASK
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
@@ -38,7 +36,7 @@ data class CommunicationEntryResponse(
     /** Human-readable Polish label for display in the UI */
     val messageTypeLabel: String,
     /** Email address or phone number */
-    val recipientAddress: String,
+    @Pii val recipientAddress: String,
     /** Email subject line; null for SMS */
     val subject: String?,
     /** Full message body for content preview */
@@ -79,8 +77,7 @@ data class CustomerCommunicationResponse(
 @RestController
 class CommunicationController(
     private val getVisitCommunicationHandler: GetVisitCommunicationHandler,
-    private val getCustomerCommunicationHandler: GetCustomerCommunicationHandler,
-    private val permissionCheckService: PermissionCheckService
+    private val getCustomerCommunicationHandler: GetCustomerCommunicationHandler
 ) {
 
     /**
@@ -94,7 +91,6 @@ class CommunicationController(
         @PathVariable visitId: String
     ): ResponseEntity<VisitCommunicationResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         val result = getVisitCommunicationHandler.handle(
             GetVisitCommunicationCommand(
@@ -106,7 +102,7 @@ class CommunicationController(
         return ResponseEntity.ok(
             VisitCommunicationResponse(
                 visitId = result.visitId,
-                entries = result.entries.map { it.toResponse(includeVisitId = false, mask = mask) }
+                entries = result.entries.map { it.toResponse(includeVisitId = false) }
             )
         )
     }
@@ -124,7 +120,6 @@ class CommunicationController(
         @PathVariable customerId: String
     ): ResponseEntity<CustomerCommunicationResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         val result = getCustomerCommunicationHandler.handle(
             GetCustomerCommunicationCommand(
@@ -136,7 +131,7 @@ class CommunicationController(
         return ResponseEntity.ok(
             CustomerCommunicationResponse(
                 customerId = result.customerId,
-                entries = result.entries.map { it.toResponse(mask = mask) }
+                entries = result.entries.map { it.toResponse() }
             )
         )
     }
@@ -146,14 +141,14 @@ class CommunicationController(
 // Mapping helpers
 // ---------------------------------------------------------------------------
 
-private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false, mask: Boolean = false) =
+private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false) =
     CommunicationEntryResponse(
         id = id,
         visitId = null,
         channel = channel.name,
         messageType = messageType.name,
         messageTypeLabel = messageTypeLabel,
-        recipientAddress = if (mask) PII_MASK else recipientAddress,
+        recipientAddress = recipientAddress,
         subject = subject,
         bodyContent = bodyContent,
         status = status.name,
@@ -161,14 +156,14 @@ private fun CommunicationLogItem.toResponse(includeVisitId: Boolean = false, mas
         sentAt = sentAt
     )
 
-private fun CustomerCommunicationLogItem.toResponse(mask: Boolean = false) =
+private fun CustomerCommunicationLogItem.toResponse() =
     CommunicationEntryResponse(
         id = id,
         visitId = visitId,
         channel = channel.name,
         messageType = messageType.name,
         messageTypeLabel = messageTypeLabel,
-        recipientAddress = if (mask) PII_MASK else recipientAddress,
+        recipientAddress = recipientAddress,
         subject = subject,
         bodyContent = bodyContent,
         status = status.name,

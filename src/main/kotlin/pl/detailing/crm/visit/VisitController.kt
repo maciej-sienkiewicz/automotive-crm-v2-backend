@@ -37,10 +37,7 @@ import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
-import pl.detailing.crm.role.domain.Permission
-import pl.detailing.crm.role.permission.PermissionCheckService
-import pl.detailing.crm.shared.maskIf
-import pl.detailing.crm.shared.maskNonNullIf
+import pl.detailing.crm.shared.pii.PiiAccessContext
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
@@ -61,8 +58,7 @@ class VisitController(
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
-    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
-    private val permissionCheckService: PermissionCheckService
+    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -105,23 +101,14 @@ class VisitController(
             status = visitStatus,
             searchTerm = search,
             scheduledDate = scheduledDateFilter,
-            includeDeleted = includeDeleted
+            includeDeleted = includeDeleted,
+            includePiiSearch = PiiAccessContext.isGranted()
         )
 
         val result = listVisitsHandler.handle(command)
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         ResponseEntity.ok(VisitListResponse(
-            visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer.let { c ->
-                    c.copy(
-                        firstName = c.firstName.maskIf(true),
-                        lastName = c.lastName.maskIf(true),
-                        phone = c.phone.maskIf(true),
-                        email = c.email.maskIf(true)
-                    )
-                })
-            } else result.items,
+            visits = result.items,
             pagination = PaginationMetadata(
                 total = result.total,
                 page = result.page,
@@ -160,23 +147,14 @@ class VisitController(
             status = visitStatus,
             searchTerm = search,
             scheduledDate = scheduledDateFilter,
-            includeDeleted = true
+            includeDeleted = true,
+            includePiiSearch = PiiAccessContext.isGranted()
         )
 
         val result = listVisitsHandler.handle(command)
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
         ResponseEntity.ok(VisitListResponse(
-            visits = if (mask) result.items.map { item ->
-                item.copy(customer = item.customer.let { c ->
-                    c.copy(
-                        firstName = c.firstName.maskIf(true),
-                        lastName = c.lastName.maskIf(true),
-                        phone = c.phone.maskIf(true),
-                        email = c.email.maskIf(true)
-                    )
-                })
-            } else result.items,
+            visits = result.items,
             pagination = PaginationMetadata(
                 total = result.total,
                 page = result.page,
@@ -203,9 +181,8 @@ class VisitController(
         )
 
         val result = getVisitDetailHandler.handle(command)
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
 
-        val response = mapToVisitDetailResponse(result, mask)
+        val response = mapToVisitDetailResponse(result)
 
         ResponseEntity.ok(response)
     }
@@ -483,11 +460,11 @@ class VisitController(
     /**
      * Map domain result to API response
      */
-    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, mask: Boolean = false): VisitDetailResponse {
+    private fun mapToVisitDetailResponse(result: GetVisitDetailResult): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, mask),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
-            documents = result.documents.map { mapToDocumentResponse(it, mask) }
+            documents = result.documents.map { mapToDocumentResponse(it) }
         )
     }
 
@@ -499,8 +476,7 @@ class VisitController(
         vehicle: Vehicle,
         customer: Customer,
         customerStats: CustomerStats,
-        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
-        mask: Boolean = false
+        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?
     ): VisitResponse {
         val totalNet = visit.calculateTotalNet()
         val totalGross = visit.calculateTotalGross()
@@ -515,7 +491,7 @@ class VisitController(
             actualCompletionDate = visit.actualCompletionDate,
             pickupDate = visit.pickupDate,
             vehicle = mapToVehicleInfoResponse(vehicle),
-            customer = mapToCustomerInfoResponse(customer, customerStats, mask),
+            customer = mapToCustomerInfoResponse(customer, customerStats),
             appointmentColor = appointmentColor?.let { color ->
                 AppointmentColorResponse(
                     id = color.id.value.toString(),
@@ -537,10 +513,10 @@ class VisitController(
                     isHandedOffByOtherPerson = handoff.isHandedOffByOtherPerson,
                     contactPerson = handoff.contactPerson?.let { contact ->
                         ContactPersonResponse(
-                            firstName = contact.firstName.maskNonNullIf(mask),
-                            lastName = contact.lastName.maskNonNullIf(mask),
-                            phone = contact.phone.maskNonNullIf(mask),
-                            email = contact.email.maskNonNullIf(mask)
+                            firstName = contact.firstName,
+                            lastName = contact.lastName,
+                            phone = contact.phone,
+                            email = contact.email
                         )
                     }
                 )
@@ -570,13 +546,13 @@ class VisitController(
     /**
      * Map Customer domain to CustomerInfoResponse
      */
-    private fun mapToCustomerInfoResponse(customer: Customer, stats: CustomerStats, mask: Boolean = false): CustomerInfoResponse {
+    private fun mapToCustomerInfoResponse(customer: Customer, stats: CustomerStats): CustomerInfoResponse {
         return CustomerInfoResponse(
             id = customer.id.value.toString(),
-            firstName = customer.firstName.maskIf(mask),
-            lastName = customer.lastName.maskIf(mask),
-            email = customer.email.maskIf(mask),
-            phone = customer.phone.maskIf(mask),
+            firstName = customer.firstName,
+            lastName = customer.lastName,
+            email = customer.email,
+            phone = customer.phone,
             companyName = customer.companyData?.name,
             stats = CustomerStatsResponse(
                 totalVisits = stats.totalVisits,
@@ -679,12 +655,14 @@ class VisitController(
     /**
      * Map VisitDocument to VisitDocumentResponse
      */
-    private fun mapToDocumentResponse(document: VisitDocument, mask: Boolean = false): VisitDocumentResponse {
+    private fun mapToDocumentResponse(document: VisitDocument): VisitDocumentResponse {
         return VisitDocumentResponse(
             id = document.id.value.toString(),
             type = mapDocumentType(document.type),
             fileName = document.fileName,
-            fileUrl = if (mask) null else document.fileUrl,
+            // The document itself carries personal data — its presigned URL is withheld
+            // when the requester's context does not grant personal-data access.
+            fileUrl = if (PiiAccessContext.isGranted()) document.fileUrl else null,
             uploadedAt = document.uploadedAt,
             uploadedBy = document.uploadedByName,
             category = document.category

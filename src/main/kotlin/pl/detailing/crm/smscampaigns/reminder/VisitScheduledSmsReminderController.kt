@@ -1,5 +1,6 @@
 package pl.detailing.crm.smscampaigns.reminder
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -40,7 +41,7 @@ data class GeneratedSmsContentResponse(
 data class SmsReminderResponse(
     val id: String,
     val visitId: String,
-    val phoneNumber: String,
+    @Pii val phoneNumber: String,
     val messageContent: String,
     val scheduledFor: Instant,
     val status: String,

@@ -1,5 +1,6 @@
 package pl.detailing.crm.appointment.list
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.data.domain.PageRequest
@@ -53,6 +54,7 @@ class ListAppointmentsHandler(
                     customerId = command.customerId,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     startOfDay = startOfDay,
                     endOfDay = endOfDay,
                     pageable = pageRequest
@@ -63,6 +65,7 @@ class ListAppointmentsHandler(
                     customerId = command.customerId,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     pageable = pageRequest
                 )
             }
@@ -250,7 +253,9 @@ data class ListAppointmentsCommand(
     val status: AppointmentStatus? = null,
     val searchTerm: String? = null,
     val scheduledDate: LocalDate? = null,
-    val customerId: UUID? = null
+    val customerId: UUID? = null,
+    /** Whether search may match personal-data columns; false = oracle-safe. */
+    val includePiiSearch: Boolean = false
 )
 
 /**
@@ -314,10 +319,10 @@ data class AppointmentSmsInfo(
 )
 
 data class CustomerInfo(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String
+    @Pii val firstName: String,
+    @Pii val lastName: String,
+    @Pii val phone: String,
+    @Pii val email: String
 )
 
 data class VehicleInfo(

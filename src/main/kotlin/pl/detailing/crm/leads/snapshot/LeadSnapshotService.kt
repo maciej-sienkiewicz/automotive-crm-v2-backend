@@ -8,7 +8,6 @@ import pl.detailing.crm.leads.RelatedVisitDto
 import pl.detailing.crm.leads.customer.CustomerSnapshot
 import pl.detailing.crm.leads.estimation.infrastructure.LeadEstimationRepository
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.maskPii
 import pl.detailing.crm.leads.toDto
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
@@ -47,10 +46,9 @@ class LeadSnapshotService(
             relatedVisits = estimation?.relatedVisits.orEmpty()
                 .map { RelatedVisitDto(id = it.id, title = it.title) },
             summary = estimation?.aiSummary,
-            // The dashboard topic is shared by the whole studio while REST masks customer
-            // PII per user permission — a broadcast cannot know the receiver, so the
-            // customer sub-object is always masked; clients with the permission see full
-            // data on the next refetch of the list.
+            // The dashboard topic is shared by the whole studio, so @Pii fields of this DTO
+            // are masked at STOMP serialization (WebSocketEventBridge sends inside
+            // PiiAccessContext.withMasked); entitled clients get full data on refetch.
             assignedCustomer = customer?.let {
                 CustomerSnapshot(
                     id = it.id.toString(),
@@ -58,7 +56,7 @@ class LeadSnapshotService(
                     lastName = it.lastName,
                     email = it.email,
                     phone = it.phone
-                ).toDto().maskPii()
+                ).toDto()
             }
         )
     }

@@ -1,5 +1,6 @@
 package pl.detailing.crm.signing
 
+import pl.detailing.crm.shared.pii.Pii
 import jakarta.servlet.http.HttpServletRequest
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpHeaders
@@ -310,7 +311,9 @@ data class TabletContextResponse(
 data class TabletSignatureRequestDto(
     val requestId: String,
     val documentName: String,
-    val signerName: String,
+    // Tablet endpoints resolve to PiiAccess.GRANTED (the signer confirms their own data),
+    // so this stays visible on the device while remaining masked on any other path.
+    @Pii val signerName: String,
     val declarationText: String,
     /** Expected SHA-256 — the tablet must verify the downloaded bytes against it. */
     val documentSha256: String,

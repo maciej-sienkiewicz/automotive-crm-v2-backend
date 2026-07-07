@@ -23,8 +23,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
         AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
         AND (CAST(:search AS text) IS NULL OR
-             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
-             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             (:includePiiSearch = TRUE AND (
+                 l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+                 l.customer_name ILIKE '%' || CAST(:search AS text) || '%')) OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
         AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
         AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
@@ -35,8 +36,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
         AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
         AND (CAST(:search AS text) IS NULL OR
-             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
-             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             (:includePiiSearch = TRUE AND (
+                 l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+                 l.customer_name ILIKE '%' || CAST(:search AS text) || '%')) OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
         AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
         AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
@@ -47,6 +49,7 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         @Param("statuses") statuses: List<String>?,
         @Param("sources") sources: List<String>?,
         @Param("search") search: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         @Param("dateFrom") dateFrom: Instant?,
         @Param("dateTo") dateTo: Instant?,
         pageable: Pageable
@@ -148,8 +151,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
         AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
         AND (CAST(:search AS text) IS NULL OR
-             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
-             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             (:includePiiSearch = TRUE AND (
+                 l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+                 l.customer_name ILIKE '%' || CAST(:search AS text) || '%')) OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
         AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
         AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
@@ -165,8 +169,9 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         AND (CAST(:statuses AS text) IS NULL OR l.status IN (:statuses))
         AND (CAST(:sources AS text) IS NULL OR l.source IN (:sources))
         AND (CAST(:search AS text) IS NULL OR
-             l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
-             l.customer_name ILIKE '%' || CAST(:search AS text) || '%' OR
+             (:includePiiSearch = TRUE AND (
+                 l.contact_identifier ILIKE '%' || CAST(:search AS text) || '%' OR
+                 l.customer_name ILIKE '%' || CAST(:search AS text) || '%')) OR
              l.initial_message ILIKE '%' || CAST(:search AS text) || '%')
         AND (CAST(:dateFrom AS timestamptz) IS NULL OR l.created_at >= CAST(:dateFrom AS timestamptz))
         AND (CAST(:dateTo AS timestamptz) IS NULL OR l.created_at < CAST(:dateTo AS timestamptz))
@@ -181,6 +186,7 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         @Param("statuses") statuses: List<String>?,
         @Param("sources") sources: List<String>?,
         @Param("search") search: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         @Param("dateFrom") dateFrom: Instant?,
         @Param("dateTo") dateTo: Instant?,
         @Param("valueMin") valueMin: Long?,

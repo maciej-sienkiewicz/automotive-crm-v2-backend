@@ -78,10 +78,11 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         AND (:customerId IS NULL OR a.customerId = :customerId)
         AND (:status IS NULL OR a.status = :status)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(v.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -93,6 +94,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("customerId") customerId: UUID?,
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         pageable: Pageable
     ): Page<AppointmentEntity>
 
@@ -109,10 +111,11 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         AND (:customerId IS NULL OR a.customerId = :customerId)
         AND (:status IS NULL OR a.status = :status)
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(v.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(v.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -126,6 +129,7 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
         @Param("customerId") customerId: UUID?,
         @Param("status") status: pl.detailing.crm.appointment.domain.AppointmentStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         @Param("startOfDay") startOfDay: Instant,
         @Param("endOfDay") endOfDay: Instant,
         pageable: Pageable

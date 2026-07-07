@@ -1,5 +1,7 @@
 package pl.detailing.crm.vehicle
 
+import pl.detailing.crm.shared.pii.Pii
+import pl.detailing.crm.shared.pii.PiiAccessContext
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -85,11 +87,14 @@ class VehicleController(
         // Filter by search
         if (search.isNotBlank()) {
             val normalizedSearch = search.replace("\\s".toRegex(), "")
+            // Oracle guard: owner names are masked without the personal-data permission,
+            // so they must not be matchable either — result presence would reveal them.
+            val matchOwners = PiiAccessContext.isGranted()
             vehicles = vehicles.filter {
                 it.licensePlate.replace("\\s".toRegex(), "").contains(normalizedSearch, ignoreCase = true) ||
                 it.brand.contains(search, ignoreCase = true) ||
                 it.model.contains(search, ignoreCase = true) ||
-                it.owners.any { owner -> owner.customerName.contains(search, ignoreCase = true) }
+                (matchOwners && it.owners.any { owner -> owner.customerName.contains(search, ignoreCase = true) })
             }
         }
 
@@ -703,7 +708,7 @@ data class VehicleFullResponse(
 
 data class OwnerResponse(
     val customerId: String,
-    val customerName: String,
+    @Pii val customerName: String,
     val role: String,
     val assignedAt: Instant
 )
@@ -804,7 +809,7 @@ data class VehicleVisitResponse(
     val id: String,
     val date: Instant,
     val customerId: String,
-    val customerName: String,
+    @Pii val customerName: String,
     val description: String,
     val totalCost: MoneyResponse,
     val status: String,
@@ -822,7 +827,7 @@ data class VehicleAppointmentResponse(
     val id: String,
     val title: String,
     val customerId: String,
-    val customerName: String,
+    @Pii val customerName: String,
     val startDateTime: Instant,
     val endDateTime: Instant,
     val isAllDay: Boolean,

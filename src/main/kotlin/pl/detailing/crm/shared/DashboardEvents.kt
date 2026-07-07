@@ -1,6 +1,7 @@
 package pl.detailing.crm.shared
 
 import org.springframework.context.ApplicationEvent
+import pl.detailing.crm.shared.pii.Pii
 import java.time.Instant
 
 /**
@@ -33,8 +34,8 @@ data class DashboardEvent<T>(
 data class NewLeadPayload(
     val id: String,
     val source: String,
-    val contactIdentifier: String,
-    val customerName: String?,
+    @Pii val contactIdentifier: String,
+    @Pii val customerName: String?,
     val estimatedValue: Long,
     val createdAt: Instant
 )
@@ -60,7 +61,7 @@ class NewCallReceivedEvent(
  */
 data class LeadClientRepliedPayload(
     val leadId: String,
-    val customerName: String,
+    @Pii val customerName: String,
     val activityAt: Instant
 )
 

@@ -1,5 +1,6 @@
 package pl.detailing.crm.inbound
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -132,8 +133,8 @@ data class RegisterCallRequest(
 
 data class RegisterCallResponse(
     val id: String,
-    val phoneNumber: String,
-    val contactName: String?,
+    @Pii val phoneNumber: String,
+    @Pii val contactName: String?,
     val timestamp: Instant,
     val note: String?
 )

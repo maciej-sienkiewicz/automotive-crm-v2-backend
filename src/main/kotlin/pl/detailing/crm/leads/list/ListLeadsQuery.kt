@@ -9,6 +9,8 @@ import java.util.UUID
 data class ListLeadsQuery(
     val studioId: StudioId,
     val search: String?,
+    /** Whether search may match personal-data columns; false = oracle-safe (message only). */
+    val includePiiSearch: Boolean = false,
     val statuses: List<LeadStatus>?,
     val sources: List<LeadSource>?,
     val page: Int,

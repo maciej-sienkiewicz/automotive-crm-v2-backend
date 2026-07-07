@@ -5,9 +5,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.auth.SecurityContextHelper
-import pl.detailing.crm.role.domain.Permission
-import pl.detailing.crm.role.permission.PermissionCheckService
-import pl.detailing.crm.shared.PII_MASK
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.shared.VisitStatus
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -17,8 +15,7 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/v1/calendar")
 class CalendarController(
-    private val getCalendarEventsHandler: GetCalendarEventsHandler,
-    private val permissionCheckService: PermissionCheckService
+    private val getCalendarEventsHandler: GetCalendarEventsHandler
 ) {
 
     @GetMapping("/events")
@@ -108,19 +105,10 @@ class CalendarController(
         )
 
         val result = getCalendarEventsHandler.handle(query)
-        val mask = !permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
-
-        val appointments = if (mask) result.appointments.map {
-            it.copy(customer = it.customer.copy(firstName = PII_MASK, lastName = PII_MASK, phone = PII_MASK, email = PII_MASK))
-        } else result.appointments
-
-        val visits = if (mask) result.visits.map {
-            it.copy(customer = it.customer.copy(firstName = PII_MASK, lastName = PII_MASK, phone = PII_MASK))
-        } else result.visits
 
         ResponseEntity.ok<Any>(CalendarEventsResponse(
-            appointments = appointments,
-            visits = visits
+            appointments = result.appointments,
+            visits = result.visits
         ))
     }
 
@@ -169,10 +157,10 @@ data class AppointmentCalendarItem(
 )
 
 data class AppointmentCustomerInfo(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String
+    @Pii val firstName: String,
+    @Pii val lastName: String,
+    @Pii val phone: String,
+    @Pii val email: String
 )
 
 data class AppointmentVehicleInfo(
@@ -226,9 +214,9 @@ data class VisitCalendarItem(
 )
 
 data class VisitCustomerInfo(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
+    @Pii val firstName: String,
+    @Pii val lastName: String,
+    @Pii val phone: String,
     val companyName: String?
 )
 

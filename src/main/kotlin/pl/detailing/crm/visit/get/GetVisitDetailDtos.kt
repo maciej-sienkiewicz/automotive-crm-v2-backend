@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.get
 
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.service.list.PackageItemDto
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.*
@@ -62,10 +63,10 @@ data class VehicleInfoResponse(
  */
 data class CustomerInfoResponse(
     val id: String,
-    val firstName: String?,
-    val lastName: String?,
-    val email: String?,
-    val phone: String?,
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
+    @Pii val email: String?,
+    @Pii val phone: String?,
     val companyName: String?,
     val stats: CustomerStatsResponse
 )
@@ -199,8 +200,8 @@ data class VehicleHandoffResponse(
  * Contact person response
  */
 data class ContactPersonResponse(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val email: String
+    @Pii val firstName: String,
+    @Pii val lastName: String,
+    @Pii val phone: String,
+    @Pii val email: String
 )

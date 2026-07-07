@@ -1,5 +1,6 @@
 package pl.detailing.crm.vehicle.list
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -107,7 +108,7 @@ data class VehicleListItem(
 
 data class VehicleOwnerInfo(
     val customerId: String,
-    val customerName: String,
+    @Pii val customerName: String,
     val role: String,
     val assignedAt: String
 )

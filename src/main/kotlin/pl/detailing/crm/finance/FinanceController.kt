@@ -10,6 +10,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.finance.cash.AdjustCashBalanceCommand
 import pl.detailing.crm.finance.cash.AdjustCashBalanceHandler
 import pl.detailing.crm.finance.cash.CashHistoryQuery
@@ -35,12 +36,9 @@ import pl.detailing.crm.finance.reporting.FinanceReportingHandler
 import pl.detailing.crm.finance.reporting.PaymentMethodReportHandler
 import pl.detailing.crm.finance.reporting.PaymentMethodReportQuery
 import pl.detailing.crm.finance.reporting.ReportGranularity
-import pl.detailing.crm.role.domain.Permission
-import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.ForbiddenException
-import pl.detailing.crm.shared.PII_MASK
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
@@ -58,12 +56,8 @@ class FinanceController(
     private val getCashRegisterHandler: GetCashRegisterHandler,
     private val reportingHandler: FinanceReportingHandler,
     private val paymentMethodReportHandler: PaymentMethodReportHandler,
-    private val auditService: AuditService,
-    private val permissionCheckService: PermissionCheckService
+    private val auditService: AuditService
 ) {
-    private fun hasPii(principal: pl.detailing.crm.auth.UserPrincipal) =
-        permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
-
     // ── Income Records (Dokumenty Przychodowe) ────────────────────────────────
 
     /**
@@ -100,7 +94,7 @@ class FinanceController(
                 counterpartyNip   = request.counterpartyNip
             )
         )
-        return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse(mask = !hasPii(principal)))
+        return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse())
     }
 
     /**
@@ -141,7 +135,7 @@ class FinanceController(
                 changes           = listOf(FieldChange("documentNumber", oldNumber, trimmed))
             )
         )
-        return ResponseEntity.ok(entity.toDomain().toResponse(mask = !hasPii(principal)))
+        return ResponseEntity.ok(entity.toDomain().toResponse())
     }
 
     /**
@@ -176,10 +170,9 @@ class FinanceController(
                 pageSize       = size.coerceIn(1, 100)
             )
         )
-        val mask = !hasPii(principal)
         return ResponseEntity.ok(
             FinancialDocumentListResponse(
-                documents = result.documents.map { it.toResponse(mask) },
+                documents = result.documents.map { it.toResponse() },
                 total     = result.total,
                 page      = result.page,
                 pageSize  = result.pageSize
@@ -193,7 +186,7 @@ class FinanceController(
         val principal = SecurityContextHelper.getCurrentUser()
         val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
             ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
-        return ResponseEntity.ok(entity.toDomain().toResponse(mask = !hasPii(principal)))
+        return ResponseEntity.ok(entity.toDomain().toResponse())
     }
 
     /** PATCH /api/v1/finance/documents/{id}/status */
@@ -214,7 +207,7 @@ class FinanceController(
                 newStatus       = parseEnum<DocumentStatus>(request.status, "status")
             )
         )
-        return ResponseEntity.ok(result.toResponse(mask = !hasPii(principal)))
+        return ResponseEntity.ok(result.toResponse())
     }
 
     /** Soft-delete. DELETE /api/v1/finance/documents/{id} */
@@ -266,7 +259,7 @@ class FinanceController(
                 action            = AuditAction.DOCUMENT_RESTORED
             )
         )
-        return ResponseEntity.ok(saved.toDomain().toResponse(mask = !hasPii(principal)))
+        return ResponseEntity.ok(saved.toDomain().toResponse())
     }
 
     // ── Cash Register ─────────────────────────────────────────────────────────
@@ -450,12 +443,12 @@ data class FinancialDocumentResponse(
     val paidAt: Instant?,
     val description: String?,
     val counterpartyName: String?,
-    val counterpartyNip: String?,
+    @Pii val counterpartyNip: String?,
     val visitId: String?,
     val vehicleBrand: String?,
     val vehicleModel: String?,
-    val customerFirstName: String?,
-    val customerLastName: String?,
+    @Pii val customerFirstName: String?,
+    @Pii val customerLastName: String?,
     val createdBy: String,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -531,7 +524,7 @@ data class PaymentMethodReportResponse(
 
 // ── Domain → Response mapping ─────────────────────────────────────────────────
 
-private fun FinancialDocument.toResponse(mask: Boolean = false) = FinancialDocumentResponse(
+private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     id                = id.toString(),
     documentNumber    = documentNumber,
     source            = source.name,
@@ -553,12 +546,12 @@ private fun FinancialDocument.toResponse(mask: Boolean = false) = FinancialDocum
     paidAt            = paidAt,
     description       = description,
     counterpartyName  = counterpartyName,
-    counterpartyNip   = if (mask && counterpartyNip != null) PII_MASK else counterpartyNip,
+    counterpartyNip   = counterpartyNip,
     visitId           = visitId?.toString(),
     vehicleBrand      = vehicleBrand,
     vehicleModel      = vehicleModel,
-    customerFirstName = if (mask && customerFirstName != null) PII_MASK else customerFirstName,
-    customerLastName  = if (mask && customerLastName != null) PII_MASK else customerLastName,
+    customerFirstName = customerFirstName,
+    customerLastName  = customerLastName,
     createdBy         = createdBy.toString(),
     createdAt         = createdAt,
     updatedAt         = updatedAt,

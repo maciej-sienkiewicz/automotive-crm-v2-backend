@@ -104,7 +104,8 @@ class SecurityConfig {
         configuration.allowedHeaders = listOf("*")
         configuration.allowCredentials = true
         configuration.maxAge = 3600L
-        configuration.exposedHeaders = listOf("Set-Cookie")
+        // X-Pii-Access: frontend reads it to render blur states for masked personal data
+        configuration.exposedHeaders = listOf("Set-Cookie", "X-Pii-Access")
 
         val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", configuration)

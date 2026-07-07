@@ -1,5 +1,6 @@
 package pl.detailing.crm.signing
 
+import pl.detailing.crm.shared.pii.Pii
 import jakarta.servlet.http.HttpServletRequest
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
@@ -175,7 +176,7 @@ data class SignatureRequestDto(
     val status: String,
     val documentName: String,
     val documentSha256: String,
-    val signerName: String,
+    @Pii val signerName: String,
     val requestedByName: String,
     val createdAt: Instant,
     val expiresAt: Instant,

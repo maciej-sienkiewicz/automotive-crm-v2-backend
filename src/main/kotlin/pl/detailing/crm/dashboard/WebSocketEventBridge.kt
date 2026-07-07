@@ -8,6 +8,7 @@ import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.leads.snapshot.LeadSnapshotService
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.shared.pii.PiiAccessContext
 
 /**
  * Bridges internal Spring ApplicationEvents to WebSocket STOMP messages.
@@ -102,7 +103,13 @@ class WebSocketEventBridge(
     private fun send(studioId: StudioId, event: DashboardEvent<*>, context: String) {
         val destination = "/topic/studio.${studioId.value}.dashboard"
         try {
-            messagingTemplate.convertAndSend(destination, event)
+            // The dashboard topic is studio-wide: subscribers' permissions are unknown at
+            // send time, so personal data must never ride on a broadcast. withMasked makes
+            // that explicit instead of relying on this listener staying @Async (off-request
+            // threads are masked by default).
+            PiiAccessContext.withMasked {
+                messagingTemplate.convertAndSend(destination, event)
+            }
             log.info("[WS-BRIDGE] Sent {} to {} ({})", event.type, destination, context)
         } catch (e: Exception) {
             // Delivery is best-effort (at-most-once): the frontend refetches REST after

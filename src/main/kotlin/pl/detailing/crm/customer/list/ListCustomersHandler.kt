@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
+import pl.detailing.crm.shared.pii.Pii
 import java.time.Instant
 import java.util.UUID
 
@@ -117,8 +118,8 @@ class ListCustomersHandler(
 
 data class CustomerListItem(
     val id: String,
-    val firstName: String?,
-    val lastName: String?,
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
     val contact: ContactInfo,
     val homeAddress: HomeAddressInfo?,
     val company: CompanyInfo?,
@@ -132,29 +133,29 @@ data class CustomerListItem(
 )
 
 data class ContactInfo(
-    val email: String?,
-    val phone: String?
+    @Pii val email: String?,
+    @Pii val phone: String?
 )
 
 data class HomeAddressInfo(
-    val street: String,
-    val city: String,
-    val postalCode: String,
+    @Pii val street: String,
+    @Pii val city: String,
+    @Pii val postalCode: String,
     val country: String
 )
 
 data class CompanyInfo(
     val id: String,
     val name: String,
-    val nip: String?,
+    @Pii val nip: String?,
     val regon: String?,
     val address: CompanyAddressInfo?
 )
 
 data class CompanyAddressInfo(
-    val street: String,
-    val city: String,
-    val postalCode: String,
+    @Pii val street: String,
+    @Pii val city: String,
+    @Pii val postalCode: String,
     val country: String
 )
 

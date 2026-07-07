@@ -2,7 +2,7 @@ package pl.detailing.crm.leads
 
 import java.time.Instant
 import pl.detailing.crm.leads.customer.CustomerSnapshot
-import pl.detailing.crm.shared.PII_MASK
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.get.EstimationItemResult
 import pl.detailing.crm.leads.get.EstimationResult
@@ -19,18 +19,18 @@ data class RelatedVisitDto(
 
 data class CustomerSnapshotDto(
     val id: String,
-    val firstName: String?,
-    val lastName: String?,
-    val email: String?,
-    val phone: String?
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
+    @Pii val email: String?,
+    @Pii val phone: String?
 )
 
 data class LeadDto(
     val id: String,
     val source: String?,
     val status: String,
-    val contactIdentifier: String?,
-    val customerName: String?,
+    @Pii val contactIdentifier: String?,
+    @Pii val customerName: String?,
     val initialMessage: String?,
     val summary: String?,
     val createdAt: Instant?,
@@ -95,13 +95,6 @@ fun CustomerSnapshot.toDto() = CustomerSnapshotDto(
     phone = phone
 )
 
-fun CustomerSnapshotDto.maskPii() = copy(
-    firstName = if (firstName != null) PII_MASK else null,
-    lastName = if (lastName != null) PII_MASK else null,
-    email = if (email != null) PII_MASK else null,
-    phone = if (phone != null) PII_MASK else null
-)
-
 data class CreateLeadRequest(
     val source: LeadSource,
     val contactIdentifier: String,
@@ -145,8 +138,8 @@ data class LeadDetailDto(
     val id: String,
     val source: String,
     val status: String,
-    val contactIdentifier: String,
-    val customerName: String?,
+    @Pii val contactIdentifier: String,
+    @Pii val customerName: String?,
     val initialMessage: String?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,

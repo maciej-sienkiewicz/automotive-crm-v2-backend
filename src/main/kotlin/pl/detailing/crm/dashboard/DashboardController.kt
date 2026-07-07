@@ -1,5 +1,6 @@
 package pl.detailing.crm.dashboard
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -192,9 +193,9 @@ data class VisitDetailResponse(
     val brand: String,
     val model: String,
     val amount: Double,
-    val customerFirstName: String,
-    val customerLastName: String,
-    val phoneNumber: String?,
+    @Pii val customerFirstName: String,
+    @Pii val customerLastName: String,
+    @Pii val phoneNumber: String?,
     val estimatedCompletionDate: String?
 )
 
@@ -219,8 +220,8 @@ data class BusinessMetricResponse(
 
 data class IncomingCallResponse(
     val id: String,
-    val phoneNumber: String,
-    val contactName: String?,
+    @Pii val phoneNumber: String,
+    @Pii val contactName: String?,
     val timestamp: String,
     val note: String?
 )

@@ -145,10 +145,11 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND v.deletedAt IS NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -161,6 +162,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         pageable: Pageable
     ): Page<VisitEntity>
 
@@ -176,10 +178,11 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND v.deletedAt IS NOT NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -192,6 +195,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         pageable: Pageable
     ): Page<VisitEntity>
 
@@ -208,10 +212,11 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND v.deletedAt IS NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -226,6 +231,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         @Param("startOfDay") startOfDay: Instant,
         @Param("endOfDay") endOfDay: Instant,
         pageable: Pageable
@@ -243,10 +249,11 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND (v.status != pl.detailing.crm.shared.VisitStatus.DRAFT)
         AND v.deletedAt IS NOT NULL
         AND (:searchTerm IS NULL OR :searchTerm = '' OR
-             LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
-             LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+             (:includePiiSearch = TRUE AND (
+                 LOWER(c.firstName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.lastName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.email) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
+                 LOWER(c.phone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))) OR
              LOWER(veh.licensePlate) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.brand) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
              LOWER(veh.model) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -261,6 +268,7 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("status") status: pl.detailing.crm.shared.VisitStatus?,
         @Param("searchTerm") searchTerm: String?,
+        @Param("includePiiSearch") includePiiSearch: Boolean,
         @Param("startOfDay") startOfDay: Instant,
         @Param("endOfDay") endOfDay: Instant,
         pageable: Pageable

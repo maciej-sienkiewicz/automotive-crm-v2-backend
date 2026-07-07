@@ -1,5 +1,6 @@
 package pl.detailing.crm.appointment
 
+import pl.detailing.crm.shared.pii.PiiAccessContext
 import kotlinx.coroutines.runBlocking
 import org.apache.coyote.BadRequestException
 import org.springframework.http.HttpStatus
@@ -96,7 +97,8 @@ class AppointmentController(
             status = appointmentStatus,
             searchTerm = search,
             scheduledDate = scheduledDateFilter,
-            customerId = customerIdFilter
+            customerId = customerIdFilter,
+            includePiiSearch = PiiAccessContext.isGranted()
         )
 
         val result = listAppointmentsHandler.handle(command)

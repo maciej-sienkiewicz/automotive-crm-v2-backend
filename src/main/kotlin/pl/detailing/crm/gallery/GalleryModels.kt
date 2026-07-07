@@ -1,5 +1,6 @@
 package pl.detailing.crm.gallery
 
+import pl.detailing.crm.shared.pii.Pii
 import java.time.Instant
 
 // ─── command ──────────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ data class GalleryPhotoItem(
     val visitId: String?,
     val visitNumber: String?,
     val customerId: String?,
-    val customerName: String?
+    @Pii val customerName: String?
 )
 
 // ─── API response DTOs ────────────────────────────────────────────────────────
@@ -92,5 +93,5 @@ data class GalleryPhotoResponse(
     val visitId: String?,
     val visitNumber: String?,
     val customerId: String?,
-    val customerName: String?
+    @Pii val customerName: String?
 )

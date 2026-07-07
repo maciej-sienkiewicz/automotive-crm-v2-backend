@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.list
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
@@ -40,6 +41,7 @@ class ListVisitsHandler(
                     studioId = command.studioId.value,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     startOfDay = startOfDay,
                     endOfDay = endOfDay,
                     pageable = pageRequest
@@ -49,6 +51,7 @@ class ListVisitsHandler(
                     studioId = command.studioId.value,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     startOfDay = startOfDay,
                     endOfDay = endOfDay,
                     pageable = pageRequest
@@ -60,6 +63,7 @@ class ListVisitsHandler(
                     studioId = command.studioId.value,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     pageable = pageRequest
                 )
             } else {
@@ -67,6 +71,7 @@ class ListVisitsHandler(
                     studioId = command.studioId.value,
                     status = command.status,
                     searchTerm = command.searchTerm?.takeIf { it.isNotBlank() },
+                    includePiiSearch = command.includePiiSearch,
                     pageable = pageRequest
                 )
             }
@@ -177,7 +182,13 @@ data class ListVisitsCommand(
     val status: VisitStatus? = null,
     val searchTerm: String? = null,
     val scheduledDate: LocalDate? = null,
-    val includeDeleted: Boolean = false
+    val includeDeleted: Boolean = false,
+    /**
+     * Whether the search term may match personal-data columns (name, phone, e-mail).
+     * Defaults to false — matching masked fields would let result presence reveal them
+     * (search oracle). Set from the request's PiiAccessContext by the controller.
+     */
+    val includePiiSearch: Boolean = false
 )
 
 /**
@@ -218,10 +229,10 @@ data class VisitListItem(
 )
 
 data class VisitCustomerInfo(
-    val firstName: String?,
-    val lastName: String?,
-    val phone: String?,
-    val email: String?,
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
+    @Pii val phone: String?,
+    @Pii val email: String?,
     val companyName: String?
 )
 
