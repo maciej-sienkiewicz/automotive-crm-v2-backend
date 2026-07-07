@@ -38,12 +38,15 @@ import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
 import pl.detailing.crm.shared.pii.PiiAccessContext
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 import java.time.LocalDate
 import java.time.Instant
 import java.util.UUID
 
 @RestController
 @RequestMapping("/api/visits")
+@RequiresPermission(Permission.VISITS_VIEW)
 class VisitController(
     private val listVisitsHandler: ListVisitsHandler,
     private val getVisitDetailHandler: GetVisitDetailHandler,

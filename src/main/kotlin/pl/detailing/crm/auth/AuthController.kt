@@ -23,6 +23,7 @@ import pl.detailing.crm.auth.signup.SignupRequest
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.voice.MobileTokenService
+import pl.detailing.crm.role.permission.PermissionCheckService
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -35,7 +36,8 @@ class AuthController(
     private val subscriptionService: SubscriptionService,
     private val securityContextRepository: SecurityContextRepository,
     private val userRepository: UserRepository,
-    private val mobileTokenService: MobileTokenService
+    private val mobileTokenService: MobileTokenService,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     @PostMapping("/signup")
@@ -145,6 +147,10 @@ class AuthController(
             val userEntity = userRepository.findById(principal.userId.value).orElse(null)
             val mobileToken = userEntity?.let { mobileTokenService.ensureToken(it) }
 
+            // null = owner (unrestricted); list = user's effective permission codes
+            val permissions = permissionCheckService.getPermissions(principal.userId, principal.studioId)
+                ?.map { it.name }
+
             ResponseEntity.ok(UnifiedAuthResponse(
                 success = true,
                 user = UserData(
@@ -159,7 +165,8 @@ class AuthController(
                     trialEndsAt = subscriptionInfo.trialEndsAt?.toString(),
                     firstName = principal.fullName.split(" ").first(),
                     lastName = principal.fullName.split(" ").last(),
-                    mobileToken = mobileToken
+                    mobileToken = mobileToken,
+                    permissions = permissions
                 )
             ))
         } catch (e: Exception) {

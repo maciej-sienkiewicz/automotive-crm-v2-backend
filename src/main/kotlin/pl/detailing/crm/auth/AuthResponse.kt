@@ -21,5 +21,7 @@ data class UserData(
     val daysRemaining: Long?,
     val subscriptionEndsAt: String?,
     val trialEndsAt: String?,
-    val mobileToken: String? = null
+    val mobileToken: String? = null,
+    /** Null means full access (owner). Non-null list contains the user's effective permission codes. */
+    val permissions: List<String>? = null
 )

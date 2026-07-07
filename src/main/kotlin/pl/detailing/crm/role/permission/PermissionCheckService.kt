@@ -41,4 +41,26 @@ class PermissionCheckService(
         val requiredFeature = permission.effectiveFeatureKey ?: return true
         return entitlementService.hasFeature(studioId, requiredFeature)
     }
+
+    /**
+     * Returns the effective permissions for a user, filtered through feature entitlements.
+     * Returns null for studio owners (they have unrestricted access to everything).
+     * Returns an empty set if the user has no custom role.
+     */
+    fun getPermissions(userId: UserId, studioId: StudioId): Set<Permission>? {
+        val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
+            ?: return emptySet()
+
+        if (userEntity.isOwner) return null
+
+        val customRoleId = userEntity.customRoleId ?: return emptySet()
+
+        val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
+            ?: return emptySet()
+
+        return roleEntity.toDomain().permissions.filter { permission ->
+            val requiredFeature = permission.effectiveFeatureKey ?: return@filter true
+            entitlementService.hasFeature(studioId, requiredFeature)
+        }.toSet()
+    }
 }

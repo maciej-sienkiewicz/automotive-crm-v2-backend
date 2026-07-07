@@ -11,6 +11,8 @@ import pl.detailing.crm.visit.transitions.markready.*
 import pl.detailing.crm.visit.transitions.complete.*
 import pl.detailing.crm.visit.transitions.reject.*
 import pl.detailing.crm.visit.transitions.archive.*
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 import java.time.LocalDate
 
 /**
@@ -24,6 +26,7 @@ import java.time.LocalDate
  */
 @RestController
 @RequestMapping("/api/visits")
+@RequiresPermission(Permission.VISITS_VIEW)
 class VisitTransitionController(
     private val markVisitReadyForPickupHandler: MarkVisitReadyForPickupHandler,
     private val completeVisitHandler: CompleteVisitHandler,
