@@ -147,45 +147,39 @@ class PdfProcessingService(
                 setupUnicodeFontForForm(document, acroForm)
 
                 // Fill each field
+                var filledCount = 0
+                var missedCount = 0
                 fieldMappings.forEach { (fieldName, value) ->
                     try {
                         val field = acroForm.getField(fieldName)
                         if (field != null) {
-                            // Special handling for checkboxes
-                            // PDFBox checkboxes need specific values from their export value list
                             if (field is org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox) {
-                                // For checkboxes: check if we should check or uncheck
-                                // If value is "Yes", "On", or "true", check the box
-                                // Otherwise, uncheck it with "Off"
                                 when (value.uppercase()) {
                                     "YES", "ON", "TRUE", "1" -> {
-                                        // Try to get the "on" value from export values
                                         val onValue = field.onValues.firstOrNull() ?: "Yes"
                                         field.setValue(onValue)
                                     }
-                                    else -> {
-                                        field.setValue("Off")
-                                    }
+                                    else -> field.setValue("Off")
                                 }
                             } else {
-                                // For all other fields (text, etc.), set value directly
                                 field.setValue(value)
                             }
+                            filledCount++
+                        } else {
+                            logger.warn("PDF field not found in AcroForm: '$fieldName' (value='${value.take(40)}') — skipping")
+                            missedCount++
                         }
                     } catch (e: Exception) {
-                        // Log warning but continue processing other fields
-                        logger.warn("Warning: Could not set value for field '$fieldName': ${e.message}")
+                        logger.warn("Could not set value for field '$fieldName': ${e.message}")
                     }
                 }
+                logger.info("PDF form fill: $filledCount/${fieldMappings.size} fields set, $missedCount not found in AcroForm")
 
-                // Make all fields read-only EXCEPT the signature field
-                // This "flattens" them by making them non-editable
-                acroForm.fields.forEach { field ->
-                    val fieldName = field.fullyQualifiedName
-                    if (fieldName != "signature") {
-                        field.isReadOnly = true
-                    }
-                }
+                // Flatten all fields into static page content so the PDF renders
+                // correctly in every viewer (including pdf.js canvas rendering on
+                // the signing tablet). The signature is overlaid as an image by
+                // SignedDocumentComposer after signing, so no AcroForm field is needed.
+                acroForm.flatten()
 
                 // Save to byte array
                 ByteArrayOutputStream().use { outputStream ->
@@ -198,50 +192,17 @@ class PdfProcessingService(
 
     /**
      * Load and register a Unicode-capable font (supporting Polish characters) as the default
-     * appearance font for the AcroForm. Tries common system font paths on Linux, then
-     * falls back to a classpath-bundled font, and finally to needAppearances=true.
+     * appearance font for the AcroForm. Classpath-bundled fonts are tried first to guarantee
+     * consistent rendering across environments (the classpath version is always identical,
+     * whereas system fonts vary between dev and production). System fonts serve as fallback
+     * only if the JAR-bundled ones cannot be loaded.
      */
     private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm) {
-        val systemFontPaths = listOf(
-            // Liberation Sans (Arial-compatible, professional) — preferred
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-            // DejaVu Sans — fallback
-            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            // Other fallbacks
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
-        )
-
-        logger.info("PDF font setup: scanning ${systemFontPaths.size} system paths...")
-        systemFontPaths.forEach { path ->
-            logger.info("PDF font setup: checking $path — exists=${java.io.File(path).exists()}")
-        }
-
-        for (path in systemFontPaths) {
-            val file = java.io.File(path)
-            if (file.exists()) {
-                try {
-                    // embedSubset=false: embed the full font so ALL Unicode glyphs (incl. Polish) are available.
-                    // Note: PDType0Font.load has no (Document, File, Boolean) overload — use FileInputStream.
-                    val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
-                    applyFontToAcroForm(document, acroForm, font)
-                    logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
-                    return
-                } catch (e: Exception) {
-                    logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
-                }
-            }
-        }
-
         val classpathFonts = listOf(
             "/fonts/LiberationSans-Regular.ttf",
-            "/fonts/DejaVuSans.ttf"  // fallback when Liberation Sans unavailable
+            "/fonts/DejaVuSans.ttf"
         )
-        logger.info("PDF font setup: no system font found, trying classpath fonts: $classpathFonts")
+        logger.info("PDF font setup: trying classpath fonts first: $classpathFonts")
         for (classpathFont in classpathFonts) {
             val stream = javaClass.getResourceAsStream(classpathFont)
             logger.info("PDF font setup: classpath '$classpathFont' — found=${stream != null}")
@@ -253,6 +214,34 @@ class PdfProcessingService(
                     return
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load classpath font '$classpathFont': ${e.message}")
+                }
+            }
+        }
+
+        val systemFontPaths = listOf(
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/DejaVu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/google-crosextra-carlito/Carlito-Regular.ttf"
+        )
+        logger.info("PDF font setup: classpath fonts unavailable, scanning ${systemFontPaths.size} system paths...")
+        systemFontPaths.forEach { path ->
+            logger.info("PDF font setup: checking $path — exists=${java.io.File(path).exists()}")
+        }
+        for (path in systemFontPaths) {
+            val file = java.io.File(path)
+            if (file.exists()) {
+                try {
+                    val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
+                    applyFontToAcroForm(document, acroForm, font)
+                    logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
+                    return
+                } catch (e: Exception) {
+                    logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
                 }
             }
         }
