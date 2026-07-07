@@ -59,6 +59,7 @@ class PermissionHierarchyTest {
     @Test
     fun `editing service prices pulls in the whole visit path`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_SERVICE_PRICES_EDIT))
+        // VISITS_CREATE is not in this set, so the module-grant expansion does not fire.
         assertEquals(
             setOf(
                 Permission.VISITS_SERVICE_PRICES_EDIT,
@@ -69,6 +70,13 @@ class PermissionHierarchyTest {
             ),
             closed
         )
+    }
+
+    @Test
+    fun `VISITS_CREATE close expands to the full visits module`() {
+        val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
+        val allVisits = Permission.entries.filter { it.module == PermissionModule.VISITS }.toSet()
+        assertEquals(allVisits, closed)
     }
 
     @Test
@@ -104,9 +112,11 @@ class PermissionHierarchyTest {
             Permission.VISITS_MEDIA_UPLOAD,
             Permission.VISITS_COMMENTS_ADD,
             Permission.VISITS_NOTES_ADD,
-            Permission.VISITS_DOCUMENTS_SIGN
+            Permission.VISITS_DOCUMENTS_SIGN,
+            // VISITS_CREATE is now a child of VISITS_VIEW_DETAILS (bottom of tree)
+            Permission.VISITS_CREATE
         ).forEach { assertTrue(it in subtree) { "${it.name} should live under VISITS_VIEW_DETAILS" } }
-        assertTrue(Permission.VISITS_CREATE !in subtree)
+        // VISITS_CHANGE_STATUS stays as a direct child of VISITS_VIEW, not under details
         assertTrue(Permission.VISITS_CHANGE_STATUS !in subtree)
     }
 

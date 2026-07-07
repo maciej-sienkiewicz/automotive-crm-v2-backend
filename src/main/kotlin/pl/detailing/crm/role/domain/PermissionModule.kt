@@ -23,5 +23,7 @@ enum class PermissionModule(
     COMMUNICATION("Komunikacja", FeatureKey.SMS_EMAIL),
     STATISTICS("Statystyki", null),
     LEADS("Leady", null),
-    TASKS("Zadania", null)
+    TASKS("Zadania", null),
+    // Service catalog (price list) — no feature gate; access is also implied by Finance/Statistics.
+    SERVICES("Usługi (cennik)", null)
 }

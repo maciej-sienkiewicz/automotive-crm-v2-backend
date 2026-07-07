@@ -38,7 +38,19 @@ object PermissionHierarchy {
     /**
      * Returns [permissions] expanded with every ancestor, so the stored set always forms
      * complete root-to-node paths. Idempotent: `close(close(x)) == close(x)`.
+     *
+     * Special module-grant rule: [Permission.VISITS_CREATE] acts as a full-module grant for
+     * [PermissionModule.VISITS]. Selecting it in the role editor implies all visit permissions
+     * (the role editor checks ancestors on tick, so placing VISITS_CREATE at the bottom of the
+     * tree and expanding to the full module on close gives "select all visits" semantics).
      */
-    fun close(permissions: Set<Permission>): Set<Permission> =
-        permissions.flatMapTo(mutableSetOf()) { ancestorsOf(it) + it }
+    fun close(permissions: Set<Permission>): Set<Permission> {
+        val result = permissions.flatMapTo(mutableSetOf()) { ancestorsOf(it) + it }
+        if (Permission.VISITS_CREATE in result) {
+            Permission.entries
+                .filter { it.module == PermissionModule.VISITS }
+                .forEach { result.add(it) }
+        }
+        return result
+    }
 }

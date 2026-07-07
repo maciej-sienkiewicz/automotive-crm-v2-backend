@@ -60,10 +60,6 @@ enum class Permission(
         PermissionModule.VISITS, "Podgląd wizyt",
         description = "Widok listy wszystkich wizyt"
     ),
-    VISITS_CREATE(
-        PermissionModule.VISITS, "Dodanie wizyty",
-        parent = VISITS_VIEW
-    ),
     VISITS_CHANGE_STATUS(
         PermissionModule.VISITS, "Zmiana statusu wizyty",
         parent = VISITS_VIEW
@@ -151,6 +147,14 @@ enum class Permission(
         featureKeyOverride = FeatureKey.DOCUMENTS
     ),
 
+    // Dodanie wizyty — bottom of the VISITS tree. Granting it implicitly expands to the
+    // entire VISITS module (see PermissionHierarchy.close), so checking it in the role
+    // editor selects all visit permissions at once.
+    VISITS_CREATE(
+        PermissionModule.VISITS, "Dodanie wizyty",
+        parent = VISITS_VIEW_DETAILS
+    ),
+
     // ── Klienci ──────────────────────────────────────────────────────────────
     CUSTOMERS_VIEW(PermissionModule.CUSTOMERS, "Podgląd listy klientów"),
     CUSTOMERS_VIEW_PERSONAL_DATA(
@@ -228,7 +232,13 @@ enum class Permission(
     // ── Zadania ──────────────────────────────────────────────────────────────
     TASKS_VIEW(PermissionModule.TASKS, "Podgląd zadań"),
     TASKS_MANAGE(PermissionModule.TASKS, "Zarządzanie zadaniami", parent = TASKS_VIEW),
-    TASKS_ASSIGN(PermissionModule.TASKS, "Przypisywanie zadań", parent = TASKS_VIEW);
+    TASKS_ASSIGN(PermissionModule.TASKS, "Przypisywanie zadań", parent = TASKS_VIEW),
+
+    // ── Usługi (cennik) ───────────────────────────────────────────────────────
+    // Access is also implicitly granted to any user holding a Finance or Statistics
+    // permission (see PermissionCheckService.expandCrossModule).
+    SERVICES_VIEW(PermissionModule.SERVICES, "Podgląd cennika usług"),
+    SERVICES_MANAGE(PermissionModule.SERVICES, "Zarządzanie cennikiem usług", parent = SERVICES_VIEW);
 
     /** Feature that must be enabled in the studio's entitlements for this permission. */
     val effectiveFeatureKey: FeatureKey?
