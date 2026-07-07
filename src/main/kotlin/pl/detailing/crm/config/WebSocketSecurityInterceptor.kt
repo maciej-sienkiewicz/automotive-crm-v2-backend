@@ -49,13 +49,10 @@ class WebSocketSecurityInterceptor(
 
         when (accessor.command) {
             StompCommand.CONNECT -> {
-                val principal = accessor.user
-                if (principal is UserPrincipal) {
-                    log.info("[WS-SEC] STOMP CONNECT user={} studio={}", principal.email, principal.studioId.value)
-                    return message
-                }
-
-                // Session-free signing tablet: authenticate via X-Tablet-Token STOMP header
+                // Tablet token takes priority over any HTTP session that may be present
+                // in the browser (e.g. a CRM user logged-in on the same device). Without
+                // this ordering a stale CRM session would shadow the tablet token and cause
+                // subsequent SUBSCRIBE checks to fail with a studio mismatch.
                 val tabletToken = accessor.getFirstNativeHeader(TABLET_TOKEN_HEADER)
                 if (tabletToken != null) {
                     val session = tabletSessionService.validateToken(tabletToken)
@@ -70,6 +67,12 @@ class WebSocketSecurityInterceptor(
                     }
                     log.warn("[WS-SEC] REJECTED CONNECT: invalid tablet token")
                     throw IllegalArgumentException("Invalid tablet token")
+                }
+
+                val principal = accessor.user
+                if (principal is UserPrincipal) {
+                    log.info("[WS-SEC] STOMP CONNECT user={} studio={}", principal.email, principal.studioId.value)
+                    return message
                 }
 
                 log.warn("[WS-SEC] REJECTED CONNECT: unauthenticated session (principal={})",
