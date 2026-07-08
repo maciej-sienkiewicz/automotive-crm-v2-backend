@@ -39,6 +39,7 @@ import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
 import pl.detailing.crm.shared.pii.PiiAccessContext
 import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.role.domain.Permission
 import java.time.LocalDate
 import java.time.Instant
@@ -61,7 +62,8 @@ class VisitController(
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
-    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler
+    private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -184,8 +186,11 @@ class VisitController(
         )
 
         val result = getVisitDetailHandler.handle(command)
+        val showPrices = permissionCheckService.hasPermission(
+            principal.userId, principal.studioId, Permission.VISITS_SERVICE_PRICES_VIEW
+        )
 
-        val response = mapToVisitDetailResponse(result)
+        val response = mapToVisitDetailResponse(result, showPrices)
 
         ResponseEntity.ok(response)
     }
@@ -463,9 +468,9 @@ class VisitController(
     /**
      * Map domain result to API response
      */
-    private fun mapToVisitDetailResponse(result: GetVisitDetailResult): VisitDetailResponse {
+    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, showPrices: Boolean): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
             documents = result.documents.map { mapToDocumentResponse(it) }
         )
@@ -479,11 +484,9 @@ class VisitController(
         vehicle: Vehicle,
         customer: Customer,
         customerStats: CustomerStats,
-        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?
+        appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
+        showPrices: Boolean
     ): VisitResponse {
-        val totalNet = visit.calculateTotalNet()
-        val totalGross = visit.calculateTotalGross()
-
         return VisitResponse(
             id = visit.id.value.toString(),
             visitNumber = visit.visitNumber,
@@ -502,12 +505,12 @@ class VisitController(
                     hexColor = color.hexColor
                 )
             },
-            services = buildServiceLineItems(visit.serviceItems),
-            totalCost = MoneyAmountResponse(
-                netAmount = totalNet.amountInCents,
-                grossAmount = totalGross.amountInCents,
+            services = buildServiceLineItems(visit.serviceItems, showPrices),
+            totalCost = if (showPrices) MoneyAmountResponse(
+                netAmount = visit.calculateTotalNet().amountInCents,
+                grossAmount = visit.calculateTotalGross().amountInCents,
                 currency = "PLN"
-            ),
+            ) else null,
             mileageAtArrival = visit.mileageAtArrival,
             keysHandedOver = visit.keysHandedOver,
             documentsHandedOver = visit.documentsHandedOver,
@@ -573,9 +576,9 @@ class VisitController(
      * Batch-load package info for all service items in a visit, then map each item.
      * Avoids N+1 queries: one query for service metadata, one for package items.
      */
-    private fun buildServiceLineItems(serviceItems: List<VisitServiceItem>): List<ServiceLineItemResponse> {
+    private fun buildServiceLineItems(serviceItems: List<VisitServiceItem>, showPrices: Boolean): List<ServiceLineItemResponse> {
         val serviceIds = serviceItems.mapNotNull { it.serviceId?.value }.distinct()
-        if (serviceIds.isEmpty()) return serviceItems.map { mapToServiceLineItemResponse(it, isPackage = false, packageItems = null) }
+        if (serviceIds.isEmpty()) return serviceItems.map { mapToServiceLineItemResponse(it, isPackage = false, packageItems = null, showPrices = showPrices) }
 
         val packageServiceIds = serviceRepository.findAllById(serviceIds)
             .filter { it.isPackage }
@@ -591,7 +594,7 @@ class VisitController(
             val sid = item.serviceId?.value
             val isPkg = sid != null && sid in packageServiceIds
             val items = if (isPkg && sid != null) packageItemsByServiceId[sid]?.sortedBy { it.position } else null
-            mapToServiceLineItemResponse(item, isPkg, items)
+            mapToServiceLineItemResponse(item, isPkg, items, showPrices)
         }
     }
 
@@ -599,45 +602,39 @@ class VisitController(
      * Map VisitServiceItem to ServiceLineItemResponse
      */
     private fun mapToServiceLineItemResponse(serviceItem: VisitServiceItem): ServiceLineItemResponse =
-        mapToServiceLineItemResponse(serviceItem, isPackage = false, packageItems = null)
+        mapToServiceLineItemResponse(serviceItem, isPackage = false, packageItems = null, showPrices = true)
 
     private fun mapToServiceLineItemResponse(
         serviceItem: VisitServiceItem,
         isPackage: Boolean,
-        packageItems: List<PackageItemDto>?
+        packageItems: List<PackageItemDto>?,
+        showPrices: Boolean
     ): ServiceLineItemResponse {
-        // Convert adjustment value based on type:
-        // - For PERCENT: convert from basis points back to signed percentage (divide by 100), returned as Double
-        // - For monetary types (FIXED_NET, FIXED_GROSS, SET_NET, SET_GROSS): return as Long (integer grosz)
         val adjustmentValue: Number = when (serviceItem.adjustmentType) {
-            AdjustmentType.PERCENT -> serviceItem.adjustmentValue / 100.0 // basis points → signed percent
-            else -> serviceItem.adjustmentValue // Long — serializes as integer JSON
+            AdjustmentType.PERCENT -> serviceItem.adjustmentValue / 100.0
+            else -> serviceItem.adjustmentValue
         }
 
         return ServiceLineItemResponse(
             id = serviceItem.id.value.toString(),
             serviceId = serviceItem.serviceId?.value?.toString(),
             serviceName = serviceItem.serviceName,
-            basePriceNet = serviceItem.basePriceNet.amountInCents,
-            vatRate = serviceItem.vatRate.rate,
-            adjustment = AdjustmentResponse(
+            basePriceNet = if (showPrices) serviceItem.basePriceNet.amountInCents else null,
+            vatRate = if (showPrices) serviceItem.vatRate.rate else null,
+            adjustment = if (showPrices) AdjustmentResponse(
                 type = mapAdjustmentType(serviceItem.adjustmentType),
                 value = adjustmentValue
-            ),
+            ) else null,
             note = serviceItem.customNote ?: "",
             status = mapServiceStatus(serviceItem.status),
-            finalPriceNet = serviceItem.finalPriceNet.amountInCents,
-            finalPriceGross = serviceItem.finalPriceGross.amountInCents,
+            finalPriceNet = if (showPrices) serviceItem.finalPriceNet.amountInCents else null,
+            finalPriceGross = if (showPrices) serviceItem.finalPriceGross.amountInCents else null,
             isPackage = isPackage,
             packageItems = packageItems,
-
-            // Pending operation tracking
             pendingOperation = serviceItem.pendingOperation?.let { mapPendingOperation(it) },
             hasPendingChange = serviceItem.pendingOperation != null,
-
-            // Previous values for EDIT operations
-            previousPriceNet = serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents,
-            previousPriceGross = serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents
+            previousPriceNet = if (showPrices) serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents else null,
+            previousPriceGross = if (showPrices) serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents else null
         )
     }
 
