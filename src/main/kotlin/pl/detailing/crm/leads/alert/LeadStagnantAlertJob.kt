@@ -66,7 +66,7 @@ class LeadStagnantAlertJob(
                 studioId = StudioId(studioId),
                 createdByUserId = ownerUserId,
                 title = "Lead bez naszej odpowiedzi: $displayName",
-                meta = "Lead oczekuje odpowiedzi od ${ourThresholdHours}h. ID: ${lead.id}",
+                meta = "",
                 done = false,
                 createdAt = now,
                 updatedAt = now,
