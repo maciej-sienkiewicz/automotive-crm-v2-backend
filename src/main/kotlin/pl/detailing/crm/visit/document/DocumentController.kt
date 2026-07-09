@@ -12,6 +12,8 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 /**
  * REST controller for document management
@@ -24,6 +26,7 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api")
+@RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
 class DocumentController(
     private val documentService: DocumentService
 ) {

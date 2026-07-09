@@ -12,12 +12,12 @@ enum class PermissionModule(
     /** Feature that must be enabled in the studio's entitlements. Null = always accessible. */
     val featureKey: FeatureKey?
 ) {
-    CALENDAR("Kalendarz", FeatureKey.CALENDAR),
-    // Photos and documents live inside the VISITS permission tree (sections of the visit
-    // details node); they keep their own feature gating via Permission.effectiveFeatureKey.
-    VISITS("Wizyty", FeatureKey.VISITS),
-    CUSTOMERS("Klienci", FeatureKey.CUSTOMERS),
-    VEHICLES("Pojazdy", FeatureKey.VEHICLES),
+    // Covers the calendar too (an event IS a visit/booking). Photos and documents live
+    // inside the VISITS permission tree; they keep their own feature gating via
+    // Permission.effectiveFeatureKey.
+    VISITS("Wizyty i kalendarz", FeatureKey.VISITS),
+    // Covers vehicles too: a vehicle is customer data, not a standalone permission area.
+    CUSTOMERS("Klienci i pojazdy", FeatureKey.CUSTOMERS),
     FINANCE("Finanse", FeatureKey.FINANCE),
     EMPLOYEES("Pracownicy", FeatureKey.EMPLOYEES),
     COMMUNICATION("Komunikacja", FeatureKey.SMS_EMAIL),

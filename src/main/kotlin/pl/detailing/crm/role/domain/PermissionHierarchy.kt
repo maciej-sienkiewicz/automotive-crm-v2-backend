@@ -39,17 +39,17 @@ object PermissionHierarchy {
      * Returns [permissions] expanded with every ancestor, so the stored set always forms
      * complete root-to-node paths. Idempotent: `close(close(x)) == close(x)`.
      *
-     * Special module-grant rule: [Permission.VISITS_CREATE] acts as a full-module grant for
-     * [PermissionModule.VISITS]. Selecting it in the role editor implies all visit permissions
-     * (the role editor checks ancestors on tick, so placing VISITS_CREATE at the bottom of the
-     * tree and expanding to the full module on close gives "select all visits" semantics).
+     * In-module implication: [Permission.VISITS_CREATE] implies
+     * [Permission.VISITS_SERVICE_PRICES_VIEW] — composing a visit means selecting services
+     * with their prices. It deliberately does NOT grant the whole VISITS module: deleting
+     * visits, deleting photos and price *editing* (discounts) are separate policies.
+     * Cross-module implications (customer data entry, the service catalog) live in
+     * [pl.detailing.crm.role.permission.PermissionCheckService].
      */
     fun close(permissions: Set<Permission>): Set<Permission> {
         val result = permissions.flatMapTo(mutableSetOf()) { ancestorsOf(it) + it }
         if (Permission.VISITS_CREATE in result) {
-            Permission.entries
-                .filter { it.module == PermissionModule.VISITS }
-                .forEach { result.add(it) }
+            result.add(Permission.VISITS_SERVICE_PRICES_VIEW)
         }
         return result
     }

@@ -12,6 +12,8 @@ import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 // ---------------------------------------------------------------------------
 // Response DTOs
@@ -75,6 +77,7 @@ data class CustomerCommunicationResponse(
  *   messages not tied to a specific visit), newest-first.
  */
 @RestController
+@RequiresPermission(Permission.CUSTOMERS_VIEW)
 class CommunicationController(
     private val getVisitCommunicationHandler: GetVisitCommunicationHandler,
     private val getCustomerCommunicationHandler: GetCustomerCommunicationHandler

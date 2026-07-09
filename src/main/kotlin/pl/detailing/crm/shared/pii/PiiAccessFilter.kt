@@ -23,10 +23,13 @@ const val PII_ACCESS_HEADER = "X-Pii-Access"
  * authenticated [UserPrincipal] (session-based) is already in the [SecurityContextHolder].
  *
  * Decision:
- * - signing-tablet endpoints (`/api/tablet/**`, token-authenticated) are GRANTED by design:
+ * - signing-tablet endpoints (`/api/tablet/…`, token-authenticated) are GRANTED by design:
  *   the recipient is the customer physically at the device, confirming their own data;
  * - an authenticated employee is GRANTED iff [PermissionCheckService] confirms
- *   `CUSTOMERS_VIEW_PERSONAL_DATA` (owner always passes, feature gating included);
+ *   `CUSTOMERS_VIEW` — the personal-data permission (owner always passes, feature gating
+ *   and cross-module implications included). Masking therefore only ever *surfaces* on
+ *   shop-floor views (visits, calendar): person-centric endpoints (customer database,
+ *   documents, invoices) are hard-gated by permissions that imply `CUSTOMERS_VIEW`;
  * - everything else — webhooks, anonymous endpoints, mobile upload tokens — is MASKED.
  */
 @Component
@@ -58,7 +61,7 @@ class PiiAccessFilter(
         val granted = permissionCheckService.hasPermission(
             principal.userId,
             principal.studioId,
-            Permission.CUSTOMERS_VIEW_PERSONAL_DATA
+            Permission.CUSTOMERS_VIEW
         )
         return if (granted) PiiAccess.GRANTED else PiiAccess.MASKED
     }

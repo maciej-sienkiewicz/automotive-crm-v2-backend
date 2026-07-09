@@ -89,7 +89,7 @@ class PiiAccessFilterTest {
         )
         SecurityContextHolder.context = SecurityContextImpl(principal)
         every {
-            permissionCheckService.hasPermission(any(), any(), Permission.CUSTOMERS_VIEW_PERSONAL_DATA)
+            permissionCheckService.hasPermission(any(), any(), Permission.CUSTOMERS_VIEW)
         } returns hasPermission
     }
 

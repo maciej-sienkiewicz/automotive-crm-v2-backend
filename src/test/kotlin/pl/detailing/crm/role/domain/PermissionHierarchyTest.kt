@@ -57,15 +57,12 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `editing service prices pulls in the whole visit path`() {
+    fun `editing service prices pulls in the visit path`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_SERVICE_PRICES_EDIT))
-        // VISITS_CREATE is not in this set, so the module-grant expansion does not fire.
         assertEquals(
             setOf(
                 Permission.VISITS_SERVICE_PRICES_EDIT,
                 Permission.VISITS_SERVICE_PRICES_VIEW,
-                Permission.VISITS_SERVICES_VIEW,
-                Permission.VISITS_VIEW_DETAILS,
                 Permission.VISITS_VIEW
             ),
             closed
@@ -73,67 +70,87 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `VISITS_CREATE close expands to the full visits module`() {
+    fun `creating visits implies seeing service prices but not the destructive permissions`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
-        val allVisits = Permission.entries.filter { it.module == PermissionModule.VISITS }.toSet()
-        assertEquals(allVisits, closed)
+        // Composing a visit means selecting services with their prices…
+        assertTrue(Permission.VISITS_SERVICE_PRICES_VIEW in closed)
+        // …but deleting visits/photos and price editing (discounts) are separate policies.
+        assertTrue(Permission.VISITS_DELETE !in closed)
+        assertTrue(Permission.VISITS_MEDIA_DELETE !in closed)
+        assertTrue(Permission.VISITS_SERVICE_PRICES_EDIT !in closed)
     }
 
     @Test
-    fun `editing a customer implies viewing personal data and the customer list`() {
-        val closed = PermissionHierarchy.close(setOf(Permission.CUSTOMERS_EDIT))
-        assertTrue(Permission.CUSTOMERS_VIEW_PERSONAL_DATA in closed)
+    fun `shop-floor viewing works without access to the customer database`() {
+        // A detailer sees the schedule (calendar included) and visit contents with the
+        // customer masked at the serialization boundary — VISITS_VIEW must NOT
+        // auto-grant CUSTOMERS_VIEW (the personal-data permission).
+        val closed = PermissionHierarchy.close(setOf(Permission.VISITS_VIEW))
+        assertTrue(Permission.CUSTOMERS_VIEW !in closed) {
+            "VISITS_VIEW must not auto-grant customer data access"
+        }
+    }
+
+    @Test
+    fun `a detailer role is expressible with two checkboxes and carries no personal data`() {
+        val detailer = PermissionHierarchy.close(
+            setOf(Permission.VISITS_VIEW, Permission.VISITS_CHANGE_STATUS)
+        )
+        assertEquals(setOf(Permission.VISITS_VIEW, Permission.VISITS_CHANGE_STATUS), detailer)
+    }
+
+    @Test
+    fun `managing customers implies viewing them`() {
+        val closed = PermissionHierarchy.close(setOf(Permission.CUSTOMERS_MANAGE))
         assertTrue(Permission.CUSTOMERS_VIEW in closed)
     }
 
     @Test
-    fun `plain view permissions never require personal data access`() {
-        // Personal-data visibility is handled by masking, not hierarchy.
-        listOf(
-            Permission.VISITS_VIEW,
-            Permission.CALENDAR_VIEW,
-            Permission.COMMUNICATION_VIEW_LOGS
-        ).forEach { viewPermission ->
-            val closed = PermissionHierarchy.close(setOf(viewPermission))
-            assertTrue(Permission.CUSTOMERS_VIEW_PERSONAL_DATA !in closed) {
-                "${viewPermission.name} must not auto-grant personal data access"
-            }
-        }
-    }
-
-    @Test
-    fun `subtree of visit details covers every in-visit action`() {
-        val subtree = PermissionHierarchy.subtreeOf(Permission.VISITS_VIEW_DETAILS)
-        listOf(
-            Permission.VISITS_DELETE,
-            Permission.VISITS_EDIT,
-            Permission.VISITS_SERVICES_MANAGE,
-            Permission.VISITS_SERVICE_PRICES_EDIT,
-            Permission.VISITS_MEDIA_UPLOAD,
-            Permission.VISITS_COMMENTS_ADD,
-            Permission.VISITS_NOTES_ADD,
-            Permission.VISITS_DOCUMENTS_SIGN,
-            // VISITS_CREATE is now a child of VISITS_VIEW_DETAILS (bottom of tree)
-            Permission.VISITS_CREATE
-        ).forEach { assertTrue(it in subtree) { "${it.name} should live under VISITS_VIEW_DETAILS" } }
-        // VISITS_CHANGE_STATUS stays as a direct child of VISITS_VIEW, not under details
-        assertTrue(Permission.VISITS_CHANGE_STATUS !in subtree)
-    }
-
-    @Test
-    fun `legacy stored codes map onto the new tree`() {
+    fun `legacy stored codes map onto the consolidated tree`() {
         mapOf(
+            // flat-list era
             "VISITS_VIEW_PRICES" to Permission.VISITS_SERVICE_PRICES_VIEW,
-            "VISITS_VIEW_COMMENTS" to Permission.VISITS_COMMENTS_VIEW,
-            "VISITS_ADD_COMMENT" to Permission.VISITS_COMMENTS_ADD,
-            "GALLERY_UPLOAD" to Permission.VISITS_MEDIA_UPLOAD,
-            "DOCUMENTS_SIGN" to Permission.VISITS_DOCUMENTS_SIGN,
+            "VISITS_VIEW_COMMENTS" to Permission.VISITS_VIEW,
+            "VISITS_ADD_COMMENT" to Permission.VISITS_VIEW,
+            "GALLERY_UPLOAD" to Permission.VISITS_VIEW,
+            "GALLERY_DELETE" to Permission.VISITS_MEDIA_DELETE,
+            "DOCUMENTS_SIGN" to Permission.VISITS_DOCUMENTS_MANAGE,
+            "CALENDAR_VIEW" to Permission.VISITS_VIEW,
+            "CALENDAR_MANAGE" to Permission.VISITS_CREATE,
+            "VEHICLES_VIEW" to Permission.VISITS_VIEW,
+            "VEHICLES_CREATE" to Permission.VISITS_CREATE,
+            "VEHICLES_DELETE" to Permission.CUSTOMERS_DELETE,
+            "CUSTOMERS_VIEW_PERSONAL_DATA" to Permission.CUSTOMERS_VIEW,
+            "CUSTOMERS_CREATE" to Permission.CUSTOMERS_MANAGE,
+            "CUSTOMERS_EDIT" to Permission.CUSTOMERS_MANAGE,
+            "COMMUNICATION_VIEW_LOGS" to Permission.CUSTOMERS_VIEW,
+            "COMMUNICATION_SEND_SMS" to Permission.COMMUNICATION_SEND,
+            "FINANCE_VIEW_INVOICES" to Permission.FINANCE_INVOICES,
+            "FINANCE_CREATE_INVOICE" to Permission.FINANCE_INVOICES,
+            "EMPLOYEES_MANAGE_ACCOUNTS" to Permission.EMPLOYEES_MANAGE,
+            "EMPLOYEES_VIEW_PAYROLL" to Permission.EMPLOYEES_PAYROLL,
+            "TASKS_ASSIGN" to Permission.TASKS_MANAGE,
+            "LEADS_VIEW" to Permission.LEADS_MANAGE,
+            // pre-consolidation tree nodes
+            "VISITS_VIEW_DETAILS" to Permission.VISITS_VIEW,
+            "VISITS_EDIT" to Permission.VISITS_CREATE,
+            "VISITS_SERVICES_VIEW" to Permission.VISITS_VIEW,
+            "VISITS_SERVICES_MANAGE" to Permission.VISITS_CREATE,
+            "VISITS_COMMENTS_ADD" to Permission.VISITS_VIEW,
+            "VISITS_NOTES_ADD" to Permission.VISITS_VIEW,
+            "VISITS_MEDIA_VIEW" to Permission.VISITS_VIEW,
+            "VISITS_MEDIA_UPLOAD" to Permission.VISITS_VIEW,
+            "VISITS_DOCUMENTS_VIEW" to Permission.VISITS_DOCUMENTS_MANAGE,
+            // current codes resolve to themselves
             "VISITS_VIEW" to Permission.VISITS_VIEW
         ).forEach { (stored, expected) ->
-            assertEquals(expected, Permission.fromStoredCode(stored))
+            assertEquals(expected, Permission.fromStoredCode(stored)) { "for $stored" }
         }
+        // Retired without a successor: the coworker directory is not permission-gated.
+        assertEquals(null, Permission.fromStoredCode("EMPLOYEES_VIEW"))
         assertEquals(null, Permission.fromStoredCode("NO_SUCH_PERMISSION"))
         // API lookups must stay strict — aliases are for persisted rows only.
         assertEquals(null, Permission.fromApiCode("GALLERY_UPLOAD"))
+        assertEquals(null, Permission.fromApiCode("CUSTOMERS_VIEW_PERSONAL_DATA"))
     }
 }

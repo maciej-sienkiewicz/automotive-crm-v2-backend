@@ -261,6 +261,7 @@ class VisitController(
      * DELETE /api/visits/{visitId}/photos/{photoId}
      */
     @DeleteMapping("/{visitId}/photos/{photoId}")
+    @RequiresPermission(Permission.VISITS_MEDIA_DELETE)
     fun deleteVisitPhoto(
         @PathVariable visitId: String,
         @PathVariable photoId: String
@@ -285,6 +286,7 @@ class VisitController(
      * PATCH /api/visits/{visitId}/services/
      */
     @PatchMapping("/{visitId}/services/")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun saveServicesChanges(
         @PathVariable visitId: String,
         @RequestBody payload: ServicesChangesPayload
@@ -313,6 +315,7 @@ class VisitController(
      * - Makes the visit immutable (cannot be cancelled anymore)
      */
     @PostMapping("/{visitId}/confirm")
+    @RequiresPermission(Permission.VISITS_CHANGE_STATUS)
     fun confirmVisit(
         @PathVariable visitId: String,
         @RequestBody(required = false) request: ConfirmVisitRequest?
@@ -361,6 +364,7 @@ class VisitController(
      * PATCH /api/visits/{visitId}/title
      */
     @PatchMapping("/{visitId}/title")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateVisitTitle(
         @PathVariable visitId: String,
         @RequestBody request: UpdateVisitTitleRequest
@@ -388,6 +392,7 @@ class VisitController(
      * Pass null to clear the date.
      */
     @PatchMapping("/{visitId}/estimated-completion-date")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateEstimatedCompletionDate(
         @PathVariable visitId: String,
         @RequestBody request: UpdateEstimatedCompletionDateRequest
@@ -415,6 +420,7 @@ class VisitController(
      * Appointment remains in CONFIRMED status (ready to be converted again).
      */
     @DeleteMapping("/{visitId}/cancel")
+    @RequiresPermission(Permission.VISITS_CHANGE_STATUS)
     fun cancelDraftVisit(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {
@@ -448,6 +454,7 @@ class VisitController(
      * Only OWNER and MANAGER roles are allowed.
      */
     @DeleteMapping("/{visitId}")
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun deleteVisit(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {

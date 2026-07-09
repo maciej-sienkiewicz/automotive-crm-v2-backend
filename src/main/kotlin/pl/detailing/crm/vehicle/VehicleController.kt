@@ -37,9 +37,12 @@ import pl.detailing.crm.vehicle.documents.VehicleDocumentService
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/vehicles")
+@RequiresPermission(Permission.VISITS_VIEW)
 class VehicleController(
     private val createVehicleHandler: CreateVehicleHandler,
     private val listVehiclesHandler: ListVehiclesHandler,
@@ -294,6 +297,7 @@ class VehicleController(
     }
 
     @PostMapping
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createVehicle(@RequestBody request: CreateVehicleRequest): ResponseEntity<VehicleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -335,6 +339,7 @@ class VehicleController(
     }
 
     @PatchMapping("/{vehicleId}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateVehicle(
         @PathVariable vehicleId: String,
         @RequestBody request: UpdateVehicleRequest
@@ -376,6 +381,7 @@ class VehicleController(
     }
 
     @DeleteMapping("/{vehicleId}")
+    @RequiresPermission(Permission.CUSTOMERS_DELETE)
     fun deleteVehicle(@PathVariable vehicleId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -393,6 +399,7 @@ class VehicleController(
     }
 
     @PostMapping("/{vehicleId}/owners")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun assignOwner(
         @PathVariable vehicleId: String,
         @RequestBody request: AssignOwnerRequest
@@ -422,6 +429,7 @@ class VehicleController(
     }
 
     @DeleteMapping("/{vehicleId}/owners/{customerId}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun removeOwner(
         @PathVariable vehicleId: String,
         @PathVariable customerId: String
@@ -535,6 +543,7 @@ class VehicleController(
     }
 
     @GetMapping("/{vehicleId}/documents")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun getVehicleDocuments(
         @PathVariable vehicleId: String
     ): ResponseEntity<VehicleDocumentsResponse> {
@@ -567,6 +576,7 @@ class VehicleController(
      * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
      */
     @PostMapping("/{vehicleId}/documents")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun initiateDocumentUpload(
         @PathVariable vehicleId: String,
         @RequestBody request: InitiateVehicleDocumentUploadRequest
@@ -632,6 +642,7 @@ class VehicleController(
     }
 
     @DeleteMapping("/{vehicleId}/documents/{documentId}")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun deleteVehicleDocument(
         @PathVariable vehicleId: String,
         @PathVariable documentId: String

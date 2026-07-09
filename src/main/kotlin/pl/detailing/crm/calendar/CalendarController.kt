@@ -11,9 +11,12 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/calendar")
+@RequiresPermission(Permission.VISITS_VIEW)
 class CalendarController(
     private val getCalendarEventsHandler: GetCalendarEventsHandler
 ) {

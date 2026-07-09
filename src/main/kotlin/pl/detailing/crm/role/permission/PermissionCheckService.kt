@@ -21,9 +21,15 @@ import pl.detailing.crm.user.infrastructure.UserRepository
  *    the studio must have that feature enabled in its active entitlements.
  *
  * Cross-module expansion (see [expandCrossModule]):
+ * - [Permission.VISITS_CREATE] → [Permission.CUSTOMERS_MANAGE] (+ its ancestors) and
+ *   [Permission.SERVICES_VIEW] — booking a visit means entering the customer's data and
+ *   composing services from the catalog.
+ * - [Permission.VISITS_DOCUMENTS_MANAGE], [Permission.FINANCE_INVOICES] and
+ *   [Permission.COMMUNICATION_SEND] → [Permission.CUSTOMERS_VIEW] — documents, invoices
+ *   and outbound messages ARE personal data; masking them would make the permission useless.
+ * - [Permission.FINANCE_INVOICES] → [Permission.VISITS_VIEW] — an income document is
+ *   created from a visit.
  * - Any Finance or Statistics permission → [Permission.SERVICES_VIEW] implied.
- * - [Permission.VISITS_SERVICES_VIEW] or any descendant → [Permission.SERVICES_VIEW] implied.
- *   (service catalog access is needed when managing services within a visit).
  */
 @Service
 class PermissionCheckService(
@@ -55,29 +61,50 @@ class PermissionCheckService(
         val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
             ?: return emptySet()
 
-        // toDomain closes over the tree (adds ancestors + VISITS_CREATE module-grant).
-        val base = roleEntity.toDomain().permissions.filterTo(mutableSetOf()) { permission ->
+        // toDomain closes over the tree (adds ancestors); expansion runs before feature
+        // filtering so implied permissions are feature-gated like directly granted ones.
+        val expanded = expandCrossModule(roleEntity.toDomain().permissions)
+
+        return expanded.filterTo(mutableSetOf()) { permission ->
             val requiredFeature = permission.effectiveFeatureKey ?: return@filterTo true
             entitlementService.hasFeature(studioId, requiredFeature)
         }
-
-        return expandCrossModule(base)
     }
 
     /**
-     * Applies cross-module access rules that cannot be expressed in the single-module tree:
-     * - Finance or Statistics permissions → [Permission.SERVICES_VIEW]
-     * - [Permission.VISITS_SERVICES_VIEW] or any descendant → [Permission.SERVICES_VIEW]
-     *   (visit coordinators need the service catalog when building a visit).
+     * Applies cross-module access rules that cannot be expressed in the single-module tree.
+     * The result is re-closed over the tree so implied permissions carry their ancestors.
      */
     private fun expandCrossModule(permissions: Set<Permission>): Set<Permission> {
-        val servicesViewGranted =
-            permissions.any { it.module == PermissionModule.FINANCE } ||
-            permissions.any { it.module == PermissionModule.STATISTICS } ||
-            PermissionHierarchy.subtreeOf(Permission.VISITS_SERVICES_VIEW).any { it in permissions }
+        val result = permissions.toMutableSet()
 
-        if (!servicesViewGranted) return permissions
+        // Booking a visit = entering the (possibly new) customer's and vehicle's data,
+        // and composing services from the catalog.
+        if (Permission.VISITS_CREATE in result) {
+            result.add(Permission.CUSTOMERS_MANAGE)
+            result.add(Permission.SERVICES_VIEW)
+        }
 
-        return (permissions + Permission.SERVICES_VIEW)
+        // Person-centric capabilities: their content IS customer personal data, so they
+        // imply the personal-data permission (CUSTOMERS_VIEW) — 403/masking would make
+        // the granted permission useless.
+        if (Permission.VISITS_DOCUMENTS_MANAGE in result ||
+            Permission.FINANCE_INVOICES in result ||
+            Permission.COMMUNICATION_SEND in result
+        ) {
+            result.add(Permission.CUSTOMERS_VIEW)
+        }
+
+        // An income document is created from a visit.
+        if (Permission.FINANCE_INVOICES in result) {
+            result.add(Permission.VISITS_VIEW)
+        }
+
+        // Finance and statistics reporting reference the service catalog.
+        if (result.any { it.module == PermissionModule.FINANCE || it.module == PermissionModule.STATISTICS }) {
+            result.add(Permission.SERVICES_VIEW)
+        }
+
+        return PermissionHierarchy.close(result)
     }
 }

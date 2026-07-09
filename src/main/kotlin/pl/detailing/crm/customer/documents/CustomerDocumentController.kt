@@ -9,9 +9,12 @@ import pl.detailing.crm.shared.pii.PiiAccessContext
 import pl.detailing.crm.shared.ForbiddenException
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/documents")
+@RequiresPermission(Permission.CUSTOMERS_VIEW)
 class CustomerDocumentController(
     private val customerDocumentService: CustomerDocumentService
 ) {
@@ -42,6 +45,7 @@ class CustomerDocumentController(
      * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
      */
     @PostMapping
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun initiateUpload(
         @PathVariable customerId: String,
         @RequestBody request: InitiateDocumentUploadRequest
@@ -68,6 +72,7 @@ class CustomerDocumentController(
     }
 
     @DeleteMapping("/{documentId}")
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun deleteDocument(
         @PathVariable customerId: String,
         @PathVariable documentId: String

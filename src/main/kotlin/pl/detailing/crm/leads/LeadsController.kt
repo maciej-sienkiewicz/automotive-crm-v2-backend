@@ -79,9 +79,12 @@ import pl.detailing.crm.shared.VehicleId
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/leads")
+@RequiresPermission(Permission.LEADS_MANAGE)
 class LeadsController(
     private val createLeadHandler: CreateLeadHandler,
     private val updateLeadHandler: UpdateLeadHandler,

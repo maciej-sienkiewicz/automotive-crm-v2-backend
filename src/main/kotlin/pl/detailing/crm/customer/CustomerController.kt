@@ -32,9 +32,12 @@ import pl.detailing.crm.vehicle.create.CreateVehicleHandler
 import java.time.Instant
 import java.util.UUID
 import java.time.temporal.ChronoUnit
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/customers")
+@RequiresPermission(Permission.CUSTOMERS_VIEW)
 class CustomerController(
     private val createCustomerHandler: CreateCustomerHandler,
     private val listCustomersHandler: ListCustomersHandler,
@@ -247,6 +250,7 @@ class CustomerController(
     }
 
     @PostMapping
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun createCustomer(@RequestBody request: CreateCustomerRequest): ResponseEntity<CustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -390,6 +394,7 @@ class CustomerController(
     }
 
     @PostMapping("/{customerId}/vehicles")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createCustomerVehicle(
         @PathVariable customerId: String,
         @RequestBody request: CreateCustomerVehicleRequest
@@ -471,6 +476,7 @@ class CustomerController(
     }
 
     @PatchMapping("/{customerId}")
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun updateCustomer(
         @PathVariable customerId: String,
         @RequestBody request: UpdateCustomerRequest
@@ -514,6 +520,7 @@ class CustomerController(
     }
 
     @PatchMapping("/{customerId}/company")
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun updateCompany(
         @PathVariable customerId: String,
         @RequestBody request: UpdateCompanyRequest
@@ -553,6 +560,7 @@ class CustomerController(
     }
 
     @DeleteMapping("/{customerId}/company")
+    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
     fun deleteCompany(@PathVariable customerId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 

@@ -27,6 +27,8 @@ import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolHandler
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.util.*
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1")
@@ -166,6 +168,7 @@ class ProtocolController(
     // ==================== Visit Protocols ====================
 
     @GetMapping("/visits/{visitId}/protocols")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun getVisitProtocols(@PathVariable visitId: String): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getVisitProtocolsHandler.handle(VisitId.fromString(visitId), principal.studioId)
@@ -173,6 +176,7 @@ class ProtocolController(
     }
 
     @PostMapping("/visits/{visitId}/protocols/generate")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun generateVisitProtocols(
         @PathVariable visitId: String,
         @RequestParam(required = false, defaultValue = "CHECK_IN") stage: String
@@ -190,6 +194,7 @@ class ProtocolController(
     }
 
     @PostMapping("/visits/{visitId}/protocols/{protocolId}/sign")
+    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
     fun signVisitProtocol(
         @PathVariable visitId: String,
         @PathVariable protocolId: String,

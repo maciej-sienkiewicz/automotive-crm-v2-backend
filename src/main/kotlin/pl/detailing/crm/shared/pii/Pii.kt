@@ -5,7 +5,7 @@ package pl.detailing.crm.shared.pii
  *
  * Fields annotated with `@Pii` are serialized through [PiiMaskingModule]: the real value
  * is written only when the current [PiiAccessContext] grants access (i.e. the requesting
- * user holds `CUSTOMERS_VIEW_PERSONAL_DATA`); otherwise the value is irreversibly replaced
+ * user holds `CUSTOMERS_VIEW`); otherwise the value is irreversibly replaced
  * with [pl.detailing.crm.shared.PII_MASK] **before it leaves the JVM**. There is no code
  * path that serializes an annotated field unmasked without an explicit, auditable
  * [PiiAccessContext.withGranted] block.

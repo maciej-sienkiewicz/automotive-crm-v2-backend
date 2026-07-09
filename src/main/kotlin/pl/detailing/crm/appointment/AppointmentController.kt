@@ -33,9 +33,12 @@ import pl.detailing.crm.smscampaigns.bookingconfirmation.SendBookingConfirmation
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.LocalDate
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/appointments")
+@RequiresPermission(Permission.VISITS_VIEW)
 class AppointmentController(
     private val createAppointmentHandler: CreateAppointmentHandler,
     private val updateAppointmentHandler: UpdateAppointmentHandler,
@@ -125,6 +128,7 @@ class AppointmentController(
     }
 
     @PostMapping
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createAppointment(@RequestBody request: CreateAppointmentRequest): ResponseEntity<AppointmentCreateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -248,6 +252,7 @@ class AppointmentController(
     }
 
     @PostMapping("/recurring")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createRecurringAppointment(
         @RequestBody request: CreateRecurringAppointmentRequest
     ): ResponseEntity<CreateRecurringAppointmentResponse> = runBlocking {
@@ -309,6 +314,7 @@ class AppointmentController(
     }
 
     @PutMapping("/{id}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateAppointment(
         @PathVariable id: String,
         @RequestBody request: CreateAppointmentRequest,
@@ -442,6 +448,7 @@ class AppointmentController(
     }
 
     @PatchMapping("/{id}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateAppointmentStatus(
         @PathVariable id: String,
         @RequestBody request: UpdateAppointmentStatusRequest
@@ -467,6 +474,7 @@ class AppointmentController(
     }
 
     @PostMapping("/{id}/restore")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun restoreAppointment(@PathVariable id: String): ResponseEntity<Unit> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -484,6 +492,7 @@ class AppointmentController(
     }
 
     @DeleteMapping("/{id}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteAppointment(
         @PathVariable id: String,
         @RequestParam(required = false) scope: String?
@@ -532,6 +541,7 @@ class AppointmentController(
      * Only OWNER and MANAGER roles are allowed.
      */
     @DeleteMapping("/{id}/permanent")
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun hardDeleteAppointment(
         @PathVariable id: String
     ): ResponseEntity<Void> = runBlocking {
@@ -551,6 +561,7 @@ class AppointmentController(
     }
 
     @PatchMapping("/{id}/sms-preferences")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateAppointmentSmsPreferences(
         @PathVariable id: String,
         @RequestBody request: UpdateSmsPreferencesRequest
@@ -571,6 +582,7 @@ class AppointmentController(
     }
 
     @PatchMapping("/{id}/title")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateAppointmentTitle(
         @PathVariable id: String,
         @RequestBody request: UpdateAppointmentTitleRequest

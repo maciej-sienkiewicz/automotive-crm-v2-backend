@@ -44,9 +44,12 @@ import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1/finance")
+@RequiresPermission(Permission.FINANCE_INVOICES)
 class FinanceController(
     private val createDocumentHandler: CreateFinancialDocumentHandler,
     private val listDocumentsHandler: ListFinancialDocumentsHandler,
@@ -265,12 +268,14 @@ class FinanceController(
     // ── Cash Register ─────────────────────────────────────────────────────────
 
     @GetMapping("/cash")
+    @RequiresPermission(Permission.FINANCE_MANAGE_CASH_REGISTER)
     fun getCashRegister(): ResponseEntity<CashRegisterResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(getCashRegisterHandler.getCashRegister(GetCashRegisterQuery(principal.studioId)).toResponse())
     }
 
     @GetMapping("/cash/history")
+    @RequiresPermission(Permission.FINANCE_MANAGE_CASH_REGISTER)
     fun getCashHistory(
         @RequestParam(defaultValue = "1")  page: Int,
         @RequestParam(defaultValue = "30") size: Int
@@ -290,6 +295,7 @@ class FinanceController(
     }
 
     @PostMapping("/cash/adjust")
+    @RequiresPermission(Permission.FINANCE_MANAGE_CASH_REGISTER)
     fun adjustCash(@RequestBody request: CashAdjustRequest): ResponseEntity<CashRegisterResponse> {
         requireManagerOrOwner()
         val principal = SecurityContextHelper.getCurrentUser()
@@ -309,6 +315,7 @@ class FinanceController(
     // ── Reporting ─────────────────────────────────────────────────────────────
 
     @GetMapping("/summary")
+    @RequiresPermission(Permission.FINANCE_VIEW_REPORTS)
     fun getSummary(
         @RequestParam(required = false) dateFrom: LocalDate?,
         @RequestParam(required = false) dateTo: LocalDate?
@@ -336,6 +343,7 @@ class FinanceController(
     }
 
     @GetMapping("/payment-method-report")
+    @RequiresPermission(Permission.FINANCE_VIEW_REPORTS)
     fun getPaymentMethodReport(
         @RequestParam(defaultValue = "MONTHLY") granularity: String,
         @RequestParam(required = false) dateFrom: LocalDate?,
