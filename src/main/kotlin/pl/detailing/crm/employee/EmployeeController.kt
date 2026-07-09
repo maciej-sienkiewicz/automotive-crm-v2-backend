@@ -21,6 +21,8 @@ import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
 @RestController
 @RequestMapping("/api/v1/employees")
@@ -37,6 +39,8 @@ class EmployeeController(
     private val userRepository: UserRepository
 ) {
 
+    // Deliberately NOT permission-gated: the coworker list (names) is needed by
+    // calendar/visit assignment views and requires no permission per the catalog.
     @GetMapping
     fun listEmployees(
         @RequestParam(required = false, defaultValue = "") search: String,
@@ -71,6 +75,7 @@ class EmployeeController(
     }
 
     @GetMapping("/{employeeId}")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun getEmployee(@PathVariable employeeId: String): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
@@ -82,6 +87,7 @@ class EmployeeController(
     }
 
     @PostMapping
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun createEmployee(@RequestBody request: CreateEmployeeRequest): ResponseEntity<EmployeeDetailResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -106,6 +112,7 @@ class EmployeeController(
     }
 
     @PutMapping("/{employeeId}")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun updateEmployee(
         @PathVariable employeeId: String,
         @RequestBody request: UpdateEmployeeRequest
@@ -132,6 +139,7 @@ class EmployeeController(
     }
 
     @DeleteMapping("/{employeeId}")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun deleteEmployee(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) {
@@ -151,6 +159,7 @@ class EmployeeController(
     // ─────────────────────────────────────────────────────────────────────────
 
     @PostMapping("/{employeeId}/account")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun provisionAccount(
         @PathVariable employeeId: String,
         @RequestBody request: ProvisionAccountRequest
@@ -170,6 +179,7 @@ class EmployeeController(
     }
 
     @PatchMapping("/{employeeId}/account/block")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun blockAccount(
         @PathVariable employeeId: String,
         @RequestBody request: BlockAccountRequest
@@ -187,6 +197,7 @@ class EmployeeController(
     }
 
     @DeleteMapping("/{employeeId}/account")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun deleteAccount(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) {
@@ -203,6 +214,7 @@ class EmployeeController(
     }
 
     @PostMapping("/{employeeId}/account/change-password")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun changeAccountPassword(
         @PathVariable employeeId: String,
         @RequestBody request: ChangeAccountPasswordRequest

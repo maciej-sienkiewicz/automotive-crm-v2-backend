@@ -11,6 +11,8 @@ import pl.detailing.crm.smscampaigns.automation.UpdateAutomationConfigHandler
 import pl.detailing.crm.smscampaigns.automation.UpdateAutomationRuleCommand
 import pl.detailing.crm.smscampaigns.automation.UpdateNotificationRuleCommand
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
 // ── Request / Response DTOs ──────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
  * GET  /api/v1/sms-campaigns/automation  → returns current config for the authenticated studio
  * PUT  /api/v1/sms-campaigns/automation  → replaces the config (OWNER / MANAGER only)
  */
+@RequiresPermission(Permission.COMMUNICATION_SEND)
 @RestController
 @RequestMapping("/api/v1/sms-campaigns/automation")
 class SmsAutomationController(

@@ -10,6 +10,7 @@ import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.observability.MetricsTags
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -22,7 +23,8 @@ class LoginHandler(
     private val passwordEncoder: PasswordEncoder,
     private val subscriptionService: SubscriptionService,
     private val redisTemplate: StringRedisTemplate,
-    private val meterRegistry: MeterRegistry
+    private val meterRegistry: MeterRegistry,
+    private val permissionCheckService: PermissionCheckService
 ) {
     companion object {
         private const val LOCKOUT_KEY_PREFIX  = "auth:lockout:"
@@ -93,7 +95,12 @@ class LoginHandler(
                     subscriptionEndsAt = subscriptionInfo.subscriptionEndsAt?.toString(),
                     trialEndsAt = subscriptionInfo.trialEndsAt?.toString(),
                     firstName = user.firstName,
-                    lastName = user.lastName
+                    lastName = user.lastName,
+                    // null = owner (unrestricted). Included here so the UI can hide
+                    // inaccessible modules immediately after login, before /auth/me.
+                    permissions = permissionCheckService
+                        .getPermissions(user.id, user.studioId)
+                        ?.map { it.name }
                 )
             )
 

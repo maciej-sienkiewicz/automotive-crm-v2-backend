@@ -9,7 +9,11 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.VisitComment
 import pl.detailing.crm.visit.domain.VisitCommentRevision
 import java.time.Instant
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
+// Comments are part of visit work documentation (see the Permission catalog).
+@RequiresPermission(Permission.VISITS_VIEW)
 @RestController
 @RequestMapping("/api/visits/{visitId}/comments")
 class VisitCommentController(

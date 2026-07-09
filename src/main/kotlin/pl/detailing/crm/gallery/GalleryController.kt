@@ -9,7 +9,11 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
+// The gallery shows visit photos — viewing photos rides on VISITS_VIEW.
+@RequiresPermission(Permission.VISITS_VIEW)
 @RestController
 @RequestMapping("/api/v1/gallery")
 class GalleryController(

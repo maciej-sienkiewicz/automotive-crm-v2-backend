@@ -7,7 +7,11 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
+// Notes live on the customer card — they are personal data.
+@RequiresPermission(Permission.CUSTOMERS_VIEW)
 @RestController
 @RequestMapping("/api/v1/customers/{customerId}/notes")
 class CustomerNoteController(

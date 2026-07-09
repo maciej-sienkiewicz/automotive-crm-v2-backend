@@ -16,7 +16,12 @@ import pl.detailing.crm.task.list.ListTasksHandler
 import pl.detailing.crm.task.list.ListTasksQuery
 import pl.detailing.crm.task.update.UpdateTaskCommand
 import pl.detailing.crm.task.update.UpdateTaskHandler
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
+// TASKS_VIEW covers viewing and completing tasks; creating/assigning and deleting
+// require TASKS_MANAGE (method-level overrides below).
+@RequiresPermission(Permission.TASKS_VIEW)
 @RestController
 @RequestMapping("/api/v1/tasks")
 class TasksController(
@@ -68,6 +73,7 @@ class TasksController(
      * POST /api/v1/tasks
      */
     @PostMapping
+    @RequiresPermission(Permission.TASKS_MANAGE)
     fun createTask(@RequestBody request: CreateTaskRequest): ResponseEntity<TaskDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -113,6 +119,7 @@ class TasksController(
      * DELETE /api/v1/tasks/{id}
      */
     @DeleteMapping("/{id}")
+    @RequiresPermission(Permission.TASKS_MANAGE)
     fun deleteTask(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 

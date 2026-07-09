@@ -15,11 +15,15 @@ import pl.detailing.crm.role.domain.PermissionModule
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.get.GetRoleHandler
 import pl.detailing.crm.role.list.ListRolesHandler
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.update.UpdateRoleCommand
 import pl.detailing.crm.role.update.UpdateRoleHandler
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
+// Role administration is part of account management (EMPLOYEES_MANAGE);
+// deleting a role additionally stays owner-only (checked in the handler below).
+@RequiresPermission(Permission.EMPLOYEES_MANAGE)
 @RestController
 @RequestMapping("/api/v1/roles")
 class RoleController(

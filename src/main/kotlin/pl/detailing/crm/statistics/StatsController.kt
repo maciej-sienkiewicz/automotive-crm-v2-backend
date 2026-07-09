@@ -15,6 +15,8 @@ import pl.detailing.crm.statistics.reports.query.*
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
 // ─── Response bodies ─────────────────────────────────────────────────────────
 
@@ -142,6 +144,7 @@ data class PeriodDetailResponse(
 
 // ─── Controller ──────────────────────────────────────────────────────────────
 
+@RequiresPermission(Permission.STATISTICS_VIEW)
 @RestController
 @RequestMapping("/api/v1/statistics")
 class StatsController(
