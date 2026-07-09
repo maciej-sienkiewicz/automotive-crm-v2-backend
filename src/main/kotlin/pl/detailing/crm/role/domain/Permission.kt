@@ -159,6 +159,15 @@ enum class Permission(
         PermissionModule.COMMUNICATION, "Wysyłanie wiadomości do klientów (SMS i e-mail)"
     ),
 
+    // ── Marketing ────────────────────────────────────────────────────────────
+    // One capability: whoever runs the studio's social media does all of it
+    // (competition monitoring, post generation, reviews).
+    MARKETING_MANAGE(
+        PermissionModule.MARKETING, "Marketing i social media",
+        description = "Monitoring konkurencji na Instagramie, generowanie postów " +
+            "i opinie Google."
+    ),
+
     // ── Statystyki ───────────────────────────────────────────────────────────
     STATISTICS_VIEW(PermissionModule.STATISTICS, "Podgląd statystyk"),
 

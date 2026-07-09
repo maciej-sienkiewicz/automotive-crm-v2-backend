@@ -11,6 +11,8 @@ import pl.detailing.crm.instagram.ai.generation.InstagramPostGenerationException
 import pl.detailing.crm.instagram.ai.generation.InstagramPostGeneratorService
 import pl.detailing.crm.instagram.ai.inspiration.InstagramInspirationService
 import pl.detailing.crm.instagram.ai.model.*
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
 /**
  * Kontroler REST dla modułu generowania postów Instagram za pomocą AI.
@@ -20,6 +22,7 @@ import pl.detailing.crm.instagram.ai.model.*
  *
  * Ścieżka bazowa: /api/v1/instagram/ai
  */
+@RequiresPermission(Permission.MARKETING_MANAGE)
 @RestController
 @RequestMapping("/api/v1/instagram/ai")
 class InstagramPostGenerationController(

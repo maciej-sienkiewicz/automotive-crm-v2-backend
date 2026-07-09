@@ -21,6 +21,9 @@ enum class PermissionModule(
     FINANCE("Finanse", FeatureKey.FINANCE),
     EMPLOYEES("Pracownicy", FeatureKey.EMPLOYEES),
     COMMUNICATION("Komunikacja", FeatureKey.SMS_EMAIL),
+    // Social media and competition monitoring (Instagram, Google Reviews) —
+    // distinct from COMMUNICATION, which is direct customer messaging.
+    MARKETING("Marketing", null),
     STATISTICS("Statystyki", null),
     LEADS("Leady", null),
     TASKS("Zadania", null),

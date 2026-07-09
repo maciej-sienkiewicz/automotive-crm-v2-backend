@@ -28,7 +28,10 @@ import pl.detailing.crm.instagram.summary.WeeklyStatDto
 import pl.detailing.crm.instagram.sync.InstagramSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.domain.Permission
 
+@RequiresPermission(Permission.MARKETING_MANAGE)
 @RestController
 @RequestMapping("/api/v1/instagram/profiles")
 class InstagramController(
