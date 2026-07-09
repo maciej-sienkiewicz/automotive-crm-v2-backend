@@ -20,10 +20,13 @@ import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import java.time.Instant
 
 @RestController
 @RequestMapping("/api/v1/employees")
+@RequiresPermission(Permission.EMPLOYEES_MANAGE)
 class EmployeeController(
     private val createEmployeeHandler: CreateEmployeeHandler,
     private val updateEmployeeHandler: UpdateEmployeeHandler,

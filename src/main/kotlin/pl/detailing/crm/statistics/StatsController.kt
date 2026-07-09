@@ -12,6 +12,8 @@ import pl.detailing.crm.statistics.reports.domain.Granularity
 import pl.detailing.crm.statistics.reports.domain.StatsDataPoint
 import pl.detailing.crm.statistics.reports.infrastructure.StatsRepository
 import pl.detailing.crm.statistics.reports.query.*
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -144,6 +146,7 @@ data class PeriodDetailResponse(
 
 @RestController
 @RequestMapping("/api/v1/statistics")
+@RequiresPermission(Permission.STATISTICS_VIEW)
 class StatsController(
     private val getCategoryStatsHandler: GetCategoryStatsHandler,
     private val getServiceStatsHandler: GetServiceStatsHandler,

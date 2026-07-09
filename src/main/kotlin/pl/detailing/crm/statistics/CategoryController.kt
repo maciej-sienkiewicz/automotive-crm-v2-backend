@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.ServiceCategoryId
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesCommand
 import pl.detailing.crm.statistics.category.assignservices.AssignServicesHandler
@@ -58,6 +60,7 @@ data class CategoryListResponse(
 
 @RestController
 @RequestMapping("/api/v1/service-categories")
+@RequiresPermission(Permission.STATISTICS_VIEW)
 class CategoryController(
     private val createCategoryHandler: CreateCategoryHandler,
     private val updateCategoryHandler: UpdateCategoryHandler,
