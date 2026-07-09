@@ -4,6 +4,7 @@ package pl.detailing.crm.config
 
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.AuthenticationException
@@ -187,6 +188,23 @@ class GlobalExceptionHandler(
             ErrorResponse("Usługa GUS niedostępna", ex.message ?: "Usługa GUS jest chwilowo niedostępna", Instant.now().toString())
         )
 
+    @ExceptionHandler(DataIntegrityViolationException::class)
+    fun handleDataIntegrityViolation(ex: DataIntegrityViolationException): ResponseEntity<ErrorResponse> {
+        val rawMessage = ex.message ?: ""
+        val userMessage = CONSTRAINT_MESSAGES.entries
+            .firstOrNull { (constraint, _) -> rawMessage.contains(constraint) }
+            ?.value
+            ?: "Operacja nie może zostać wykonana — naruszenie unikalności danych."
+        log.warn("DataIntegrityViolationException [{}]: {}", resolveContext(), rawMessage)
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(ErrorResponse(
+                error = "Konflikt danych",
+                message = userMessage,
+                timestamp = Instant.now().toString()
+            ))
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
         log.error("Unhandled exception [{}]", resolveContext(), ex)
@@ -194,9 +212,35 @@ class GlobalExceptionHandler(
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse(
                 error = "Błąd serwera",
-                message = "Wystąpił nieoczekiwany błąd: ${ex.message}",
+                message = "Wystąpił nieoczekiwany błąd. Spróbuj ponownie lub skontaktuj się z pomocą techniczną.",
                 timestamp = Instant.now().toString()
             ))
+    }
+
+    companion object {
+        private val CONSTRAINT_MESSAGES = mapOf(
+            "idx_customers_studio_phone" to "Klient z podanym numerem telefonu już istnieje w tym studiu.",
+            "idx_customers_studio_email" to "Klient z podanym adresem e-mail już istnieje w tym studiu.",
+            "idx_users_studio_email" to "Użytkownik z podanym adresem e-mail już istnieje.",
+            "idx_users_mobile_token" to "Podany token urządzenia mobilnego jest już przypisany.",
+            "idx_studio_roles_studio_name" to "Rola o podanej nazwie już istnieje w tym studiu.",
+            "idx_studios_email_alias" to "Podany alias e-mail jest już zajęty.",
+            "idx_visits_visit_number" to "Wizyta o podanym numerze już istnieje.",
+            "idx_sms_credit_balances_studio_id" to "Saldo kredytów SMS dla tego studia zostało już zainicjalizowane.",
+            "idx_sms_automation_configs_studio_id" to "Konfiguracja automatyzacji SMS dla tego studia już istnieje.",
+            "idx_email_automation_configs_studio_id" to "Konfiguracja automatyzacji e-mail dla tego studia już istnieje.",
+            "idx_demo_accounts_studio_id" to "Konto demo dla tego studia już istnieje.",
+            "idx_lead_estimations_lead_id" to "Wycena dla tego zapytania już istnieje.",
+            "idx_lead_user_quotes_lead_id" to "Oferta użytkownika dla tego zapytania już istnieje.",
+            "idx_studio_ig_studio_profile" to "Profil Instagram dla tego studia jest już połączony.",
+            "idx_ig_profiles_username" to "Profil Instagram o podanej nazwie użytkownika już istnieje.",
+            "idx_ig_posts_post_pk" to "Post Instagram o podanym identyfikatorze już istnieje.",
+            "idx_ig_reactions_studio_post" to "Reakcja studia na ten post już istnieje.",
+            "idx_ig_stories_story_id" to "Story Instagram o podanym identyfikatorze już istnieje.",
+            "idx_protocol_mappings_unique" to "Mapowanie pola protokołu już istnieje.",
+            "idx_consent_templates_def_version" to "Szablon zgody w tej wersji już istnieje.",
+            "idx_sms_send_log_appointment_trigger" to "Wiadomość SMS dla tej wizyty i zdarzenia została już wysłana."
+        )
     }
 }
 
