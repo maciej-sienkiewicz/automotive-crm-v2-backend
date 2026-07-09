@@ -20,7 +20,7 @@ import pl.detailing.crm.role.domain.Permission
  * fun listInvoices(): ResponseEntity<List<InvoiceDto>> { ... }
  * ```
  */
-@Target(AnnotationTarget.FUNCTION)
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 @MustBeDocumented
 annotation class RequiresPermission(val value: Permission)
