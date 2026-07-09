@@ -17,26 +17,26 @@ class AddOnEntity(
     val key: AddOnKey,
 
     @Column(nullable = false, length = 100)
-    val name: String,
+    var name: String,
 
     @Column(columnDefinition = "TEXT")
-    val description: String? = null,
+    var description: String? = null,
 
     /**
      * Null means the add-on is not yet priced — it exists in the catalog
      * but cannot be purchased until a price is set.
      */
     @Column(name = "monthly_price_gross_cents")
-    val monthlyPriceGrossCents: Long? = null,
+    var monthlyPriceGrossCents: Long? = null,
 
     @Column(name = "is_active", nullable = false)
-    val isActive: Boolean = true,
+    var isActive: Boolean = true,
 
     /**
      * False when the module is under development — visible in catalog but not purchasable.
      */
     @Column(name = "is_available", nullable = false)
-    val isAvailable: Boolean = true,
+    var isAvailable: Boolean = true,
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(

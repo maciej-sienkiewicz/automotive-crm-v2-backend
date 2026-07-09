@@ -41,13 +41,20 @@ class PricingService(
         val totalCents = if (hasUndefinedPrices) null
         else basePlan.monthlyPriceGrossCents + addOnLines.sumOf { it.monthlyPriceGrossCents!! }
 
+        val fullPlan = planRepository.findByKey(PlanKey.FULL)
+        val savings = if (totalCents != null && fullPlan != null && totalCents > fullPlan.monthlyPriceGrossCents)
+            totalCents - fullPlan.monthlyPriceGrossCents
+        else null
+
         return CustomPriceResponse(
             basePlanKey = basePlan.key.name,
             basePlanName = basePlan.name,
             basePlanMonthlyPriceCents = basePlan.monthlyPriceGrossCents,
             addOns = addOnLines,
             totalMonthlyPriceCents = totalCents,
-            hasUndefinedPrices = hasUndefinedPrices
+            hasUndefinedPrices = hasUndefinedPrices,
+            fullPlanMonthlyPriceCents = fullPlan?.monthlyPriceGrossCents,
+            savingsWithFullCents = savings
         )
     }
 }

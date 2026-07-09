@@ -62,13 +62,19 @@ data class AddOnDto(
 
 data class CustomPriceRequest(val addOnKeys: List<AddOnKey>)
 
+/**
+ * [fullPlanMonthlyPriceCents] / [savingsWithFullCents] let the frontend upsell FULL:
+ * when a self-assembled package exceeds the FULL price, savings are positive.
+ */
 data class CustomPriceResponse(
     val basePlanKey: String,
     val basePlanName: String,
     val basePlanMonthlyPriceCents: Long,
     val addOns: List<AddOnPriceLineDto>,
     val totalMonthlyPriceCents: Long?,
-    val hasUndefinedPrices: Boolean
+    val hasUndefinedPrices: Boolean,
+    val fullPlanMonthlyPriceCents: Long?,
+    val savingsWithFullCents: Long?
 )
 
 data class AddOnPriceLineDto(
@@ -78,13 +84,8 @@ data class AddOnPriceLineDto(
 )
 
 data class AssignPlanRequest(val planKey: PlanKey)
-data class ActivateAddOnRequest(val addOnKey: AddOnKey)
 data class PreviewPlanChangeRequest(val newPlanKey: PlanKey)
 data class PreviewAddOnRequest(val addOnKey: AddOnKey)
-data class ActivatePackageRequest(
-    val planKey: PlanKey,
-    val addOnKeys: List<AddOnKey> = emptyList()
-)
 
 /**
  * Unified "my subscription" view — combines billing status with plan/add-on details.
@@ -160,10 +161,13 @@ data class AddOnActivationPreviewDto(
  *   POST /api/v1/subscription/preview-plan-change → shows proration/timing before change
  *   POST /api/v1/subscription/preview-add-on      → shows prorated cost before activating
  *
- * Mutation (OWNER only, with billing):
- *   POST   /api/v1/subscription/change-plan       → upgrade (immediate) or downgrade (deferred)
- *   POST   /api/v1/subscription/activate-add-on   → immediate + prorated billing
- *   DELETE /api/v1/subscription/add-ons/{key}     → deactivate add-on (end of period)
+ * Free mutations (OWNER only — no payment involved):
+ *   POST   /api/v1/subscription/change-plan       → schedule a downgrade (deferred to period end)
+ *   DELETE /api/v1/subscription/pending-plan-change → cancel a scheduled downgrade
+ *   DELETE /api/v1/subscription/add-ons/{key}     → deactivate add-on (no refund)
+ *
+ * Paid mutations (purchase, renewal, upgrade, module purchase) go through
+ * POST /api/v1/subscription/checkout → Przelewy24 (see payments module).
  */
 @RestController
 class EntitlementsController(
@@ -307,9 +311,8 @@ class EntitlementsController(
     // ── Mutation ──────────────────────────────────────────────────────────────
 
     /**
-     * Changes the studio's plan with appropriate billing:
-     * - Upgrade → immediate, prorated charge for the price difference
-     * - Downgrade → deferred to end of billing period, no charge
+     * Schedules a downgrade to a cheaper plan (takes effect at period end, no charge).
+     * Upgrades are rejected with 400 — they require payment via POST /checkout.
      *
      * Always preview first via POST /preview-plan-change.
      */
@@ -317,32 +320,7 @@ class EntitlementsController(
     fun changePlan(@RequestBody request: AssignPlanRequest): ResponseEntity<EntitlementsResponse> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        planManagementService.changePlan(studioId, request.planKey)
-        return getMyEntitlements()
-    }
-
-    /**
-     * First-purchase bundle: activates the base plan and all selected add-ons in one request.
-     * Only valid when the studio has no active subscription.
-     * Returns the resulting entitlements immediately after activation.
-     */
-    @PostMapping("/api/v1/subscription/activate-package")
-    fun activatePackage(@RequestBody request: ActivatePackageRequest): ResponseEntity<EntitlementsResponse> {
-        requireOwner()
-        val studioId = SecurityContextHelper.getCurrentStudioId()
-        planManagementService.activatePackage(studioId, request.planKey, request.addOnKeys)
-        return getMyEntitlements()
-    }
-
-    /**
-     * Activates an add-on immediately with prorated billing for remaining days.
-     * Preview first via POST /preview-add-on.
-     */
-    @PostMapping("/api/v1/subscription/activate-add-on")
-    fun activateAddOn(@RequestBody request: ActivateAddOnRequest): ResponseEntity<EntitlementsResponse> {
-        requireOwner()
-        val studioId = SecurityContextHelper.getCurrentStudioId()
-        planManagementService.activateAddOnWithBilling(studioId, request.addOnKey)
+        planManagementService.schedulePlanDowngrade(studioId, request.planKey)
         return getMyEntitlements()
     }
 

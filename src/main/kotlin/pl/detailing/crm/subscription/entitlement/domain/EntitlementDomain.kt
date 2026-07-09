@@ -33,7 +33,7 @@ data class AddOn(
 /**
  * Resolved entitlement snapshot for a studio — computed once and cached in Redis.
  *
- * [planKey] is the active plan (BASIC or EVERYTHING).
+ * [planKey] is the active plan (BASIC or FULL).
  * [enabledFeatures] is the union of features from the plan and all active add-ons.
  * [activeAddOnKeys] lists every add-on currently active for the studio.
  */
@@ -48,11 +48,15 @@ data class StudioEntitlements(
 
 enum class PlanKey(val displayName: String) {
     BASIC("Podstawowy"),
-    EVERYTHING("Wszystko")
+    FULL("Pełny")
 }
 
 enum class AddOnKey(val displayName: String) {
-    FINANCE_MODULE("Moduł Finansów"),
-    EMPLOYEES_MODULE("Moduł Pracowników"),
-    SMS_EMAIL_MODULE("SMS i E-maile")
+    AI_LEAD_ASSISTANT("Asystent AI przy obsłudze leadów"),
+    INSTAGRAM_MONITORING("Monitoring konkurencji na Instagramie"),
+    CLIENT_COMMUNICATION("Automatyzacja kontaktu z klientem (SMS i E-mail)"),
+    MARKETING_CAMPAIGNS("Kampanie marketingowe SMS i E-mail"),
+    E_SIGNATURES("Podpisy elektroniczne"),
+    FINANCE_MODULE("Kontrola nad finansami"),
+    STATISTICS_MODULE("Statystyki")
 }

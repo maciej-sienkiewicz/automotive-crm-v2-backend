@@ -7,8 +7,6 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.SubscriptionStatus
-import pl.detailing.crm.subscription.domain.SubscriptionPlan
-import pl.detailing.crm.subscription.domain.SubscriptionPlanType
 import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository
 import pl.detailing.crm.subscription.entitlement.infrastructure.PlanJpaRepository
 import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
@@ -26,17 +24,6 @@ data class SubscriptionStatusResponse(
     val trialEndsAt: Instant?,
     val trialUsed: Boolean
 )
-
-data class SubscriptionPlanDto(
-    val type: SubscriptionPlanType,
-    val name: String,
-    val durationDays: Int,
-    val priceGross: BigDecimal,
-    val currency: String,
-    val pricePerMonth: BigDecimal
-)
-
-data class PurchaseSubscriptionRequest(val planType: SubscriptionPlanType)
 
 /**
  * Single entry in the payment/event history.
@@ -88,9 +75,11 @@ data class PaymentHistoryResponse(
  * so expired studios can still reach them to renew their subscription.
  *
  * GET  /api/v1/subscription/status          → current subscription state
- * GET  /api/v1/subscription/plans           → available billing plans with pricing
- * POST /api/v1/subscription/purchase        → buy a plan (OWNER only)
+ * POST /api/v1/subscription/start-trial     → start the free trial (OWNER only)
  * GET  /api/v1/subscription/payment-history → full billing event history (OWNER only)
+ *
+ * Purchases and renewals are handled by the payments module
+ * (POST /api/v1/subscription/checkout → Przelewy24).
  */
 @RestController
 @RequestMapping("/api/v1/subscription")
@@ -108,12 +97,6 @@ class SubscriptionController(
         ResponseEntity.ok(info.toResponse())
     }
 
-    @GetMapping("/plans")
-    fun getPlans(): ResponseEntity<List<SubscriptionPlanDto>> {
-        val plans = SubscriptionPlan.ALL.map { it.toDto() }
-        return ResponseEntity.ok(plans)
-    }
-
     @PostMapping("/start-trial")
     fun startTrial(): ResponseEntity<SubscriptionStatusResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -121,20 +104,6 @@ class SubscriptionController(
             throw ForbiddenException("Uruchomienie trialu jest dostępne wyłącznie dla właściciela studia")
         }
         val info = subscriptionService.startTrial(principal.studioId)
-        ResponseEntity.ok(info.toResponse())
-    }
-
-    @PostMapping("/purchase")
-    fun purchase(
-        @RequestBody request: PurchaseSubscriptionRequest
-    ): ResponseEntity<SubscriptionStatusResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        if (!principal.isOwner) {
-            throw ForbiddenException("Zakup subskrypcji jest dostępny wyłącznie dla właściciela studia")
-        }
-
-        val info = subscriptionService.purchaseSubscription(principal.studioId, request.planType)
         ResponseEntity.ok(info.toResponse())
     }
 
@@ -219,16 +188,4 @@ private fun SubscriptionInfo.toResponse() = SubscriptionStatusResponse(
     subscriptionEndsAt = subscriptionEndsAt,
     trialEndsAt = trialEndsAt,
     trialUsed = trialUsed
-)
-
-private fun SubscriptionPlan.toDto() = SubscriptionPlanDto(
-    type = type,
-    name = name,
-    durationDays = durationDays,
-    priceGross = priceGross,
-    currency = currency,
-    pricePerMonth = when (type) {
-        SubscriptionPlanType.MONTHLY -> priceGross
-        SubscriptionPlanType.YEARLY  -> priceGross.divide(BigDecimal(12), 2, java.math.RoundingMode.HALF_UP)
-    }
 )

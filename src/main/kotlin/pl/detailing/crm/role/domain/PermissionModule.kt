@@ -19,12 +19,13 @@ enum class PermissionModule(
     // Covers vehicles too: a vehicle is customer data, not a standalone permission area.
     CUSTOMERS("Klienci i pojazdy", FeatureKey.CUSTOMERS),
     FINANCE("Finanse", FeatureKey.FINANCE),
-    EMPLOYEES("Pracownicy", FeatureKey.EMPLOYEES),
+    // Employee management ships with the base product — no paid module gates it.
+    EMPLOYEES("Pracownicy", null),
     COMMUNICATION("Komunikacja", FeatureKey.SMS_EMAIL),
     // Social media and competition monitoring (Instagram, Google Reviews) —
     // distinct from COMMUNICATION, which is direct customer messaging.
-    MARKETING("Marketing", null),
-    STATISTICS("Statystyki", null),
+    MARKETING("Marketing", FeatureKey.CAMPAIGNS),
+    STATISTICS("Statystyki", FeatureKey.STATISTICS),
     LEADS("Leady", null),
     TASKS("Zadania", null),
     // Service catalog (price list) — no feature gate; access is also implied by Finance/Statistics.

@@ -3,7 +3,6 @@ package pl.detailing.crm.subscription.pricing
 import org.springframework.stereotype.Service
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
-import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentJpaRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -28,8 +27,7 @@ import java.time.temporal.ChronoUnit
  */
 @Service
 class ProrationService(
-    private val studioRepository: StudioRepository,
-    private val paymentRepository: SubscriptionPaymentJpaRepository
+    private val studioRepository: StudioRepository
 ) {
 
     /**
@@ -105,6 +103,10 @@ class ProrationService(
             currency = "PLN"
         )
     }
+
+    /** Returns when the active billing period ends, or null if trial. */
+    fun periodEndsAt(studioId: StudioId): Instant? =
+        studioRepository.findByStudioId(studioId.value)?.subscriptionEndsAt
 
     /** Returns how many days are left in the active billing period, or null if trial. */
     fun daysRemainingInPeriod(studioId: StudioId): Long? {

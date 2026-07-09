@@ -4,12 +4,12 @@ package pl.detailing.crm.subscription.entitlement
  * Canonical set of feature identifiers used throughout the entitlement system.
  *
  * BASIC plan: CALENDAR, VISITS, CUSTOMERS, VEHICLES, DOCUMENTS, GALLERY
- * EVERYTHING plan: all features
- * Individual add-ons unlock: FINANCE, EMPLOYEES, SMS_EMAIL
+ * FULL plan: all features
+ * Each purchasable add-on module unlocks exactly one of the remaining features.
  */
 enum class FeatureKey(val displayName: String) {
 
-    // ── Pakiet Podstawowy ────────────────────────────────────────────────────
+    // ── Pakiet BASIC ─────────────────────────────────────────────────────────
     CALENDAR("Kalendarz"),
     VISITS("Wizyty"),
     CUSTOMERS("Klienci"),
@@ -17,8 +17,12 @@ enum class FeatureKey(val displayName: String) {
     DOCUMENTS("Dokumenty"),
     GALLERY("Galeria"),
 
-    // ── Add-ony / Pakiet Wszystko ────────────────────────────────────────────
-    FINANCE("Moduł Finansów"),
-    EMPLOYEES("Moduł Pracowników"),
-    SMS_EMAIL("SMS i E-maile")
+    // ── Moduły dodatkowe / Pakiet FULL ───────────────────────────────────────
+    AI_LEADS("Asystent AI dla leadów"),
+    INSTAGRAM_MONITORING("Monitoring konkurencji na Instagramie"),
+    SMS_EMAIL("Automatyzacja kontaktu (SMS i E-mail)"),
+    CAMPAIGNS("Kampanie marketingowe SMS i E-mail"),
+    E_SIGNATURES("Podpisy elektroniczne"),
+    FINANCE("Kontrola nad finansami"),
+    STATISTICS("Statystyki")
 }

@@ -17,10 +17,10 @@ class FeatureEntity(
     val key: FeatureKey,
 
     @Column(nullable = false, length = 100)
-    val name: String,
+    var name: String,
 
     @Column(columnDefinition = "TEXT")
-    val description: String? = null,
+    var description: String? = null,
 
     @Column(name = "is_active", nullable = false)
     val isActive: Boolean = true

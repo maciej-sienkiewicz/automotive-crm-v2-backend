@@ -61,6 +61,9 @@ class SecurityConfig {
                 auth.requestMatchers("/api/sms/inbound").permitAll()
                 // CloudFlare email webhook — public, token-validated by CloudflareWebhookTokenFilter
                 auth.requestMatchers("/api/v1/inbound/email").permitAll()
+                // Przelewy24 payment status webhook — server-to-server, authenticated
+                // by SHA-384 CRC signature + verify call back to the P24 API
+                auth.requestMatchers("/api/v1/payments/p24/status").permitAll()
 
                 auth.requestMatchers(
                     "/api/auth/**",

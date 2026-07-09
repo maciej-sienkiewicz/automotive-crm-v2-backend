@@ -8,6 +8,7 @@ import java.util.UUID
 
 enum class SubscriptionEventType(val displayName: String) {
     SUBSCRIPTION_PURCHASE("Zakup subskrypcji"),
+    SUBSCRIPTION_RENEWAL("Przedłużenie subskrypcji"),
     PLAN_UPGRADE("Zmiana planu (upgrade)"),
     PLAN_DOWNGRADE("Zmiana planu (downgrade)"),
     ADD_ON_ACTIVATION("Aktywacja modułu"),
@@ -18,10 +19,10 @@ enum class SubscriptionEventType(val displayName: String) {
  * Immutable audit log of all billing-relevant subscription events.
  *
  * Written by:
- *   - [SubscriptionService.purchaseSubscription] → SUBSCRIPTION_PURCHASE
- *   - [PlanManagementService.changePlan]          → PLAN_UPGRADE | PLAN_DOWNGRADE
- *   - [PlanManagementService.activateAddOnWithBilling] → ADD_ON_ACTIVATION
- *   - [EntitlementService.deactivateAddOn]         → ADD_ON_DEACTIVATION
+ *   - OrderFulfillmentService (payments)           → SUBSCRIPTION_PURCHASE | SUBSCRIPTION_RENEWAL
+ *                                                    | PLAN_UPGRADE | ADD_ON_ACTIVATION
+ *   - PlanManagementService.schedulePlanDowngrade  → PLAN_DOWNGRADE
+ *   - PlanManagementService.deactivateAddOnWithLog → ADD_ON_DEACTIVATION
  *
  * [amountInCents] is 0 for events with no charge (downgrades, deactivations).
  * [planKey]  is always set — records the plan active at the time of the event.

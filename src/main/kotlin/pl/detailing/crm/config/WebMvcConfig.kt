@@ -34,7 +34,12 @@ class WebMvcConfig(
                 "/api/v1/subscription/preview-add-on",
                 "/api/v1/subscription/payment-history",
                 "/api/v1/subscription/start-trial",
-                "/api/v1/subscription/status"
+                "/api/v1/subscription/status",
+                // Checkout must work for expired studios — that's when they need to pay
+                "/api/v1/subscription/checkout",
+                "/api/v1/subscription/orders/**",
+                // Przelewy24 server-to-server notifications (no session at all)
+                "/api/v1/payments/**"
             )
     }
 }

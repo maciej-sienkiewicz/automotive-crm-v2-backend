@@ -9,28 +9,21 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
-import pl.detailing.crm.subscription.domain.SubscriptionPayment
-import pl.detailing.crm.subscription.domain.SubscriptionPlan
-import pl.detailing.crm.subscription.domain.SubscriptionPlanType
-import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentEntity
-import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentJpaRepository
-import pl.detailing.crm.smscredits.payment.MockPaymentGateway
-import pl.detailing.crm.smscredits.payment.PaymentRequest
-import pl.detailing.crm.subscription.entitlement.EntitlementService
-import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
-import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
-import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogRepository
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
+/**
+ * Subscription lifecycle: studio creation, trial management, status queries
+ * and expiry sweeps.
+ *
+ * All money movement lives in the payments module ([pl.detailing.crm.payments]):
+ * purchases, renewals, upgrades and module activations go through
+ * CheckoutService → Przelewy24 → OrderFulfillmentService.
+ */
 @Service
 class SubscriptionService(
-    private val studioRepository: StudioRepository,
-    private val paymentJpaRepository: SubscriptionPaymentJpaRepository,
-    private val paymentGateway: MockPaymentGateway,
-    private val entitlementService: EntitlementService,
-    private val paymentLogRepository: SubscriptionPaymentLogRepository
+    private val studioRepository: StudioRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -112,81 +105,6 @@ class SubscriptionService(
         val studio = getStudio(studioId)
         studio.toSubscriptionInfo()
     }
-
-    // ─── Purchase ─────────────────────────────────────────────────────────────
-
-    @Transactional
-    suspend fun purchaseSubscription(studioId: StudioId, planType: SubscriptionPlanType): SubscriptionInfo =
-        withContext(Dispatchers.IO) {
-            val entity = studioRepository.findByStudioId(studioId.value)
-                ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
-
-            val plan = SubscriptionPlan.forType(planType)
-
-            val paymentResult = paymentGateway.charge(
-                PaymentRequest(
-                    amountInCents = plan.priceGrossInCents,
-                    currency = plan.currency,
-                    description = "Subskrypcja ${plan.name} — ${plan.durationDays} dni",
-                    studioId = studioId.value
-                )
-            )
-
-            if (!paymentResult.success) {
-                throw ValidationException("Płatność nie powiodła się: ${paymentResult.message}")
-            }
-
-            // Correct renewal: extend from existing end date if subscription is still active,
-            // otherwise start from now — so two consecutive purchases stack properly.
-            val now = Instant.now()
-            val baseDate = if (
-                entity.subscriptionStatus == SubscriptionStatus.ACTIVE &&
-                entity.subscriptionEndsAt != null &&
-                entity.subscriptionEndsAt!!.isAfter(now)
-            ) entity.subscriptionEndsAt!! else now
-
-            val newEndsAt = baseDate.plus(plan.durationDays.toLong(), ChronoUnit.DAYS)
-
-            entity.subscriptionStatus = SubscriptionStatus.ACTIVE
-            entity.subscriptionEndsAt = newEndsAt
-            entity.trialEndsAt = null
-            studioRepository.save(entity)
-
-            paymentJpaRepository.save(
-                SubscriptionPaymentEntity(
-                    id = UUID.randomUUID(),
-                    studioId = studioId.value,
-                    planType = planType,
-                    durationDays = plan.durationDays,
-                    amountInCents = plan.priceGrossInCents,
-                    currency = plan.currency,
-                    paymentTransactionId = paymentResult.transactionId,
-                    subscriptionEndsAt = newEndsAt,
-                    createdAt = now
-                )
-            )
-
-            logger.info(
-                "Studio={} purchased {} subscription — extends to {} (txId={})",
-                studioId, planType, newEndsAt, paymentResult.transactionId
-            )
-
-            // Invalidate the entitlement cache so the next request reflects the new subscription state
-            entitlementService.evictEntitlementsCache(studioId)
-
-            paymentLogRepository.save(
-                SubscriptionPaymentLogEntity(
-                    studioId = studioId.value,
-                    eventType = SubscriptionEventType.SUBSCRIPTION_PURCHASE,
-                    amountInCents = plan.priceGrossInCents,
-                    currency = plan.currency,
-                    transactionId = paymentResult.transactionId,
-                    description = "Subskrypcja ${plan.name} — ${plan.durationDays} dni (do ${newEndsAt})"
-                )
-            )
-
-            entity.toDomain().toSubscriptionInfo()
-        }
 
     // ─── Maintenance ──────────────────────────────────────────────────────────
 

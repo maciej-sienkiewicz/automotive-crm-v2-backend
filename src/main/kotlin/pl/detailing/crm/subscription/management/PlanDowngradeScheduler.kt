@@ -15,7 +15,7 @@ import java.time.Instant
  * Scheduled job that applies deferred plan downgrades.
  *
  * Background:
- *   When a studio requests a downgrade (e.g. EVERYTHING → BASIC), the change is not
+ *   When a studio requests a downgrade (e.g. FULL → BASIC), the change is not
  *   applied immediately — the studio keeps its current plan until the end of its paid
  *   billing period. [PlanManagementService.changePlan] records the intent as a
  *   [PendingPlanChangeEntity] with [PendingPlanChangeStatus.PENDING].
