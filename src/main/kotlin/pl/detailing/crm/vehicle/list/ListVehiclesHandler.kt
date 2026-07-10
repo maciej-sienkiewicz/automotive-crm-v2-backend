@@ -14,7 +14,8 @@ import java.math.BigDecimal
 import java.util.UUID
 
 data class VehicleListQuery(
-    val serviceIds: List<UUID>? = null
+    val serviceIds: List<UUID>? = null,
+    val includeDeleted: Boolean = false
 )
 
 @Service
@@ -81,8 +82,14 @@ class ListVehiclesHandler(
 
     private fun resolveVehicleEntities(studioId: StudioId, query: VehicleListQuery) =
         with(query) {
+            val allVehicles = if (includeDeleted) {
+                vehicleRepository.findAllByStudioId(studioId.value)
+            } else {
+                vehicleRepository.findByStudioId(studioId.value)
+            }
+
             if (serviceIds.isNullOrEmpty()) {
-                return@with vehicleRepository.findByStudioId(studioId.value)
+                return@with allVehicles
             }
 
             val allowedVehicleIds = visitRepository.findVehicleIdsByServiceIds(
@@ -91,7 +98,7 @@ class ListVehiclesHandler(
             ).toSet()
 
             if (allowedVehicleIds.isEmpty()) emptyList()
-            else vehicleRepository.findByStudioId(studioId.value).filter { it.id in allowedVehicleIds }
+            else allVehicles.filter { it.id in allowedVehicleIds }
         }
 }
 

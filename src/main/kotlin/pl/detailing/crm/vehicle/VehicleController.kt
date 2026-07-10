@@ -76,7 +76,8 @@ class VehicleController(
         @RequestParam(required = false) maxRevenue: Double?,
         @RequestParam(required = false) services: List<String>?,
         @RequestParam(required = false) lastServiceWithinDays: Int?,
-        @RequestParam(required = false) notServicedSinceDays: Int?
+        @RequestParam(required = false) notServicedSinceDays: Int?,
+        @RequestParam(required = false, defaultValue = "false") includeDeleted: Boolean
     ): ResponseEntity<VehicleListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -84,7 +85,7 @@ class VehicleController(
             ?.mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() }
 
-        val query = VehicleListQuery(serviceIds = serviceIds)
+        val query = VehicleListQuery(serviceIds = serviceIds, includeDeleted = includeDeleted)
         var vehicles = listVehiclesHandler.handle(principal.studioId, query)
 
         // Filter by search
