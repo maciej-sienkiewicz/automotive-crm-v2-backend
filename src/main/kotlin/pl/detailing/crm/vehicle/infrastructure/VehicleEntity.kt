@@ -62,6 +62,9 @@ class VehicleEntity(
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now(),
 
+    @Column(name = "deleted_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var deletedAt: Instant? = null,
+
     @OneToMany(mappedBy = "vehicle", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     val photos: MutableList<VehiclePhotoEntity> = mutableListOf()
 ) {
@@ -79,7 +82,8 @@ class VehicleEntity(
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        deletedAt = deletedAt
     )
 
     companion object {
@@ -97,7 +101,8 @@ class VehicleEntity(
             createdBy = vehicle.createdBy.value,
             updatedBy = vehicle.updatedBy.value,
             createdAt = vehicle.createdAt,
-            updatedAt = vehicle.updatedAt
+            updatedAt = vehicle.updatedAt,
+            deletedAt = vehicle.deletedAt
         )
     }
 }

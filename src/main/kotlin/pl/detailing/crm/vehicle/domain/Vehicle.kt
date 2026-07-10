@@ -17,7 +17,8 @@ data class Vehicle(
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val deletedAt: Instant? = null
 )
 
 data class VehicleOwner(

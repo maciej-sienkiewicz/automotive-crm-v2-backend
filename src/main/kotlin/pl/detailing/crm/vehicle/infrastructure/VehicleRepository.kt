@@ -24,7 +24,7 @@ interface VehicleRepository : JpaRepository<VehicleEntity, UUID> {
         @Param("studioId") studioId: UUID
     ): VehicleEntity?
 
-    @Query("SELECT v FROM VehicleEntity v WHERE v.studioId = :studioId")
+    @Query("SELECT v FROM VehicleEntity v WHERE v.studioId = :studioId AND v.status != 'ARCHIVED'")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<VehicleEntity>
 
     @Query("SELECT v FROM VehicleEntity v WHERE v.studioId = :studioId AND v.status = 'ACTIVE'")

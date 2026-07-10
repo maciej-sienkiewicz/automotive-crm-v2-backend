@@ -81,7 +81,7 @@ class GetVehicleDetailHandler(
                     ),
                     createdAt = vehicleEntity.createdAt,
                     updatedAt = vehicleEntity.updatedAt,
-                    deletedAt = null
+                    deletedAt = vehicleEntity.deletedAt
                 ),
                 recentVisits = emptyList(),
                 activities = emptyList(),

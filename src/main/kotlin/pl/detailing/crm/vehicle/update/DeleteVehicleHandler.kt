@@ -29,9 +29,11 @@ class DeleteVehicleHandler(
         val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
 
         // Soft delete - archive the vehicle
+        val now = Instant.now()
         vehicleEntity.status = VehicleStatus.ARCHIVED
         vehicleEntity.updatedBy = command.userId.value
-        vehicleEntity.updatedAt = Instant.now()
+        vehicleEntity.updatedAt = now
+        vehicleEntity.deletedAt = now
 
         vehicleRepository.save(vehicleEntity)
 
