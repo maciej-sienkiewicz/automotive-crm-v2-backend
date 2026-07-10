@@ -85,13 +85,17 @@ class CheckoutService(
             )
         )
 
-        // Nothing to charge (trial activation) or mock mode — settle immediately.
-        if (order.amountCents <= 0 || properties.mockMode) {
+        // Nothing to charge, mock explicitly enabled, or no P24 credentials → settle immediately.
+        val useMock = properties.mockMode || !properties.isConfigured
+        if (order.amountCents <= 0 || useMock) {
             order.status = PaymentOrderStatus.PAID
             order.paidAt = java.time.Instant.now()
             orderRepository.save(order)
             fulfillmentService.fulfill(order)
-            logger.info("Order {} settled without P24 (amount={} mockMode={})", order.id, order.amountCents, properties.mockMode)
+            logger.info(
+                "Order {} settled without P24 (amount={} mockMode={} configured={})",
+                order.id, order.amountCents, properties.mockMode, properties.isConfigured
+            )
             return order.toResponse(paymentUrl = null)
         }
 
