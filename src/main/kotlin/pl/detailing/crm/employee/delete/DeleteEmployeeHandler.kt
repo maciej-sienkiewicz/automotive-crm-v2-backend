@@ -6,12 +6,14 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
+import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserRepository
 
 @Service
 class DeleteEmployeeHandler(
     private val employeeRepository: EmployeeRepository,
+    private val employeeLeaveRepository: EmployeeLeaveRepository,
     private val userRepository: UserRepository,
     private val auditService: AuditService
 ) {
@@ -31,6 +33,9 @@ class DeleteEmployeeHandler(
         }
 
         val fullName = "${employeeEntity.firstName} ${employeeEntity.lastName}"
+
+        // Urlopy pracownika nie mogą pozostać osierocone — zasilają kalendarz zespołu
+        employeeLeaveRepository.deleteByStudioIdAndEmployeeId(studioId.value, employeeId.value)
         employeeRepository.delete(employeeEntity)
 
         auditService.log(LogAuditCommand(

@@ -37,4 +37,6 @@ interface EmployeeLeaveRepository : JpaRepository<EmployeeLeaveEntity, UUID> {
         @Param("from") from: LocalDate,
         @Param("to") to: LocalDate
     ): List<EmployeeLeaveEntity>
+
+    fun deleteByStudioIdAndEmployeeId(studioId: UUID, employeeId: UUID)
 }
