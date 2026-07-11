@@ -85,7 +85,8 @@ class SignatureRequestLifecycleService(
             tabletId = tabletId,
             documentName = declined.documentName,
             signerName = declined.signerName,
-            status = declined.status.name
+            status = declined.status.name,
+            errorMessage = reason
         )
         return declined
     }

@@ -326,7 +326,8 @@ class SubmitSignatureHandler(
             tabletId = command.tabletId,
             documentName = request.documentName,
             signerName = request.signerName,
-            status = failed.status.name
+            status = failed.status.name,
+            errorMessage = reason
         )
         logger.warn("Signature request {} FAILED: {}", request.id, reason)
         return failed

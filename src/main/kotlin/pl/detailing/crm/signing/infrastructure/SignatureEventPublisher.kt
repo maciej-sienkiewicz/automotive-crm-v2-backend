@@ -35,7 +35,8 @@ class SignatureEventPublisher(
         tabletId: String? = null,
         documentName: String? = null,
         signerName: String? = null,
-        status: String? = null
+        status: String? = null,
+        errorMessage: String? = null
     ) {
         val payload = objectMapper.writeValueAsString(
             mapOf(
@@ -46,6 +47,7 @@ class SignatureEventPublisher(
                 "documentName" to documentName,
                 "signerName" to signerName,
                 "status" to status,
+                "errorMessage" to errorMessage,
                 "occurredAt" to Instant.now().toString()
             )
         )
@@ -118,6 +120,7 @@ class SignatureRequestMessageListener(
                 documentName = payload["documentName"] as? String,
                 signerName = payload["signerName"] as? String,
                 status = payload["status"] as? String,
+                errorMessage = payload["errorMessage"] as? String,
                 occurredAt = occurredAt
             )
 
@@ -138,6 +141,8 @@ data class SignatureRequestWsMessage(
     val documentName: String?,
     val signerName: String?,
     val status: String?,
+    /** Human-readable failure/decline reason; set only for SIGNATURE_FAILED / SIGNATURE_DECLINED. */
+    val errorMessage: String?,
     val occurredAt: Instant
 )
 
