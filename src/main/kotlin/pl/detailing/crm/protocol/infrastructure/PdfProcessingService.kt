@@ -46,7 +46,7 @@ class PdfProcessingService(
     fun flattenPdfBytes(pdfBytes: ByteArray): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
-                document.documentCatalog.acroForm?.flatten()
+                document.documentCatalog.acroForm?.let { flattenPreservingContent(document, it) }
                 ByteArrayOutputStream().use { outputStream ->
                     document.save(outputStream)
                     outputStream.toByteArray()
@@ -144,7 +144,16 @@ class PdfProcessingService(
                 }
 
                 // Set up Unicode font to support Polish characters
-                setupUnicodeFontForForm(document, acroForm)
+                val fontEmbedded = setupUnicodeFontForForm(document, acroForm)
+
+                // We embed our own font and PDFBox generates the field appearances itself
+                // in setValue(), so the template's NeedAppearances flag (viewer-side
+                // appearance generation) is obsolete. Clearing it stops viewers from
+                // regenerating appearances with non-embedded fonts and silences the
+                // PDAcroForm flatten() warnings.
+                if (fontEmbedded) {
+                    acroForm.needAppearances = false
+                }
 
                 // Fill each field
                 var filledCount = 0
@@ -179,7 +188,7 @@ class PdfProcessingService(
                 // correctly in every viewer (including pdf.js canvas rendering on
                 // the signing tablet). The signature is overlaid as an image by
                 // SignedDocumentComposer after signing, so no AcroForm field is needed.
-                acroForm.flatten()
+                flattenPreservingContent(document, acroForm)
 
                 // Save to byte array
                 ByteArrayOutputStream().use { outputStream ->
@@ -196,8 +205,11 @@ class PdfProcessingService(
      * consistent rendering across environments (the classpath version is always identical,
      * whereas system fonts vary between dev and production). System fonts serve as fallback
      * only if the JAR-bundled ones cannot be loaded.
+     *
+     * @return true when a Unicode font was embedded (PDFBox can generate field appearances
+     *         itself), false when falling back to Helvetica + needAppearances=true.
      */
-    private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm) {
+    private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm): Boolean {
         val classpathFonts = listOf(
             "/fonts/LiberationSans-Regular.ttf",
             "/fonts/DejaVuSans.ttf"
@@ -211,7 +223,7 @@ class PdfProcessingService(
                     val font = PDType0Font.load(document, it, false)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont'")
-                    return
+                    return true
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load classpath font '$classpathFont': ${e.message}")
                 }
@@ -239,7 +251,7 @@ class PdfProcessingService(
                     val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
-                    return
+                    return true
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
                 }
@@ -249,6 +261,69 @@ class PdfProcessingService(
         logger.warn("PDF font setup: FALLBACK — no Unicode font found. Using Helvetica + needAppearances=true. Polish characters WILL be garbled in flattened PDFs.")
         acroForm.needAppearances = true
         acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
+        return false
+    }
+
+    /**
+     * Flatten [acroForm] without losing field values.
+     *
+     * PDFBox's flatten() only draws widget annotations that are listed in a page's /Annots
+     * array — and then removes ALL fields. Templates produced by some editors leave the field
+     * widgets out of /Annots (typically together with a missing /P page reference, which
+     * PDFBox logs as "widget with a missing page reference"). Flattening such a template
+     * silently drops every value and produces a visually blank PDF — exactly what happened
+     * in production with the check-in vehicle receipt protocol. [attachOrphanWidgetsToPages]
+     * repairs the template before flattening.
+     *
+     * Additionally, when the document still declares NeedAppearances=true the appearances are
+     * refreshed first so flatten() never merges stale or missing appearance streams.
+     */
+    private fun flattenPreservingContent(document: PDDocument, acroForm: PDAcroForm) {
+        attachOrphanWidgetsToPages(document, acroForm)
+        if (acroForm.needAppearances) {
+            try {
+                acroForm.refreshAppearances()
+                acroForm.needAppearances = false
+            } catch (e: Exception) {
+                logger.warn("PDF flatten: could not refresh appearances: ${e.message}")
+            }
+        }
+        acroForm.flatten()
+    }
+
+    /**
+     * Ensure every field widget annotation is referenced by a page's /Annots array.
+     *
+     * A widget that no page references cannot be rendered by any viewer and is silently
+     * skipped (then deleted) by flatten(). Orphaned widgets are attached to the page they
+     * point to via /P, or to the first page when the reference is missing (protocol
+     * templates are single-page).
+     */
+    private fun attachOrphanWidgetsToPages(document: PDDocument, acroForm: PDAcroForm) {
+        if (document.numberOfPages == 0) return
+
+        val annotatedWidgets = document.pages
+            .flatMap { page -> page.annotations.map { it.cosObject } }
+            .toSet()
+
+        var repaired = 0
+        for (field in acroForm.fieldTree) {
+            if (field !is org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField) continue
+            for (widget in field.widgets) {
+                if (widget.cosObject in annotatedWidgets) continue
+
+                val page = widget.page ?: document.getPage(0).also { widget.page = it }
+                page.annotations.add(widget)
+                repaired++
+            }
+        }
+        if (repaired > 0) {
+            logger.warn(
+                "PDF flatten: attached $repaired orphaned field widget(s) to page /Annots — " +
+                    "the template is malformed (widgets missing from page annotations); " +
+                    "without the repair flatten() would produce a blank document"
+            )
+        }
     }
 
     /**
@@ -344,7 +419,7 @@ class PdfProcessingService(
 
                 // Flatten the form (merge fields into content)
                 document.documentCatalog.acroForm?.let { acroForm ->
-                    acroForm.flatten()
+                    flattenPreservingContent(document, acroForm)
                 }
 
                 // Save to byte array
