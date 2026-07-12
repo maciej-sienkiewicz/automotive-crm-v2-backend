@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.VehicleOwner
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerEntity
@@ -16,6 +17,7 @@ import java.time.Instant
 class AssignOwnerHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
+    private val customerRepository: CustomerRepository,
     private val auditService: AuditService
 ) {
 
@@ -25,6 +27,15 @@ class AssignOwnerHandler(
             command.vehicleId.value,
             command.studioId.value
         ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony, id: ${command.vehicleId}")
+
+        // Verify the customer belongs to the caller's studio before linking it to the vehicle.
+        // Without this check a caller could pass a customerId owned by another studio and both
+        // link a foreign customer to their vehicle and read that customer's name back via the
+        // vehicle detail's owner list — a cross-tenant PII leak.
+        customerRepository.findByIdAndStudioId(
+            command.customerId.value,
+            command.studioId.value
+        ) ?: throw EntityNotFoundException("Klient nie został znaleziony, id: ${command.customerId}")
 
         // Check if owner already assigned
         val alreadyAssigned = vehicleOwnerRepository.existsByVehicleIdAndCustomerId(

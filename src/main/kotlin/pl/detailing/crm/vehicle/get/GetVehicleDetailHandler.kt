@@ -31,7 +31,12 @@ class GetVehicleDetailHandler(
             val owners = vehicleOwnerRepository.findByVehicleId(vehicleEntity.id)
 
             val ownersInfo = owners.map { ownerEntity ->
-                val customer = customerRepository.findById(ownerEntity.id.customerId).orElse(null)
+                // Studio-scoped lookup: never resolve a customer that belongs to another
+                // studio, so a stale cross-tenant owner link cannot leak a name here.
+                val customer = customerRepository.findByIdAndStudioId(
+                    ownerEntity.id.customerId,
+                    command.studioId.value
+                )
                 VehicleOwnerDetail(
                     customerId = ownerEntity.id.customerId.toString(),
                     customerName = if (customer != null) "${customer.firstName} ${customer.lastName}" else "Unknown",

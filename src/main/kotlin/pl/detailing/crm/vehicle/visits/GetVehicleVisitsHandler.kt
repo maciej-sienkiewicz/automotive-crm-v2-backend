@@ -47,7 +47,7 @@ class GetVehicleVisitsHandler(
             // Batch-load customer names
             val customerIds = paginatedVisits.map { it.customerId }.distinct()
             val customerNames = customerIds.associateWith { customerId ->
-                val customer = customerRepository.findById(customerId).orElse(null)
+                val customer = customerRepository.findByIdAndStudioId(customerId, command.studioId.value)
                 if (customer != null) {
                     listOfNotNull(customer.firstName, customer.lastName).joinToString(" ")
                 } else ""
