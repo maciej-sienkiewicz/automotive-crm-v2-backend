@@ -79,7 +79,10 @@ class CreateVisitFromReservationHandler(
                     createCustomer(customerData, command.studioId, command.userId)
                 }
                 is CustomerData.Existing -> {
-                    customerData.id
+                    // Verify the referenced customer belongs to the caller's studio.
+                    // Without this check an attacker could pass a customerId from another
+                    // studio and attach a foreign customer to a visit in their own studio.
+                    requireCustomerInStudio(customerData.id, command.studioId)
                 }
                 is CustomerData.Update -> {
                     // Use existing customer and update if data changed
@@ -346,7 +349,7 @@ class CreateVisitFromReservationHandler(
             val customerId = when (val customerData = command.customer) {
                 null -> throw ValidationException("Dane klienta są wymagane podczas przyjęcia pojazdu")
                 is CustomerData.New -> createCustomer(customerData, command.studioId, command.userId)
-                is CustomerData.Existing -> customerData.id
+                is CustomerData.Existing -> requireCustomerInStudio(customerData.id, command.studioId)
                 is CustomerData.Update -> {
                     updateCustomerIfNeeded(customerData.id, customerData, command.studioId, command.userId)
                     customerData.id
@@ -581,6 +584,17 @@ class CreateVisitFromReservationHandler(
 
         appointmentRepository.save(AppointmentEntity.fromDomain(appointment))
         return appointment
+    }
+
+    /**
+     * Resolves an existing customer's ID only after confirming it belongs to [studioId].
+     * Throws [EntityNotFoundException] (mapped to 404) otherwise, so a cross-tenant ID is
+     * indistinguishable from a non-existent one and never gets attached to a visit.
+     */
+    private fun requireCustomerInStudio(customerId: CustomerId, studioId: StudioId): CustomerId {
+        customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
+            ?: throw EntityNotFoundException("Klient nie został znaleziony")
+        return customerId
     }
 
     private fun createCustomer(
