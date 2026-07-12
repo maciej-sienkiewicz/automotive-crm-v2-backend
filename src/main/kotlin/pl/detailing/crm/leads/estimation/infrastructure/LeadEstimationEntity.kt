@@ -89,5 +89,9 @@ class LeadEstimationItemEntity(
     val vatRate: Int,
 
     @Column(name = "price_gross", nullable = false)
-    val priceGross: Long
+    val priceGross: Long,
+
+    // Service has requireManualPrice — the price fields are zeroed and a human must quote it
+    @Column(name = "manual_price_required", nullable = false, columnDefinition = "boolean not null default false")
+    val manualPriceRequired: Boolean = false
 )

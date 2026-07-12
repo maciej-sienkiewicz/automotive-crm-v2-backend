@@ -89,7 +89,8 @@ class GenerateQuoteReplyHandler(
                 ServiceLine(
                     name = item.serviceName,
                     priceGrossGrosze = item.priceGross,
-                    vatRate = item.vatRate
+                    vatRate = item.vatRate,
+                    manualPriceRequired = item.manualPriceRequired
                 )
             }
         }
@@ -139,8 +140,12 @@ class GenerateQuoteReplyHandler(
         appendLine()
         appendLine("Twoja propozycja usług wraz z cenami:")
         services.forEach { line ->
-            val priceFormatted = formatGrosze(line.priceGrossGrosze)
-            appendLine("- ${line.name}: $priceFormatted zł brutto")
+            if (line.manualPriceRequired) {
+                appendLine("- ${line.name}: wycena indywidualna (nie podawaj żadnej kwoty dla tej usługi — poinformuj klienta, że cena zostanie ustalona indywidualnie)")
+            } else {
+                val priceFormatted = formatGrosze(line.priceGrossGrosze)
+                appendLine("- ${line.name}: $priceFormatted zł brutto")
+            }
         }
         appendLine()
         appendLine("Dane podpisu:")
@@ -161,7 +166,8 @@ class GenerateQuoteReplyHandler(
     private data class ServiceLine(
         val name: String,
         val priceGrossGrosze: Long,
-        val vatRate: Int
+        val vatRate: Int,
+        val manualPriceRequired: Boolean = false
     )
 
     private data class SignatureData(

@@ -83,7 +83,8 @@ class AnalyzeLeadHandler(
                 id = s.id.toString(),
                 name = s.name,
                 priceNet = s.basePriceNet,
-                vatRate = s.vatRate
+                vatRate = s.vatRate,
+                requireManualPrice = s.requireManualPrice
             )
         }
 
@@ -120,14 +121,17 @@ class AnalyzeLeadHandler(
             leadEstimationRepository.findById(estimationId).ifPresent { est ->
                 val matchedServices = analysisResult.matchedServiceIds.mapNotNull { id -> catalogById[id] }
                 val items = matchedServices.map { service ->
+                    // Services flagged requireManualPrice have no valid catalog price —
+                    // basePriceNet is a placeholder, so the estimate must not quote it.
                     LeadEstimationItemEntity(
                         id = UUID.randomUUID(),
                         estimation = est,
                         serviceId = UUID.fromString(service.id),
                         serviceName = service.name,
-                        priceNet = service.priceNet,
+                        priceNet = if (service.requireManualPrice) 0 else service.priceNet,
                         vatRate = service.vatRate,
-                        priceGross = grossFromNet(service.priceNet, service.vatRate)
+                        priceGross = if (service.requireManualPrice) 0 else grossFromNet(service.priceNet, service.vatRate),
+                        manualPriceRequired = service.requireManualPrice
                     )
                 }
 

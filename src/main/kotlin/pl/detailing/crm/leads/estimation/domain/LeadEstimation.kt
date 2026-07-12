@@ -26,7 +26,8 @@ data class LeadEstimationItem(
     val serviceName: String,
     val priceNet: Long,
     val vatRate: Int,
-    val priceGross: Long
+    val priceGross: Long,
+    val manualPriceRequired: Boolean = false
 )
 
 enum class LeadEstimationStatus {
