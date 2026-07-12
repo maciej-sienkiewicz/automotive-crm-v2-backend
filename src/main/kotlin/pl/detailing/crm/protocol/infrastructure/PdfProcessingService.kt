@@ -34,6 +34,13 @@ class PdfProcessingService(
 
     companion object {
         private const val MAX_FIELD_FONT_SIZE = 7f
+
+        /**
+         * The AcroForm field reserved in protocol templates for the customer's signature.
+         * It must survive form filling un-flattened: SignedDocumentComposer reads its widget
+         * rectangle to know where (and how large) the tablet signature image may be stamped.
+         */
+        const val SIGNATURE_FIELD_NAME = "signature"
     }
 
     /**
@@ -186,9 +193,11 @@ class PdfProcessingService(
 
                 // Flatten all fields into static page content so the PDF renders
                 // correctly in every viewer (including pdf.js canvas rendering on
-                // the signing tablet). The signature is overlaid as an image by
-                // SignedDocumentComposer after signing, so no AcroForm field is needed.
-                flattenPreservingContent(document, acroForm)
+                // the signing tablet) — EXCEPT the signature field. Its widget rectangle
+                // must survive: SignedDocumentComposer uses it to position and scale the
+                // signature image stamped after tablet signing. Flattening it would erase
+                // the field and force the composer onto its blind fallback position.
+                flattenPreservingContent(document, acroForm, keepFieldNames = setOf(SIGNATURE_FIELD_NAME))
 
                 // Save to byte array
                 ByteArrayOutputStream().use { outputStream ->
@@ -277,8 +286,15 @@ class PdfProcessingService(
      *
      * Additionally, when the document still declares NeedAppearances=true the appearances are
      * refreshed first so flatten() never merges stale or missing appearance streams.
+     *
+     * Fields listed in [keepFieldNames] are left interactive (not flattened) — used to keep
+     * the signature field's rectangle available for the signing step.
      */
-    private fun flattenPreservingContent(document: PDDocument, acroForm: PDAcroForm) {
+    private fun flattenPreservingContent(
+        document: PDDocument,
+        acroForm: PDAcroForm,
+        keepFieldNames: Set<String> = emptySet()
+    ) {
         attachOrphanWidgetsToPages(document, acroForm)
         if (acroForm.needAppearances) {
             try {
@@ -288,7 +304,16 @@ class PdfProcessingService(
                 logger.warn("PDF flatten: could not refresh appearances: ${e.message}")
             }
         }
-        acroForm.flatten()
+        if (keepFieldNames.isEmpty()) {
+            acroForm.flatten()
+        } else {
+            val fieldsToFlatten = acroForm.fieldTree.filter { it.fullyQualifiedName !in keepFieldNames }
+            logger.info(
+                "PDF flatten: flattening ${fieldsToFlatten.size} field(s), " +
+                    "keeping interactive: ${keepFieldNames.filter { acroForm.getField(it) != null }}"
+            )
+            acroForm.flatten(fieldsToFlatten, false)
+        }
     }
 
     /**

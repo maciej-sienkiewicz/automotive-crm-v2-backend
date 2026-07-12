@@ -51,6 +51,10 @@ class PdfProcessingServiceTest {
     private val s3Client = mockk<S3Client>()
     private val service = PdfProcessingService(s3Client, "test-bucket")
 
+    companion object {
+        private val SIGNATURE_RECT = PDRectangle(300f, 100f, 200f, 60f)
+    }
+
     private val protocolFields = mapOf(
         "customer_name" to "Jan Kowalski",
         "vehicle_make" to "Škoda Octavia",
@@ -154,6 +158,52 @@ class PdfProcessingServiceTest {
 
         assertTrue(extractText(output).contains("Jan Kowalski"))
         assertFlattened(output)
+    }
+
+    @Test
+    fun `signature field survives filling un-flattened so the signing step can find its rectangle`() {
+        val template = createTemplatePdf(needAppearances = true, withSignatureField = true)
+        val output = fillViaService(template, protocolFields)
+
+        // Other fields flattened, their values in static content
+        val text = extractText(output)
+        protocolFields.values.forEach { value ->
+            assertTrue(text.contains(value), "Flattened PDF must contain '$value'")
+        }
+
+        Loader.loadPDF(output).use { doc ->
+            val acroForm = doc.documentCatalog.acroForm
+            val remaining = acroForm?.fields?.map { it.fullyQualifiedName } ?: emptyList()
+            assertEquals(listOf("signature"), remaining, "Only the signature field may stay interactive")
+
+            val widget = (acroForm!!.getField("signature")
+                as org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField).widgets.first()
+            assertEquals(SIGNATURE_RECT.lowerLeftX, widget.rectangle.lowerLeftX)
+            assertEquals(SIGNATURE_RECT.width, widget.rectangle.width)
+            // The repair step must leave the widget reachable for the composer
+            val page = doc.getPage(0)
+            assertTrue(
+                page.annotations.any { it.cosObject == widget.cosObject },
+                "Signature widget must be listed in page /Annots"
+            )
+        }
+    }
+
+    @Test
+    fun `orphaned signature widget is repaired and still not flattened`() {
+        val template = createTemplatePdf(
+            needAppearances = true,
+            withSignatureField = true,
+            widgetsInAnnots = false,
+            widgetsWithPageRef = false
+        )
+        val output = fillViaService(template, protocolFields)
+
+        assertTrue(extractText(output).contains("Jan Kowalski"))
+        Loader.loadPDF(output).use { doc ->
+            val remaining = doc.documentCatalog.acroForm?.fields?.map { it.fullyQualifiedName }
+            assertEquals(listOf("signature"), remaining)
+        }
     }
 
     @Test
@@ -295,6 +345,7 @@ class PdfProcessingServiceTest {
     private fun createTemplatePdf(
         needAppearances: Boolean,
         withCheckbox: Boolean = false,
+        withSignatureField: Boolean = false,
         widgetsInAnnots: Boolean = true,
         widgetsWithPageRef: Boolean = true
     ): ByteArray {
@@ -322,6 +373,17 @@ class PdfProcessingServiceTest {
                 if (widgetsInAnnots) page.annotations.add(widget)
                 fields.add(field)
                 y -= 30f
+            }
+
+            if (withSignatureField) {
+                val field = PDTextField(acroForm)
+                field.partialName = "signature"
+                field.defaultAppearance = "/Helv 10 Tf 0 g"
+                val widget = field.widgets[0]
+                widget.rectangle = SIGNATURE_RECT
+                if (widgetsWithPageRef) widget.page = page
+                if (widgetsInAnnots) page.annotations.add(widget)
+                fields.add(field)
             }
 
             if (withCheckbox) {
