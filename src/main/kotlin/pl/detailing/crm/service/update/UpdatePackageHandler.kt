@@ -42,7 +42,8 @@ class UpdatePackageHandler(
         oldPackageEntity.updatedAt = Instant.now()
         serviceRepository.save(oldPackageEntity)
 
-        val netAmount = command.basePriceNet
+        // Manual-price packages must not carry a catalog price — any price sent by the client is dropped
+        val netAmount = if (command.requireManualPrice) Money.ZERO else command.basePriceNet
         val vatAmount = command.vatRate.calculateVatAmount(netAmount)
         val grossAmount = command.vatRate.calculateGrossAmount(netAmount)
 

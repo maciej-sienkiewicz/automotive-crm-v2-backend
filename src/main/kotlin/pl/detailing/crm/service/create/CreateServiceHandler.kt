@@ -22,7 +22,8 @@ class CreateServiceHandler(
     suspend fun handle(command: CreateServiceCommand): CreateServiceResult = withContext(Dispatchers.IO) {
         validatorComposite.validate(command)
 
-        val netAmount = command.basePriceNet
+        // Manual-price services must not carry a catalog price — any price sent by the client is dropped
+        val netAmount = if (command.requireManualPrice) Money.ZERO else command.basePriceNet
         val vatAmount = command.vatRate.calculateVatAmount(netAmount)
         val grossAmount = command.vatRate.calculateGrossAmount(netAmount)
 
