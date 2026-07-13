@@ -5,7 +5,7 @@ import jakarta.persistence.PersistenceContext
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -40,12 +40,12 @@ class DemoCleanupJob(
     private val instagramProfileMetricsSnapshotRepository: InstagramProfileMetricsSnapshotRepository,
     private val userRepository: UserRepository,
     private val studioRepository: StudioRepository,
+    private val transactionTemplate: TransactionTemplate,
     @PersistenceContext private val entityManager: EntityManager
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Scheduled(fixedRate = 900_000)
-    @Transactional
     fun cleanupExpiredDemoAccounts() {
         val now = Instant.now()
         val expired = demoAccountRepository.findExpired(now)
@@ -54,9 +54,13 @@ class DemoCleanupJob(
 
         logger.info("Cleaning up {} expired demo accounts", expired.size)
 
+        // Each account is cleaned in its own transaction so a failure on one account
+        // rolls back only that account and does not poison the cleanup of the others.
         expired.forEach { demo ->
             try {
-                cleanupSingleDemoAccount(demo)
+                transactionTemplate.executeWithoutResult {
+                    cleanupSingleDemoAccount(demo)
+                }
             } catch (e: Exception) {
                 logger.error("Failed to clean up demo account studioId={}: {}", demo.studioId, e.message, e)
             }
@@ -80,6 +84,27 @@ class DemoCleanupJob(
         entityManager.createQuery(
             """DELETE FROM VisitCommentEntity c
                WHERE c.visitId IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 2a. Delete visit documents (FK: visit_id -> visits.id, NOT cascaded from VisitEntity).
+        // Check-in registers damage maps, generated protocols and signed PDFs here — without
+        // this step deleting visits violates the visit_documents FK constraint.
+        entityManager.createQuery(
+            """DELETE FROM VisitDocumentEntity d
+               WHERE d.visit.id IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 2b. Delete signature audit events and signature requests (tablet signing sessions)
+        entityManager.createQuery(
+            "DELETE FROM SignatureAuditEventEntity e WHERE e.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.createQuery(
+            "DELETE FROM SignatureRequestEntity r WHERE r.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+
+        // 2c. Delete visit protocols (intake/pickup documents generated during check-in)
+        entityManager.createQuery(
+            "DELETE FROM VisitProtocolEntity p WHERE p.studioId = :studioId"
         ).setParameter("studioId", studioId).executeUpdate()
         entityManager.flush()
 
