@@ -2,6 +2,7 @@ package pl.detailing.crm.checkin
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.Appointment
@@ -290,8 +291,7 @@ class CreateVisitFromReservationHandler(
             }
 
             // Step 9: Persist Visit entity (must be done before registering documents)
-            val visitEntity = VisitEntity.fromDomain(visit)
-            visitRepository.save(visitEntity)
+            visit = persistVisitRetryingOnDuplicateNumber(visit, command.studioId)
 
             // Step 9.1: Retroactively link pre-visit SMS (booking confirmation, reminder) to this visit.
             // Those entries were recorded with visitId = null because the visit did not exist yet.
@@ -492,8 +492,7 @@ class CreateVisitFromReservationHandler(
             }
 
             // Step 10: Persist visit
-            val visitEntity = VisitEntity.fromDomain(visit)
-            visitRepository.save(visitEntity)
+            visit = persistVisitRetryingOnDuplicateNumber(visit, command.studioId)
 
             // Step 10.1: Audit log
             val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
@@ -535,6 +534,30 @@ class CreateVisitFromReservationHandler(
 
             ReservationToVisitResult(visitId = visitId)
         }
+
+    /**
+     * Persists the visit, retrying with a freshly generated visit number when the
+     * unique (studio_id, visit_number) index is violated. The number generator uses
+     * read-max+1 without any lock, so two concurrent check-ins in the same studio can
+     * draw the same number — without the retry the second check-in fails with a
+     * PSQLException on idx_visits_visit_number.
+     */
+    private fun persistVisitRetryingOnDuplicateNumber(visit: Visit, studioId: StudioId): Visit {
+        var current = visit
+        var attempts = 0
+        while (true) {
+            try {
+                visitRepository.saveAndFlush(VisitEntity.fromDomain(current))
+                return current
+            } catch (e: DataIntegrityViolationException) {
+                attempts++
+                if (attempts >= 3) throw e
+                current = current.copy(
+                    visitNumber = visitNumberGenerator.generateVisitNumber(studioId)
+                )
+            }
+        }
+    }
 
     private fun createWalkInAppointment(
         command: WalkInVisitCommand,

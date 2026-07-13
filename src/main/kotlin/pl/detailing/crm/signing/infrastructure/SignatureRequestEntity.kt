@@ -174,6 +174,14 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
     fun findByIdAndStudioId(id: UUID, studioId: UUID): SignatureRequestEntity?
 
     /**
+     * Pessimistic write lock on the request row, used to serialize concurrent
+     * audit-trail appends for the same signing session (see SignatureAuditTrailService).
+     */
+    @org.springframework.data.jpa.repository.Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM SignatureRequestEntity r WHERE r.id = :id")
+    fun lockForAuditAppend(@Param("id") id: UUID): SignatureRequestEntity?
+
+    /**
      * Newest active (not yet signed/cancelled) request routed to the given tablet
      * or to any tablet in the studio (tabletId IS NULL).
      */

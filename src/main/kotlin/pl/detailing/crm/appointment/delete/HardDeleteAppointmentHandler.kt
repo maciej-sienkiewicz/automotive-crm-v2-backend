@@ -25,6 +25,7 @@ import pl.detailing.crm.smscampaigns.reminder.infrastructure.ScheduledSmsReminde
 @Service
 class HardDeleteAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
+    private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository,
     private val scheduledSmsReminderJpaRepository: ScheduledSmsReminderJpaRepository,
     private val smsLogJpaRepository: SmsLogJpaRepository,
     private val auditService: AuditService
@@ -42,6 +43,20 @@ class HardDeleteAppointmentHandler(
         if (appointmentEntity.status == AppointmentStatus.CONVERTED) {
             throw ValidationException(
                 "Nie można usunąć rezerwacji o statusie CONVERTED. Najpierw usuń powiązaną wizytę."
+            )
+        }
+
+        // Rezerwacja z wizytą DRAFT (check-in w toku) ma nadal status CONFIRMED — appointment
+        // dostaje CONVERTED dopiero przy potwierdzeniu wizyty. Bez tej walidacji usunięcie
+        // rezerwacji zostawia wizytę z wiszącym appointment_id i blokuje jej potwierdzenie.
+        val referencingVisit = visitRepository.findByAppointmentIdAndStudioId(
+            command.appointmentId.value,
+            command.studioId.value
+        )
+        if (referencingVisit != null) {
+            throw ValidationException(
+                "Nie można usunąć rezerwacji — istnieje powiązana wizyta " +
+                "(#${referencingVisit.visitNumber}). Najpierw anuluj lub usuń wizytę."
             )
         }
 

@@ -94,6 +94,12 @@ class DemoCleanupJob(
                WHERE d.visit.id IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)"""
         ).setParameter("studioId", studioId).executeUpdate()
 
+        // 2a'. Delete visit journal entries (FK: visit_id -> visits.id, NOT cascaded)
+        entityManager.createQuery(
+            """DELETE FROM VisitJournalEntryEntity j
+               WHERE j.visit.id IN (SELECT v.id FROM VisitEntity v WHERE v.studioId = :studioId)"""
+        ).setParameter("studioId", studioId).executeUpdate()
+
         // 2b. Delete signature audit events and signature requests (tablet signing sessions)
         entityManager.createQuery(
             "DELETE FROM SignatureAuditEventEntity e WHERE e.studioId = :studioId"

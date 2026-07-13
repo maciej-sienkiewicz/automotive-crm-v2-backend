@@ -4,6 +4,8 @@ import jakarta.persistence.*
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -83,8 +85,18 @@ interface SignatureAuditEventRepository : JpaRepository<SignatureAuditEventEntit
  */
 @Service
 class SignatureAuditTrailService(
-    private val repository: SignatureAuditEventRepository
+    private val repository: SignatureAuditEventRepository,
+    private val signatureRequestRepository: SignatureRequestRepository
 ) {
+    /**
+     * Appends are serialized per signing session by taking a pessimistic write lock
+     * on the parent signature_requests row before computing max(sequence_number)+1.
+     * Without the lock, concurrent events — e.g. the employee cancelling the request
+     * in the CRM while the tablet reports DOCUMENT_DISPLAYED or submits the signature —
+     * both read the same latest sequence and the second insert dies on the
+     * uq_signature_audit_request_seq unique constraint.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
     fun append(
         requestId: UUID,
         studioId: UUID,
@@ -95,6 +107,7 @@ class SignatureAuditTrailService(
         details: String? = null,
         occurredAt: Instant = Instant.now()
     ): SignatureAuditEventEntity {
+        signatureRequestRepository.lockForAuditAppend(requestId)
         val previous = repository.findTopByRequestIdOrderBySequenceNumberDesc(requestId)
         val sequenceNumber = (previous?.sequenceNumber ?: 0) + 1
         val previousHash = previous?.eventHash
