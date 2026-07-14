@@ -50,6 +50,9 @@ class StudioSettingsEntity(
     @Column(name = "lead_stagnant_client_threshold_hours", nullable = false)
     var leadStagnantClientThresholdHours: Int = 72,
 
+    @Column(name = "sms_api_name_confirmed", nullable = false)
+    var smsApiNameConfirmed: Boolean = false,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )

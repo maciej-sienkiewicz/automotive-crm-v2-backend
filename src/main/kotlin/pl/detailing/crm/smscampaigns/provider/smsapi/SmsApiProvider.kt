@@ -32,9 +32,9 @@ class SmsApiProvider(
         )
     }
 
-    override fun send(phoneNumber: String, message: String): SmsDeliveryResult {
+    override fun send(phoneNumber: String, message: String, senderName: String?): SmsDeliveryResult {
         if (!properties.enabled) {
-            logger.info("[SMS DISABLED] To: {} | Message: {}", phoneNumber, message)
+            logger.info("[SMS DISABLED] To: {} | Sender: {} | Message: {}", phoneNumber, senderName ?: "(default)", message)
             return SmsDeliveryResult.success("mock-disabled")
         }
 
@@ -48,15 +48,20 @@ class SmsApiProvider(
 
         return try {
             val action = smsFactory.actionSend(normalizedNumber, message)
-                .apply { if (properties.senderName.isNotBlank()) setSender("2WAY") }
+                .apply {
+                    when {
+                        !senderName.isNullOrBlank() -> setSender(senderName)
+                        properties.senderName.isNotBlank() -> setSender(properties.senderName)
+                    }
+                }
 
             val response = action.execute()
             val firstMessage = response.list.firstOrNull()
 
             if (firstMessage != null) {
                 logger.info(
-                    "SMS dispatched via SMSAPI | to={} shipmentId={} status={}",
-                    phoneNumber, firstMessage.id, firstMessage.status
+                    "SMS dispatched via SMSAPI | to={} sender={} shipmentId={} status={}",
+                    phoneNumber, senderName ?: properties.senderName.ifBlank { "(default)" }, firstMessage.id, firstMessage.status
                 )
                 SmsDeliveryResult.success(firstMessage.id ?: "")
             } else {

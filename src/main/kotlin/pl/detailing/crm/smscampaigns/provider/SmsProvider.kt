@@ -9,5 +9,5 @@ package pl.detailing.crm.smscampaigns.provider
  * [phoneNumber] must be in E.164 format, e.g. "+48100200300".
  */
 interface SmsProvider {
-    fun send(phoneNumber: String, message: String): SmsDeliveryResult
+    fun send(phoneNumber: String, message: String, senderName: String? = null): SmsDeliveryResult
 }

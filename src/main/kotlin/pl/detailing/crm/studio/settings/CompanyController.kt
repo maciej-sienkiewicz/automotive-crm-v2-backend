@@ -68,6 +68,7 @@ class CompanyController(
                 bankAccount = settings?.bankAccount,
                 logoUrl = logoUrl,
                 emailAlias = studioEntity?.emailAlias,
+                smsApiNameConfirmed = settings?.smsApiNameConfirmed ?: false,
                 updatedAt = (settings?.updatedAt ?: Instant.now()).toString()
             )
         )
@@ -130,6 +131,7 @@ class CompanyController(
                 bankAccount = saved.bankAccount,
                 logoUrl = logoUrl,
                 emailAlias = studioEmailAlias,
+                smsApiNameConfirmed = saved.smsApiNameConfirmed,
                 updatedAt = saved.updatedAt.toString()
             )
         )
@@ -251,6 +253,36 @@ class CompanyController(
         )
     }
 
+    @PatchMapping("/sms-sender-config")
+    fun updateSmsSenderConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateSmsSenderConfigRequest
+    ): ResponseEntity<SmsSenderConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+
+        settings.smsApiNameConfirmed = request.smsApiNameConfirmed
+        settings.updatedAt = Instant.now()
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+
+        logger.info(
+            "SMS sender name config updated for studio={} smsApiNameConfirmed={} senderName={}",
+            studioId, saved.smsApiNameConfirmed, saved.name
+        )
+
+        ResponseEntity.ok(
+            SmsSenderConfigResponse(
+                smsApiNameConfirmed = saved.smsApiNameConfirmed,
+                effectiveSenderName = if (saved.smsApiNameConfirmed) saved.name else null
+            )
+        )
+    }
+
     private fun generateLogoPresignedUrl(s3Key: String): String {
         val getObjectRequest = GetObjectRequest.builder()
             .bucket(bucketName)
@@ -280,6 +312,7 @@ data class CompanySettingsResponse(
     val bankAccount: String?,
     val logoUrl: String?,
     val emailAlias: String?,
+    val smsApiNameConfirmed: Boolean,
     val updatedAt: String
 )
 
@@ -308,4 +341,13 @@ data class LeadAlertConfigResponse(
 data class UpdateLeadAlertConfigRequest(
     val leadStagnantOurThresholdHours: Int?,
     val leadStagnantClientThresholdHours: Int?
+)
+
+data class UpdateSmsSenderConfigRequest(
+    val smsApiNameConfirmed: Boolean
+)
+
+data class SmsSenderConfigResponse(
+    val smsApiNameConfirmed: Boolean,
+    val effectiveSenderName: String?
 )

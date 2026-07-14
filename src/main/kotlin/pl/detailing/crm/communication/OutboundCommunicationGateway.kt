@@ -12,6 +12,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.provider.SmsDeliveryResult
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscredits.SmsCreditService
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.util.UUID
 
 /**
@@ -35,9 +36,15 @@ class OutboundCommunicationGateway(
     private val smsProvider: SmsProvider,
     private val emailProvider: EmailProvider,
     private val consentChecker: MarketingConsentChecker,
-    private val smsCreditService: SmsCreditService
+    private val smsCreditService: SmsCreditService,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    private fun resolveSmsSenderName(studioId: UUID): String? {
+        val settings = studioSettingsRepository.findById(studioId).orElse(null) ?: return null
+        return if (settings.smsApiNameConfirmed && !settings.name.isNullOrBlank()) settings.name else null
+    }
 
     fun sendSms(
         customerId: UUID,
@@ -56,7 +63,8 @@ class OutboundCommunicationGateway(
             throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
         }
 
-        val result = smsProvider.send(phoneNumber, message)
+        val senderName = resolveSmsSenderName(studioId)
+        val result = smsProvider.send(phoneNumber, message, senderName)
 
         if (!result.success) {
             smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
@@ -76,7 +84,8 @@ class OutboundCommunicationGateway(
             throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
         }
 
-        val result = smsProvider.send(phoneNumber, message)
+        val senderName = resolveSmsSenderName(studioId)
+        val result = smsProvider.send(phoneNumber, message, senderName)
 
         if (!result.success) {
             smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
