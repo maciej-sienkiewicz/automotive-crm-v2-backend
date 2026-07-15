@@ -40,6 +40,12 @@ import pl.detailing.crm.communication.AppointmentCommunicationLinker
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.doortodoor.domain.DoorToDoor
+import pl.detailing.crm.doortodoor.domain.DoorToDoorAddress
+import pl.detailing.crm.doortodoor.domain.DoorToDoorStatus
+import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorEntity
+import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
+import pl.detailing.crm.shared.DoorToDoorId
 import java.time.Instant
 
 @Service
@@ -57,7 +63,8 @@ class CreateVisitFromReservationHandler(
     private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
     private val checkinPhotoService: CheckinPhotoService,
     private val auditService: AuditService,
-    private val appointmentCommunicationLinker: AppointmentCommunicationLinker
+    private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
+    private val doorToDoorRepository: DoorToDoorRepository
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -338,7 +345,12 @@ class CreateVisitFromReservationHandler(
             // Appointment will be marked as CONVERTED only when visit is confirmed (after documents are signed)
             // This allows users to cancel the draft visit and return to reservation
 
-            // Step 11: Return result
+            // Step 11: Persist Door to Door if provided
+            command.doorToDoor?.let { d2d ->
+                persistDoorToDoor(visitId, command.studioId, command.userId, d2d)
+            }
+
+            // Step 12: Return result
             ReservationToVisitResult(visitId = visitId)
         }
 
@@ -530,6 +542,11 @@ class CreateVisitFromReservationHandler(
                 } catch (e: Exception) {
                     println("Warning: Failed to register damage map document for walk-in: ${e.message}")
                 }
+            }
+
+            // Step 11: Persist Door to Door if provided
+            command.doorToDoor?.let { d2d ->
+                persistDoorToDoor(visitId, command.studioId, command.userId, d2d)
             }
 
             ReservationToVisitResult(visitId = visitId)
@@ -852,5 +869,30 @@ class CreateVisitFromReservationHandler(
             existingEntity.updatedAt = Instant.now()
             vehicleRepository.save(existingEntity)
         }
+    }
+
+    private fun persistDoorToDoor(
+        visitId: VisitId,
+        studioId: StudioId,
+        userId: UserId,
+        d2d: DoorToDoorCheckinRequest
+    ) {
+        val now = Instant.now()
+        val entity = DoorToDoorEntity.fromDomain(
+            DoorToDoor(
+                id = DoorToDoorId.random(),
+                studioId = studioId,
+                visitId = visitId,
+                pickupAddress = DoorToDoorAddress(city = d2d.pickupCity, street = d2d.pickupStreet),
+                deliveryAddress = DoorToDoorAddress(city = d2d.deliveryCity, street = d2d.deliveryStreet),
+                notes = d2d.notes,
+                status = DoorToDoorStatus.SCHEDULED,
+                createdBy = userId,
+                updatedBy = userId,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        doorToDoorRepository.save(entity)
     }
 }

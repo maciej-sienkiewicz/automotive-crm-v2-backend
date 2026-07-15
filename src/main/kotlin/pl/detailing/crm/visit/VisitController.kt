@@ -8,6 +8,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.*
 import pl.detailing.crm.visit.list.*
+import pl.detailing.crm.doortodoor.domain.DoorToDoor
 import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitCommand
 import pl.detailing.crm.visit.transitions.confirm.ConfirmVisitHandler
@@ -190,7 +191,7 @@ class VisitController(
             principal.userId, principal.studioId, Permission.VISITS_SERVICE_PRICES_VIEW
         )
 
-        val response = mapToVisitDetailResponse(result, showPrices)
+        val response = mapToVisitDetailResponse(result, showPrices, result.doorToDoor)
 
         ResponseEntity.ok(response)
     }
@@ -475,9 +476,9 @@ class VisitController(
     /**
      * Map domain result to API response
      */
-    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, showPrices: Boolean): VisitDetailResponse {
+    private fun mapToVisitDetailResponse(result: GetVisitDetailResult, showPrices: Boolean, doorToDoor: DoorToDoor? = null): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices, doorToDoor),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
             documents = result.documents.map { mapToDocumentResponse(it) }
         )
@@ -492,7 +493,8 @@ class VisitController(
         customer: Customer,
         customerStats: CustomerStats,
         appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
-        showPrices: Boolean
+        showPrices: Boolean,
+        doorToDoor: DoorToDoor? = null
     ): VisitResponse {
         return VisitResponse(
             id = visit.id.value.toString(),
@@ -536,6 +538,15 @@ class VisitController(
             },
             technicalNotes = visit.technicalNotes,
             smsReminderSuppressed = visit.smsReminderSuppressed,
+            doorToDoor = doorToDoor?.let { d2d ->
+                DoorToDoorInfoResponse(
+                    id = d2d.id.toString(),
+                    pickupAddress = DoorToDoorAddressInfo(d2d.pickupAddress.city, d2d.pickupAddress.street),
+                    deliveryAddress = DoorToDoorAddressInfo(d2d.deliveryAddress.city, d2d.deliveryAddress.street),
+                    notes = d2d.notes,
+                    status = d2d.status.name
+                )
+            },
             createdAt = visit.createdAt,
             updatedAt = visit.updatedAt
         )

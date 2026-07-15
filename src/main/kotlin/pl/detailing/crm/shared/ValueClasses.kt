@@ -960,6 +960,15 @@ value class BonusEntryId(val value: UUID) : Serializable {
     override fun toString(): String = value.toString()
 }
 
+@JvmInline
+value class DoorToDoorId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = DoorToDoorId(UUID.randomUUID())
+        fun fromString(value: String) = DoorToDoorId(UUID.fromString(value))
+    }
+    override fun toString(): String = value.toString()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Employee module – enums
 // ─────────────────────────────────────────────────────────────────────────────

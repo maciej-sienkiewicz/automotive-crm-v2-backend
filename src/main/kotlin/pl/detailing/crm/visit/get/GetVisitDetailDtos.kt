@@ -7,6 +7,7 @@ import pl.detailing.crm.visit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity
+import pl.detailing.crm.doortodoor.domain.DoorToDoor
 import java.time.Instant
 
 /**
@@ -41,8 +42,22 @@ data class VisitResponse(
     val vehicleHandoff: VehicleHandoffResponse?,
     val technicalNotes: String?,
     val smsReminderSuppressed: Boolean,
+    val doorToDoor: DoorToDoorInfoResponse?,
     val createdAt: Instant,
     val updatedAt: Instant
+)
+
+data class DoorToDoorInfoResponse(
+    val id: String,
+    val pickupAddress: DoorToDoorAddressInfo,
+    val deliveryAddress: DoorToDoorAddressInfo,
+    val notes: String?,
+    val status: String
+)
+
+data class DoorToDoorAddressInfo(
+    val city: String,
+    val street: String
 )
 
 /**
@@ -167,7 +182,8 @@ data class GetVisitDetailResult(
     val appointmentColor: AppointmentColorEntity.AppointmentColorDomain?,
     val journalEntries: List<VisitJournalEntry>,
     val documents: List<VisitDocument>,
-    val customerStats: CustomerStats
+    val customerStats: CustomerStats,
+    val doorToDoor: DoorToDoor? = null
 )
 
 /**

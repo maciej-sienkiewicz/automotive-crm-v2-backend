@@ -143,7 +143,8 @@ class CheckinController(
                 )
             } ?: emptyList(),
             services = request.services,
-            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) }
+            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
+            doorToDoor = request.doorToDoor
         )
 
         val result = createVisitFromReservationHandler.handle(command)
@@ -300,7 +301,8 @@ class CheckinController(
                 )
             } ?: emptyList(),
             services = request.services,
-            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) }
+            appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
+            doorToDoor = request.doorToDoor
         )
 
         val result = createVisitFromReservationHandler.handleWalkIn(command)
@@ -440,7 +442,8 @@ data class ReservationToVisitRequest(
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?,
     val sendEmail: Boolean = false,
-    val emailOptions: WelcomeEmailOptionsRequest? = null
+    val emailOptions: WelcomeEmailOptionsRequest? = null,
+    val doorToDoor: DoorToDoorCheckinRequest? = null
 )
 
 enum class IdentityMode {
@@ -575,7 +578,8 @@ data class ReservationToVisitCommand(
     val photoIds: List<String>,
     val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,
-    val appointmentColorId: AppointmentColorId?
+    val appointmentColorId: AppointmentColorId?,
+    val doorToDoor: DoorToDoorCheckinRequest? = null
 )
 
 sealed class CustomerData {
@@ -633,6 +637,14 @@ data class UploadTokenResponse(
 )
 
 // Walk-in request/command DTOs
+data class DoorToDoorCheckinRequest(
+    val pickupCity: String,
+    val pickupStreet: String,
+    val deliveryCity: String,
+    val deliveryStreet: String,
+    val notes: String? = null
+)
+
 data class WalkInVisitRequest(
     val startDateTime: Instant,
     val endDateTime: Instant,
@@ -647,7 +659,8 @@ data class WalkInVisitRequest(
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?,
     val sendEmail: Boolean = false,
-    val emailOptions: WelcomeEmailOptionsRequest? = null
+    val emailOptions: WelcomeEmailOptionsRequest? = null,
+    val doorToDoor: DoorToDoorCheckinRequest? = null
 )
 
 data class WalkInVisitCommand(
@@ -665,7 +678,8 @@ data class WalkInVisitCommand(
     val photoIds: List<String>,
     val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,
-    val appointmentColorId: AppointmentColorId?
+    val appointmentColorId: AppointmentColorId?,
+    val doorToDoor: DoorToDoorCheckinRequest? = null
 )
 
 // DTOs for mobile-damage-points desktop endpoint

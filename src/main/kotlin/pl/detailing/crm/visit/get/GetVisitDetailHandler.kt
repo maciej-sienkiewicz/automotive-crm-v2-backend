@@ -8,6 +8,7 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
+import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
 
 @Service
 class GetVisitDetailHandler(
@@ -17,7 +18,8 @@ class GetVisitDetailHandler(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val journalEntryRepository: VisitJournalEntryRepository,
     private val documentRepository: VisitDocumentRepository,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val doorToDoorRepository: DoorToDoorRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -90,6 +92,9 @@ class GetVisitDetailHandler(
             vehiclesCount = vehiclesCount
         )
 
+        val doorToDoor = doorToDoorRepository.findByVisitIdAndStudioId(visit.id.value, command.studioId.value)
+            ?.toDomain()
+
         return GetVisitDetailResult(
             visit = visit,
             vehicle = vehicle,
@@ -97,7 +102,8 @@ class GetVisitDetailHandler(
             appointmentColor = appointmentColor,
             journalEntries = journalEntries,
             documents = documents,
-            customerStats = customerStats
+            customerStats = customerStats,
+            doorToDoor = doorToDoor
         )
     }
 }

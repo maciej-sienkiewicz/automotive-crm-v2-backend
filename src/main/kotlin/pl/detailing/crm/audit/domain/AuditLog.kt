@@ -26,7 +26,8 @@ enum class AuditModule {
     CASH_REGISTER,
     EMPLOYEE,
     TASK,
-    SECURITY
+    SECURITY,
+    DOOR_TO_DOOR
 }
 
 /**
