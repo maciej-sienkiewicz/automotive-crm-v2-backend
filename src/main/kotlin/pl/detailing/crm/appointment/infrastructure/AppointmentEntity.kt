@@ -85,7 +85,22 @@ class AppointmentEntity(
     var recurrenceIndex: Int? = null,
 
     @Column(name = "is_detached", nullable = false, columnDefinition = "boolean not null default false")
-    var isDetached: Boolean = false
+    var isDetached: Boolean = false,
+
+    @Column(name = "d2d_pickup_city", length = 255)
+    var d2dPickupCity: String? = null,
+
+    @Column(name = "d2d_pickup_street", length = 255)
+    var d2dPickupStreet: String? = null,
+
+    @Column(name = "d2d_delivery_city", length = 255)
+    var d2dDeliveryCity: String? = null,
+
+    @Column(name = "d2d_delivery_street", length = 255)
+    var d2dDeliveryStreet: String? = null,
+
+    @Column(name = "d2d_notes", columnDefinition = "TEXT")
+    var d2dNotes: String? = null
 ) {
     fun toDomain(): Appointment = Appointment(
         id = AppointmentId(id),

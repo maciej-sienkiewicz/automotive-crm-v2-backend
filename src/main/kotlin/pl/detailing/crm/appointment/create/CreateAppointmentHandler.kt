@@ -117,6 +117,13 @@ class CreateAppointmentHandler(
 
         // Step 6: Persist Appointment
         val appointmentEntity = AppointmentEntity.fromDomain(appointment)
+        command.doorToDoor?.also { d2d ->
+            appointmentEntity.d2dPickupCity = d2d.pickupCity
+            appointmentEntity.d2dPickupStreet = d2d.pickupStreet
+            appointmentEntity.d2dDeliveryCity = d2d.deliveryCity
+            appointmentEntity.d2dDeliveryStreet = d2d.deliveryStreet
+            appointmentEntity.d2dNotes = d2d.notes
+        }
         appointmentRepository.save(appointmentEntity)
 
         // Step 7: Audit log

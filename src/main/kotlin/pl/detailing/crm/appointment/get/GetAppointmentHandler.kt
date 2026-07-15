@@ -7,6 +7,7 @@ import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.appointment.list.*
+
 import pl.detailing.crm.service.list.PackageItemDto
 import java.util.UUID
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -92,7 +93,16 @@ class GetAppointmentHandler(
                         totalInSeries = count,
                         isDetached = appointment.isDetached
                     )
-                }
+                },
+                doorToDoor = if (appointment.d2dPickupCity != null && appointment.d2dDeliveryCity != null) {
+                    DoorToDoorAppointmentInfo(
+                        pickupCity = appointment.d2dPickupCity!!,
+                        pickupStreet = appointment.d2dPickupStreet ?: "",
+                        deliveryCity = appointment.d2dDeliveryCity!!,
+                        deliveryStreet = appointment.d2dDeliveryStreet ?: "",
+                        notes = appointment.d2dNotes
+                    )
+                } else null
             )
         }
 

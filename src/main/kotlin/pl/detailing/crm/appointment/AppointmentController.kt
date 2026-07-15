@@ -220,7 +220,16 @@ class AppointmentController(
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
             note = request.note,
-            sendReminderSms = request.sendReminderSms
+            sendReminderSms = request.sendReminderSms,
+            doorToDoor = request.doorToDoor?.let {
+                DoorToDoorAppointmentCommand(
+                    pickupCity = it.pickupCity,
+                    pickupStreet = it.pickupStreet,
+                    deliveryCity = it.deliveryCity,
+                    deliveryStreet = it.deliveryStreet,
+                    notes = it.notes
+                )
+            }
         )
 
         val result = createAppointmentHandler.handle(command)

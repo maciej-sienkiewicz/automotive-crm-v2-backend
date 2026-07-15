@@ -287,7 +287,16 @@ data class AppointmentListItem(
     val createdAt: Instant,
     val updatedAt: Instant,
     val smsInfo: AppointmentSmsInfo,
-    val recurrenceInfo: RecurrenceInfo? = null
+    val recurrenceInfo: RecurrenceInfo? = null,
+    val doorToDoor: DoorToDoorAppointmentInfo? = null
+)
+
+data class DoorToDoorAppointmentInfo(
+    val pickupCity: String,
+    val pickupStreet: String,
+    val deliveryCity: String,
+    val deliveryStreet: String,
+    val notes: String?
 )
 
 data class RecurrenceInfo(

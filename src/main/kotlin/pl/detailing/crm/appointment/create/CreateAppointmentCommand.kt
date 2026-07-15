@@ -18,7 +18,16 @@ data class CreateAppointmentCommand(
     val appointmentTitle: String?,
     val appointmentColorId: AppointmentColorId,
     val note: String?,
-    val sendReminderSms: Boolean = false
+    val sendReminderSms: Boolean = false,
+    val doorToDoor: DoorToDoorAppointmentCommand? = null
+)
+
+data class DoorToDoorAppointmentCommand(
+    val pickupCity: String,
+    val pickupStreet: String,
+    val deliveryCity: String,
+    val deliveryStreet: String,
+    val notes: String? = null
 )
 
 sealed class CustomerIdentity {

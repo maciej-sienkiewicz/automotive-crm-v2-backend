@@ -16,7 +16,16 @@ data class CreateAppointmentRequest(
     val appointmentColorId: String,
     val note: String?,
     val sendConfirmationSms: Boolean = false,
-    val sendReminderSms: Boolean = false
+    val sendReminderSms: Boolean = false,
+    val doorToDoor: DoorToDoorAppointmentRequest? = null
+)
+
+data class DoorToDoorAppointmentRequest(
+    val pickupCity: String,
+    val pickupStreet: String,
+    val deliveryCity: String,
+    val deliveryStreet: String,
+    val notes: String? = null
 )
 
 data class CustomerIdentityRequest(
