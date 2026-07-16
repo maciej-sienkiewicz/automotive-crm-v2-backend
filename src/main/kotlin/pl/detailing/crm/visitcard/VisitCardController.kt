@@ -39,10 +39,12 @@ class VisitCardController(
         val id = VisitId.fromString(visitId)
 
         withContext(Dispatchers.IO) {
-            visitRepository.findByIdAndStudioId(id.value, principal.studioId.value)
+            val visitEntity = visitRepository.findByIdAndStudioId(id.value, principal.studioId.value)
                 ?: throw EntityNotFoundException("Visit not found: $visitId")
 
-            val token = tokenService.getOrCreateToken(principal.studioId, id)
+            val token = tokenService.getOrCreateToken(
+                principal.studioId, id, pl.detailing.crm.shared.AppointmentId(visitEntity.appointmentId)
+            )
             ResponseEntity.ok(
                 VisitCardLinkResponse(
                     token = token,

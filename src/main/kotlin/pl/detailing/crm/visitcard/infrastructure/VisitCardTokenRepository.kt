@@ -10,4 +10,6 @@ interface VisitCardTokenRepository : JpaRepository<VisitCardTokenEntity, UUID> {
     fun findByToken(token: String): VisitCardTokenEntity?
 
     fun findByVisitIdAndStudioId(visitId: UUID, studioId: UUID): VisitCardTokenEntity?
+
+    fun findByAppointmentIdAndStudioId(appointmentId: UUID, studioId: UUID): VisitCardTokenEntity?
 }

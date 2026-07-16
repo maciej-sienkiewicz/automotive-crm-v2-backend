@@ -2,6 +2,7 @@ package pl.detailing.crm.visitcard
 
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.visitcard.infrastructure.VisitCardTokenEntity
@@ -19,11 +20,17 @@ class VisitCardTokenService(
     }
 
     /**
-     * Return the existing card token for the visit, creating one on first use.
-     * The token is stable for the lifetime of the visit so the customer's link never breaks.
+     * Return the card token for a visit, creating one on first use.
+     *
+     * When the visit originates from a reservation that already has a card token
+     * (the link was sent to the customer at booking time), that token is reused —
+     * the customer keeps a single link that follows the reservation into the visit.
      */
-    fun getOrCreateToken(studioId: StudioId, visitId: VisitId): String {
+    fun getOrCreateToken(studioId: StudioId, visitId: VisitId, appointmentId: AppointmentId? = null): String {
         tokenRepository.findByVisitIdAndStudioId(visitId.value, studioId.value)?.let { return it.token }
+        appointmentId?.let { apptId ->
+            tokenRepository.findByAppointmentIdAndStudioId(apptId.value, studioId.value)?.let { return it.token }
+        }
 
         val entity = VisitCardTokenEntity(
             id = UUID.randomUUID(),
@@ -36,6 +43,28 @@ class VisitCardTokenService(
         } catch (e: DataIntegrityViolationException) {
             // Concurrent first request created the token — reuse it
             tokenRepository.findByVisitIdAndStudioId(visitId.value, studioId.value)?.token ?: throw e
+        }
+    }
+
+    /**
+     * Return the card token for a reservation (appointment), creating one on first
+     * use. The same link keeps working after check-in — resolution finds the visit
+     * created from this appointment.
+     */
+    fun getOrCreateTokenForAppointment(studioId: StudioId, appointmentId: AppointmentId): String {
+        tokenRepository.findByAppointmentIdAndStudioId(appointmentId.value, studioId.value)?.let { return it.token }
+
+        val entity = VisitCardTokenEntity(
+            id = UUID.randomUUID(),
+            studioId = studioId.value,
+            visitId = null,
+            appointmentId = appointmentId.value,
+            token = generateSecureToken()
+        )
+        return try {
+            tokenRepository.save(entity).token
+        } catch (e: DataIntegrityViolationException) {
+            tokenRepository.findByAppointmentIdAndStudioId(appointmentId.value, studioId.value)?.token ?: throw e
         }
     }
 

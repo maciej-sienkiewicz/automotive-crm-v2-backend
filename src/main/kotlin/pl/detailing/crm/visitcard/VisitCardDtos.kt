@@ -16,9 +16,11 @@ import java.time.Instant
 data class VisitCardResponse(
     val visitNumber: String,
     val title: String?,
+    /** Visit status name, or "RESERVATION" for a not-yet-checked-in reservation card. */
     val status: String,
     val reservation: VisitCardReservation,
-    val vehicle: VisitCardVehicle,
+    /** Null for reservations that don't have a vehicle assigned yet. */
+    val vehicle: VisitCardVehicle?,
     val customer: VisitCardCustomer,
     val company: VisitCardCompany,
     val services: List<VisitCardServiceLine>,

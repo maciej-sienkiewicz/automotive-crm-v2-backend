@@ -32,7 +32,8 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/sms/inbound")
 class SmsInboundController(
-    private val smsConsentService: SmsConsentService
+    private val smsConsentService: SmsConsentService,
+    private val reservationUpsellConsentService: pl.detailing.crm.visitcard.upsell.ReservationUpsellConsentService
 ) {
 
     private val logger = LoggerFactory.getLogger(SmsInboundController::class.java)
@@ -55,6 +56,8 @@ class SmsInboundController(
         logger.info("Inbound SMS received | sms_from={} sms_to={} sms_date={} text={}", smsFrom, smsTo, smsDate, smsText)
 
         smsConsentService.processInboundReply(smsFrom, smsText)
+        // Upsell requests made on a reservation card (pre-check-in) are tracked separately
+        reservationUpsellConsentService.processInboundReply(smsFrom, smsText)
 
         // SMSAPI requires the literal string "OK" in the response body
         return ResponseEntity.ok("OK")

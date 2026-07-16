@@ -2,8 +2,12 @@ package pl.detailing.crm.visitcard
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.appointment.domain.AppointmentStatus
+import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
+import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
@@ -52,20 +56,46 @@ class GetVisitCardHandler(
     private val photoSessionService: PhotoSessionService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val s3ProtocolStorageService: S3ProtocolStorageService,
-    private val upsellSuggestionRepository: VisitUpsellSuggestionRepository
+    private val upsellSuggestionRepository: VisitUpsellSuggestionRepository,
+    private val appointmentRepository: AppointmentRepository,
+    private val vehicleRepository: VehicleRepository
 ) {
 
+    /**
+     * Resolves a card token to its content:
+     *  - visit token → visit card,
+     *  - appointment token → the visit created from that reservation (after
+     *    check-in the same link keeps working), or the reservation card itself
+     *    while no visit exists yet.
+     */
     @Transactional(readOnly = true)
     fun handle(token: String): VisitCardResponse {
         val tokenEntity = tokenService.findByToken(token)
             ?: throw EntityNotFoundException("Karta wizyty nie została znaleziona")
+        val studioId = tokenEntity.studioId
 
-        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(tokenEntity.visitId, tokenEntity.studioId)
-            ?: throw EntityNotFoundException("Karta wizyty nie została znaleziona")
+        val visitEntity = when {
+            tokenEntity.visitId != null ->
+                visitRepository.findByIdAndStudioIdWithPhotos(tokenEntity.visitId, studioId)
+                    ?: throw EntityNotFoundException("Karta wizyty nie została znaleziona")
+            else ->
+                visitRepository.findByAppointmentIdAndStudioId(tokenEntity.appointmentId!!, studioId)
+                    ?.let { visitRepository.findByIdAndStudioIdWithPhotos(it.id, studioId) }
+        }
+
+        if (visitEntity == null) {
+            return buildReservationCard(tokenEntity.appointmentId!!, studioId)
+        }
+        return buildVisitCard(visitEntity, studioId)
+    }
+
+    private fun buildVisitCard(
+        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
+        studioId: UUID
+    ): VisitCardResponse {
         visitEntity.serviceItems.size // force-load within transaction
 
         val visit = visitEntity.toDomain()
-        val studioId = tokenEntity.studioId
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, studioId)
 
@@ -100,8 +130,72 @@ class GetVisitCardHandler(
             ),
             inProgress = if (started) buildInProgressSection(visit, studioId) else null,
             completion = if (finished) buildCompletionSection(visit, studioId) else null,
+            // Include suggestions attached to the visit AND to the reservation it came from,
+            // so suggestions assigned at booking time survive the check-in transition.
             upsellSuggestions = upsellSuggestionRepository
-                .findAllByVisitIdAndStudioId(visit.id.value, studioId)
+                .findAllForVisitCard(visit.id.value, visit.appointmentId.value, studioId)
+                .map { it.toPublicDto() }
+        )
+    }
+
+    /** Card for a reservation that has not been checked in yet — booking info only. */
+    private fun buildReservationCard(appointmentId: UUID, studioId: UUID): VisitCardResponse {
+        val appointment: AppointmentEntity = appointmentRepository.findByIdAndStudioId(appointmentId, studioId)
+            ?: throw EntityNotFoundException("Karta wizyty nie została znaleziona")
+
+        val customer = customerRepository.findByIdAndStudioId(appointment.customerId, studioId)
+
+        val vehicle = appointment.vehicleId
+            ?.let { vehicleRepository.findByIdAndStudioId(it, studioId) }
+            ?.let { entity ->
+                val domain = entity.toDomain()
+                VisitCardVehicle(
+                    brand = domain.brand,
+                    model = domain.model,
+                    licensePlate = domain.licensePlate,
+                    yearOfProduction = domain.yearOfProduction,
+                    color = null
+                )
+            }
+
+        val status = when (appointment.status) {
+            AppointmentStatus.CANCELLED, AppointmentStatus.ABANDONED -> "REJECTED"
+            else -> "RESERVATION"
+        }
+
+        val services = appointment.lineItems.map { item ->
+            VisitCardServiceLine(
+                name = item.serviceName,
+                note = item.customNote,
+                priceGross = item.finalPriceGross,
+                priceNet = item.finalPriceNet
+            )
+        }
+
+        return VisitCardResponse(
+            visitNumber = "",
+            title = null,
+            status = status,
+            reservation = VisitCardReservation(
+                scheduledDate = appointment.startDateTime,
+                estimatedCompletionDate = appointment.endDateTime
+            ),
+            vehicle = vehicle,
+            customer = VisitCardCustomer(
+                firstName = customer?.firstName,
+                lastName = customer?.lastName
+            ),
+            company = buildCompanySection(studioId),
+            services = services,
+            totals = VisitCardTotals(
+                totalNet = appointment.lineItems.sumOf { it.finalPriceNet },
+                totalGross = appointment.lineItems.sumOf { it.finalPriceGross },
+                currency = "PLN"
+            ),
+            inProgress = null,
+            completion = null,
+            upsellSuggestions = upsellSuggestionRepository
+                .findAllByAppointmentIdAndStudioId(appointmentId, studioId)
                 .map { it.toPublicDto() }
         )
     }

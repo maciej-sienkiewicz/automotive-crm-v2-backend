@@ -25,18 +25,20 @@ import java.util.UUID
 enum class UpsellSuggestionStatus { SUGGESTED, REQUESTED, CONFIRMED }
 
 /**
- * A suggested additional service ("upsell") attached to a single visit/reservation.
+ * A suggested additional service ("upsell") attached to a single visit or
+ * reservation (appointment) — exactly one of [visitId]/[appointmentId] is set.
  *
- * Suggestions are always assigned per visit — there is no studio-wide auto-suggest.
- * Pricing (including a potential discount) is frozen at suggestion time, exactly like
- * visit service items, so the price shown to the customer never drifts after
- * catalog changes.
+ * Suggestions are always assigned per visit/reservation, intentionally, one by
+ * one — there is no studio-wide auto-suggest. Pricing (including a potential
+ * discount) is frozen at suggestion time, exactly like visit service items, so
+ * the price shown to the customer never drifts after catalog changes.
  */
 @Entity
 @Table(
     name = "visit_upsell_suggestions",
     indexes = [
         Index(name = "idx_upsell_suggestions_visit", columnList = "studio_id, visit_id"),
+        Index(name = "idx_upsell_suggestions_appointment", columnList = "studio_id, appointment_id"),
         Index(name = "idx_upsell_suggestions_status", columnList = "visit_id, status")
     ]
 )
@@ -48,8 +50,11 @@ class VisitUpsellSuggestionEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "visit_id", nullable = false, columnDefinition = "uuid")
-    val visitId: UUID,
+    @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
+    val visitId: UUID?,
+
+    @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
+    val appointmentId: UUID? = null,
 
     /** Catalog service this suggestion was created from. */
     @Column(name = "service_id", nullable = false, columnDefinition = "uuid")

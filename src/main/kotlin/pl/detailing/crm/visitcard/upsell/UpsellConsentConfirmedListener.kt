@@ -20,16 +20,22 @@ import java.time.Instant
  */
 @Component
 class UpsellConsentConfirmedListener(
-    private val suggestionRepository: VisitUpsellSuggestionRepository
+    private val suggestionRepository: VisitUpsellSuggestionRepository,
+    private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @EventListener
     @Transactional(propagation = Propagation.REQUIRED)
     fun onConsentConfirmed(event: SmsConsentConfirmedEvent) {
-        val requested = suggestionRepository.findAllByVisitIdAndStudioIdAndStatus(
-            event.visitId, event.studioId, UpsellSuggestionStatus.REQUESTED
-        )
+        // Cover suggestions attached to the visit AND to the reservation it came from —
+        // both can be REQUESTED through the visit card.
+        val visit = visitRepository.findByIdAndStudioId(event.visitId, event.studioId)
+        val requested = (
+            visit?.let {
+                suggestionRepository.findAllForVisitCard(event.visitId, it.appointmentId, event.studioId)
+            } ?: suggestionRepository.findAllByVisitIdAndStudioId(event.visitId, event.studioId)
+        ).filter { it.status == UpsellSuggestionStatus.REQUESTED }
         if (requested.isEmpty()) return
 
         val now = Instant.now()

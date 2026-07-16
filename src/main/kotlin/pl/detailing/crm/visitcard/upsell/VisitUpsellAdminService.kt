@@ -3,7 +3,9 @@ package pl.detailing.crm.visitcard.upsell
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AdjustmentType
+import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.ServiceId
@@ -20,25 +22,37 @@ import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRep
 import java.util.UUID
 
 /**
- * Employee-side management of upsell suggestions.
+ * Employee-side management of upsell suggestions, for visits and reservations
+ * (appointments) alike.
  *
- * Suggestions are attached per visit, intentionally, one by one — there is no
- * bulk/automatic assignment. Pricing (with an optional discount) is frozen at
- * creation time from the catalog service, using the same price engine as visit
- * service items, so what the customer sees on the card is exactly what would be
- * added to the visit.
+ * Suggestions are attached per visit/reservation, intentionally, one by one —
+ * there is no bulk/automatic assignment. Pricing (with an optional discount) is
+ * frozen at creation time from the catalog service, using the same price engine
+ * as visit service items, so what the customer sees on the card is exactly what
+ * would be added.
  */
 @Service
 class VisitUpsellAdminService(
     private val visitRepository: VisitRepository,
+    private val appointmentRepository: AppointmentRepository,
     private val serviceRepository: ServiceRepository,
     private val suggestionRepository: VisitUpsellSuggestionRepository
 ) {
 
     @Transactional(readOnly = true)
     fun list(visitId: VisitId, studioId: StudioId): List<UpsellSuggestionResponse> {
-        requireVisit(visitId, studioId)
-        return suggestionRepository.findAllByVisitIdAndStudioId(visitId.value, studioId.value)
+        val visit = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
+            ?: throw EntityNotFoundException("Visit not found: $visitId")
+        // Suggestions assigned to the originating reservation stay visible on the visit.
+        return suggestionRepository
+            .findAllForVisitCard(visitId.value, visit.appointmentId, studioId.value)
+            .map { it.toResponse() }
+    }
+
+    @Transactional(readOnly = true)
+    fun listForAppointment(appointmentId: AppointmentId, studioId: StudioId): List<UpsellSuggestionResponse> {
+        requireAppointment(appointmentId, studioId)
+        return suggestionRepository.findAllByAppointmentIdAndStudioId(appointmentId.value, studioId.value)
             .map { it.toResponse() }
     }
 
@@ -49,8 +63,29 @@ class VisitUpsellAdminService(
         userId: UserId,
         request: CreateUpsellSuggestionRequest
     ): UpsellSuggestionResponse {
-        requireVisit(visitId, studioId)
+        visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
+            ?: throw EntityNotFoundException("Visit not found: $visitId")
+        return createSuggestion(studioId, userId, request, visitId = visitId.value, appointmentId = null)
+    }
 
+    @Transactional
+    fun createForAppointment(
+        appointmentId: AppointmentId,
+        studioId: StudioId,
+        userId: UserId,
+        request: CreateUpsellSuggestionRequest
+    ): UpsellSuggestionResponse {
+        requireAppointment(appointmentId, studioId)
+        return createSuggestion(studioId, userId, request, visitId = null, appointmentId = appointmentId.value)
+    }
+
+    private fun createSuggestion(
+        studioId: StudioId,
+        userId: UserId,
+        request: CreateUpsellSuggestionRequest,
+        visitId: UUID?,
+        appointmentId: UUID?
+    ): UpsellSuggestionResponse {
         val serviceId = ServiceId.fromString(request.serviceId)
         val service = serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
             ?: throw EntityNotFoundException("Usługa nie została znaleziona: ${request.serviceId}")
@@ -74,7 +109,8 @@ class VisitUpsellAdminService(
             VisitUpsellSuggestionEntity(
                 id = UUID.randomUUID(),
                 studioId = studioId.value,
-                visitId = visitId.value,
+                visitId = visitId,
+                appointmentId = appointmentId,
                 serviceId = service.id,
                 serviceName = service.name,
                 basePriceNet = service.basePriceNet,
@@ -97,19 +133,32 @@ class VisitUpsellAdminService(
      */
     @Transactional
     fun delete(visitId: VisitId, suggestionId: UUID, studioId: StudioId) {
+        val visit = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
+            ?: throw EntityNotFoundException("Visit not found: $visitId")
         val suggestion = suggestionRepository.findByIdAndStudioId(suggestionId, studioId.value)
-            ?.takeIf { it.visitId == visitId.value }
+            ?.takeIf { it.visitId == visitId.value || it.appointmentId == visit.appointmentId }
             ?: throw EntityNotFoundException("Sugestia nie została znaleziona: $suggestionId")
+        deleteSuggestion(suggestion)
+    }
 
+    @Transactional
+    fun deleteForAppointment(appointmentId: AppointmentId, suggestionId: UUID, studioId: StudioId) {
+        val suggestion = suggestionRepository.findByIdAndStudioId(suggestionId, studioId.value)
+            ?.takeIf { it.appointmentId == appointmentId.value }
+            ?: throw EntityNotFoundException("Sugestia nie została znaleziona: $suggestionId")
+        deleteSuggestion(suggestion)
+    }
+
+    private fun deleteSuggestion(suggestion: VisitUpsellSuggestionEntity) {
         if (suggestion.status != UpsellSuggestionStatus.SUGGESTED) {
             throw ValidationException("Nie można usunąć sugestii, na którą klient już odpowiedział")
         }
         suggestionRepository.delete(suggestion)
     }
 
-    private fun requireVisit(visitId: VisitId, studioId: StudioId) {
-        visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
-            ?: throw EntityNotFoundException("Visit not found: $visitId")
+    private fun requireAppointment(appointmentId: AppointmentId, studioId: StudioId) {
+        appointmentRepository.findByIdAndStudioId(appointmentId.value, studioId.value)
+            ?: throw EntityNotFoundException("Appointment not found: $appointmentId")
     }
 }
 

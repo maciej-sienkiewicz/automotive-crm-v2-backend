@@ -4,55 +4,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
-import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Delivery channel configured per studio (studio_settings.visit_card_delivery_channel). */
-enum class VisitCardDeliveryChannel {
-    EMAIL, SMS, BOTH, NONE;
-
-    companion object {
-        fun fromString(value: String?): VisitCardDeliveryChannel =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: EMAIL
-    }
-}
-
-data class SendVisitCardLinkCommand(
-    val visitId: VisitId,
-    val studioId: StudioId,
-    /** Optional override; when null the studio's configured channel is used. */
-    val channelOverride: VisitCardDeliveryChannel? = null
-)
-
-data class SendVisitCardLinkResult(
-    val emailSent: Boolean,
-    val smsSent: Boolean,
-    val message: String
+data class SendReservationCardLinkCommand(
+    val appointmentId: AppointmentId,
+    val studioId: StudioId
 )
 
 /**
- * Sends the customer their Visit Card link by e-mail and/or SMS, depending on
- * the studio's configured delivery channel. Falls back to the other channel
- * when the preferred one has no usable contact data.
+ * Sends the customer their card link for a reservation (appointment), before
+ * check-in. Mirrors [SendVisitCardLinkHandler]: channel comes from the studio's
+ * visit-card delivery configuration, with fallback to the other channel when the
+ * preferred contact detail is missing.
  */
 @Service
-class SendVisitCardLinkHandler(
-    private val visitRepository: VisitRepository,
+class SendReservationCardLinkHandler(
+    private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
     private val studioRepository: StudioRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
@@ -68,15 +51,15 @@ class SendVisitCardLinkHandler(
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
     }
 
-    suspend fun handle(command: SendVisitCardLinkCommand): SendVisitCardLinkResult = withContext(Dispatchers.IO) {
-        val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
+    suspend fun handle(command: SendReservationCardLinkCommand): SendVisitCardLinkResult = withContext(Dispatchers.IO) {
+        val appointment = appointmentRepository.findByIdAndStudioId(command.appointmentId.value, command.studioId.value)
+            ?: throw EntityNotFoundException("Appointment not found: ${command.appointmentId}")
 
-        val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, command.studioId.value)
-            ?: throw EntityNotFoundException("Customer not found: ${visitEntity.customerId}")
+        val customer = customerRepository.findByIdAndStudioId(appointment.customerId, command.studioId.value)
+            ?: throw EntityNotFoundException("Customer not found: ${appointment.customerId}")
 
         val settings = studioSettingsRepository.findById(command.studioId.value).orElse(null)
-        val channel = command.channelOverride ?: VisitCardDeliveryChannel.fromString(settings?.visitCardDeliveryChannel)
+        val channel = VisitCardDeliveryChannel.fromString(settings?.visitCardDeliveryChannel)
         if (channel == VisitCardDeliveryChannel.NONE) {
             return@withContext SendVisitCardLinkResult(false, false, "Wysyłka Karty Wizyty jest wyłączona w konfiguracji")
         }
@@ -85,16 +68,12 @@ class SendVisitCardLinkHandler(
             ?: studioRepository.findByStudioId(command.studioId.value)?.name
             ?: "Studio detailingu"
 
-        val token = tokenService.getOrCreateToken(
-            command.studioId, command.visitId, pl.detailing.crm.shared.AppointmentId(visitEntity.appointmentId)
-        )
+        val token = tokenService.getOrCreateTokenForAppointment(command.studioId, command.appointmentId)
         val cardUrl = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token"
 
         val hasEmail = !customer.email.isNullOrBlank()
         val hasPhone = !customer.phone.isNullOrBlank()
 
-        // Preferred channel with fallback: never lose the message just because
-        // the customer record is missing the preferred contact detail.
         val sendEmail = when (channel) {
             VisitCardDeliveryChannel.EMAIL -> hasEmail
             VisitCardDeliveryChannel.SMS -> !hasPhone && hasEmail
@@ -112,20 +91,20 @@ class SendVisitCardLinkHandler(
             return@withContext SendVisitCardLinkResult(false, false, "Klient nie ma adresu e-mail ani numeru telefonu")
         }
 
-        val scheduledAt = DATE_FORMAT.format(visitEntity.scheduledDate.atZone(WARSAW))
+        val scheduledAt = DATE_FORMAT.format(appointment.startDateTime.atZone(WARSAW))
 
         var emailSent = false
         var smsSent = false
 
         if (sendEmail) {
             val recipient = customer.email!!
-            val subject = "Karta wizyty ${visitEntity.visitNumber} — $studioName"
+            val subject = "Twoja rezerwacja $scheduledAt — $studioName"
             val body = buildString {
                 appendLine("Dzień dobry${customer.firstName?.let { " $it" } ?: ""},")
                 appendLine()
-                appendLine("przygotowaliśmy Kartę Wizyty dla Twojego pojazdu ${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot} (wizyta ${visitEntity.visitNumber}, termin: $scheduledAt).")
+                appendLine("przygotowaliśmy stronę Twojej rezerwacji (termin: $scheduledAt).")
                 appendLine()
-                appendLine("Znajdziesz na niej szczegóły rezerwacji, zakres usług z wyceną oraz — w trakcie wizyty — dokumentację zdjęciową i dokumenty:")
+                appendLine("Znajdziesz na niej szczegóły rezerwacji i zakres usług z wyceną, a po przyjęciu pojazdu także dokumentację zdjęciową i dokumenty:")
                 appendLine(cardUrl)
                 appendLine()
                 appendLine("Pozdrawiamy,")
@@ -137,14 +116,15 @@ class SendVisitCardLinkHandler(
                 to = recipient,
                 subject = subject,
                 bodyText = body,
-                context = "SendVisitCardLink visit=${command.visitId}"
+                context = "SendReservationCardLink appointment=${command.appointmentId}"
             )
             emailSent = result.success
             communicationLogService.record(
                 RecordCommunicationCommand(
                     studioId = command.studioId,
                     customerId = CustomerId(customer.id),
-                    visitId = command.visitId,
+                    visitId = null,
+                    appointmentId = command.appointmentId,
                     channel = CommunicationChannel.EMAIL,
                     messageType = CommunicationMessageType.VISIT_CARD_EMAIL,
                     recipientAddress = recipient,
@@ -158,8 +138,7 @@ class SendVisitCardLinkHandler(
 
         if (sendSms) {
             val phone = normalizePolishPhone(customer.phone!!)
-            val message = "$studioName: Karta Twojej wizyty ${visitEntity.visitNumber} " +
-                "(${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}): $cardUrl"
+            val message = "$studioName: strona Twojej rezerwacji ($scheduledAt): $cardUrl"
             try {
                 val result = communicationGateway.sendTransactionalSms(command.studioId.value, phone, message)
                 smsSent = result.success
@@ -167,7 +146,8 @@ class SendVisitCardLinkHandler(
                     RecordCommunicationCommand(
                         studioId = command.studioId,
                         customerId = CustomerId(customer.id),
-                        visitId = command.visitId,
+                        visitId = null,
+                        appointmentId = command.appointmentId,
                         channel = CommunicationChannel.SMS,
                         messageType = CommunicationMessageType.VISIT_CARD_SMS,
                         recipientAddress = phone,
@@ -178,12 +158,16 @@ class SendVisitCardLinkHandler(
                     )
                 )
             } catch (e: InsufficientSmsCreditsException) {
-                logger.warn("SendVisitCardLink: no SMS credits [studioId={} visitId={}]", command.studioId, command.visitId)
+                logger.warn(
+                    "SendReservationCardLink: no SMS credits [studioId={} appointmentId={}]",
+                    command.studioId, command.appointmentId
+                )
                 communicationLogService.record(
                     RecordCommunicationCommand(
                         studioId = command.studioId,
                         customerId = CustomerId(customer.id),
-                        visitId = command.visitId,
+                        visitId = null,
+                        appointmentId = command.appointmentId,
                         channel = CommunicationChannel.SMS,
                         messageType = CommunicationMessageType.VISIT_CARD_SMS,
                         recipientAddress = phone,
@@ -197,8 +181,8 @@ class SendVisitCardLinkHandler(
         }
 
         logger.info(
-            "SendVisitCardLink: visit={} channel={} emailSent={} smsSent={}",
-            command.visitId, channel, emailSent, smsSent
+            "SendReservationCardLink: appointment={} channel={} emailSent={} smsSent={}",
+            command.appointmentId, channel, emailSent, smsSent
         )
 
         val message = when {
