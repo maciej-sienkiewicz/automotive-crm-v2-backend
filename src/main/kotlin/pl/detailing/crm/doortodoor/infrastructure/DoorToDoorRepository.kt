@@ -8,4 +8,5 @@ import java.util.UUID
 interface DoorToDoorRepository : JpaRepository<DoorToDoorEntity, UUID> {
     fun findByVisitIdAndStudioId(visitId: UUID, studioId: UUID): DoorToDoorEntity?
     fun findByVisitId(visitId: UUID): DoorToDoorEntity?
+    fun findByVisitIdIn(visitIds: Collection<UUID>): List<DoorToDoorEntity>
 }

@@ -150,7 +150,16 @@ class ListAppointmentsHandler(
                             totalInSeries = localSeriesCounts[sid] ?: 0L,
                             isDetached = appointment.isDetached
                         )
-                    }
+                    },
+                    doorToDoor = if (appointment.d2dPickupCity != null && appointment.d2dDeliveryCity != null) {
+                        DoorToDoorAppointmentInfo(
+                            pickupCity = appointment.d2dPickupCity!!,
+                            pickupStreet = appointment.d2dPickupStreet ?: "",
+                            deliveryCity = appointment.d2dDeliveryCity!!,
+                            deliveryStreet = appointment.d2dDeliveryStreet ?: "",
+                            notes = appointment.d2dNotes
+                        )
+                    } else null
                 )
             }
 

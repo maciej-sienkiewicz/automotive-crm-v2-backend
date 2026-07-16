@@ -11,6 +11,7 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
+import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -20,7 +21,8 @@ class ListVisitsHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val doorToDoorRepository: DoorToDoorRepository
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: ListVisitsCommand): ListVisitsResult {
@@ -88,6 +90,7 @@ class ListVisitsHandler(
         val customers = customerRepository.findAllById(customerIds).associateBy { it.id }
         val vehicles = vehicleRepository.findAllById(vehicleIds).associateBy { it.id }
         val appointmentColors = appointmentColorRepository.findAllById(appointmentColorIds).associateBy { it.id }
+        val doorToDoorByVisitId = doorToDoorRepository.findByVisitIdIn(visits.map { it.id }).associateBy { it.visitId }
 
         // Map to list items
         val items = visits.map { visit ->
@@ -158,7 +161,16 @@ class ListVisitsHandler(
                 totalGross = totalGross.amountInCents,
                 createdAt = visit.createdAt,
                 updatedAt = visit.updatedAt,
-                deletedAt = visit.deletedAt
+                deletedAt = visit.deletedAt,
+                doorToDoor = doorToDoorByVisitId[visit.id]?.let { d2d ->
+                    VisitDoorToDoorInfo(
+                        pickupCity = d2d.pickupCity,
+                        pickupStreet = d2d.pickupStreet,
+                        deliveryCity = d2d.deliveryCity,
+                        deliveryStreet = d2d.deliveryStreet,
+                        status = d2d.status.name
+                    )
+                }
             )
         }
 
@@ -225,7 +237,16 @@ data class VisitListItem(
     val totalGross: Long,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val deletedAt: Instant? = null
+    val deletedAt: Instant? = null,
+    val doorToDoor: VisitDoorToDoorInfo? = null
+)
+
+data class VisitDoorToDoorInfo(
+    val pickupCity: String,
+    val pickupStreet: String,
+    val deliveryCity: String,
+    val deliveryStreet: String,
+    val status: String
 )
 
 data class VisitCustomerInfo(
