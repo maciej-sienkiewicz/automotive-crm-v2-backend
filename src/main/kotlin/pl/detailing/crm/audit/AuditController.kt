@@ -180,6 +180,7 @@ class AuditController(
         EMPLOYEE -> "Pracownicy"
         AuditModule.TASK -> "Zadania"
         AuditModule.SECURITY -> "Bezpieczeństwo"
+        AuditModule.DOOR_TO_DOOR -> "Door to door"
     }
 
     private fun actionDisplayName(action: AuditAction): String = when (action) {
