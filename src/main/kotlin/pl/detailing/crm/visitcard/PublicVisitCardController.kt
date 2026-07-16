@@ -6,8 +6,13 @@ import kotlinx.coroutines.withContext
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import pl.detailing.crm.visitcard.upsell.RequestUpsellServicesHandler
+import pl.detailing.crm.visitcard.upsell.RequestUpsellServicesRequest
+import pl.detailing.crm.visitcard.upsell.RequestUpsellServicesResponse
 
 /**
  * Public (unauthenticated) Visit Card endpoint.
@@ -19,12 +24,28 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/public/visit-card")
 class PublicVisitCardController(
-    private val getVisitCardHandler: GetVisitCardHandler
+    private val getVisitCardHandler: GetVisitCardHandler,
+    private val requestUpsellServicesHandler: RequestUpsellServicesHandler
 ) {
 
     @GetMapping("/{token}")
     fun getVisitCard(@PathVariable token: String): ResponseEntity<VisitCardResponse> = runBlocking {
         val card = withContext(Dispatchers.IO) { getVisitCardHandler.handle(token) }
         ResponseEntity.ok(card)
+    }
+
+    /**
+     * Customer picks suggested additional services on the card. Creates pending
+     * service items on the visit and sends the "Odpisz TAK…" consent SMS.
+     * Idempotent per suggestion: only SUGGESTED suggestions can be requested,
+     * so re-submitting the same selection cannot trigger another SMS.
+     */
+    @PostMapping("/{token}/upsell/request")
+    fun requestUpsellServices(
+        @PathVariable token: String,
+        @RequestBody request: RequestUpsellServicesRequest
+    ): ResponseEntity<RequestUpsellServicesResponse> = runBlocking {
+        val result = withContext(Dispatchers.IO) { requestUpsellServicesHandler.handle(token, request) }
+        ResponseEntity.ok(result)
     }
 }

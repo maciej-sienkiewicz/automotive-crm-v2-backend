@@ -24,7 +24,9 @@ data class VisitCardResponse(
     val services: List<VisitCardServiceLine>,
     val totals: VisitCardTotals,
     val inProgress: VisitCardInProgress?,
-    val completion: VisitCardCompletion?
+    val completion: VisitCardCompletion?,
+    /** Suggested additional services (upselling) — empty when none were assigned. */
+    val upsellSuggestions: List<pl.detailing.crm.visitcard.upsell.VisitCardUpsellSuggestion>
 )
 
 data class VisitCardReservation(

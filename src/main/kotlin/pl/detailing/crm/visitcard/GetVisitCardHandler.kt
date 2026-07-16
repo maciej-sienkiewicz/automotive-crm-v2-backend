@@ -24,6 +24,8 @@ import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRepository
+import pl.detailing.crm.visitcard.upsell.toPublicDto
 import java.util.UUID
 
 /**
@@ -49,7 +51,8 @@ class GetVisitCardHandler(
     private val documentStorageService: DocumentStorageService,
     private val photoSessionService: PhotoSessionService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
-    private val s3ProtocolStorageService: S3ProtocolStorageService
+    private val s3ProtocolStorageService: S3ProtocolStorageService,
+    private val upsellSuggestionRepository: VisitUpsellSuggestionRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -96,7 +99,10 @@ class GetVisitCardHandler(
                 currency = "PLN"
             ),
             inProgress = if (started) buildInProgressSection(visit, studioId) else null,
-            completion = if (finished) buildCompletionSection(visit, studioId) else null
+            completion = if (finished) buildCompletionSection(visit, studioId) else null,
+            upsellSuggestions = upsellSuggestionRepository
+                .findAllByVisitIdAndStudioId(visit.id.value, studioId)
+                .map { it.toPublicDto() }
         )
     }
 

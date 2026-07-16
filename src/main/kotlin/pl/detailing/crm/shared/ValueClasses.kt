@@ -828,7 +828,10 @@ enum class CommunicationMessageType(val label: String) {
 
     // Visit Card link delivery
     VISIT_CARD_EMAIL("E-mail z linkiem do Karty Wizyty"),
-    VISIT_CARD_SMS("SMS z linkiem do Karty Wizyty")
+    VISIT_CARD_SMS("SMS z linkiem do Karty Wizyty"),
+
+    // Visit Card upselling
+    VISIT_CARD_UPSELL_SMS("SMS potwierdzenia dodania sugerowanych usług")
 }
 
 /**

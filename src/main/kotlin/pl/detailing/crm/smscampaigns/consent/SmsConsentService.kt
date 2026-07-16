@@ -1,6 +1,7 @@
 package pl.detailing.crm.smscampaigns.consent
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
@@ -47,7 +48,8 @@ class SmsConsentService(
     private val smsProvider: SmsProvider,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val visitRepository: VisitRepository,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     companion object {
@@ -239,6 +241,16 @@ class SmsConsentService(
         consentRequest.status = SmsConsentRequestStatus.CONFIRMED
         consentRequest.respondedAt = Instant.now()
         smsConsentRequestRepository.save(consentRequest)
+
+        // Same-transaction event so dependent modules (e.g. Visit Card upselling)
+        // can react to the confirmation atomically with the approval itself.
+        eventPublisher.publishEvent(
+            SmsConsentConfirmedEvent(
+                visitId = visitId.value,
+                studioId = studioId.value,
+                approvedServiceItemIds = pendingItems.map { it.id.value }
+            )
+        )
 
         communicationLogService.record(
             RecordCommunicationCommand(
