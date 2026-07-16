@@ -824,7 +824,11 @@ enum class CommunicationMessageType(val label: String) {
 
     // SMS confirmation types
     SMS_APPOINTMENT_RESCHEDULE_CONFIRMATION("SMS potwierdzenie zmiany terminu"),
-    SMS_BOOKING_CONFIRMATION("SMS potwierdzenie rezerwacji")
+    SMS_BOOKING_CONFIRMATION("SMS potwierdzenie rezerwacji"),
+
+    // Visit Card link delivery
+    VISIT_CARD_EMAIL("E-mail z linkiem do Karty Wizyty"),
+    VISIT_CARD_SMS("SMS z linkiem do Karty Wizyty")
 }
 
 /**

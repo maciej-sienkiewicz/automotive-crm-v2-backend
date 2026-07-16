@@ -21,6 +21,9 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.id = :id AND d.studioId = :studioId")
     fun findByIdAndStudioIdIncludingDeleted(id: UUID, studioId: UUID): FinancialDocumentEntity?
 
+    @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.visitId = :visitId AND d.studioId = :studioId AND d.deletedAt IS NULL")
+    fun findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visitId: UUID, studioId: UUID): List<FinancialDocumentEntity>
+
     @Query("""
         SELECT COUNT(d) FROM FinancialDocumentEntity d
         WHERE d.studioId = :studioId

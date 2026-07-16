@@ -60,6 +60,7 @@ class VisitController(
     private val saveVisitServicesHandler: SaveVisitServicesHandler,
     private val confirmVisitHandler: ConfirmVisitHandler,
     private val sendVisitWelcomeEmailHandler: SendVisitWelcomeEmailHandler,
+    private val sendVisitCardLinkHandler: pl.detailing.crm.visitcard.SendVisitCardLinkHandler,
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
@@ -352,6 +353,18 @@ class VisitController(
             }.onFailure { ex ->
                 logger.warn("confirmVisit: email notification failed [visitId={}]: {}", visitId, ex.message)
             }
+        }
+
+        // Visit Card link — sent over the studio-configured channel (EMAIL/SMS/BOTH/NONE)
+        runCatching {
+            sendVisitCardLinkHandler.handle(
+                pl.detailing.crm.visitcard.SendVisitCardLinkCommand(
+                    visitId = command.visitId,
+                    studioId = command.studioId
+                )
+            )
+        }.onFailure { ex ->
+            logger.warn("confirmVisit: visit card link send failed [visitId={}]: {}", visitId, ex.message)
         }
 
         ResponseEntity.ok(ConfirmVisitResponse(

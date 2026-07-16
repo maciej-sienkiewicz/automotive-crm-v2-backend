@@ -53,6 +53,10 @@ class StudioSettingsEntity(
     @Column(name = "sms_api_name_confirmed", nullable = false)
     var smsApiNameConfirmed: Boolean = false,
 
+    /** Delivery channel for the customer Visit Card link: EMAIL, SMS, BOTH or NONE (no auto-send). */
+    @Column(name = "visit_card_delivery_channel", nullable = false, length = 10)
+    var visitCardDeliveryChannel: String = "EMAIL",
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )
