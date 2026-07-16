@@ -12,6 +12,7 @@ import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.PendingOperation
+import pl.detailing.crm.shared.ProtocolStage
 import pl.detailing.crm.shared.VisitProtocolStatus
 import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.shared.VisitStatus
@@ -148,22 +149,24 @@ class GetVisitCardHandler(
     }
 
     private fun buildInProgressSection(visit: Visit, studioId: UUID): VisitCardInProgress {
-        val signedProtocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStatus(
-            visit.id.value, studioId, VisitProtocolStatus.SIGNED
-        )
+        // Include all CHECK_IN protocols that have at least a filled PDF — covers both
+        // READY_FOR_SIGNATURE (filled, not yet digitally signed) and SIGNED states.
+        val checkInProtocols = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
+            visit.id.value, studioId, ProtocolStage.CHECK_IN
+        ).filter { it.filledPdfS3Key != null || it.signedPdfS3Key != null }
 
-        val signedConsents = signedProtocols.mapNotNull { protocol ->
-            val signedAt = protocol.signedAt ?: return@mapNotNull null
+        val signedConsents = checkInProtocols.map { protocol ->
             val name = protocol.consentDefinitionId
                 ?.let { consentDefinitionRepository.findByIdAndStudioId(it, studioId)?.name }
                 ?: protocol.templateId?.let {
                     protocolTemplateRepository.findByIdAndStudioId(it, studioId)?.name
                 }
-                ?: "Podpisany dokument"
+                ?: "Protokół odbioru pojazdu"
+            val pdfKey = protocol.signedPdfS3Key ?: protocol.filledPdfS3Key
             VisitCardSignedDocument(
                 name = name,
-                signedAt = signedAt,
-                downloadUrl = protocol.signedPdfS3Key?.let { key ->
+                signedAt = protocol.signedAt,
+                downloadUrl = pdfKey?.let { key ->
                     runCatching { s3ProtocolStorageService.generateDownloadUrl(key) }.getOrNull()
                 }
             )

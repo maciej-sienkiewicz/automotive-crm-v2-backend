@@ -79,7 +79,7 @@ data class VisitCardInProgress(
 
 data class VisitCardSignedDocument(
     val name: String,
-    val signedAt: Instant,
+    val signedAt: Instant?,
     val downloadUrl: String?
 )
 
