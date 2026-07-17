@@ -40,9 +40,42 @@ class FetchKsefInvoicesHandler(
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
     companion object {
-        /** Limit pobrań XML na jeden przebieg backfillu — reszta w kolejnych przebiegach. */
-        private const val BACKFILL_BATCH_SIZE = 100
+        /**
+         * Limity KSeF API 2.0 dla GET /invoices/ksef/{ksefNumber}: 8 req/s, 16 req/min, 64 req/h
+         * (naliczane per kontekst NIP + adres IP, w przesuwającym się oknie czasowym).
+         *
+         * Pacing 4s między pobraniami XML daje maks. 15 req/min — poniżej limitu minutowego.
+         * Batch 12 faktur na przebieg przy syncu co 15 min to maks. 48 pobrań/h z backfillu,
+         * co zostawia zapas na XML nowych faktur w ramach limitu godzinowego 64 req/h.
+         */
+        private const val BACKFILL_BATCH_SIZE = 12
+        private const val XML_FETCH_INTERVAL_MS = 4_000L
+
+        /** Maks. liczba ponowień po 429 dla jednego pobrania XML. */
+        private const val MAX_RATE_LIMIT_RETRIES = 2
+
+        /**
+         * Gdy Retry-After przekracza ten próg, blokada dotyczy limitu minutowego/godzinowego —
+         * nie czekamy aktywnie, tylko przerywamy przebieg (reszta w kolejnym cyklu syncu).
+         */
+        private const val MAX_RETRY_AFTER_SECONDS = 15L
+
+        /** Domyślny czas oczekiwania po 429, gdy nie udało się odczytać Retry-After. */
+        private const val DEFAULT_RETRY_AFTER_SECONDS = 2L
+
+        /** Wyciąga sugerowany czas oczekiwania z komunikatu 429 KSeF („Spróbuj ponownie po N sekundach"). */
+        private val RETRY_AFTER_PATTERN = Regex("po (\\d+) sekund")
     }
+
+    /**
+     * Wyczerpanie limitu żądań KSeF, którego nie opłaca się przeczekiwać w bieżącym przebiegu.
+     * Faktury bez pobranego XML mają details_synced = FALSE i zostaną dokończone w kolejnym cyklu.
+     */
+    private class KsefRateLimitException(message: String) : RuntimeException(message)
+
+    /** Znacznik ostatniego pobrania XML — wymusza odstęp [XML_FETCH_INTERVAL_MS] między żądaniami. */
+    @Volatile
+    private var lastXmlFetchAtMs = 0L
 
     /**
      * Fetches EXPENSE (SUBJECT2) invoices from KSeF for the given date range.
@@ -64,6 +97,7 @@ class FetchKsefInvoicesHandler(
 
         var fetched = 0
         var skipped = 0
+        var rateLimited = false
 
         for (metadata in allMetadata) {
             val existing = invoiceRepository.findByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)
@@ -73,7 +107,15 @@ class FetchKsefInvoicesHandler(
             }
 
             val isCorrection = metadata.invoiceType?.value == "FA_KOR"
-            val parsedXml = safeParseXml(metadata.ksefNumber, accessToken)
+            // Po wyczerpaniu limitu żądań zapisujemy faktury z samych metadanych —
+            // XML (pozycje, adresy, płatność) uzupełni backfill w kolejnym cyklu
+            val parsedXml = if (rateLimited) null else try {
+                safeParseXml(metadata.ksefNumber, accessToken)
+            } catch (e: KsefRateLimitException) {
+                log.warn("KSeF rate limit podczas fetchu studio={}: {}", command.studioId, e.message)
+                rateLimited = true
+                null
+            }
             val xmlData = parsedXml ?: KsefXmlData.EMPTY
 
             val invoice = invoiceRepository.save(
@@ -140,7 +182,14 @@ class FetchKsefInvoicesHandler(
         var backfilled = 0
 
         for (invoice in candidates) {
-            val xmlData = safeParseXml(invoice.ksefNumber, accessToken) ?: continue
+            val xmlData = try {
+                safeParseXml(invoice.ksefNumber, accessToken) ?: continue
+            } catch (e: KsefRateLimitException) {
+                // Limit żądań wyczerpany — pozostałe faktury zachowują details_synced=FALSE
+                // i zostaną uzupełnione w kolejnym cyklu syncu
+                log.warn("KSeF rate limit podczas backfillu studio={}, przerywam przebieg: {}", studioId, e.message)
+                break
+            }
 
             if (!itemRepository.existsByInvoiceId(invoice.id)) {
                 saveItems(invoice.id, xmlData.lines)
@@ -193,16 +242,67 @@ class FetchKsefInvoicesHandler(
         })
     }
 
-    /** Pobiera i parsuje XML faktury; null gdy pobranie/parsowanie się nie powiodło. */
+    /**
+     * Pobiera i parsuje XML faktury z poszanowaniem limitów KSeF:
+     * - wymusza minimalny odstęp między żądaniami ([XML_FETCH_INTERVAL_MS]),
+     * - po 429 ponawia z czasem z Retry-After (maks. [MAX_RATE_LIMIT_RETRIES] razy),
+     * - gdy blokada jest dłuższa niż [MAX_RETRY_AFTER_SECONDS] lub ponowienia wyczerpane,
+     *   rzuca [KsefRateLimitException] — sygnał do przerwania przebiegu.
+     *
+     * @return null gdy pobranie/parsowanie nie powiodło się z przyczyn innych niż rate limit
+     */
     private fun safeParseXml(ksefNumber: String, accessToken: String): KsefXmlData? {
-        return try {
-            val xml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
-            xmlParser.parseInvoiceData(xml)
-        } catch (e: Exception) {
-            log.warn("Failed to fetch XML for invoice {}: {}", ksefNumber, e.message)
-            null
+        var attempt = 0
+        while (true) {
+            paceXmlFetch()
+            try {
+                val xml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
+                return xmlParser.parseInvoiceData(xml)
+            } catch (e: Exception) {
+                if (!isRateLimited(e)) {
+                    log.warn("Failed to fetch XML for invoice {}: {}", ksefNumber, e.message)
+                    return null
+                }
+
+                val retryAfter = retryAfterSeconds(e)
+                attempt++
+                if (attempt > MAX_RATE_LIMIT_RETRIES || retryAfter > MAX_RETRY_AFTER_SECONDS) {
+                    throw KsefRateLimitException(
+                        "429 dla faktury $ksefNumber (retryAfter=${retryAfter}s, próba $attempt)"
+                    )
+                }
+                log.info(
+                    "KSeF 429 dla faktury {} — ponowienie za {}s (próba {}/{})",
+                    ksefNumber, retryAfter, attempt, MAX_RATE_LIMIT_RETRIES
+                )
+                Thread.sleep(retryAfter * 1000)
+            }
         }
     }
+
+    /** Wymusza minimalny odstęp między pobraniami XML — limit KSeF to 8 req/s i 16 req/min. */
+    private fun paceXmlFetch() {
+        val waitMs = lastXmlFetchAtMs + XML_FETCH_INTERVAL_MS - System.currentTimeMillis()
+        if (waitMs > 0) Thread.sleep(waitMs)
+        lastXmlFetchAtMs = System.currentTimeMillis()
+    }
+
+    /**
+     * KSeF zwraca 429 z opisem w treści błędu; SDK opakowuje odpowiedź w wyjątek
+     * z komunikatem zawierającym kod statusu, stąd detekcja po treści komunikatu.
+     */
+    private fun isRateLimited(e: Exception): Boolean =
+        e.message?.contains("429") == true
+
+    /**
+     * Czas oczekiwania sugerowany przez KSeF. Nagłówek Retry-After nie jest dostępny
+     * w wyjątku SDK, ale ta sama wartość występuje w opisie błędu
+     * („Przekroczono limit ... Spróbuj ponownie po N sekundach.").
+     */
+    private fun retryAfterSeconds(e: Exception): Long =
+        RETRY_AFTER_PATTERN.find(e.message ?: "")
+            ?.groupValues?.get(1)?.toLongOrNull()
+            ?: DEFAULT_RETRY_AFTER_SECONDS
 
     private fun fetchAllPages(filters: InvoiceQueryFilters, accessToken: String, pageSize: Int) = buildList {
         var offset = 0

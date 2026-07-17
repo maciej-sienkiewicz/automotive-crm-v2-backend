@@ -2,7 +2,6 @@ package pl.detailing.crm.ksef.sync
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
 import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
@@ -35,7 +34,11 @@ class KsefSyncService(
         private val STALE_THRESHOLD = Duration.ofMinutes(30)
     }
 
-    @Transactional
+    /**
+     * Celowo BEZ @Transactional: fetch i backfill mają własne transakcje w handlerze.
+     * Wspólna transakcja powodowała, że wyjątek z handlera oznaczał ją jako rollback-only
+     * i zapis statusu ERROR na kursorze ginął (UnexpectedRollbackException przy commicie).
+     */
     fun syncStudio(studioId: StudioId) {
         val cursor = cursorRepository.findById(studioId.value)
             .orElse(KsefSyncCursorEntity(studioId = studioId.value))
