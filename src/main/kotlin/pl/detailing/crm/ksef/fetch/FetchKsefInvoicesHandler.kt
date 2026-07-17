@@ -12,9 +12,12 @@ import pl.akmf.ksef.sdk.client.model.util.SortOrder
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.StudioId
 import java.time.OffsetDateTime
+import java.util.UUID
 
 data class FetchExpensesCommand(
     val studioId: StudioId,
@@ -30,6 +33,7 @@ class FetchKsefInvoicesHandler(
     private val ksefAuthService: KsefAuthService,
     private val ksefClient: KSeFClient,
     private val invoiceRepository: KsefInvoiceRepository,
+    private val itemRepository: KsefInvoiceItemRepository,
     private val xmlParser: KsefInvoiceXmlParser
 ) {
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
@@ -56,7 +60,9 @@ class FetchKsefInvoicesHandler(
         var skipped = 0
 
         for (metadata in allMetadata) {
-            if (invoiceRepository.existsByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)) {
+            val existing = invoiceRepository.findByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)
+            if (existing != null) {
+                backfillItemsIfMissing(existing, accessToken)
                 skipped++
                 continue
             }
@@ -64,7 +70,7 @@ class FetchKsefInvoicesHandler(
             val isCorrection = metadata.invoiceType?.value == "FA_KOR"
             val xmlData = safeParseXml(metadata.ksefNumber, accessToken)
 
-            invoiceRepository.save(
+            val invoice = invoiceRepository.save(
                 KsefInvoiceEntity(
                     studioId       = command.studioId.value,
                     source         = "KSEF",
@@ -72,10 +78,16 @@ class FetchKsefInvoicesHandler(
                     invoiceNumber  = metadata.invoiceNumber,
                     invoicingDate  = metadata.invoicingDate,
                     issueDate      = metadata.issueDate,
-                    sellerNip      = metadata.seller?.nip,
-                    sellerName     = xmlData.sellerName,
-                    buyerNip       = metadata.buyer?.identifier?.value,
-                    buyerName      = xmlData.buyerName,
+                    sellerNip      = metadata.seller?.nip ?: xmlData.seller.nip,
+                    sellerName     = xmlData.seller.name,
+                    buyerNip       = metadata.buyer?.identifier?.value ?: xmlData.buyer.nip,
+                    buyerName      = xmlData.buyer.name,
+                    sellerAddressLine1 = xmlData.seller.addressLine1,
+                    sellerAddressLine2 = xmlData.seller.addressLine2,
+                    sellerCountryCode  = xmlData.seller.countryCode,
+                    buyerAddressLine1  = xmlData.buyer.addressLine1,
+                    buyerAddressLine2  = xmlData.buyer.addressLine2,
+                    buyerCountryCode   = xmlData.buyer.countryCode,
                     netAmount      = metadata.netAmount,
                     grossAmount    = metadata.grossAmount,
                     vatAmount      = metadata.vatAmount,
@@ -84,15 +96,58 @@ class FetchKsefInvoicesHandler(
                     direction      = "EXPENSE",
                     isCorrection   = isCorrection,
                     status         = "ACTIVE",
-                    paymentStatus  = PaymentForm.defaultPaymentStatus(xmlData.paymentForm),
-                    paymentForm    = xmlData.paymentForm?.name
+                    paymentStatus  = resolvePaymentStatus(xmlData.payment),
+                    paymentForm    = xmlData.payment.paymentForm?.name,
+                    paymentDueDate = xmlData.payment.dueDate,
+                    bankAccount    = xmlData.payment.bankAccount
                 )
             )
+            saveItems(invoice.id, xmlData.lines)
             fetched++
         }
 
         log.info("KSeF fetch complete studio={}: fetched={} skipped={}", command.studioId, fetched, skipped)
         return FetchExpensesResult(fetched, skipped)
+    }
+
+    /**
+     * Faktury zsynchronizowane przed wprowadzeniem tabeli pozycji nie mają wierszy.
+     * Ponowny fetch obejmujący ich zakres dat uzupełnia brakujące pozycje z XML,
+     * nie modyfikując samej faktury (statusy i notatki admina zostają nietknięte).
+     */
+    private fun backfillItemsIfMissing(existing: KsefInvoiceEntity, accessToken: String) {
+        if (existing.source != "KSEF") return
+        if (itemRepository.existsByInvoiceId(existing.id)) return
+
+        val xmlData = safeParseXml(existing.ksefNumber, accessToken)
+        if (xmlData.lines.isNotEmpty()) {
+            saveItems(existing.id, xmlData.lines)
+            log.info("Backfilled {} items for existing invoice {}", xmlData.lines.size, existing.ksefNumber)
+        }
+    }
+
+    /**
+     * Zaplacono=1 w XML oznacza fakturę już opłaconą — niezależnie od formy płatności.
+     * W pozostałych przypadkach status wynika z formy płatności (przelew/kredyt → PENDING).
+     */
+    private fun resolvePaymentStatus(payment: KsefXmlPayment): String =
+        if (payment.paid) "PAID" else PaymentForm.defaultPaymentStatus(payment.paymentForm)
+
+    private fun saveItems(invoiceId: UUID, lines: List<KsefXmlLine>) {
+        if (lines.isEmpty()) return
+        itemRepository.saveAll(lines.map { line ->
+            KsefInvoiceItemEntity(
+                invoiceId    = invoiceId,
+                lineNumber   = line.lineNumber,
+                name         = line.name,
+                unit         = line.unit,
+                quantity     = line.quantity,
+                unitPriceNet = line.unitPriceNet,
+                netValue     = line.netValue,
+                grossValue   = line.grossValue,
+                vatRate      = line.vatRate
+            )
+        })
     }
 
     private fun safeParseXml(ksefNumber: String, accessToken: String): KsefXmlData {
@@ -101,7 +156,7 @@ class FetchKsefInvoicesHandler(
             xmlParser.parseInvoiceData(xml)
         } catch (e: Exception) {
             log.warn("Failed to fetch XML for invoice {}: {}", ksefNumber, e.message)
-            KsefXmlData(null, null, null)
+            KsefXmlData.EMPTY
         }
     }
 
