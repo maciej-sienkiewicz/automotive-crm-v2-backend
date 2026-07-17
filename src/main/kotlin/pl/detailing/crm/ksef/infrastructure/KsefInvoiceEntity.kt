@@ -154,12 +154,65 @@ class KsefInvoiceEntity(
 
     /** Free-text note added by the admin (e.g. context on the expense). Null when no note set. */
     @Column(name = "note", columnDefinition = "TEXT")
-    val note: String? = null
+    val note: String? = null,
+
+    /**
+     * True gdy pełne dane z XML (pozycje, adresy stron, szczegóły płatności) zostały pobrane.
+     * DB default FALSE — faktury zsynchronizowane przed wprowadzeniem pozycji mają FALSE
+     * i są uzupełniane przez synchronizację wsteczną (backfill) w kolejnych przebiegach syncu.
+     */
+    @Column(name = "details_synced", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    val detailsSynced: Boolean = true
 
 ) {
     fun withStatus(newStatus: String) = copy(status = newStatus)
     fun withPaymentStatus(newPaymentStatus: String) = copy(paymentStatus = newPaymentStatus)
     fun withNote(newNote: String?) = copy(note = newNote)
+
+    /**
+     * Uzupełnia brakujące (null) dane szczegółowe z XML faktury, nie nadpisując wartości
+     * już obecnych ani pól kontrolowanych przez admina (status, paymentStatus, note).
+     * Oznacza fakturę jako w pełni zsynchronizowaną.
+     */
+    fun withBackfilledDetails(
+        sellerNip: String?,
+        sellerName: String?,
+        buyerNip: String?,
+        buyerName: String?,
+        sellerAddressLine1: String?,
+        sellerAddressLine2: String?,
+        sellerCountryCode: String?,
+        buyerAddressLine1: String?,
+        buyerAddressLine2: String?,
+        buyerCountryCode: String?,
+        paymentForm: String?,
+        paymentDueDate: LocalDate?,
+        bankAccount: String?
+    ) = KsefInvoiceEntity(
+        id = id, studioId = studioId,
+        source = source, ksefNumber = ksefNumber, invoiceNumber = invoiceNumber,
+        invoicingDate = invoicingDate, issueDate = issueDate,
+        sellerNip = this.sellerNip ?: sellerNip,
+        sellerName = this.sellerName ?: sellerName,
+        buyerNip = this.buyerNip ?: buyerNip,
+        buyerName = this.buyerName ?: buyerName,
+        sellerAddressLine1 = this.sellerAddressLine1 ?: sellerAddressLine1,
+        sellerAddressLine2 = this.sellerAddressLine2 ?: sellerAddressLine2,
+        sellerCountryCode = this.sellerCountryCode ?: sellerCountryCode,
+        buyerAddressLine1 = this.buyerAddressLine1 ?: buyerAddressLine1,
+        buyerAddressLine2 = this.buyerAddressLine2 ?: buyerAddressLine2,
+        buyerCountryCode = this.buyerCountryCode ?: buyerCountryCode,
+        netAmount = netAmount, grossAmount = grossAmount, vatAmount = vatAmount,
+        currency = currency, invoiceType = invoiceType, fetchedAt = fetchedAt,
+        direction = direction, isCorrection = isCorrection,
+        originalKsefNumber = originalKsefNumber, status = status,
+        paymentStatus = paymentStatus,
+        paymentForm = this.paymentForm ?: paymentForm,
+        paymentDueDate = this.paymentDueDate ?: paymentDueDate,
+        bankAccount = this.bankAccount ?: bankAccount,
+        note = note,
+        detailsSynced = true
+    )
 
     private fun copy(
         source: String = this.source,
@@ -200,6 +253,7 @@ class KsefInvoiceEntity(
         originalKsefNumber = originalKsefNumber, status = status,
         paymentStatus = paymentStatus, paymentForm = paymentForm,
         paymentDueDate = this.paymentDueDate, bankAccount = this.bankAccount,
-        note = note
+        note = note,
+        detailsSynced = this.detailsSynced
     )
 }

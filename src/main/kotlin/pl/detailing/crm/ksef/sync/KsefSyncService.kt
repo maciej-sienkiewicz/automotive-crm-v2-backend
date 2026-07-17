@@ -16,6 +16,10 @@ import java.time.ZoneOffset
  *
  * First sync: starts from credentials.createdAt to avoid pulling pre-integration history.
  * Subsequent syncs: starts from (lastExpenseSync - 1h) for reliability against KSeF delays.
+ *
+ * Each run also performs a backward sync (backfill): invoices fetched before line items
+ * and detail data were introduced (details_synced = FALSE) get their missing data pulled
+ * from the invoice XML, regardless of the delta window.
  */
 @Service
 class KsefSyncService(
@@ -67,8 +71,15 @@ class KsefSyncService(
                 FetchExpensesCommand(studioId = studioId, dateFrom = dateFrom, dateTo = now, pageSize = PAGE_SIZE)
             )
 
+            // Synchronizacja wsteczna: uzupełnia pozycje i szczegóły faktur pobranych
+            // przed wprowadzeniem tych danych — niezależnie od okna dat delta-syncu
+            val backfilled = fetchHandler.backfillMissingDetails(studioId)
+
             cursorRepository.save(cursor.toSuccess(now))
-            log.info("KSeF sync done studio={} fetched={} skipped={}", studioId, result.fetched, result.skipped)
+            log.info(
+                "KSeF sync done studio={} fetched={} skipped={} backfilled={}",
+                studioId, result.fetched, result.skipped, backfilled
+            )
         } catch (e: Exception) {
             log.error("KSeF sync FAILED studio={}: {}", studioId, e.message, e)
             cursorRepository.save(cursor.toError(e.message ?: "Unknown error"))
