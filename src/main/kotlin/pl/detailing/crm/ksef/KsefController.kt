@@ -14,6 +14,8 @@ import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
+import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.ksef.statistics.KsefStatisticsHandler
 import pl.detailing.crm.ksef.statistics.KsefStatisticsQuery
@@ -21,6 +23,7 @@ import pl.detailing.crm.ksef.sync.KsefSyncCursorRepository
 import pl.detailing.crm.ksef.sync.KsefSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -32,6 +35,7 @@ class KsefController(
     private val ksefAuthService: KsefAuthService,
     private val fetchHandler: FetchKsefInvoicesHandler,
     private val invoiceRepository: KsefInvoiceRepository,
+    private val invoiceItemRepository: KsefInvoiceItemRepository,
     private val syncService: KsefSyncService,
     private val syncCursorRepository: KsefSyncCursorRepository,
     private val statisticsHandler: KsefStatisticsHandler
@@ -143,6 +147,18 @@ class KsefController(
                 pageSize = result.size
             )
         )
+    }
+
+    /**
+     * Full expense document detail — parties with addresses, payment info and line items.
+     * Data source for the invoice visualization view.
+     */
+    @GetMapping("/expenses/{id}")
+    fun getExpenseDetail(@PathVariable id: UUID): ResponseEntity<ExpenseDetailResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = findExpenseOrThrow(id, principal.studioId.value)
+        val items = invoiceItemRepository.findByInvoiceIdOrderByLineNumberAsc(entity.id)
+        return ResponseEntity.ok(entity.toDetailResponse(items))
     }
 
     /** Create a manual expense document (for invoices not received via KSeF). */
@@ -304,6 +320,7 @@ class KsefController(
             throw ValidationException("Można usuwać tylko ręcznie dodane dokumenty kosztowe. Faktury KSeF można wyłącznie ukryć.")
         }
 
+        invoiceItemRepository.deleteByInvoiceId(entity.id)
         invoiceRepository.delete(entity)
         return ResponseEntity.noContent().build()
     }
@@ -390,6 +407,58 @@ class KsefController(
         fetchedAt      = fetchedAt,
         note           = note
     )
+
+    private fun KsefInvoiceEntity.toDetailResponse(items: List<KsefInvoiceItemEntity>) = ExpenseDetailResponse(
+        id             = id.toString(),
+        source         = source,
+        ksefNumber     = if (source == "KSEF") ksefNumber else null,
+        documentNumber = invoiceNumber,
+        saleDate       = invoicingDate,
+        issueDate      = issueDate,
+        invoiceType    = invoiceType,
+        seller         = ExpensePartyResponse(
+            name         = sellerName,
+            nip          = sellerNip,
+            addressLine1 = sellerAddressLine1,
+            addressLine2 = sellerAddressLine2,
+            countryCode  = sellerCountryCode
+        ),
+        buyer          = ExpensePartyResponse(
+            name         = buyerName,
+            nip          = buyerNip,
+            addressLine1 = buyerAddressLine1,
+            addressLine2 = buyerAddressLine2,
+            countryCode  = buyerCountryCode
+        ),
+        netAmount      = netAmount,
+        grossAmount    = grossAmount,
+        vatAmount      = vatAmount,
+        currency       = currency ?: "PLN",
+        payment        = ExpensePaymentResponse(
+            method      = paymentForm,
+            methodLabel = paymentForm?.let { runCatching { PaymentForm.valueOf(it).displayName }.getOrNull() },
+            status      = paymentStatus,
+            dueDate     = paymentDueDate,
+            bankAccount = bankAccount
+        ),
+        items          = items.map { item ->
+            ExpenseItemResponse(
+                lineNumber   = item.lineNumber,
+                name         = item.name,
+                unit         = item.unit,
+                quantity     = item.quantity,
+                unitPriceNet = item.unitPriceNet,
+                netValue     = item.netValue,
+                grossValue   = item.grossValue,
+                vatRate      = item.vatRate
+            )
+        },
+        status         = status,
+        isCorrection   = isCorrection,
+        originalKsefNumber = originalKsefNumber,
+        fetchedAt      = fetchedAt,
+        note           = note
+    )
 }
 
 // ── Request DTOs ───────────────────────────────────────────────────────────────
@@ -448,6 +517,60 @@ data class ExpenseResponse(
     val paymentStatus: String,          // PAID | PENDING
     val status: String,                 // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
     val isCorrection: Boolean,
+    val fetchedAt: Instant,
+    val note: String?
+)
+
+/** Strona faktury (sprzedawca / nabywca) z danymi adresowymi. */
+data class ExpensePartyResponse(
+    val name: String?,
+    val nip: String?,
+    val addressLine1: String?,
+    val addressLine2: String?,
+    val countryCode: String?
+)
+
+/** Szczegóły płatności dokumentu kosztowego. */
+data class ExpensePaymentResponse(
+    val method: String?,        // PaymentForm.name
+    val methodLabel: String?,   // PaymentForm.displayName
+    val status: String,         // PAID | PENDING
+    val dueDate: LocalDate?,
+    val bankAccount: String?
+)
+
+/** Pozycja faktury (wiersz FaWiersz z KSeF). */
+data class ExpenseItemResponse(
+    val lineNumber: Int,
+    val name: String?,
+    val unit: String?,
+    val quantity: Double?,
+    val unitPriceNet: Double?,
+    val netValue: Double?,
+    val grossValue: Double?,
+    val vatRate: String?
+)
+
+/** Pełne dane dokumentu kosztowego — podstawa do wizualizacji faktury. */
+data class ExpenseDetailResponse(
+    val id: String,
+    val source: String,                 // KSEF | MANUAL
+    val ksefNumber: String?,            // null for MANUAL
+    val documentNumber: String?,
+    val saleDate: OffsetDateTime?,
+    val issueDate: LocalDate?,
+    val invoiceType: String?,           // FA | FA_KOR | null (MANUAL)
+    val seller: ExpensePartyResponse,
+    val buyer: ExpensePartyResponse,
+    val netAmount: Double?,
+    val grossAmount: Double?,
+    val vatAmount: Double?,
+    val currency: String,
+    val payment: ExpensePaymentResponse,
+    val items: List<ExpenseItemResponse>,
+    val status: String,                 // ACTIVE | CORRECTED | CANCELLED | EXCLUDED
+    val isCorrection: Boolean,
+    val originalKsefNumber: String?,
     val fetchedAt: Instant,
     val note: String?
 )

@@ -71,6 +71,30 @@ class KsefInvoiceEntity(
     @Column(name = "buyer_name", length = 500)
     val buyerName: String?,
 
+    /** Adres sprzedawcy z XML KSeF (Podmiot1/Adres/AdresL1) — zwykle ulica i numer. */
+    @Column(name = "seller_address_line1", length = 500)
+    val sellerAddressLine1: String? = null,
+
+    /** Adres sprzedawcy c.d. (Podmiot1/Adres/AdresL2) — zwykle kod pocztowy i miejscowość. */
+    @Column(name = "seller_address_line2", length = 500)
+    val sellerAddressLine2: String? = null,
+
+    /** Kod kraju sprzedawcy wg ISO 3166-1 (Podmiot1/Adres/KodKraju). */
+    @Column(name = "seller_country_code", length = 2)
+    val sellerCountryCode: String? = null,
+
+    /** Adres nabywcy z XML KSeF (Podmiot2/Adres/AdresL1). */
+    @Column(name = "buyer_address_line1", length = 500)
+    val buyerAddressLine1: String? = null,
+
+    /** Adres nabywcy c.d. (Podmiot2/Adres/AdresL2). */
+    @Column(name = "buyer_address_line2", length = 500)
+    val buyerAddressLine2: String? = null,
+
+    /** Kod kraju nabywcy wg ISO 3166-1 (Podmiot2/Adres/KodKraju). */
+    @Column(name = "buyer_country_code", length = 2)
+    val buyerCountryCode: String? = null,
+
     @Column(name = "net_amount")
     val netAmount: Double?,
 
@@ -120,6 +144,14 @@ class KsefInvoiceEntity(
     @Column(name = "payment_form", length = 20)
     val paymentForm: String? = null,
 
+    /** Termin płatności z XML KSeF (Platnosc/TerminPlatnosci/Termin). */
+    @Column(name = "payment_due_date")
+    val paymentDueDate: LocalDate? = null,
+
+    /** Numer rachunku bankowego sprzedawcy (Platnosc/RachunekBankowy/NrRB). */
+    @Column(name = "bank_account", length = 40)
+    val bankAccount: String? = null,
+
     /** Free-text note added by the admin (e.g. context on the expense). Null when no note set. */
     @Column(name = "note", columnDefinition = "TEXT")
     val note: String? = null
@@ -158,10 +190,16 @@ class KsefInvoiceEntity(
         invoicingDate = invoicingDate, issueDate = issueDate,
         sellerNip = sellerNip, sellerName = sellerName,
         buyerNip = buyerNip, buyerName = buyerName,
+        sellerAddressLine1 = this.sellerAddressLine1, sellerAddressLine2 = this.sellerAddressLine2,
+        sellerCountryCode = this.sellerCountryCode,
+        buyerAddressLine1 = this.buyerAddressLine1, buyerAddressLine2 = this.buyerAddressLine2,
+        buyerCountryCode = this.buyerCountryCode,
         netAmount = netAmount, grossAmount = grossAmount, vatAmount = vatAmount,
         currency = currency, invoiceType = invoiceType, fetchedAt = fetchedAt,
         direction = direction, isCorrection = isCorrection,
         originalKsefNumber = originalKsefNumber, status = status,
-        paymentStatus = paymentStatus, paymentForm = paymentForm, note = note
+        paymentStatus = paymentStatus, paymentForm = paymentForm,
+        paymentDueDate = this.paymentDueDate, bankAccount = this.bankAccount,
+        note = note
     )
 }

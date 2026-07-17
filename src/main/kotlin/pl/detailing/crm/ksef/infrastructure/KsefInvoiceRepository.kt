@@ -15,8 +15,6 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefInvoiceEntity?
 
-    fun existsByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): Boolean
-
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefInvoiceEntity?
 
     /**
