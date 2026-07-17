@@ -491,7 +491,7 @@ class VisitController(
      */
     private fun mapToVisitDetailResponse(result: GetVisitDetailResult, showPrices: Boolean, doorToDoor: DoorToDoor? = null): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices, doorToDoor),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices, doorToDoor, result.acceptedByName),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
             documents = result.documents.map { mapToDocumentResponse(it) }
         )
@@ -507,7 +507,8 @@ class VisitController(
         customerStats: CustomerStats,
         appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
         showPrices: Boolean,
-        doorToDoor: DoorToDoor? = null
+        doorToDoor: DoorToDoor? = null,
+        acceptedByName: String? = null
     ): VisitResponse {
         return VisitResponse(
             id = visit.id.value.toString(),
@@ -560,6 +561,7 @@ class VisitController(
                     status = d2d.status.name
                 )
             },
+            acceptedByName = acceptedByName,
             createdAt = visit.createdAt,
             updatedAt = visit.updatedAt
         )

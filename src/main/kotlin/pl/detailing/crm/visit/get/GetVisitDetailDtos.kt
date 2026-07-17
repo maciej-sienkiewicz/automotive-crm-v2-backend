@@ -43,6 +43,7 @@ data class VisitResponse(
     val technicalNotes: String?,
     val smsReminderSuppressed: Boolean,
     val doorToDoor: DoorToDoorInfoResponse?,
+    val acceptedByName: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -183,7 +184,8 @@ data class GetVisitDetailResult(
     val journalEntries: List<VisitJournalEntry>,
     val documents: List<VisitDocument>,
     val customerStats: CustomerStats,
-    val doorToDoor: DoorToDoor? = null
+    val doorToDoor: DoorToDoor? = null,
+    val acceptedByName: String? = null
 )
 
 /**
