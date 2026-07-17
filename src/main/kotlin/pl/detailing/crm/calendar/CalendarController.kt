@@ -1,6 +1,7 @@
 package pl.detailing.crm.calendar
 
 import kotlinx.coroutines.runBlocking
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.appointment.domain.AppointmentStatus
@@ -8,6 +9,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.shared.VisitStatus
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -18,8 +20,32 @@ import pl.detailing.crm.role.permission.RequiresPermission
 @RequestMapping("/api/v1/calendar")
 @RequiresPermission(Permission.VISITS_VIEW)
 class CalendarController(
-    private val getCalendarEventsHandler: GetCalendarEventsHandler
+    private val getCalendarEventsHandler: GetCalendarEventsHandler,
+    private val getDoorToDoorCalendarHandler: GetDoorToDoorCalendarHandler
 ) {
+
+    @GetMapping("/door-to-door")
+    fun getDoorToDoorCalendar(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate
+    ): ResponseEntity<List<DoorToDoorCalendarDayResponse>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val days = getDoorToDoorCalendarHandler.handle(principal.studioId, from, to)
+        ResponseEntity.ok(days.map { day ->
+            DoorToDoorCalendarDayResponse(
+                date = day.date.toString(),
+                count = day.count,
+                entries = day.entries.map {
+                    DoorToDoorCalendarEntryResponse(
+                        id = it.id,
+                        direction = it.direction.name,
+                        vehicle = it.vehicle,
+                        customerLastName = it.customerLastName
+                    )
+                }
+            )
+        })
+    }
 
     @GetMapping("/events")
     fun getCalendarEvents(
@@ -130,6 +156,19 @@ class CalendarController(
         null
     }
 }
+
+data class DoorToDoorCalendarEntryResponse(
+    val id: String,
+    val direction: String,
+    val vehicle: String,
+    @Pii val customerLastName: String
+)
+
+data class DoorToDoorCalendarDayResponse(
+    val date: String,
+    val count: Int,
+    val entries: List<DoorToDoorCalendarEntryResponse>
+)
 
 data class CalendarErrorResponse(
     val error: String,
