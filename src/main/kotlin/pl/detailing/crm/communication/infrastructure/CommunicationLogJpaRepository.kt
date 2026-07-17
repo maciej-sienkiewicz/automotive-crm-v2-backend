@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import pl.detailing.crm.shared.CommunicationMessageType
+import pl.detailing.crm.shared.CommunicationStatus
 import java.util.UUID
 
 @Repository
@@ -62,4 +64,26 @@ interface CommunicationLogJpaRepository : JpaRepository<CommunicationLogEntity, 
         @Param("visitId") visitId: UUID,
         @Param("studioId") studioId: UUID
     ): Int
+
+    /**
+     * Successful sends of the given message types for a visit and/or the
+     * reservation it originated from, newest-first. Used by the Visit Card
+     * link modal to tell the employee the card has already been delivered.
+     * Pass null for the id you don't have — a null id matches nothing.
+     */
+    @Query("""
+        SELECT c FROM CommunicationLogEntity c
+        WHERE c.studioId = :studioId
+          AND c.status = :status
+          AND c.messageType IN :messageTypes
+          AND (c.visitId = :visitId OR c.appointmentId = :appointmentId)
+        ORDER BY c.sentAt DESC
+    """)
+    fun findSentByTypesForVisitOrAppointment(
+        @Param("studioId") studioId: UUID,
+        @Param("visitId") visitId: UUID?,
+        @Param("appointmentId") appointmentId: UUID?,
+        @Param("messageTypes") messageTypes: Collection<CommunicationMessageType>,
+        @Param("status") status: CommunicationStatus
+    ): List<CommunicationLogEntity>
 }

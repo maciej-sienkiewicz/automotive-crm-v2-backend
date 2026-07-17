@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
@@ -27,6 +28,7 @@ class ReservationCardController(
     private val appointmentRepository: AppointmentRepository,
     private val tokenService: VisitCardTokenService,
     private val sendReservationCardLinkHandler: SendReservationCardLinkHandler,
+    private val sendStatusService: VisitCardSendStatusService,
     private val properties: VisitCardProperties
 ) {
 
@@ -41,11 +43,14 @@ class ReservationCardController(
                 ?: throw EntityNotFoundException("Appointment not found: $appointmentId")
 
             val token = tokenService.getOrCreateTokenForAppointment(principal.studioId, id)
+            val sendStatus = sendStatusService.status(principal.studioId.value, null, id.value)
             ResponseEntity.ok(
                 VisitCardLinkResponse(
                     token = token,
                     path = "/vc/$token",
-                    url = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token"
+                    url = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token",
+                    lastEmailSentAt = sendStatus.lastEmailSentAt,
+                    lastSmsSentAt = sendStatus.lastSmsSentAt
                 )
             )
         }
@@ -53,13 +58,17 @@ class ReservationCardController(
 
     @PostMapping("/{appointmentId}/card-link/send")
     @RequiresPermission(Permission.COMMUNICATION_SEND)
-    fun sendCardLink(@PathVariable appointmentId: String): ResponseEntity<VisitCardSendResponse> = runBlocking {
+    fun sendCardLink(
+        @PathVariable appointmentId: String,
+        @RequestBody(required = false) request: SendCardLinkRequest?
+    ): ResponseEntity<VisitCardSendResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val result = sendReservationCardLinkHandler.handle(
             SendReservationCardLinkCommand(
                 appointmentId = AppointmentId.fromString(appointmentId),
-                studioId = principal.studioId
+                studioId = principal.studioId,
+                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
             )
         )
         ResponseEntity.ok(

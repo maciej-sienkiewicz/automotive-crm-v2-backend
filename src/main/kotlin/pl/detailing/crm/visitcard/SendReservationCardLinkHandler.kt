@@ -24,7 +24,9 @@ import java.time.format.DateTimeFormatter
 
 data class SendReservationCardLinkCommand(
     val appointmentId: AppointmentId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    /** Optional override; when null the studio's configured channel is used. */
+    val channelOverride: VisitCardDeliveryChannel? = null
 )
 
 /**
@@ -59,7 +61,7 @@ class SendReservationCardLinkHandler(
             ?: throw EntityNotFoundException("Customer not found: ${appointment.customerId}")
 
         val settings = studioSettingsRepository.findById(command.studioId.value).orElse(null)
-        val channel = VisitCardDeliveryChannel.fromString(settings?.visitCardDeliveryChannel)
+        val channel = command.channelOverride ?: VisitCardDeliveryChannel.fromString(settings?.visitCardDeliveryChannel)
         if (channel == VisitCardDeliveryChannel.NONE) {
             return@withContext SendVisitCardLinkResult(false, false, "Wysyłka Karty Wizyty jest wyłączona w konfiguracji")
         }

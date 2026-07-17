@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -26,6 +27,7 @@ class VisitCardController(
     private val visitRepository: VisitRepository,
     private val tokenService: VisitCardTokenService,
     private val sendVisitCardLinkHandler: SendVisitCardLinkHandler,
+    private val sendStatusService: VisitCardSendStatusService,
     private val properties: VisitCardProperties
 ) {
 
@@ -45,28 +47,38 @@ class VisitCardController(
             val token = tokenService.getOrCreateToken(
                 principal.studioId, id, pl.detailing.crm.shared.AppointmentId(visitEntity.appointmentId)
             )
+            val sendStatus = sendStatusService.status(
+                principal.studioId.value, visitEntity.id, visitEntity.appointmentId
+            )
             ResponseEntity.ok(
                 VisitCardLinkResponse(
                     token = token,
                     path = "/vc/$token",
-                    url = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token"
+                    url = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token",
+                    lastEmailSentAt = sendStatus.lastEmailSentAt,
+                    lastSmsSentAt = sendStatus.lastSmsSentAt
                 )
             )
         }
     }
 
     /**
-     * Send the card link to the customer over the studio-configured channel (e-mail/SMS).
+     * Send the card link to the customer. The employee may pick the channel
+     * explicitly; without a body the studio-configured channel is used.
      */
     @PostMapping("/{visitId}/card-link/send")
     @RequiresPermission(Permission.COMMUNICATION_SEND)
-    fun sendCardLink(@PathVariable visitId: String): ResponseEntity<VisitCardSendResponse> = runBlocking {
+    fun sendCardLink(
+        @PathVariable visitId: String,
+        @RequestBody(required = false) request: SendCardLinkRequest?
+    ): ResponseEntity<VisitCardSendResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val result = sendVisitCardLinkHandler.handle(
             SendVisitCardLinkCommand(
                 visitId = VisitId.fromString(visitId),
-                studioId = principal.studioId
+                studioId = principal.studioId,
+                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
             )
         )
         ResponseEntity.ok(
@@ -82,7 +94,16 @@ class VisitCardController(
 data class VisitCardLinkResponse(
     val token: String,
     val path: String,
-    val url: String
+    val url: String,
+    /** Last successful delivery per channel — null when never sent that way. */
+    val lastEmailSentAt: java.time.Instant? = null,
+    val lastSmsSentAt: java.time.Instant? = null
+)
+
+/** Optional send-request body; when absent the studio-configured channel applies. */
+data class SendCardLinkRequest(
+    /** EMAIL, SMS or BOTH */
+    val channel: String? = null
 )
 
 data class VisitCardSendResponse(
