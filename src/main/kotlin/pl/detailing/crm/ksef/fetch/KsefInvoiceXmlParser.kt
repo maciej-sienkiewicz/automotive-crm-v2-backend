@@ -203,7 +203,6 @@ class KsefInvoiceXmlParser {
             .parse(ByteArrayInputStream(xmlBytes))
     }
 
-    /** Buduje XPath niezależny od namespace: //*[local-name()='A']/*[local-name()='B']/... */
     private fun localNamePath(vararg tags: String): String =
         tags.joinToString(separator = "/", prefix = "//") { "*[local-name()='$it']" }
 
