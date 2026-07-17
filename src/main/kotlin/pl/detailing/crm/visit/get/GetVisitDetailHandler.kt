@@ -9,6 +9,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
+import pl.detailing.crm.user.infrastructure.UserRepository
 
 @Service
 class GetVisitDetailHandler(
@@ -19,7 +20,8 @@ class GetVisitDetailHandler(
     private val journalEntryRepository: VisitJournalEntryRepository,
     private val documentRepository: VisitDocumentRepository,
     private val appointmentColorRepository: AppointmentColorRepository,
-    private val doorToDoorRepository: DoorToDoorRepository
+    private val doorToDoorRepository: DoorToDoorRepository,
+    private val userRepository: UserRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -95,6 +97,10 @@ class GetVisitDetailHandler(
         val doorToDoor = doorToDoorRepository.findByVisitIdAndStudioId(visit.id.value, command.studioId.value)
             ?.toDomain()
 
+        // 8. Resolve the employee who accepted the vehicle (visit creator)
+        val acceptedByName = userRepository.findByIdAndStudioId(visit.createdBy.value, command.studioId.value)
+            ?.let { "${it.firstName} ${it.lastName}".trim().ifBlank { null } }
+
         return GetVisitDetailResult(
             visit = visit,
             vehicle = vehicle,
@@ -103,7 +109,8 @@ class GetVisitDetailHandler(
             journalEntries = journalEntries,
             documents = documents,
             customerStats = customerStats,
-            doorToDoor = doorToDoor
+            doorToDoor = doorToDoor,
+            acceptedByName = acceptedByName
         )
     }
 }
