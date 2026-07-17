@@ -1,6 +1,7 @@
 package pl.detailing.crm.ksef.fetch
 
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.akmf.ksef.sdk.client.interfaces.KSeFClient
@@ -38,6 +39,11 @@ class FetchKsefInvoicesHandler(
 ) {
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
+    companion object {
+        /** Limit pobrań XML na jeden przebieg backfillu — reszta w kolejnych przebiegach. */
+        private const val BACKFILL_BATCH_SIZE = 100
+    }
+
     /**
      * Fetches EXPENSE (SUBJECT2) invoices from KSeF for the given date range.
      * Deduplicates by ksefNumber. Marks corrected invoices as CORRECTED when FA_KOR is detected.
@@ -62,13 +68,13 @@ class FetchKsefInvoicesHandler(
         for (metadata in allMetadata) {
             val existing = invoiceRepository.findByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)
             if (existing != null) {
-                backfillItemsIfMissing(existing, accessToken)
                 skipped++
                 continue
             }
 
             val isCorrection = metadata.invoiceType?.value == "FA_KOR"
-            val xmlData = safeParseXml(metadata.ksefNumber, accessToken)
+            val parsedXml = safeParseXml(metadata.ksefNumber, accessToken)
+            val xmlData = parsedXml ?: KsefXmlData.EMPTY
 
             val invoice = invoiceRepository.save(
                 KsefInvoiceEntity(
@@ -99,7 +105,10 @@ class FetchKsefInvoicesHandler(
                     paymentStatus  = resolvePaymentStatus(xmlData.payment),
                     paymentForm    = xmlData.payment.paymentForm?.name,
                     paymentDueDate = xmlData.payment.dueDate,
-                    bankAccount    = xmlData.payment.bankAccount
+                    bankAccount    = xmlData.payment.bankAccount,
+                    // Gdy pobranie XML się nie powiodło, faktura zostanie uzupełniona
+                    // przez synchronizację wsteczną w kolejnym przebiegu
+                    detailsSynced  = parsedXml != null
                 )
             )
             saveItems(invoice.id, xmlData.lines)
@@ -111,19 +120,53 @@ class FetchKsefInvoicesHandler(
     }
 
     /**
-     * Faktury zsynchronizowane przed wprowadzeniem tabeli pozycji nie mają wierszy.
-     * Ponowny fetch obejmujący ich zakres dat uzupełnia brakujące pozycje z XML,
-     * nie modyfikując samej faktury (statusy i notatki admina zostają nietknięte).
+     * Synchronizacja wsteczna: faktury zsynchronizowane przed wprowadzeniem pozycji
+     * i szczegółów (details_synced = FALSE) mają uzupełniane brakujące dane z XML —
+     * pozycje, adresy stron i szczegóły płatności. Pola kontrolowane przez admina
+     * (status, paymentStatus, note) pozostają nietknięte.
+     *
+     * Sterowana lokalną bazą (nie oknem dat zapytania do KSeF), więc obejmuje każdą
+     * wcześniej pobraną fakturę niezależnie od jej daty. XML pobierany bezpośrednio
+     * po numerze KSeF; nieudane pobrania są ponawiane w kolejnych przebiegach.
      */
-    private fun backfillItemsIfMissing(existing: KsefInvoiceEntity, accessToken: String) {
-        if (existing.source != "KSEF") return
-        if (itemRepository.existsByInvoiceId(existing.id)) return
+    @Transactional
+    fun backfillMissingDetails(studioId: StudioId, batchSize: Int = BACKFILL_BATCH_SIZE): Int {
+        val candidates = invoiceRepository.findByStudioIdAndSourceAndDetailsSyncedFalseOrderByFetchedAtDesc(
+            studioId.value, "KSEF", PageRequest.of(0, batchSize)
+        )
+        if (candidates.isEmpty()) return 0
 
-        val xmlData = safeParseXml(existing.ksefNumber, accessToken)
-        if (xmlData.lines.isNotEmpty()) {
-            saveItems(existing.id, xmlData.lines)
-            log.info("Backfilled {} items for existing invoice {}", xmlData.lines.size, existing.ksefNumber)
+        val accessToken = ksefAuthService.getValidAccessToken(studioId)
+        var backfilled = 0
+
+        for (invoice in candidates) {
+            val xmlData = safeParseXml(invoice.ksefNumber, accessToken) ?: continue
+
+            if (!itemRepository.existsByInvoiceId(invoice.id)) {
+                saveItems(invoice.id, xmlData.lines)
+            }
+            invoiceRepository.save(
+                invoice.withBackfilledDetails(
+                    sellerNip          = xmlData.seller.nip,
+                    sellerName         = xmlData.seller.name,
+                    buyerNip           = xmlData.buyer.nip,
+                    buyerName          = xmlData.buyer.name,
+                    sellerAddressLine1 = xmlData.seller.addressLine1,
+                    sellerAddressLine2 = xmlData.seller.addressLine2,
+                    sellerCountryCode  = xmlData.seller.countryCode,
+                    buyerAddressLine1  = xmlData.buyer.addressLine1,
+                    buyerAddressLine2  = xmlData.buyer.addressLine2,
+                    buyerCountryCode   = xmlData.buyer.countryCode,
+                    paymentForm        = xmlData.payment.paymentForm?.name,
+                    paymentDueDate     = xmlData.payment.dueDate,
+                    bankAccount        = xmlData.payment.bankAccount
+                )
+            )
+            backfilled++
         }
+
+        log.info("KSeF backfill studio={}: candidates={} backfilled={}", studioId, candidates.size, backfilled)
+        return backfilled
     }
 
     /**
@@ -150,13 +193,14 @@ class FetchKsefInvoicesHandler(
         })
     }
 
-    private fun safeParseXml(ksefNumber: String, accessToken: String): KsefXmlData {
+    /** Pobiera i parsuje XML faktury; null gdy pobranie/parsowanie się nie powiodło. */
+    private fun safeParseXml(ksefNumber: String, accessToken: String): KsefXmlData? {
         return try {
             val xml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
             xmlParser.parseInvoiceData(xml)
         } catch (e: Exception) {
             log.warn("Failed to fetch XML for invoice {}: {}", ksefNumber, e.message)
-            KsefXmlData.EMPTY
+            null
         }
     }
 
