@@ -5,8 +5,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.communication.CommunicationLogService
-import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
@@ -34,7 +34,6 @@ import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellReservationConsent
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellReservationConsentRepository
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellReservationConsentStatus
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellSuggestionStatus
-import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRepository
 import java.time.Instant
 import java.util.UUID
@@ -66,7 +65,7 @@ class RequestUpsellServicesHandler(
     private val suggestionRepository: VisitUpsellSuggestionRepository,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val reservationConsentRepository: UpsellReservationConsentRepository,
-    private val communicationGateway: OutboundCommunicationGateway,
+    private val smsProvider: SmsProvider,
     private val communicationLogService: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -155,7 +154,7 @@ class RequestUpsellServicesHandler(
 
         val normalizedPhone = normalizePolishPhone(phone)
         val message = buildConsentSms(selected.map { it.serviceName to it.finalPriceGross })
-        val (smsSent, errorMessage) = sendConsentSms(studioId, normalizedPhone, message)
+        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
 
         if (smsSent) {
             val proposedTotalGross = updatedVisit.serviceItems
@@ -170,7 +169,7 @@ class RequestUpsellServicesHandler(
                     customerPhone = normalizedPhone,
                     totalPriceGross = proposedTotalGross,
                     status = SmsConsentRequestStatus.PENDING,
-                    externalMessageId = null,
+                    externalMessageId = externalMessageId,
                     createdAt = now,
                     respondedAt = null
                 )
@@ -220,7 +219,7 @@ class RequestUpsellServicesHandler(
 
         val normalizedPhone = normalizePolishPhone(phone)
         val message = buildConsentSms(selected.map { it.serviceName to it.finalPriceGross })
-        val (smsSent, errorMessage) = sendConsentSms(studioId, normalizedPhone, message)
+        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
 
         if (smsSent) {
             reservationConsentRepository.supersedePendingByAppointmentId(appointmentId.value)
@@ -231,7 +230,7 @@ class RequestUpsellServicesHandler(
                     appointmentId = appointmentId.value,
                     customerPhone = normalizedPhone,
                     status = UpsellReservationConsentStatus.PENDING,
-                    externalMessageId = null,
+                    externalMessageId = externalMessageId,
                     createdAt = now
                 )
             )
@@ -262,14 +261,14 @@ class RequestUpsellServicesHandler(
                 "Nie możemy wysłać SMS-a z potwierdzeniem — brak numeru telefonu. Skontaktuj się z serwisem."
             )
 
-    /** @return smsSent to errorMessage */
-    private fun sendConsentSms(studioId: StudioId, phone: String, message: String): Pair<Boolean, String?> =
+    /** @return Triple(smsSent, externalMessageId, errorMessage) */
+    private fun sendConsentSms(phone: String, message: String): Triple<Boolean, String?, String?> =
         try {
-            val result = communicationGateway.sendTransactionalSms(studioId.value, phone, message)
-            result.success to result.errorMessage
+            val result = smsProvider.send(phone, message)
+            Triple(result.success, result.externalMessageId, result.errorMessage)
         } catch (e: InsufficientSmsCreditsException) {
-            logger.warn("Upsell consent SMS blocked — no credits [studio={}]", studioId)
-            false to "Brak kredytów SMS"
+            logger.warn("Upsell consent SMS blocked — no credits")
+            Triple(false, null, "Brak kredytów SMS")
         }
 
     private fun recordCommunication(
