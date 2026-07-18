@@ -26,7 +26,9 @@ data class DoorToDoorCalendarEntry(
     val id: String,
     val direction: DoorToDoorTripDirection,
     val vehicle: String,
-    val customerLastName: String
+    val customerLastName: String,
+    /** Formatted "city, street" for the relevant trip leg; null when address is empty. */
+    val address: String?
 )
 
 data class DoorToDoorCalendarDay(
@@ -50,6 +52,10 @@ class GetDoorToDoorCalendarHandler(
 ) {
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
+
+        private fun formatAddress(city: String?, street: String?): String? =
+            listOfNotNull(city?.takeIf { it.isNotBlank() }, street?.takeIf { it.isNotBlank() })
+                .joinToString(", ").ifBlank { null }
     }
 
     suspend fun handle(studioId: StudioId, from: LocalDate, to: LocalDate): List<DoorToDoorCalendarDay> =
@@ -86,9 +92,10 @@ class GetDoorToDoorCalendarHandler(
                 customerId = null,
                 vehicleId = null
             )
-            val d2dVisitIds = if (visits.isEmpty()) emptySet()
-                else doorToDoorRepository.findByVisitIdIn(visits.map { it.id }).map { it.visitId }.toSet()
-            val d2dVisits = visits.filter { it.id in d2dVisitIds }
+            val d2dEntities = if (visits.isEmpty()) emptyList()
+                else doorToDoorRepository.findByVisitIdIn(visits.map { it.id })
+            val d2dEntityByVisitId = d2dEntities.associateBy { it.visitId }
+            val d2dVisits = visits.filter { it.id in d2dEntityByVisitId }
 
             val customerIds = (appointments.map { it.customerId } + d2dVisits.map { it.customerId }).distinct()
             val vehicleIds = appointments.mapNotNull { it.vehicleId }.distinct()
@@ -111,7 +118,8 @@ class GetDoorToDoorCalendarHandler(
                             id = appointment.id.toString(),
                             direction = DoorToDoorTripDirection.PICKUP,
                             vehicle = vehicleLabel,
-                            customerLastName = lastName
+                            customerLastName = lastName,
+                            address = formatAddress(appointment.d2dPickupCity, appointment.d2dPickupStreet)
                         ))
                     }
                 }
@@ -123,7 +131,8 @@ class GetDoorToDoorCalendarHandler(
                             id = appointment.id.toString(),
                             direction = DoorToDoorTripDirection.DELIVERY,
                             vehicle = vehicleLabel,
-                            customerLastName = lastName
+                            customerLastName = lastName,
+                            address = formatAddress(appointment.d2dDeliveryCity, appointment.d2dDeliveryStreet)
                         ))
                     }
                 }
@@ -132,11 +141,13 @@ class GetDoorToDoorCalendarHandler(
             d2dVisits.forEach { visit ->
                 val day = (visit.estimatedCompletionDate ?: visit.scheduledDate).atZone(WARSAW).toLocalDate()
                 if (day.isBefore(from) || day.isAfter(to)) return@forEach
+                val d2d = d2dEntityByVisitId[visit.id]
                 entriesByDate.getOrPut(day) { mutableListOf() }.add(DoorToDoorCalendarEntry(
                     id = visit.id.toString(),
                     direction = DoorToDoorTripDirection.DELIVERY,
                     vehicle = "${visit.brandSnapshot} ${visit.modelSnapshot}",
-                    customerLastName = customers[visit.customerId] ?: ""
+                    customerLastName = customers[visit.customerId] ?: "",
+                    address = d2d?.let { formatAddress(it.deliveryCity, it.deliveryStreet) }
                 ))
             }
 
