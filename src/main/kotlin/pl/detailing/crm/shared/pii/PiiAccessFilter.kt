@@ -54,6 +54,9 @@ class PiiAccessFilter(
 
     private fun resolveAccess(request: HttpServletRequest): PiiAccess {
         if (request.requestURI.startsWith("/api/tablet/")) return PiiAccess.GRANTED
+        // Remote signing link: the recipient is the customer on their own phone,
+        // confirming their own data — same rationale as the tablet in front of them
+        if (request.requestURI.startsWith("/api/public/signing/")) return PiiAccess.GRANTED
 
         val principal = SecurityContextHolder.getContext().authentication as? UserPrincipal
             ?: return PiiAccess.MASKED

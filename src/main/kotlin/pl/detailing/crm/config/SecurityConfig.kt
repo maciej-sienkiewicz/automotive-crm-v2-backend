@@ -81,6 +81,9 @@ class SecurityConfig {
                 auth.requestMatchers("/api/tablet/**").permitAll()
                 // Customer Visit Card — authenticated by the unguessable card token in the URL
                 auth.requestMatchers("/api/public/visit-card/**").permitAll()
+                // Remote document signing from the customer's phone — authenticated by
+                // the unguessable, TTL-bound link token delivered by SMS
+                auth.requestMatchers("/api/public/signing/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->

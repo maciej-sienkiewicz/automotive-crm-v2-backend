@@ -28,6 +28,12 @@ data class SignatureRequest(
     val protocolId: VisitProtocolId,
     /** Tablet the request is routed to; null = any paired tablet in this studio. */
     val tabletId: String?,
+    /** How the document is presented to the signer: studio tablet or a tokenized SMS link. */
+    val channel: SignatureChannel = SignatureChannel.TABLET,
+    /** Phone number the signing link was sent to (SMS_LINK channel only). */
+    val signerPhone: String? = null,
+    /** Unguessable token embedded in the SMS link (SMS_LINK channel only). */
+    val linkToken: String? = null,
     val status: SignatureRequestStatus,
     /** S3 key of the exact PDF revision presented for signature. */
     val documentS3Key: String,
@@ -134,6 +140,12 @@ data class SignatureRequest(
 
     fun fail(reason: String, now: Instant = Instant.now()): SignatureRequest =
         copy(status = SignatureRequestStatus.FAILED, failureReason = reason, updatedAt = now)
+}
+
+/** Where the signer sees and signs the document. */
+enum class SignatureChannel {
+    TABLET,     // Studio tablet paired via X-Tablet-Token
+    SMS_LINK    // Customer's own phone, opened from a tokenized link sent by SMS
 }
 
 enum class SignatureRequestStatus {

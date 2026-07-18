@@ -39,16 +39,15 @@ class DocumentIntegrityService(
         return MessageDigest.isEqual(a, b)
     }
 
-    /** Issue a single-use challenge nonce bound to the signature request. */
-    fun issueChallenge(requestId: UUID): String {
+    /**
+     * Issue a single-use challenge nonce bound to the signature request.
+     * [ttl] must match the request's lifetime (SMS-link sessions live longer than tablet ones).
+     */
+    fun issueChallenge(requestId: UUID, ttl: Duration = Duration.ofMinutes(requestTtlMinutes)): String {
         val bytes = ByteArray(32)
         SECURE_RANDOM.nextBytes(bytes)
         val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-        redisTemplate.opsForValue().set(
-            CHALLENGE_KEY_PREFIX + requestId,
-            challenge,
-            Duration.ofMinutes(requestTtlMinutes)
-        )
+        redisTemplate.opsForValue().set(CHALLENGE_KEY_PREFIX + requestId, challenge, ttl)
         return challenge
     }
 

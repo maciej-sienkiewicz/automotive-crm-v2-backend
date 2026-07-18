@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.infrastructure.SignatureEventPublisher
 import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
@@ -44,6 +45,12 @@ class SignatureRequestController(
             throw ValidationException("Imię i nazwisko osoby podpisującej jest wymagane")
         }
 
+        val channel = when (request.deliveryChannel?.trim()?.uppercase()) {
+            null, "", "TABLET" -> SignatureChannel.TABLET
+            "SMS", "SMS_LINK" -> SignatureChannel.SMS_LINK
+            else -> throw ValidationException("Nieznany kanał podpisu: ${request.deliveryChannel}")
+        }
+
         val result = requestSignatureHandler.handle(
             RequestSignatureCommand(
                 studioId = principal.studioId,
@@ -52,6 +59,7 @@ class SignatureRequestController(
                 visitId = VisitId.fromString(visitId),
                 protocolId = VisitProtocolId.fromString(protocolId),
                 tabletId = request.tabletId?.trim()?.ifBlank { null },
+                channel = channel,
                 signerName = request.signerName.trim(),
                 declarationText = request.declarationText,
                 employeeIpAddress = clientIp(httpRequest)
@@ -150,6 +158,8 @@ class SignatureRequestController(
 data class CreateSignatureRequestBody(
     /** Route to a specific paired tablet; null = any tablet in the studio. */
     val tabletId: String? = null,
+    /** "TABLET" (default) or "SMS" — send a tokenized signing link to the customer's phone. */
+    val deliveryChannel: String? = null,
     val signerName: String,
     /** Custom declaration; falls back to the configured default when null. */
     val declarationText: String? = null
@@ -173,6 +183,7 @@ data class SignatureRequestDto(
     val visitId: String,
     val protocolId: String,
     val tabletId: String?,
+    val channel: String,
     val status: String,
     val documentName: String,
     val documentSha256: String,
@@ -193,6 +204,7 @@ internal fun SignatureRequest.toDto() = SignatureRequestDto(
     visitId = visitId.toString(),
     protocolId = protocolId.toString(),
     tabletId = tabletId,
+    channel = channel.name,
     status = status.name,
     documentName = documentName,
     documentSha256 = documentSha256,

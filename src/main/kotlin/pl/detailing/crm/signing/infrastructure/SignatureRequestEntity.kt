@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
 import java.time.Instant
@@ -18,7 +19,8 @@ import java.util.*
         Index(name = "idx_signature_requests_studio", columnList = "studio_id, status"),
         Index(name = "idx_signature_requests_protocol", columnList = "protocol_id"),
         Index(name = "idx_signature_requests_visit", columnList = "studio_id, visit_id"),
-        Index(name = "idx_signature_requests_tablet", columnList = "studio_id, tablet_id, status")
+        Index(name = "idx_signature_requests_tablet", columnList = "studio_id, tablet_id, status"),
+        Index(name = "idx_signature_requests_link_token", columnList = "link_token")
     ]
 )
 class SignatureRequestEntity(
@@ -37,6 +39,17 @@ class SignatureRequestEntity(
 
     @Column(name = "tablet_id", length = 100)
     val tabletId: String?,
+
+    // Nullable for rows created before the SMS-link channel existed; null = TABLET
+    @Enumerated(EnumType.STRING)
+    @Column(name = "channel", length = 20)
+    val channel: SignatureChannel? = null,
+
+    @Column(name = "signer_phone", length = 30)
+    val signerPhone: String? = null,
+
+    @Column(name = "link_token", length = 100, unique = true)
+    val linkToken: String? = null,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
@@ -111,6 +124,9 @@ class SignatureRequestEntity(
         visitId = VisitId(visitId),
         protocolId = VisitProtocolId(protocolId),
         tabletId = tabletId,
+        channel = channel ?: SignatureChannel.TABLET,
+        signerPhone = signerPhone,
+        linkToken = linkToken,
         status = status,
         documentS3Key = documentS3Key,
         documentSha256 = documentSha256,
@@ -142,6 +158,9 @@ class SignatureRequestEntity(
             visitId = r.visitId.value,
             protocolId = r.protocolId.value,
             tabletId = r.tabletId,
+            channel = r.channel,
+            signerPhone = r.signerPhone,
+            linkToken = r.linkToken,
             status = r.status,
             documentS3Key = r.documentS3Key,
             documentSha256 = r.documentSha256,
@@ -173,6 +192,9 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): SignatureRequestEntity?
 
+    /** Resolve an SMS signing link — the token itself is the credential. */
+    fun findByLinkToken(linkToken: String): SignatureRequestEntity?
+
     /**
      * Pessimistic write lock on the request row, used to serialize concurrent
      * audit-trail appends for the same signing session (see SignatureAuditTrailService).
@@ -192,6 +214,7 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
           AND r.status IN ('PENDING_DISPLAY', 'DISPLAYED')
           AND r.expiresAt > :now
           AND (r.tabletId IS NULL OR r.tabletId = :tabletId)
+          AND (r.channel IS NULL OR r.channel = pl.detailing.crm.signing.domain.SignatureChannel.TABLET)
         ORDER BY r.createdAt DESC
         """
     )
