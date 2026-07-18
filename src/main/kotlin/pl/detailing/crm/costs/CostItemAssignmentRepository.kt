@@ -43,8 +43,8 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
         JOIN ksef_invoices ki ON ki.id = kii.invoice_id
         WHERE cia.studio_id = CAST(:studioId AS uuid)
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
-          AND (CAST(:dateFrom AS date) IS NULL OR ki.invoicing_date::date >= CAST(:dateFrom AS date))
-          AND (CAST(:dateTo   AS date) IS NULL OR ki.invoicing_date::date <= CAST(:dateTo   AS date))
+          AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
         GROUP BY cia.category_id
     """, nativeQuery = true)
     fun sumByCategory(
@@ -56,16 +56,16 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
     /** Time-series: total cost gross per period (for the overview chart). */
     @Query(value = """
         SELECT
-            TO_CHAR(ki.invoicing_date::date, :periodFormat)  AS period,
-            COALESCE(SUM(kii.gross_value), 0)                AS totalCostGross,
-            COUNT(*)                                         AS itemCount
+            TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)  AS period,
+            COALESCE(SUM(kii.gross_value), 0)                        AS totalCostGross,
+            COUNT(*)                                                  AS itemCount
         FROM ksef_invoice_items kii
         JOIN ksef_invoices ki ON ki.id = kii.invoice_id
         WHERE ki.studio_id = CAST(:studioId AS uuid)
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
-          AND (CAST(:dateFrom AS date) IS NULL OR ki.invoicing_date::date >= CAST(:dateFrom AS date))
-          AND (CAST(:dateTo   AS date) IS NULL OR ki.invoicing_date::date <= CAST(:dateTo   AS date))
-        GROUP BY TO_CHAR(ki.invoicing_date::date, :periodFormat)
+          AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
+        GROUP BY TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)
         ORDER BY period ASC
     """, nativeQuery = true)
     fun findTimeSeriesAllItems(
@@ -78,18 +78,18 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
     /** Time-series for a single category. */
     @Query(value = """
         SELECT
-            TO_CHAR(ki.invoicing_date::date, :periodFormat)  AS period,
-            COALESCE(SUM(kii.gross_value), 0)                AS totalCostGross,
-            COUNT(*)                                         AS itemCount
+            TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)  AS period,
+            COALESCE(SUM(kii.gross_value), 0)                        AS totalCostGross,
+            COUNT(*)                                                  AS itemCount
         FROM cost_item_assignments cia
         JOIN ksef_invoice_items kii ON kii.id = cia.ksef_item_id
         JOIN ksef_invoices ki ON ki.id = kii.invoice_id
         WHERE cia.studio_id    = CAST(:studioId    AS uuid)
           AND cia.category_id  = CAST(:categoryId  AS uuid)
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
-          AND (CAST(:dateFrom AS date) IS NULL OR ki.invoicing_date::date >= CAST(:dateFrom AS date))
-          AND (CAST(:dateTo   AS date) IS NULL OR ki.invoicing_date::date <= CAST(:dateTo   AS date))
-        GROUP BY TO_CHAR(ki.invoicing_date::date, :periodFormat)
+          AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
+        GROUP BY TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)
         ORDER BY period ASC
     """, nativeQuery = true)
     fun findTimeSeriesByCategory(
