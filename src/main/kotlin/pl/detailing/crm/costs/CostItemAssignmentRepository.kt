@@ -65,8 +65,8 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
           AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
-        GROUP BY TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)
-        ORDER BY period ASC
+        GROUP BY 1
+        ORDER BY 1 ASC
     """, nativeQuery = true)
     fun findTimeSeriesAllItems(
         @Param("studioId")    studioId:    UUID,
@@ -89,8 +89,8 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
           AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
-        GROUP BY TO_CHAR(CAST(ki.invoicing_date AS date), :periodFormat)
-        ORDER BY period ASC
+        GROUP BY 1
+        ORDER BY 1 ASC
     """, nativeQuery = true)
     fun findTimeSeriesByCategory(
         @Param("studioId")    studioId:    UUID,
