@@ -40,7 +40,8 @@ class CalendarController(
                         id = it.id,
                         direction = it.direction.name,
                         vehicle = it.vehicle,
-                        customerLastName = it.customerLastName
+                        customerLastName = it.customerLastName,
+                        address = it.address
                     )
                 }
             )
@@ -161,7 +162,8 @@ data class DoorToDoorCalendarEntryResponse(
     val id: String,
     val direction: String,
     val vehicle: String,
-    @Pii val customerLastName: String
+    @Pii val customerLastName: String,
+    val address: String?
 )
 
 data class DoorToDoorCalendarDayResponse(
