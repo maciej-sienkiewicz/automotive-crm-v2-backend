@@ -71,7 +71,7 @@ class GetDoorToDoorCalendarHandler(
                 endDate = rangeEnd,
                 customerId = null,
                 vehicleId = null
-            ).filter { it.d2dPickupCity != null || it.d2dDeliveryCity != null }
+            ).filter { !it.d2dPickupCity.isNullOrBlank() || !it.d2dDeliveryCity.isNullOrBlank() }
 
             val visits = visitRepository.findForCalendar(
                 studioId = studioId.value,
@@ -100,15 +100,33 @@ class GetDoorToDoorCalendarHandler(
             val entriesByDate = mutableMapOf<LocalDate, MutableList<DoorToDoorCalendarEntry>>()
 
             appointments.forEach { appointment ->
-                val day = appointment.startDateTime.atZone(WARSAW).toLocalDate()
-                if (day.isBefore(from) || day.isAfter(to)) return@forEach
-                val vehicle = appointment.vehicleId?.let { vehicles[it] }
-                entriesByDate.getOrPut(day) { mutableListOf() }.add(DoorToDoorCalendarEntry(
-                    id = appointment.id.toString(),
-                    direction = DoorToDoorTripDirection.PICKUP,
-                    vehicle = vehicle?.let { "${it.brand} ${it.model}" } ?: "Pojazd",
-                    customerLastName = customers[appointment.customerId] ?: ""
-                ))
+                val vehicleLabel = appointment.vehicleId?.let { vehicles[it] }
+                    ?.let { "${it.brand} ${it.model}" } ?: "Pojazd"
+                val lastName = customers[appointment.customerId] ?: ""
+
+                if (!appointment.d2dPickupCity.isNullOrBlank()) {
+                    val day = appointment.startDateTime.atZone(WARSAW).toLocalDate()
+                    if (!day.isBefore(from) && !day.isAfter(to)) {
+                        entriesByDate.getOrPut(day) { mutableListOf() }.add(DoorToDoorCalendarEntry(
+                            id = appointment.id.toString(),
+                            direction = DoorToDoorTripDirection.PICKUP,
+                            vehicle = vehicleLabel,
+                            customerLastName = lastName
+                        ))
+                    }
+                }
+
+                if (!appointment.d2dDeliveryCity.isNullOrBlank()) {
+                    val day = appointment.endDateTime.atZone(WARSAW).toLocalDate()
+                    if (!day.isBefore(from) && !day.isAfter(to)) {
+                        entriesByDate.getOrPut(day) { mutableListOf() }.add(DoorToDoorCalendarEntry(
+                            id = appointment.id.toString(),
+                            direction = DoorToDoorTripDirection.DELIVERY,
+                            vehicle = vehicleLabel,
+                            customerLastName = lastName
+                        ))
+                    }
+                }
             }
 
             d2dVisits.forEach { visit ->
