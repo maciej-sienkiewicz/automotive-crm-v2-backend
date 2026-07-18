@@ -33,13 +33,19 @@ interface ServiceRepository : JpaRepository<ServiceEntity, UUID> {
     ): ServiceEntity?
 
     @Query("""
-        SELECT COUNT(s) > 0 FROM ServiceEntity s 
-        WHERE s.studioId = :studioId 
-        AND s.name = :name 
+        SELECT COUNT(s) > 0 FROM ServiceEntity s
+        WHERE s.studioId = :studioId
+        AND s.name = :name
         AND s.isActive = true
     """)
     fun existsActiveByStudioIdAndName(
         @Param("studioId") studioId: UUID,
         @Param("name") name: String
     ): Boolean
+
+    @Query("SELECT s FROM ServiceEntity s WHERE s.id IN :ids AND s.studioId = :studioId")
+    fun findAllByIdInAndStudioId(
+        @Param("ids") ids: List<UUID>,
+        @Param("studioId") studioId: UUID
+    ): List<ServiceEntity>
 }

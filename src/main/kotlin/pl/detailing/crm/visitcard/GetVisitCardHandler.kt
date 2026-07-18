@@ -28,6 +28,13 @@ import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
+import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.shared.Money
+import pl.detailing.crm.shared.VatRate
+import pl.detailing.crm.visitcard.upsell.UpsellPackageItemDto
+import pl.detailing.crm.visitcard.upsell.VisitCardUpsellSuggestion
+import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRepository
 import pl.detailing.crm.visitcard.upsell.toPublicDto
 import java.util.UUID
@@ -58,7 +65,9 @@ class GetVisitCardHandler(
     private val s3ProtocolStorageService: S3ProtocolStorageService,
     private val upsellSuggestionRepository: VisitUpsellSuggestionRepository,
     private val appointmentRepository: AppointmentRepository,
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val serviceRepository: ServiceRepository,
+    private val servicePackageItemRepository: ServicePackageItemRepository
 ) {
 
     /**
@@ -126,15 +135,17 @@ class GetVisitCardHandler(
             totals = VisitCardTotals(
                 totalNet = visit.calculateTotalNet().amountInCents,
                 totalGross = visit.calculateTotalGross().amountInCents,
+                totalDiscountGross = calculateVisitDiscountGross(visit),
                 currency = "PLN"
             ),
             inProgress = if (started) buildInProgressSection(visit, studioId) else null,
             completion = if (finished) buildCompletionSection(visit, studioId) else null,
             // Include suggestions attached to the visit AND to the reservation it came from,
             // so suggestions assigned at booking time survive the check-in transition.
-            upsellSuggestions = upsellSuggestionRepository
-                .findAllForVisitCard(visit.id.value, visit.appointmentId.value, studioId)
-                .map { it.toPublicDto() }
+            upsellSuggestions = buildUpsellSuggestions(
+                upsellSuggestionRepository.findAllForVisitCard(visit.id.value, visit.appointmentId.value, studioId),
+                studioId
+            )
         )
     }
 
@@ -190,13 +201,20 @@ class GetVisitCardHandler(
             totals = VisitCardTotals(
                 totalNet = appointment.lineItems.sumOf { it.finalPriceNet },
                 totalGross = appointment.lineItems.sumOf { it.finalPriceGross },
+                totalDiscountGross = appointment.lineItems.sumOf { item ->
+                    val originalGross = VatRate.fromInt(item.vatRate)
+                        .calculateGrossAmount(Money.fromCents(item.basePriceNet))
+                        .amountInCents
+                    maxOf(0L, originalGross - item.finalPriceGross)
+                },
                 currency = "PLN"
             ),
             inProgress = null,
             completion = null,
-            upsellSuggestions = upsellSuggestionRepository
-                .findAllByAppointmentIdAndStudioId(appointmentId, studioId)
-                .map { it.toPublicDto() }
+            upsellSuggestions = buildUpsellSuggestions(
+                upsellSuggestionRepository.findAllByAppointmentIdAndStudioId(appointmentId, studioId),
+                studioId
+            )
         )
     }
 
@@ -322,5 +340,64 @@ class GetVisitCardHandler(
             documents = documents,
             paymentStatus = paymentStatus
         )
+    }
+
+    /**
+     * Computes the total discount shown in the summary (original gross minus final gross for all
+     * effective service items). The per-line breakdown is intentionally not exposed to the customer
+     * — only this aggregate figure appears on the card.
+     */
+    private fun calculateVisitDiscountGross(visit: Visit): Long {
+        return visit.serviceItems.sumOf { item ->
+            when {
+                item.status == VisitServiceStatus.CONFIRMED || item.status == VisitServiceStatus.APPROVED -> {
+                    val originalGross = item.vatRate.calculateGrossAmount(item.basePriceNet).amountInCents
+                    maxOf(0L, originalGross - item.finalPriceGross.amountInCents)
+                }
+                item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT -> {
+                    val snapshot = item.confirmedSnapshot ?: return@sumOf 0L
+                    val originalGross = snapshot.vatRate.calculateGrossAmount(snapshot.basePriceNet).amountInCents
+                    maxOf(0L, originalGross - snapshot.finalPriceGross.amountInCents)
+                }
+                item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE -> {
+                    val originalGross = item.vatRate.calculateGrossAmount(item.basePriceNet).amountInCents
+                    maxOf(0L, originalGross - item.finalPriceGross.amountInCents)
+                }
+                else -> 0L
+            }
+        }
+    }
+
+    /**
+     * Maps a list of upsell suggestion entities to their customer-facing DTOs, enriching
+     * package suggestions with the list of their component services.
+     */
+    private fun buildUpsellSuggestions(
+        suggestions: List<VisitUpsellSuggestionEntity>,
+        studioId: UUID
+    ): List<VisitCardUpsellSuggestion> {
+        if (suggestions.isEmpty()) return emptyList()
+
+        val serviceIds = suggestions.map { it.serviceId }.distinct()
+        val serviceMap = serviceRepository.findAllByIdInAndStudioId(serviceIds, studioId)
+            .associateBy { it.id }
+
+        val packageServiceIds = serviceIds.filter { serviceMap[it]?.isPackage == true }
+        val packageItemsByPackageId = if (packageServiceIds.isNotEmpty()) {
+            servicePackageItemRepository.findByPackageIdIn(packageServiceIds)
+                .groupBy { it.packageId }
+        } else {
+            emptyMap()
+        }
+
+        return suggestions.map { entity ->
+            val isPackage = serviceMap[entity.serviceId]?.isPackage == true
+            val items = if (isPackage) {
+                packageItemsByPackageId[entity.serviceId]
+                    ?.sortedBy { it.position }
+                    ?.map { UpsellPackageItemDto(name = it.serviceName) }
+            } else null
+            entity.toPublicDto(isPackage = isPackage, packageItems = items)
+        }
     }
 }

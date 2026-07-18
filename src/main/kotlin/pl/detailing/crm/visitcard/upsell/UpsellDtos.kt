@@ -67,6 +67,9 @@ data class UpsellSuggestionResponse(
 
 // ─── Public (tokenized Visit Card) API ────────────────────────────────────────
 
+/** A single component service within a package upsell suggestion. */
+data class UpsellPackageItemDto(val name: String)
+
 /** A single suggested service as shown to the customer on the Visit Card. */
 data class VisitCardUpsellSuggestion(
     val id: String,
@@ -76,11 +79,18 @@ data class VisitCardUpsellSuggestion(
     val priceGross: Long,   // grosz
     /** Gross price before the discount; null when the suggestion has no discount. */
     val originalPriceGross: Long?,
-    val status: UpsellSuggestionStatus
+    val status: UpsellSuggestionStatus,
+    /** True when this suggestion is a service package (bundle of individual services). */
+    val isPackage: Boolean = false,
+    /** Component services within the package; null for non-package suggestions. */
+    val packageItems: List<UpsellPackageItemDto>? = null
 )
 
 /** Maps a suggestion to its customer-facing shape (no internal pricing internals). */
-fun VisitUpsellSuggestionEntity.toPublicDto(): VisitCardUpsellSuggestion {
+fun VisitUpsellSuggestionEntity.toPublicDto(
+    isPackage: Boolean = false,
+    packageItems: List<UpsellPackageItemDto>? = null
+): VisitCardUpsellSuggestion {
     val originalGross = pl.detailing.crm.shared.VatRate.fromInt(vatRate)
         .calculateGrossAmount(pl.detailing.crm.shared.Money.fromCents(basePriceNet))
         .amountInCents
@@ -91,7 +101,9 @@ fun VisitUpsellSuggestionEntity.toPublicDto(): VisitCardUpsellSuggestion {
         priceNet = finalPriceNet,
         priceGross = finalPriceGross,
         originalPriceGross = originalGross.takeIf { it != finalPriceGross },
-        status = status
+        status = status,
+        isPackage = isPackage,
+        packageItems = packageItems
     )
 }
 

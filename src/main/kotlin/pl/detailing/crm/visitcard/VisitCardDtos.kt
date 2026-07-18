@@ -70,6 +70,8 @@ data class VisitCardServiceLine(
 data class VisitCardTotals(
     val totalNet: Long,
     val totalGross: Long,
+    /** Total discount applied across all service lines; 0 when no discounts were given. */
+    val totalDiscountGross: Long,
     val currency: String
 )
 
