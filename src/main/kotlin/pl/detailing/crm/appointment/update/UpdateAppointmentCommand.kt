@@ -14,7 +14,8 @@ data class UpdateAppointmentCommand(
     val schedule: ScheduleCommand,
     val appointmentTitle: String?,
     val appointmentColorId: AppointmentColorId,
-    val note: String?
+    val note: String?,
+    val doorToDoor: DoorToDoorAppointmentCommand? = null
 )
 
 fun UpdateAppointmentCommand.toCreateCommand() = CreateAppointmentCommand(
@@ -27,5 +28,6 @@ fun UpdateAppointmentCommand.toCreateCommand() = CreateAppointmentCommand(
     schedule = schedule,
     appointmentTitle = appointmentTitle,
     appointmentColorId = appointmentColorId,
-    note = note
+    note = note,
+    doorToDoor = doorToDoor
 )

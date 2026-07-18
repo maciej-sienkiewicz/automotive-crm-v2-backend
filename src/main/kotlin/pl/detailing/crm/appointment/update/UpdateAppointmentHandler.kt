@@ -126,6 +126,21 @@ class UpdateAppointmentHandler(
         existingEntity.updatedBy = command.userId.value
         existingEntity.updatedAt = Instant.now()
 
+        // Update Door to Door fields
+        command.doorToDoor?.also { d2d ->
+            existingEntity.d2dPickupCity = d2d.pickupCity
+            existingEntity.d2dPickupStreet = d2d.pickupStreet
+            existingEntity.d2dDeliveryCity = d2d.deliveryCity
+            existingEntity.d2dDeliveryStreet = d2d.deliveryStreet
+            existingEntity.d2dNotes = d2d.notes
+        } ?: run {
+            existingEntity.d2dPickupCity = null
+            existingEntity.d2dPickupStreet = null
+            existingEntity.d2dDeliveryCity = null
+            existingEntity.d2dDeliveryStreet = null
+            existingEntity.d2dNotes = null
+        }
+
         // Update line items
         existingEntity.lineItems.clear()
         existingEntity.lineItems.addAll(lineItems.map { AppointmentLineItemEntity.fromDomain(it, existingEntity) })

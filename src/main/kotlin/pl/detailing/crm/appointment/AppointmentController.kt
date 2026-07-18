@@ -418,7 +418,16 @@ class AppointmentController(
             ),
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
-            note = request.note
+            note = request.note,
+            doorToDoor = request.doorToDoor?.let {
+                DoorToDoorAppointmentCommand(
+                    pickupCity = it.pickupCity,
+                    pickupStreet = it.pickupStreet,
+                    deliveryCity = it.deliveryCity,
+                    deliveryStreet = it.deliveryStreet,
+                    notes = it.notes
+                )
+            }
         )
 
         val result = updateAppointmentHandler.handle(command)
