@@ -17,6 +17,13 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefInvoiceEntity?
 
+    /** All invoices from a given seller (by normalized NIP) excluding cancelled/excluded — used for auto-rule application. */
+    fun findByStudioIdAndSellerNipAndStatusNotIn(
+        studioId: UUID,
+        sellerNip: String,
+        statuses: List<String>
+    ): List<KsefInvoiceEntity>
+
     /**
      * Faktury KSeF bez pełnych danych z XML (details_synced = FALSE) — kandydaci do
      * synchronizacji wstecznej. Paginacja ogranicza liczbę pobrań XML w jednym przebiegu.

@@ -48,6 +48,7 @@ data class CostExpenseItemDto(
     val id: String,
     val invoiceId: String,
     val invoiceNumber: String?,
+    val sellerNip: String?,
     val sellerName: String?,
     val saleDate: String?,
     val lineNumber: Int,
@@ -96,6 +97,34 @@ data class CostOverview(
 
 data class CostTotals(val itemCount: Long, val totalCostGross: Double)
 
+// ─── Auto-rule DTOs ───────────────────────────────────────────────────────────
+
+data class CreateAutoRuleRequest(
+    val sellerNip: String,
+    val sellerName: String,
+    val categoryId: String,
+    val applyNow: Boolean = true
+)
+
+data class UpdateAutoRuleRequest(
+    val sellerName: String,
+    val categoryId: String
+)
+
+data class SupplierAutoRuleDto(
+    val id: String,
+    val sellerNip: String,
+    val sellerName: String,
+    val categoryId: String,
+    val categoryName: String?,
+    val categoryColor: String?,
+    val createdAt: String
+)
+
+data class AutoRuleListResponse(val rules: List<SupplierAutoRuleDto>)
+data class CreateAutoRuleResponse(val id: String, val assignedItemCount: Int)
+data class ApplyAutoRulesResponse(val assignedItemCount: Int)
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 @RestController
@@ -103,6 +132,7 @@ data class CostTotals(val itemCount: Long, val totalCostGross: Double)
 class CostCategoryController(
     private val categoryRepository: CostCategoryRepository,
     private val assignmentRepository: CostItemAssignmentRepository,
+    private val autoRuleRepository: SupplierAutoRuleRepository,
     private val invoiceRepository: KsefInvoiceRepository,
     private val invoiceItemRepository: KsefInvoiceItemRepository
 ) {
@@ -265,6 +295,7 @@ class CostCategoryController(
                 id                = item.id.toString(),
                 invoiceId         = item.invoiceId.toString(),
                 invoiceNumber     = invoice?.invoiceNumber,
+                sellerNip         = invoice?.sellerNip,
                 sellerName        = invoice?.sellerName,
                 saleDate          = invoice?.issueDate?.toString() ?: invoice?.invoicingDate?.toLocalDate()?.toString(),
                 lineNumber        = item.lineNumber,
@@ -354,6 +385,84 @@ class CostCategoryController(
         )
     }
 
+    // ── Auto-rules ────────────────────────────────────────────────────────
+
+    @GetMapping("/auto-rules")
+    fun listAutoRules(): ResponseEntity<AutoRuleListResponse> {
+        val studioId    = SecurityContextHelper.getCurrentUser().studioId.value
+        val categoryMap = categoryRepository.findActiveByStudioId(studioId).associateBy { it.id }
+        val rules = autoRuleRepository.findByStudioId(studioId).map { it.toDto(categoryMap) }
+        return ResponseEntity.ok(AutoRuleListResponse(rules))
+    }
+
+    @PostMapping("/auto-rules")
+    @Transactional
+    fun createAutoRule(@RequestBody req: CreateAutoRuleRequest): ResponseEntity<CreateAutoRuleResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId  = principal.studioId.value
+        val nip       = req.sellerNip.replace(Regex("[^0-9]"), "")
+
+        categoryRepository.findByIdAndStudioId(UUID.fromString(req.categoryId), studioId)
+            ?: return ResponseEntity.notFound().build()
+
+        val existing = autoRuleRepository.findByStudioIdAndSellerNip(studioId, nip)
+        val rule = if (existing != null) {
+            existing.sellerName  = req.sellerName.trim()
+            existing.categoryId  = UUID.fromString(req.categoryId)
+            existing.updatedAt   = Instant.now()
+            autoRuleRepository.save(existing)
+        } else {
+            autoRuleRepository.save(
+                SupplierAutoRuleEntity(
+                    studioId   = studioId,
+                    sellerNip  = nip,
+                    sellerName = req.sellerName.trim(),
+                    categoryId = UUID.fromString(req.categoryId)
+                )
+            )
+        }
+
+        val assigned = if (req.applyNow) applyRule(rule, studioId) else 0
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(CreateAutoRuleResponse(id = rule.id.toString(), assignedItemCount = assigned))
+    }
+
+    @PutMapping("/auto-rules/{ruleId}")
+    @Transactional
+    fun updateAutoRule(
+        @PathVariable ruleId: String,
+        @RequestBody req: UpdateAutoRuleRequest
+    ): ResponseEntity<Void> {
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        val rule = autoRuleRepository.findByIdAndStudioId(UUID.fromString(ruleId), studioId)
+            ?: return ResponseEntity.notFound().build()
+        categoryRepository.findByIdAndStudioId(UUID.fromString(req.categoryId), studioId)
+            ?: return ResponseEntity.notFound().build()
+        rule.sellerName = req.sellerName.trim()
+        rule.categoryId = UUID.fromString(req.categoryId)
+        rule.updatedAt  = Instant.now()
+        autoRuleRepository.save(rule)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/auto-rules/{ruleId}")
+    @Transactional
+    fun deleteAutoRule(@PathVariable ruleId: String): ResponseEntity<Void> {
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        autoRuleRepository.deleteByIdAndStudioId(UUID.fromString(ruleId), studioId)
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Apply ALL active rules to currently unassigned items. */
+    @PostMapping("/auto-rules/apply")
+    @Transactional
+    fun applyAllRules(): ResponseEntity<ApplyAutoRulesResponse> {
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        val rules    = autoRuleRepository.findByStudioId(studioId)
+        val total    = rules.sumOf { applyRule(it, studioId) }
+        return ResponseEntity.ok(ApplyAutoRulesResponse(total))
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun CostCategoryEntity.toDto() = CostCategoryDto(
@@ -364,6 +473,47 @@ class CostCategoryController(
         isActive    = isActive,
         createdAt   = createdAt.toString(),
         updatedAt   = updatedAt.toString()
+    )
+
+    /**
+     * Assigns all unassigned items from invoices matching [rule.sellerNip] to [rule.categoryId].
+     * Already-assigned items are skipped — manual overrides are preserved.
+     */
+    private fun applyRule(rule: SupplierAutoRuleEntity, studioId: UUID): Int {
+        val invoices = invoiceRepository.findByStudioIdAndSellerNipAndStatusNotIn(
+            studioId, rule.sellerNip, listOf("CANCELLED", "EXCLUDED")
+        )
+        if (invoices.isEmpty()) return 0
+
+        val items    = invoiceItemRepository.findByInvoiceIdIn(invoices.map { it.id })
+        if (items.isEmpty()) return 0
+
+        val assigned = assignmentRepository.findByStudioId(studioId).map { it.ksefItemId }.toSet()
+        var count    = 0
+        items.forEach { item ->
+            if (item.id !in assigned) {
+                assignmentRepository.save(
+                    CostItemAssignmentEntity(
+                        categoryId = rule.categoryId,
+                        ksefItemId = item.id,
+                        invoiceId  = item.invoiceId,
+                        studioId   = studioId
+                    )
+                )
+                count++
+            }
+        }
+        return count
+    }
+
+    private fun SupplierAutoRuleEntity.toDto(categoryMap: Map<UUID, CostCategoryEntity>) = SupplierAutoRuleDto(
+        id            = id.toString(),
+        sellerNip     = sellerNip,
+        sellerName    = sellerName,
+        categoryId    = categoryId.toString(),
+        categoryName  = categoryMap[categoryId]?.name,
+        categoryColor = categoryMap[categoryId]?.color,
+        createdAt     = createdAt.toString()
     )
 
     private fun periodFormatFor(granularity: String): String = when (granularity.uppercase()) {
