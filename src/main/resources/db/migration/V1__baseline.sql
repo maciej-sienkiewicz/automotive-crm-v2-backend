@@ -1,0 +1,3 @@
+-- Baseline: reprezentuje stan bazy danych przed wprowadzeniem Flyway.
+-- Wszystkie wcześniejsze zmiany schematu były aplikowane ręcznie (psql).
+-- Ten plik jest celowo pusty — Flyway oznaczy go jako wykonany bez uruchamiania.
