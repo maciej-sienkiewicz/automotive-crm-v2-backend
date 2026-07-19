@@ -375,10 +375,13 @@ data class VisitServiceItem(
             vatRate: VatRate,
             adjustmentType: AdjustmentType,
             adjustmentValue: Long,
-            customNote: String?
+            customNote: String?,
+            basePriceGross: Money? = null
         ): VisitServiceItem {
             val finalNet = PriceCalculator.calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
-            val finalGross = vatRate.calculateGrossAmount(finalNet)
+            val finalGross = PriceCalculator.calculateFinalGross(
+                finalNet, basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross
+            )
 
             return VisitServiceItem(
                 id = VisitServiceItemId.random(),
@@ -424,7 +427,9 @@ data class VisitServiceItem(
         val effectiveAdjustmentValue = newAdjustmentValue ?: adjustmentValue
 
         val finalNet = PriceCalculator.calculateFinalNet(newBasePriceNet, effectiveVatRate, effectiveAdjustmentType, effectiveAdjustmentValue)
-        val finalGross = effectiveVatRate.calculateGrossAmount(finalNet)
+        val finalGross = PriceCalculator.calculateFinalGross(
+            finalNet, newBasePriceNet, effectiveVatRate, effectiveAdjustmentType, effectiveAdjustmentValue, null
+        )
 
         return copy(
             basePriceNet = newBasePriceNet,
@@ -570,6 +575,37 @@ object PriceCalculator {
             )
         }
         return Money(calculatedNet)
+    }
+
+    /**
+     * Final gross: preserved exactly whenever the price flows gross-side
+     * (SET_GROSS target, FIXED_GROSS from a stored base gross, or a no-op
+     * adjustment on a catalog service with a stored gross), otherwise derived
+     * from the final net. Net→gross re-derivation is not surjective on the
+     * grosz grid, so recomputing would shift gross-entered prices by 1 grosz
+     * (e.g. 201.00 → 200.99).
+     */
+    fun calculateFinalGross(
+        finalNet: Money,
+        basePriceNet: Money,
+        vatRate: VatRate,
+        adjustmentType: AdjustmentType,
+        adjustmentValue: Long,
+        basePriceGross: Money?
+    ): Money {
+        val isNoOpAdjustment = when (adjustmentType) {
+            AdjustmentType.PERCENT, AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS -> adjustmentValue == 0L
+            AdjustmentType.SET_NET, AdjustmentType.SET_GROSS -> false
+        }
+        return when {
+            adjustmentType == AdjustmentType.SET_GROSS ->
+                Money(adjustmentValue.coerceAtLeast(0))
+            adjustmentType == AdjustmentType.FIXED_GROSS && basePriceGross != null ->
+                Money((basePriceGross.amountInCents - adjustmentValue).coerceAtLeast(0))
+            isNoOpAdjustment && basePriceGross != null && finalNet.amountInCents == basePriceNet.amountInCents ->
+                basePriceGross
+            else -> vatRate.calculateGrossAmount(finalNet)
+        }
     }
 }
 

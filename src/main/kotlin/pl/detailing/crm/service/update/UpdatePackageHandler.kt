@@ -44,14 +44,16 @@ class UpdatePackageHandler(
 
         // Manual-price packages must not carry a catalog price — any price sent by the client is dropped
         val netAmount = if (command.requireManualPrice) Money.ZERO else command.basePriceNet
-        val vatAmount = command.vatRate.calculateVatAmount(netAmount)
-        val grossAmount = command.vatRate.calculateGrossAmount(netAmount)
+        val grossAmount = if (command.requireManualPrice) Money.ZERO
+            else command.vatRate.resolveGrossAmount(netAmount, command.basePriceGross)
+        val vatAmount = grossAmount.minus(netAmount)
 
         val newPackage = ServiceDomain(
             id = ServiceId.random(),
             studioId = command.studioId,
             name = command.name.trim(),
             basePriceNet = netAmount,
+            basePriceGross = grossAmount,
             vatRate = command.vatRate,
             isActive = true,
             requireManualPrice = command.requireManualPrice,

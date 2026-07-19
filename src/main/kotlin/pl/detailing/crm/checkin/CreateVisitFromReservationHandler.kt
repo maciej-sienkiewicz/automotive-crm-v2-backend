@@ -154,7 +154,8 @@ class CreateVisitFromReservationHandler(
                     vatRate = VatRate.fromInt(serviceReq.vatRate),
                     adjustmentType = adjustmentType,
                     adjustmentValue = adjustmentValue,
-                    customNote = serviceReq.note
+                    customNote = serviceReq.note,
+                    basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
                 )
 
                 VisitServiceItem(
@@ -400,7 +401,8 @@ class CreateVisitFromReservationHandler(
                     vatRate = VatRate.fromInt(serviceReq.vatRate),
                     adjustmentType = adjustmentType,
                     adjustmentValue = adjustmentValue,
-                    customNote = serviceReq.note
+                    customNote = serviceReq.note,
+                    basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
                 )
                 VisitServiceItem(
                     id = VisitServiceItemId.random(),
@@ -590,7 +592,8 @@ class CreateVisitFromReservationHandler(
                 vatRate = VatRate.fromInt(serviceReq.vatRate),
                 adjustmentType = adjustmentType,
                 adjustmentValue = adjustmentValue,
-                customNote = serviceReq.note
+                customNote = serviceReq.note,
+                basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
             )
         }
 

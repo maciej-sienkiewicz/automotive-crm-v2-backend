@@ -623,6 +623,25 @@ enum class VatRate(val rate: Int) {
         return netAmount.plus(calculateVatAmount(netAmount))
     }
 
+    /**
+     * Resolves the stored gross for a (net, user-entered gross) pair.
+     *
+     * Net→gross rounding on the grosz grid is not surjective — e.g. at 23% VAT
+     * no integer net maps to gross 201.00 PLN (163.41 → 200.99, 163.42 → 201.01).
+     * When the user enters a price gross-side, the exact gross must therefore be
+     * carried alongside net instead of being recomputed. A 1-grosz tolerance
+     * against the net-derived gross is allowed (VAT "w stu" rounding); anything
+     * further off is rejected as inconsistent client data.
+     */
+    fun resolveGrossAmount(netAmount: Money, providedGross: Money?): Money {
+        val derived = calculateGrossAmount(netAmount)
+        if (providedGross == null) return derived
+        require(Math.abs(providedGross.amountInCents - derived.amountInCents) <= 1) {
+            "Niespójna para cen: brutto ${providedGross.amountInCents} gr nie odpowiada netto ${netAmount.amountInCents} gr przy stawce $rate%"
+        }
+        return providedGross
+    }
+
     companion object {
         fun fromInt(value: Int): VatRate = entries.find { it.rate == value }
             ?: throw IllegalArgumentException("Invalid VAT rate: $value")

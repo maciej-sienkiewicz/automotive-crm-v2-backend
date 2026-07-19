@@ -121,9 +121,12 @@ data class AppointmentLineItem(
     val customNote: String?
 ) {
     init {
-        // Validate financial integrity: gross = net + vat
+        // Financial integrity: gross must correspond to net. A 1-grosz tolerance is
+        // allowed because gross-entered prices (SET_GROSS / stored catalog gross) are
+        // carried exactly — VAT "w stu" — and net→gross re-derivation can differ by
+        // a single grosz of rounding (e.g. gross 201.00 → net 163.41 → derived 200.99).
         val expectedGross = vatRate.calculateGrossAmount(finalPriceNet)
-        require(finalPriceGross.amountInCents == expectedGross.amountInCents) {
+        require(Math.abs(finalPriceGross.amountInCents - expectedGross.amountInCents) <= 1) {
             "Financial integrity violation: finalPriceGross ($finalPriceGross) does not match " +
                 "calculated gross from net ($expectedGross)"
         }
@@ -131,7 +134,12 @@ data class AppointmentLineItem(
 
     companion object {
         /**
-         * Create a line item by applying price adjustment to base price
+         * Create a line item by applying price adjustment to base price.
+         *
+         * [basePriceGross] — the catalog's stored gross (exact, user-entered). When the
+         * price flows gross-side (SET_GROSS / FIXED_GROSS / no-op adjustment on a gross
+         * base) the exact gross is preserved instead of being re-derived from net, so
+         * user-entered gross prices like 201.00 don't drift to 200.99.
          */
         fun create(
             serviceId: ServiceId?,
@@ -140,10 +148,11 @@ data class AppointmentLineItem(
             vatRate: VatRate,
             adjustmentType: AdjustmentType,
             adjustmentValue: Long,
-            customNote: String?
+            customNote: String?,
+            basePriceGross: Money? = null
         ): AppointmentLineItem {
             val finalNet = calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
-            val finalGross = vatRate.calculateGrossAmount(finalNet)
+            val finalGross = calculateFinalGross(finalNet, basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross)
 
             return AppointmentLineItem(
                 serviceId = serviceId,
@@ -201,6 +210,36 @@ data class AppointmentLineItem(
                     val calculatedNet = (adjustmentValue / vatMultiplier).toLong()
                     Money(calculatedNet.coerceAtLeast(0))
                 }
+            }
+        }
+
+        /**
+         * Final gross: preserved exactly whenever the price flows gross-side,
+         * otherwise derived from the final net (VAT "od sta").
+         */
+        private fun calculateFinalGross(
+            finalNet: Money,
+            basePriceNet: Money,
+            vatRate: VatRate,
+            adjustmentType: AdjustmentType,
+            adjustmentValue: Long,
+            basePriceGross: Money?
+        ): Money {
+            val isNoOpAdjustment = when (adjustmentType) {
+                AdjustmentType.PERCENT, AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS -> adjustmentValue == 0L
+                AdjustmentType.SET_NET, AdjustmentType.SET_GROSS -> false
+            }
+            return when {
+                // Explicit gross target — keep it to the grosz
+                adjustmentType == AdjustmentType.SET_GROSS ->
+                    Money(adjustmentValue.coerceAtLeast(0))
+                // Gross-side discount from a known exact base gross
+                adjustmentType == AdjustmentType.FIXED_GROSS && basePriceGross != null ->
+                    Money((basePriceGross.amountInCents + adjustmentValue).coerceAtLeast(0))
+                // No adjustment at all — the catalog's stored gross IS the final gross
+                isNoOpAdjustment && basePriceGross != null && finalNet.amountInCents == basePriceNet.amountInCents ->
+                    basePriceGross
+                else -> vatRate.calculateGrossAmount(finalNet)
             }
         }
     }

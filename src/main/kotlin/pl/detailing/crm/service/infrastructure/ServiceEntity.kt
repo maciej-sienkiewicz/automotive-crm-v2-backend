@@ -31,6 +31,9 @@ class ServiceEntity(
     @Column(name = "base_price_net", nullable = false)
     var basePriceNet: Long,
 
+    @Column(name = "base_price_gross", nullable = false)
+    var basePriceGross: Long,
+
     @Column(name = "vat_rate", nullable = false)
     var vatRate: Int,
 
@@ -63,6 +66,7 @@ class ServiceEntity(
         studioId = StudioId(studioId),
         name = name,
         basePriceNet = Money.fromCents(basePriceNet),
+        basePriceGross = Money.fromCents(basePriceGross),
         vatRate = VatRate.fromInt(vatRate),
         isActive = isActive,
         requireManualPrice = requireManualPrice,
@@ -80,6 +84,7 @@ class ServiceEntity(
             studioId = service.studioId.value,
             name = service.name,
             basePriceNet = service.basePriceNet.amountInCents,
+            basePriceGross = service.basePriceGross.amountInCents,
             vatRate = service.vatRate.rate,
             isActive = service.isActive,
             requireManualPrice = service.requireManualPrice,

@@ -116,6 +116,7 @@ class DemoDataInitializer(
                 studioId = studioId,
                 name = name,
                 basePriceNet = price,
+                basePriceGross = price + Math.round(price * vat / 100.0),
                 vatRate = vat,
                 isActive = true,
                 requireManualPrice = false,

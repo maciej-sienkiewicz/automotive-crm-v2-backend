@@ -539,6 +539,8 @@ data class ServiceLineItemRequest(
     val serviceId: String?,
     val serviceName: String,
     val basePriceNet: Long,
+    // Exact gross from the catalog / user input; null (older clients) = derive from net.
+    val basePriceGross: Long? = null,
     val vatRate: Int,
     val adjustment: AdjustmentRequest,
     val note: String?

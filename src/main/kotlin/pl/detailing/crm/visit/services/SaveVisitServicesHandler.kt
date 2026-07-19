@@ -62,6 +62,13 @@ class SaveVisitServicesHandler(
                 VatRate.fromInt(added.vatRate)
             }
 
+            // Catalog's stored gross applies only when the item is added at the catalog net
+            // price — otherwise (custom/edited base) gross is derived from net as before.
+            val basePriceGross = serviceId
+                ?.let { servicesFromDb[it.value] }
+                ?.takeIf { it.basePriceNet == added.basePriceNet }
+                ?.let { Money(it.basePriceGross) }
+
             VisitServiceItem.createPending(
                 serviceId = serviceId,
                 serviceName = added.serviceName,
@@ -69,7 +76,8 @@ class SaveVisitServicesHandler(
                 vatRate = vatRate,
                 adjustmentType = adjustmentType,
                 adjustmentValue = adjustmentValueLong,
-                customNote = added.note
+                customNote = added.note,
+                basePriceGross = basePriceGross
             )
         }
 

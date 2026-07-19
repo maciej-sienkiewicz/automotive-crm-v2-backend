@@ -8,6 +8,13 @@ data class Service(
     val studioId: StudioId,
     val name: String,
     val basePriceNet: Money,
+    /**
+     * Stored gross price — exactly as entered by the user. Not derivable from
+     * [basePriceNet]: net→gross rounding skips some gross values entirely
+     * (e.g. no integer net maps to 201.00 PLN at 23% VAT), so recomputing
+     * gross from net would silently shift user-entered prices by 1 grosz.
+     */
+    val basePriceGross: Money,
     val vatRate: VatRate,
     val isActive: Boolean,
     val requireManualPrice: Boolean,
@@ -18,9 +25,9 @@ data class Service(
     val createdAt: Instant,
     val updatedAt: Instant
 ) {
-    fun calculateVatAmount(): Money = vatRate.calculateVatAmount(basePriceNet)
+    fun calculateVatAmount(): Money = basePriceGross.minus(basePriceNet)
 
-    fun calculateGrossPrice(): Money = vatRate.calculateGrossAmount(basePriceNet)
+    fun calculateGrossPrice(): Money = basePriceGross
 
     fun archive(): Service = copy(isActive = false, updatedAt = Instant.now())
 

@@ -76,7 +76,8 @@ class CreateAppointmentHandler(
                     vatRate = VatRate.fromInt(serviceLineItem.vatRate),
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
-                    customNote = serviceLineItem.customNote
+                    customNote = serviceLineItem.customNote,
+                    basePriceGross = service.basePriceGross
                 )
             } else {
                 // Custom service without serviceId - use provided data directly

@@ -11,6 +11,8 @@ data class CreatePackageCommand(
     val userId: UserId,
     val name: String,
     val basePriceNet: Money,
+    // Exact gross as entered by the user; null = derive from net (legacy clients).
+    val basePriceGross: Money? = null,
     val vatRate: VatRate,
     val requireManualPrice: Boolean,
     val serviceIds: List<ServiceId>,

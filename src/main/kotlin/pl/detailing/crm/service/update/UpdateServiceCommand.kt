@@ -12,6 +12,8 @@ data class UpdateServiceCommand(
     val oldServiceId: ServiceId,
     val name: String,
     val basePriceNet: Money,
+    // Exact gross as entered by the user; null = derive from net (legacy clients).
+    val basePriceGross: Money? = null,
     val vatRate: VatRate,
     val requireManualPrice: Boolean,
     val userName: String? = null
