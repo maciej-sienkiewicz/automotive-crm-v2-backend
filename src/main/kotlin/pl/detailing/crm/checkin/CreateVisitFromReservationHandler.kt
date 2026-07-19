@@ -261,12 +261,8 @@ class CreateVisitFromReservationHandler(
                 mileageAtArrival = command.technicalState.mileage,
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,
-                inspectionNotes = listOfNotNull(command.technicalState.inspectionNotes)
-                    .joinToString("\n")
-                    .ifBlank { null },
-                technicalNotes = listOfNotNull(command.technicalState.inspectionNotes)
-                    .joinToString("\n")
-                    .ifBlank { null }, // Also save to technicalNotes for visibility in API response
+                inspectionNotes = command.technicalState.inspectionNotes.ifBlank { null },
+                technicalNotes = command.technicalState.protocolNotes.ifBlank { null },
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
                 photos = allPhotos,  // session-based photos + QR-uploaded photos
@@ -474,7 +470,7 @@ class CreateVisitFromReservationHandler(
                 keysHandedOver = command.technicalState.deposit.keys,
                 documentsHandedOver = command.technicalState.deposit.registrationDocument,
                 inspectionNotes = command.technicalState.inspectionNotes.ifBlank { null },
-                technicalNotes = command.technicalState.inspectionNotes.ifBlank { null },
+                technicalNotes = command.technicalState.protocolNotes.ifBlank { null },
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
                 photos = visitPhotos,

@@ -506,7 +506,8 @@ data class VehicleDataRequest(
 data class TechnicalStateRequest(
     val mileage: Long,
     val deposit: DepositItemRequest,
-    val inspectionNotes: String
+    val inspectionNotes: String,
+    val protocolNotes: String = ""
 )
 
 data class DepositItemRequest(
