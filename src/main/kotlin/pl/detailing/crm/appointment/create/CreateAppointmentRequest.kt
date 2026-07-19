@@ -17,7 +17,7 @@ data class CreateAppointmentRequest(
     val note: String?,
     val sendConfirmationSms: Boolean = false,
     val sendReminderSms: Boolean = false,
-    /** Send the customer their Visit Card (reservation card) link right after booking. */
+    /** Send the customer their Visit Card link via SMS right after booking. Requires SMS_EMAIL feature. */
     val sendVisitCard: Boolean = false,
     val doorToDoor: DoorToDoorAppointmentRequest? = null
 )

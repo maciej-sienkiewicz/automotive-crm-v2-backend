@@ -76,7 +76,8 @@ class AppointmentController(
             sendReservationCardLinkHandler.handle(
                 pl.detailing.crm.visitcard.SendReservationCardLinkCommand(
                     appointmentId = appointmentId,
-                    studioId = studioId
+                    studioId = studioId,
+                    channelOverride = pl.detailing.crm.visitcard.VisitCardDeliveryChannel.SMS
                 )
             )
         } catch (e: Exception) {
