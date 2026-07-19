@@ -16,6 +16,7 @@ data class CreateRecurringAppointmentRequest(
     val note: String?,
     val sendConfirmationSms: Boolean = false,
     val sendReminderSms: Boolean = false,
+    val sendVisitCard: Boolean = false,
     val recurrence: RecurrenceRuleRequest
 ) {
     fun toBaseRequest() = CreateAppointmentRequest(
@@ -27,7 +28,8 @@ data class CreateRecurringAppointmentRequest(
         appointmentColorId = appointmentColorId,
         note = note,
         sendConfirmationSms = sendConfirmationSms,
-        sendReminderSms = sendReminderSms
+        sendReminderSms = sendReminderSms,
+        sendVisitCard = sendVisitCard
     )
 }
 

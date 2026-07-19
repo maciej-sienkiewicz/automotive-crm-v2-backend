@@ -55,8 +55,34 @@ class AppointmentController(
     private val createRecurringAppointmentHandler: CreateRecurringAppointmentHandler,
     private val updateRecurringAppointmentHandler: UpdateRecurringAppointmentHandler,
     private val deleteRecurringAppointmentHandler: DeleteRecurringAppointmentHandler,
-    private val getRecurrenceSeriesHandler: GetRecurrenceSeriesHandler
+    private val getRecurrenceSeriesHandler: GetRecurrenceSeriesHandler,
+    private val sendReservationCardLinkHandler: pl.detailing.crm.visitcard.SendReservationCardLinkHandler,
+    private val entitlementService: pl.detailing.crm.subscription.entitlement.EntitlementService
 ) {
+    private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Best-effort delivery of the reservation card link right after booking
+     * ("Wyślij Kartę Wizyty do klienta" checkbox). Requires the SMS module;
+     * the handler itself additionally honours the studio's visit-card settings.
+     * Never fails the booking that was just created.
+     */
+    private suspend fun sendVisitCardAfterBooking(appointmentId: AppointmentId, studioId: StudioId) {
+        if (!entitlementService.hasFeature(studioId, pl.detailing.crm.subscription.entitlement.FeatureKey.SMS_EMAIL)) {
+            logger.warn("sendVisitCard requested without SMS module — skipped [studioId={}]", studioId)
+            return
+        }
+        try {
+            sendReservationCardLinkHandler.handle(
+                pl.detailing.crm.visitcard.SendReservationCardLinkCommand(
+                    appointmentId = appointmentId,
+                    studioId = studioId
+                )
+            )
+        } catch (e: Exception) {
+            logger.error("Failed to send reservation card link after booking [appointmentId={}]", appointmentId, e)
+        }
+    }
 
     @GetMapping
     fun getAppointments(
@@ -248,6 +274,10 @@ class AppointmentController(
             }
         }
 
+        if (request.sendVisitCard) {
+            sendVisitCardAfterBooking(result.appointmentId, principal.studioId)
+        }
+
         ResponseEntity
             .status(HttpStatus.CREATED)
             .body(AppointmentCreateResponse(
@@ -297,6 +327,10 @@ class AppointmentController(
                     )
                 )
             }
+        }
+
+        if (request.sendVisitCard) {
+            sendVisitCardAfterBooking(result.firstAppointmentId, principal.studioId)
         }
 
         ResponseEntity.status(HttpStatus.CREATED).body(

@@ -61,6 +61,9 @@ class SendReservationCardLinkHandler(
             ?: throw EntityNotFoundException("Customer not found: ${appointment.customerId}")
 
         val settings = studioSettingsRepository.findById(command.studioId.value).orElse(null)
+        if (settings?.visitCardEnabled == false) {
+            return@withContext SendVisitCardLinkResult(false, false, "Karta Wizyty jest wyłączona w ustawieniach")
+        }
         val channel = command.channelOverride ?: VisitCardDeliveryChannel.fromString(settings?.visitCardDeliveryChannel)
         if (channel == VisitCardDeliveryChannel.NONE) {
             return@withContext SendVisitCardLinkResult(false, false, "Wysyłka Karty Wizyty jest wyłączona w konfiguracji")

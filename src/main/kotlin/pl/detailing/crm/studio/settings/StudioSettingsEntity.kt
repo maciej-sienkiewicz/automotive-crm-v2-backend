@@ -57,6 +57,14 @@ class StudioSettingsEntity(
     @Column(name = "visit_card_delivery_channel", nullable = false, length = 10)
     var visitCardDeliveryChannel: String = "EMAIL",
 
+    /** Master switch for the customer Visit Card feature (its use requires the SMS module). */
+    @Column(name = "visit_card_enabled", nullable = false, columnDefinition = "boolean not null default true")
+    var visitCardEnabled: Boolean = true,
+
+    /** Default state of the "send the Visit Card to the customer" checkbox at booking/check-in. */
+    @Column(name = "visit_card_send_by_default", nullable = false, columnDefinition = "boolean not null default false")
+    var visitCardSendByDefault: Boolean = false,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )
