@@ -89,6 +89,9 @@ class GenerateBatchReportHandler(
         val margin = 40f
         val usableWidth = pageWidth - 2 * margin
 
+        val logoMaxW = 120f
+        val logoMaxH = 50f
+
         val colDate = 70f
         val colVehicle = 130f
         val colServices = 200f
@@ -101,8 +104,6 @@ class GenerateBatchReportHandler(
         val tableFontSize = 8f
         val tableHeaderFontSize = 8f
         val rowMinHeight = 14f
-        val logoMaxW = 120f
-        val logoMaxH = 50f
 
         fun newPage(): Pair<PDPage, PDPageContentStream> {
             val page = PDPage(PDRectangle.A4)
@@ -142,7 +143,7 @@ class GenerateBatchReportHandler(
         var (_, cs) = newPage()
         var currentY = pageHeight - margin
 
-        // ---- LOGO (top-right corner, drawn first so text renders on top if they overlap) ----
+        // ---- LOGO (top-right corner) ----
         if (logoBytes != null) {
             runCatching {
                 val pdImage = PDImageXObject.createFromByteArray(document, logoBytes, "logo")
@@ -156,7 +157,7 @@ class GenerateBatchReportHandler(
             }
         }
 
-        // ---- TITLE + META (left side; logo on the right shares the same vertical zone) ----
+        // ---- HEADER ----
         drawText(cs, "ZESTAWIENIE ZBIORCZE", bold, headerFontSize, margin, currentY)
         currentY -= 20f
 
@@ -172,7 +173,7 @@ class GenerateBatchReportHandler(
         // Ensure full-width elements begin below the logo area
         currentY = minOf(currentY, pageHeight - margin - logoMaxH - 4f)
 
-        // ---- PERIOD BAND (full-width dark-blue highlight) ----
+        // ---- PERIOD BAND ----
         val periodText = when {
             from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
             from != null -> "Od: ${from.format(dateFormat)}"
@@ -187,13 +188,14 @@ class GenerateBatchReportHandler(
         cs.setNonStrokingColor(0f, 0f, 0f)
         currentY -= 26f
 
-        // ---- TABLE HEADER ----
         val totalNet = entries.sumOf { it.netAmountCents }
         val totalGross = entries.sumOf { it.grossAmountCents }
 
+        // ---- TABLE HEADER ----
         cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
         cs.addRect(margin, currentY - 14f, usableWidth, 16f)
         cs.fill()
+        cs.setNonStrokingColor(0f, 0f, 0f)
 
         cs.setNonStrokingColor(1f, 1f, 1f)
         var colX = margin + 3f
@@ -247,6 +249,7 @@ class GenerateBatchReportHandler(
                 cs = newCs
                 currentY = pageHeight - margin
 
+                // Re-draw table header on new page
                 cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
                 cs.addRect(margin, currentY - 14f, usableWidth, 16f)
                 cs.fill()
@@ -310,7 +313,7 @@ class GenerateBatchReportHandler(
             rowAlt = !rowAlt
         }
 
-        // ---- SUMMARY FOOTER (only place where totals appear) ----
+        // ---- SUMMARY FOOTER ----
         currentY -= 10f
         if (currentY < margin + 40f) {
             cs.close()
