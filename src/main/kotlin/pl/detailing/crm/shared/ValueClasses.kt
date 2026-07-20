@@ -499,6 +499,32 @@ enum class VatRate(val rate: Int) {
 }
 
 /**
+ * Type-safe ID wrapper for BatchContractor entities
+ */
+@JvmInline
+value class BatchContractorId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = BatchContractorId(UUID.randomUUID())
+        fun fromString(value: String) = BatchContractorId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
+ * Type-safe ID wrapper for BatchOrderEntry entities
+ */
+@JvmInline
+value class BatchOrderEntryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = BatchOrderEntryId(UUID.randomUUID())
+        fun fromString(value: String) = BatchOrderEntryId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Base exception for business logic violations
  */
 sealed class BusinessException(message: String) : RuntimeException(message)
