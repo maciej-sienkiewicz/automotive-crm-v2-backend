@@ -2,12 +2,28 @@ package pl.detailing.crm.batchorder.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.batchorder.domain.BatchOrderEntry
+import pl.detailing.crm.batchorder.domain.BatchOrderServiceItem
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
+
+@Embeddable
+class ServiceItemEmbeddable(
+    @Column(name = "service_name", nullable = false, length = 500)
+    var name: String = "",
+
+    @Column(name = "net_amount_cents", nullable = false)
+    var netAmountCents: Long = 0,
+
+    @Column(name = "gross_amount_cents", nullable = false)
+    var grossAmountCents: Long = 0,
+
+    @Column(name = "vat_rate", nullable = false)
+    var vatRate: Int = 23
+)
 
 @Entity
 @Table(
@@ -46,18 +62,8 @@ class BatchOrderEntryEntity(
         name = "batch_order_entry_services",
         joinColumns = [JoinColumn(name = "entry_id")]
     )
-    @Column(name = "service_name", nullable = false)
     @OrderColumn(name = "sort_order")
-    var services: MutableList<String> = mutableListOf(),
-
-    @Column(name = "net_amount_cents", nullable = false)
-    var netAmountCents: Long = 0,
-
-    @Column(name = "gross_amount_cents", nullable = false)
-    var grossAmountCents: Long = 0,
-
-    @Column(name = "vat_rate", nullable = false)
-    var vatRate: Int = 23,
+    var services: MutableList<ServiceItemEmbeddable> = mutableListOf(),
 
     @Column(name = "notes", columnDefinition = "TEXT")
     var notes: String?,
@@ -68,6 +74,9 @@ class BatchOrderEntryEntity(
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 ) {
+    val netAmountCents: Long get() = services.sumOf { it.netAmountCents }
+    val grossAmountCents: Long get() = services.sumOf { it.grossAmountCents }
+
     fun toDomain(): BatchOrderEntry = BatchOrderEntry(
         id = BatchOrderEntryId(id),
         studioId = StudioId(studioId),
@@ -76,10 +85,7 @@ class BatchOrderEntryEntity(
         vehicleMake = vehicleMake,
         vehicleModel = vehicleModel,
         vehicleLicensePlate = vehicleLicensePlate,
-        services = services.toList(),
-        netAmountCents = netAmountCents,
-        grossAmountCents = grossAmountCents,
-        vatRate = vatRate,
+        services = services.map { BatchOrderServiceItem(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
         notes = notes,
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -95,14 +101,13 @@ class BatchOrderEntryEntity(
                 vehicleMake = entry.vehicleMake,
                 vehicleModel = entry.vehicleModel,
                 vehicleLicensePlate = entry.vehicleLicensePlate,
-                netAmountCents = entry.netAmountCents,
-                grossAmountCents = entry.grossAmountCents,
-                vatRate = entry.vatRate,
                 notes = entry.notes,
                 createdAt = entry.createdAt,
                 updatedAt = entry.updatedAt
             )
-            entity.services = entry.services.toMutableList()
+            entity.services = entry.services.map {
+                ServiceItemEmbeddable(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate)
+            }.toMutableList()
             return entity
         }
     }

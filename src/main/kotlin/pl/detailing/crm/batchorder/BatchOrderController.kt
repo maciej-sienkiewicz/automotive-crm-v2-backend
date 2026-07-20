@@ -12,12 +12,14 @@ import pl.detailing.crm.batchorder.entry.CreateEntryCommand
 import pl.detailing.crm.batchorder.entry.CreateEntryHandler
 import pl.detailing.crm.batchorder.entry.DeleteEntryCommand
 import pl.detailing.crm.batchorder.entry.DeleteEntryHandler
+import pl.detailing.crm.batchorder.entry.ServiceItemInput
 import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderEntryId
+import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.LocalDate
 
 @RestController
@@ -31,7 +33,8 @@ class BatchOrderController(
     private val createEntryHandler: CreateEntryHandler,
     private val updateEntryHandler: UpdateEntryHandler,
     private val deleteEntryHandler: DeleteEntryHandler,
-    private val generateBatchReportHandler: GenerateBatchReportHandler
+    private val generateBatchReportHandler: GenerateBatchReportHandler,
+    private val vehicleRepository: VehicleRepository
 ) {
 
     @GetMapping("/contractors")
@@ -131,10 +134,7 @@ class BatchOrderController(
                 vehicleMake = request.vehicleMake,
                 vehicleModel = request.vehicleModel,
                 vehicleLicensePlate = request.vehicleLicensePlate,
-                services = request.services,
-                netAmountCents = request.netAmountCents,
-                grossAmountCents = request.grossAmountCents,
-                vatRate = request.vatRate,
+                services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
                 notes = request.notes
             )
         )
@@ -155,10 +155,7 @@ class BatchOrderController(
                 vehicleMake = request.vehicleMake,
                 vehicleModel = request.vehicleModel,
                 vehicleLicensePlate = request.vehicleLicensePlate,
-                services = request.services,
-                netAmountCents = request.netAmountCents,
-                grossAmountCents = request.grossAmountCents,
-                vatRate = request.vatRate,
+                services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
                 notes = request.notes
             )
         )
@@ -197,6 +194,22 @@ class BatchOrderController(
         headers.setContentDispositionFormData("attachment", "zestawienie-zbiorcze.pdf")
         ResponseEntity.ok().headers(headers).body(pdfBytes)
     }
+
+    @GetMapping("/vehicles/search")
+    fun searchVehicles(@RequestParam q: String): ResponseEntity<List<VehicleSuggestionDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val normalized = q.trim().replace("\\s".toRegex(), "").uppercase()
+        if (normalized.length < 2) return@runBlocking ResponseEntity.ok(emptyList())
+
+        val suggestions = vehicleRepository.findByStudioId(principal.studioId.value)
+            .filter { v ->
+                v.licensePlate?.replace("\\s".toRegex(), "")?.uppercase()?.contains(normalized) == true
+            }
+            .take(10)
+            .map { VehicleSuggestionDto(licensePlate = it.licensePlate ?: "", brand = it.brand, model = it.model) }
+
+        ResponseEntity.ok(suggestions)
+    }
 }
 
 data class ContractorRequest(
@@ -209,16 +222,26 @@ data class ContractorRequest(
     val notes: String?
 )
 
+data class ServiceItemRequest(
+    val name: String,
+    val netAmountCents: Long,
+    val grossAmountCents: Long,
+    val vatRate: Int
+)
+
 data class EntryRequest(
     val serviceDate: String,
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
-    val services: List<String>,
-    val netAmountCents: Long,
-    val grossAmountCents: Long,
-    val vatRate: Int,
+    val services: List<ServiceItemRequest>,
     val notes: String?
+)
+
+data class VehicleSuggestionDto(
+    val licensePlate: String,
+    val brand: String,
+    val model: String
 )
 
 data class ContractorsResponse(val contractors: List<ContractorListItem>)
