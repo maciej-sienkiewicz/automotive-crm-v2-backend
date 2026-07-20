@@ -4,8 +4,8 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
-import org.apache.pdfbox.pdmodel.font.PDType1Font
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts
+import org.apache.pdfbox.pdmodel.font.PDFont
+import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
@@ -61,9 +61,16 @@ class GenerateBatchReportHandler(
         val document = PDDocument()
         val dateFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
-        val regular = PDType1Font(Standard14Fonts.FontName.HELVETICA)
-        val bold = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)
-        val oblique = PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE)
+        val regular = PDType0Font.load(
+            document,
+            GenerateBatchReportHandler::class.java.getResourceAsStream("/fonts/LiberationSans-Regular.ttf")!!,
+            true
+        )
+        val bold = PDType0Font.load(
+            document,
+            GenerateBatchReportHandler::class.java.getResourceAsStream("/fonts/LiberationSans-Bold.ttf")!!,
+            true
+        )
 
         val pageWidth = PDRectangle.A4.width
         val pageHeight = PDRectangle.A4.height
@@ -81,7 +88,6 @@ class GenerateBatchReportHandler(
         val subheaderFontSize = 10f
         val tableFontSize = 8f
         val tableHeaderFontSize = 8f
-        val lineHeight = 14f
         val rowMinHeight = 14f
 
         fun newPage(): Pair<PDPage, PDPageContentStream> {
@@ -96,7 +102,7 @@ class GenerateBatchReportHandler(
             return "%.2f zł".format(amount)
         }
 
-        fun drawText(cs: PDPageContentStream, text: String, font: PDType1Font, size: Float, x: Float, y: Float) {
+        fun drawText(cs: PDPageContentStream, text: String, font: PDFont, size: Float, x: Float, y: Float) {
             cs.beginText()
             cs.setFont(font, size)
             cs.newLineAtOffset(x, y)
@@ -104,7 +110,7 @@ class GenerateBatchReportHandler(
             cs.endText()
         }
 
-        fun truncateText(text: String, font: PDType1Font, fontSize: Float, maxWidth: Float): String {
+        fun truncateText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): String {
             var result = text
             try {
                 while (result.isNotEmpty() && font.getStringWidth(result) / 1000 * fontSize > maxWidth) {
@@ -194,7 +200,6 @@ class GenerateBatchReportHandler(
             val rowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
 
             if (currentY - rowHeight < margin + 30f) {
-                // Draw bottom border on current page
                 cs.setStrokingColor(0.7f, 0.7f, 0.7f)
                 cs.moveTo(margin, currentY)
                 cs.lineTo(margin + usableWidth, currentY)
@@ -205,7 +210,6 @@ class GenerateBatchReportHandler(
                 cs = newCs
                 currentY = pageHeight - margin
 
-                // Re-draw table header on new page
                 cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
                 cs.addRect(margin, currentY - 14f, usableWidth, 16f)
                 cs.fill()
@@ -257,10 +261,9 @@ class GenerateBatchReportHandler(
             colX += colGross
 
             notesLines.forEachIndexed { idx, line ->
-                drawText(cs, truncateText(line, regular, tableFontSize, colNotes - 4f), oblique, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
+                drawText(cs, truncateText(line, regular, tableFontSize, colNotes - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
             }
 
-            // Row bottom border
             cs.setStrokingColor(0.85f, 0.85f, 0.85f)
             cs.moveTo(margin, currentY - rowHeight)
             cs.lineTo(margin + usableWidth, currentY - rowHeight)
