@@ -101,9 +101,11 @@ class VisitUpsellAdminService(
         }
 
         val basePriceNet = Money.fromCents(service.basePriceNet)
+        val basePriceGross = Money.fromCents(service.basePriceGross)
         val vatRate = VatRate.fromInt(service.vatRate)
         val finalNet = PriceCalculator.calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
-        val finalGross = vatRate.calculateGrossAmount(finalNet)
+        // Preserve exact catalog gross when there is no adjustment; otherwise re-derive from adjusted net.
+        val finalGross = vatRate.resolveGrossAmount(finalNet, if (finalNet == basePriceNet) basePriceGross else null)
 
         val entity = suggestionRepository.save(
             VisitUpsellSuggestionEntity(

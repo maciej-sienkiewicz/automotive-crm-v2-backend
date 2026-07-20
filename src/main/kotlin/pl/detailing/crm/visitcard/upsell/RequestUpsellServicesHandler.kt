@@ -132,7 +132,8 @@ class RequestUpsellServicesHandler(
                 vatRate = VatRate.fromInt(suggestion.vatRate),
                 adjustmentType = suggestion.adjustmentType,
                 adjustmentValue = suggestion.adjustmentValue,
-                customNote = suggestion.note
+                customNote = suggestion.note,
+                basePriceGross = Money.fromCents(suggestion.finalPriceGross)
             )
         }
 
