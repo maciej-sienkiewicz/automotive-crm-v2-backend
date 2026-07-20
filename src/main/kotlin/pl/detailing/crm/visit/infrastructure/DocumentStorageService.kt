@@ -121,6 +121,18 @@ class DocumentStorageService(
     }
 
     /**
+     * Download raw bytes of an S3 object directly (no presigning).
+     * Used internally for embedding assets (e.g. studio logo) into generated PDFs.
+     */
+    fun downloadBytes(s3Key: String): ByteArray {
+        val request = GetObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .build()
+        return s3Client.getObjectAsBytes(request).asByteArray()
+    }
+
+    /**
      * Generate a presigned URL for uploading a document
      * Valid for 15 minutes
      *

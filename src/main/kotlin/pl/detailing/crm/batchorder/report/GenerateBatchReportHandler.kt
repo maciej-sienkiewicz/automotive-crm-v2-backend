@@ -6,6 +6,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.pdmodel.font.PDFont
 import org.apache.pdfbox.pdmodel.font.PDType0Font
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
@@ -14,6 +15,8 @@ import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
+import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -21,7 +24,9 @@ import java.time.format.DateTimeFormatter
 @Service
 class GenerateBatchReportHandler(
     private val contractorRepository: BatchContractorRepository,
-    private val entryRepository: BatchOrderEntryRepository
+    private val entryRepository: BatchOrderEntryRepository,
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val documentStorageService: DocumentStorageService
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: GenerateBatchReportCommand): ByteArray {
@@ -42,12 +47,18 @@ class GenerateBatchReportHandler(
             )
         }
 
+        val logoBytes: ByteArray? = studioSettingsRepository.findById(command.studioId.value)
+            .orElse(null)?.logoS3Key?.let { key ->
+                runCatching { documentStorageService.downloadBytes(key) }.getOrNull()
+            }
+
         return buildPdf(
             contractorName = contractor.name,
             contractorTaxId = contractor.taxId,
             from = command.from,
             to = command.to,
-            entries = entries
+            entries = entries,
+            logoBytes = logoBytes
         )
     }
 
@@ -56,7 +67,8 @@ class GenerateBatchReportHandler(
         contractorTaxId: String?,
         from: LocalDate?,
         to: LocalDate?,
-        entries: List<BatchOrderEntryEntity>
+        entries: List<BatchOrderEntryEntity>,
+        logoBytes: ByteArray?
     ): ByteArray {
         val document = PDDocument()
         val dateFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
@@ -89,6 +101,8 @@ class GenerateBatchReportHandler(
         val tableFontSize = 8f
         val tableHeaderFontSize = 8f
         val rowMinHeight = 14f
+        val logoMaxW = 120f
+        val logoMaxH = 50f
 
         fun newPage(): Pair<PDPage, PDPageContentStream> {
             val page = PDPage(PDRectangle.A4)
@@ -128,18 +142,23 @@ class GenerateBatchReportHandler(
         var (_, cs) = newPage()
         var currentY = pageHeight - margin
 
-        // ---- HEADER ----
+        // ---- LOGO (top-right corner, drawn first so text renders on top if they overlap) ----
+        if (logoBytes != null) {
+            runCatching {
+                val pdImage = PDImageXObject.createFromByteArray(document, logoBytes, "logo")
+                val aspect = pdImage.width.toFloat() / pdImage.height
+                val (drawW, drawH) = if (aspect > logoMaxW / logoMaxH) {
+                    logoMaxW to (logoMaxW / aspect)
+                } else {
+                    (logoMaxH * aspect) to logoMaxH
+                }
+                cs.drawImage(pdImage, pageWidth - margin - drawW, currentY - drawH, drawW, drawH)
+            }
+        }
+
+        // ---- TITLE + META (left side; logo on the right shares the same vertical zone) ----
         drawText(cs, "ZESTAWIENIE ZBIORCZE", bold, headerFontSize, margin, currentY)
         currentY -= 20f
-
-        val periodText = when {
-            from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
-            from != null -> "Od: ${from.format(dateFormat)}"
-            to != null -> "Do: ${to.format(dateFormat)}"
-            else -> "Wszystkie wpisy"
-        }
-        drawText(cs, periodText, regular, subheaderFontSize, margin, currentY)
-        currentY -= 16f
 
         drawText(cs, "Kontrahent: $contractorName", bold, subheaderFontSize, margin, currentY)
         if (contractorTaxId != null) {
@@ -147,16 +166,34 @@ class GenerateBatchReportHandler(
         }
         currentY -= 16f
 
-        val totalNet = entries.sumOf { it.netAmountCents }
-        val totalGross = entries.sumOf { it.grossAmountCents }
-        drawText(cs, "Liczba wpisów: ${entries.size}   |   Suma netto: ${formatMoney(totalNet)}   |   Suma brutto: ${formatMoney(totalGross)}", regular, subheaderFontSize, margin, currentY)
-        currentY -= 20f
+        drawText(cs, "Liczba wpisów: ${entries.size}", regular, subheaderFontSize, margin, currentY)
+        currentY -= 16f
+
+        // Ensure full-width elements begin below the logo area
+        currentY = minOf(currentY, pageHeight - margin - logoMaxH - 4f)
+
+        // ---- PERIOD BAND (full-width dark-blue highlight) ----
+        val periodText = when {
+            from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
+            from != null -> "Od: ${from.format(dateFormat)}"
+            to != null -> "Do: ${to.format(dateFormat)}"
+            else -> "Wszystkie wpisy"
+        }
+        cs.setNonStrokingColor(0.12f, 0.27f, 0.67f)
+        cs.addRect(margin, currentY - 20f, usableWidth, 22f)
+        cs.fill()
+        cs.setNonStrokingColor(1f, 1f, 1f)
+        drawText(cs, periodText, bold, subheaderFontSize, margin + 6f, currentY - 14f)
+        cs.setNonStrokingColor(0f, 0f, 0f)
+        currentY -= 26f
 
         // ---- TABLE HEADER ----
+        val totalNet = entries.sumOf { it.netAmountCents }
+        val totalGross = entries.sumOf { it.grossAmountCents }
+
         cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
         cs.addRect(margin, currentY - 14f, usableWidth, 16f)
         cs.fill()
-        cs.setNonStrokingColor(0f, 0f, 0f)
 
         cs.setNonStrokingColor(1f, 1f, 1f)
         var colX = margin + 3f
@@ -273,7 +310,7 @@ class GenerateBatchReportHandler(
             rowAlt = !rowAlt
         }
 
-        // ---- SUMMARY FOOTER ----
+        // ---- SUMMARY FOOTER (only place where totals appear) ----
         currentY -= 10f
         if (currentY < margin + 40f) {
             cs.close()
