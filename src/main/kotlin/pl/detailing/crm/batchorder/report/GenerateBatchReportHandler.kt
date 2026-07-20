@@ -92,12 +92,12 @@ class GenerateBatchReportHandler(
         val logoMaxW = 120f
         val logoMaxH = 50f
 
-        val colDate = 70f
-        val colVehicle = 130f
-        val colServices = 200f
-        val colNet = 75f
-        val colGross = 75f
-        val colNotes = usableWidth - colDate - colVehicle - colServices - colNet - colGross
+        val colDate = 68f
+        val colVehicle = 120f
+        val colServices = usableWidth - 68f - 120f - 72f - 72f - 60f
+        val colNet = 72f
+        val colGross = 72f
+        val colNotes = 60f
 
         val headerFontSize = 14f
         val subheaderFontSize = 10f
@@ -140,6 +140,26 @@ class GenerateBatchReportHandler(
             return result
         }
 
+        fun drawTableHeader(cs: PDPageContentStream, y: Float) {
+            cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
+            cs.addRect(margin, y - 14f, usableWidth, 16f)
+            cs.fill()
+            cs.setNonStrokingColor(1f, 1f, 1f)
+            var colX = margin + 3f
+            drawText(cs, "Data", bold, tableHeaderFontSize, colX, y - 10f)
+            colX += colDate
+            drawText(cs, "Pojazd", bold, tableHeaderFontSize, colX, y - 10f)
+            colX += colVehicle
+            drawText(cs, "Usługi", bold, tableHeaderFontSize, colX, y - 10f)
+            colX += colServices
+            drawText(cs, "Netto", bold, tableHeaderFontSize, colX, y - 10f)
+            colX += colNet
+            drawText(cs, "Brutto", bold, tableHeaderFontSize, colX, y - 10f)
+            colX += colGross
+            drawText(cs, "Uwagi", bold, tableHeaderFontSize, colX, y - 10f)
+            cs.setNonStrokingColor(0f, 0f, 0f)
+        }
+
         var (_, cs) = newPage()
         var currentY = pageHeight - margin
 
@@ -159,59 +179,42 @@ class GenerateBatchReportHandler(
 
         // ---- HEADER ----
         drawText(cs, "ZESTAWIENIE ZBIORCZE", bold, headerFontSize, margin, currentY)
-        currentY -= 20f
+        currentY -= 18f
 
         drawText(cs, "Kontrahent: $contractorName", bold, subheaderFontSize, margin, currentY)
         if (contractorTaxId != null) {
             drawText(cs, "NIP: $contractorTaxId", regular, subheaderFontSize, margin + 280f, currentY)
         }
-        currentY -= 16f
+        currentY -= 14f
 
         drawText(cs, "Liczba wpisów: ${entries.size}", regular, subheaderFontSize, margin, currentY)
-        currentY -= 16f
+        currentY -= 14f
 
         // Ensure full-width elements begin below the logo area
         currentY = minOf(currentY, pageHeight - margin - logoMaxH - 4f)
 
-        // ---- PERIOD BAND ----
+        // ---- PERIOD (plain formal text) ----
         val periodText = when {
             from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
             from != null -> "Od: ${from.format(dateFormat)}"
             to != null -> "Do: ${to.format(dateFormat)}"
             else -> "Wszystkie wpisy"
         }
-        cs.setNonStrokingColor(0.12f, 0.27f, 0.67f)
-        cs.addRect(margin, currentY - 20f, usableWidth, 22f)
-        cs.fill()
-        cs.setNonStrokingColor(1f, 1f, 1f)
-        drawText(cs, periodText, bold, subheaderFontSize, margin + 6f, currentY - 14f)
-        cs.setNonStrokingColor(0f, 0f, 0f)
-        currentY -= 26f
+        drawText(cs, periodText, bold, subheaderFontSize, margin, currentY)
+        currentY -= 6f
+
+        // Thin separator line under period
+        cs.setStrokingColor(0.6f, 0.6f, 0.6f)
+        cs.moveTo(margin, currentY)
+        cs.lineTo(margin + usableWidth, currentY)
+        cs.stroke()
+        currentY -= 14f
 
         val totalNet = entries.sumOf { it.netAmountCents }
         val totalGross = entries.sumOf { it.grossAmountCents }
 
         // ---- TABLE HEADER ----
-        cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
-        cs.addRect(margin, currentY - 14f, usableWidth, 16f)
-        cs.fill()
-        cs.setNonStrokingColor(0f, 0f, 0f)
-
-        cs.setNonStrokingColor(1f, 1f, 1f)
-        var colX = margin + 3f
-        drawText(cs, "Data", bold, tableHeaderFontSize, colX, currentY - 10f)
-        colX += colDate
-        drawText(cs, "Pojazd", bold, tableHeaderFontSize, colX, currentY - 10f)
-        colX += colVehicle
-        drawText(cs, "Usługi", bold, tableHeaderFontSize, colX, currentY - 10f)
-        colX += colServices
-        drawText(cs, "Netto", bold, tableHeaderFontSize, colX, currentY - 10f)
-        colX += colNet
-        drawText(cs, "Brutto", bold, tableHeaderFontSize, colX, currentY - 10f)
-        colX += colGross
-        drawText(cs, "Uwagi", bold, tableHeaderFontSize, colX, currentY - 10f)
-        cs.setNonStrokingColor(0f, 0f, 0f)
-
+        drawTableHeader(cs, currentY)
         currentY -= 16f
 
         // ---- TABLE ROWS ----
@@ -229,11 +232,18 @@ class GenerateBatchReportHandler(
                 }
             }.ifBlank { "-" }
 
-            val servicesText = entry.services.joinToString("\n").ifBlank { "-" }
-            val notesText = entry.notes ?: ""
+            // Services: each item as "name (net / gross VAT%)"
+            val vatLabel: (Int) -> String = { r -> if (r == -1) "ZW" else "${r}%" }
+            val serviceLines = if (entry.services.isEmpty()) {
+                listOf("-")
+            } else {
+                entry.services.map { svc ->
+                    "${svc.name}  ${formatMoney(svc.netAmountCents)} / ${formatMoney(svc.grossAmountCents)} ${vatLabel(svc.vatRate)}"
+                }
+            }
 
+            val notesText = entry.notes ?: ""
             val vehicleLines = vehicleText.split("\n")
-            val serviceLines = servicesText.split("\n")
             val notesLines = if (notesText.isNotBlank()) notesText.split("\n") else listOf("")
             val maxLines = maxOf(vehicleLines.size, serviceLines.size, notesLines.size, 1)
             val rowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
@@ -248,25 +258,7 @@ class GenerateBatchReportHandler(
                 val (_, newCs) = newPage()
                 cs = newCs
                 currentY = pageHeight - margin
-
-                // Re-draw table header on new page
-                cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
-                cs.addRect(margin, currentY - 14f, usableWidth, 16f)
-                cs.fill()
-                cs.setNonStrokingColor(1f, 1f, 1f)
-                colX = margin + 3f
-                drawText(cs, "Data", bold, tableHeaderFontSize, colX, currentY - 10f)
-                colX += colDate
-                drawText(cs, "Pojazd", bold, tableHeaderFontSize, colX, currentY - 10f)
-                colX += colVehicle
-                drawText(cs, "Usługi", bold, tableHeaderFontSize, colX, currentY - 10f)
-                colX += colServices
-                drawText(cs, "Netto", bold, tableHeaderFontSize, colX, currentY - 10f)
-                colX += colNet
-                drawText(cs, "Brutto", bold, tableHeaderFontSize, colX, currentY - 10f)
-                colX += colGross
-                drawText(cs, "Uwagi", bold, tableHeaderFontSize, colX, currentY - 10f)
-                cs.setNonStrokingColor(0f, 0f, 0f)
+                drawTableHeader(cs, currentY)
                 currentY -= 16f
                 rowAlt = false
             }
@@ -279,7 +271,7 @@ class GenerateBatchReportHandler(
             }
 
             val textY = currentY - tableFontSize - 3f
-            colX = margin + 3f
+            var colX = margin + 3f
 
             drawText(cs, entry.serviceDate.format(dateFormat), regular, tableFontSize, colX, textY)
             colX += colDate

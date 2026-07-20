@@ -3,7 +3,9 @@ package pl.detailing.crm.batchorder.entry
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.contractor.EntryItem
+import pl.detailing.crm.batchorder.contractor.toEntryItem
 import pl.detailing.crm.batchorder.domain.BatchOrderEntry
+import pl.detailing.crm.batchorder.domain.BatchOrderServiceItem
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
@@ -25,8 +27,10 @@ class CreateEntryHandler(
         contractorRepository.findByIdAndStudioId(command.contractorId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Contractor not found")
 
-        if (command.netAmountCents < 0) throw ValidationException("Net amount cannot be negative")
-        if (command.grossAmountCents < 0) throw ValidationException("Gross amount cannot be negative")
+        command.services.forEach { item ->
+            if (item.netAmountCents < 0) throw ValidationException("Net amount cannot be negative")
+            if (item.grossAmountCents < 0) throw ValidationException("Gross amount cannot be negative")
+        }
 
         val entry = BatchOrderEntry(
             id = BatchOrderEntryId.random(),
@@ -36,10 +40,9 @@ class CreateEntryHandler(
             vehicleMake = command.vehicleMake?.trim()?.takeIf { it.isNotBlank() },
             vehicleModel = command.vehicleModel?.trim()?.takeIf { it.isNotBlank() },
             vehicleLicensePlate = command.vehicleLicensePlate?.trim()?.takeIf { it.isNotBlank() },
-            services = command.services.filter { it.isNotBlank() }.map { it.trim() },
-            netAmountCents = command.netAmountCents,
-            grossAmountCents = command.grossAmountCents,
-            vatRate = command.vatRate,
+            services = command.services
+                .filter { it.name.isNotBlank() }
+                .map { BatchOrderServiceItem(it.name.trim(), it.netAmountCents, it.grossAmountCents, it.vatRate) },
             notes = command.notes?.trim()?.takeIf { it.isNotBlank() },
             createdAt = Instant.now(),
             updatedAt = Instant.now()
@@ -50,6 +53,13 @@ class CreateEntryHandler(
     }
 }
 
+data class ServiceItemInput(
+    val name: String,
+    val netAmountCents: Long,
+    val grossAmountCents: Long,
+    val vatRate: Int
+)
+
 data class CreateEntryCommand(
     val studioId: StudioId,
     val contractorId: BatchContractorId,
@@ -57,24 +67,6 @@ data class CreateEntryCommand(
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
-    val services: List<String>,
-    val netAmountCents: Long,
-    val grossAmountCents: Long,
-    val vatRate: Int,
+    val services: List<ServiceItemInput>,
     val notes: String?
-)
-
-fun BatchOrderEntryEntity.toEntryItem() = EntryItem(
-    id = id.toString(),
-    serviceDate = serviceDate.toString(),
-    vehicleMake = vehicleMake,
-    vehicleModel = vehicleModel,
-    vehicleLicensePlate = vehicleLicensePlate,
-    services = services.toList(),
-    netAmountCents = netAmountCents,
-    grossAmountCents = grossAmountCents,
-    vatRate = vatRate,
-    notes = notes,
-    createdAt = createdAt.toString(),
-    updatedAt = updatedAt.toString()
 )

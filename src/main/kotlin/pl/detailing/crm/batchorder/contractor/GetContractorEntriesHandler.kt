@@ -3,6 +3,7 @@ package pl.detailing.crm.batchorder.contractor
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -33,23 +34,7 @@ class GetContractorEntriesHandler(
             )
         }
 
-        val entryItems = entries.map { e ->
-            EntryItem(
-                id = e.id.toString(),
-                serviceDate = e.serviceDate.toString(),
-                vehicleMake = e.vehicleMake,
-                vehicleModel = e.vehicleModel,
-                vehicleLicensePlate = e.vehicleLicensePlate,
-                services = e.services.toList(),
-                netAmountCents = e.netAmountCents,
-                grossAmountCents = e.grossAmountCents,
-                vatRate = e.vatRate,
-                notes = e.notes,
-                createdAt = e.createdAt.toString(),
-                updatedAt = e.updatedAt.toString()
-            )
-        }
-
+        val entryItems = entries.map { it.toEntryItem() }
         val totalNetCents = entries.sumOf { it.netAmountCents }
         val totalGrossCents = entries.sumOf { it.grossAmountCents }
 
@@ -91,16 +76,22 @@ data class GetContractorEntriesResult(
     val summary: EntrySummary
 )
 
+data class ServiceItemDto(
+    val name: String,
+    val netAmountCents: Long,
+    val grossAmountCents: Long,
+    val vatRate: Int
+)
+
 data class EntryItem(
     val id: String,
     val serviceDate: String,
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
-    val services: List<String>,
+    val services: List<ServiceItemDto>,
     val netAmountCents: Long,
     val grossAmountCents: Long,
-    val vatRate: Int,
     val notes: String?,
     val createdAt: String,
     val updatedAt: String
@@ -110,4 +101,18 @@ data class EntrySummary(
     val totalNetCents: Long,
     val totalGrossCents: Long,
     val entryCount: Int
+)
+
+fun BatchOrderEntryEntity.toEntryItem() = EntryItem(
+    id = id.toString(),
+    serviceDate = serviceDate.toString(),
+    vehicleMake = vehicleMake,
+    vehicleModel = vehicleModel,
+    vehicleLicensePlate = vehicleLicensePlate,
+    services = services.map { ServiceItemDto(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
+    netAmountCents = netAmountCents,
+    grossAmountCents = grossAmountCents,
+    notes = notes,
+    createdAt = createdAt.toString(),
+    updatedAt = updatedAt.toString()
 )
