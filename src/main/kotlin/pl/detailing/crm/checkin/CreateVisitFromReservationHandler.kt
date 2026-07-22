@@ -447,6 +447,28 @@ class CreateVisitFromReservationHandler(
                 } else emptyList()
             } else emptyList()
 
+            // Step 7.5: Finalize QR-uploaded photos for walk-in (moved from temp/uploads/ to final visit location)
+            val qrPhotos = command.qrCheckinId?.let { qrId ->
+                try {
+                    checkinPhotoService.finalizePhotos(
+                        tenantId = command.studioId.value.toString(),
+                        checkinId = qrId,
+                        visitId = visitId
+                    ).map { finalized ->
+                        VisitPhoto(
+                            id = VisitPhotoId(finalized.photoId),
+                            fileId = finalized.fileId,
+                            fileName = finalized.fileName,
+                            description = null,
+                            uploadedAt = Instant.now()
+                        )
+                    }
+                } catch (e: Exception) {
+                    println("Warning: Failed to finalize QR photos for walk-in checkin $qrId: ${e.message}")
+                    emptyList()
+                }
+            } ?: emptyList()
+
             // Step 8: Create Visit domain object
             var visit = Visit(
                 id = visitId,
@@ -475,7 +497,7 @@ class CreateVisitFromReservationHandler(
                 technicalNotes = command.technicalState.protocolNotes.ifBlank { null },
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
-                photos = visitPhotos,
+                photos = visitPhotos + qrPhotos,
                 damageMapFileId = null,
                 smsReminderSuppressed = false,
                 createdBy = command.userId,
