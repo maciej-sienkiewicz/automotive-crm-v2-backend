@@ -37,9 +37,16 @@ class UploadContextTokenService(
 
     /**
      * Generate a new upload token for the given checkin.
-     * If a token already exists for this checkin it is replaced with a fresh one.
+     * If a token already exists for this checkin it is revoked first so the old QR
+     * code stops working immediately instead of remaining valid for its original TTL.
      */
     fun generateToken(tenantId: String, checkinId: String, userId: String): GeneratedUploadToken {
+        // Revoke previous token so the old QR is no longer usable
+        val oldToken = redisTemplate.opsForValue().get("$CONTEXT_KEY_PREFIX$tenantId:$checkinId")
+        if (oldToken != null) {
+            redisTemplate.delete(TOKEN_KEY_PREFIX + oldToken)
+        }
+
         val token = generateSecureToken()
         val expiresAt = Instant.now().plusSeconds(ttlHours * 3600)
         val ttl = Duration.ofHours(ttlHours)

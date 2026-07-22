@@ -224,6 +224,7 @@ class CheckinController(
             startDateTime = request.startDateTime,
             endDateTime = request.endDateTime,
             title = request.title,
+            qrCheckinId = request.qrCheckinId,
             customer = request.customer?.let { customerReq ->
                 when (customerReq.mode) {
                     IdentityMode.EXISTING -> CustomerData.Existing(
@@ -661,6 +662,7 @@ data class WalkInVisitRequest(
     val damagePoints: List<DamagePointRequest>?,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?,
+    val qrCheckinId: String? = null,
     val sendEmail: Boolean = false,
     val emailOptions: WelcomeEmailOptionsRequest? = null,
     val doorToDoor: DoorToDoorCheckinRequest? = null
@@ -682,6 +684,7 @@ data class WalkInVisitCommand(
     val damagePoints: List<DamagePoint>,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: AppointmentColorId?,
+    val qrCheckinId: String? = null,
     val doorToDoor: DoorToDoorCheckinRequest? = null
 )
 
