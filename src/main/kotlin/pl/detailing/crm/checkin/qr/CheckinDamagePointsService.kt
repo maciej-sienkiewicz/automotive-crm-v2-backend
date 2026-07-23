@@ -82,7 +82,32 @@ data class DamagePointData(
     val id: Int = 0,
     val x: Double = 0.0,
     val y: Double = 0.0,
-    val note: String? = null
+    val note: String? = null,
+    val photos: List<DamagePointPhotoData> = emptyList()
+)
+
+/**
+ * Photo attached to a damage point during a mobile check-in session.
+ *
+ * @param photoId ID of the QR-uploaded photo
+ * @param s3Key   resolved S3 key of the photo in temp storage (stable, unlike presigned URLs);
+ *                used to re-generate thumbnails and to embed the photo in the damage report
+ */
+data class DamagePointPhotoData(
+    val photoId: String = "",
+    val s3Key: String? = null,
+    val strokes: List<AnnotationStrokeData> = emptyList()
+)
+
+data class AnnotationStrokeData(
+    val color: String = "#EF4444",
+    val width: Double = 1.0,
+    val points: List<AnnotationPointData> = emptyList()
+)
+
+data class AnnotationPointData(
+    val x: Double = 0.0,
+    val y: Double = 0.0
 )
 
 data class StoredDamagePoints(

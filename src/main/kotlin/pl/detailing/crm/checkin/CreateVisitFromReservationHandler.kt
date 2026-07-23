@@ -279,7 +279,8 @@ class CreateVisitFromReservationHandler(
             // Step 8: Generate and upload damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints)
+                    val damagePhotoAttachments = buildDamagePhotoAttachments(command.damagePoints, allPhotos)
+                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints, damagePhotoAttachments)
 
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
@@ -509,7 +510,8 @@ class CreateVisitFromReservationHandler(
             // Step 9: Generate damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints)
+                    val damagePhotoAttachments = buildDamagePhotoAttachments(command.damagePoints, visitPhotos + qrPhotos)
+                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints, damagePhotoAttachments)
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
                             studioId = command.studioId.value,
@@ -571,6 +573,45 @@ class CreateVisitFromReservationHandler(
 
             ReservationToVisitResult(visitId = visitId)
         }
+
+    /**
+     * Resolves S3 bytes for photos attached to damage points so they can be embedded
+     * (with their annotation strokes burned in) into the damage map PDF.
+     *
+     * The photoId referenced by a damage point is either:
+     *  - a photo-session photo id — matches VisitPhoto.id, or
+     *  - a QR-uploaded photo id — preserved in the finalized file name "{photoId}.{ext}".
+     */
+    private suspend fun buildDamagePhotoAttachments(
+        damagePoints: List<pl.detailing.crm.visit.domain.DamagePoint>,
+        visitPhotos: List<VisitPhoto>
+    ): List<pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment> {
+        if (damagePoints.none { it.photos.isNotEmpty() }) return emptyList()
+
+        val keysByPhotoId = mutableMapOf<String, String>()
+        visitPhotos.forEach { photo ->
+            keysByPhotoId[photo.id.value.toString()] = photo.fileId
+            keysByPhotoId[photo.fileName.substringBeforeLast('.')] = photo.fileId
+        }
+
+        return damagePoints.flatMap { point ->
+            point.photos.mapNotNull { damagePhoto ->
+                try {
+                    val s3Key = keysByPhotoId[damagePhoto.photoId] ?: return@mapNotNull null
+                    val bytes = checkinPhotoService.downloadPhotoBytes(s3Key) ?: return@mapNotNull null
+                    pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment(
+                        damagePointId = point.id,
+                        note = point.note,
+                        imageBytes = bytes,
+                        strokes = damagePhoto.strokes
+                    )
+                } catch (e: Exception) {
+                    println("Warning: Failed to load damage photo ${damagePhoto.photoId}: ${e.message}")
+                    null
+                }
+            }
+        }
+    }
 
     /**
      * Persists the visit, retrying with a freshly generated visit number when the

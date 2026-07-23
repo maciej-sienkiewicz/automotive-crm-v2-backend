@@ -21,7 +21,8 @@ import java.time.Instant
 @Component
 class CheckinDamageUpdatedMessageListener(
     private val messagingTemplate: SimpMessagingTemplate,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val checkinPhotoService: CheckinPhotoService
 ) : MessageListener {
 
     private val logger = LoggerFactory.getLogger(CheckinDamageUpdatedMessageListener::class.java)
@@ -45,11 +46,37 @@ class CheckinDamageUpdatedMessageListener(
             @Suppress("UNCHECKED_CAST")
             val rawPoints = payload["damagePoints"] as? List<Map<String, Any?>> ?: emptyList()
             val damagePoints = rawPoints.map { p ->
+                @Suppress("UNCHECKED_CAST")
+                val rawPhotos = p["photos"] as? List<Map<String, Any?>> ?: emptyList()
                 DamagePointWsItem(
                     id = (p["id"] as? Number)?.toInt() ?: 0,
                     x = (p["x"] as? Number)?.toDouble() ?: 0.0,
                     y = (p["y"] as? Number)?.toDouble() ?: 0.0,
-                    note = p["note"] as? String
+                    note = p["note"] as? String,
+                    photos = rawPhotos.map { photo ->
+                        @Suppress("UNCHECKED_CAST")
+                        val rawStrokes = photo["strokes"] as? List<Map<String, Any?>> ?: emptyList()
+                        DamagePhotoWsItem(
+                            photoId = photo["photoId"] as? String ?: "",
+                            thumbnailUrl = (photo["s3Key"] as? String)?.let { key ->
+                                runCatching { checkinPhotoService.generateDownloadUrl(key) }.getOrNull()
+                            },
+                            strokes = rawStrokes.map { stroke ->
+                                @Suppress("UNCHECKED_CAST")
+                                val rawStrokePoints = stroke["points"] as? List<Map<String, Any?>> ?: emptyList()
+                                AnnotationStrokeWsItem(
+                                    color = stroke["color"] as? String ?: "#EF4444",
+                                    width = (stroke["width"] as? Number)?.toDouble() ?: 1.0,
+                                    points = rawStrokePoints.map { sp ->
+                                        AnnotationPointWsItem(
+                                            x = (sp["x"] as? Number)?.toDouble() ?: 0.0,
+                                            y = (sp["y"] as? Number)?.toDouble() ?: 0.0
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    }
                 )
             }
 
@@ -80,7 +107,25 @@ data class DamagePointWsItem(
     val id: Int,
     val x: Double,
     val y: Double,
-    val note: String?
+    val note: String?,
+    val photos: List<DamagePhotoWsItem> = emptyList()
+)
+
+data class DamagePhotoWsItem(
+    val photoId: String,
+    val thumbnailUrl: String?,
+    val strokes: List<AnnotationStrokeWsItem> = emptyList()
+)
+
+data class AnnotationStrokeWsItem(
+    val color: String,
+    val width: Double,
+    val points: List<AnnotationPointWsItem> = emptyList()
+)
+
+data class AnnotationPointWsItem(
+    val x: Double,
+    val y: Double
 )
 
 data class CheckinDamageUpdatedWsMessage(

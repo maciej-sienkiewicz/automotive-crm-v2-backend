@@ -15,6 +15,9 @@ import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.DamageAnnotationPoint
+import pl.detailing.crm.visit.domain.DamageAnnotationStroke
+import pl.detailing.crm.visit.domain.DamagePhoto
 import pl.detailing.crm.visit.domain.DamagePoint
 import java.time.Instant
 import java.util.UUID
@@ -28,7 +31,8 @@ class CheckinController(
     private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val s3StorageService: S3ProtocolStorageService,
     private val uploadContextTokenService: UploadContextTokenService,
-    private val checkinDamagePointsService: CheckinDamagePointsService
+    private val checkinDamagePointsService: CheckinDamagePointsService,
+    private val checkinPhotoService: pl.detailing.crm.checkin.qr.CheckinPhotoService
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -134,14 +138,7 @@ class CheckinController(
             technicalState = request.technicalState,
             vehicleHandoff = vehicleHandoff,
             photoIds = request.photoIds,
-            damagePoints = request.damagePoints?.map { damagePointReq ->
-                DamagePoint(
-                    id = damagePointReq.id,
-                    x = damagePointReq.x,
-                    y = damagePointReq.y,
-                    note = damagePointReq.note
-                )
-            } ?: emptyList(),
+            damagePoints = request.damagePoints?.map { it.toDomain() } ?: emptyList(),
             services = request.services,
             appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
             doorToDoor = request.doorToDoor
@@ -293,14 +290,7 @@ class CheckinController(
             technicalState = request.technicalState,
             vehicleHandoff = vehicleHandoff,
             photoIds = request.photoIds,
-            damagePoints = request.damagePoints?.map { damagePointReq ->
-                DamagePoint(
-                    id = damagePointReq.id,
-                    x = damagePointReq.x,
-                    y = damagePointReq.y,
-                    note = damagePointReq.note
-                )
-            } ?: emptyList(),
+            damagePoints = request.damagePoints?.map { it.toDomain() } ?: emptyList(),
             services = request.services,
             appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
             doorToDoor = request.doorToDoor
@@ -413,8 +403,28 @@ class CheckinController(
         return ResponseEntity.ok(
             MobileDamagePointsDesktopResponse(
                 checkinId = appointmentId,
-                damagePoints = result.damagePoints.map {
-                    MobileDamagePointDesktopDto(id = it.id, x = it.x, y = it.y, note = it.note)
+                damagePoints = result.damagePoints.map { point ->
+                    MobileDamagePointDesktopDto(
+                        id = point.id,
+                        x = point.x,
+                        y = point.y,
+                        note = point.note,
+                        photos = point.photos.map { photo ->
+                            MobileDamagePhotoDesktopDto(
+                                photoId = photo.photoId,
+                                thumbnailUrl = photo.s3Key?.let { key ->
+                                    runCatching { checkinPhotoService.generateDownloadUrl(key) }.getOrNull()
+                                },
+                                strokes = photo.strokes.map { stroke ->
+                                    AnnotationStrokeRequest(
+                                        color = stroke.color,
+                                        width = stroke.width,
+                                        points = stroke.points.map { AnnotationPointRequest(x = it.x, y = it.y) }
+                                    )
+                                }
+                            )
+                        }
+                    )
                 },
                 savedAt = result.savedAt
             )
@@ -532,7 +542,43 @@ data class DamagePointRequest(
     val id: Int,
     val x: Double,
     val y: Double,
-    val note: String?
+    val note: String?,
+    val photos: List<DamagePointPhotoRequest>? = null
+) {
+    fun toDomain() = DamagePoint(
+        id = id,
+        x = x,
+        y = y,
+        note = note,
+        photos = photos.orEmpty().map { photo ->
+            DamagePhoto(
+                photoId = photo.photoId,
+                strokes = photo.strokes.orEmpty().map { stroke ->
+                    DamageAnnotationStroke(
+                        color = stroke.color,
+                        width = stroke.width,
+                        points = stroke.points.orEmpty().map { DamageAnnotationPoint(x = it.x, y = it.y) }
+                    )
+                }
+            )
+        }
+    )
+}
+
+data class DamagePointPhotoRequest(
+    val photoId: String,
+    val strokes: List<AnnotationStrokeRequest>? = null
+)
+
+data class AnnotationStrokeRequest(
+    val color: String = "#EF4444",
+    val width: Double = 1.0,
+    val points: List<AnnotationPointRequest>? = null
+)
+
+data class AnnotationPointRequest(
+    val x: Double,
+    val y: Double
 )
 
 data class ServiceLineItemRequest(
@@ -693,7 +739,14 @@ data class MobileDamagePointDesktopDto(
     val id: Int,
     val x: Double,
     val y: Double,
-    val note: String?
+    val note: String?,
+    val photos: List<MobileDamagePhotoDesktopDto> = emptyList()
+)
+
+data class MobileDamagePhotoDesktopDto(
+    val photoId: String,
+    val thumbnailUrl: String?,
+    val strokes: List<AnnotationStrokeRequest> = emptyList()
 )
 
 data class MobileDamagePointsDesktopResponse(

@@ -13,10 +13,26 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.visit.domain.DamageAnnotationStroke
 import pl.detailing.crm.visit.domain.DamagePoint
 import java.awt.Color
 import java.io.ByteArrayOutputStream
 import java.io.File
+
+/**
+ * A damage photo to embed in the report.
+ *
+ * @param damagePointId the damage point number the photo belongs to
+ * @param note          note of the owning damage point (used in the caption)
+ * @param imageBytes    raw photo bytes (JPG/PNG/WebP as supported by ImageIO)
+ * @param strokes       annotation strokes to burn into the photo before embedding
+ */
+data class DamagePhotoAttachment(
+    val damagePointId: Int,
+    val note: String?,
+    val imageBytes: ByteArray,
+    val strokes: List<DamageAnnotationStroke>
+)
 
 @Service
 class DamageMapReportService(
@@ -76,11 +92,24 @@ class DamageMapReportService(
      *
      * @return PDF bytes, or null if [damagePoints] is empty
      */
-    suspend fun generateReport(damagePoints: List<DamagePoint>): ByteArray? = withContext(Dispatchers.IO) {
+    suspend fun generateReport(
+        damagePoints: List<DamagePoint>,
+        photoAttachments: List<DamagePhotoAttachment> = emptyList()
+    ): ByteArray? = withContext(Dispatchers.IO) {
         if (damagePoints.isEmpty()) return@withContext null
 
         val sorted = damagePoints.sortedBy { it.id }
         val markedImageBytes = damageMarkingService.generateDamageMap(sorted) ?: return@withContext null
+
+        // Burn annotation strokes into each photo before embedding
+        val annotatedPhotos = photoAttachments.sortedBy { it.damagePointId }.mapNotNull { attachment ->
+            try {
+                attachment to damageMarkingService.annotatePhoto(attachment.imageBytes, attachment.strokes)
+            } catch (e: Exception) {
+                logger.warn("Skipping damage photo for point ${attachment.damagePointId}: ${e.message}")
+                null
+            }
+        }
 
         try {
             PDDocument().use { doc ->
@@ -100,11 +129,105 @@ class DamageMapReportService(
                     renderLegend(cs, sorted, regular, bold, imageAreaHeight)
                 }
 
+                renderPhotoPages(doc, annotatedPhotos, regular, bold)
+
                 ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
             }
         } catch (e: Exception) {
             logger.error("Failed to generate damage map PDF", e)
             throw IllegalStateException("Damage map PDF generation failed: ${e.message}", e)
+        }
+    }
+
+    // ─── Photo attachment pages ────────────────────────────────────────────────
+
+    /**
+     * Appends "Dokumentacja zdjęciowa uszkodzeń" pages — two annotated photos per
+     * page, each captioned with its damage point number and note.
+     */
+    private fun renderPhotoPages(
+        doc: PDDocument,
+        annotatedPhotos: List<Pair<DamagePhotoAttachment, ByteArray>>,
+        regular: PDFont,
+        bold: PDFont
+    ) {
+        if (annotatedPhotos.isEmpty()) return
+
+        val photosPerPage = 2
+        val captionHeight = 24f
+        val slotGap = 16f
+
+        annotatedPhotos.chunked(photosPerPage).forEach { pagePhotos ->
+            val page = PDPage(PDRectangle.A4)
+            doc.addPage(page)
+
+            PDPageContentStream(doc, page).use { cs ->
+                // Page header
+                cs.beginText()
+                cs.setFont(bold, 13f)
+                cs.setNonStrokingColor(BRAND_BLUE)
+                cs.newLineAtOffset(MARGIN, PAGE_HEIGHT - MARGIN - 24f)
+                cs.showText(bold.safe("Dokumentacja zdjęciowa uszkodzeń"))
+                cs.endText()
+
+                val lineY = PAGE_HEIGHT - MARGIN - HEADER_HEIGHT
+                cs.setStrokingColor(BORDER_GRAY)
+                cs.setLineWidth(1f)
+                cs.moveTo(MARGIN, lineY)
+                cs.lineTo(PAGE_WIDTH - MARGIN, lineY)
+                cs.stroke()
+
+                val contentTop = lineY - SECTION_GAP
+                val contentHeight = contentTop - MARGIN
+                val slotHeight = (contentHeight - (photosPerPage - 1) * slotGap) / photosPerPage
+
+                pagePhotos.forEachIndexed { index, (attachment, imageBytes) ->
+                    val slotTop = contentTop - index * (slotHeight + slotGap)
+                    val imageAreaHeight = slotHeight - captionHeight
+
+                    // Caption: marker circle + "Uszkodzenie nr X — note"
+                    val captionY = slotTop - 14f
+                    drawFilledCircle(cs, MARGIN + MARKER_RADIUS, captionY + 3f, MARKER_RADIUS, DAMAGE_RED)
+                    val idText = attachment.damagePointId.toString()
+                    val idW = bold.getStringWidth(idText) / 1000f * 7.5f
+                    cs.beginText()
+                    cs.setFont(bold, 7.5f)
+                    cs.setNonStrokingColor(Color.WHITE)
+                    cs.newLineAtOffset(MARGIN + MARKER_RADIUS - idW / 2f, captionY)
+                    cs.showText(idText)
+                    cs.endText()
+
+                    val rawCaption = attachment.note?.trim()?.ifBlank { null }
+                        ?.let { "Uszkodzenie nr ${attachment.damagePointId} — $it" }
+                        ?: "Uszkodzenie nr ${attachment.damagePointId}"
+                    val caption = truncateText(regular.safe(rawCaption), regular, 9f, CONTENT_WIDTH - 2 * MARKER_RADIUS - 10f)
+                    cs.beginText()
+                    cs.setFont(regular, 9f)
+                    cs.setNonStrokingColor(TEXT_PRIMARY)
+                    cs.newLineAtOffset(MARGIN + 2 * MARKER_RADIUS + 8f, captionY)
+                    cs.showText(caption)
+                    cs.endText()
+
+                    // Photo
+                    try {
+                        val pdImage = PDImageXObject.createFromByteArray(
+                            doc, imageBytes, "damage-photo-${attachment.damagePointId}-$index"
+                        )
+                        val aspect = pdImage.width.toFloat() / pdImage.height
+                        val (drawW, drawH) = fitIntoArea(CONTENT_WIDTH, imageAreaHeight - 8f, aspect)
+                        val imageX = MARGIN + (CONTENT_WIDTH - drawW) / 2f
+                        val imageY = slotTop - captionHeight - drawH
+                        cs.drawImage(pdImage, imageX, imageY, drawW, drawH)
+
+                        cs.setStrokingColor(BORDER_GRAY)
+                        cs.setLineWidth(0.75f)
+                        cs.addRect(imageX, imageY, drawW, drawH)
+                        cs.stroke()
+                    } catch (e: Exception) {
+                        logger.warn("Failed to embed damage photo for point ${attachment.damagePointId}: ${e.message}")
+                    }
+                }
+            }
         }
     }
 
