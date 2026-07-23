@@ -17,6 +17,7 @@ import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.DamagePointData
 import pl.detailing.crm.checkin.qr.DamagePointsResult
+import pl.detailing.crm.checkin.qr.MobileSessionStatus
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UnprocessableEntityException
@@ -174,6 +175,48 @@ class MobileUploadController(
         )
 
         return ResponseEntity.ok(result.toResponse())
+    }
+
+    /**
+     * Mark that the mobile user has finished reviewing and accepted their input.
+     *
+     * POST /api/mobile/checkin/done
+     * X-Upload-Token: <token>
+     *
+     * Records the "done" flag in Redis so subsequent status polls reflect it.
+     * Requires a valid (non-expired) session.
+     */
+    @PostMapping("/done")
+    fun markDone(
+        @RequestHeader("X-Upload-Token") token: String
+    ): ResponseEntity<Void> {
+        uploadContextTokenService.validateToken(token)
+            ?: throw ForbiddenException("Nieprawidłowy lub wygasły token przesyłania zdjęć")
+
+        uploadContextTokenService.markUserDone(token)
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Return the current lifecycle status of the mobile session.
+     *
+     * GET /api/mobile/checkin/status
+     * X-Upload-Token: <token>
+     *
+     * Does NOT require the upload token to be valid — safe to call even after the
+     * visit was created on desktop (which revokes the token).  Returns three flags:
+     * - sessionActive  — upload token is still present in Redis
+     * - visitCreated   — desktop has saved the visit (token revoked as a result)
+     * - userDone       — mobile user previously clicked "Gotowe"
+     *
+     * Returns 200 with all flags false when the token is completely unknown.
+     */
+    @GetMapping("/status")
+    fun getStatus(
+        @RequestHeader("X-Upload-Token") token: String
+    ): ResponseEntity<MobileSessionStatus> {
+        val status = uploadContextTokenService.getStatus(token)
+        return ResponseEntity.ok(status)
     }
 }
 
