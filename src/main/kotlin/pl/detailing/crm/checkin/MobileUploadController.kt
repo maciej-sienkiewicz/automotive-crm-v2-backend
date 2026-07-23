@@ -156,6 +156,8 @@ class MobileUploadController(
             }
         }
 
+        val vehicleType = request.vehicleType?.takeIf { it in ALLOWED_VEHICLE_TYPES }
+
         // Resolve stable S3 keys for the referenced photos (single prefix listing)
         val tempKeysByPhotoId = checkinPhotoService.listTempPhotoKeys(
             tenantId = metadata.tenantId,
@@ -165,6 +167,7 @@ class MobileUploadController(
         val result = checkinDamagePointsService.saveDamagePoints(
             tenantId = metadata.tenantId,
             checkinId = metadata.checkinId,
+            vehicleType = vehicleType,
             damagePoints = request.damagePoints.map { point ->
                 DamagePointData(
                     id = point.id,
@@ -215,9 +218,12 @@ class MobileUploadController(
     }
 }
 
+val ALLOWED_VEHICLE_TYPES = setOf("cabrio", "coupe", "hatchback", "kombi", "sedan", "suv", "van")
+
 private fun DamagePointsResult.toResponse(checkinPhotoService: CheckinPhotoService) =
     MobileDamagePointsResponse(
         checkinId = checkinId,
+        vehicleType = vehicleType,
         damagePoints = damagePoints.map { point ->
             MobileDamagePointDto(
                 id = point.id,
@@ -285,11 +291,14 @@ data class MobileAnnotationPointDto(
 )
 
 data class MobileDamagePointsRequest(
-    val damagePoints: List<MobileDamagePointDto>
+    val damagePoints: List<MobileDamagePointDto>,
+    /** Vehicle body type the points were placed on (sedan, suv, ...) */
+    val vehicleType: String? = null
 )
 
 data class MobileDamagePointsResponse(
     val checkinId: String,
+    val vehicleType: String? = null,
     val damagePoints: List<MobileDamagePointDto>,
     val savedAt: Instant?
 )

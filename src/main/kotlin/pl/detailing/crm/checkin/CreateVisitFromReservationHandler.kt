@@ -243,11 +243,12 @@ class CreateVisitFromReservationHandler(
             // (Redis) — the desktop payload may lag behind the phone (missed WS
             // event, wizard on another step), so Redis is the source of truth for
             // mobile-attached photos.
-            val effectiveDamagePoints = mergeMobileDamagePhotos(
+            val (effectiveDamagePoints, mobileVehicleType) = mergeMobileDamagePhotos(
                 tenantId = command.studioId.value.toString(),
                 checkinId = command.reservationId.value.toString(),
                 damagePoints = command.damagePoints
             )
+            val effectiveVehicleType = command.damageVehicleType ?: mobileVehicleType
 
             // Step 7.8: Burn damage annotations into the photo files and link
             // each damage photo to its damage point via the photo description.
@@ -296,7 +297,7 @@ class CreateVisitFromReservationHandler(
             // Step 8: Generate and upload damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments)
+                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments, effectiveVehicleType)
 
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
@@ -487,11 +488,12 @@ class CreateVisitFromReservationHandler(
             } ?: emptyList()
 
             // Step 7.6: Merge damage photos/annotations saved by the mobile QR flow (Redis)
-            val effectiveDamagePoints = mergeMobileDamagePhotos(
+            val (effectiveDamagePoints, mobileVehicleType) = mergeMobileDamagePhotos(
                 tenantId = command.studioId.value.toString(),
                 checkinId = command.qrCheckinId,
                 damagePoints = command.damagePoints
             )
+            val effectiveVehicleType = command.damageVehicleType ?: mobileVehicleType
 
             // Step 7.7: Burn damage annotations into the photo files and link
             // each damage photo to its damage point via the photo description.
@@ -538,7 +540,7 @@ class CreateVisitFromReservationHandler(
             // Step 9: Generate damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments)
+                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments, effectiveVehicleType)
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
                             studioId = command.studioId.value,
@@ -612,15 +614,15 @@ class CreateVisitFromReservationHandler(
         tenantId: String,
         checkinId: String?,
         damagePoints: List<pl.detailing.crm.visit.domain.DamagePoint>
-    ): List<pl.detailing.crm.visit.domain.DamagePoint> {
-        if (checkinId == null || damagePoints.isEmpty()) return damagePoints
+    ): Pair<List<pl.detailing.crm.visit.domain.DamagePoint>, String?> {
+        if (checkinId == null || damagePoints.isEmpty()) return damagePoints to null
 
         return try {
             val mobile = checkinDamagePointsService.getDamagePoints(tenantId, checkinId)
-            if (mobile.savedAt == null) return damagePoints
+            if (mobile.savedAt == null) return damagePoints to null
 
             val mobileById = mobile.damagePoints.associateBy { it.id }
-            damagePoints.map { point ->
+            val merged = damagePoints.map { point ->
                 if (point.photos.isNotEmpty()) return@map point
                 val mobilePhotos = mobileById[point.id]?.photos.orEmpty()
                 if (mobilePhotos.isEmpty()) return@map point
@@ -640,9 +642,10 @@ class CreateVisitFromReservationHandler(
                     )
                 })
             }
+            merged to mobile.vehicleType
         } catch (e: Exception) {
             println("Warning: Failed to merge mobile damage photos for checkin $checkinId: ${e.message}")
-            damagePoints
+            damagePoints to null
         }
     }
 

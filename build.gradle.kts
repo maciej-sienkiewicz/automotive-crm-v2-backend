@@ -71,6 +71,8 @@ dependencies {
     // Apache PDFBox for PDF form filling and manipulation
     implementation("org.apache.pdfbox:pdfbox:3.0.1")
     implementation("org.apache.pdfbox:fontbox:3.0.1")
+    // EXIF metadata (photo orientation normalization for damage photos)
+    implementation("com.drewnoakes:metadata-extractor:2.19.0")
 
     // BouncyCastle – PAdES qualified electronic seal (CMS/CAdES) + RFC 3161 qualified timestamps
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")

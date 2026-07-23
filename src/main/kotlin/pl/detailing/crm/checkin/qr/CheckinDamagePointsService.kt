@@ -31,13 +31,15 @@ class CheckinDamagePointsService(
     fun saveDamagePoints(
         tenantId: String,
         checkinId: String,
-        damagePoints: List<DamagePointData>
+        damagePoints: List<DamagePointData>,
+        vehicleType: String? = null
     ): DamagePointsResult {
         val savedAt = Instant.now()
         val stored = StoredDamagePoints(
             checkinId = checkinId,
             tenantId = tenantId,
             damagePoints = damagePoints,
+            vehicleType = vehicleType,
             savedAt = savedAt
         )
         val json = objectMapper.writeValueAsString(stored)
@@ -52,28 +54,35 @@ class CheckinDamagePointsService(
                 "tenantId" to tenantId,
                 "checkinId" to checkinId,
                 "damagePoints" to damagePoints,
+                "vehicleType" to vehicleType,
                 "updatedAt" to savedAt.toString()
             )
         )
         redisTemplate.convertAndSend(REDIS_DAMAGE_UPDATED_CHANNEL, pubSubPayload)
 
-        logger.info("Saved ${damagePoints.size} damage points for checkin=$checkinId tenant=$tenantId")
-        return DamagePointsResult(checkinId = checkinId, damagePoints = damagePoints, savedAt = savedAt)
+        logger.info("Saved ${damagePoints.size} damage points for checkin=$checkinId tenant=$tenantId vehicleType=$vehicleType")
+        return DamagePointsResult(
+            checkinId = checkinId,
+            damagePoints = damagePoints,
+            vehicleType = vehicleType,
+            savedAt = savedAt
+        )
     }
 
     fun getDamagePoints(tenantId: String, checkinId: String): DamagePointsResult {
         val json = redisTemplate.opsForValue().get("$DAMAGE_POINTS_KEY_PREFIX$tenantId:$checkinId")
-            ?: return DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), savedAt = null)
+            ?: return DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), vehicleType = null, savedAt = null)
         return try {
             val stored = objectMapper.readValue(json, StoredDamagePoints::class.java)
             DamagePointsResult(
                 checkinId = stored.checkinId,
                 damagePoints = stored.damagePoints,
+                vehicleType = stored.vehicleType,
                 savedAt = stored.savedAt
             )
         } catch (e: Exception) {
             logger.warn("Failed to deserialize damage points for checkin=$checkinId: ${e.message}")
-            DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), savedAt = null)
+            DamagePointsResult(checkinId = checkinId, damagePoints = emptyList(), vehicleType = null, savedAt = null)
         }
     }
 }
@@ -114,11 +123,14 @@ data class StoredDamagePoints(
     val checkinId: String = "",
     val tenantId: String = "",
     val damagePoints: List<DamagePointData> = emptyList(),
+    /** Vehicle body type the points were placed on (sedan, suv, ...) */
+    val vehicleType: String? = null,
     val savedAt: Instant = Instant.now()
 )
 
 data class DamagePointsResult(
     val checkinId: String,
     val damagePoints: List<DamagePointData>,
+    val vehicleType: String?,
     val savedAt: Instant?
 )
