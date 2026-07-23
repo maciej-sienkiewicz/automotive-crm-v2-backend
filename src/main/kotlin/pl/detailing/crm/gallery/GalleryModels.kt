@@ -34,7 +34,8 @@ data class GalleryPaginationResult(
 
 enum class GalleryPhotoSource {
     VISIT,
-    VEHICLE
+    VEHICLE,
+    BATCH_ORDER
 }
 
 data class GalleryPhotoItem(
@@ -56,7 +57,9 @@ data class GalleryPhotoItem(
     val visitId: String?,
     val visitNumber: String?,
     val customerId: String?,
-    @Pii val customerName: String?
+    @Pii val customerName: String?,
+    val batchOrderEntryId: String?,
+    val contractorName: String?
 )
 
 // ─── API response DTOs ────────────────────────────────────────────────────────
@@ -93,5 +96,7 @@ data class GalleryPhotoResponse(
     val visitId: String?,
     val visitNumber: String?,
     val customerId: String?,
-    @Pii val customerName: String?
+    @Pii val customerName: String?,
+    val batchOrderEntryId: String?,
+    val contractorName: String?
 )

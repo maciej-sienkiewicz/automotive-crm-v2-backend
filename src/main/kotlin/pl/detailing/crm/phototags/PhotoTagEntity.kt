@@ -15,7 +15,8 @@ import java.util.UUID
  */
 enum class PhotoSource {
     VISIT_PHOTO,
-    VEHICLE_PHOTO
+    VEHICLE_PHOTO,
+    BATCH_ORDER_PHOTO
 }
 
 /**

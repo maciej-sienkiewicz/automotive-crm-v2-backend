@@ -2,6 +2,9 @@ package pl.detailing.crm.gallery
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderPhotoRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.phototags.PhotoSource
 import pl.detailing.crm.phototags.PhotoTagRepository
@@ -22,7 +25,10 @@ class GetGalleryHandler(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val customerRepository: CustomerRepository,
     private val photoTagRepository: PhotoTagRepository,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val batchOrderPhotoRepository: BatchOrderPhotoRepository,
+    private val batchOrderEntryRepository: BatchOrderEntryRepository,
+    private val batchContractorRepository: BatchContractorRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -71,7 +77,10 @@ class GetGalleryHandler(
             val visitId: UUID?,
             val visitNumber: String?,
             // customer will be resolved later
-            val customerId: UUID?
+            val customerId: UUID?,
+            // batch order fields (only for BATCH_ORDER source)
+            val batchOrderEntryId: UUID? = null,
+            val contractorName: String? = null
         )
 
         val rawPhotos = mutableListOf<RawPhoto>()
@@ -139,6 +148,45 @@ class GetGalleryHandler(
             }
         }
 
+        // ── 4b. Batch order photos ────────────────────────────────────────────
+        val batchPhotos = batchOrderPhotoRepository.findByStudioId(studioId)
+        if (batchPhotos.isNotEmpty()) {
+            val entryIds = batchPhotos.map { it.entryId }.distinct()
+            val entriesById = batchOrderEntryRepository.findAllById(entryIds).associateBy { it.id }
+            val contractorIds = batchPhotos.map { it.contractorId }.distinct()
+            val contractorsById = batchContractorRepository.findAllById(contractorIds).associateBy { it.id }
+
+            for (photo in batchPhotos) {
+                val entry = entriesById[photo.entryId]
+                if (command.brand != null && !entry?.vehicleMake.equals(command.brand, ignoreCase = true)) continue
+                if (command.model != null && !entry?.vehicleModel.equals(command.model, ignoreCase = true)) continue
+
+                val contractor = contractorsById[photo.contractorId]
+                rawPhotos.add(
+                    RawPhoto(
+                        photoId = photo.id,
+                        source = GalleryPhotoSource.BATCH_ORDER,
+                        fileId = photo.fileId,
+                        fileName = photo.fileName,
+                        description = photo.description,
+                        uploadedAt = photo.uploadedAt,
+                        uploadedBy = photo.uploadedBy,
+                        uploadedByName = photo.uploadedByName,
+                        vehicleId = null,
+                        vehicleBrand = entry?.vehicleMake,
+                        vehicleModel = entry?.vehicleModel,
+                        vehicleLicensePlate = entry?.vehicleLicensePlate,
+                        vehicleYear = null,
+                        visitId = null,
+                        visitNumber = null,
+                        customerId = null,
+                        batchOrderEntryId = photo.entryId,
+                        contractorName = contractor?.name
+                    )
+                )
+            }
+        }
+
         // ── 5. Resolve customer IDs for vehicle photos via primary owners ─────
         val vehicleIdsForOwnerLookup = rawPhotos
             .filter { it.source == GalleryPhotoSource.VEHICLE && it.vehicleId != null }
@@ -186,6 +234,7 @@ class GetGalleryHandler(
             val tags = when (rp.source) {
                 GalleryPhotoSource.VISIT -> visitTagsByPhotoId[rp.photoId] ?: emptyList()
                 GalleryPhotoSource.VEHICLE -> vehicleTagsByPhotoId[rp.photoId] ?: emptyList()
+                GalleryPhotoSource.BATCH_ORDER -> emptyList()
             }
             GalleryPhotoItem(
                 id = rp.photoId.toString(),
@@ -206,7 +255,9 @@ class GetGalleryHandler(
                 visitId = rp.visitId?.toString(),
                 visitNumber = rp.visitNumber,
                 customerId = rp.customerId?.toString(),
-                customerName = rp.customerId?.let { customerNameById[it] }
+                customerName = rp.customerId?.let { customerNameById[it] },
+                batchOrderEntryId = rp.batchOrderEntryId?.toString(),
+                contractorName = rp.contractorName
             )
         }.let { photos ->
             if (command.sortOrder == GallerySortOrder.ASC) photos.sortedBy { it.uploadedAt }

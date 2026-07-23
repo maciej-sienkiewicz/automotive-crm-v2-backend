@@ -76,7 +76,9 @@ class GalleryController(
                         visitId = photo.visitId,
                         visitNumber = photo.visitNumber,
                         customerId = photo.customerId,
-                        customerName = photo.customerName
+                        customerName = photo.customerName,
+                        batchOrderEntryId = photo.batchOrderEntryId,
+                        contractorName = photo.contractorName
                     )
                 },
                 pagination = GalleryPaginationResponse(
