@@ -36,6 +36,7 @@ import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
+import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.communication.AppointmentCommunicationLinker
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -64,6 +65,7 @@ class CreateVisitFromReservationHandler(
     private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
     private val checkinPhotoService: CheckinPhotoService,
     private val checkinDamagePointsService: pl.detailing.crm.checkin.qr.CheckinDamagePointsService,
+    private val uploadContextTokenService: UploadContextTokenService,
     private val auditService: AuditService,
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
     private val doorToDoorRepository: DoorToDoorRepository
@@ -217,10 +219,12 @@ class CreateVisitFromReservationHandler(
             }
 
             // Step 7.6: Finalize QR-uploaded photos (moved from temp/uploads/ to final visit location)
+            val qrCheckinTenantId = command.studioId.value.toString()
+            val qrCheckinId = command.reservationId.value.toString()
             val qrPhotos = try {
                 checkinPhotoService.finalizePhotos(
-                    tenantId = command.studioId.value.toString(),
-                    checkinId = command.reservationId.value.toString(),
+                    tenantId = qrCheckinTenantId,
+                    checkinId = qrCheckinId,
                     visitId = visitId
                 ).map { finalized ->
                     VisitPhoto(
@@ -235,6 +239,13 @@ class CreateVisitFromReservationHandler(
                 // Do not abort visit creation if QR photo finalization fails
                 println("Warning: Failed to finalize QR photos for checkin ${command.reservationId.value}: ${e.message}")
                 emptyList()
+            }
+
+            // Revoke mobile upload token so the phone shows the "visit created" screen
+            try {
+                uploadContextTokenService.markVisitCreated(qrCheckinTenantId, qrCheckinId)
+            } catch (e: Exception) {
+                println("Warning: Failed to revoke mobile upload token for checkin $qrCheckinId: ${e.message}")
             }
 
             val allPhotos = visitPhotos + qrPhotos
@@ -466,10 +477,11 @@ class CreateVisitFromReservationHandler(
             } else emptyList()
 
             // Step 7.5: Finalize QR-uploaded photos for walk-in (moved from temp/uploads/ to final visit location)
+            val walkInTenantId = command.studioId.value.toString()
             val qrPhotos = command.qrCheckinId?.let { qrId ->
-                try {
+                val photos = try {
                     checkinPhotoService.finalizePhotos(
-                        tenantId = command.studioId.value.toString(),
+                        tenantId = walkInTenantId,
                         checkinId = qrId,
                         visitId = visitId
                     ).map { finalized ->
@@ -485,6 +497,13 @@ class CreateVisitFromReservationHandler(
                     println("Warning: Failed to finalize QR photos for walk-in checkin $qrId: ${e.message}")
                     emptyList()
                 }
+                // Revoke mobile upload token so the phone shows the "visit created" screen
+                try {
+                    uploadContextTokenService.markVisitCreated(walkInTenantId, qrId)
+                } catch (e: Exception) {
+                    println("Warning: Failed to revoke mobile upload token for walk-in checkin $qrId: ${e.message}")
+                }
+                photos
             } ?: emptyList()
 
             // Step 7.6: Merge damage photos/annotations saved by the mobile QR flow (Redis)
