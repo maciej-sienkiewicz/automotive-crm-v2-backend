@@ -5,12 +5,15 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
+import pl.detailing.crm.visit.domain.DamageAnnotationStroke
 import pl.detailing.crm.visit.domain.DamagePoint
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
+import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
@@ -140,5 +143,70 @@ class DamageMarkingService {
             logger.error("Failed to generate damage map", e)
             throw IllegalStateException("Failed to generate damage map: ${e.message}", e)
         }
+    }
+
+    /**
+     * Burns freehand annotation strokes into a damage photo.
+     *
+     * Stroke coordinates are percentages (0-100) of the photo dimensions and the
+     * stroke width is a percentage of the photo width, matching the format produced
+     * by the frontend annotation editor.
+     *
+     * @return JPG bytes of the annotated photo; the original bytes if [strokes] is empty
+     *         or the image cannot be decoded.
+     */
+    suspend fun annotatePhoto(
+        imageBytes: ByteArray,
+        strokes: List<DamageAnnotationStroke>
+    ): ByteArray = withContext(Dispatchers.IO) {
+        if (strokes.isEmpty()) return@withContext imageBytes
+
+        val source = try {
+            ImageIO.read(ByteArrayInputStream(imageBytes))
+        } catch (e: Exception) {
+            logger.warn("Failed to decode damage photo for annotation: ${e.message}")
+            null
+        } ?: return@withContext imageBytes
+
+        val output = BufferedImage(source.width, source.height, BufferedImage.TYPE_INT_RGB)
+        val graphics = output.createGraphics()
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            graphics.drawImage(source, 0, 0, null)
+
+            strokes.forEach { stroke ->
+                if (stroke.points.isEmpty()) return@forEach
+
+                graphics.color = parseHexColor(stroke.color)
+                val strokeWidthPx = (stroke.width / 100.0 * source.width).toFloat().coerceAtLeast(2f)
+                graphics.stroke = BasicStroke(strokeWidthPx, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+
+                val path = Path2D.Double()
+                stroke.points.forEachIndexed { index, point ->
+                    val px = point.x / 100.0 * source.width
+                    val py = point.y / 100.0 * source.height
+                    if (index == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                }
+                // A single point becomes a visible dot
+                if (stroke.points.size == 1) {
+                    val p = stroke.points.first()
+                    path.lineTo(p.x / 100.0 * source.width + 0.1, p.y / 100.0 * source.height + 0.1)
+                }
+                graphics.draw(path)
+            }
+
+            val outputStream = ByteArrayOutputStream()
+            ImageIO.write(output, "jpg", outputStream)
+            outputStream.toByteArray()
+        } finally {
+            graphics.dispose()
+        }
+    }
+
+    private fun parseHexColor(hex: String): Color = try {
+        Color.decode(hex.trim())
+    } catch (e: Exception) {
+        DAMAGE_CIRCLE_COLOR
     }
 }

@@ -212,6 +212,35 @@ class CheckinPhotoService(
     // Helpers
     // -------------------------------------------------
 
+    /**
+     * Lists temp-storage photos of a checkin session and maps photoId → S3 key.
+     * Used to resolve stable S3 keys for photos referenced by damage points.
+     */
+    fun listTempPhotoKeys(tenantId: String, checkinId: String): Map<String, String> {
+        val prefix = buildTempPrefix(tenantId, checkinId)
+        return listObjectsUnderPrefix(prefix).associateBy { key ->
+            key.substringAfterLast('/').substringBeforeLast('.')
+        }
+    }
+
+    /**
+     * Downloads raw photo bytes from S3, e.g. to embed a damage photo in the
+     * generated damage report PDF. Returns null when the object does not exist.
+     */
+    suspend fun downloadPhotoBytes(s3Key: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            s3Client.getObjectAsBytes(
+                GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build()
+            ).asByteArray()
+        } catch (e: Exception) {
+            logger.warn("Failed to download photo bytes for key=$s3Key: ${e.message}")
+            null
+        }
+    }
+
     fun generateDownloadUrl(s3Key: String): String {
         val presignRequest = GetObjectPresignRequest.builder()
             .signatureDuration(PRESIGNED_DOWNLOAD_DURATION)
