@@ -87,6 +87,7 @@ class CheckinDamageUpdatedMessageListener(
                 type = "CHECKIN_DAMAGE_UPDATED",
                 checkinId = checkinId,
                 damagePoints = damagePoints,
+                vehicleType = payload["vehicleType"] as? String,
                 updatedAt = updatedAt
             )
 
@@ -132,5 +133,6 @@ data class CheckinDamageUpdatedWsMessage(
     val type: String,
     val checkinId: String,
     val damagePoints: List<DamagePointWsItem>,
+    val vehicleType: String?,
     val updatedAt: Instant
 )

@@ -139,6 +139,7 @@ class CheckinController(
             vehicleHandoff = vehicleHandoff,
             photoIds = request.photoIds,
             damagePoints = request.damagePoints?.map { it.toDomain() } ?: emptyList(),
+            damageVehicleType = request.damageVehicleType,
             services = request.services,
             appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
             doorToDoor = request.doorToDoor
@@ -291,6 +292,7 @@ class CheckinController(
             vehicleHandoff = vehicleHandoff,
             photoIds = request.photoIds,
             damagePoints = request.damagePoints?.map { it.toDomain() } ?: emptyList(),
+            damageVehicleType = request.damageVehicleType,
             services = request.services,
             appointmentColorId = request.appointmentColorId?.let { AppointmentColorId.fromString(it) },
             doorToDoor = request.doorToDoor
@@ -403,6 +405,7 @@ class CheckinController(
         return ResponseEntity.ok(
             MobileDamagePointsDesktopResponse(
                 checkinId = appointmentId,
+                vehicleType = result.vehicleType,
                 damagePoints = result.damagePoints.map { point ->
                     MobileDamagePointDesktopDto(
                         id = point.id,
@@ -450,6 +453,7 @@ data class ReservationToVisitRequest(
     val vehicleHandoff: VehicleHandoffRequest?,
     val photoIds: List<String>,
     val damagePoints: List<DamagePointRequest>?,
+    val damageVehicleType: String? = null,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?,
     val sendEmail: Boolean = false,
@@ -627,6 +631,7 @@ data class ReservationToVisitCommand(
     val vehicleHandoff: pl.detailing.crm.visit.domain.VehicleHandoff?,
     val photoIds: List<String>,
     val damagePoints: List<DamagePoint>,
+    val damageVehicleType: String? = null,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: AppointmentColorId?,
     val doorToDoor: DoorToDoorCheckinRequest? = null
@@ -706,6 +711,7 @@ data class WalkInVisitRequest(
     val vehicleHandoff: VehicleHandoffRequest? = null,
     val photoIds: List<String>,
     val damagePoints: List<DamagePointRequest>?,
+    val damageVehicleType: String? = null,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: String?,
     val qrCheckinId: String? = null,
@@ -728,6 +734,7 @@ data class WalkInVisitCommand(
     val vehicleHandoff: pl.detailing.crm.visit.domain.VehicleHandoff?,
     val photoIds: List<String>,
     val damagePoints: List<DamagePoint>,
+    val damageVehicleType: String? = null,
     val services: List<ServiceLineItemRequest>,
     val appointmentColorId: AppointmentColorId?,
     val qrCheckinId: String? = null,
@@ -751,6 +758,7 @@ data class MobileDamagePhotoDesktopDto(
 
 data class MobileDamagePointsDesktopResponse(
     val checkinId: String,
+    val vehicleType: String? = null,
     val damagePoints: List<MobileDamagePointDesktopDto>,
     val savedAt: Instant
 )

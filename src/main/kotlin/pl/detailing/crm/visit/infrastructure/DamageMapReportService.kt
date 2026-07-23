@@ -94,12 +94,13 @@ class DamageMapReportService(
      */
     suspend fun generateReport(
         damagePoints: List<DamagePoint>,
-        photoAttachments: List<DamagePhotoAttachment> = emptyList()
+        photoAttachments: List<DamagePhotoAttachment> = emptyList(),
+        vehicleType: String? = null
     ): ByteArray? = withContext(Dispatchers.IO) {
         if (damagePoints.isEmpty()) return@withContext null
 
         val sorted = damagePoints.sortedBy { it.id }
-        val markedImageBytes = damageMarkingService.generateDamageMap(sorted) ?: return@withContext null
+        val markedImageBytes = damageMarkingService.generateDamageMap(sorted, vehicleType) ?: return@withContext null
 
         // Burn annotation strokes into each photo before embedding
         val annotatedPhotos = photoAttachments.sortedBy { it.damagePointId }.mapNotNull { attachment ->
