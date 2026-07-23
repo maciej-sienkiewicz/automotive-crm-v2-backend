@@ -31,4 +31,16 @@ interface BatchOrderEntryRepository : JpaRepository<BatchOrderEntryEntity, UUID>
 
     @Query("SELECT e FROM BatchOrderEntryEntity e WHERE e.id = :id AND e.studioId = :studioId")
     fun findByIdAndStudioId(id: UUID, studioId: UUID): BatchOrderEntryEntity?
+
+    @Query("""
+        SELECT e FROM BatchOrderEntryEntity e
+        WHERE e.studioId = :studioId
+          AND (
+            (e.vehicleVin IS NOT NULL AND UPPER(e.vehicleVin) LIKE UPPER(CONCAT(:q, '%')))
+            OR
+            (UPPER(REPLACE(e.vehicleLicensePlate, ' ', '')) LIKE UPPER(CONCAT('%', :q, '%')))
+          )
+        ORDER BY e.serviceDate DESC
+    """)
+    fun searchByVinOrPlate(studioId: UUID, q: String): List<BatchOrderEntryEntity>
 }

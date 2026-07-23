@@ -57,6 +57,9 @@ class BatchOrderEntryEntity(
     @Column(name = "vehicle_license_plate", length = 20)
     var vehicleLicensePlate: String?,
 
+    @Column(name = "vehicle_vin", length = 17)
+    var vehicleVin: String?,
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
         name = "batch_order_entry_services",
@@ -85,6 +88,7 @@ class BatchOrderEntryEntity(
         vehicleMake = vehicleMake,
         vehicleModel = vehicleModel,
         vehicleLicensePlate = vehicleLicensePlate,
+        vehicleVin = vehicleVin,
         services = services.map { BatchOrderServiceItem(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
         notes = notes,
         createdAt = createdAt,
@@ -101,6 +105,7 @@ class BatchOrderEntryEntity(
                 vehicleMake = entry.vehicleMake,
                 vehicleModel = entry.vehicleModel,
                 vehicleLicensePlate = entry.vehicleLicensePlate,
+                vehicleVin = entry.vehicleVin,
                 notes = entry.notes,
                 createdAt = entry.createdAt,
                 updatedAt = entry.updatedAt

@@ -16,6 +16,7 @@ import pl.detailing.crm.batchorder.entry.ServiceItemInput
 import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
 import pl.detailing.crm.batchorder.photos.*
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
 import pl.detailing.crm.shared.BatchContractorId
@@ -38,7 +39,8 @@ class BatchOrderController(
     private val vehicleRepository: VehicleRepository,
     private val addBatchOrderPhotoHandler: AddBatchOrderPhotoHandler,
     private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
-    private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler
+    private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler,
+    private val entryRepository: BatchOrderEntryRepository
 ) {
 
     @GetMapping("/contractors")
@@ -138,6 +140,7 @@ class BatchOrderController(
                 vehicleMake = request.vehicleMake,
                 vehicleModel = request.vehicleModel,
                 vehicleLicensePlate = request.vehicleLicensePlate,
+                vehicleVin = request.vehicleVin,
                 services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
                 notes = request.notes
             )
@@ -159,6 +162,7 @@ class BatchOrderController(
                 vehicleMake = request.vehicleMake,
                 vehicleModel = request.vehicleModel,
                 vehicleLicensePlate = request.vehicleLicensePlate,
+                vehicleVin = request.vehicleVin,
                 services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
                 notes = request.notes
             )
@@ -260,7 +264,31 @@ class BatchOrderController(
                 v.licensePlate?.replace("\\s".toRegex(), "")?.uppercase()?.contains(normalized) == true
             }
             .take(10)
-            .map { VehicleSuggestionDto(licensePlate = it.licensePlate ?: "", brand = it.brand, model = it.model) }
+            .map { VehicleSuggestionDto(licensePlate = it.licensePlate ?: "", brand = it.brand, model = it.model, vin = null) }
+
+        ResponseEntity.ok(suggestions)
+    }
+
+    @GetMapping("/vehicles/search-entry")
+    fun searchVehiclesFromEntries(@RequestParam q: String): ResponseEntity<List<VehicleSuggestionDto>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val normalized = q.trim().replace("\\s".toRegex(), "").uppercase()
+        if (normalized.length < 2) return@runBlocking ResponseEntity.ok(emptyList())
+
+        val seen = mutableSetOf<String>()
+        val suggestions = entryRepository.searchByVinOrPlate(principal.studioId.value, normalized)
+            .mapNotNull { e ->
+                val key = "${e.vehicleVin.orEmpty()}|${e.vehicleLicensePlate.orEmpty()}"
+                if (seen.add(key)) {
+                    VehicleSuggestionDto(
+                        licensePlate = e.vehicleLicensePlate ?: "",
+                        brand = e.vehicleMake ?: "",
+                        model = e.vehicleModel ?: "",
+                        vin = e.vehicleVin
+                    )
+                } else null
+            }
+            .take(10)
 
         ResponseEntity.ok(suggestions)
     }
@@ -288,6 +316,7 @@ data class EntryRequest(
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
+    val vehicleVin: String?,
     val services: List<ServiceItemRequest>,
     val notes: String?
 )
@@ -295,7 +324,8 @@ data class EntryRequest(
 data class VehicleSuggestionDto(
     val licensePlate: String,
     val brand: String,
-    val model: String
+    val model: String,
+    val vin: String?
 )
 
 data class PhotoUploadRequest(
