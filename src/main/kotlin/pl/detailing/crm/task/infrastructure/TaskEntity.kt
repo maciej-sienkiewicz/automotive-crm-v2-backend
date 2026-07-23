@@ -5,6 +5,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.TaskId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.task.domain.Task
+import pl.detailing.crm.task.domain.TaskVisibilityType
 import java.time.Instant
 import java.util.UUID
 
@@ -53,7 +54,16 @@ class TaskEntity(
     var deletedAt: Instant? = null,
 
     @Column(name = "deleted_by_user_id", nullable = true, columnDefinition = "uuid")
-    var deletedByUserId: UUID? = null
+    var deletedByUserId: UUID? = null,
+
+    @Column(name = "visibility_type", nullable = false, length = 10)
+    var visibilityType: String = "ALL",
+
+    @Column(name = "visible_to_user_ids", nullable = true, columnDefinition = "text")
+    var visibleToUserIds: String? = null,
+
+    @Column(name = "visible_to_role_id", nullable = true, columnDefinition = "uuid")
+    var visibleToRoleId: UUID? = null
 ) {
     fun toDomain(): Task = Task(
         id = TaskId(id),
@@ -67,7 +77,10 @@ class TaskEntity(
         completedAt = completedAt,
         completedByUserId = completedByUserId?.let { UserId(it) },
         deletedAt = deletedAt,
-        deletedByUserId = deletedByUserId?.let { UserId(it) }
+        deletedByUserId = deletedByUserId?.let { UserId(it) },
+        visibilityType = runCatching { TaskVisibilityType.valueOf(visibilityType) }.getOrDefault(TaskVisibilityType.ALL),
+        visibleToUserIds = visibleToUserIds?.split(",")?.filter { it.isNotBlank() }?.map { UUID.fromString(it.trim()) } ?: emptyList(),
+        visibleToRoleId = visibleToRoleId
     )
 
     companion object {
@@ -83,7 +96,10 @@ class TaskEntity(
             completedAt = task.completedAt,
             completedByUserId = task.completedByUserId?.value,
             deletedAt = task.deletedAt,
-            deletedByUserId = task.deletedByUserId?.value
+            deletedByUserId = task.deletedByUserId?.value,
+            visibilityType = task.visibilityType.name,
+            visibleToUserIds = task.visibleToUserIds.takeIf { it.isNotEmpty() }?.joinToString(","),
+            visibleToRoleId = task.visibleToRoleId
         )
     }
 }

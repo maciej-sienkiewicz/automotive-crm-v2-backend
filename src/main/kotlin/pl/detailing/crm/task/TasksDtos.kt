@@ -1,7 +1,9 @@
 package pl.detailing.crm.task
 
 import pl.detailing.crm.task.domain.Task
+import pl.detailing.crm.task.domain.TaskVisibilityType
 import java.time.Instant
+import java.util.UUID
 
 data class TaskDto(
     val id: String,
@@ -11,7 +13,10 @@ data class TaskDto(
     val createdAt: Instant,
     val createdByUserName: String?,
     val completedAt: Instant?,
-    val completedByUserName: String?
+    val completedByUserName: String?,
+    val visibilityType: String = "ALL",
+    val visibleToUserIds: List<String> = emptyList(),
+    val visibleToRoleId: String? = null
 )
 
 data class ArchivedTaskDto(
@@ -39,8 +44,6 @@ data class ArchivedTasksPage(
     val pagination: TaskPagination
 )
 
-
-
 fun Task.toDto(
     createdByUserName: String? = null,
     completedByUserName: String? = null
@@ -52,16 +55,39 @@ fun Task.toDto(
     createdAt = createdAt,
     createdByUserName = createdByUserName,
     completedAt = completedAt,
-    completedByUserName = completedByUserName
+    completedByUserName = completedByUserName,
+    visibilityType = visibilityType.name,
+    visibleToUserIds = visibleToUserIds.map { it.toString() },
+    visibleToRoleId = visibleToRoleId?.toString()
 )
 
 data class CreateTaskRequest(
     val title: String,
-    val meta: String?
+    val meta: String?,
+    val visibilityType: String = "ALL",
+    val visibleToUserIds: List<String>? = null,
+    val visibleToRoleId: String? = null
 )
 
 data class UpdateTaskRequest(
     val title: String?,
     val meta: String?,
     val done: Boolean?
+)
+
+// ─── Visibility options ───────────────────────────────────────────────────────
+
+data class TaskVisibilityUser(
+    val userId: String,
+    val fullName: String
+)
+
+data class TaskVisibilityRole(
+    val roleId: String,
+    val name: String
+)
+
+data class TaskVisibilityOptionsResponse(
+    val users: List<TaskVisibilityUser>,
+    val roles: List<TaskVisibilityRole>
 )
