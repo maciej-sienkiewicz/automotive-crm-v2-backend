@@ -1,0 +1,4 @@
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS visibility_type VARCHAR(10) NOT NULL DEFAULT 'ALL',
+    ADD COLUMN IF NOT EXISTS visible_to_user_ids TEXT NULL,
+    ADD COLUMN IF NOT EXISTS visible_to_role_id UUID NULL;

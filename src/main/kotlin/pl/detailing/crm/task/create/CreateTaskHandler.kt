@@ -39,7 +39,10 @@ class CreateTaskHandler(
                 completedAt = null,
                 completedByUserId = null,
                 deletedAt = null,
-                deletedByUserId = null
+                deletedByUserId = null,
+                visibilityType = command.visibilityType,
+                visibleToUserIds = command.visibleToUserIds,
+                visibleToRoleId = command.visibleToRoleId
             )
 
             taskRepository.save(TaskEntity.fromDomain(task))
