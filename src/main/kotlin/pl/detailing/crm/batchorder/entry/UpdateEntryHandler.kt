@@ -31,6 +31,7 @@ class UpdateEntryHandler(
         entity.vehicleMake = command.vehicleMake?.trim()?.takeIf { it.isNotBlank() }
         entity.vehicleModel = command.vehicleModel?.trim()?.takeIf { it.isNotBlank() }
         entity.vehicleLicensePlate = command.vehicleLicensePlate?.trim()?.takeIf { it.isNotBlank() }
+        entity.vehicleVin = command.vehicleVin?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
         entity.services = command.services
             .filter { it.name.isNotBlank() }
             .map { ServiceItemEmbeddable(it.name.trim(), it.netAmountCents, it.grossAmountCents, it.vatRate) }
@@ -50,6 +51,7 @@ data class UpdateEntryCommand(
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
+    val vehicleVin: String?,
     val services: List<ServiceItemInput>,
     val notes: String?
 )

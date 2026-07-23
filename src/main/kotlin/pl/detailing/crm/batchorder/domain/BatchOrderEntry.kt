@@ -21,6 +21,7 @@ data class BatchOrderEntry(
     val vehicleMake: String?,
     val vehicleModel: String?,
     val vehicleLicensePlate: String?,
+    val vehicleVin: String?,
     val services: List<BatchOrderServiceItem>,
     val notes: String?,
     val createdAt: Instant,
