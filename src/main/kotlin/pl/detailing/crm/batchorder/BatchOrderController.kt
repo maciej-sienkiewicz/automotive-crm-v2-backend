@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.batchorder.contractor.*
 import pl.detailing.crm.batchorder.entry.CreateEntryCommand
@@ -19,6 +20,7 @@ import pl.detailing.crm.batchorder.photos.*
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
+import pl.detailing.crm.batchorder.vin.VinExtractionService
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
@@ -40,7 +42,8 @@ class BatchOrderController(
     private val addBatchOrderPhotoHandler: AddBatchOrderPhotoHandler,
     private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
     private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler,
-    private val entryRepository: BatchOrderEntryRepository
+    private val entryRepository: BatchOrderEntryRepository,
+    private val vinExtractionService: VinExtractionService
 ) {
 
     @GetMapping("/contractors")
@@ -292,6 +295,19 @@ class BatchOrderController(
 
         ResponseEntity.ok(suggestions)
     }
+
+    @PostMapping("/vin/extract", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun extractVin(@RequestParam("image") image: MultipartFile): ResponseEntity<VinExtractResponse> = runBlocking {
+        SecurityContextHelper.getCurrentUser()
+
+        if (image.isEmpty) return@runBlocking ResponseEntity.badRequest().body(VinExtractResponse(null))
+
+        val contentType = image.contentType?.takeIf { it.startsWith("image/") }
+            ?: return@runBlocking ResponseEntity.badRequest().body(VinExtractResponse(null))
+
+        val vin = vinExtractionService.extractVin(image.bytes, contentType)
+        ResponseEntity.ok(VinExtractResponse(vin))
+    }
 }
 
 data class ContractorRequest(
@@ -342,6 +358,8 @@ data class PhotoUploadResponse(
 data class EntryPhotosResponse(
     val photos: List<BatchOrderPhotoItem>
 )
+
+data class VinExtractResponse(val vin: String?)
 
 data class ContractorsResponse(val contractors: List<ContractorListItem>)
 data class ContractorItemResponse(val contractor: ContractorListItem)
