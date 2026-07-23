@@ -224,6 +224,28 @@ class CheckinPhotoService(
     }
 
     /**
+     * Overwrites an existing photo object with new bytes (e.g. after burning
+     * damage annotations into the image). Keeps the same S3 key so all stored
+     * references (VisitPhoto.fileId) remain valid.
+     */
+    suspend fun overwritePhoto(
+        s3Key: String,
+        bytes: ByteArray,
+        contentType: String = "image/jpeg"
+    ): Unit = withContext(Dispatchers.IO) {
+        s3Client.putObject(
+            PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .contentType(contentType)
+                .contentLength(bytes.size.toLong())
+                .build(),
+            RequestBody.fromBytes(bytes)
+        )
+        logger.info("Overwrote photo with annotated version: key=$s3Key, size=${bytes.size}B")
+    }
+
+    /**
      * Downloads raw photo bytes from S3, e.g. to embed a damage photo in the
      * generated damage report PDF. Returns null when the object does not exist.
      */
