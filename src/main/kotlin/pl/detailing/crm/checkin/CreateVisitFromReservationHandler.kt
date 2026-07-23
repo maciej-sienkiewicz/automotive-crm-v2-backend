@@ -57,11 +57,13 @@ class CreateVisitFromReservationHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val damageMapReportService: DamageMapReportService,
+    private val damageMarkingService: pl.detailing.crm.visit.infrastructure.DamageMarkingService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val documentService: DocumentService,
     private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository,
     private val photoSessionService: pl.detailing.crm.visit.infrastructure.PhotoSessionService,
     private val checkinPhotoService: CheckinPhotoService,
+    private val checkinDamagePointsService: pl.detailing.crm.checkin.qr.CheckinDamagePointsService,
     private val auditService: AuditService,
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
     private val doorToDoorRepository: DoorToDoorRepository
@@ -237,6 +239,21 @@ class CreateVisitFromReservationHandler(
 
             val allPhotos = visitPhotos + qrPhotos
 
+            // Step 7.7: Merge damage photos/annotations saved by the mobile QR flow
+            // (Redis) — the desktop payload may lag behind the phone (missed WS
+            // event, wizard on another step), so Redis is the source of truth for
+            // mobile-attached photos.
+            val effectiveDamagePoints = mergeMobileDamagePhotos(
+                tenantId = command.studioId.value.toString(),
+                checkinId = command.reservationId.value.toString(),
+                damagePoints = command.damagePoints
+            )
+
+            // Step 7.8: Burn damage annotations into the photo files and link
+            // each damage photo to its damage point via the photo description.
+            val (processedPhotos, damagePhotoAttachments) =
+                processDamagePhotos(effectiveDamagePoints, allPhotos)
+
             var visit = Visit(
                 id = visitId,
                 studioId = command.studioId,
@@ -266,7 +283,7 @@ class CreateVisitFromReservationHandler(
                 technicalNotes = command.technicalState.protocolNotes.ifBlank { null },
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
-                photos = allPhotos,  // session-based photos + QR-uploaded photos
+                photos = processedPhotos,  // session-based photos + QR-uploaded photos (damage photos annotated)
                 damageMapFileId = null, // Will be set after generating damage map
                 smsReminderSuppressed = false,
                 // Audit
@@ -279,8 +296,7 @@ class CreateVisitFromReservationHandler(
             // Step 8: Generate and upload damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damagePhotoAttachments = buildDamagePhotoAttachments(command.damagePoints, allPhotos)
-                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints, damagePhotoAttachments)
+                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments)
 
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
@@ -470,6 +486,18 @@ class CreateVisitFromReservationHandler(
                 }
             } ?: emptyList()
 
+            // Step 7.6: Merge damage photos/annotations saved by the mobile QR flow (Redis)
+            val effectiveDamagePoints = mergeMobileDamagePhotos(
+                tenantId = command.studioId.value.toString(),
+                checkinId = command.qrCheckinId,
+                damagePoints = command.damagePoints
+            )
+
+            // Step 7.7: Burn damage annotations into the photo files and link
+            // each damage photo to its damage point via the photo description.
+            val (processedPhotos, damagePhotoAttachments) =
+                processDamagePhotos(effectiveDamagePoints, visitPhotos + qrPhotos)
+
             // Step 8: Create Visit domain object
             var visit = Visit(
                 id = visitId,
@@ -498,7 +526,7 @@ class CreateVisitFromReservationHandler(
                 technicalNotes = command.technicalState.protocolNotes.ifBlank { null },
                 vehicleHandoff = command.vehicleHandoff,
                 serviceItems = serviceItems,
-                photos = visitPhotos + qrPhotos,
+                photos = processedPhotos,
                 damageMapFileId = null,
                 smsReminderSuppressed = false,
                 createdBy = command.userId,
@@ -510,8 +538,7 @@ class CreateVisitFromReservationHandler(
             // Step 9: Generate damage map PDF if damage points are provided
             if (command.damagePoints.isNotEmpty()) {
                 try {
-                    val damagePhotoAttachments = buildDamagePhotoAttachments(command.damagePoints, visitPhotos + qrPhotos)
-                    val damageMapBytes = damageMapReportService.generateReport(command.damagePoints, damagePhotoAttachments)
+                    val damageMapBytes = damageMapReportService.generateReport(effectiveDamagePoints, damagePhotoAttachments)
                     if (damageMapBytes != null) {
                         val damageMapFileId = s3DamageMapStorageService.uploadDamageMap(
                             studioId = command.studioId.value,
@@ -575,41 +602,128 @@ class CreateVisitFromReservationHandler(
         }
 
     /**
-     * Resolves S3 bytes for photos attached to damage points so they can be embedded
-     * (with their annotation strokes burned in) into the damage map PDF.
+     * Merges damage-point photos saved by the mobile QR flow (kept in Redis for the
+     * duration of the check-in session) into the damage points submitted from the
+     * desktop wizard. For each point that arrives without photos, the photos and
+     * annotation strokes stored by the phone (matched by point id) are used instead.
+     * Never fails — on any error the submitted points are returned unchanged.
+     */
+    private fun mergeMobileDamagePhotos(
+        tenantId: String,
+        checkinId: String?,
+        damagePoints: List<pl.detailing.crm.visit.domain.DamagePoint>
+    ): List<pl.detailing.crm.visit.domain.DamagePoint> {
+        if (checkinId == null || damagePoints.isEmpty()) return damagePoints
+
+        return try {
+            val mobile = checkinDamagePointsService.getDamagePoints(tenantId, checkinId)
+            if (mobile.savedAt == null) return damagePoints
+
+            val mobileById = mobile.damagePoints.associateBy { it.id }
+            damagePoints.map { point ->
+                if (point.photos.isNotEmpty()) return@map point
+                val mobilePhotos = mobileById[point.id]?.photos.orEmpty()
+                if (mobilePhotos.isEmpty()) return@map point
+
+                point.copy(photos = mobilePhotos.map { photo ->
+                    pl.detailing.crm.visit.domain.DamagePhoto(
+                        photoId = photo.photoId,
+                        strokes = photo.strokes.map { stroke ->
+                            pl.detailing.crm.visit.domain.DamageAnnotationStroke(
+                                color = stroke.color,
+                                width = stroke.width,
+                                points = stroke.points.map {
+                                    pl.detailing.crm.visit.domain.DamageAnnotationPoint(x = it.x, y = it.y)
+                                }
+                            )
+                        }
+                    )
+                })
+            }
+        } catch (e: Exception) {
+            println("Warning: Failed to merge mobile damage photos for checkin $checkinId: ${e.message}")
+            damagePoints
+        }
+    }
+
+    /**
+     * Post-processes photos attached to damage points:
+     *  1. burns the annotation strokes permanently into the photo file in S3
+     *     (so the visit gallery shows the marked-up image),
+     *  2. sets the photo description to "Uszkodzenie nr X — note" so the visit
+     *     view can show which damage the photo belongs to,
+     *  3. returns the annotated bytes for embedding in the damage map PDF.
      *
      * The photoId referenced by a damage point is either:
      *  - a photo-session photo id — matches VisitPhoto.id, or
      *  - a QR-uploaded photo id — preserved in the finalized file name "{photoId}.{ext}".
+     *
+     * Never aborts visit creation — on any failure the original photos are returned.
      */
-    private suspend fun buildDamagePhotoAttachments(
+    private suspend fun processDamagePhotos(
         damagePoints: List<pl.detailing.crm.visit.domain.DamagePoint>,
         visitPhotos: List<VisitPhoto>
-    ): List<pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment> {
-        if (damagePoints.none { it.photos.isNotEmpty() }) return emptyList()
+    ): Pair<List<VisitPhoto>, List<pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment>> {
+        if (damagePoints.none { it.photos.isNotEmpty() }) return visitPhotos to emptyList()
 
-        val keysByPhotoId = mutableMapOf<String, String>()
-        visitPhotos.forEach { photo ->
-            keysByPhotoId[photo.id.value.toString()] = photo.fileId
-            keysByPhotoId[photo.fileName.substringBeforeLast('.')] = photo.fileId
-        }
+        return try {
+            // Map both possible photoId representations to the VisitPhoto
+            val photosById = mutableMapOf<String, VisitPhoto>()
+            visitPhotos.forEach { photo ->
+                photosById[photo.id.value.toString()] = photo
+                photosById[photo.fileName.substringBeforeLast('.')] = photo
+            }
 
-        return damagePoints.flatMap { point ->
-            point.photos.mapNotNull { damagePhoto ->
-                try {
-                    val s3Key = keysByPhotoId[damagePhoto.photoId] ?: return@mapNotNull null
-                    val bytes = checkinPhotoService.downloadPhotoBytes(s3Key) ?: return@mapNotNull null
-                    pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment(
-                        damagePointId = point.id,
-                        note = point.note,
-                        imageBytes = bytes,
-                        strokes = damagePhoto.strokes
-                    )
-                } catch (e: Exception) {
-                    println("Warning: Failed to load damage photo ${damagePhoto.photoId}: ${e.message}")
-                    null
+            val descriptionsByFileId = mutableMapOf<String, String>()
+            val attachments = mutableListOf<pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment>()
+
+            for (point in damagePoints) {
+                val damageLabel = point.note?.trim()?.ifBlank { null }
+                    ?.let { "Uszkodzenie nr ${point.id} — $it" }
+                    ?: "Uszkodzenie nr ${point.id}"
+
+                for (damagePhoto in point.photos) {
+                    try {
+                        val visitPhoto = photosById[damagePhoto.photoId] ?: continue
+                        descriptionsByFileId[visitPhoto.fileId] = damageLabel
+
+                        val originalBytes = checkinPhotoService.downloadPhotoBytes(visitPhoto.fileId) ?: continue
+
+                        val finalBytes = if (damagePhoto.strokes.isNotEmpty()) {
+                            val annotated = damageMarkingService.annotatePhoto(originalBytes, damagePhoto.strokes)
+                            // Persist the marked-up image so every consumer (visit
+                            // gallery, emails, downloads) sees the annotations.
+                            checkinPhotoService.overwritePhoto(visitPhoto.fileId, annotated)
+                            annotated
+                        } else {
+                            originalBytes
+                        }
+
+                        attachments.add(
+                            pl.detailing.crm.visit.infrastructure.DamagePhotoAttachment(
+                                damagePointId = point.id,
+                                note = point.note,
+                                imageBytes = finalBytes,
+                                // Strokes are already burned into the bytes above
+                                strokes = emptyList()
+                            )
+                        )
+                    } catch (e: Exception) {
+                        println("Warning: Failed to process damage photo ${damagePhoto.photoId}: ${e.message}")
+                    }
                 }
             }
+
+            val updatedPhotos = visitPhotos.map { photo ->
+                descriptionsByFileId[photo.fileId]
+                    ?.let { photo.copy(description = it) }
+                    ?: photo
+            }
+
+            updatedPhotos to attachments
+        } catch (e: Exception) {
+            println("Warning: Failed to process damage photos: ${e.message}")
+            visitPhotos to emptyList()
         }
     }
 
