@@ -15,6 +15,7 @@ import pl.detailing.crm.batchorder.entry.DeleteEntryHandler
 import pl.detailing.crm.batchorder.entry.ServiceItemInput
 import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
+import pl.detailing.crm.batchorder.photos.*
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
 import pl.detailing.crm.shared.BatchContractorId
@@ -34,7 +35,10 @@ class BatchOrderController(
     private val updateEntryHandler: UpdateEntryHandler,
     private val deleteEntryHandler: DeleteEntryHandler,
     private val generateBatchReportHandler: GenerateBatchReportHandler,
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val addBatchOrderPhotoHandler: AddBatchOrderPhotoHandler,
+    private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
+    private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler
 ) {
 
     @GetMapping("/contractors")
@@ -195,6 +199,56 @@ class BatchOrderController(
         ResponseEntity.ok().headers(headers).body(pdfBytes)
     }
 
+    @PostMapping("/entries/{entryId}/photos/upload-url")
+    fun requestPhotoUploadUrl(
+        @PathVariable entryId: String,
+        @RequestBody request: PhotoUploadRequest
+    ): ResponseEntity<PhotoUploadResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = addBatchOrderPhotoHandler.handle(
+            AddBatchOrderPhotoCommand(
+                entryId = BatchOrderEntryId.fromString(entryId),
+                studioId = principal.studioId,
+                fileName = request.fileName,
+                description = request.description,
+                userId = principal.userId,
+                userName = principal.fullName
+            )
+        )
+        ResponseEntity.ok(PhotoUploadResponse(
+            photoId = result.photoId,
+            uploadUrl = result.uploadUrl,
+            fileId = result.fileId
+        ))
+    }
+
+    @GetMapping("/entries/{entryId}/photos")
+    fun listEntryPhotos(@PathVariable entryId: String): ResponseEntity<EntryPhotosResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val photos = listBatchOrderPhotosHandler.handle(
+            ListBatchOrderPhotosCommand(
+                entryId = BatchOrderEntryId.fromString(entryId),
+                studioId = principal.studioId
+            )
+        )
+        ResponseEntity.ok(EntryPhotosResponse(photos = photos))
+    }
+
+    @DeleteMapping("/entries/{entryId}/photos/{photoId}")
+    fun deleteEntryPhoto(
+        @PathVariable entryId: String,
+        @PathVariable photoId: String
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        deleteBatchOrderPhotoHandler.handle(
+            DeleteBatchOrderPhotoCommand(
+                photoId = photoId,
+                studioId = principal.studioId
+            )
+        )
+        ResponseEntity.noContent().build()
+    }
+
     @GetMapping("/vehicles/search")
     fun searchVehicles(@RequestParam q: String): ResponseEntity<List<VehicleSuggestionDto>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -242,6 +296,21 @@ data class VehicleSuggestionDto(
     val licensePlate: String,
     val brand: String,
     val model: String
+)
+
+data class PhotoUploadRequest(
+    val fileName: String,
+    val description: String?
+)
+
+data class PhotoUploadResponse(
+    val photoId: String,
+    val uploadUrl: String,
+    val fileId: String
+)
+
+data class EntryPhotosResponse(
+    val photos: List<BatchOrderPhotoItem>
 )
 
 data class ContractorsResponse(val contractors: List<ContractorListItem>)
