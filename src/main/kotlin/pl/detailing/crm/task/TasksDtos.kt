@@ -16,7 +16,9 @@ data class TaskDto(
     val completedByUserName: String?,
     val visibilityType: String = "ALL",
     val visibleToUserIds: List<String> = emptyList(),
-    val visibleToRoleId: String? = null
+    val visibleToUserNames: List<String> = emptyList(),
+    val visibleToRoleId: String? = null,
+    val visibleToRoleName: String? = null
 )
 
 data class ArchivedTaskDto(
@@ -46,7 +48,9 @@ data class ArchivedTasksPage(
 
 fun Task.toDto(
     createdByUserName: String? = null,
-    completedByUserName: String? = null
+    completedByUserName: String? = null,
+    visibleToUserNames: List<String> = emptyList(),
+    visibleToRoleName: String? = null
 ): TaskDto = TaskDto(
     id = id.value.toString(),
     title = title,
@@ -58,7 +62,9 @@ fun Task.toDto(
     completedByUserName = completedByUserName,
     visibilityType = visibilityType.name,
     visibleToUserIds = visibleToUserIds.map { it.toString() },
-    visibleToRoleId = visibleToRoleId?.toString()
+    visibleToUserNames = visibleToUserNames,
+    visibleToRoleId = visibleToRoleId?.toString(),
+    visibleToRoleName = visibleToRoleName
 )
 
 data class CreateTaskRequest(
