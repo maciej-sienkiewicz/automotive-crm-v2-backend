@@ -18,7 +18,7 @@ import java.util.UUID
     indexes = [
         Index(name = "idx_users_studio_email", columnList = "studio_id, email", unique = true),
         Index(name = "idx_users_studio_id", columnList = "studio_id"),
-        Index(name = "idx_users_email", columnList = "email"),
+        Index(name = "idx_users_email", columnList = "email", unique = true),
         Index(name = "idx_users_mobile_token", columnList = "mobile_token", unique = true)
     ]
 )
