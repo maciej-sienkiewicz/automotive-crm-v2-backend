@@ -88,6 +88,22 @@ class SmsAutomationConfigEntity(
     @Column(name = "visit_ready_for_pickup_message_template", nullable = false, columnDefinition = "TEXT")
     var visitReadyForPickupMessageTemplate: String,
 
+    // ── SENDER NAME CONFIG ──────────────────────────────────────────────────────
+    // Custom alphanumeric sender name (max 11 chars) submitted to SMSAPI.
+    // Requires a signed authorization document from the studio owner.
+
+    @Column(name = "sms_sender_name", nullable = true, length = 11)
+    var smsSenderName: String? = null,
+
+    @Column(name = "sms_api_name_confirmed", nullable = false)
+    var smsApiNameConfirmed: Boolean = false,
+
+    @Column(name = "sms_auth_document_s3_key", nullable = true, columnDefinition = "TEXT")
+    var smsAuthDocumentS3Key: String? = null,
+
+    @Column(name = "sms_auth_document_name", nullable = true, columnDefinition = "TEXT")
+    var smsAuthDocumentName: String? = null,
+
     // ── AUDIT ───────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
