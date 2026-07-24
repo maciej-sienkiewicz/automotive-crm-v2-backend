@@ -34,6 +34,8 @@ class SmsAutomationConfigRepositoryAdapter(
             existing.bookingConfirmationMessageTemplate = config.bookingConfirmation.messageTemplate
             existing.rescheduleConfirmationEnabled = config.rescheduleConfirmation.enabled
             existing.rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate
+            existing.visitReadyForPickupEnabled = config.visitReadyForPickup.enabled
+            existing.visitReadyForPickupMessageTemplate = config.visitReadyForPickup.messageTemplate
             existing.updatedAt = java.time.Instant.now()
             existing
         } else {

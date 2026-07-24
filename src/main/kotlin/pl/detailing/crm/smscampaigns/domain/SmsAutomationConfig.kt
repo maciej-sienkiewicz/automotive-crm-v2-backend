@@ -35,7 +35,8 @@ data class SmsAutomationConfig(
     val postVisit: SmsAutomationRule,
     val delayedReminder: SmsAutomationRule,
     val bookingConfirmation: SmsNotificationRule,
-    val rescheduleConfirmation: SmsNotificationRule
+    val rescheduleConfirmation: SmsNotificationRule,
+    val visitReadyForPickup: SmsNotificationRule
 ) {
     companion object {
         private const val DEFAULT_PRE_VISIT_OFFSET = 60
@@ -52,6 +53,8 @@ data class SmsAutomationConfig(
             "Drogi/a {{imie}}, potwierdzamy rezerwację w {{studio}} na {{data}} o godz. {{godzina}}. Czekamy na Ciebie!"
         private const val DEFAULT_RESCHEDULE_CONFIRMATION_TEMPLATE =
             "Drogi/a {{imie}}, termin Twojej wizyty w {{studio}} został zmieniony na {{data}} o godz. {{godzina}}. Do zobaczenia!"
+        private const val DEFAULT_VISIT_READY_FOR_PICKUP_TEMPLATE =
+            "Drogi/a {{imie}}, Twój pojazd jest gotowy do odbioru w {{studio}}. Zapraszamy!"
 
         fun defaultFor(studioId: StudioId) = SmsAutomationConfig(
             studioId = studioId,
@@ -77,6 +80,10 @@ data class SmsAutomationConfig(
             rescheduleConfirmation = SmsNotificationRule(
                 enabled = false,
                 messageTemplate = DEFAULT_RESCHEDULE_CONFIRMATION_TEMPLATE
+            ),
+            visitReadyForPickup = SmsNotificationRule(
+                enabled = false,
+                messageTemplate = DEFAULT_VISIT_READY_FOR_PICKUP_TEMPLATE
             )
         )
     }

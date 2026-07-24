@@ -14,6 +14,8 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
@@ -21,7 +23,8 @@ class SendVisitReadyForPickupSmsHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val communicationGateway: OutboundCommunicationGateway,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val configRepository: SmsAutomationConfigRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -49,8 +52,14 @@ class SendVisitReadyForPickupSmsHandler(
 
         val phoneNumber = normalizePolishPhone(rawPhone)
         val firstName = customerEntity.firstName ?: "Kliencie"
-        val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
-        val message = buildMessage(firstName, vehicleName, visitEntity.visitNumber)
+
+        val config = configRepository.findByStudioId(command.studioId)
+            ?: SmsAutomationConfig.defaultFor(command.studioId)
+        val template = config.visitReadyForPickup.messageTemplate
+        val studioName = command.studioName
+        val message = template
+            .replace("{{imie}}", firstName)
+            .replace("{{studio}}", studioName)
 
         val result = communicationGateway.sendSms(
             customerId = visitEntity.customerId,
@@ -84,13 +93,10 @@ class SendVisitReadyForPickupSmsHandler(
             )
         }
     }
-
-    private fun buildMessage(firstName: String, vehicleName: String, visitNumber: String): String =
-        "Drogi/a $firstName, Twój pojazd $vehicleName jest gotowy do odbioru. " +
-        "Numer wizyty: $visitNumber. Zapraszamy!"
 }
 
 data class SendVisitReadyForPickupSmsCommand(
     val visitId: VisitId,
-    val studioId: StudioId
+    val studioId: StudioId,
+    val studioName: String = ""
 )
