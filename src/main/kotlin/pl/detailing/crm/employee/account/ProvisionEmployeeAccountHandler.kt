@@ -64,7 +64,7 @@ class ProvisionEmployeeAccountHandler(
         employeeRepository.save(employeeEntity)
 
         val rawToken = tokenService.issueToken(userId)
-        val setupLink = "${properties.frontendBaseUrl.trimEnd('/')}/reset-password?token=$rawToken"
+        val setupLink = "${properties.frontendBaseUrl.trimEnd('/')}/confirm-password?token=$rawToken"
 
         val emailResult = emailProvider.send(
             to = email,
