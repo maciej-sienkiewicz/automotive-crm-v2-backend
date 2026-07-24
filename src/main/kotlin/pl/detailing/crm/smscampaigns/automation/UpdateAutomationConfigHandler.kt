@@ -14,7 +14,8 @@ data class UpdateAutomationConfigCommand(
     val postVisit: UpdateAutomationRuleCommand,
     val delayedReminder: UpdateAutomationRuleCommand,
     val bookingConfirmation: UpdateNotificationRuleCommand,
-    val rescheduleConfirmation: UpdateNotificationRuleCommand
+    val rescheduleConfirmation: UpdateNotificationRuleCommand,
+    val visitReadyForPickup: UpdateNotificationRuleCommand
 )
 
 data class UpdateAutomationRuleCommand(
@@ -62,6 +63,10 @@ class UpdateAutomationConfigHandler(
             rescheduleConfirmation = SmsNotificationRule(
                 enabled = command.rescheduleConfirmation.enabled,
                 messageTemplate = command.rescheduleConfirmation.messageTemplate
+            ),
+            visitReadyForPickup = SmsNotificationRule(
+                enabled = command.visitReadyForPickup.enabled,
+                messageTemplate = command.visitReadyForPickup.messageTemplate
             )
         )
         return configRepository.save(config)

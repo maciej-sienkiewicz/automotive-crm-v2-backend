@@ -31,7 +31,8 @@ data class SmsAutomationConfigDto(
     val preVisit: SmsAutomationRuleDto,
     val postVisit: SmsAutomationRuleDto,
     val bookingConfirmation: SmsNotificationRuleDto,
-    val rescheduleConfirmation: SmsNotificationRuleDto
+    val rescheduleConfirmation: SmsNotificationRuleDto,
+    val visitReadyForPickup: SmsNotificationRuleDto
 )
 
 // ── Mapping ──────────────────────────────────────────────────────────────────
@@ -40,7 +41,8 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
     preVisit = SmsAutomationRuleDto(preVisit.enabled, preVisit.offsetMinutes, preVisit.messageTemplate),
     postVisit = SmsAutomationRuleDto(postVisit.enabled, postVisit.offsetMinutes, postVisit.messageTemplate),
     bookingConfirmation = SmsNotificationRuleDto(bookingConfirmation.enabled, bookingConfirmation.messageTemplate),
-    rescheduleConfirmation = SmsNotificationRuleDto(rescheduleConfirmation.enabled, rescheduleConfirmation.messageTemplate)
+    rescheduleConfirmation = SmsNotificationRuleDto(rescheduleConfirmation.enabled, rescheduleConfirmation.messageTemplate),
+    visitReadyForPickup = SmsNotificationRuleDto(visitReadyForPickup.enabled, visitReadyForPickup.messageTemplate)
 )
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -99,6 +101,10 @@ class SmsAutomationController(
             rescheduleConfirmation = UpdateNotificationRuleCommand(
                 enabled = request.rescheduleConfirmation.enabled,
                 messageTemplate = request.rescheduleConfirmation.messageTemplate
+            ),
+            visitReadyForPickup = UpdateNotificationRuleCommand(
+                enabled = request.visitReadyForPickup.enabled,
+                messageTemplate = request.visitReadyForPickup.messageTemplate
             )
         )
 

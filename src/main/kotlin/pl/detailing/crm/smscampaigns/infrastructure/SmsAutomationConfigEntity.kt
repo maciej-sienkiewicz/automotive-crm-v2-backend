@@ -79,6 +79,15 @@ class SmsAutomationConfigEntity(
     @Column(name = "reschedule_confirmation_message_template", nullable = false, columnDefinition = "TEXT")
     var rescheduleConfirmationMessageTemplate: String,
 
+    // ── VISIT READY FOR PICKUP RULE ─────────────────────────────────────────────
+    // Fired manually when the user marks a visit as ready for pickup.
+
+    @Column(name = "visit_ready_for_pickup_enabled", nullable = false)
+    var visitReadyForPickupEnabled: Boolean,
+
+    @Column(name = "visit_ready_for_pickup_message_template", nullable = false, columnDefinition = "TEXT")
+    var visitReadyForPickupMessageTemplate: String,
+
     // ── AUDIT ───────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
@@ -111,6 +120,10 @@ class SmsAutomationConfigEntity(
         rescheduleConfirmation = SmsNotificationRule(
             enabled = rescheduleConfirmationEnabled,
             messageTemplate = rescheduleConfirmationMessageTemplate
+        ),
+        visitReadyForPickup = SmsNotificationRule(
+            enabled = visitReadyForPickupEnabled,
+            messageTemplate = visitReadyForPickupMessageTemplate
         )
     )
 
@@ -132,6 +145,8 @@ class SmsAutomationConfigEntity(
                 bookingConfirmationMessageTemplate = config.bookingConfirmation.messageTemplate,
                 rescheduleConfirmationEnabled = config.rescheduleConfirmation.enabled,
                 rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate,
+                visitReadyForPickupEnabled = config.visitReadyForPickup.enabled,
+                visitReadyForPickupMessageTemplate = config.visitReadyForPickup.messageTemplate,
                 updatedAt = Instant.now()
             )
     }
