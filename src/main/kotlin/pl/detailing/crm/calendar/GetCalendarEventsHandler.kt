@@ -180,6 +180,7 @@ class GetCalendarEventsHandler(
                         hexColor = it.hexColor
                     )
                 },
+                services = visit.serviceItems.map { VisitServiceInfo(serviceName = it.serviceName) },
                 totalNet = totalNet,
                 totalGross = totalGross,
                 currency = "PLN",
