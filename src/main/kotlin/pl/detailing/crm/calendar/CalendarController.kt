@@ -280,6 +280,10 @@ data class AppointmentColorInfo(
     val hexColor: String
 )
 
+data class VisitServiceInfo(
+    val serviceName: String
+)
+
 /**
  * Same redaction contract as AppointmentCalendarItem: customer and price
  * fields are omitted (not nulled) in the JSON when the caller lacks the
@@ -298,6 +302,7 @@ data class VisitCalendarItem(
     val customer: VisitCustomerInfo?,
     val vehicle: VisitVehicleInfo,
     val appointmentColor: AppointmentColorInfo?,
+    val services: List<VisitServiceInfo>,
     val totalNet: Long?,
     val totalGross: Long?,
     val currency: String,
