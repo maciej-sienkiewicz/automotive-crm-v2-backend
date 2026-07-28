@@ -1,5 +1,6 @@
 package pl.detailing.crm.calendar
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.runBlocking
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
@@ -14,6 +15,7 @@ import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 import java.util.UUID
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
@@ -21,7 +23,8 @@ import pl.detailing.crm.role.permission.RequiresPermission
 @RequiresPermission(Permission.VISITS_VIEW)
 class CalendarController(
     private val getCalendarEventsHandler: GetCalendarEventsHandler,
-    private val getDoorToDoorCalendarHandler: GetDoorToDoorCalendarHandler
+    private val getDoorToDoorCalendarHandler: GetDoorToDoorCalendarHandler,
+    private val permissionCheckService: PermissionCheckService,
 ) {
 
     @GetMapping("/door-to-door")
@@ -123,6 +126,13 @@ class CalendarController(
                 ?: return@runBlocking badRequest("INVALID_UUID", "Invalid vehicleId: '$vehicleId'. Expected UUID format.", "vehicleId")
         }
 
+        val canViewPii = permissionCheckService.hasPermission(
+            principal.userId, principal.studioId, Permission.CUSTOMERS_VIEW
+        )
+        val canViewPrices = permissionCheckService.hasPermission(
+            principal.userId, principal.studioId, Permission.VISITS_SERVICE_PRICES_VIEW
+        )
+
         val query = GetCalendarEventsQuery(
             studioId = principal.studioId,
             startDate = startInstant,
@@ -137,8 +147,8 @@ class CalendarController(
         val result = getCalendarEventsHandler.handle(query)
 
         ResponseEntity.ok<Any>(CalendarEventsResponse(
-            appointments = result.appointments,
-            visits = result.visits
+            appointments = result.appointments.map { it.redact(canViewPii, canViewPrices) },
+            visits = result.visits.map { it.redact(canViewPii, canViewPrices) }
         ))
     }
 
@@ -156,6 +166,33 @@ class CalendarController(
     } catch (_: IllegalArgumentException) {
         null
     }
+}
+
+/**
+ * Strips fields the caller is not permitted to see.
+ *
+ * - CUSTOMERS_VIEW not granted → customer object is omitted entirely (null).
+ *   The @Pii masking module would already mask individual fields to "***",
+ *   but we go further and remove the whole object so no data leaks at all.
+ * - VISITS_SERVICE_PRICES_VIEW not granted → price totals are omitted.
+ */
+private fun AppointmentCalendarItem.redact(canViewPii: Boolean, canViewPrices: Boolean): AppointmentCalendarItem {
+    if (canViewPii && canViewPrices) return this
+    return copy(
+        customer = if (canViewPii) customer else null,
+        totalNet = if (canViewPrices) totalNet else null,
+        totalGross = if (canViewPrices) totalGross else null,
+        totalVat = if (canViewPrices) totalVat else null,
+    )
+}
+
+private fun VisitCalendarItem.redact(canViewPii: Boolean, canViewPrices: Boolean): VisitCalendarItem {
+    if (canViewPii && canViewPrices) return this
+    return copy(
+        customer = if (canViewPii) customer else null,
+        totalNet = if (canViewPrices) totalNet else null,
+        totalGross = if (canViewPrices) totalGross else null,
+    )
 }
 
 data class DoorToDoorCalendarEntryResponse(
@@ -183,20 +220,27 @@ data class CalendarEventsResponse(
     val visits: List<VisitCalendarItem>
 )
 
+/**
+ * Null fields (customer when CUSTOMERS_VIEW is missing; price totals when
+ * VISITS_SERVICE_PRICES_VIEW is missing) are omitted from the JSON response
+ * rather than serialised as JSON null, so the client receives a clean object
+ * with only the fields the caller is permitted to see.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class AppointmentCalendarItem(
     val id: String,
     val appointmentTitle: String?,
     val customerId: String,
     val vehicleId: String?,
     val status: String,
-    val customer: AppointmentCustomerInfo,
+    val customer: AppointmentCustomerInfo?,
     val vehicle: AppointmentVehicleInfo?,
     val services: List<AppointmentServiceInfo>,
     val schedule: AppointmentScheduleInfo,
     val appointmentColor: AppointmentColorInfo,
-    val totalNet: Long,
-    val totalGross: Long,
-    val totalVat: Long,
+    val totalNet: Long?,
+    val totalGross: Long?,
+    val totalVat: Long?,
     val note: String?
 )
 
@@ -236,6 +280,12 @@ data class AppointmentColorInfo(
     val hexColor: String
 )
 
+/**
+ * Same redaction contract as AppointmentCalendarItem: customer and price
+ * fields are omitted (not nulled) in the JSON when the caller lacks the
+ * corresponding permissions.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class VisitCalendarItem(
     val id: String,
     val title: String?,
@@ -245,11 +295,11 @@ data class VisitCalendarItem(
     val status: String,
     val scheduledDate: Instant,
     val estimatedCompletionDate: Instant?,
-    val customer: VisitCustomerInfo,
+    val customer: VisitCustomerInfo?,
     val vehicle: VisitVehicleInfo,
     val appointmentColor: AppointmentColorInfo?,
-    val totalNet: Long,
-    val totalGross: Long,
+    val totalNet: Long?,
+    val totalGross: Long?,
     val currency: String,
     val technicalNotes: String?,
     val description: String?,
