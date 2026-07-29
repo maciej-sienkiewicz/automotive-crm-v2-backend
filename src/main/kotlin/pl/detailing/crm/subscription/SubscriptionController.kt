@@ -135,7 +135,7 @@ class SubscriptionController(
         val clampedPageSize = pageSize.coerceIn(1, 100)
 
         val planCache = planRepository.findAll().associateBy { it.key }
-        val addOnCache = addOnRepository.findAll().associateBy { it.key }
+        val addOnCacheByName = addOnRepository.findAll().associateBy { it.key.name }
 
         val logEntries = paymentLogRepository.findAllByStudioIdOrderByCreatedAtDesc(
             studioId.value,
@@ -148,9 +148,9 @@ class SubscriptionController(
                 planCache[key]?.let { PaymentPlanSnapshotDto(key = key.name, name = it.name) }
                     ?: PaymentPlanSnapshotDto(key = key.name, name = key.displayName)
             }
-            val addOnSnapshot = entry.addOnKey?.let { key ->
-                addOnCache[key]?.let { PaymentAddOnSnapshotDto(key = key.name, name = it.name) }
-                    ?: PaymentAddOnSnapshotDto(key = key.name, name = key.displayName)
+            val addOnSnapshot = entry.addOnKey?.let { keyStr ->
+                addOnCacheByName[keyStr]?.let { PaymentAddOnSnapshotDto(key = keyStr, name = it.name) }
+                    ?: PaymentAddOnSnapshotDto(key = keyStr, name = keyStr)
             }
 
             PaymentHistoryEntryDto(
