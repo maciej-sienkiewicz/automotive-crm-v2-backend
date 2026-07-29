@@ -22,6 +22,8 @@ import pl.detailing.crm.finance.document.ListFinancialDocumentsCommand
 import pl.detailing.crm.finance.document.ListFinancialDocumentsHandler
 import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
 import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
+import pl.detailing.crm.finance.document.UpdateFinancialDocumentCommand
+import pl.detailing.crm.finance.document.UpdateFinancialDocumentHandler
 import pl.detailing.crm.finance.domain.CashOperation
 import pl.detailing.crm.finance.domain.CashRegister
 import pl.detailing.crm.finance.domain.DocumentDirection
@@ -52,6 +54,7 @@ import pl.detailing.crm.role.permission.RequiresPermission
 @RequiresPermission(Permission.FINANCE_INVOICES)
 class FinanceController(
     private val createDocumentHandler: CreateFinancialDocumentHandler,
+    private val updateDocumentHandler: UpdateFinancialDocumentHandler,
     private val listDocumentsHandler: ListFinancialDocumentsHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
     private val documentRepository: FinancialDocumentRepository,
@@ -98,6 +101,42 @@ class FinanceController(
             )
         )
         return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse())
+    }
+
+    /**
+     * Full update of a MANUAL financial document.
+     * PUT /api/v1/finance/documents/{id}
+     *
+     * Only documents with source=MANUAL may be edited.
+     * The direction field is immutable — use delete+create to change it.
+     */
+    @PutMapping("/documents/{id}")
+    fun updateDocument(
+        @PathVariable id: UUID,
+        @RequestBody request: UpdateDocumentRequest
+    ): ResponseEntity<FinancialDocumentResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = updateDocumentHandler.handle(
+            UpdateFinancialDocumentCommand(
+                studioId         = principal.studioId,
+                userId           = principal.userId,
+                userDisplayName  = principal.fullName,
+                documentId       = id,
+                documentType     = parseEnum<DocumentType>(request.documentType, "documentType"),
+                paymentMethod    = parseEnum<PaymentMethod>(request.paymentMethod, "paymentMethod"),
+                totalNet         = request.totalNet,
+                totalVat         = request.totalVat,
+                totalGross       = request.totalGross,
+                issueDate        = request.issueDate,
+                dueDate          = request.dueDate,
+                description      = request.description,
+                counterpartyName = request.counterpartyName,
+                counterpartyNip  = request.counterpartyNip
+            )
+        )
+        return ResponseEntity.ok(result.toResponse())
     }
 
     /**
@@ -421,6 +460,19 @@ data class CreateDocumentRequest(
     val vehicleModel: String? = null,
     val customerFirstName: String? = null,
     val customerLastName: String? = null
+)
+
+data class UpdateDocumentRequest(
+    val documentType:     String,
+    val paymentMethod:    String,
+    val totalNet:         Long,
+    val totalVat:         Long,
+    val totalGross:       Long,
+    val issueDate:        LocalDate,
+    val dueDate:          LocalDate?,
+    val description:      String?,
+    val counterpartyName: String?,
+    val counterpartyNip:  String?
 )
 
 data class UpdateDocumentNumberRequest(val documentNumber: String)

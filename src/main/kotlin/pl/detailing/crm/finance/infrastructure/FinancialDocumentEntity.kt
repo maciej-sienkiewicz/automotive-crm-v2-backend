@@ -73,7 +73,7 @@ class FinancialDocumentEntity(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "document_type", nullable = false, length = 20)
-    val documentType: DocumentType,
+    var documentType: DocumentType,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "direction", nullable = false, length = 10)
@@ -85,37 +85,37 @@ class FinancialDocumentEntity(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false, length = 20)
-    val paymentMethod: PaymentMethod,
+    var paymentMethod: PaymentMethod,
 
     @Column(name = "total_net", nullable = false)
-    val totalNet: Long,
+    var totalNet: Long,
 
     @Column(name = "total_vat", nullable = false)
-    val totalVat: Long,
+    var totalVat: Long,
 
     @Column(name = "total_gross", nullable = false)
-    val totalGross: Long,
+    var totalGross: Long,
 
     @Column(name = "currency", nullable = false, length = 3)
     val currency: String = "PLN",
 
     @Column(name = "issue_date", nullable = false)
-    val issueDate: LocalDate,
+    var issueDate: LocalDate,
 
     @Column(name = "due_date")
-    val dueDate: LocalDate?,
+    var dueDate: LocalDate?,
 
     @Column(name = "paid_at")
     var paidAt: Instant?,
 
     @Column(name = "description", columnDefinition = "TEXT")
-    val description: String?,
+    var description: String?,
 
     @Column(name = "counterparty_name", length = 255)
-    val counterpartyName: String?,
+    var counterpartyName: String?,
 
     @Column(name = "counterparty_nip", length = 20)
-    val counterpartyNip: String?,
+    var counterpartyNip: String?,
 
     @Column(name = "created_by", columnDefinition = "uuid", nullable = false)
     val createdBy: UUID,
