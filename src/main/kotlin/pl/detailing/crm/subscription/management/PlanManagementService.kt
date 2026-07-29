@@ -217,7 +217,7 @@ class PlanManagementService(
                 eventType = SubscriptionEventType.ADD_ON_DEACTIVATION,
                 amountInCents = 0,
                 planKey = currentPlanKey,
-                addOnKey = addOnKey,
+                addOnKey = addOnKey.name,
                 description = "Dezaktywacja modułu ${addOn?.name ?: addOnKey.name}"
             )
         )

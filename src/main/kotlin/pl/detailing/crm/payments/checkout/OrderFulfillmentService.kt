@@ -111,7 +111,7 @@ class OrderFulfillmentService(
                 currency = order.currency,
                 transactionId = order.p24OrderId?.toString() ?: order.sessionId,
                 planKey = order.planKey,
-                addOnKey = order.addOnKeys.singleOrNull(),
+                addOnKey = order.addOnKeys.singleOrNull()?.name,
                 description = description
             )
         )

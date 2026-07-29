@@ -1,7 +1,6 @@
 package pl.detailing.crm.subscription.infrastructure
 
 import jakarta.persistence.*
-import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import java.time.Instant
 import java.util.UUID
@@ -60,9 +59,8 @@ class SubscriptionPaymentLogEntity(
     @Column(name = "plan_key", length = 50)
     val planKey: PlanKey? = null,
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "add_on_key", length = 50)
-    val addOnKey: AddOnKey? = null,
+    val addOnKey: String? = null,
 
     @Column(name = "description", nullable = false, columnDefinition = "TEXT")
     val description: String,
