@@ -94,15 +94,15 @@ class GenerateBatchReportHandler(
 
         val colDate = 68f
         val colVehicle = 120f
-        val colServices = usableWidth - 68f - 120f - 72f - 72f - 60f
+        val colServices = usableWidth - 68f - 120f - 72f - 72f  // wider — notes moved to sub-row
         val colNet = 72f
         val colGross = 72f
-        val colNotes = 60f
 
         val headerFontSize = 14f
         val subheaderFontSize = 10f
         val tableFontSize = 8f
         val tableHeaderFontSize = 8f
+        val notesFontSize = 7.5f
         val rowMinHeight = 14f
 
         fun newPage(): Pair<PDPage, PDPageContentStream> {
@@ -140,6 +140,28 @@ class GenerateBatchReportHandler(
             return result
         }
 
+        fun wrapText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): List<String> {
+            val words = text.split(" ")
+            val lines = mutableListOf<String>()
+            var currentLine = StringBuilder()
+            for (word in words) {
+                val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
+                val width = try {
+                    font.getStringWidth(candidate) / 1000 * fontSize
+                } catch (_: Exception) {
+                    candidate.length * fontSize * 0.5f
+                }
+                if (width > maxWidth && currentLine.isNotEmpty()) {
+                    lines.add(currentLine.toString())
+                    currentLine = StringBuilder(word)
+                } else {
+                    currentLine = StringBuilder(candidate)
+                }
+            }
+            if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
+            return lines.ifEmpty { listOf(text) }
+        }
+
         fun drawTableHeader(cs: PDPageContentStream, y: Float) {
             cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
             cs.addRect(margin, y - 14f, usableWidth, 16f)
@@ -155,8 +177,6 @@ class GenerateBatchReportHandler(
             drawText(cs, "Netto", bold, tableHeaderFontSize, colX, y - 10f)
             colX += colNet
             drawText(cs, "Brutto", bold, tableHeaderFontSize, colX, y - 10f)
-            colX += colGross
-            drawText(cs, "Uwagi", bold, tableHeaderFontSize, colX, y - 10f)
             cs.setNonStrokingColor(0f, 0f, 0f)
         }
 
@@ -190,10 +210,9 @@ class GenerateBatchReportHandler(
         drawText(cs, "Liczba wpisów: ${entries.size}", regular, subheaderFontSize, margin, currentY)
         currentY -= 14f
 
-        // Ensure full-width elements begin below the logo area
         currentY = minOf(currentY, pageHeight - margin - logoMaxH - 4f)
 
-        // ---- PERIOD (plain formal text) ----
+        // ---- PERIOD ----
         val periodText = when {
             from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
             from != null -> "Od: ${from.format(dateFormat)}"
@@ -203,7 +222,6 @@ class GenerateBatchReportHandler(
         drawText(cs, periodText, bold, subheaderFontSize, margin, currentY)
         currentY -= 6f
 
-        // Thin separator line under period
         cs.setStrokingColor(0.6f, 0.6f, 0.6f)
         cs.moveTo(margin, currentY)
         cs.lineTo(margin + usableWidth, currentY)
@@ -232,23 +250,29 @@ class GenerateBatchReportHandler(
                 }
             }.ifBlank { "-" }
 
-            // Services: each item as "name (net / gross VAT%)"
-            val vatLabel: (Int) -> String = { r -> if (r == -1) "ZW" else "${r}%" }
+            // Service names only — amounts are already in Netto/Brutto columns
             val serviceLines = if (entry.services.isEmpty()) {
                 listOf("-")
             } else {
-                entry.services.map { svc ->
-                    "${svc.name}  ${formatMoney(svc.netAmountCents)} / ${formatMoney(svc.grossAmountCents)} ${vatLabel(svc.vatRate)}"
-                }
+                entry.services.map { svc -> svc.name }
             }
 
-            val notesText = entry.notes ?: ""
+            val notesText = (entry.notes ?: "").trim()
             val vehicleLines = vehicleText.split("\n")
-            val notesLines = if (notesText.isNotBlank()) notesText.split("\n") else listOf("")
-            val maxLines = maxOf(vehicleLines.size, serviceLines.size, notesLines.size, 1)
-            val rowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
+            val maxLines = maxOf(vehicleLines.size, serviceLines.size, 1)
+            val mainRowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
 
-            if (currentY - rowHeight < margin + 30f) {
+            // Notes rendered as a sub-row below the main row
+            val notesWrapped = if (notesText.isNotBlank())
+                wrapText(notesText, regular, notesFontSize, usableWidth - 46f)
+            else emptyList()
+            val notesRowHeight = if (notesWrapped.isNotEmpty())
+                notesWrapped.size * (notesFontSize + 3f) + 6f
+            else 0f
+
+            val totalRowHeight = mainRowHeight + notesRowHeight
+
+            if (currentY - totalRowHeight < margin + 30f) {
                 cs.setStrokingColor(0.7f, 0.7f, 0.7f)
                 cs.moveTo(margin, currentY)
                 cs.lineTo(margin + usableWidth, currentY)
@@ -263,9 +287,10 @@ class GenerateBatchReportHandler(
                 rowAlt = false
             }
 
+            // Main row background
             if (rowAlt) {
                 cs.setNonStrokingColor(0.96f, 0.96f, 0.97f)
-                cs.addRect(margin, currentY - rowHeight, usableWidth, rowHeight)
+                cs.addRect(margin, currentY - mainRowHeight, usableWidth, mainRowHeight)
                 cs.fill()
                 cs.setNonStrokingColor(0f, 0f, 0f)
             }
@@ -290,18 +315,28 @@ class GenerateBatchReportHandler(
             colX += colNet
 
             drawText(cs, formatMoney(entry.grossAmountCents), regular, tableFontSize, colX, textY)
-            colX += colGross
 
-            notesLines.forEachIndexed { idx, line ->
-                drawText(cs, truncateText(line, regular, tableFontSize, colNotes - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
+            // Notes sub-row
+            if (notesWrapped.isNotEmpty()) {
+                val notesTopY = currentY - mainRowHeight
+                cs.setNonStrokingColor(0.97f, 0.97f, 0.94f)
+                cs.addRect(margin, notesTopY - notesRowHeight, usableWidth, notesRowHeight)
+                cs.fill()
+                cs.setNonStrokingColor(0.35f, 0.35f, 0.35f)
+                val notesTextY = notesTopY - notesFontSize - 2f
+                drawText(cs, "Uwagi:", bold, notesFontSize, margin + 4f, notesTextY)
+                notesWrapped.forEachIndexed { idx, line ->
+                    drawText(cs, line, regular, notesFontSize, margin + 44f, notesTextY - idx * (notesFontSize + 3f))
+                }
+                cs.setNonStrokingColor(0f, 0f, 0f)
             }
 
             cs.setStrokingColor(0.85f, 0.85f, 0.85f)
-            cs.moveTo(margin, currentY - rowHeight)
-            cs.lineTo(margin + usableWidth, currentY - rowHeight)
+            cs.moveTo(margin, currentY - totalRowHeight)
+            cs.lineTo(margin + usableWidth, currentY - totalRowHeight)
             cs.stroke()
 
-            currentY -= rowHeight
+            currentY -= totalRowHeight
             rowAlt = !rowAlt
         }
 
