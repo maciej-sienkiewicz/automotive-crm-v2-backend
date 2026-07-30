@@ -32,7 +32,8 @@ data class SmsAutomationConfigDto(
     val postVisit: SmsAutomationRuleDto,
     val bookingConfirmation: SmsNotificationRuleDto,
     val rescheduleConfirmation: SmsNotificationRuleDto,
-    val visitReadyForPickup: SmsNotificationRuleDto
+    val visitReadyForPickup: SmsNotificationRuleDto,
+    val visitCardLink: SmsNotificationRuleDto
 )
 
 // ── Mapping ──────────────────────────────────────────────────────────────────
@@ -42,7 +43,8 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
     postVisit = SmsAutomationRuleDto(postVisit.enabled, postVisit.offsetMinutes, postVisit.messageTemplate),
     bookingConfirmation = SmsNotificationRuleDto(bookingConfirmation.enabled, bookingConfirmation.messageTemplate),
     rescheduleConfirmation = SmsNotificationRuleDto(rescheduleConfirmation.enabled, rescheduleConfirmation.messageTemplate),
-    visitReadyForPickup = SmsNotificationRuleDto(visitReadyForPickup.enabled, visitReadyForPickup.messageTemplate)
+    visitReadyForPickup = SmsNotificationRuleDto(visitReadyForPickup.enabled, visitReadyForPickup.messageTemplate),
+    visitCardLink = SmsNotificationRuleDto(visitCardLink.enabled, visitCardLink.messageTemplate)
 )
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -105,6 +107,10 @@ class SmsAutomationController(
             visitReadyForPickup = UpdateNotificationRuleCommand(
                 enabled = request.visitReadyForPickup.enabled,
                 messageTemplate = request.visitReadyForPickup.messageTemplate
+            ),
+            visitCardLink = UpdateNotificationRuleCommand(
+                enabled = request.visitCardLink.enabled,
+                messageTemplate = request.visitCardLink.messageTemplate
             )
         )
 

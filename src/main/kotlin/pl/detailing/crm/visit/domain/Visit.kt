@@ -116,6 +116,12 @@ data class Visit(
     }
 
     /**
+     * Returns true when all billable services sum to zero (free visit).
+     * Free visits must not generate financial income documents.
+     */
+    fun isFreeVisit(): Boolean = calculateTotalGross().amountInCents == 0L
+
+    /**
      * Check if visit can be marked as READY_FOR_PICKUP
      * No services can be in PENDING status (all must be CONFIRMED, APPROVED, or REJECTED)
      */

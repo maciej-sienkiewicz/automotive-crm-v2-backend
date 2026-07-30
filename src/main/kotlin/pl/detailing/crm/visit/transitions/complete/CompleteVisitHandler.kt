@@ -98,7 +98,8 @@ class CompleteVisitHandler(
 
     /**
      * Creates a financial document (receipt or other non-invoice type) for all CONFIRMED
-     * and APPROVED service items. Returns null when the visit has no service items.
+     * and APPROVED service items. Returns null for free visits (total gross = 0) or when
+     * there are no service items.
      */
     private fun issueFinancialDocument(
         command: CompleteVisitCommand,
@@ -107,6 +108,10 @@ class CompleteVisitHandler(
     ): FinancialDocument? {
         if (visit.serviceItems.isEmpty()) {
             log.info("Visit {} has no service items – skipping financial document creation", command.visitId)
+            return null
+        }
+        if (visit.isFreeVisit()) {
+            log.info("Visit {} is a free visit (total gross = 0) – skipping financial document creation", command.visitId)
             return null
         }
 

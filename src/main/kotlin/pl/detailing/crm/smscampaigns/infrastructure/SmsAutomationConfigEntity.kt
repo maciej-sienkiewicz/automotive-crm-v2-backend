@@ -88,6 +88,15 @@ class SmsAutomationConfigEntity(
     @Column(name = "visit_ready_for_pickup_message_template", nullable = false, columnDefinition = "TEXT")
     var visitReadyForPickupMessageTemplate: String,
 
+    // ── VISIT CARD LINK RULE ────────────────────────────────────────────────────
+    // Configurable template for the SMS sent with the Visit Card link.
+
+    @Column(name = "visit_card_link_enabled", nullable = false)
+    var visitCardLinkEnabled: Boolean,
+
+    @Column(name = "visit_card_link_message_template", nullable = false, columnDefinition = "TEXT")
+    var visitCardLinkMessageTemplate: String,
+
     // ── SENDER NAME CONFIG ──────────────────────────────────────────────────────
     // Custom alphanumeric sender name (max 11 chars) submitted to SMSAPI.
     // Requires a signed authorization document from the studio owner.
@@ -140,6 +149,10 @@ class SmsAutomationConfigEntity(
         visitReadyForPickup = SmsNotificationRule(
             enabled = visitReadyForPickupEnabled,
             messageTemplate = visitReadyForPickupMessageTemplate
+        ),
+        visitCardLink = SmsNotificationRule(
+            enabled = visitCardLinkEnabled,
+            messageTemplate = visitCardLinkMessageTemplate
         )
     )
 
@@ -163,6 +176,8 @@ class SmsAutomationConfigEntity(
                 rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate,
                 visitReadyForPickupEnabled = config.visitReadyForPickup.enabled,
                 visitReadyForPickupMessageTemplate = config.visitReadyForPickup.messageTemplate,
+                visitCardLinkEnabled = config.visitCardLink.enabled,
+                visitCardLinkMessageTemplate = config.visitCardLink.messageTemplate,
                 updatedAt = Instant.now()
             )
     }

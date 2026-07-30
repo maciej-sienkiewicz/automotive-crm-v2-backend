@@ -16,6 +16,7 @@ import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
+import pl.detailing.crm.smscampaigns.automation.GetAutomationConfigHandler
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -59,6 +60,7 @@ class SendVisitCardLinkHandler(
     private val tokenService: VisitCardTokenService,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
+    private val getAutomationConfigHandler: GetAutomationConfigHandler,
     private val properties: VisitCardProperties
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -161,8 +163,16 @@ class SendVisitCardLinkHandler(
 
         if (sendSms) {
             val phone = normalizePolishPhone(customer.phone!!)
-            val message = "$studioName: Karta Twojej wizyty ${visitEntity.visitNumber} " +
-                "(${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}): $cardUrl"
+            val visitCardLinkRule = getAutomationConfigHandler.handle(command.studioId).visitCardLink
+            val message = if (visitCardLinkRule.enabled && visitCardLinkRule.messageTemplate.isNotBlank()) {
+                visitCardLinkRule.messageTemplate
+                    .replace("{{studio}}", studioName)
+                    .replace("{{imie}}", customer.firstName ?: "")
+                    .replace("{{link}}", cardUrl)
+            } else {
+                "$studioName: Karta Twojej wizyty ${visitEntity.visitNumber} " +
+                    "(${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}): $cardUrl"
+            }
             try {
                 val result = communicationGateway.sendTransactionalSms(command.studioId.value, phone, message)
                 smsSent = result.success
