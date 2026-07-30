@@ -71,6 +71,9 @@ class BatchOrderEntryEntity(
     @Column(name = "notes", columnDefinition = "TEXT")
     var notes: String?,
 
+    @Column(name = "is_closed", nullable = false)
+    var isClosed: Boolean = false,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 

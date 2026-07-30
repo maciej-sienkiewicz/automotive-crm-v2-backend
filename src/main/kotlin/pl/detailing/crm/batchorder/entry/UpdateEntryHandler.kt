@@ -37,6 +37,7 @@ class UpdateEntryHandler(
             .map { ServiceItemEmbeddable(it.name.trim(), it.netAmountCents, it.grossAmountCents, it.vatRate) }
             .toMutableList()
         entity.notes = command.notes?.trim()?.takeIf { it.isNotBlank() }
+        entity.isClosed = false
         entity.updatedAt = Instant.now()
 
         val saved = entryRepository.save(entity)

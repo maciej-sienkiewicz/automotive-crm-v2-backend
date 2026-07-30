@@ -94,6 +94,7 @@ data class EntryItem(
     val netAmountCents: Long,
     val grossAmountCents: Long,
     val notes: String?,
+    val isClosed: Boolean,
     val createdAt: String,
     val updatedAt: String
 )
@@ -115,6 +116,7 @@ fun BatchOrderEntryEntity.toEntryItem() = EntryItem(
     netAmountCents = netAmountCents,
     grossAmountCents = grossAmountCents,
     notes = notes,
+    isClosed = isClosed,
     createdAt = createdAt.toString(),
     updatedAt = updatedAt.toString()
 )

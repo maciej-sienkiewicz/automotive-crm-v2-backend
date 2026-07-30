@@ -18,6 +18,8 @@ import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
 import pl.detailing.crm.batchorder.photos.*
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.batchorder.report.CloseMonthCommand
+import pl.detailing.crm.batchorder.report.CloseMonthHandler
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
 import pl.detailing.crm.batchorder.vin.VinExtractionService
@@ -38,6 +40,7 @@ class BatchOrderController(
     private val updateEntryHandler: UpdateEntryHandler,
     private val deleteEntryHandler: DeleteEntryHandler,
     private val generateBatchReportHandler: GenerateBatchReportHandler,
+    private val closeMonthHandler: CloseMonthHandler,
     private val vehicleRepository: VehicleRepository,
     private val addBatchOrderPhotoHandler: AddBatchOrderPhotoHandler,
     private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
@@ -206,6 +209,34 @@ class BatchOrderController(
         ResponseEntity.ok().headers(headers).body(pdfBytes)
     }
 
+    @PostMapping("/contractors/{contractorId}/close-month")
+    fun closeMonth(
+        @PathVariable contractorId: String,
+        @RequestBody request: CloseMonthRequest
+    ): ResponseEntity<CloseMonthResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = closeMonthHandler.handle(
+            CloseMonthCommand(
+                studioId = principal.studioId,
+                contractorId = BatchContractorId.fromString(contractorId),
+                userId = principal.userId,
+                userDisplayName = principal.fullName,
+                from = request.from?.let { LocalDate.parse(it) },
+                to = request.to?.let { LocalDate.parse(it) },
+                addToFinances = request.addToFinances,
+                sendEmail = request.sendEmail,
+                emailOverride = request.emailOverride
+            )
+        )
+        ResponseEntity.ok(
+            CloseMonthResponse(
+                closedEntryCount = result.closedEntryCount,
+                financeEntryCreated = result.financeEntryCreated,
+                emailSent = result.emailSent
+            )
+        )
+    }
+
     @PostMapping("/entries/{entryId}/photos/upload-url")
     fun requestPhotoUploadUrl(
         @PathVariable entryId: String,
@@ -335,6 +366,20 @@ data class EntryRequest(
     val vehicleVin: String?,
     val services: List<ServiceItemRequest>,
     val notes: String?
+)
+
+data class CloseMonthRequest(
+    val from: String?,
+    val to: String?,
+    val addToFinances: Boolean,
+    val sendEmail: Boolean,
+    val emailOverride: String?
+)
+
+data class CloseMonthResponse(
+    val closedEntryCount: Int,
+    val financeEntryCreated: Boolean,
+    val emailSent: Boolean
 )
 
 data class VehicleSuggestionDto(
