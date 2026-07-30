@@ -14,6 +14,7 @@ import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryReposito
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.shared.BatchContractorId
+import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
@@ -51,6 +52,7 @@ class GenerateBatchReportHandler(
         }
 
         val logoBytes = loadLogo(command.studioId)
+
         return buildPdf(
             contractorName  = contractor.name,
             contractorTaxId = contractor.taxId,
@@ -62,42 +64,39 @@ class GenerateBatchReportHandler(
     }
 
     @Transactional(readOnly = true)
-    suspend fun handleForSnapshot(historyId: UUID, studioId: StudioId): ByteArray {
-        val history = closeHistoryRepository.findById(historyId).orElseThrow {
-            EntityNotFoundException("Close history record not found")
-        }
-        if (history.studioId != studioId.value) throw EntityNotFoundException("Close history record not found")
-
+    suspend fun handleForSnapshot(historyId: BatchOrderCloseHistoryId, studioId: StudioId): ByteArray {
+        val history = closeHistoryRepository.findByIdAndStudioId(historyId.value, studioId.value)
+            ?: throw EntityNotFoundException("Close history record not found")
         val contractor = contractorRepository.findByIdAndStudioId(history.contractorId, studioId.value)
             ?: throw EntityNotFoundException("Contractor not found")
-
-        val entryIds = parseEntryIds(history.closedEntryIds)
-        val entries = if (entryIds.isEmpty()) emptyList()
-        else entryRepository.findByIdsAndStudioId(entryIds, studioId.value)
-
+        val entries = entryRepository.findByCloseHistoryId(historyId.value)
         val logoBytes = loadLogo(studioId)
         return buildPdf(
-            contractorName  = contractor.name,
+            contractorName = contractor.name,
             contractorTaxId = contractor.taxId,
-            from            = history.periodFrom,
-            to              = history.periodTo,
-            entries         = entries,
-            logoBytes       = logoBytes
+            from = history.fromDate,
+            to = history.toDate,
+            entries = entries,
+            logoBytes = logoBytes
         )
+    }
+
+    suspend fun buildPdfBytes(
+        contractorName: String,
+        contractorTaxId: String?,
+        from: LocalDate,
+        to: LocalDate,
+        entries: List<BatchOrderEntryEntity>,
+        studioId: StudioId
+    ): ByteArray {
+        val logoBytes = loadLogo(studioId)
+        return buildPdf(contractorName, contractorTaxId, from, to, entries, logoBytes)
     }
 
     private fun loadLogo(studioId: StudioId): ByteArray? =
         studioSettingsRepository.findById(studioId.value).orElse(null)?.logoS3Key?.let { key ->
             runCatching { documentStorageService.downloadBytes(key) }.getOrNull()
         }
-
-    private fun parseEntryIds(json: String): List<UUID> =
-        json.removeSurrounding("[", "]")
-            .split(",")
-            .mapNotNull { token ->
-                token.trim().removeSurrounding("\"").takeIf { it.isNotBlank() }
-                    ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            }
 
     private fun buildPdf(
         contractorName: String,

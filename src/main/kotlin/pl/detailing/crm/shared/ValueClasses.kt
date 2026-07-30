@@ -675,6 +675,19 @@ value class BatchOrderEntryId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for BatchOrderCloseHistory entities
+ */
+@JvmInline
+value class BatchOrderCloseHistoryId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = BatchOrderCloseHistoryId(UUID.randomUUID())
+        fun fromString(value: String) = BatchOrderCloseHistoryId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type-safe ID wrapper for KSeF invoice entities
  */
 @JvmInline

@@ -1,10 +1,12 @@
 package pl.detailing.crm.batchorder.domain
 
 import pl.detailing.crm.shared.BatchContractorId
+import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.time.LocalDate
+import java.util.UUID
 
 data class BatchOrderServiceItem(
     val name: String,
@@ -24,6 +26,8 @@ data class BatchOrderEntry(
     val vehicleVin: String?,
     val services: List<BatchOrderServiceItem>,
     val notes: String?,
+    val isClosed: Boolean = false,
+    val closeHistoryId: UUID? = null,
     val createdAt: Instant,
     val updatedAt: Instant
 )

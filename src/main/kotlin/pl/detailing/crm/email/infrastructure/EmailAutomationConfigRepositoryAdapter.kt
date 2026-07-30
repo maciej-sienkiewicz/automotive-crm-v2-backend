@@ -23,6 +23,9 @@ class EmailAutomationConfigRepositoryAdapter(
             existing.visitReadyForPickupEnabled = config.visitReadyForPickup.enabled
             existing.visitReadyForPickupSubjectTemplate = config.visitReadyForPickup.subjectTemplate
             existing.visitReadyForPickupBodyTemplate = config.visitReadyForPickup.bodyTemplate
+            existing.batchOrderCloseEnabled = config.batchOrderClose.enabled
+            existing.batchOrderCloseSubjectTemplate = config.batchOrderClose.subjectTemplate
+            existing.batchOrderCloseBodyTemplate = config.batchOrderClose.bodyTemplate
             existing.updatedAt = Instant.now()
             existing
         } else {

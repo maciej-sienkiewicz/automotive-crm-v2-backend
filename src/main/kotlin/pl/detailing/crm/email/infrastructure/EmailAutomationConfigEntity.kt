@@ -43,6 +43,17 @@ class EmailAutomationConfigEntity(
     @Column(name = "visit_ready_for_pickup_body_template", nullable = false, columnDefinition = "TEXT")
     var visitReadyForPickupBodyTemplate: String,
 
+    // ── BATCH ORDER CLOSE ────────────────────────────────────────────────────────
+
+    @Column(name = "batch_order_close_enabled", nullable = false)
+    var batchOrderCloseEnabled: Boolean = false,
+
+    @Column(name = "batch_order_close_subject_template", columnDefinition = "TEXT")
+    var batchOrderCloseSubjectTemplate: String? = null,
+
+    @Column(name = "batch_order_close_body_template", columnDefinition = "TEXT")
+    var batchOrderCloseBodyTemplate: String? = null,
+
     // ── AUDIT ────────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
@@ -51,19 +62,27 @@ class EmailAutomationConfigEntity(
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 ) {
-    fun toDomain(): EmailAutomationConfig = EmailAutomationConfig(
-        studioId = StudioId(studioId),
-        visitWelcome = EmailNotificationRule(
-            enabled = visitWelcomeEnabled,
-            subjectTemplate = visitWelcomeSubjectTemplate,
-            bodyTemplate = visitWelcomeBodyTemplate
-        ),
-        visitReadyForPickup = EmailNotificationRule(
-            enabled = visitReadyForPickupEnabled,
-            subjectTemplate = visitReadyForPickupSubjectTemplate,
-            bodyTemplate = visitReadyForPickupBodyTemplate
+    fun toDomain(): EmailAutomationConfig {
+        val defaults = EmailAutomationConfig.defaultFor(StudioId(studioId))
+        return EmailAutomationConfig(
+            studioId = StudioId(studioId),
+            visitWelcome = EmailNotificationRule(
+                enabled = visitWelcomeEnabled,
+                subjectTemplate = visitWelcomeSubjectTemplate,
+                bodyTemplate = visitWelcomeBodyTemplate
+            ),
+            visitReadyForPickup = EmailNotificationRule(
+                enabled = visitReadyForPickupEnabled,
+                subjectTemplate = visitReadyForPickupSubjectTemplate,
+                bodyTemplate = visitReadyForPickupBodyTemplate
+            ),
+            batchOrderClose = EmailNotificationRule(
+                enabled = batchOrderCloseEnabled,
+                subjectTemplate = batchOrderCloseSubjectTemplate ?: defaults.batchOrderClose.subjectTemplate,
+                bodyTemplate = batchOrderCloseBodyTemplate ?: defaults.batchOrderClose.bodyTemplate
+            )
         )
-    )
+    }
 
     companion object {
         fun fromDomain(config: EmailAutomationConfig, existingId: UUID? = null): EmailAutomationConfigEntity =
@@ -76,6 +95,9 @@ class EmailAutomationConfigEntity(
                 visitReadyForPickupEnabled = config.visitReadyForPickup.enabled,
                 visitReadyForPickupSubjectTemplate = config.visitReadyForPickup.subjectTemplate,
                 visitReadyForPickupBodyTemplate = config.visitReadyForPickup.bodyTemplate,
+                batchOrderCloseEnabled = config.batchOrderClose.enabled,
+                batchOrderCloseSubjectTemplate = config.batchOrderClose.subjectTemplate,
+                batchOrderCloseBodyTemplate = config.batchOrderClose.bodyTemplate,
                 updatedAt = Instant.now()
             )
     }

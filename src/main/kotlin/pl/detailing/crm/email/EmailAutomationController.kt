@@ -21,7 +21,8 @@ data class EmailNotificationRuleDto(
 
 data class EmailAutomationConfigDto(
     val visitWelcome: EmailNotificationRuleDto,
-    val visitReadyForPickup: EmailNotificationRuleDto
+    val visitReadyForPickup: EmailNotificationRuleDto,
+    val batchOrderClose: EmailNotificationRuleDto
 )
 
 // ── Mapping ──────────────────────────────────────────────────────────────────
@@ -36,6 +37,11 @@ private fun EmailAutomationConfig.toDto() = EmailAutomationConfigDto(
         enabled = visitReadyForPickup.enabled,
         subjectTemplate = visitReadyForPickup.subjectTemplate,
         bodyTemplate = visitReadyForPickup.bodyTemplate
+    ),
+    batchOrderClose = EmailNotificationRuleDto(
+        enabled = batchOrderClose.enabled,
+        subjectTemplate = batchOrderClose.subjectTemplate,
+        bodyTemplate = batchOrderClose.bodyTemplate
     )
 )
 
@@ -79,6 +85,11 @@ class EmailAutomationController(
                 enabled = request.visitReadyForPickup.enabled,
                 subjectTemplate = request.visitReadyForPickup.subjectTemplate,
                 bodyTemplate = request.visitReadyForPickup.bodyTemplate
+            ),
+            batchOrderClose = UpdateEmailNotificationRuleCommand(
+                enabled = request.batchOrderClose.enabled,
+                subjectTemplate = request.batchOrderClose.subjectTemplate,
+                bodyTemplate = request.batchOrderClose.bodyTemplate
             )
         )
 

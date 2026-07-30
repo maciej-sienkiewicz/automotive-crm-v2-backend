@@ -74,6 +74,9 @@ class BatchOrderEntryEntity(
     @Column(name = "is_closed", nullable = false)
     var isClosed: Boolean = false,
 
+    @Column(name = "close_history_id", columnDefinition = "uuid")
+    var closeHistoryId: UUID? = null,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -94,6 +97,8 @@ class BatchOrderEntryEntity(
         vehicleVin = vehicleVin,
         services = services.map { BatchOrderServiceItem(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
         notes = notes,
+        isClosed = isClosed,
+        closeHistoryId = closeHistoryId,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -110,6 +115,8 @@ class BatchOrderEntryEntity(
                 vehicleLicensePlate = entry.vehicleLicensePlate,
                 vehicleVin = entry.vehicleVin,
                 notes = entry.notes,
+                isClosed = entry.isClosed,
+                closeHistoryId = entry.closeHistoryId,
                 createdAt = entry.createdAt,
                 updatedAt = entry.updatedAt
             )

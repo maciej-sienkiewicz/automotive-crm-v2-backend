@@ -18,38 +18,37 @@ import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
 import pl.detailing.crm.batchorder.photos.*
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.batchorder.report.CloseMode
 import pl.detailing.crm.batchorder.report.CloseMonthCommand
 import pl.detailing.crm.batchorder.report.CloseMonthHandler
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
-import pl.detailing.crm.batchorder.report.GetCloseHistoryHandler
 import pl.detailing.crm.batchorder.vin.VinExtractionService
 import pl.detailing.crm.shared.BatchContractorId
+import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.LocalDate
-import java.util.UUID
 
 @RestController
 @RequestMapping("/api/batch-orders")
 class BatchOrderController(
-    private val listContractorsHandler      : ListContractorsHandler,
-    private val createContractorHandler     : CreateContractorHandler,
-    private val updateContractorHandler     : UpdateContractorHandler,
-    private val deleteContractorHandler     : DeleteContractorHandler,
-    private val getContractorEntriesHandler : GetContractorEntriesHandler,
-    private val createEntryHandler          : CreateEntryHandler,
-    private val updateEntryHandler          : UpdateEntryHandler,
-    private val deleteEntryHandler          : DeleteEntryHandler,
-    private val generateBatchReportHandler  : GenerateBatchReportHandler,
-    private val closeMonthHandler           : CloseMonthHandler,
-    private val getCloseHistoryHandler      : GetCloseHistoryHandler,
-    private val vehicleRepository           : VehicleRepository,
-    private val addBatchOrderPhotoHandler   : AddBatchOrderPhotoHandler,
-    private val listBatchOrderPhotosHandler : ListBatchOrderPhotosHandler,
+    private val listContractorsHandler: ListContractorsHandler,
+    private val createContractorHandler: CreateContractorHandler,
+    private val updateContractorHandler: UpdateContractorHandler,
+    private val deleteContractorHandler: DeleteContractorHandler,
+    private val getContractorEntriesHandler: GetContractorEntriesHandler,
+    private val createEntryHandler: CreateEntryHandler,
+    private val updateEntryHandler: UpdateEntryHandler,
+    private val deleteEntryHandler: DeleteEntryHandler,
+    private val generateBatchReportHandler: GenerateBatchReportHandler,
+    private val closeMonthHandler: CloseMonthHandler,
+    private val vehicleRepository: VehicleRepository,
+    private val addBatchOrderPhotoHandler: AddBatchOrderPhotoHandler,
+    private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
     private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler,
-    private val entryRepository             : BatchOrderEntryRepository,
-    private val vinExtractionService        : VinExtractionService
+    private val entryRepository: BatchOrderEntryRepository,
+    private val vinExtractionService: VinExtractionService
 ) {
 
     @GetMapping("/contractors")
@@ -64,14 +63,14 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val item = createContractorHandler.handle(
             CreateContractorCommand(
-                studioId            = principal.studioId,
-                name                = request.name,
-                taxId               = request.taxId,
-                address             = request.address,
-                contactPersonName   = request.contactPersonName,
-                email               = request.email,
-                phone               = request.phone,
-                notes               = request.notes
+                studioId = principal.studioId,
+                name = request.name,
+                taxId = request.taxId,
+                address = request.address,
+                contactPersonName = request.contactPersonName,
+                email = request.email,
+                phone = request.phone,
+                notes = request.notes
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(ContractorItemResponse(contractor = item))
@@ -85,15 +84,15 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val item = updateContractorHandler.handle(
             UpdateContractorCommand(
-                studioId            = principal.studioId,
-                contractorId        = BatchContractorId.fromString(contractorId),
-                name                = request.name,
-                taxId               = request.taxId,
-                address             = request.address,
-                contactPersonName   = request.contactPersonName,
-                email               = request.email,
-                phone               = request.phone,
-                notes               = request.notes
+                studioId = principal.studioId,
+                contractorId = BatchContractorId.fromString(contractorId),
+                name = request.name,
+                taxId = request.taxId,
+                address = request.address,
+                contactPersonName = request.contactPersonName,
+                email = request.email,
+                phone = request.phone,
+                notes = request.notes
             )
         )
         ResponseEntity.ok(ContractorItemResponse(contractor = item))
@@ -103,7 +102,10 @@ class BatchOrderController(
     fun deleteContractor(@PathVariable contractorId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         deleteContractorHandler.handle(
-            DeleteContractorCommand(studioId = principal.studioId, contractorId = BatchContractorId.fromString(contractorId))
+            DeleteContractorCommand(
+                studioId = principal.studioId,
+                contractorId = BatchContractorId.fromString(contractorId)
+            )
         )
         ResponseEntity.noContent().build()
     }
@@ -117,13 +119,19 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getContractorEntriesHandler.handle(
             GetContractorEntriesCommand(
-                studioId     = principal.studioId,
+                studioId = principal.studioId,
                 contractorId = BatchContractorId.fromString(contractorId),
-                from         = from?.let { LocalDate.parse(it) },
-                to           = to?.let { LocalDate.parse(it) }
+                from = from?.let { LocalDate.parse(it) },
+                to = to?.let { LocalDate.parse(it) }
             )
         )
-        ResponseEntity.ok(ContractorEntriesResponse(contractor = result.contractor, entries = result.entries, summary = result.summary))
+        ResponseEntity.ok(
+            ContractorEntriesResponse(
+                contractor = result.contractor,
+                entries = result.entries,
+                summary = result.summary
+            )
+        )
     }
 
     @PostMapping("/contractors/{contractorId}/entries")
@@ -134,15 +142,15 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val item = createEntryHandler.handle(
             CreateEntryCommand(
-                studioId             = principal.studioId,
-                contractorId         = BatchContractorId.fromString(contractorId),
-                serviceDate          = LocalDate.parse(request.serviceDate),
-                vehicleMake          = request.vehicleMake,
-                vehicleModel         = request.vehicleModel,
-                vehicleLicensePlate  = request.vehicleLicensePlate,
-                vehicleVin           = request.vehicleVin,
-                services             = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
-                notes                = request.notes
+                studioId = principal.studioId,
+                contractorId = BatchContractorId.fromString(contractorId),
+                serviceDate = LocalDate.parse(request.serviceDate),
+                vehicleMake = request.vehicleMake,
+                vehicleModel = request.vehicleModel,
+                vehicleLicensePlate = request.vehicleLicensePlate,
+                vehicleVin = request.vehicleVin,
+                services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
+                notes = request.notes
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(EntryItemResponse(entry = item))
@@ -156,15 +164,15 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val item = updateEntryHandler.handle(
             UpdateEntryCommand(
-                studioId            = principal.studioId,
-                entryId             = BatchOrderEntryId.fromString(entryId),
-                serviceDate         = LocalDate.parse(request.serviceDate),
-                vehicleMake         = request.vehicleMake,
-                vehicleModel        = request.vehicleModel,
+                studioId = principal.studioId,
+                entryId = BatchOrderEntryId.fromString(entryId),
+                serviceDate = LocalDate.parse(request.serviceDate),
+                vehicleMake = request.vehicleMake,
+                vehicleModel = request.vehicleModel,
                 vehicleLicensePlate = request.vehicleLicensePlate,
-                vehicleVin          = request.vehicleVin,
-                services            = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
-                notes               = request.notes
+                vehicleVin = request.vehicleVin,
+                services = request.services.map { ServiceItemInput(it.name, it.netAmountCents, it.grossAmountCents, it.vatRate) },
+                notes = request.notes
             )
         )
         ResponseEntity.ok(EntryItemResponse(entry = item))
@@ -173,7 +181,12 @@ class BatchOrderController(
     @DeleteMapping("/entries/{entryId}")
     fun deleteEntry(@PathVariable entryId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        deleteEntryHandler.handle(DeleteEntryCommand(studioId = principal.studioId, entryId = BatchOrderEntryId.fromString(entryId)))
+        deleteEntryHandler.handle(
+            DeleteEntryCommand(
+                studioId = principal.studioId,
+                entryId = BatchOrderEntryId.fromString(entryId)
+            )
+        )
         ResponseEntity.noContent().build()
     }
 
@@ -186,10 +199,10 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val pdfBytes = generateBatchReportHandler.handle(
             GenerateBatchReportCommand(
-                studioId     = principal.studioId,
+                studioId = principal.studioId,
                 contractorId = BatchContractorId.fromString(contractorId),
-                from         = from?.let { LocalDate.parse(it) },
-                to           = to?.let { LocalDate.parse(it) }
+                from = from?.let { LocalDate.parse(it) },
+                to = to?.let { LocalDate.parse(it) }
             )
         )
         val headers = HttpHeaders()
@@ -206,48 +219,57 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val result = closeMonthHandler.handle(
             CloseMonthCommand(
-                studioId        = principal.studioId,
-                contractorId    = BatchContractorId.fromString(contractorId),
-                userId          = principal.userId,
-                userDisplayName = principal.fullName,
-                from            = request.from?.let { LocalDate.parse(it) },
-                to              = request.to?.let { LocalDate.parse(it) },
-                addToFinances   = request.addToFinances,
-                sendEmail       = request.sendEmail,
-                emailOverride   = request.emailOverride,
-                mode            = request.mode ?: "ALL"
+                studioId = principal.studioId,
+                contractorId = BatchContractorId.fromString(contractorId),
+                from = LocalDate.parse(request.from),
+                to = LocalDate.parse(request.to),
+                mode = CloseMode.valueOf(request.mode),
+                emailTo = request.emailTo
             )
         )
-        ResponseEntity.ok(
-            CloseMonthResponse(
-                closedEntryCount    = result.closedEntryCount,
-                financeEntryCreated = result.financeEntryCreated,
-                emailSent           = result.emailSent,
-                historyId           = result.historyId
-            )
-        )
+        ResponseEntity.ok(CloseMonthResponse(
+            historyId = result.historyId,
+            entryCount = result.entryCount,
+            totalNetCents = result.totalNetCents,
+            totalGrossCents = result.totalGrossCents,
+            emailSent = result.emailSent
+        ))
     }
 
     @GetMapping("/contractors/{contractorId}/close-history")
     fun getCloseHistory(@PathVariable contractorId: String): ResponseEntity<CloseHistoryResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        val items = getCloseHistoryHandler.handle(
+        val records = closeMonthHandler.listHistory(
             contractorId = BatchContractorId.fromString(contractorId),
-            studioId     = principal.studioId
+            studioId = principal.studioId
         )
-        ResponseEntity.ok(CloseHistoryResponse(records = items.map { it.toDto() }))
+        ResponseEntity.ok(CloseHistoryResponse(records = records.map {
+            CloseHistoryRecordDto(
+                id = it.id,
+                contractorId = it.contractorId,
+                fromDate = it.fromDate,
+                toDate = it.toDate,
+                mode = it.mode,
+                entryCount = it.entryCount,
+                totalNetCents = it.totalNetCents,
+                totalGrossCents = it.totalGrossCents,
+                emailSent = it.emailSent,
+                emailTo = it.emailTo,
+                closedAt = it.closedAt
+            )
+        }))
     }
 
     @GetMapping("/close-history/{historyId}/snapshot")
-    fun downloadHistorySnapshot(@PathVariable historyId: String): ResponseEntity<ByteArray> = runBlocking {
+    fun getHistorySnapshot(@PathVariable historyId: String): ResponseEntity<ByteArray> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        val pdfBytes  = generateBatchReportHandler.handleForSnapshot(
-            historyId = UUID.fromString(historyId),
-            studioId  = principal.studioId
+        val pdfBytes = generateBatchReportHandler.handleForSnapshot(
+            historyId = BatchOrderCloseHistoryId.fromString(historyId),
+            studioId = principal.studioId
         )
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_PDF
-        headers.setContentDispositionFormData("attachment", "zamkniecie-${historyId.take(8)}.pdf")
+        headers.setContentDispositionFormData("attachment", "zestawienie-zbiorcze.pdf")
         ResponseEntity.ok().headers(headers).body(pdfBytes)
     }
 
@@ -259,22 +281,29 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val result = addBatchOrderPhotoHandler.handle(
             AddBatchOrderPhotoCommand(
-                entryId     = BatchOrderEntryId.fromString(entryId),
-                studioId    = principal.studioId,
-                fileName    = request.fileName,
+                entryId = BatchOrderEntryId.fromString(entryId),
+                studioId = principal.studioId,
+                fileName = request.fileName,
                 description = request.description,
-                userId      = principal.userId,
-                userName    = principal.fullName
+                userId = principal.userId,
+                userName = principal.fullName
             )
         )
-        ResponseEntity.ok(PhotoUploadResponse(photoId = result.photoId, uploadUrl = result.uploadUrl, fileId = result.fileId))
+        ResponseEntity.ok(PhotoUploadResponse(
+            photoId = result.photoId,
+            uploadUrl = result.uploadUrl,
+            fileId = result.fileId
+        ))
     }
 
     @GetMapping("/entries/{entryId}/photos")
     fun listEntryPhotos(@PathVariable entryId: String): ResponseEntity<EntryPhotosResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val photos = listBatchOrderPhotosHandler.handle(
-            ListBatchOrderPhotosCommand(entryId = BatchOrderEntryId.fromString(entryId), studioId = principal.studioId)
+            ListBatchOrderPhotosCommand(
+                entryId = BatchOrderEntryId.fromString(entryId),
+                studioId = principal.studioId
+            )
         )
         ResponseEntity.ok(EntryPhotosResponse(photos = photos))
     }
@@ -286,70 +315,155 @@ class BatchOrderController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         deleteBatchOrderPhotoHandler.handle(
-            DeleteBatchOrderPhotoCommand(photoId = photoId, studioId = principal.studioId)
+            DeleteBatchOrderPhotoCommand(
+                photoId = photoId,
+                studioId = principal.studioId
+            )
         )
         ResponseEntity.noContent().build()
     }
 
     @GetMapping("/vehicles/search")
     fun searchVehicles(@RequestParam q: String): ResponseEntity<List<VehicleSuggestionDto>> = runBlocking {
-        val principal  = SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
         val normalized = q.trim().replace("\\s".toRegex(), "").uppercase()
         if (normalized.length < 2) return@runBlocking ResponseEntity.ok(emptyList())
+
         val suggestions = vehicleRepository.findByStudioId(principal.studioId.value)
-            .filter { v -> v.licensePlate?.replace("\\s".toRegex(), "")?.uppercase()?.contains(normalized) == true }
+            .filter { v ->
+                v.licensePlate?.replace("\\s".toRegex(), "")?.uppercase()?.contains(normalized) == true
+            }
             .take(10)
             .map { VehicleSuggestionDto(licensePlate = it.licensePlate ?: "", brand = it.brand, model = it.model, vin = null) }
+
         ResponseEntity.ok(suggestions)
     }
 
     @GetMapping("/vehicles/search-entry")
     fun searchVehiclesFromEntries(@RequestParam q: String): ResponseEntity<List<VehicleSuggestionDto>> = runBlocking {
-        val principal  = SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
         val normalized = q.trim().replace("\\s".toRegex(), "").uppercase()
         if (normalized.length < 2) return@runBlocking ResponseEntity.ok(emptyList())
+
         val seen = mutableSetOf<String>()
         val suggestions = entryRepository.searchByVinOrPlate(principal.studioId.value, normalized)
             .mapNotNull { e ->
                 val key = "${e.vehicleVin.orEmpty()}|${e.vehicleLicensePlate.orEmpty()}"
-                if (seen.add(key)) VehicleSuggestionDto(licensePlate = e.vehicleLicensePlate ?: "", brand = e.vehicleMake ?: "", model = e.vehicleModel ?: "", vin = e.vehicleVin)
-                else null
-            }.take(10)
+                if (seen.add(key)) {
+                    VehicleSuggestionDto(
+                        licensePlate = e.vehicleLicensePlate ?: "",
+                        brand = e.vehicleMake ?: "",
+                        model = e.vehicleModel ?: "",
+                        vin = e.vehicleVin
+                    )
+                } else null
+            }
+            .take(10)
+
         ResponseEntity.ok(suggestions)
     }
 
     @PostMapping("/vin/extract", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun extractVin(@RequestParam("image") image: MultipartFile): ResponseEntity<VinExtractResponse> = runBlocking {
         SecurityContextHelper.getCurrentUser()
+
         if (image.isEmpty) return@runBlocking ResponseEntity.badRequest().body(VinExtractResponse(null))
+
         val contentType = image.contentType?.takeIf { it.startsWith("image/") }
             ?: return@runBlocking ResponseEntity.badRequest().body(VinExtractResponse(null))
-        ResponseEntity.ok(VinExtractResponse(vinExtractionService.extractVin(image.bytes, contentType)))
+
+        val vin = vinExtractionService.extractVin(image.bytes, contentType)
+        ResponseEntity.ok(VinExtractResponse(vin))
     }
 }
 
-/* ---- Request / Response DTOs ---- */
+data class ContractorRequest(
+    val name: String,
+    val taxId: String?,
+    val address: String?,
+    val contactPersonName: String?,
+    val email: String?,
+    val phone: String?,
+    val notes: String?
+)
 
-data class ContractorRequest(val name: String, val taxId: String?, val address: String?, val contactPersonName: String?, val email: String?, val phone: String?, val notes: String?)
-data class ServiceItemRequest(val name: String, val netAmountCents: Long, val grossAmountCents: Long, val vatRate: Int)
-data class EntryRequest(val serviceDate: String, val vehicleMake: String?, val vehicleModel: String?, val vehicleLicensePlate: String?, val vehicleVin: String?, val services: List<ServiceItemRequest>, val notes: String?)
-data class CloseMonthRequest(val from: String?, val to: String?, val addToFinances: Boolean, val sendEmail: Boolean, val emailOverride: String?, val mode: String? = "ALL")
-data class CloseMonthResponse(val closedEntryCount: Int, val financeEntryCreated: Boolean, val emailSent: Boolean, val historyId: String)
-data class CloseHistoryResponse(val records: List<CloseHistoryItemDto>)
-data class CloseHistoryItemDto(val id: String, val closedAt: String, val periodFrom: String?, val periodTo: String?, val entryCount: Int, val totalNetCents: Long, val totalGrossCents: Long, val mode: String, val financeEntryCreated: Boolean, val emailRequested: Boolean, val emailSent: Boolean, val emailRecipient: String?, val closedByUserName: String?)
-data class VehicleSuggestionDto(val licensePlate: String, val brand: String, val model: String, val vin: String?)
-data class PhotoUploadRequest(val fileName: String, val description: String?)
-data class PhotoUploadResponse(val photoId: String, val uploadUrl: String, val fileId: String)
-data class EntryPhotosResponse(val photos: List<BatchOrderPhotoItem>)
+data class ServiceItemRequest(
+    val name: String,
+    val netAmountCents: Long,
+    val grossAmountCents: Long,
+    val vatRate: Int
+)
+
+data class EntryRequest(
+    val serviceDate: String,
+    val vehicleMake: String?,
+    val vehicleModel: String?,
+    val vehicleLicensePlate: String?,
+    val vehicleVin: String?,
+    val services: List<ServiceItemRequest>,
+    val notes: String?
+)
+
+data class VehicleSuggestionDto(
+    val licensePlate: String,
+    val brand: String,
+    val model: String,
+    val vin: String?
+)
+
+data class PhotoUploadRequest(
+    val fileName: String,
+    val description: String?
+)
+
+data class PhotoUploadResponse(
+    val photoId: String,
+    val uploadUrl: String,
+    val fileId: String
+)
+
+data class EntryPhotosResponse(
+    val photos: List<BatchOrderPhotoItem>
+)
+
 data class VinExtractResponse(val vin: String?)
+
 data class ContractorsResponse(val contractors: List<ContractorListItem>)
 data class ContractorItemResponse(val contractor: ContractorListItem)
-data class ContractorEntriesResponse(val contractor: ContractorListItem, val entries: List<EntryItem>, val summary: EntrySummary)
+data class ContractorEntriesResponse(
+    val contractor: ContractorListItem,
+    val entries: List<EntryItem>,
+    val summary: EntrySummary
+)
 data class EntryItemResponse(val entry: EntryItem)
 
-private fun pl.detailing.crm.batchorder.report.CloseHistoryItem.toDto() = CloseHistoryItemDto(
-    id = id, closedAt = closedAt.toString(), periodFrom = periodFrom?.toString(), periodTo = periodTo?.toString(),
-    entryCount = entryCount, totalNetCents = totalNetCents, totalGrossCents = totalGrossCents, mode = mode,
-    financeEntryCreated = financeEntryCreated, emailRequested = emailRequested, emailSent = emailSent,
-    emailRecipient = emailRecipient, closedByUserName = closedByUserName
+data class CloseMonthRequest(
+    val from: String,
+    val to: String,
+    val mode: String,
+    val emailTo: String?
 )
+
+data class CloseMonthResponse(
+    val historyId: String,
+    val entryCount: Int,
+    val totalNetCents: Long,
+    val totalGrossCents: Long,
+    val emailSent: Boolean
+)
+
+data class CloseHistoryRecordDto(
+    val id: String,
+    val contractorId: String,
+    val fromDate: String,
+    val toDate: String,
+    val mode: String,
+    val entryCount: Int,
+    val totalNetCents: Long,
+    val totalGrossCents: Long,
+    val emailSent: Boolean,
+    val emailTo: String?,
+    val closedAt: String
+)
+
+data class CloseHistoryResponse(val records: List<CloseHistoryRecordDto>)

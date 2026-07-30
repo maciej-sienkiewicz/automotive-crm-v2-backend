@@ -19,7 +19,8 @@ data class EmailNotificationRule(
 data class EmailAutomationConfig(
     val studioId: StudioId,
     val visitWelcome: EmailNotificationRule,
-    val visitReadyForPickup: EmailNotificationRule
+    val visitReadyForPickup: EmailNotificationRule,
+    val batchOrderClose: EmailNotificationRule
 ) {
     companion object {
         private const val DEFAULT_VISIT_WELCOME_SUBJECT =
@@ -49,6 +50,20 @@ Zapraszamy po odbiór w godzinach otwarcia naszego serwisu. Do zobaczenia!
 Pozdrawiamy,
 {{studio}}"""
 
+        private const val DEFAULT_BATCH_CLOSE_SUBJECT =
+            "Zestawienie zbiorcze – {{kontrahent}} – {{okres}}"
+        private const val DEFAULT_BATCH_CLOSE_BODY = """Szanowni Państwo,
+
+Przesyłamy zestawienie zbiorcze za okres {{okres}} dla kontrahenta {{kontrahent}}.
+
+Liczba wpisów: {{liczba_wpisow}}
+Łączna kwota brutto: {{kwota_brutto}}
+
+Zestawienie w formacie PDF znajdą Państwo w załączniku.
+
+Pozdrawiamy,
+{{studio}}"""
+
         fun defaultFor(studioId: StudioId) = EmailAutomationConfig(
             studioId = studioId,
             visitWelcome = EmailNotificationRule(
@@ -60,6 +75,11 @@ Pozdrawiamy,
                 enabled = false,
                 subjectTemplate = DEFAULT_VISIT_READY_SUBJECT,
                 bodyTemplate = DEFAULT_VISIT_READY_BODY
+            ),
+            batchOrderClose = EmailNotificationRule(
+                enabled = false,
+                subjectTemplate = DEFAULT_BATCH_CLOSE_SUBJECT,
+                bodyTemplate = DEFAULT_BATCH_CLOSE_BODY
             )
         )
     }

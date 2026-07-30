@@ -46,4 +46,26 @@ interface BatchOrderEntryRepository : JpaRepository<BatchOrderEntryEntity, UUID>
         ORDER BY e.serviceDate DESC
     """)
     fun searchByVinOrPlate(studioId: UUID, q: String): List<BatchOrderEntryEntity>
+
+    @Query("""
+        SELECT e FROM BatchOrderEntryEntity e
+        WHERE e.closeHistoryId = :closeHistoryId
+        ORDER BY e.serviceDate ASC
+    """)
+    fun findByCloseHistoryId(closeHistoryId: UUID): List<BatchOrderEntryEntity>
+
+    @Query("""
+        SELECT e FROM BatchOrderEntryEntity e
+        WHERE e.contractorId = :contractorId
+          AND e.studioId = :studioId
+          AND e.serviceDate >= :from AND e.serviceDate <= :to
+          AND e.isClosed = false
+        ORDER BY e.serviceDate ASC
+    """)
+    fun findOpenByContractorIdAndStudioIdAndDateRange(
+        contractorId: UUID,
+        studioId: UUID,
+        from: LocalDate,
+        to: LocalDate
+    ): List<BatchOrderEntryEntity>
 }

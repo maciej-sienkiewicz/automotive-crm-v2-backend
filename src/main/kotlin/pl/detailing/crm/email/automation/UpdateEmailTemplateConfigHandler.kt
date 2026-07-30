@@ -10,7 +10,8 @@ import pl.detailing.crm.shared.StudioId
 data class UpdateEmailTemplateConfigCommand(
     val studioId: StudioId,
     val visitWelcome: UpdateEmailNotificationRuleCommand,
-    val visitReadyForPickup: UpdateEmailNotificationRuleCommand
+    val visitReadyForPickup: UpdateEmailNotificationRuleCommand,
+    val batchOrderClose: UpdateEmailNotificationRuleCommand
 )
 
 data class UpdateEmailNotificationRuleCommand(
@@ -36,6 +37,11 @@ class UpdateEmailTemplateConfigHandler(
                 enabled = command.visitReadyForPickup.enabled,
                 subjectTemplate = command.visitReadyForPickup.subjectTemplate,
                 bodyTemplate = command.visitReadyForPickup.bodyTemplate
+            ),
+            batchOrderClose = EmailNotificationRule(
+                enabled = command.batchOrderClose.enabled,
+                subjectTemplate = command.batchOrderClose.subjectTemplate,
+                bodyTemplate = command.batchOrderClose.bodyTemplate
             )
         )
         return configRepository.save(config)

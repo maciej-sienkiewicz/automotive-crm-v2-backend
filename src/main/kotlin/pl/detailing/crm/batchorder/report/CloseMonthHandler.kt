@@ -1,178 +1,207 @@
 package pl.detailing.crm.batchorder.report
 
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.email.automation.GetEmailTemplateConfigHandler
+import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailProvider
-import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
-import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
-import pl.detailing.crm.finance.domain.DocumentDirection
-import pl.detailing.crm.finance.domain.DocumentSource
-import pl.detailing.crm.finance.domain.DocumentType
-import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.shared.BatchContractorId
+import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
+
+enum class CloseMode { ALL, NEW_ONLY }
+
+data class CloseMonthCommand(
+    val studioId: StudioId,
+    val contractorId: BatchContractorId,
+    val from: LocalDate,
+    val to: LocalDate,
+    val mode: CloseMode,
+    val emailTo: String?
+)
+
+data class CloseMonthResult(
+    val historyId: String,
+    val entryCount: Int,
+    val totalNetCents: Long,
+    val totalGrossCents: Long,
+    val emailSent: Boolean
+)
+
+data class CloseHistoryItem(
+    val id: String,
+    val contractorId: String,
+    val fromDate: String,
+    val toDate: String,
+    val mode: String,
+    val entryCount: Int,
+    val totalNetCents: Long,
+    val totalGrossCents: Long,
+    val emailSent: Boolean,
+    val emailTo: String?,
+    val closedAt: String
+)
 
 @Service
 class CloseMonthHandler(
     private val contractorRepository: BatchContractorRepository,
     private val entryRepository: BatchOrderEntryRepository,
     private val closeHistoryRepository: BatchOrderCloseHistoryRepository,
-    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
-    private val emailProvider: EmailProvider
+    private val generateBatchReportHandler: GenerateBatchReportHandler,
+    private val getEmailTemplateConfigHandler: GetEmailTemplateConfigHandler,
+    private val emailProvider: EmailProvider,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
-    private val log = LoggerFactory.getLogger(CloseMonthHandler::class.java)
-
     @Transactional
     suspend fun handle(command: CloseMonthCommand): CloseMonthResult {
-        val contractor = contractorRepository.findByIdAndStudioId(
-            command.contractorId.value, command.studioId.value
-        ) ?: throw EntityNotFoundException("Contractor not found")
+        val contractor = contractorRepository.findByIdAndStudioId(command.contractorId.value, command.studioId.value)
+            ?: throw EntityNotFoundException("Contractor not found")
 
-        val allEntries = if (command.from != null && command.to != null) {
-            entryRepository.findByContractorIdAndStudioIdAndDateRange(
+        val entriesToClose = when (command.mode) {
+            CloseMode.ALL -> entryRepository.findByContractorIdAndStudioIdAndDateRange(
                 contractorId = command.contractorId.value,
                 studioId = command.studioId.value,
                 from = command.from,
                 to = command.to
             )
-        } else {
-            entryRepository.findByContractorIdAndStudioId(
+            CloseMode.NEW_ONLY -> entryRepository.findOpenByContractorIdAndStudioIdAndDateRange(
                 contractorId = command.contractorId.value,
-                studioId = command.studioId.value
+                studioId = command.studioId.value,
+                from = command.from,
+                to = command.to
             )
         }
 
-        val entriesToClose = when (command.mode) {
-            "NEW_ONLY" -> allEntries.filter { !it.isClosed }
-            else       -> allEntries
+        if (entriesToClose.isEmpty()) {
+            throw EntityNotFoundException("Brak wpisów do zamknięcia w wybranym okresie")
         }
 
-        val now = Instant.now()
-        entriesToClose.forEach { it.isClosed = true; it.updatedAt = now }
+        val historyId = UUID.randomUUID()
+        val totalNet = entriesToClose.sumOf { it.netAmountCents }
+        val totalGross = entriesToClose.sumOf { it.grossAmountCents }
+
+        val historyEntity = BatchOrderCloseHistoryEntity(
+            id = historyId,
+            studioId = command.studioId.value,
+            contractorId = command.contractorId.value,
+            fromDate = command.from,
+            toDate = command.to,
+            mode = command.mode.name,
+            entryCount = entriesToClose.size,
+            totalNetCents = totalNet,
+            totalGrossCents = totalGross,
+            emailSent = false,
+            emailTo = command.emailTo,
+            closedAt = Instant.now()
+        )
+        closeHistoryRepository.save(historyEntity)
+
+        entriesToClose.forEach { entry ->
+            entry.isClosed = true
+            entry.closeHistoryId = historyId
+            entry.updatedAt = Instant.now()
+        }
         entryRepository.saveAll(entriesToClose)
 
-        val totalNet   = entriesToClose.sumOf { it.netAmountCents }
-        val totalGross = entriesToClose.sumOf { it.grossAmountCents }
-        val totalVat   = totalGross - totalNet
-
-        var financeEntryCreated = false
-        if (command.addToFinances && entriesToClose.isNotEmpty()) {
-            val df = DateTimeFormatter.ofPattern("MM.yyyy")
-            val period = command.from?.format(df) ?: LocalDate.now().format(df)
-            createFinancialDocumentHandler.handle(
-                CreateFinancialDocumentCommand(
-                    studioId          = command.studioId,
-                    userId            = command.userId,
-                    userDisplayName   = command.userDisplayName,
-                    source            = DocumentSource.MANUAL,
-                    visitId           = null,
-                    documentType      = DocumentType.OTHER,
-                    direction         = DocumentDirection.INCOME,
-                    paymentMethod     = PaymentMethod.TRANSFER,
-                    totalNet          = totalNet,
-                    totalVat          = totalVat,
-                    totalGross        = totalGross,
-                    issueDate         = LocalDate.now(),
-                    dueDate           = LocalDate.now().plusDays(14),
-                    description       = "Zlecenie zbiorcze – ${contractor.name} – $period",
-                    counterpartyName  = contractor.name,
-                    counterpartyNip   = contractor.taxId
-                )
-            )
-            financeEntryCreated = true
-        }
-
         var emailSent = false
-        val targetEmail = command.emailOverride?.takeIf { it.isNotBlank() } ?: contractor.email
-        if (command.sendEmail && !targetEmail.isNullOrBlank()) {
-            if (contractor.email.isNullOrBlank() && !command.emailOverride.isNullOrBlank()) {
-                contractor.email = command.emailOverride
-                contractorRepository.save(contractor)
-            }
-            val df = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-            val periodText = when {
-                command.from != null && command.to != null ->
-                    "${command.from.format(df)} – ${command.to.format(df)}"
-                command.from != null -> "od ${command.from.format(df)}"
-                else                 -> "bieżący miesiąc"
-            }
-            val totalFormatted = "%.2f zł".format(totalGross / 100.0)
-            val subject = "Zestawienie zbiorcze – ${contractor.name} – $periodText"
-            val body = """
-Szanowni Państwo,
-
-Przesyłamy miesięczne zestawienie zbiorcze za okres: $periodText.
-
-Kontrahent: ${contractor.name}
-Liczba wpisów: ${entriesToClose.size}
-Łączna kwota brutto: $totalFormatted
-
-Dziękujemy za współpracę.
-            """.trimIndent()
+        if (!command.emailTo.isNullOrBlank()) {
             runCatching {
-                emailProvider.send(to = targetEmail, subject = subject, bodyText = body)
+                val pdfBytes = generateBatchReportHandler.buildPdfBytes(
+                    contractorName = contractor.name,
+                    contractorTaxId = contractor.taxId,
+                    from = command.from,
+                    to = command.to,
+                    entries = entriesToClose,
+                    studioId = command.studioId
+                )
+
+                val emailConfig = getEmailTemplateConfigHandler.handle(command.studioId)
+                val rule = emailConfig.batchOrderClose
+
+                val studioName = studioSettingsRepository.findById(command.studioId.value).orElse(null)?.name
+                    ?: "Studio"
+
+                val periodFmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+                val period = "${command.from.format(periodFmt)} – ${command.to.format(periodFmt)}"
+                val grossFormatted = "%.2f zł".format(totalGross / 100.0)
+
+                fun processTemplate(template: String): String = template
+                    .replace("{{kontrahent}}", contractor.name)
+                    .replace("{{okres}}", period)
+                    .replace("{{kwota_brutto}}", grossFormatted)
+                    .replace("{{liczba_wpisow}}", entriesToClose.size.toString())
+                    .replace("{{studio}}", studioName)
+
+                val subject = processTemplate(rule.subjectTemplate)
+                val body = processTemplate(rule.bodyTemplate)
+
+                val fileName = "zestawienie-${contractor.name.replace(Regex("\\s+"), "-")}-${command.from.format(DateTimeFormatter.ofPattern("yyyy-MM"))}.pdf"
+
+                emailProvider.send(
+                    to = command.emailTo,
+                    subject = subject,
+                    bodyText = body,
+                    attachments = listOf(EmailAttachment(fileName, pdfBytes, "application/pdf"))
+                )
                 emailSent = true
-            }.onFailure { ex ->
-                log.warn("Failed to send month-close email to {}: {}", targetEmail, ex.message)
+            }.onFailure { /* email failure is non-fatal — history is already saved */ }
+
+            if (emailSent) {
+                val updated = BatchOrderCloseHistoryEntity(
+                    id = historyEntity.id,
+                    studioId = historyEntity.studioId,
+                    contractorId = historyEntity.contractorId,
+                    fromDate = historyEntity.fromDate,
+                    toDate = historyEntity.toDate,
+                    mode = historyEntity.mode,
+                    entryCount = historyEntity.entryCount,
+                    totalNetCents = historyEntity.totalNetCents,
+                    totalGrossCents = historyEntity.totalGrossCents,
+                    emailSent = true,
+                    emailTo = historyEntity.emailTo,
+                    closedAt = historyEntity.closedAt,
+                    createdAt = historyEntity.createdAt
+                )
+                closeHistoryRepository.save(updated)
             }
         }
-
-        val closedEntryIds = "[" + entriesToClose.joinToString(",") { "\"${it.id}\"" } + "]"
-        val historyRecord = BatchOrderCloseHistoryEntity(
-            studioId            = command.studioId.value,
-            contractorId        = command.contractorId.value,
-            closedByUserId      = command.userId.value,
-            closedByUserName    = command.userDisplayName,
-            closedAt            = now,
-            periodFrom          = command.from,
-            periodTo            = command.to,
-            entryCount          = entriesToClose.size,
-            totalNetCents       = totalNet,
-            totalGrossCents     = totalGross,
-            mode                = command.mode,
-            financeEntryCreated = financeEntryCreated,
-            emailRequested      = command.sendEmail,
-            emailSent           = emailSent,
-            emailRecipient      = if (command.sendEmail) targetEmail else null,
-            closedEntryIds      = closedEntryIds
-        )
-        closeHistoryRepository.save(historyRecord)
 
         return CloseMonthResult(
-            closedEntryCount    = entriesToClose.size,
-            financeEntryCreated = financeEntryCreated,
-            emailSent           = emailSent,
-            historyId           = historyRecord.id.toString()
+            historyId = historyId.toString(),
+            entryCount = entriesToClose.size,
+            totalNetCents = totalNet,
+            totalGrossCents = totalGross,
+            emailSent = emailSent
         )
     }
+
+    @Transactional(readOnly = true)
+    fun listHistory(contractorId: BatchContractorId, studioId: StudioId): List<CloseHistoryItem> {
+        return closeHistoryRepository.findByContractorIdAndStudioId(contractorId.value, studioId.value)
+            .map { it.toItem() }
+    }
+
+    private fun BatchOrderCloseHistoryEntity.toItem() = CloseHistoryItem(
+        id = id.toString(),
+        contractorId = contractorId.toString(),
+        fromDate = fromDate.toString(),
+        toDate = toDate.toString(),
+        mode = mode,
+        entryCount = entryCount,
+        totalNetCents = totalNetCents,
+        totalGrossCents = totalGrossCents,
+        emailSent = emailSent,
+        emailTo = emailTo,
+        closedAt = closedAt.toString()
+    )
 }
-
-data class CloseMonthCommand(
-    val studioId         : StudioId,
-    val contractorId     : BatchContractorId,
-    val userId           : UserId,
-    val userDisplayName  : String,
-    val from             : LocalDate?,
-    val to               : LocalDate?,
-    val addToFinances    : Boolean,
-    val sendEmail        : Boolean,
-    val emailOverride    : String?,
-    val mode             : String = "ALL"
-)
-
-data class CloseMonthResult(
-    val closedEntryCount    : Int,
-    val financeEntryCreated : Boolean,
-    val emailSent           : Boolean,
-    val historyId           : String
-)
