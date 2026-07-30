@@ -1,2 +1,0 @@
-ALTER TABLE batch_order_entries
-    ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE;
