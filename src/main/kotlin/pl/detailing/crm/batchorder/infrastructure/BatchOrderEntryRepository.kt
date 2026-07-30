@@ -32,6 +32,9 @@ interface BatchOrderEntryRepository : JpaRepository<BatchOrderEntryEntity, UUID>
     @Query("SELECT e FROM BatchOrderEntryEntity e WHERE e.id = :id AND e.studioId = :studioId")
     fun findByIdAndStudioId(id: UUID, studioId: UUID): BatchOrderEntryEntity?
 
+    @Query("SELECT e FROM BatchOrderEntryEntity e WHERE e.id IN :ids AND e.studioId = :studioId ORDER BY e.serviceDate ASC")
+    fun findByIdsAndStudioId(ids: Collection<UUID>, studioId: UUID): List<BatchOrderEntryEntity>
+
     @Query("""
         SELECT e FROM BatchOrderEntryEntity e
         WHERE e.studioId = :studioId

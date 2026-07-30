@@ -10,6 +10,7 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.shared.BatchContractorId
@@ -20,11 +21,13 @@ import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 @Service
 class GenerateBatchReportHandler(
     private val contractorRepository: BatchContractorRepository,
     private val entryRepository: BatchOrderEntryRepository,
+    private val closeHistoryRepository: BatchOrderCloseHistoryRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val documentStorageService: DocumentStorageService
 ) {
@@ -36,31 +39,65 @@ class GenerateBatchReportHandler(
         val entries = if (command.from != null && command.to != null) {
             entryRepository.findByContractorIdAndStudioIdAndDateRange(
                 contractorId = command.contractorId.value,
-                studioId = command.studioId.value,
-                from = command.from,
-                to = command.to
+                studioId     = command.studioId.value,
+                from         = command.from,
+                to           = command.to
             )
         } else {
             entryRepository.findByContractorIdAndStudioId(
                 contractorId = command.contractorId.value,
-                studioId = command.studioId.value
+                studioId     = command.studioId.value
             )
         }
 
-        val logoBytes: ByteArray? = studioSettingsRepository.findById(command.studioId.value)
-            .orElse(null)?.logoS3Key?.let { key ->
-                runCatching { documentStorageService.downloadBytes(key) }.getOrNull()
-            }
-
+        val logoBytes = loadLogo(command.studioId)
         return buildPdf(
-            contractorName = contractor.name,
+            contractorName  = contractor.name,
             contractorTaxId = contractor.taxId,
-            from = command.from,
-            to = command.to,
-            entries = entries,
-            logoBytes = logoBytes
+            from            = command.from,
+            to              = command.to,
+            entries         = entries,
+            logoBytes       = logoBytes
         )
     }
+
+    @Transactional(readOnly = true)
+    suspend fun handleForSnapshot(historyId: UUID, studioId: StudioId): ByteArray {
+        val history = closeHistoryRepository.findById(historyId).orElseThrow {
+            EntityNotFoundException("Close history record not found")
+        }
+        if (history.studioId != studioId.value) throw EntityNotFoundException("Close history record not found")
+
+        val contractor = contractorRepository.findByIdAndStudioId(history.contractorId, studioId.value)
+            ?: throw EntityNotFoundException("Contractor not found")
+
+        val entryIds = parseEntryIds(history.closedEntryIds)
+        val entries = if (entryIds.isEmpty()) emptyList()
+        else entryRepository.findByIdsAndStudioId(entryIds, studioId.value)
+
+        val logoBytes = loadLogo(studioId)
+        return buildPdf(
+            contractorName  = contractor.name,
+            contractorTaxId = contractor.taxId,
+            from            = history.periodFrom,
+            to              = history.periodTo,
+            entries         = entries,
+            logoBytes       = logoBytes
+        )
+    }
+
+    private fun loadLogo(studioId: StudioId): ByteArray? =
+        studioSettingsRepository.findById(studioId.value).orElse(null)?.logoS3Key?.let { key ->
+            runCatching { documentStorageService.downloadBytes(key) }.getOrNull()
+        }
+
+    private fun parseEntryIds(json: String): List<UUID> =
+        json.removeSurrounding("[", "]")
+            .split(",")
+            .mapNotNull { token ->
+                token.trim().removeSurrounding("\"").takeIf { it.isNotBlank() }
+                    ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+            }
 
     private fun buildPdf(
         contractorName: String,
@@ -84,244 +121,158 @@ class GenerateBatchReportHandler(
             true
         )
 
-        val pageWidth = PDRectangle.A4.width
+        val pageWidth  = PDRectangle.A4.width
         val pageHeight = PDRectangle.A4.height
-        val margin = 40f
+        val margin     = 40f
         val usableWidth = pageWidth - 2 * margin
 
         val logoMaxW = 120f
         val logoMaxH = 50f
 
-        val colDate = 68f
-        val colVehicle = 120f
-        val colServices = usableWidth - 68f - 120f - 72f - 72f  // wider — notes moved to sub-row
-        val colNet = 72f
-        val colGross = 72f
+        val colDate     = 68f
+        val colVehicle  = 120f
+        val colServices = usableWidth - 68f - 120f - 72f - 72f
+        val colNet      = 72f
+        val colGross    = 72f
 
-        val headerFontSize = 14f
-        val subheaderFontSize = 10f
-        val tableFontSize = 8f
+        val headerFontSize      = 14f
+        val subheaderFontSize   = 10f
+        val tableFontSize       = 8f
         val tableHeaderFontSize = 8f
-        val notesFontSize = 7.5f
-        val rowMinHeight = 14f
+        val notesFontSize       = 7.5f
+        val rowMinHeight        = 14f
 
         fun newPage(): Pair<PDPage, PDPageContentStream> {
             val page = PDPage(PDRectangle.A4)
             document.addPage(page)
-            val cs = PDPageContentStream(document, page)
-            return Pair(page, cs)
+            return Pair(page, PDPageContentStream(document, page))
         }
 
-        fun formatMoney(cents: Long): String {
-            val amount = cents / 100.0
-            return "%.2f zł".format(amount)
-        }
+        fun formatMoney(cents: Long) = "%.2f zł".format(cents / 100.0)
 
         fun drawText(cs: PDPageContentStream, text: String, font: PDFont, size: Float, x: Float, y: Float) {
-            cs.beginText()
-            cs.setFont(font, size)
-            cs.newLineAtOffset(x, y)
-            cs.showText(text)
-            cs.endText()
+            cs.beginText(); cs.setFont(font, size); cs.newLineAtOffset(x, y); cs.showText(text); cs.endText()
         }
 
         fun truncateText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): String {
             var result = text
             try {
-                while (result.isNotEmpty() && font.getStringWidth(result) / 1000 * fontSize > maxWidth) {
+                while (result.isNotEmpty() && font.getStringWidth(result) / 1000 * fontSize > maxWidth)
                     result = result.dropLast(1)
-                }
-                if (result.length < text.length && result.isNotEmpty()) {
-                    result = result.dropLast(3) + "..."
-                }
-            } catch (_: Exception) {
-                result = text.take(20)
-            }
+                if (result.length < text.length && result.isNotEmpty()) result = result.dropLast(3) + "..."
+            } catch (_: Exception) { result = text.take(20) }
             return result
         }
 
         fun wrapText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): List<String> {
-            val words = text.split(" ")
             val lines = mutableListOf<String>()
-            var currentLine = StringBuilder()
-            for (word in words) {
-                val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
-                val width = try {
-                    font.getStringWidth(candidate) / 1000 * fontSize
-                } catch (_: Exception) {
-                    candidate.length * fontSize * 0.5f
-                }
-                if (width > maxWidth && currentLine.isNotEmpty()) {
-                    lines.add(currentLine.toString())
-                    currentLine = StringBuilder(word)
-                } else {
-                    currentLine = StringBuilder(candidate)
-                }
+            var current = StringBuilder()
+            for (word in text.split(" ")) {
+                val candidate = if (current.isEmpty()) word else "$current $word"
+                val w = try { font.getStringWidth(candidate) / 1000 * fontSize } catch (_: Exception) { candidate.length * fontSize * 0.5f }
+                if (w > maxWidth && current.isNotEmpty()) { lines.add(current.toString()); current = StringBuilder(word) }
+                else current = StringBuilder(candidate)
             }
-            if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
+            if (current.isNotEmpty()) lines.add(current.toString())
             return lines.ifEmpty { listOf(text) }
         }
 
         fun drawTableHeader(cs: PDPageContentStream, y: Float) {
             cs.setNonStrokingColor(0.15f, 0.15f, 0.15f)
-            cs.addRect(margin, y - 14f, usableWidth, 16f)
-            cs.fill()
+            cs.addRect(margin, y - 14f, usableWidth, 16f); cs.fill()
             cs.setNonStrokingColor(1f, 1f, 1f)
             var colX = margin + 3f
-            drawText(cs, "Data", bold, tableHeaderFontSize, colX, y - 10f)
-            colX += colDate
-            drawText(cs, "Pojazd", bold, tableHeaderFontSize, colX, y - 10f)
-            colX += colVehicle
-            drawText(cs, "Usługi", bold, tableHeaderFontSize, colX, y - 10f)
-            colX += colServices
-            drawText(cs, "Netto", bold, tableHeaderFontSize, colX, y - 10f)
-            colX += colNet
-            drawText(cs, "Brutto", bold, tableHeaderFontSize, colX, y - 10f)
+            drawText(cs, "Data",    bold, tableHeaderFontSize, colX, y - 10f); colX += colDate
+            drawText(cs, "Pojazd",  bold, tableHeaderFontSize, colX, y - 10f); colX += colVehicle
+            drawText(cs, "Usługi",  bold, tableHeaderFontSize, colX, y - 10f); colX += colServices
+            drawText(cs, "Netto",   bold, tableHeaderFontSize, colX, y - 10f); colX += colNet
+            drawText(cs, "Brutto",  bold, tableHeaderFontSize, colX, y - 10f)
             cs.setNonStrokingColor(0f, 0f, 0f)
         }
 
         var (_, cs) = newPage()
         var currentY = pageHeight - margin
 
-        // ---- LOGO (top-right corner) ----
         if (logoBytes != null) {
             runCatching {
                 val pdImage = PDImageXObject.createFromByteArray(document, logoBytes, "logo")
                 val aspect = pdImage.width.toFloat() / pdImage.height
-                val (drawW, drawH) = if (aspect > logoMaxW / logoMaxH) {
-                    logoMaxW to (logoMaxW / aspect)
-                } else {
-                    (logoMaxH * aspect) to logoMaxH
-                }
+                val (drawW, drawH) = if (aspect > logoMaxW / logoMaxH) logoMaxW to (logoMaxW / aspect) else (logoMaxH * aspect) to logoMaxH
                 cs.drawImage(pdImage, pageWidth - margin - drawW, currentY - drawH, drawW, drawH)
             }
         }
 
-        // ---- HEADER ----
-        drawText(cs, "ZESTAWIENIE ZBIORCZE", bold, headerFontSize, margin, currentY)
-        currentY -= 18f
-
+        drawText(cs, "ZESTAWIENIE ZBIORCZE", bold, headerFontSize, margin, currentY); currentY -= 18f
         drawText(cs, "Kontrahent: $contractorName", bold, subheaderFontSize, margin, currentY)
-        if (contractorTaxId != null) {
-            drawText(cs, "NIP: $contractorTaxId", regular, subheaderFontSize, margin + 280f, currentY)
-        }
+        if (contractorTaxId != null) drawText(cs, "NIP: $contractorTaxId", regular, subheaderFontSize, margin + 280f, currentY)
         currentY -= 14f
-
-        drawText(cs, "Liczba wpisów: ${entries.size}", regular, subheaderFontSize, margin, currentY)
-        currentY -= 14f
-
+        drawText(cs, "Liczba wpisów: ${entries.size}", regular, subheaderFontSize, margin, currentY); currentY -= 14f
         currentY = minOf(currentY, pageHeight - margin - logoMaxH - 4f)
 
-        // ---- PERIOD ----
         val periodText = when {
             from != null && to != null -> "Okres: ${from.format(dateFormat)} – ${to.format(dateFormat)}"
-            from != null -> "Od: ${from.format(dateFormat)}"
-            to != null -> "Do: ${to.format(dateFormat)}"
-            else -> "Wszystkie wpisy"
+            from != null               -> "Od: ${from.format(dateFormat)}"
+            to   != null               -> "Do: ${to.format(dateFormat)}"
+            else                       -> "Wszystkie wpisy"
         }
-        drawText(cs, periodText, bold, subheaderFontSize, margin, currentY)
-        currentY -= 6f
-
+        drawText(cs, periodText, bold, subheaderFontSize, margin, currentY); currentY -= 6f
         cs.setStrokingColor(0.6f, 0.6f, 0.6f)
-        cs.moveTo(margin, currentY)
-        cs.lineTo(margin + usableWidth, currentY)
-        cs.stroke()
+        cs.moveTo(margin, currentY); cs.lineTo(margin + usableWidth, currentY); cs.stroke()
         currentY -= 14f
 
-        val totalNet = entries.sumOf { it.netAmountCents }
+        val totalNet   = entries.sumOf { it.netAmountCents }
         val totalGross = entries.sumOf { it.grossAmountCents }
 
-        // ---- TABLE HEADER ----
-        drawTableHeader(cs, currentY)
-        currentY -= 16f
+        drawTableHeader(cs, currentY); currentY -= 16f
 
-        // ---- TABLE ROWS ----
         var rowAlt = false
         for (entry in entries) {
             val vehicleText = buildString {
-                if (!entry.vehicleMake.isNullOrBlank()) append(entry.vehicleMake)
-                if (!entry.vehicleModel.isNullOrBlank()) {
-                    if (isNotEmpty()) append(" ")
-                    append(entry.vehicleModel)
-                }
-                if (!entry.vehicleLicensePlate.isNullOrBlank()) {
-                    if (isNotEmpty()) append("\n")
-                    append(entry.vehicleLicensePlate)
-                }
+                if (!entry.vehicleMake.isNullOrBlank())  append(entry.vehicleMake)
+                if (!entry.vehicleModel.isNullOrBlank()) { if (isNotEmpty()) append(" "); append(entry.vehicleModel) }
+                if (!entry.vehicleLicensePlate.isNullOrBlank()) { if (isNotEmpty()) append("\n"); append(entry.vehicleLicensePlate) }
             }.ifBlank { "-" }
 
-            // Service names only — amounts are already in Netto/Brutto columns
-            val serviceLines = if (entry.services.isEmpty()) {
-                listOf("-")
-            } else {
-                entry.services.map { svc -> svc.name }
-            }
-
-            val notesText = (entry.notes ?: "").trim()
+            val serviceLines = if (entry.services.isEmpty()) listOf("-") else entry.services.map { it.name }
+            val notesText    = (entry.notes ?: "").trim()
             val vehicleLines = vehicleText.split("\n")
-            val maxLines = maxOf(vehicleLines.size, serviceLines.size, 1)
+            val maxLines     = maxOf(vehicleLines.size, serviceLines.size, 1)
             val mainRowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
-
-            // Notes rendered as a sub-row below the main row
-            val notesWrapped = if (notesText.isNotBlank())
-                wrapText(notesText, regular, notesFontSize, usableWidth - 46f)
-            else emptyList()
-            val notesRowHeight = if (notesWrapped.isNotEmpty())
-                notesWrapped.size * (notesFontSize + 3f) + 6f
-            else 0f
-
+            val notesWrapped  = if (notesText.isNotBlank()) wrapText(notesText, regular, notesFontSize, usableWidth - 46f) else emptyList()
+            val notesRowHeight = if (notesWrapped.isNotEmpty()) notesWrapped.size * (notesFontSize + 3f) + 6f else 0f
             val totalRowHeight = mainRowHeight + notesRowHeight
 
             if (currentY - totalRowHeight < margin + 30f) {
                 cs.setStrokingColor(0.7f, 0.7f, 0.7f)
-                cs.moveTo(margin, currentY)
-                cs.lineTo(margin + usableWidth, currentY)
-                cs.stroke()
+                cs.moveTo(margin, currentY); cs.lineTo(margin + usableWidth, currentY); cs.stroke()
                 cs.close()
-
-                val (_, newCs) = newPage()
-                cs = newCs
+                val (_, newCs) = newPage(); cs = newCs
                 currentY = pageHeight - margin
-                drawTableHeader(cs, currentY)
-                currentY -= 16f
-                rowAlt = false
+                drawTableHeader(cs, currentY); currentY -= 16f; rowAlt = false
             }
 
-            // Main row background
             if (rowAlt) {
                 cs.setNonStrokingColor(0.96f, 0.96f, 0.97f)
-                cs.addRect(margin, currentY - mainRowHeight, usableWidth, mainRowHeight)
-                cs.fill()
+                cs.addRect(margin, currentY - mainRowHeight, usableWidth, mainRowHeight); cs.fill()
                 cs.setNonStrokingColor(0f, 0f, 0f)
             }
 
             val textY = currentY - tableFontSize - 3f
-            var colX = margin + 3f
-
-            drawText(cs, entry.serviceDate.format(dateFormat), regular, tableFontSize, colX, textY)
-            colX += colDate
-
+            var colX  = margin + 3f
+            drawText(cs, entry.serviceDate.format(dateFormat), regular, tableFontSize, colX, textY); colX += colDate
             vehicleLines.forEachIndexed { idx, line ->
                 drawText(cs, truncateText(line, regular, tableFontSize, colVehicle - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
-            }
-            colX += colVehicle
-
+            }; colX += colVehicle
             serviceLines.forEachIndexed { idx, line ->
                 drawText(cs, truncateText(line, regular, tableFontSize, colServices - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
-            }
-            colX += colServices
-
-            drawText(cs, formatMoney(entry.netAmountCents), regular, tableFontSize, colX, textY)
-            colX += colNet
-
+            }; colX += colServices
+            drawText(cs, formatMoney(entry.netAmountCents),   regular, tableFontSize, colX, textY); colX += colNet
             drawText(cs, formatMoney(entry.grossAmountCents), regular, tableFontSize, colX, textY)
 
-            // Notes sub-row
             if (notesWrapped.isNotEmpty()) {
                 val notesTopY = currentY - mainRowHeight
                 cs.setNonStrokingColor(0.97f, 0.97f, 0.94f)
-                cs.addRect(margin, notesTopY - notesRowHeight, usableWidth, notesRowHeight)
-                cs.fill()
+                cs.addRect(margin, notesTopY - notesRowHeight, usableWidth, notesRowHeight); cs.fill()
                 cs.setNonStrokingColor(0.35f, 0.35f, 0.35f)
                 val notesTextY = notesTopY - notesFontSize - 2f
                 drawText(cs, "Uwagi:", bold, notesFontSize, margin + 4f, notesTextY)
@@ -332,44 +283,31 @@ class GenerateBatchReportHandler(
             }
 
             cs.setStrokingColor(0.85f, 0.85f, 0.85f)
-            cs.moveTo(margin, currentY - totalRowHeight)
-            cs.lineTo(margin + usableWidth, currentY - totalRowHeight)
-            cs.stroke()
-
-            currentY -= totalRowHeight
-            rowAlt = !rowAlt
+            cs.moveTo(margin, currentY - totalRowHeight); cs.lineTo(margin + usableWidth, currentY - totalRowHeight); cs.stroke()
+            currentY -= totalRowHeight; rowAlt = !rowAlt
         }
 
-        // ---- SUMMARY FOOTER ----
         currentY -= 10f
         if (currentY < margin + 40f) {
-            cs.close()
-            val (_, newCs) = newPage()
-            cs = newCs
-            currentY = pageHeight - margin - 20f
+            cs.close(); val (_, newCs) = newPage(); cs = newCs; currentY = pageHeight - margin - 20f
         }
-
         cs.setNonStrokingColor(0.92f, 0.95f, 1.0f)
-        cs.addRect(margin, currentY - 20f, usableWidth, 22f)
-        cs.fill()
+        cs.addRect(margin, currentY - 20f, usableWidth, 22f); cs.fill()
         cs.setNonStrokingColor(0f, 0f, 0f)
-
-        drawText(cs, "PODSUMOWANIE:", bold, subheaderFontSize, margin + 3f, currentY - 14f)
-        drawText(cs, "Łącznie netto: ${formatMoney(totalNet)}", bold, subheaderFontSize, margin + 200f, currentY - 14f)
+        drawText(cs, "PODSUMOWANIE:",                           bold, subheaderFontSize, margin + 3f,   currentY - 14f)
+        drawText(cs, "Łącznie netto: ${formatMoney(totalNet)}",  bold, subheaderFontSize, margin + 200f, currentY - 14f)
         drawText(cs, "Łącznie brutto: ${formatMoney(totalGross)}", bold, subheaderFontSize, margin + 380f, currentY - 14f)
 
         cs.close()
-
         val output = ByteArrayOutputStream()
-        document.save(output)
-        document.close()
+        document.save(output); document.close()
         return output.toByteArray()
     }
 }
 
 data class GenerateBatchReportCommand(
-    val studioId: StudioId,
-    val contractorId: BatchContractorId,
-    val from: LocalDate?,
-    val to: LocalDate?
+    val studioId     : StudioId,
+    val contractorId : BatchContractorId,
+    val from         : LocalDate?,
+    val to           : LocalDate?
 )
