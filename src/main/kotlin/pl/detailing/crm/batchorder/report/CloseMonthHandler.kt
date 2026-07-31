@@ -27,7 +27,8 @@ data class CloseMonthCommand(
     val from: LocalDate,
     val to: LocalDate,
     val mode: CloseMode,
-    val emailTo: String?
+    val sendEmail: Boolean = false,
+    val emailOverride: String? = null
 )
 
 data class CloseMonthResult(
@@ -90,6 +91,13 @@ class CloseMonthHandler(
         val totalNet = entriesToClose.sumOf { it.netAmountCents }
         val totalGross = entriesToClose.sumOf { it.grossAmountCents }
 
+        val resolvedEmailTo = when {
+            !command.sendEmail -> null
+            !command.emailOverride.isNullOrBlank() -> command.emailOverride
+            !contractor.email.isNullOrBlank() -> contractor.email
+            else -> null
+        }
+
         val historyEntity = BatchOrderCloseHistoryEntity(
             id = historyId,
             studioId = command.studioId.value,
@@ -101,7 +109,7 @@ class CloseMonthHandler(
             totalNetCents = totalNet,
             totalGrossCents = totalGross,
             emailSent = false,
-            emailTo = command.emailTo,
+            emailTo = resolvedEmailTo,
             closedAt = Instant.now()
         )
         closeHistoryRepository.save(historyEntity)
@@ -114,7 +122,7 @@ class CloseMonthHandler(
         entryRepository.saveAll(entriesToClose)
 
         var emailSent = false
-        if (!command.emailTo.isNullOrBlank()) {
+        if (resolvedEmailTo != null) {
             runCatching {
                 val pdfBytes = generateBatchReportHandler.buildPdfBytes(
                     contractorName = contractor.name,
@@ -148,31 +156,32 @@ class CloseMonthHandler(
                 val fileName = "zestawienie-${contractor.name.replace(Regex("\\s+"), "-")}-${command.from.format(DateTimeFormatter.ofPattern("yyyy-MM"))}.pdf"
 
                 emailProvider.send(
-                    to = command.emailTo,
+                    to = resolvedEmailTo,
                     subject = subject,
                     bodyText = body,
                     attachments = listOf(EmailAttachment(fileName, pdfBytes, "application/pdf"))
                 )
                 emailSent = true
-            }.onFailure { /* email failure is non-fatal — history is already saved */ }
+            }.onFailure { /* email failure is non-fatal — history record is already saved */ }
 
             if (emailSent) {
-                val updated = BatchOrderCloseHistoryEntity(
-                    id = historyEntity.id,
-                    studioId = historyEntity.studioId,
-                    contractorId = historyEntity.contractorId,
-                    fromDate = historyEntity.fromDate,
-                    toDate = historyEntity.toDate,
-                    mode = historyEntity.mode,
-                    entryCount = historyEntity.entryCount,
-                    totalNetCents = historyEntity.totalNetCents,
-                    totalGrossCents = historyEntity.totalGrossCents,
-                    emailSent = true,
-                    emailTo = historyEntity.emailTo,
-                    closedAt = historyEntity.closedAt,
-                    createdAt = historyEntity.createdAt
+                closeHistoryRepository.save(
+                    BatchOrderCloseHistoryEntity(
+                        id = historyEntity.id,
+                        studioId = historyEntity.studioId,
+                        contractorId = historyEntity.contractorId,
+                        fromDate = historyEntity.fromDate,
+                        toDate = historyEntity.toDate,
+                        mode = historyEntity.mode,
+                        entryCount = historyEntity.entryCount,
+                        totalNetCents = historyEntity.totalNetCents,
+                        totalGrossCents = historyEntity.totalGrossCents,
+                        emailSent = true,
+                        emailTo = historyEntity.emailTo,
+                        closedAt = historyEntity.closedAt,
+                        createdAt = historyEntity.createdAt
+                    )
                 )
-                closeHistoryRepository.save(updated)
             }
         }
 

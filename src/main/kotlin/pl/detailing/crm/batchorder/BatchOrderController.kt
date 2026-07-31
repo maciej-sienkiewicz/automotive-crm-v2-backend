@@ -224,14 +224,14 @@ class BatchOrderController(
                 from = LocalDate.parse(request.from),
                 to = LocalDate.parse(request.to),
                 mode = CloseMode.valueOf(request.mode),
-                emailTo = request.emailTo
+                sendEmail = request.sendEmail,
+                emailOverride = request.emailOverride?.ifBlank { null }
             )
         )
         ResponseEntity.ok(CloseMonthResponse(
             historyId = result.historyId,
-            entryCount = result.entryCount,
-            totalNetCents = result.totalNetCents,
-            totalGrossCents = result.totalGrossCents,
+            closedEntryCount = result.entryCount,
+            financeEntryCreated = false,
             emailSent = result.emailSent
         ))
     }
@@ -246,16 +246,18 @@ class BatchOrderController(
         ResponseEntity.ok(CloseHistoryResponse(records = records.map {
             CloseHistoryRecordDto(
                 id = it.id,
-                contractorId = it.contractorId,
-                fromDate = it.fromDate,
-                toDate = it.toDate,
-                mode = it.mode,
+                closedAt = it.closedAt,
+                periodFrom = it.fromDate,
+                periodTo = it.toDate,
                 entryCount = it.entryCount,
                 totalNetCents = it.totalNetCents,
                 totalGrossCents = it.totalGrossCents,
+                mode = it.mode,
+                financeEntryCreated = false,
+                emailRequested = it.emailTo != null,
                 emailSent = it.emailSent,
-                emailTo = it.emailTo,
-                closedAt = it.closedAt
+                emailRecipient = it.emailTo,
+                closedByUserName = null
             )
         }))
     }
@@ -440,30 +442,33 @@ data class EntryItemResponse(val entry: EntryItem)
 data class CloseMonthRequest(
     val from: String,
     val to: String,
-    val mode: String,
-    val emailTo: String?
+    val mode: String = "NEW_ONLY",
+    val addToFinances: Boolean = false,
+    val sendEmail: Boolean = false,
+    val emailOverride: String? = null
 )
 
 data class CloseMonthResponse(
     val historyId: String,
-    val entryCount: Int,
-    val totalNetCents: Long,
-    val totalGrossCents: Long,
+    val closedEntryCount: Int,
+    val financeEntryCreated: Boolean,
     val emailSent: Boolean
 )
 
 data class CloseHistoryRecordDto(
     val id: String,
-    val contractorId: String,
-    val fromDate: String,
-    val toDate: String,
-    val mode: String,
+    val closedAt: String,
+    val periodFrom: String?,
+    val periodTo: String?,
     val entryCount: Int,
     val totalNetCents: Long,
     val totalGrossCents: Long,
+    val mode: String,
+    val financeEntryCreated: Boolean,
+    val emailRequested: Boolean,
     val emailSent: Boolean,
-    val emailTo: String?,
-    val closedAt: String
+    val emailRecipient: String?,
+    val closedByUserName: String?
 )
 
 data class CloseHistoryResponse(val records: List<CloseHistoryRecordDto>)
