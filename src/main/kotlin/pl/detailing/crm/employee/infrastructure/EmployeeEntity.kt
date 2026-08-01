@@ -39,6 +39,9 @@ class EmployeeEntity(
     @Column(name = "email", length = 255)
     var email: String?,
 
+    @Column(name = "signature_s3_key", length = 512)
+    var signatureS3Key: String?,
+
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
@@ -59,6 +62,7 @@ class EmployeeEntity(
         lastName = lastName,
         phone = phone,
         email = email,
+        signatureS3Key = signatureS3Key,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -74,6 +78,7 @@ class EmployeeEntity(
             lastName = employee.lastName,
             phone = employee.phone,
             email = employee.email,
+            signatureS3Key = employee.signatureS3Key,
             createdBy = employee.createdBy.value,
             updatedBy = employee.updatedBy.value,
             createdAt = employee.createdAt,

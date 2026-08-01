@@ -33,6 +33,7 @@ class CreateEmployeeHandler(
             lastName = command.lastName.trim(),
             phone = command.phone?.trim(),
             email = command.email?.trim()?.lowercase(),
+            signatureS3Key = null,
             createdBy = command.userId,
             updatedBy = command.userId,
             createdAt = Instant.now(),
