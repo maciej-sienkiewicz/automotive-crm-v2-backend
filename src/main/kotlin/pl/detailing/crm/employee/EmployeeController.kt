@@ -80,6 +80,19 @@ class EmployeeController(
         ))
     }
 
+    @GetMapping("/me")
+    fun getMyEmployee(): ResponseEntity<EmployeeDetailResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = employeeRepository.findByStudioIdAndUserId(
+            principal.studioId.value, principal.userId.value
+        ) ?: return@runBlocking ResponseEntity.notFound().build()
+
+        val employee = entity.toDomain()
+        val accountInfo = userRepository.findByIdAndStudioId(principal.userId.value, principal.studioId.value)
+            ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
+        ResponseEntity.ok(employee.toDetailResponse(accountInfo))
+    }
+
     @GetMapping("/{employeeId}")
     @RequiresPermission(Permission.EMPLOYEES_MANAGE)
     fun getEmployee(@PathVariable employeeId: String): ResponseEntity<EmployeeDetailResponse> = runBlocking {
