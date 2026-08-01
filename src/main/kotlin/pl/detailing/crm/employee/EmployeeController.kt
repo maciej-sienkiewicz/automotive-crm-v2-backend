@@ -329,7 +329,8 @@ data class EmployeeListItem(
     val fullName: String,
     val email: String?,
     val phone: String?,
-    val hasAccount: Boolean
+    val hasAccount: Boolean,
+    val hasSignature: Boolean
 )
 
 data class EmployeeListResponse(
@@ -375,7 +376,8 @@ private fun Employee.toListItem() = EmployeeListItem(
     fullName = fullName(),
     email = email,
     phone = phone,
-    hasAccount = userId != null
+    hasAccount = userId != null,
+    hasSignature = signatureS3Key != null
 )
 
 private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) = EmployeeDetailResponse(
