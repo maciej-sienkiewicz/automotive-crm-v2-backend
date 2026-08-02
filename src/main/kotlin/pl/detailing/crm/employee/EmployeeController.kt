@@ -16,9 +16,6 @@ import pl.detailing.crm.employee.list.ListEmployeesHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeCommand
 import pl.detailing.crm.employee.update.UpdateEmployeeHandler
 import pl.detailing.crm.employee.update.UpdateEmployeeRequest
-import pl.detailing.crm.employee.infrastructure.EmployeeRepository
-import pl.detailing.crm.employee.signature.EmployeeSignatureService
-import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.RoleId
@@ -39,10 +36,7 @@ class EmployeeController(
     private val deleteEmployeeAccountHandler: DeleteEmployeeAccountHandler,
     private val deleteEmployeeHandler: DeleteEmployeeHandler,
     private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
-    private val userRepository: UserRepository,
-    private val employeeRepository: EmployeeRepository,
-    private val employeeSignatureService: EmployeeSignatureService,
-    private val permissionCheckService: PermissionCheckService
+    private val userRepository: UserRepository
 ) {
 
     // Deliberately NOT permission-gated: the coworker list (names) is needed by
@@ -78,19 +72,6 @@ class EmployeeController(
                 itemsPerPage = limit
             )
         ))
-    }
-
-    @GetMapping("/me")
-    fun getMyEmployee(): ResponseEntity<EmployeeDetailResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val entity = employeeRepository.findByStudioIdAndUserId(
-            principal.studioId.value, principal.userId.value
-        ) ?: return@runBlocking ResponseEntity.notFound().build()
-
-        val employee = entity.toDomain()
-        val accountInfo = userRepository.findByIdAndStudioId(principal.userId.value, principal.studioId.value)
-            ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
-        ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
 
     @GetMapping("/{employeeId}")
@@ -250,76 +231,6 @@ class EmployeeController(
         )
         ResponseEntity.noContent().build()
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Employee Signature Management
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Save (or replace) an employee's pre-configured signature.
-     * Allowed if the caller has EMPLOYEES_MANAGE permission OR if the
-     * employee being edited is the caller's own employee record.
-     */
-    @PutMapping("/{employeeId}/signature")
-    fun saveSignature(
-        @PathVariable employeeId: String,
-        @RequestBody request: SaveSignatureRequest
-    ): ResponseEntity<Void> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val empId = EmployeeId.fromString(employeeId)
-        assertSignatureAccess(principal, empId)
-
-        employeeSignatureService.saveSignature(
-            studioId = principal.studioId,
-            employeeId = empId,
-            requestedBy = principal.userId,
-            signatureImageBase64 = request.signatureImageBase64
-        )
-        ResponseEntity.noContent().build()
-    }
-
-    @DeleteMapping("/{employeeId}/signature")
-    fun deleteSignature(@PathVariable employeeId: String): ResponseEntity<Void> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val empId = EmployeeId.fromString(employeeId)
-        assertSignatureAccess(principal, empId)
-
-        employeeSignatureService.deleteSignature(
-            studioId = principal.studioId,
-            employeeId = empId,
-            requestedBy = principal.userId
-        )
-        ResponseEntity.noContent().build()
-    }
-
-    @GetMapping("/{employeeId}/signature-url")
-    fun getSignatureUrl(@PathVariable employeeId: String): ResponseEntity<Map<String, String>> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val empId = EmployeeId.fromString(employeeId)
-        assertSignatureAccess(principal, empId)
-
-        val url = employeeSignatureService.getSignaturePresignedUrl(
-            studioId = principal.studioId,
-            employeeId = empId
-        )
-        ResponseEntity.ok(mapOf("url" to url))
-    }
-
-    private fun assertSignatureAccess(
-        principal: pl.detailing.crm.auth.UserPrincipal,
-        employeeId: EmployeeId
-    ) {
-        if (principal.isOwner) return
-        if (permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.EMPLOYEES_MANAGE)) return
-
-        // Allow self-service: employee may manage their own signature
-        val ownEmployee = employeeRepository.findByStudioIdAndUserId(
-            principal.studioId.value, principal.userId.value
-        )
-        if (ownEmployee?.id == employeeId.value) return
-
-        throw ForbiddenException("Brak dostępu do zarządzania podpisem tego pracownika")
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,7 +240,6 @@ class EmployeeController(
 data class ProvisionAccountRequest(val email: String)
 data class BlockAccountRequest(val block: Boolean)
 data class ChangeAccountPasswordRequest(val newPassword: String, val confirmPassword: String)
-data class SaveSignatureRequest(val signatureImageBase64: String)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response DTOs
@@ -342,8 +252,7 @@ data class EmployeeListItem(
     val fullName: String,
     val email: String?,
     val phone: String?,
-    val hasAccount: Boolean,
-    val hasSignature: Boolean
+    val hasAccount: Boolean
 )
 
 data class EmployeeListResponse(
@@ -373,7 +282,6 @@ data class EmployeeDetailResponse(
     val phone: String?,
     val email: String?,
     val account: EmployeeAccountInfo?,
-    val hasSignature: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -389,8 +297,7 @@ private fun Employee.toListItem() = EmployeeListItem(
     fullName = fullName(),
     email = email,
     phone = phone,
-    hasAccount = userId != null,
-    hasSignature = signatureS3Key != null
+    hasAccount = userId != null
 )
 
 private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) = EmployeeDetailResponse(
@@ -402,7 +309,6 @@ private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) 
     phone = phone,
     email = email,
     account = accountInfo,
-    hasSignature = signatureS3Key != null,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

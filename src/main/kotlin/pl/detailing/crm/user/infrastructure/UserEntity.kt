@@ -59,7 +59,10 @@ class UserEntity(
 
     /** References a custom [pl.detailing.crm.role.infrastructure.RoleEntity] within the same studio. Null = no custom role. */
     @Column(name = "custom_role_id", nullable = true, columnDefinition = "uuid")
-    var customRoleId: UUID? = null
+    var customRoleId: UUID? = null,
+
+    @Column(name = "signature_s3_key", length = 512)
+    var signatureS3Key: String? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),
@@ -72,7 +75,8 @@ class UserEntity(
         phoneNumber = phoneNumber,
         isActive = isActive,
         createdAt = createdAt,
-        mobileToken = mobileToken
+        mobileToken = mobileToken,
+        signatureS3Key = signatureS3Key
     )
 
     companion object {
@@ -87,7 +91,8 @@ class UserEntity(
             isOwner = user.isOwner,
             isActive = user.isActive,
             createdAt = user.createdAt,
-            mobileToken = user.mobileToken
+            mobileToken = user.mobileToken,
+            signatureS3Key = user.signatureS3Key
         )
     }
 }
