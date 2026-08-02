@@ -51,13 +51,13 @@ class UserSignatureLinkService(
 
     data class SendLinkResult(val expiresAt: Instant)
 
-    /** Generate a token and send the signing link by SMS to the user's own phone number. */
-    fun sendLink(studioId: StudioId, userId: UserId): SendLinkResult {
+    /** Generate a token and send the signing link by SMS to the provided phone number. */
+    fun sendLink(studioId: StudioId, userId: UserId, phoneNumber: String): SendLinkResult {
         val entity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
             ?: throw EntityNotFoundException("Użytkownik nie został znaleziony")
 
-        val rawPhone = entity.phoneNumber.takeIf { it.isNotBlank() }
-            ?: throw ValidationException("Twoje konto nie ma przypisanego numeru telefonu")
+        val rawPhone = phoneNumber.trim().takeIf { it.isNotBlank() }
+            ?: throw ValidationException("Numer telefonu jest wymagany")
         val phone = normalizePolishPhone(rawPhone)
 
         val token = generateToken()
