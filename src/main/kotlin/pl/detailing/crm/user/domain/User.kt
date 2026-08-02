@@ -25,5 +25,6 @@ data class User(
     val isOwner: Boolean,
     val isActive: Boolean,
     val createdAt: Instant,
-    val mobileToken: String? = null
+    val mobileToken: String? = null,
+    val signatureS3Key: String? = null
 )

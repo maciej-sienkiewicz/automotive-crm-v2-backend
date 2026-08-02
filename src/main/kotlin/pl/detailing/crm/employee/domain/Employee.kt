@@ -11,7 +11,6 @@ data class Employee(
     val lastName: String,
     val phone: String?,
     val email: String?,
-    val signatureS3Key: String?,
     val createdBy: UserId,
     val updatedBy: UserId,
     val createdAt: Instant,
