@@ -6,12 +6,15 @@ import kotlinx.coroutines.withContext
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.user.signature.UserSignatureLinkService
 import pl.detailing.crm.user.signature.UserSignatureService
+import java.time.Instant
 
 @RestController
 @RequestMapping("/api/v1/profile")
 class ProfileController(
-    private val userSignatureService: UserSignatureService
+    private val userSignatureService: UserSignatureService,
+    private val userSignatureLinkService: UserSignatureLinkService
 ) {
 
     @GetMapping("/signature")
@@ -40,7 +43,18 @@ class ProfileController(
         }
         ResponseEntity.noContent().build()
     }
+
+    /** Send a signing link by SMS to the user's own registered phone number. */
+    @PostMapping("/signature/send-link")
+    fun sendSignatureLink(): ResponseEntity<SendLinkResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = withContext(Dispatchers.IO) {
+            userSignatureLinkService.sendLink(principal.studioId, principal.userId)
+        }
+        ResponseEntity.ok(SendLinkResponse(expiresAt = result.expiresAt))
+    }
 }
 
 data class SaveSignatureRequest(val signatureImageBase64: String)
 data class SignatureStatusResponse(val hasSignature: Boolean, val url: String?)
+data class SendLinkResponse(val expiresAt: Instant)
