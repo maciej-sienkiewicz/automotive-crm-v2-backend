@@ -84,6 +84,9 @@ class SecurityConfig {
                 // Remote document signing from the customer's phone — authenticated by
                 // the unguessable, TTL-bound link token delivered by SMS
                 auth.requestMatchers("/api/public/signing/**").permitAll()
+                // Personal signature drawing from the user's own phone — authenticated by
+                // the unguessable, TTL-bound link token sent to the user's own number
+                auth.requestMatchers("/api/public/user-signature/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->
