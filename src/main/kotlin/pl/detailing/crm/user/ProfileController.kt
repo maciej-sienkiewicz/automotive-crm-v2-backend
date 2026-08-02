@@ -44,17 +44,18 @@ class ProfileController(
         ResponseEntity.noContent().build()
     }
 
-    /** Send a signing link by SMS to the user's own registered phone number. */
+    /** Send a signing link by SMS to the provided phone number. */
     @PostMapping("/signature/send-link")
-    fun sendSignatureLink(): ResponseEntity<SendLinkResponse> = runBlocking {
+    fun sendSignatureLink(@RequestBody request: SendLinkRequest): ResponseEntity<SendLinkResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = withContext(Dispatchers.IO) {
-            userSignatureLinkService.sendLink(principal.studioId, principal.userId)
+            userSignatureLinkService.sendLink(principal.studioId, principal.userId, request.phoneNumber)
         }
         ResponseEntity.ok(SendLinkResponse(expiresAt = result.expiresAt))
     }
 }
 
 data class SaveSignatureRequest(val signatureImageBase64: String)
+data class SendLinkRequest(val phoneNumber: String)
 data class SignatureStatusResponse(val hasSignature: Boolean, val url: String?)
 data class SendLinkResponse(val expiresAt: Instant)
