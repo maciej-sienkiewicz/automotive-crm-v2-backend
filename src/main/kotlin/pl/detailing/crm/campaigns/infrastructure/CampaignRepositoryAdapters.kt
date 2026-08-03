@@ -62,6 +62,9 @@ class CampaignRecipientRepositoryAdapter(
     override fun findDueForDispatch(now: Instant, limit: Int): List<CampaignRecipient> =
         jpa.findDueForDispatch(now, limit).map { it.toDomain() }
 
+    override fun findById(id: UUID, campaignId: UUID, studioId: StudioId): CampaignRecipient? =
+        jpa.findByIdAndCampaignIdAndStudioId(id, campaignId, studioId.value)?.toDomain()
+
     override fun findByCampaign(
         campaignId: UUID,
         studioId: StudioId,

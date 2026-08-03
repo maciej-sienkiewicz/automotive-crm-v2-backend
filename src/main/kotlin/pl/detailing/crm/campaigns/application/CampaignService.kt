@@ -247,6 +247,45 @@ class CampaignService(
         return campaigns.save(campaign.copy(status = to, updatedBy = userId, updatedAt = Instant.now()))
     }
 
+    // ─── Retry ───────────────────────────────────────────────────────────────────
+
+    @Transactional
+    fun retryRecipient(campaignId: UUID, recipientId: UUID, studioId: StudioId): CampaignRecipient {
+        val campaign = get(campaignId, studioId)
+        val recipient = recipients.findById(recipientId, campaignId, studioId)
+            ?: throw EntityNotFoundException("Odbiorca nie istnieje")
+        if (recipient.status in setOf(RecipientStatus.SENT, RecipientStatus.PENDING, RecipientStatus.EXCLUDED_MANUALLY, RecipientStatus.SKIPPED_OPTED_OUT)) {
+            throw ValidationException("Ten rekord nie może być ponowiony")
+        }
+        val retried = recipients.save(
+            recipient.copy(status = RecipientStatus.PENDING, errorMessage = null, sentAt = null, scheduledFor = Instant.now())
+        )
+        if (campaign.status == CampaignStatus.COMPLETED || campaign.status == CampaignStatus.FAILED) {
+            campaigns.save(campaign.copy(status = CampaignStatus.SENDING, completedAt = null, updatedAt = Instant.now()))
+        }
+        return retried
+    }
+
+    @Transactional
+    fun retryAllFailed(campaignId: UUID, studioId: StudioId): Int {
+        val campaign = get(campaignId, studioId)
+        val retryableStatuses = setOf(
+            RecipientStatus.FAILED, RecipientStatus.STOPPED,
+            RecipientStatus.SKIPPED_NO_CREDITS, RecipientStatus.SKIPPED_FREQUENCY_CAP
+        )
+        val toRetry = recipients.findByCampaign(campaignId, studioId, null)
+            .filter { it.status in retryableStatuses }
+        if (toRetry.isEmpty()) return 0
+        val now = Instant.now()
+        toRetry.forEach { r ->
+            recipients.save(r.copy(status = RecipientStatus.PENDING, errorMessage = null, sentAt = null, scheduledFor = now))
+        }
+        if (campaign.status == CampaignStatus.COMPLETED || campaign.status == CampaignStatus.FAILED) {
+            campaigns.save(campaign.copy(status = CampaignStatus.SENDING, completedAt = null, updatedAt = now))
+        }
+        return toRetry.size
+    }
+
     // ─── Settings ────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
