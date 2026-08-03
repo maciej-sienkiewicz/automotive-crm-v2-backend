@@ -128,9 +128,10 @@ class GenerateBatchReportHandler(
         val logoMaxW = 120f
         val logoMaxH = 50f
 
-        val colDate     = 68f
-        val colVehicle  = 120f
-        val colServices = usableWidth - 68f - 120f - 72f - 72f
+        val colDate     = 62f
+        val colVehicle  = 90f
+        val colVin      = 105f
+        val colServices = usableWidth - colDate - colVehicle - colVin - 72f - 72f
         val colNet      = 72f
         val colGross    = 72f
 
@@ -181,11 +182,12 @@ class GenerateBatchReportHandler(
             cs.addRect(margin, y - 14f, usableWidth, 16f); cs.fill()
             cs.setNonStrokingColor(1f, 1f, 1f)
             var colX = margin + 3f
-            drawText(cs, "Data",    bold, tableHeaderFontSize, colX, y - 10f); colX += colDate
-            drawText(cs, "Pojazd",  bold, tableHeaderFontSize, colX, y - 10f); colX += colVehicle
-            drawText(cs, "Usługi",  bold, tableHeaderFontSize, colX, y - 10f); colX += colServices
-            drawText(cs, "Netto",   bold, tableHeaderFontSize, colX, y - 10f); colX += colNet
-            drawText(cs, "Brutto",  bold, tableHeaderFontSize, colX, y - 10f)
+            drawText(cs, "Data",                   bold, tableHeaderFontSize, colX, y - 10f); colX += colDate
+            drawText(cs, "Pojazd",                 bold, tableHeaderFontSize, colX, y - 10f); colX += colVehicle
+            drawText(cs, "Identyfikacja pojazdu",  bold, tableHeaderFontSize, colX, y - 10f); colX += colVin
+            drawText(cs, "Usługi",                 bold, tableHeaderFontSize, colX, y - 10f); colX += colServices
+            drawText(cs, "Netto",                  bold, tableHeaderFontSize, colX, y - 10f); colX += colNet
+            drawText(cs, "Brutto",                 bold, tableHeaderFontSize, colX, y - 10f)
             cs.setNonStrokingColor(0f, 0f, 0f)
         }
 
@@ -229,13 +231,18 @@ class GenerateBatchReportHandler(
             val vehicleText = buildString {
                 if (!entry.vehicleMake.isNullOrBlank())  append(entry.vehicleMake)
                 if (!entry.vehicleModel.isNullOrBlank()) { if (isNotEmpty()) append(" "); append(entry.vehicleModel) }
-                if (!entry.vehicleLicensePlate.isNullOrBlank()) { if (isNotEmpty()) append("\n"); append(entry.vehicleLicensePlate) }
+            }.ifBlank { "-" }
+
+            val vinText = buildString {
+                if (!entry.vehicleLicensePlate.isNullOrBlank()) append(entry.vehicleLicensePlate)
+                if (!entry.vehicleVin.isNullOrBlank()) { if (isNotEmpty()) append("\n"); append(entry.vehicleVin) }
             }.ifBlank { "-" }
 
             val serviceLines = if (entry.services.isEmpty()) listOf("-") else entry.services.map { it.name }
             val notesText    = (entry.notes ?: "").trim()
             val vehicleLines = vehicleText.split("\n")
-            val maxLines     = maxOf(vehicleLines.size, serviceLines.size, 1)
+            val vinLines     = vinText.split("\n")
+            val maxLines     = maxOf(vehicleLines.size, vinLines.size, serviceLines.size, 1)
             val mainRowHeight = maxOf(rowMinHeight, maxLines * (tableFontSize + 3f) + 6f)
             val notesWrapped  = if (notesText.isNotBlank()) wrapText(notesText, regular, notesFontSize, usableWidth - 46f) else emptyList()
             val notesRowHeight = if (notesWrapped.isNotEmpty()) notesWrapped.size * (notesFontSize + 3f) + 6f else 0f
@@ -262,6 +269,9 @@ class GenerateBatchReportHandler(
             vehicleLines.forEachIndexed { idx, line ->
                 drawText(cs, truncateText(line, regular, tableFontSize, colVehicle - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
             }; colX += colVehicle
+            vinLines.forEachIndexed { idx, line ->
+                drawText(cs, truncateText(line, regular, tableFontSize, colVin - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
+            }; colX += colVin
             serviceLines.forEachIndexed { idx, line ->
                 drawText(cs, truncateText(line, regular, tableFontSize, colServices - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
             }; colX += colServices
