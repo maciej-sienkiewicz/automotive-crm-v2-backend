@@ -12,5 +12,6 @@ data class UpdateRoleCommand(
     val roleId: RoleId,
     val name: String,
     val description: String?,
-    val permissions: Set<Permission>
+    val permissions: Set<Permission>,
+    val trackWorkTime: Boolean = false
 )

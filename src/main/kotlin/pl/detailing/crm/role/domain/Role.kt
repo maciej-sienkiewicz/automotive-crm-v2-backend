@@ -11,6 +11,7 @@ data class Role(
     val name: String,
     val description: String?,
     val permissions: Set<Permission>,
+    val trackWorkTime: Boolean = false,
     val createdBy: UserId,
     val createdAt: Instant,
     val updatedAt: Instant

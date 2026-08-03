@@ -88,7 +88,8 @@ class RoleController(
                 requestedByName = principal.fullName,
                 name = request.name,
                 description = request.description,
-                permissions = permissions
+                permissions = permissions,
+                trackWorkTime = request.trackWorkTime
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(mapOf("roleId" to roleId.toString()))
@@ -113,7 +114,8 @@ class RoleController(
                 roleId = RoleId.fromString(roleId),
                 name = request.name,
                 description = request.description,
-                permissions = permissions
+                permissions = permissions,
+                trackWorkTime = request.trackWorkTime
             )
         )
 
@@ -166,13 +168,15 @@ class RoleController(
 data class CreateRoleRequest(
     val name: String,
     val description: String?,
-    val permissions: List<String>
+    val permissions: List<String>,
+    val trackWorkTime: Boolean = false
 )
 
 data class UpdateRoleRequest(
     val name: String,
     val description: String?,
-    val permissions: List<String>
+    val permissions: List<String>,
+    val trackWorkTime: Boolean = false
 )
 
 data class AssignRoleRequest(
@@ -217,6 +221,7 @@ data class RoleResponse(
     val name: String,
     val description: String?,
     val permissions: List<RolePermissionResponse>,
+    val trackWorkTime: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -244,6 +249,7 @@ private fun Role.toResponse() = RoleResponse(
                 moduleDisplayName = p.module.displayName
             )
         },
+    trackWorkTime = trackWorkTime,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

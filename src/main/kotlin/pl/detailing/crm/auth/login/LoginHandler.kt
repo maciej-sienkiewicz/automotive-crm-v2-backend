@@ -100,7 +100,9 @@ class LoginHandler(
                     // inaccessible modules immediately after login, before /auth/me.
                     permissions = permissionCheckService
                         .getPermissions(user.id, user.studioId)
-                        ?.map { it.name }
+                        ?.map { it.name },
+                    trackWorkTime = permissionCheckService
+                        .getTrackWorkTime(user.id, user.studioId)
                 )
             )
 

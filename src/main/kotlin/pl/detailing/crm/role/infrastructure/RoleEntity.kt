@@ -43,6 +43,9 @@ class RoleEntity(
     @Column(name = "permission", nullable = false, length = 100)
     var permissions: MutableSet<String>,
 
+    @Column(name = "track_work_time", nullable = false)
+    var trackWorkTime: Boolean = false,
+
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
@@ -62,6 +65,7 @@ class RoleEntity(
         permissions = PermissionHierarchy.close(
             permissions.mapNotNull { Permission.fromStoredCode(it) }.toSet()
         ),
+        trackWorkTime = trackWorkTime,
         createdBy = UserId(createdBy),
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -74,6 +78,7 @@ class RoleEntity(
             name = role.name,
             description = role.description,
             permissions = role.permissions.map { it.name }.toMutableSet(),
+            trackWorkTime = role.trackWorkTime,
             createdBy = role.createdBy.value,
             createdAt = role.createdAt,
             updatedAt = role.updatedAt
