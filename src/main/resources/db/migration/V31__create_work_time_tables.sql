@@ -1,3 +1,28 @@
+-- Drop tables if they exist with a wrong schema (e.g. created by Hibernate before this migration
+-- was introduced). We detect "wrong schema" by checking for the expected user_id column.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'work_time_entries'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'work_time_entries' AND column_name = 'user_id'
+    ) THEN
+        DROP TABLE work_time_entries;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'work_time_periods'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'work_time_periods' AND column_name = 'user_id'
+    ) THEN
+        DROP TABLE work_time_periods;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS work_time_entries (
     id                  UUID PRIMARY KEY,
     user_id             UUID NOT NULL,
