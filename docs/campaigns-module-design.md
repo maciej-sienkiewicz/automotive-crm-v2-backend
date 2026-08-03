@@ -311,14 +311,14 @@ z danymi studia i obowiązkowym linkiem rezygnacji doklejana automatycznie. "Wy�
 
 **Krok 1 — Scenariusz.** Karty do wyboru:
 
-| Scenariusz | Prefill |
+| Scenariusz (ikona Lucide) | Prefill |
 |---|---|
-| 🎄 Świąteczna / okazjonalna | ONE_TIME, wszyscy ze zgodą, szablon życzeń, planowanie daty |
-| 🔁 Przypomnienie po usłudze | AUTOMATIC, wybór usługi + suwak dni (90/180/365), szablon "czas na odświeżenie" |
-| 😴 Reaktywacja | ONE_TIME, `lastVisitOlderThanDays: 180`, szablon "dawno Cię nie było" |
-| 🚗 Właściciele wybranych aut | ONE_TIME, filtr marka/model otwarty na starcie |
-| 💎 Klienci VIP | ONE_TIME, `revenue.totalGrossMin` + `visits.countMin` |
-| ⚙️ Własna | wszystko puste |
+| Świąteczna / okazjonalna (`gift`) | ONE_TIME, wszyscy ze zgodą, szablon życzeń, planowanie daty |
+| Przypomnienie po usłudze (`repeat`) | AUTOMATIC, wybór usługi + suwak dni (90/180/365), szablon "czas na odświeżenie" |
+| Reaktywacja (`moon`) | ONE_TIME, `lastVisitOlderThanDays: 180`, szablon "dawno Cię nie było" |
+| Właściciele wybranych aut (firmowa sylwetka coupé) | ONE_TIME, filtr marka/model otwarty na starcie |
+| Klienci VIP (`gem`) | ONE_TIME, `revenue.totalGrossMin` + `visits.countMin` |
+| Własna (`settings-2`) | wszystko puste |
 
 **Krok 2 — Odbiorcy.** Dwie kolumny:
 - Lewa: filtry jako składane sekcje (Wizyty / Przychody / Usługi / Pojazdy / Klient) —
