@@ -194,6 +194,8 @@ data class PeriodSummaryResponse(
     val totalMinutes: Int,
     val totalHours: String,
     val entryCount: Int,
+    val overtimeMinutes: Int,
+    val overtimeHours: String,
     val returnNote: String?
 )
 
@@ -204,6 +206,8 @@ data class PeriodDetailResponse(
     val totalMinutes: Int,
     val totalHours: String,
     val entryCount: Int,
+    val overtimeMinutes: Int,
+    val overtimeHours: String,
     val returnNote: String?,
     val entries: List<EntryResponse>
 )

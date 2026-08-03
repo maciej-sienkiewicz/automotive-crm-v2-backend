@@ -45,6 +45,7 @@ class WorkTimeService(
         val to = yearMonth.atEndOfMonth()
         val entries = entryRepository.findByUserIdAndStudioIdAndDateBetween(userId.value, studioId.value, from, to)
         val totalMinutes = entries.sumOf { it.minutes }
+        val overtimeMinutes = entries.sumOf { maxOf(0, it.minutes - 480) }
 
         return PeriodDetailResponse(
             period = yearMonth.toString(),
@@ -53,6 +54,8 @@ class WorkTimeService(
             totalMinutes = totalMinutes,
             totalHours = formatMinutes(totalMinutes),
             entryCount = entries.size,
+            overtimeMinutes = overtimeMinutes,
+            overtimeHours = formatMinutes(overtimeMinutes),
             returnNote = periodEntity?.returnNote,
             entries = entries.map { it.toResponse() }
         )
@@ -174,19 +177,18 @@ class WorkTimeService(
 
     private fun WorkTimePeriodEntity.toSummary(userId: UUID): PeriodSummaryResponse {
         val ym = YearMonth.parse(period)
-        val totalMinutes = entryRepository.sumMinutesByUserIdAndDateBetween(
-            userId, ym.atDay(1), ym.atEndOfMonth()
-        ) ?: 0
-        val entryCount = entryRepository.findByUserIdAndDateBetween(
-            userId, ym.atDay(1), ym.atEndOfMonth()
-        ).size
+        val entries = entryRepository.findByUserIdAndDateBetween(userId, ym.atDay(1), ym.atEndOfMonth())
+        val totalMinutes = entries.sumOf { it.minutes }
+        val overtimeMinutes = entries.sumOf { maxOf(0, it.minutes - 480) }
         return PeriodSummaryResponse(
             period = period,
             label = ym.toPolishLabel(),
             status = status.name,
             totalMinutes = totalMinutes,
             totalHours = formatMinutes(totalMinutes),
-            entryCount = entryCount,
+            entryCount = entries.size,
+            overtimeMinutes = overtimeMinutes,
+            overtimeHours = formatMinutes(overtimeMinutes),
             returnNote = returnNote
         )
     }
