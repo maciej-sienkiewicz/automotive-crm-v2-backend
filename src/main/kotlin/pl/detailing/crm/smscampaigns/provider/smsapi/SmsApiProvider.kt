@@ -38,13 +38,14 @@ class SmsApiProvider(
             return SmsDeliveryResult.success("mock-disabled")
         }
 
-        if (properties.whitelist.isNotEmpty() && phoneNumber !in properties.whitelist) {
+        val e164Number = phoneNumber.normalizePhone()
+        if (properties.whitelist.isNotEmpty() && e164Number !in properties.whitelist.map { it.normalizePhone() }) {
             logger.warn("[SMS WHITELIST] Blocked send to {} — number not on whitelist", phoneNumber)
             return SmsDeliveryResult.failure("Numer został celowo zablokowany. Faza testowa.")
         }
 
         // SMSAPI expects numbers without the leading '+', e.g. "48100200300"
-        val normalizedNumber = phoneNumber.removePrefix("+")
+        val normalizedNumber = e164Number.removePrefix("+")
 
         return try {
             val action = smsFactory.actionSend(normalizedNumber, message)
@@ -74,3 +75,6 @@ class SmsApiProvider(
         }
     }
 }
+
+/** Strip all whitespace and dashes so "+48 888 915 358" equals "+48888915358". */
+private fun String.normalizePhone(): String = replace(Regex("[\\s\\-]"), "")
