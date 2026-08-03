@@ -72,6 +72,20 @@ class PermissionCheckService(
     }
 
     /**
+     * Returns true when the user's assigned role has the "track work time" flag enabled.
+     * Studio owners always return false (they manage employees, they don't log their own hours).
+     */
+    fun getTrackWorkTime(userId: UserId, studioId: StudioId): Boolean {
+        val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
+            ?: return false
+        if (userEntity.isOwner) return false
+        val customRoleId = userEntity.customRoleId ?: return false
+        val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
+            ?: return false
+        return roleEntity.trackWorkTime
+    }
+
+    /**
      * Applies cross-module access rules that cannot be expressed in the single-module tree.
      * The result is re-closed over the tree so implied permissions carry their ancestors.
      */

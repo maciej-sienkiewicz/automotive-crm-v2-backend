@@ -35,6 +35,7 @@ class CreateRoleHandler(
             // Auto-complete the set with every ancestor in the permission tree so the stored
             // role always forms complete root-to-node paths. Runtime checks stay trivial.
             permissions = PermissionHierarchy.close(command.permissions),
+            trackWorkTime = command.trackWorkTime,
             createdBy = command.requestedBy,
             createdAt = Instant.now(),
             updatedAt = Instant.now()

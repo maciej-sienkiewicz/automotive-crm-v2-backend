@@ -23,5 +23,7 @@ data class UserData(
     val trialEndsAt: String?,
     val mobileToken: String? = null,
     /** Null means full access (owner). Non-null list contains the user's effective permission codes. */
-    val permissions: List<String>? = null
+    val permissions: List<String>? = null,
+    /** True when the user's role has "track work time" enabled — shows the Czas pracy sidebar entry. */
+    val trackWorkTime: Boolean = false
 )

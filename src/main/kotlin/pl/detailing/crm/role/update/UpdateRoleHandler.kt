@@ -39,6 +39,7 @@ class UpdateRoleHandler(
         entity.description = command.description?.trim()
         entity.permissions.clear()
         entity.permissions.addAll(effectivePermissions.map { it.name })
+        entity.trackWorkTime = command.trackWorkTime
         entity.updatedAt = Instant.now()
 
         roleRepository.save(entity)

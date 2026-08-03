@@ -150,6 +150,7 @@ class AuthController(
             // null = owner (unrestricted); list = user's effective permission codes
             val permissions = permissionCheckService.getPermissions(principal.userId, principal.studioId)
                 ?.map { it.name }
+            val trackWorkTime = permissionCheckService.getTrackWorkTime(principal.userId, principal.studioId)
 
             ResponseEntity.ok(UnifiedAuthResponse(
                 success = true,
@@ -166,7 +167,8 @@ class AuthController(
                     firstName = principal.fullName.split(" ").first(),
                     lastName = principal.fullName.split(" ").last(),
                     mobileToken = mobileToken,
-                    permissions = permissions
+                    permissions = permissions,
+                    trackWorkTime = trackWorkTime
                 )
             ))
         } catch (e: Exception) {
