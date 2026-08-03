@@ -33,7 +33,8 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/sms/inbound")
 class SmsInboundController(
     private val smsConsentService: SmsConsentService,
-    private val reservationUpsellConsentService: pl.detailing.crm.visitcard.upsell.ReservationUpsellConsentService
+    private val reservationUpsellConsentService: pl.detailing.crm.visitcard.upsell.ReservationUpsellConsentService,
+    private val campaignOptOutService: pl.detailing.crm.campaigns.application.CampaignOptOutService
 ) {
 
     private val logger = LoggerFactory.getLogger(SmsInboundController::class.java)
@@ -58,6 +59,8 @@ class SmsInboundController(
         smsConsentService.processInboundReply(smsFrom, smsText)
         // Upsell requests made on a reservation card (pre-check-in) are tracked separately
         reservationUpsellConsentService.processInboundReply(smsFrom, smsText)
+        // "STOP" opts the customer out of marketing campaigns
+        campaignOptOutService.processInboundReply(smsFrom, smsText)
 
         // SMSAPI requires the literal string "OK" in the response body
         return ResponseEntity.ok("OK")
