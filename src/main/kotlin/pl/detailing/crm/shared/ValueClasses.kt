@@ -892,7 +892,11 @@ enum class CommunicationMessageType(val label: String) {
     VISIT_CARD_UPSELL_SMS("SMS potwierdzenia dodania sugerowanych usług"),
 
     // Remote document signing
-    SIGNATURE_LINK_SMS("SMS z linkiem do podpisu dokumentu")
+    SIGNATURE_LINK_SMS("SMS z linkiem do podpisu dokumentu"),
+
+    // Marketing campaigns
+    CAMPAIGN_SMS("SMS kampanii marketingowej"),
+    CAMPAIGN_EMAIL("E-mail kampanii marketingowej")
 }
 
 /**
