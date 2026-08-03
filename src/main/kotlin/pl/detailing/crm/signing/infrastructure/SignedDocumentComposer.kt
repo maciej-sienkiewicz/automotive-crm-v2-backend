@@ -1,9 +1,11 @@
 package pl.detailing.crm.signing.infrastructure
 
 import org.apache.pdfbox.Loader
+import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget
 import org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -15,12 +17,15 @@ import java.io.ByteArrayOutputStream
  *
  *   filled protocol PDF
  *     + transparent signature strokes (stamped into the "signature" field area
- *       or the bottom of the last page)
+ *       or the bottom of the last page as fallback)
+ *     + optional employee signature (stamped into the "company_signature" field area;
+ *       skipped gracefully when the template has no such field or the employee has
+ *       no configured signature)
  *     + flattening of all form fields (visual immutability)
  *     + appended audit page (Karta Podpisu)
  *
  * The output of this composer is the input of [QualifiedSealService] — the seal and
- * qualified timestamp cover the document, the signature image AND the audit page,
+ * qualified timestamp cover the document, the signature images AND the audit page,
  * closing the cryptographic loop. No intermediate artifact is persisted anywhere.
  */
 @Service
@@ -31,13 +36,14 @@ class SignedDocumentComposer(
 
     companion object {
         private const val SIGNATURE_FIELD_NAME = "signature"
+        private const val COMPANY_SIGNATURE_FIELD_NAME = "company_signature"
         private const val FALLBACK_X = 50f
         private const val FALLBACK_Y = 50f
         private const val FALLBACK_MAX_WIDTH = 200f
         private const val FALLBACK_MAX_HEIGHT = 80f
 
         /**
-         * Inner margin (PDF points) between the signature field's border and the stamped
+         * Inner margin (PDF points) between a signature field's border and the stamped
          * strokes, so the signature never touches or overlaps the printed frame.
          */
         private const val SIGNATURE_BOX_PADDING = 3f
@@ -46,6 +52,7 @@ class SignedDocumentComposer(
     fun compose(
         filledPdfBytes: ByteArray,
         signaturePngBytes: ByteArray,
+        companySignaturePngBytes: ByteArray?,
         request: SignatureRequest,
         auditEvents: List<SignatureAuditEventEntity>,
         visitNumber: String,
@@ -53,9 +60,11 @@ class SignedDocumentComposer(
     ): ByteArray {
         logger.info(
             "[Composer] requestId={} protocolId={} — composing signed PDF: " +
-                "filledPdf={}B signaturePng={}B auditEvents={}",
+                "filledPdf={}B signaturePng={}B companySignature={} auditEvents={}",
             request.id, request.protocolId,
-            filledPdfBytes.size, signaturePngBytes.size, auditEvents.size
+            filledPdfBytes.size, signaturePngBytes.size,
+            if (companySignaturePngBytes != null) "${companySignaturePngBytes.size}B" else "none",
+            auditEvents.size
         )
 
         Loader.loadPDF(filledPdfBytes).use { document ->
@@ -68,45 +77,28 @@ class SignedDocumentComposer(
                 request.id, document.numberOfPages
             )
 
-            val signatureImage = PDImageXObject.createFromByteArray(
-                document, signaturePngBytes, "signature"
-            )
+            // ── Customer signature (required) ────────────────────────────────────
+            val customerImage = PDImageXObject.createFromByteArray(document, signaturePngBytes, "signature")
+            logSignatureFieldDiagnostics(document, request, SIGNATURE_FIELD_NAME, customerImage, signaturePngBytes.size)
 
-            logSignatureFieldDiagnostics(document, request, signatureImage, signaturePngBytes.size)
+            val customerPlacement = findPlacement(document, SIGNATURE_FIELD_NAME, request, useFallback = true)!!
+            stampImage(document, customerImage, customerPlacement, request.id.toString(), SIGNATURE_FIELD_NAME)
 
-            val placement = findSignaturePlacement(document, request)
+            // ── Employee / company signature (optional) ──────────────────────────
+            if (companySignaturePngBytes != null) {
+                val companyImage = PDImageXObject.createFromByteArray(document, companySignaturePngBytes, "company_signature")
+                logSignatureFieldDiagnostics(document, request, COMPANY_SIGNATURE_FIELD_NAME, companyImage, companySignaturePngBytes.size)
 
-            // Shrink the target box by an inner padding so the strokes never touch the
-            // field's printed frame, then scale the image down (never up) preserving the
-            // stroke aspect ratio, and center it inside the box. A large signature drawn
-            // on a large tablet is thus reduced to fit entirely within the frame.
-            val availableWidth = (placement.maxWidth - 2 * SIGNATURE_BOX_PADDING).coerceAtLeast(1f)
-            val availableHeight = (placement.maxHeight - 2 * SIGNATURE_BOX_PADDING).coerceAtLeast(1f)
-            val (width, height) = fitPreservingAspect(
-                signatureImage.width.toFloat(), signatureImage.height.toFloat(),
-                availableWidth, availableHeight
-            )
-            val drawX = placement.x + (placement.maxWidth - width) / 2
-            val drawY = placement.y + (placement.maxHeight - height) / 2
-
-            logger.info(
-                "[Composer] requestId={} — signature stamping: image={}x{}px, box={}x{}pt at ({}, {}) " +
-                    "page={}, padding={}pt, scale={}, drawn={}x{}pt at ({}, {}), fallbackUsed={}",
-                request.id,
-                signatureImage.width, signatureImage.height,
-                placement.maxWidth, placement.maxHeight, placement.x, placement.y,
-                document.pages.indexOf(placement.page),
-                SIGNATURE_BOX_PADDING,
-                String.format("%.4f", width / signatureImage.width),
-                String.format("%.1f", width), String.format("%.1f", height),
-                String.format("%.1f", drawX), String.format("%.1f", drawY),
-                placement.fallbackUsed
-            )
-
-            PDPageContentStream(
-                document, placement.page, PDPageContentStream.AppendMode.APPEND, true, true
-            ).use { cs ->
-                cs.drawImage(signatureImage, drawX, drawY, width, height)
+                val companyPlacement = findPlacement(document, COMPANY_SIGNATURE_FIELD_NAME, request, useFallback = false)
+                if (companyPlacement != null) {
+                    stampImage(document, companyImage, companyPlacement, request.id.toString(), COMPANY_SIGNATURE_FIELD_NAME)
+                } else {
+                    logger.info(
+                        "[Composer] requestId={} — no usable '{}' field in template; " +
+                            "company signature not stamped (template does not support it yet)",
+                        request.id, COMPANY_SIGNATURE_FIELD_NAME
+                    )
+                }
             }
 
             // Flatten AcroForm fields so the visual state is frozen before sealing
@@ -142,15 +134,21 @@ class SignedDocumentComposer(
     )
 
     /**
-     * Prefer the rectangle of the AcroForm field named "signature" (templates reserve it);
-     * fall back to a fixed area at the bottom of the last page.
+     * Locate the widget rectangle of [fieldName] in the document's AcroForm.
+     *
+     * When [useFallback] is true and the field is absent/unusable, returns a hardcoded
+     * position at the bottom of the last page (used for the mandatory customer signature).
+     * When [useFallback] is false, returns null instead of a fallback position (used for
+     * the optional company signature — we must not stamp it in a random location).
      */
-    private fun findSignaturePlacement(
-        document: org.apache.pdfbox.pdmodel.PDDocument,
-        request: SignatureRequest
-    ): Placement {
+    private fun findPlacement(
+        document: PDDocument,
+        fieldName: String,
+        request: SignatureRequest,
+        useFallback: Boolean
+    ): Placement? {
         val acroForm = document.documentCatalog.acroForm
-        val field = acroForm?.getField(SIGNATURE_FIELD_NAME) as? PDTerminalField
+        val field = acroForm?.getField(fieldName) as? PDTerminalField
         val widget = field?.widgets?.firstOrNull()
         if (widget != null) {
             val rect = widget.rectangle
@@ -166,11 +164,21 @@ class SignedDocumentComposer(
                 )
             }
         }
+
+        if (!useFallback) {
+            logger.warn(
+                "[Composer] requestId={} — no usable '{}' field " +
+                    "(acroFormPresent={}, fieldFound={}, widgetFound={})",
+                request.id, fieldName, acroForm != null, field != null, widget != null
+            )
+            return null
+        }
+
         logger.warn(
             "[Composer] requestId={} — no usable '{}' field (acroFormPresent={}, fieldFound={}, " +
-                "widgetFound={}, see diagnostics above) — stamping at FALLBACK position on last page: " +
+                "widgetFound={}) — stamping at FALLBACK position on last page: " +
                 "x={}, y={}, box={}x{}pt",
-            request.id, SIGNATURE_FIELD_NAME,
+            request.id, fieldName,
             acroForm != null, field != null, widget != null,
             FALLBACK_X, FALLBACK_Y, FALLBACK_MAX_WIDTH, FALLBACK_MAX_HEIGHT
         )
@@ -184,32 +192,67 @@ class SignedDocumentComposer(
         )
     }
 
+    private fun stampImage(
+        document: PDDocument,
+        image: PDImageXObject,
+        placement: Placement,
+        requestId: String,
+        fieldName: String
+    ) {
+        val availableWidth = (placement.maxWidth - 2 * SIGNATURE_BOX_PADDING).coerceAtLeast(1f)
+        val availableHeight = (placement.maxHeight - 2 * SIGNATURE_BOX_PADDING).coerceAtLeast(1f)
+        val (width, height) = fitPreservingAspect(
+            image.width.toFloat(), image.height.toFloat(),
+            availableWidth, availableHeight
+        )
+        val drawX = placement.x + (placement.maxWidth - width) / 2
+        val drawY = placement.y + (placement.maxHeight - height) / 2
+
+        logger.info(
+            "[Composer] requestId={} field='{}' — stamping: image={}x{}px box={}x{}pt at ({},{}) " +
+                "page={} scale={} drawn={}x{}pt at ({},{}) fallback={}",
+            requestId, fieldName,
+            image.width, image.height,
+            placement.maxWidth, placement.maxHeight, placement.x, placement.y,
+            document.pages.indexOf(placement.page),
+            String.format("%.4f", width / image.width),
+            String.format("%.1f", width), String.format("%.1f", height),
+            String.format("%.1f", drawX), String.format("%.1f", drawY),
+            placement.fallbackUsed
+        )
+
+        PDPageContentStream(
+            document, placement.page, PDPageContentStream.AppendMode.APPEND, true, true
+        ).use { cs ->
+            cs.drawImage(image, drawX, drawY, width, height)
+        }
+    }
+
     /**
-     * Dump everything we know about the "signature" AcroForm field and the incoming
-     * signature image at INFO level. Deliberately verbose: when a signature lands in the
-     * wrong place, gets clipped or scaled oddly in production, this log is the forensic
-     * record for the next iteration (templates differ between environments and are only
-     * reachable through the production S3 bucket).
+     * Dump everything we know about an AcroForm field and the incoming signature image
+     * at INFO level. Deliberately verbose: when a signature lands in the wrong place or
+     * gets clipped oddly in production, this log is the forensic record.
      */
     private fun logSignatureFieldDiagnostics(
-        document: org.apache.pdfbox.pdmodel.PDDocument,
+        document: PDDocument,
         request: SignatureRequest,
+        fieldName: String,
         signatureImage: PDImageXObject,
         signaturePngSize: Int
     ) {
         try {
             logger.info(
-                "[Composer] requestId={} — signature image: {}x{}px ({}B), aspectRatio={}",
-                request.id, signatureImage.width, signatureImage.height, signaturePngSize,
+                "[Composer] requestId={} field='{}' — image: {}x{}px ({}B) aspectRatio={}",
+                request.id, fieldName,
+                signatureImage.width, signatureImage.height, signaturePngSize,
                 String.format("%.3f", signatureImage.width.toFloat() / signatureImage.height)
             )
 
             val acroForm = document.documentCatalog.acroForm
             if (acroForm == null) {
                 logger.warn(
-                    "[Composer] requestId={} — signature field diagnostics: document has NO AcroForm " +
-                        "(the '{}' field was flattened away or the template never had it)",
-                    request.id, SIGNATURE_FIELD_NAME
+                    "[Composer] requestId={} field='{}' — document has NO AcroForm",
+                    request.id, fieldName
                 )
                 return
             }
@@ -220,20 +263,19 @@ class SignedDocumentComposer(
                 request.id, acroForm.needAppearances, allFieldNames.size, allFieldNames
             )
 
-            val field = acroForm.getField(SIGNATURE_FIELD_NAME)
+            val field = acroForm.getField(fieldName)
             if (field == null) {
                 logger.warn(
                     "[Composer] requestId={} — field '{}' NOT FOUND in AcroForm",
-                    request.id, SIGNATURE_FIELD_NAME
+                    request.id, fieldName
                 )
                 return
             }
 
             logger.info(
-                "[Composer] requestId={} — field '{}': type={}, fieldType={}, partialName={}, " +
-                    "readOnly={}, required={}, widgets={}",
-                request.id, SIGNATURE_FIELD_NAME,
-                field.javaClass.simpleName, field.fieldType, field.partialName,
+                "[Composer] requestId={} — field '{}': type={} partialName={} readOnly={} required={} widgets={}",
+                request.id, fieldName,
+                field.javaClass.simpleName, field.partialName,
                 field.isReadOnly, field.isRequired,
                 (field as? PDTerminalField)?.widgets?.size ?: 0
             )
@@ -243,14 +285,12 @@ class SignedDocumentComposer(
                 val pageViaP = widget.page
                 val pageResolved = pageViaP ?: pageOfWidget(document, widget)
                 val pageIndex = pageResolved?.let { document.pages.indexOf(it) } ?: -1
-                val inAnnots = pageResolved
-                    ?.annotations?.any { it.cosObject == widget.cosObject } ?: false
+                val inAnnots = pageResolved?.annotations?.any { it.cosObject == widget.cosObject } ?: false
                 logger.info(
-                    "[Composer] requestId={} — field '{}' widget[{}]: rect=[llx={}, lly={}, urx={}, ury={}] " +
-                        "({}x{}pt), pageRef(/P)={}, resolvedPageIndex={}, inPageAnnots={}, " +
-                        "hidden={}, invisible={}, noView={}, printed={}, hasAppearance(/AP)={}, " +
-                        "pageMediaBox={}x{}pt, pageRotation={}",
-                    request.id, SIGNATURE_FIELD_NAME, index,
+                    "[Composer] requestId={} field='{}' widget[{}]: rect=[{},{},{},{}] ({}x{}pt) " +
+                        "pageRef=/P:{} resolvedPage={} inAnnots={} hidden={} invisible={} noView={} " +
+                        "printed={} hasAP={} mediaBox={}x{}pt rotation={}",
+                    request.id, fieldName, index,
                     rect?.lowerLeftX, rect?.lowerLeftY, rect?.upperRightX, rect?.upperRightY,
                     rect?.width, rect?.height,
                     pageViaP != null, pageIndex, inAnnots,
@@ -261,18 +301,14 @@ class SignedDocumentComposer(
                 )
             }
         } catch (e: Exception) {
-            // Diagnostics must never break signing
             logger.warn(
-                "[Composer] requestId={} — failed to collect signature field diagnostics: {}",
-                request.id, e.message
+                "[Composer] requestId={} field='{}' — failed to collect diagnostics: {}",
+                request.id, fieldName, e.message
             )
         }
     }
 
-    private fun pageOfWidget(
-        document: org.apache.pdfbox.pdmodel.PDDocument,
-        widget: org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget
-    ): PDPage? {
+    private fun pageOfWidget(document: PDDocument, widget: PDAnnotationWidget): PDPage? {
         for (page in document.pages) {
             if (page.annotations.any { it.cosObject == widget.cosObject }) return page
         }

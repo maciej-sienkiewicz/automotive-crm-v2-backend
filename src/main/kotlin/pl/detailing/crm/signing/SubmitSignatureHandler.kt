@@ -20,6 +20,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
 import pl.detailing.crm.signing.infrastructure.*
+import pl.detailing.crm.user.signature.UserSignatureService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -54,7 +55,8 @@ class SubmitSignatureHandler(
     private val eventPublisher: SignatureEventPublisher,
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val customerConsentRepository: CustomerConsentRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val userSignatureService: UserSignatureService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -153,6 +155,21 @@ class SubmitSignatureHandler(
                     ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
 
                 // ── 4. Compose: PDF + signature strokes + audit page, then seal ─────
+                val companySignatureBytes = userSignatureService.downloadBytes(
+                    request.studioId, request.requestedBy
+                )
+                if (companySignatureBytes != null) {
+                    logger.info(
+                        "Company signature loaded for stamping: requestId={} userId={} bytes={}",
+                        request.id, request.requestedBy, companySignatureBytes.size
+                    )
+                } else {
+                    logger.info(
+                        "No company signature configured for requestedBy={} — 'company_signature' field will be skipped",
+                        request.requestedBy
+                    )
+                }
+
                 val auditEvents = auditTrailService.eventsFor(request.id.value)
                 logger.info(
                     "Composing signed document: requestId={} protocolId={} " +
@@ -163,6 +180,7 @@ class SubmitSignatureHandler(
                 val composedPdf = signedDocumentComposer.compose(
                     filledPdfBytes = filledPdfBytes,
                     signaturePngBytes = normalizedSignature,
+                    companySignaturePngBytes = companySignatureBytes,
                     request = request.copy(
                         signerIpAddress = command.ipAddress,
                         signerDevice = command.deviceName,

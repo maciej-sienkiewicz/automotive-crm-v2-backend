@@ -41,6 +41,13 @@ class PdfProcessingService(
          * rectangle to know where (and how large) the tablet signature image may be stamped.
          */
         const val SIGNATURE_FIELD_NAME = "signature"
+
+        /**
+         * AcroForm field for the employee's own (company-side) signature.
+         * Preserved alongside [SIGNATURE_FIELD_NAME] so SignedDocumentComposer can stamp
+         * the configured user signature into the correct position.
+         */
+        const val COMPANY_SIGNATURE_FIELD_NAME = "company_signature"
     }
 
     /**
@@ -197,7 +204,7 @@ class PdfProcessingService(
                 // must survive: SignedDocumentComposer uses it to position and scale the
                 // signature image stamped after tablet signing. Flattening it would erase
                 // the field and force the composer onto its blind fallback position.
-                flattenPreservingContent(document, acroForm, keepFieldNames = setOf(SIGNATURE_FIELD_NAME))
+                flattenPreservingContent(document, acroForm, keepFieldNames = setOf(SIGNATURE_FIELD_NAME, COMPANY_SIGNATURE_FIELD_NAME))
 
                 // Save to byte array
                 ByteArrayOutputStream().use { outputStream ->
