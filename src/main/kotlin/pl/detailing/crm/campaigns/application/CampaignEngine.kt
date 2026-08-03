@@ -43,13 +43,30 @@ fun shiftOutOfQuietHours(instant: Instant, settings: CampaignSettings): Instant 
  * recomputed here — the design's "przeliczamy w dniu wysyłki" decision) and
  * flips them to SENDING. Dispatch itself happens in [CampaignDispatcher].
  */
+private fun skipReasonMessage(status: RecipientStatus): String = when (status) {
+    RecipientStatus.SKIPPED_NO_CONSENT -> "Brak zgody marketingowej"
+    RecipientStatus.SKIPPED_NO_ADDRESS -> "Brak adresu (telefon / e-mail)"
+    RecipientStatus.SKIPPED_OPTED_OUT -> "Klient wypisany z komunikacji marketingowej"
+    RecipientStatus.SKIPPED_FREQUENCY_CAP -> "Przekroczono limit częstotliwości wysyłki"
+    RecipientStatus.SKIPPED_NO_CREDITS -> "Brak kredytów SMS"
+    RecipientStatus.STOPPED -> "Wysyłka kampanii zatrzymana"
+    else -> "Pominięto"
+}
+
+private fun CampaignRecipient.toCommChannel() =
+    if (channel == RecipientChannel.SMS) CommunicationChannel.SMS else CommunicationChannel.EMAIL
+
+private fun CampaignRecipient.toCommMessageType() =
+    if (channel == RecipientChannel.SMS) CommunicationMessageType.CAMPAIGN_SMS else CommunicationMessageType.CAMPAIGN_EMAIL
+
 @Service
 class CampaignMaterializer(
     private val campaigns: CampaignRepository,
     private val recipients: CampaignRecipientRepository,
     private val service: CampaignService,
     private val audienceQuery: AudienceQueryService,
-    private val renderer: CampaignTemplateRenderer
+    private val renderer: CampaignTemplateRenderer,
+    private val communicationLog: CommunicationLogService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -88,6 +105,25 @@ class CampaignMaterializer(
         }
 
         recipients.saveAll(rows)
+
+        // Log non-PENDING recipients to the customer communication timeline immediately —
+        // they will never be picked up by the dispatcher, so this is the only chance.
+        rows.filter { it.status != RecipientStatus.PENDING }.forEach { r ->
+            communicationLog.record(
+                RecordCommunicationCommand(
+                    studioId = StudioId(r.studioId),
+                    customerId = CustomerId(r.customerId),
+                    visitId = null,
+                    channel = r.toCommChannel(),
+                    messageType = r.toCommMessageType(),
+                    recipientAddress = r.address,
+                    subject = r.renderedSubject,
+                    bodyContent = r.renderedBody,
+                    success = false,
+                    errorMessage = skipReasonMessage(r.status)
+                )
+            )
+        }
 
         val skipped = rows.count { it.status != RecipientStatus.PENDING }
         campaigns.save(
@@ -204,6 +240,20 @@ class CampaignDispatcher(
                     recipients.save(
                         recipient.copy(status = RecipientStatus.FAILED, errorMessage = ex.message, sentAt = Instant.now())
                     )
+                    communicationLog.record(
+                        RecordCommunicationCommand(
+                            studioId = StudioId(recipient.studioId),
+                            customerId = CustomerId(recipient.customerId),
+                            visitId = null,
+                            channel = recipient.toCommChannel(),
+                            messageType = recipient.toCommMessageType(),
+                            recipientAddress = recipient.address,
+                            subject = recipient.renderedSubject,
+                            bodyContent = recipient.renderedBody,
+                            success = false,
+                            errorMessage = ex.message
+                        )
+                    )
                 }
         }
         refreshSendingCampaigns()
@@ -213,6 +263,20 @@ class CampaignDispatcher(
         // Opt-out mógł przyjść po zaplanowaniu — ostatnia linia obrony.
         if (optOuts.isOptedOut(recipient.studioId, recipient.customerId)) {
             recipients.save(recipient.copy(status = RecipientStatus.SKIPPED_OPTED_OUT, sentAt = Instant.now()))
+            communicationLog.record(
+                RecordCommunicationCommand(
+                    studioId = StudioId(recipient.studioId),
+                    customerId = CustomerId(recipient.customerId),
+                    visitId = null,
+                    channel = recipient.toCommChannel(),
+                    messageType = recipient.toCommMessageType(),
+                    recipientAddress = recipient.address,
+                    subject = recipient.renderedSubject,
+                    bodyContent = recipient.renderedBody,
+                    success = false,
+                    errorMessage = skipReasonMessage(RecipientStatus.SKIPPED_OPTED_OUT)
+                )
+            )
             return
         }
 
@@ -233,6 +297,20 @@ class CampaignDispatcher(
                             status = RecipientStatus.SKIPPED_NO_CREDITS,
                             errorMessage = ex.message,
                             sentAt = Instant.now()
+                        )
+                    )
+                    communicationLog.record(
+                        RecordCommunicationCommand(
+                            studioId = StudioId(recipient.studioId),
+                            customerId = CustomerId(recipient.customerId),
+                            visitId = null,
+                            channel = recipient.toCommChannel(),
+                            messageType = recipient.toCommMessageType(),
+                            recipientAddress = recipient.address,
+                            subject = recipient.renderedSubject,
+                            bodyContent = recipient.renderedBody,
+                            success = false,
+                            errorMessage = skipReasonMessage(RecipientStatus.SKIPPED_NO_CREDITS)
                         )
                     )
                     return
