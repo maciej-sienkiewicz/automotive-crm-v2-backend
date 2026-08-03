@@ -59,6 +59,8 @@ interface CampaignRecipientJpaRepository : JpaRepository<CampaignRecipientEntity
 
     fun findByCampaignIdAndStudioIdOrderByCreatedAt(campaignId: UUID, studioId: UUID): List<CampaignRecipientEntity>
 
+    fun findByIdAndCampaignIdAndStudioId(id: UUID, campaignId: UUID, studioId: UUID): CampaignRecipientEntity?
+
     fun findByCampaignIdAndStudioIdAndStatusOrderByCreatedAt(
         campaignId: UUID,
         studioId: UUID,

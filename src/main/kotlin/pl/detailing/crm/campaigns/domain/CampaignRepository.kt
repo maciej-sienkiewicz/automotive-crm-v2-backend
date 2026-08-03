@@ -23,6 +23,7 @@ interface CampaignRecipientRepository {
     fun saveAll(recipients: List<CampaignRecipient>): Int
     fun save(recipient: CampaignRecipient): CampaignRecipient
     fun findDueForDispatch(now: Instant, limit: Int): List<CampaignRecipient>
+    fun findById(id: UUID, campaignId: UUID, studioId: StudioId): CampaignRecipient?
     fun findByCampaign(campaignId: UUID, studioId: StudioId, status: RecipientStatus?): List<CampaignRecipient>
     fun countByCampaignAndStatuses(campaignId: UUID): Map<RecipientStatus, Long>
     fun stopPending(campaignId: UUID): Int

@@ -408,6 +408,21 @@ class CampaignController(
         )
     }
 
+    @PostMapping("/{id}/recipients/{recipientId}/retry")
+    fun retryRecipient(@PathVariable id: UUID, @PathVariable recipientId: UUID): ResponseEntity<CampaignRecipientDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            CampaignRecipientDto.fromDomain(service.retryRecipient(id, recipientId, principal.studioId))
+        )
+    }
+
+    @PostMapping("/{id}/retry-failed")
+    fun retryAllFailed(@PathVariable id: UUID): ResponseEntity<Map<String, Int>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val retried = service.retryAllFailed(id, principal.studioId)
+        return ResponseEntity.ok(mapOf("retried" to retried))
+    }
+
     @PostMapping("/audience/estimate")
     fun estimateAudience(@RequestBody request: AudienceEstimateRequest): ResponseEntity<AudienceEstimateDto> {
         val principal = SecurityContextHelper.getCurrentUser()
