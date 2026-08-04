@@ -65,6 +65,10 @@ class StudioSettingsEntity(
     @Column(name = "visit_card_send_by_default", nullable = false, columnDefinition = "boolean not null default false")
     var visitCardSendByDefault: Boolean = false,
 
+    /** 0 = disabled; positive value = lock screen after N minutes of inactivity (client-side enforcement). */
+    @Column(name = "idle_timeout_minutes", nullable = false)
+    var idleTimeoutMinutes: Int = 0,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )

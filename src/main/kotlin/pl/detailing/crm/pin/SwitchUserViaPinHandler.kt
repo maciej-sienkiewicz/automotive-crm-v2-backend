@@ -13,6 +13,7 @@ import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.util.UUID
@@ -24,7 +25,8 @@ class SwitchUserViaPinHandler(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val subscriptionService: SubscriptionService,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
     suspend fun handle(
         targetUserId: UUID,
@@ -98,7 +100,9 @@ class SwitchUserViaPinHandler(
                     .getPermissions(userId, studioIdTyped)
                     ?.map { it.name },
                 trackWorkTime = permissionCheckService
-                    .getTrackWorkTime(userId, studioIdTyped)
+                    .getTrackWorkTime(userId, studioIdTyped),
+                idleTimeoutMinutes = studioSettingsRepository
+                    .findById(user.studioId).orElse(null)?.idleTimeoutMinutes ?: 0
             )
         )
 

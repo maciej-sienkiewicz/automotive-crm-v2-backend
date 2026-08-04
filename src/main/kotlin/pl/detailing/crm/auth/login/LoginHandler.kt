@@ -12,6 +12,7 @@ import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.observability.MetricsTags
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.UnauthorizedException
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Duration
@@ -24,7 +25,8 @@ class LoginHandler(
     private val subscriptionService: SubscriptionService,
     private val redisTemplate: StringRedisTemplate,
     private val meterRegistry: MeterRegistry,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
     companion object {
         private const val LOCKOUT_KEY_PREFIX  = "auth:lockout:"
@@ -102,7 +104,10 @@ class LoginHandler(
                         .getPermissions(user.id, user.studioId)
                         ?.map { it.name },
                     trackWorkTime = permissionCheckService
-                        .getTrackWorkTime(user.id, user.studioId)
+                        .getTrackWorkTime(user.id, user.studioId),
+                    idleTimeoutMinutes = withContext(Dispatchers.IO) {
+                        studioSettingsRepository.findById(user.studioId).orElse(null)?.idleTimeoutMinutes ?: 0
+                    }
                 )
             )
 
