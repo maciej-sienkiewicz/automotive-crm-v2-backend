@@ -155,8 +155,8 @@ class AuthController(
             val permissions = permissionCheckService.getPermissions(principal.userId, principal.studioId)
                 ?.map { it.name }
             val trackWorkTime = permissionCheckService.getTrackWorkTime(principal.userId, principal.studioId)
-            val idleTimeoutMinutes = withContext(Dispatchers.IO) {
-                studioSettingsRepository.findById(principal.studioId.value).orElse(null)?.idleTimeoutMinutes ?: 0
+            val idleTimeoutSeconds = withContext(Dispatchers.IO) {
+                studioSettingsRepository.findById(principal.studioId.value).orElse(null)?.idleTimeoutSeconds ?: 0
             }
 
             ResponseEntity.ok(UnifiedAuthResponse(
@@ -176,7 +176,7 @@ class AuthController(
                     mobileToken = mobileToken,
                     permissions = permissions,
                     trackWorkTime = trackWorkTime,
-                    idleTimeoutMinutes = idleTimeoutMinutes
+                    idleTimeoutSeconds = idleTimeoutSeconds
                 )
             ))
         } catch (e: Exception) {

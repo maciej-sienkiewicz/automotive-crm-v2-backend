@@ -289,7 +289,7 @@ class CompanyController(
         val settings = withContext(Dispatchers.IO) {
             studioSettingsRepository.findById(principal.studioId.value).orElse(null)
         }
-        ResponseEntity.ok(IdleTimeoutResponse(idleTimeoutMinutes = settings?.idleTimeoutMinutes ?: 0))
+        ResponseEntity.ok(IdleTimeoutResponse(idleTimeoutSeconds = settings?.idleTimeoutSeconds ?: 0))
     }
 
     @PatchMapping("/idle-timeout")
@@ -299,7 +299,7 @@ class CompanyController(
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) throw ForbiddenException("Only owners can change idle timeout settings")
 
-        require(request.idleTimeoutMinutes in 0..480) { "Idle timeout must be between 0 and 480 minutes" }
+        require(request.idleTimeoutSeconds in 0..86400) { "Idle timeout must be between 0 and 86400 seconds" }
 
         val studioId = principal.studioId.value
         val settings = withContext(Dispatchers.IO) {
@@ -307,11 +307,11 @@ class CompanyController(
                 ?: StudioSettingsEntity(studioId = studioId)
         }
 
-        settings.idleTimeoutMinutes = request.idleTimeoutMinutes
+        settings.idleTimeoutSeconds = request.idleTimeoutSeconds
         settings.updatedAt = Instant.now()
 
         val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
-        ResponseEntity.ok(IdleTimeoutResponse(idleTimeoutMinutes = saved.idleTimeoutMinutes))
+        ResponseEntity.ok(IdleTimeoutResponse(idleTimeoutSeconds = saved.idleTimeoutSeconds))
     }
 
     private fun generateLogoPresignedUrl(s3Key: String): String {
@@ -383,6 +383,6 @@ data class SmsSenderConfigResponse(
     val effectiveSenderName: String?
 )
 
-data class IdleTimeoutResponse(val idleTimeoutMinutes: Int)
+data class IdleTimeoutResponse(val idleTimeoutSeconds: Int)
 
-data class UpdateIdleTimeoutRequest(val idleTimeoutMinutes: Int)
+data class UpdateIdleTimeoutRequest(val idleTimeoutSeconds: Int)

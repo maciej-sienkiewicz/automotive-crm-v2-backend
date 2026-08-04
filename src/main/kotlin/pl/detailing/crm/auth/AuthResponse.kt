@@ -26,6 +26,6 @@ data class UserData(
     val permissions: List<String>? = null,
     /** True when the user's role has "track work time" enabled — shows the Czas pracy sidebar entry. */
     val trackWorkTime: Boolean = false,
-    /** Minutes of inactivity before the client-side lock screen fires. 0 = disabled. */
-    val idleTimeoutMinutes: Int = 0
+    /** Seconds of inactivity before the client-side lock screen fires. 0 = disabled. */
+    val idleTimeoutSeconds: Int = 0
 )
