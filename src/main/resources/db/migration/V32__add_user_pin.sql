@@ -1,0 +1,4 @@
+-- V32: Add PIN-based user switching support
+ALTER TABLE users ADD COLUMN pin_hash VARCHAR(255) NULL;
+ALTER TABLE users ADD COLUMN pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN pin_locked BOOLEAN NOT NULL DEFAULT FALSE;

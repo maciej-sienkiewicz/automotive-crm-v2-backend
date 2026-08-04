@@ -81,7 +81,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -106,7 +106,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
         }
         ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse(accountInfo))
     }
@@ -133,7 +133,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive) }
+                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -270,7 +270,8 @@ data class EmployeePaginationInfo(
 data class EmployeeAccountInfo(
     val userId: String,
     val roleId: String?,
-    val isActive: Boolean
+    val isActive: Boolean,
+    val hasPinConfigured: Boolean = false
 )
 
 data class EmployeeDetailResponse(

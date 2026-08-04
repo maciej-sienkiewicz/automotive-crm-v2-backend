@@ -62,7 +62,16 @@ class UserEntity(
     var customRoleId: UUID? = null,
 
     @Column(name = "signature_s3_key", length = 512)
-    var signatureS3Key: String? = null
+    var signatureS3Key: String? = null,
+
+    @Column(name = "pin_hash", nullable = true, length = 255)
+    var pinHash: String? = null,
+
+    @Column(name = "pin_failed_attempts", nullable = false)
+    var pinFailedAttempts: Int = 0,
+
+    @Column(name = "pin_locked", nullable = false)
+    var pinLocked: Boolean = false
 ) {
     fun toDomain(): User = User(
         id = UserId(id),
@@ -76,7 +85,10 @@ class UserEntity(
         isActive = isActive,
         createdAt = createdAt,
         mobileToken = mobileToken,
-        signatureS3Key = signatureS3Key
+        signatureS3Key = signatureS3Key,
+        pinHash = pinHash,
+        pinFailedAttempts = pinFailedAttempts,
+        pinLocked = pinLocked
     )
 
     companion object {
@@ -92,7 +104,10 @@ class UserEntity(
             isActive = user.isActive,
             createdAt = user.createdAt,
             mobileToken = user.mobileToken,
-            signatureS3Key = user.signatureS3Key
+            signatureS3Key = user.signatureS3Key,
+            pinHash = user.pinHash,
+            pinFailedAttempts = user.pinFailedAttempts,
+            pinLocked = user.pinLocked
         )
     }
 }
