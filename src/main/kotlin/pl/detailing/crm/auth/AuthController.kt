@@ -4,7 +4,9 @@ package pl.detailing.crm.auth
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.context.SecurityContextHolder
@@ -20,6 +22,7 @@ import pl.detailing.crm.auth.passwordreset.ResetPasswordRequest
 import pl.detailing.crm.auth.passwordreset.ValidateResetTokenResponse
 import pl.detailing.crm.auth.signup.SignupHandler
 import pl.detailing.crm.auth.signup.SignupRequest
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.voice.MobileTokenService
@@ -37,7 +40,8 @@ class AuthController(
     private val securityContextRepository: SecurityContextRepository,
     private val userRepository: UserRepository,
     private val mobileTokenService: MobileTokenService,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
 
     @PostMapping("/signup")
@@ -151,6 +155,9 @@ class AuthController(
             val permissions = permissionCheckService.getPermissions(principal.userId, principal.studioId)
                 ?.map { it.name }
             val trackWorkTime = permissionCheckService.getTrackWorkTime(principal.userId, principal.studioId)
+            val idleTimeoutMinutes = withContext(Dispatchers.IO) {
+                studioSettingsRepository.findById(principal.studioId.value).orElse(null)?.idleTimeoutMinutes ?: 0
+            }
 
             ResponseEntity.ok(UnifiedAuthResponse(
                 success = true,
@@ -168,7 +175,8 @@ class AuthController(
                     lastName = principal.fullName.split(" ").last(),
                     mobileToken = mobileToken,
                     permissions = permissions,
-                    trackWorkTime = trackWorkTime
+                    trackWorkTime = trackWorkTime,
+                    idleTimeoutMinutes = idleTimeoutMinutes
                 )
             ))
         } catch (e: Exception) {
