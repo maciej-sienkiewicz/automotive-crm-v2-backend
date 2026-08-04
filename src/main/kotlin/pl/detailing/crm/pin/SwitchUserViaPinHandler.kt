@@ -101,8 +101,8 @@ class SwitchUserViaPinHandler(
                     ?.map { it.name },
                 trackWorkTime = permissionCheckService
                     .getTrackWorkTime(userId, studioIdTyped),
-                idleTimeoutMinutes = studioSettingsRepository
-                    .findById(user.studioId).orElse(null)?.idleTimeoutMinutes ?: 0
+                idleTimeoutSeconds = studioSettingsRepository
+                    .findById(user.studioId).orElse(null)?.idleTimeoutSeconds ?: 0
             )
         )
 
