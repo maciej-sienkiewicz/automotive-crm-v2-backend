@@ -26,5 +26,8 @@ data class User(
     val isActive: Boolean,
     val createdAt: Instant,
     val mobileToken: String? = null,
-    val signatureS3Key: String? = null
+    val signatureS3Key: String? = null,
+    val pinHash: String? = null,
+    val pinFailedAttempts: Int = 0,
+    val pinLocked: Boolean = false
 )
