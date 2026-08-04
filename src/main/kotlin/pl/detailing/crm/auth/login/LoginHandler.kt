@@ -106,7 +106,7 @@ class LoginHandler(
                     trackWorkTime = permissionCheckService
                         .getTrackWorkTime(user.id, user.studioId),
                     idleTimeoutMinutes = withContext(Dispatchers.IO) {
-                        studioSettingsRepository.findById(user.studioId).orElse(null)?.idleTimeoutMinutes ?: 0
+                        studioSettingsRepository.findById(user.studioId.value).orElse(null)?.idleTimeoutMinutes ?: 0
                     }
                 )
             )
