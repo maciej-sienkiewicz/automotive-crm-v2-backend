@@ -57,15 +57,15 @@ class PaymentOrderEntity(
     val sessionId: String,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "order_type", nullable = false, length = 40)
+    @Column(name = "order_type", nullable = false, columnDefinition = "VARCHAR(40)")
     val type: PaymentOrderType,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(20)")
     var status: PaymentOrderStatus = PaymentOrderStatus.PENDING,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "plan_key", length = 50)
+    @Column(name = "plan_key", columnDefinition = "VARCHAR(50)")
     val planKey: PlanKey? = null,
 
     /** Comma-separated [AddOnKey] names; empty when the order carries no modules. */

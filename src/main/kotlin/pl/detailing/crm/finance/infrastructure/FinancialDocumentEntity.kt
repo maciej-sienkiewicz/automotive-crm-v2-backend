@@ -72,19 +72,19 @@ class FinancialDocumentEntity(
     var documentNumber: String,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "document_type", nullable = false, length = 20)
+    @Column(name = "document_type", nullable = false, columnDefinition = "VARCHAR(20)")
     val documentType: DocumentType,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "direction", nullable = false, length = 10)
+    @Column(name = "direction", nullable = false, columnDefinition = "VARCHAR(10)")
     val direction: DocumentDirection,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(20)")
     var status: DocumentStatus,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "payment_method", nullable = false, length = 20)
+    @Column(name = "payment_method", nullable = false, columnDefinition = "VARCHAR(20)")
     val paymentMethod: PaymentMethod,
 
     @Column(name = "total_net", nullable = false)

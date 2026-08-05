@@ -51,7 +51,7 @@ class AppointmentEntity(
     var endDateTime: Instant,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 50)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(50)")
     var status: AppointmentStatus,
 
     @Column(name = "note", columnDefinition = "TEXT")
@@ -192,7 +192,7 @@ class AppointmentLineItemEntity(
     var vatRate: Int,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "adjustment_type", nullable = false, length = 50)
+    @Column(name = "adjustment_type", nullable = false, columnDefinition = "VARCHAR(50)")
     var adjustmentType: AdjustmentType,
 
     @Column(name = "adjustment_value", nullable = false)

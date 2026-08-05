@@ -34,7 +34,7 @@ class AuditLogEntity(
     @Column(name = "user_display_name", nullable = false, length = 200)
     val userDisplayName: String,
 
-    @Column(name = "module", nullable = false, length = 50)
+    @Column(name = "module", nullable = false, columnDefinition = "VARCHAR(50)")
     @Enumerated(EnumType.STRING)
     val module: AuditModule,
 

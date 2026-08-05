@@ -26,7 +26,7 @@ class VisitCommentEntity(
     val visitId: UUID,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 50)
+    @Column(name = "type", nullable = false, columnDefinition = "VARCHAR(50)")
     var type: CommentType,
 
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")

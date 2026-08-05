@@ -76,7 +76,7 @@ class VisitEntity(
 
     // Visit status and dates
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 50)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(50)")
     var status: VisitStatus,
 
     @Column(name = "scheduled_date", nullable = false, columnDefinition = "timestamp with time zone")
@@ -295,7 +295,7 @@ class VisitServiceItemEntity(
     val vatRate: Int,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "adjustment_type", nullable = false, length = 50)
+    @Column(name = "adjustment_type", nullable = false, columnDefinition = "VARCHAR(50)")
     val adjustmentType: AdjustmentType,
 
     @Column(name = "adjustment_value", nullable = false)
@@ -308,11 +308,11 @@ class VisitServiceItemEntity(
     val finalPriceGross: Long,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 50)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(50)")
     var status: VisitServiceStatus,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "pending_operation", nullable = true, length = 50)
+    @Column(name = "pending_operation", nullable = true, columnDefinition = "VARCHAR(50)")
     var pendingOperation: PendingOperation?,
 
     @Column(name = "confirmed_snapshot", columnDefinition = "TEXT")
@@ -480,7 +480,7 @@ class VisitJournalEntryEntity(
     var visit: VisitEntity,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 50)
+    @Column(name = "type", nullable = false, columnDefinition = "VARCHAR(50)")
     val type: JournalEntryType,
 
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
@@ -545,7 +545,7 @@ class VisitDocumentEntity(
     val customerId: UUID,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 50)
+    @Column(name = "type", nullable = false, columnDefinition = "VARCHAR(50)")
     val type: DocumentType,
 
     @Column(name = "name", nullable = false, length = 255)

@@ -58,11 +58,11 @@ class CommunicationLogEntity(
     val appointmentId: UUID?,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "channel", nullable = false, length = 10)
+    @Column(name = "channel", nullable = false, columnDefinition = "VARCHAR(10)")
     val channel: CommunicationChannel,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "message_type", nullable = false, length = 50)
+    @Column(name = "message_type", nullable = false, columnDefinition = "VARCHAR(50)")
     val messageType: CommunicationMessageType,
 
     /** Phone number (E.164) for SMS, or email address for EMAIL messages. */
@@ -78,7 +78,7 @@ class CommunicationLogEntity(
     val bodyContent: String,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 10)
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(10)")
     val status: CommunicationStatus,
 
     /** Provider error description, null when status = SENT. */

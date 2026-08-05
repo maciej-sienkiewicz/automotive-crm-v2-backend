@@ -62,7 +62,7 @@ class CashOperationEntity(
     val balanceAfter: Long,
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "operation_type", nullable = false, length = 30)
+    @Column(name = "operation_type", nullable = false, columnDefinition = "VARCHAR(30)")
     val operationType: CashOperationType,
 
     /**
