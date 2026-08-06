@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import java.math.BigDecimal
 import pl.detailing.crm.smscampaigns.consent.ServiceChangesSummary
 import pl.detailing.crm.smscampaigns.consent.SmsConsentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -136,6 +137,24 @@ class SaveVisitServicesHandler(
             changes.add(FieldChange("servicesDeleted", null, payload.deleted.size.toString()))
         }
 
+        val grossBefore = visit.calculateTotalGross().amountInCents
+        val grossAfter = updatedVisit.calculateTotalGross().amountInCents
+        if (grossBefore != grossAfter) {
+            changes.add(FieldChange(
+                "totalGross",
+                BigDecimal(grossBefore).movePointLeft(2).toPlainString(),
+                BigDecimal(grossAfter).movePointLeft(2).toPlainString(),
+                AuditValueType.MONEY
+            ))
+        }
+
+        val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, studioId.value)
+        val vehicleName = listOfNotNull(
+            visitEntity.brandSnapshot,
+            visitEntity.modelSnapshot,
+            visitEntity.licensePlateSnapshot?.let { "($it)" }
+        ).joinToString(" ").takeIf { it.isNotBlank() }
+
         auditService.log(LogAuditCommand(
             studioId = studioId,
             userId = userId,
@@ -144,7 +163,16 @@ class SaveVisitServicesHandler(
             entityId = visitId.value.toString(),
             entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
             action = AuditAction.SERVICES_UPDATED,
-            changes = changes
+            changes = changes,
+            amount = AuditAmount(BigDecimal(grossAfter).movePointLeft(2)),
+            context = AuditContext(
+                customerId = CustomerId(visitEntity.customerId),
+                customerName = customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").takeIf { n -> n.isNotBlank() } },
+                vehicleId = VehicleId(visitEntity.vehicleId),
+                vehicleName = vehicleName,
+                visitId = visitId,
+                visitName = "Wizyta #${visitEntity.visitNumber}"
+            )
         ))
 
         if (payload.notifyCustomer) {

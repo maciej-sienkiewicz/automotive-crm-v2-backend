@@ -3,6 +3,7 @@ package pl.detailing.crm.communication
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.audit.domain.AuditActorResolver
 import pl.detailing.crm.audit.domain.AuditContext
 import pl.detailing.crm.audit.domain.AuditEvent
@@ -45,7 +46,14 @@ data class RecordCommunicationCommand(
     val success: Boolean,
     val errorMessage: String?,
     /** When set, overrides the [success]-based status mapping. */
-    val status: CommunicationStatus? = null
+    val status: CommunicationStatus? = null,
+    /**
+     * The employee who initiated the send. When set, overrides [AuditActorResolver]
+     * so the feed shows the person's name instead of "System". Must be captured on the
+     * request thread before any coroutine dispatcher switch, because the security context
+     * is thread-local and may not survive the switch to Dispatchers.IO.
+     */
+    val initiatedBy: AuditActor? = null
 )
 
 /**
@@ -110,9 +118,9 @@ class CommunicationLogService(
         auditService.recordSync(
             AuditEvent(
                 studioId = command.studioId,
-                // Automations and campaign dispatch run without a principal and resolve to
-                // the system actor; a message an employee sent by hand keeps their name.
-                actor = auditActorResolver.current(),
+                // Prefer the actor captured before any dispatcher switch; fall back to
+                // auditActorResolver for automations/campaign dispatch (no principal).
+                actor = command.initiatedBy ?: auditActorResolver.current(),
                 module = AuditModule.COMMUNICATION,
                 action = when {
                     command.channel == CommunicationChannel.SMS && succeeded -> AuditAction.SMS_SENT

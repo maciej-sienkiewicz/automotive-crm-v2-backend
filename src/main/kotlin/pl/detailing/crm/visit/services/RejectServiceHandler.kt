@@ -3,10 +3,12 @@ package pl.detailing.crm.visit.services
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.MoneyAmountResponse
+import java.math.BigDecimal
 
 /**
  * Handler for rejecting pending service changes
@@ -14,7 +16,8 @@ import pl.detailing.crm.visit.get.MoneyAmountResponse
 @Service
 class RejectServiceHandler(
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val customerRepository: CustomerRepository
 ) {
 
     @Transactional
@@ -42,7 +45,26 @@ class RejectServiceHandler(
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
 
-        // Audit logging
+        val grossBefore = visit.calculateTotalGross().amountInCents
+        val grossAfter = updatedVisit.calculateTotalGross().amountInCents
+        val changes = mutableListOf<FieldChange>()
+        if (grossBefore != grossAfter) {
+            changes.add(FieldChange(
+                "totalGross",
+                BigDecimal(grossBefore).movePointLeft(2).toPlainString(),
+                BigDecimal(grossAfter).movePointLeft(2).toPlainString(),
+                AuditValueType.MONEY
+            ))
+        }
+        serviceItem?.let { changes.add(FieldChange("status", "PENDING", "REJECTED")) }
+
+        val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, studioId.value)
+        val vehicleName = listOfNotNull(
+            visitEntity.brandSnapshot,
+            visitEntity.modelSnapshot,
+            visitEntity.licensePlateSnapshot?.let { "($it)" }
+        ).joinToString(" ").takeIf { it.isNotBlank() }
+
         auditService.log(LogAuditCommand(
             studioId = studioId,
             userId = userId,
@@ -51,13 +73,20 @@ class RejectServiceHandler(
             entityId = visitId.value.toString(),
             entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
             action = AuditAction.SERVICE_UPDATED,
+            changes = changes,
+            amount = AuditAmount(BigDecimal(grossAfter).movePointLeft(2)),
+            context = AuditContext(
+                customerId = CustomerId(visitEntity.customerId),
+                customerName = customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").takeIf { n -> n.isNotBlank() } },
+                vehicleId = VehicleId(visitEntity.vehicleId),
+                vehicleName = vehicleName,
+                visitId = visitId,
+                visitName = "Wizyta #${visitEntity.visitNumber}"
+            ),
             metadata = buildMap {
                 put("serviceItemId", serviceItemId.value.toString())
                 put("operation", "REJECT")
-                if (serviceItem != null) {
-                    put("serviceName", serviceItem.serviceName)
-                    serviceItem.pendingOperation?.let { put("pendingOperation", it.name) }
-                }
+                serviceItem?.serviceName?.let { put("serviceName", it) }
             }
         ))
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
@@ -78,7 +79,8 @@ class VisitCardController(
             SendVisitCardLinkCommand(
                 visitId = VisitId.fromString(visitId),
                 studioId = principal.studioId,
-                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
+                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) },
+                initiatedBy = AuditActor.employee(principal.userId, principal.fullName)
             )
         )
         ResponseEntity.ok(
