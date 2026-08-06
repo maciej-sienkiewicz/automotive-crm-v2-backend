@@ -5,19 +5,60 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Propagation
-import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.infrastructure.AuditLogEntity
-import pl.detailing.crm.audit.infrastructure.AuditLogRepository
+import pl.detailing.crm.audit.infrastructure.AuditLogWriter
+import pl.detailing.crm.audit.infrastructure.AuditRequestContext
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.time.Instant
+import java.util.UUID
+
+/**
+ * An auditable thing that happened. This is the API to reach for in new code.
+ *
+ * Everything except the actor, the module, the action and the entity is optional, and the
+ * optional parts are what make the entry render well in the activity feed:
+ * [context] gives the feed something to link to, [amount] answers "for how much", and
+ * [severity] / [channel] are derived automatically unless the call site knows better.
+ *
+ * ```
+ * auditService.record(AuditEvent(
+ *     studioId = command.studioId,
+ *     actor = AuditActor.employee(command.userId, command.userName),
+ *     module = AuditModule.VISIT,
+ *     action = AuditAction.VISIT_CREATED,
+ *     entityId = visitId.toString(),
+ *     entityDisplayName = "Wizyta #${visit.visitNumber}",
+ *     context = AuditContext(customerId = customerId, vehicleId = vehicleId),
+ *     amount = AuditAmount(visit.totalGross)
+ * ))
+ * ```
+ */
+data class AuditEvent(
+    val studioId: StudioId,
+    val actor: AuditActor,
+    val module: AuditModule,
+    val action: AuditAction,
+    val entityId: String,
+    val entityDisplayName: String? = null,
+    val changes: List<FieldChange> = emptyList(),
+    val metadata: Map<String, String> = emptyMap(),
+    val context: AuditContext = AuditContext.EMPTY,
+    val amount: AuditAmount? = null,
+    /** Defaults to the action's declared severity. */
+    val severity: AuditSeverity? = null,
+    /** Defaults to the ambient HTTP request, then to the actor type. */
+    val channel: AuditChannel? = null,
+    val correlationId: UUID? = null
+)
 
 /**
  * Command object for logging an audit event.
- * This is the primary API for all modules to record audit entries.
+ *
+ * Retained as the compatibility surface for the ~90 handlers written against it. New code
+ * should use [AuditEvent], which can express a customer or system actor; this type is
+ * pinned to an employee [userId] and cannot.
  */
 data class LogAuditCommand(
     val studioId: StudioId,
@@ -28,98 +69,134 @@ data class LogAuditCommand(
     val entityDisplayName: String? = null,
     val action: AuditAction,
     val changes: List<FieldChange> = emptyList(),
-    val metadata: Map<String, String> = emptyMap()
-)
+    val metadata: Map<String, String> = emptyMap(),
+    // v2 additions — optional, so existing call sites are unaffected.
+    val context: AuditContext = AuditContext.EMPTY,
+    val amount: AuditAmount? = null,
+    val severity: AuditSeverity? = null,
+    val channel: AuditChannel? = null,
+    val correlationId: UUID? = null
+) {
+    fun toEvent(): AuditEvent = AuditEvent(
+        studioId = studioId,
+        actor = AuditActor.employee(userId, userDisplayName),
+        module = module,
+        action = action,
+        entityId = entityId,
+        entityDisplayName = entityDisplayName,
+        changes = changes,
+        metadata = metadata,
+        context = context,
+        amount = amount,
+        severity = severity,
+        channel = channel,
+        correlationId = correlationId
+    )
+}
 
 /**
  * Core audit service providing generic audit logging for all modules.
  *
- * Usage from handlers:
- * ```
- * auditService.log(LogAuditCommand(
- *     studioId = command.studioId,
- *     userId = command.userId,
- *     userDisplayName = "Jan Kowalski",
- *     module = AuditModule.CUSTOMER,
- *     entityId = customerId.toString(),
- *     entityDisplayName = "Jan Kowalski",
- *     action = AuditAction.UPDATE,
- *     changes = listOf(FieldChange("email", "old@mail.com", "new@mail.com"))
- * ))
- * ```
+ * Logging never throws: a failure to record an event must not take down the business
+ * operation that caused it. It is reported at ERROR together with the full event payload,
+ * so a dropped entry stays reconstructable from the application log.
  */
 @Service
 class AuditService(
-    private val auditLogRepository: AuditLogRepository,
+    private val auditLogWriter: AuditLogWriter,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(AuditService::class.java)
 
     /**
-     * Log an audit event. This method is designed to never throw exceptions
-     * to avoid breaking the primary business flow.
+     * Record an event. Safe to call from any coroutine; the database write happens on the
+     * IO dispatcher in its own transaction.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    suspend fun log(command: LogAuditCommand) {
-        try {
-            withContext(Dispatchers.IO) {
-                val auditLog = AuditLog(
-                    id = AuditLogId.random(),
-                    studioId = command.studioId,
-                    userId = command.userId,
-                    userDisplayName = command.userDisplayName,
-                    module = command.module,
-                    entityId = command.entityId,
-                    entityDisplayName = command.entityDisplayName,
-                    action = command.action,
-                    changes = command.changes,
-                    metadata = command.metadata,
-                    createdAt = Instant.now()
-                )
-
-                val entity = AuditLogEntity.fromDomain(
-                    auditLog = auditLog,
-                    changesSerializer = ::serializeChanges,
-                    metadataSerializer = ::serializeMetadata
-                )
-
-                auditLogRepository.save(entity)
-            }
+    suspend fun record(event: AuditEvent) {
+        val entity = try {
+            // Captured here, on the caller's thread: the request thread locals are gone by
+            // the time the body below runs on the IO dispatcher.
+            toEntity(event)
         } catch (e: Exception) {
-            logger.error("Failed to save audit log: module=${command.module}, action=${command.action}, entityId=${command.entityId}", e)
+            reportFailure(event, e)
+            return
+        }
+
+        try {
+            withContext(Dispatchers.IO) { auditLogWriter.write(entity) }
+        } catch (e: Exception) {
+            reportFailure(event, e)
         }
     }
 
-    /**
-     * Log an audit event synchronously (for use in non-coroutine contexts).
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun logSync(command: LogAuditCommand) {
+    /** Record an event from a non-coroutine context (schedulers, listeners, filters). */
+    fun recordSync(event: AuditEvent) {
         try {
-            val auditLog = AuditLog(
-                id = AuditLogId.random(),
-                studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userDisplayName,
-                module = command.module,
-                entityId = command.entityId,
-                entityDisplayName = command.entityDisplayName,
-                action = command.action,
-                changes = command.changes,
-                metadata = command.metadata,
-                createdAt = Instant.now()
-            )
-
-            val entity = AuditLogEntity.fromDomain(
-                auditLog = auditLog,
-                changesSerializer = ::serializeChanges,
-                metadataSerializer = ::serializeMetadata
-            )
-
-            auditLogRepository.save(entity)
+            auditLogWriter.write(toEntity(event))
         } catch (e: Exception) {
-            logger.error("Failed to save audit log (sync): module=${command.module}, action=${command.action}, entityId=${command.entityId}", e)
+            reportFailure(event, e)
         }
+    }
+
+    /** Compatibility wrapper — see [LogAuditCommand]. */
+    suspend fun log(command: LogAuditCommand) = record(command.toEvent())
+
+    /** Compatibility wrapper — see [LogAuditCommand]. */
+    fun logSync(command: LogAuditCommand) = recordSync(command.toEvent())
+
+    private fun toEntity(event: AuditEvent): AuditLogEntity {
+        val request = AuditRequestContext.capture()
+
+        val auditLog = AuditLog(
+            id = AuditLogId.random(),
+            studioId = event.studioId,
+            actor = event.actor,
+            module = event.module,
+            entityId = event.entityId,
+            entityDisplayName = event.entityDisplayName,
+            action = event.action,
+            changes = event.changes,
+            metadata = event.metadata,
+            context = event.context,
+            amount = event.amount,
+            severity = event.severity ?: event.action.severity,
+            channel = event.channel ?: request?.channel ?: defaultChannelFor(event.actor.type),
+            ipAddress = request?.ipAddress,
+            correlationId = event.correlationId ?: request?.correlationId,
+            createdAt = Instant.now()
+        )
+
+        return AuditLogEntity.fromDomain(
+            auditLog = auditLog,
+            changesSerializer = ::serializeChanges,
+            metadataSerializer = ::serializeMetadata
+        )
+    }
+
+    /**
+     * Used when no HTTP request is visible. That is not proof the action was automated —
+     * a handler that already switched dispatchers looks the same — so an employee action
+     * is attributed to the panel rather than being mislabelled as a system job.
+     */
+    private fun defaultChannelFor(actorType: AuditActorType): AuditChannel = when (actorType) {
+        AuditActorType.EMPLOYEE -> AuditChannel.WEB_PANEL
+        AuditActorType.CUSTOMER -> AuditChannel.PUBLIC_LINK
+        AuditActorType.SYSTEM -> AuditChannel.SYSTEM
+        AuditActorType.INTEGRATION -> AuditChannel.API
+    }
+
+    private fun reportFailure(event: AuditEvent, e: Exception) {
+        logger.error(
+            "Failed to save audit log: studioId={}, module={}, action={}, entityId={}, actor={}/{}, payload={}",
+            event.studioId,
+            event.module,
+            event.action,
+            event.entityId,
+            event.actor.type,
+            event.actor.id,
+            runCatching { objectMapper.writeValueAsString(event) }.getOrElse { "<unserializable>" },
+            e
+        )
     }
 
     /**
@@ -152,7 +229,13 @@ class AuditService(
 
     fun deserializeChanges(json: String?): List<FieldChange> {
         if (json.isNullOrBlank()) return emptyList()
-        return objectMapper.readValue(json)
+        return try {
+            objectMapper.readValue(json)
+        } catch (e: Exception) {
+            // A malformed payload must not take down the whole page of results.
+            logger.warn("Unreadable audit changes payload, rendering entry without changes", e)
+            emptyList()
+        }
     }
 
     fun serializeMetadata(metadata: Map<String, String>): String? {
@@ -162,6 +245,11 @@ class AuditService(
 
     fun deserializeMetadata(json: String?): Map<String, String> {
         if (json.isNullOrBlank()) return emptyMap()
-        return objectMapper.readValue(json)
+        return try {
+            objectMapper.readValue(json)
+        } catch (e: Exception) {
+            logger.warn("Unreadable audit metadata payload, rendering entry without metadata", e)
+            emptyMap()
+        }
     }
 }

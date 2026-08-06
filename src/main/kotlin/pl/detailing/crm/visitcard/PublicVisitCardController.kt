@@ -25,12 +25,23 @@ import pl.detailing.crm.visitcard.upsell.RequestUpsellServicesResponse
 @RequestMapping("/api/public/visit-card")
 class PublicVisitCardController(
     private val getVisitCardHandler: GetVisitCardHandler,
-    private val requestUpsellServicesHandler: RequestUpsellServicesHandler
+    private val requestUpsellServicesHandler: RequestUpsellServicesHandler,
+    private val visitCardTokenService: VisitCardTokenService,
+    private val visitCardViewRecorder: VisitCardViewRecorder
 ) {
 
     @GetMapping("/{token}")
     fun getVisitCard(@PathVariable token: String): ResponseEntity<VisitCardResponse> = runBlocking {
         val card = withContext(Dispatchers.IO) { getVisitCardHandler.handle(token) }
+
+        // After the card resolves, so an invalid token never produces an activity entry.
+        // Recording must not be able to fail the customer's page load.
+        withContext(Dispatchers.IO) {
+            runCatching {
+                visitCardTokenService.findByToken(token)?.let { visitCardViewRecorder.recordView(it, card) }
+            }
+        }
+
         ResponseEntity.ok(card)
     }
 

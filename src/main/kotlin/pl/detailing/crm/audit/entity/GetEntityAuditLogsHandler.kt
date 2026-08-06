@@ -2,13 +2,15 @@ package pl.detailing.crm.audit.entity
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
-import pl.detailing.crm.audit.domain.*
-import pl.detailing.crm.audit.infrastructure.AuditLogRepository
-import pl.detailing.crm.audit.list.AuditLogListItem
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.infrastructure.AuditFeedFilters
+import pl.detailing.crm.audit.infrastructure.AuditFeedQueryRepository
 import pl.detailing.crm.audit.list.AuditLogListResult
+import pl.detailing.crm.audit.list.toLegacyListItem
 import pl.detailing.crm.shared.StudioId
+import kotlin.math.ceil
 
 data class GetEntityAuditLogsCommand(
     val studioId: StudioId,
@@ -18,41 +20,40 @@ data class GetEntityAuditLogsCommand(
     val pageSize: Int = 50
 )
 
+/**
+ * History of one entity, page-numbered — the "activity" tab on a customer, vehicle or
+ * visit card. New clients should prefer `GET /api/v1/audit/feed?module=…&entityId=…`,
+ * which returns the same rows already rendered for display.
+ */
 @Service
 class GetEntityAuditLogsHandler(
-    private val auditLogRepository: AuditLogRepository,
+    private val auditFeedQueryRepository: AuditFeedQueryRepository,
     private val auditService: AuditService
 ) {
 
     suspend fun handle(command: GetEntityAuditLogsCommand): AuditLogListResult = withContext(Dispatchers.IO) {
-        val pageable = PageRequest.of(command.page - 1, command.pageSize)
+        val page = maxOf(1, command.page)
+        val pageSize = command.pageSize.coerceIn(1, 100)
 
-        val page = auditLogRepository.findByStudioIdAndModuleAndEntityId(
+        val filters = AuditFeedFilters(
             studioId = command.studioId.value,
             module = command.module,
-            entityId = command.entityId,
-            pageable = pageable
+            entityId = command.entityId
+        )
+
+        val total = auditFeedQueryRepository.count(filters)
+        val rows = auditFeedQueryRepository.findOffsetPage(
+            filters = filters,
+            offset = (page - 1) * pageSize,
+            limit = pageSize
         )
 
         AuditLogListResult(
-            items = page.content.map { entity ->
-                AuditLogListItem(
-                    id = entity.id.toString(),
-                    userId = entity.userId.toString(),
-                    userDisplayName = entity.userDisplayName,
-                    module = entity.module.name,
-                    entityId = entity.entityId,
-                    entityDisplayName = entity.entityDisplayName,
-                    action = entity.action.name,
-                    changes = auditService.deserializeChanges(entity.changes),
-                    metadata = auditService.deserializeMetadata(entity.metadata),
-                    createdAt = entity.createdAt
-                )
-            },
-            total = page.totalElements.toInt(),
-            page = command.page,
-            pageSize = command.pageSize,
-            totalPages = page.totalPages
+            items = rows.map { toLegacyListItem(it, auditService) },
+            total = total.toInt(),
+            page = page,
+            pageSize = pageSize,
+            totalPages = ceil(total.toDouble() / pageSize).toInt()
         )
     }
 }

@@ -4,6 +4,16 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditActor
+import pl.detailing.crm.audit.domain.AuditAmount
+import pl.detailing.crm.audit.domain.AuditChannel
+import pl.detailing.crm.audit.domain.AuditContext
+import pl.detailing.crm.audit.domain.AuditEvent
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
@@ -35,6 +45,7 @@ import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellReservationConsent
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellReservationConsentStatus
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellSuggestionStatus
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRepository
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -66,7 +77,8 @@ class RequestUpsellServicesHandler(
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val reservationConsentRepository: UpsellReservationConsentRepository,
     private val smsProvider: SmsProvider,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val auditService: AuditService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -179,6 +191,15 @@ class RequestUpsellServicesHandler(
 
         recordCommunication(studioId, visitEntity.customerId, visitId, null, normalizedPhone, message, smsSent, errorMessage)
 
+        recordUpsellAudit(
+            studioId = studioId,
+            customerId = CustomerId(visitEntity.customerId),
+            visitId = visitId,
+            appointmentId = visitEntity.appointmentId?.let { AppointmentId(it) },
+            selected = selected,
+            smsSent = smsSent
+        )
+
         logger.info(
             "Upsell requested from Visit Card | visit={} suggestions={} smsSent={}",
             visitId, selected.map { it.id }, smsSent
@@ -241,6 +262,15 @@ class RequestUpsellServicesHandler(
             studioId, appointment.customerId, null, appointmentId, normalizedPhone, message, smsSent, errorMessage
         )
 
+        recordUpsellAudit(
+            studioId = studioId,
+            customerId = CustomerId(appointment.customerId),
+            visitId = null,
+            appointmentId = appointmentId,
+            selected = selected,
+            smsSent = smsSent
+        )
+
         logger.info(
             "Upsell requested from Reservation Card | appointment={} suggestions={} smsSent={}",
             appointmentId, selected.map { it.id }, smsSent
@@ -254,6 +284,56 @@ class RequestUpsellServicesHandler(
     }
 
     // ── Shared pieces ────────────────────────────────────────────────────────
+
+    /**
+     * The customer accepting suggested work is one of the few events in the system where
+     * the actor is not an employee, and it commits the studio to extra work and money —
+     * so it is recorded as a customer-driven, critical entry with the amount attached.
+     *
+     * The consent SMS still has to be answered before the services become firm; the entry
+     * says what the customer asked for, and [smsSent] records whether the confirmation
+     * request actually went out.
+     */
+    private fun recordUpsellAudit(
+        studioId: StudioId,
+        customerId: CustomerId,
+        visitId: VisitId?,
+        appointmentId: AppointmentId?,
+        selected: List<VisitUpsellSuggestionEntity>,
+        smsSent: Boolean
+    ) {
+        val customer = customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
+        val customerName = listOfNotNull(customer?.firstName, customer?.lastName)
+            .joinToString(" ")
+            .takeIf { it.isNotBlank() }
+        val totalGrossCents = selected.sumOf { it.finalPriceGross }
+
+        auditService.recordSync(
+            AuditEvent(
+                studioId = studioId,
+                actor = AuditActor.customer(customerId, customerName),
+                module = AuditModule.VISIT_CARD,
+                action = AuditAction.UPSELL_REQUESTED,
+                entityId = (visitId?.value ?: appointmentId?.value).toString(),
+                entityDisplayName = selected.joinToString(", ") { it.serviceName },
+                changes = listOf(
+                    FieldChange("servicesAdded", null, selected.joinToString(", ") { it.serviceName })
+                ),
+                metadata = buildMap {
+                    put("suggestionIds", selected.joinToString(",") { it.id.toString() })
+                    put("consentSmsSent", smsSent.toString())
+                },
+                context = AuditContext(
+                    customerId = customerId,
+                    customerName = customerName,
+                    visitId = visitId,
+                    appointmentId = appointmentId
+                ),
+                amount = AuditAmount(BigDecimal.valueOf(totalGrossCents, 2)),
+                channel = AuditChannel.PUBLIC_LINK
+            )
+        )
+    }
 
     private fun requireCustomerPhone(customerId: UUID, studioId: StudioId): String =
         customerRepository.findByIdAndStudioId(customerId, studioId.value)

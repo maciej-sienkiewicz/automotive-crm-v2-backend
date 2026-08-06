@@ -186,7 +186,18 @@ enum class Permission(
     // Access is also implicitly granted to any user holding a Finance, Statistics or
     // visit-creation permission (see PermissionCheckService.expandCrossModule).
     SERVICES_VIEW(PermissionModule.SERVICES, "Podgląd cennika usług"),
-    SERVICES_MANAGE(PermissionModule.SERVICES, "Zarządzanie cennikiem usług", parent = SERVICES_VIEW);
+    SERVICES_MANAGE(PermissionModule.SERVICES, "Zarządzanie cennikiem usług", parent = SERVICES_VIEW),
+
+    // ── Historia aktywności ──────────────────────────────────────────────────
+    // The activity feed spans every module and surfaces payroll, permission and security
+    // events, so it cannot ride on any module's own view permission. Owners bypass the
+    // check entirely (see RequiresPermission), which is the intended default: this is the
+    // owner's oversight tool, and it is granted to an employee only deliberately.
+    AUDIT_VIEW(
+        PermissionModule.AUDIT, "Podgląd historii aktywności firmy",
+        description = "Tablica wszystkich zdarzeń w firmie — kto co zrobił, kiedy i na jaką " +
+            "kwotę. Obejmuje zdarzenia kadrowo-płacowe i bezpieczeństwa."
+    );
 
     /** Feature that must be enabled in the studio's entitlements for this permission. */
     val effectiveFeatureKey: FeatureKey?
