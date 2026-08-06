@@ -82,6 +82,6 @@ class VisitCardViewRecorder(
         ) > 0
 
     companion object {
-        private val VIEW_WINDOW: Duration = Duration.ofHours(1)
+        private val VIEW_WINDOW: Duration = Duration.ofMinutes(3)
     }
 }
