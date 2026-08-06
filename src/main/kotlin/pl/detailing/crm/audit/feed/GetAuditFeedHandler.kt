@@ -55,8 +55,6 @@ class GetAuditFeedHandler(
     private val auditService: AuditService,
     private val renderer: AuditFeedRenderer
 ) {
-    private val logger = LoggerFactory.getLogger(GetAuditFeedHandler::class.java)
-
     suspend fun handle(command: GetAuditFeedCommand): AuditFeedResponse = withContext(Dispatchers.IO) {
         val limit = command.limit.coerceIn(1, GetAuditFeedCommand.MAX_LIMIT)
 
