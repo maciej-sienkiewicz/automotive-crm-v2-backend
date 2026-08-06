@@ -6,13 +6,19 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditAmount
+import pl.detailing.crm.audit.domain.AuditContext
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.AuditValueType
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.appointment.LeadSyncService
+import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -29,7 +35,8 @@ import java.util.UUID
 class ReservationStatusUpdateJob(
     private val appointmentRepository: AppointmentRepository,
     private val auditService: AuditService,
-    private val leadSyncService: LeadSyncService
+    private val leadSyncService: LeadSyncService,
+    private val customerRepository: CustomerRepository
 ) {
 
     companion object {
@@ -75,9 +82,22 @@ class ReservationStatusUpdateJob(
 
                 appointmentRepository.save(appointment)
 
+                val studioId = StudioId(appointment.studioId)
+                val domain = appointment.toDomain()
+                val totalGross = domain.calculateTotalGross()
+                val customer = try {
+                    customerRepository.findByIdAndStudioId(appointment.customerId, appointment.studioId)
+                } catch (ex: Exception) {
+                    logger.warn("Could not load customer {} for abandoned audit: {}", appointment.customerId, ex.message)
+                    null
+                }
+                val customerName = customer?.let {
+                    listOfNotNull(it.firstName, it.lastName).joinToString(" ").takeIf { n -> n.isNotBlank() }
+                }
+
                 auditService.logSync(
                     LogAuditCommand(
-                        studioId = StudioId(appointment.studioId),
+                        studioId = studioId,
                         userId = SYSTEM_USER_ID,
                         userDisplayName = SYSTEM_USER_NAME,
                         module = AuditModule.APPOINTMENT,
@@ -89,7 +109,20 @@ class ReservationStatusUpdateJob(
                                 field = "status",
                                 oldValue = AppointmentStatus.CREATED.name,
                                 newValue = AppointmentStatus.ABANDONED.name
+                            ),
+                            FieldChange(
+                                field = "scheduledDate",
+                                oldValue = null,
+                                newValue = appointment.startDateTime.toString(),
+                                type = AuditValueType.DATE_TIME
                             )
+                        ),
+                        amount = if (totalGross.amountInCents > 0)
+                            AuditAmount(BigDecimal.valueOf(totalGross.amountInCents, 2))
+                        else null,
+                        context = AuditContext(
+                            customerId = CustomerId(appointment.customerId),
+                            customerName = customerName
                         )
                     )
                 )

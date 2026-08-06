@@ -12,6 +12,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.communication.infrastructure.CommunicationLogEntity
 import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
@@ -71,7 +72,8 @@ data class RecordCommunicationCommand(
 class CommunicationLogService(
     private val repository: CommunicationLogJpaRepository,
     private val auditService: AuditService,
-    private val auditActorResolver: AuditActorResolver
+    private val auditActorResolver: AuditActorResolver,
+    private val customerRepository: CustomerRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -115,6 +117,16 @@ class CommunicationLogService(
     private fun recordAudit(id: UUID, command: RecordCommunicationCommand) {
         val succeeded = command.status?.let { it != CommunicationStatus.FAILED } ?: command.success
 
+        val customer = try {
+            customerRepository.findByIdAndStudioId(command.customerId.value, command.studioId.value)
+        } catch (ex: Exception) {
+            logger.warn("Could not load customer {} for communication audit: {}", command.customerId, ex.message)
+            null
+        }
+        val customerName = customer?.let {
+            listOfNotNull(it.firstName, it.lastName).joinToString(" ").takeIf { n -> n.isNotBlank() }
+        }
+
         auditService.recordSync(
             AuditEvent(
                 studioId = command.studioId,
@@ -131,6 +143,7 @@ class CommunicationLogService(
                 entityId = id.toString(),
                 entityDisplayName = command.messageType.label,
                 changes = listOfNotNull(
+                    customerName?.let { FieldChange("recipientName", null, it) },
                     FieldChange("recipient", null, command.recipientAddress),
                     command.subject?.let { FieldChange("subject", null, it) }
                 ),
@@ -141,6 +154,7 @@ class CommunicationLogService(
                 },
                 context = AuditContext(
                     customerId = command.customerId,
+                    customerName = customerName,
                     visitId = command.visitId,
                     appointmentId = command.appointmentId
                 )
