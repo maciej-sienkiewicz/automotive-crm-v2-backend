@@ -785,7 +785,7 @@ class CreateVisitFromReservationHandler(
             vehicleId = vehicleId,
             vehicleName = vehicleDisplayName,
             visitId = visitId,
-            visitName = "Wizyta ${visit.visitNumber}",
+            visitName = "#${visit.visitNumber}",
             appointmentId = appointmentId
         )
         val metadata = mapOf(

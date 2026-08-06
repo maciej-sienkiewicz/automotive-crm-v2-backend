@@ -4,8 +4,12 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditAmount
+import pl.detailing.crm.audit.domain.AuditContext
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.AuditValueType
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.finance.domain.CashOperationType
 import pl.detailing.crm.finance.domain.DocumentDirection
@@ -22,6 +26,7 @@ import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.Money
+import java.math.BigDecimal
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -140,12 +145,18 @@ class CreateFinancialDocumentHandler(
                 entityId          = saved.id.toString(),
                 entityDisplayName = documentNumber,
                 action            = AuditAction.DOCUMENT_ISSUED,
+                changes           = listOf(
+                    FieldChange("documentType", null, command.documentType.displayName),
+                    FieldChange("totalGross", null, BigDecimal(command.totalGross).movePointLeft(2).toPlainString(),
+                        AuditValueType.MONEY)
+                ),
+                amount            = AuditAmount(BigDecimal(command.totalGross).movePointLeft(2)),
+                context           = AuditContext(visitId = command.visitId),
                 metadata          = mapOf(
                     "source"        to command.source.name,
                     "documentType"  to command.documentType.name,
                     "direction"     to command.direction.name,
                     "paymentMethod" to command.paymentMethod.name,
-                    "totalGross"    to command.totalGross.toString(),
                     "status"        to status.name
                 )
             )
