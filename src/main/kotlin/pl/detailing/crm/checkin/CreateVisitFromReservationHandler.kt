@@ -32,9 +32,12 @@ import pl.detailing.crm.visit.infrastructure.DamageMapReportService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditActor
+import pl.detailing.crm.audit.domain.AuditAmount
+import pl.detailing.crm.audit.domain.AuditContext
+import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
-import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.communication.AppointmentCommunicationLinker
@@ -47,7 +50,9 @@ import pl.detailing.crm.doortodoor.domain.DoorToDoorStatus
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorEntity
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
 import pl.detailing.crm.shared.DoorToDoorId
+import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 @Service
 class CreateVisitFromReservationHandler(
@@ -330,23 +335,22 @@ class CreateVisitFromReservationHandler(
             // Those entries were recorded with visitId = null because the visit did not exist yet.
             appointmentCommunicationLinker.linkToVisit(appointment.id, visitId, command.studioId)
 
-            // Step 9.3: Log visit creation on the vehicle's audit trail
+            // Step 9.3: Log the check-in — on the visit (the thing that was started) and on
+            // the vehicle's own trail (so the vehicle card shows every time it came in).
             val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
                 (vehicle.licensePlate?.let { " ($it)" } ?: "")
-            auditService.log(LogAuditCommand(
+            recordCheckIn(
                 studioId = command.studioId,
                 userId = command.userId,
-                userDisplayName = command.userName,
-                module = AuditModule.VEHICLE,
-                entityId = vehicleId.value.toString(),
-                entityDisplayName = vehicleDisplayName,
-                action = AuditAction.VISIT_ADDED,
-                metadata = mapOf(
-                    "visitId" to visitId.value.toString(),
-                    "visitNumber" to visit.visitNumber,
-                    "appointmentId" to appointment.id.value.toString()
-                )
-            ))
+                userName = command.userName,
+                visit = visit,
+                visitId = visitId,
+                vehicleId = vehicleId,
+                vehicleDisplayName = vehicleDisplayName,
+                customerId = customerId,
+                appointmentId = appointment.id,
+                walkIn = false
+            )
 
             // Step 9.4: Register damage map as a document if it was generated
             if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {
@@ -579,21 +583,18 @@ class CreateVisitFromReservationHandler(
             // Step 10.1: Audit log
             val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +
                 (vehicle.licensePlate?.let { " ($it)" } ?: "")
-            auditService.log(LogAuditCommand(
+            recordCheckIn(
                 studioId = command.studioId,
                 userId = command.userId,
-                userDisplayName = command.userName,
-                module = AuditModule.VEHICLE,
-                entityId = vehicleId.value.toString(),
-                entityDisplayName = vehicleDisplayName,
-                action = AuditAction.VISIT_ADDED,
-                metadata = mapOf(
-                    "visitId" to visitId.value.toString(),
-                    "visitNumber" to visit.visitNumber,
-                    "appointmentId" to appointment.id.value.toString(),
-                    "walkIn" to "true"
-                )
-            ))
+                userName = command.userName,
+                visit = visit,
+                visitId = visitId,
+                vehicleId = vehicleId,
+                vehicleDisplayName = vehicleDisplayName,
+                customerId = customerId,
+                appointmentId = appointment.id,
+                walkIn = true
+            )
 
             // Step 10.2: Register damage map document if generated
             if (command.damagePoints.isNotEmpty() && visit.damageMapFileId != null) {
@@ -747,6 +748,85 @@ class CreateVisitFromReservationHandler(
             println("Warning: Failed to process damage photos: ${e.message}")
             visitPhotos to emptyList()
         }
+    }
+
+    /**
+     * Records a vehicle check-in in the activity feed.
+     *
+     * Two entries, because they answer different questions. The [AuditModule.VISIT] entry
+     * is the event the owner watches for — a car came in, here is the customer, the vehicle
+     * and the value of the work — and it carries the amount, which used to be missing
+     * entirely. The [AuditModule.VEHICLE] entry keeps the vehicle's own history complete,
+     * so the vehicle card still lists every time it was brought in. Both share a
+     * correlation id, so the feed can collapse them into one row.
+     */
+    private suspend fun recordCheckIn(
+        studioId: StudioId,
+        userId: UserId,
+        userName: String,
+        visit: Visit,
+        visitId: VisitId,
+        vehicleId: VehicleId,
+        vehicleDisplayName: String,
+        customerId: CustomerId,
+        appointmentId: AppointmentId,
+        walkIn: Boolean
+    ) {
+        val customer = customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
+        val customerName = listOfNotNull(customer?.firstName, customer?.lastName)
+            .joinToString(" ")
+            .takeIf { it.isNotBlank() }
+
+        val actor = AuditActor.employee(userId, userName)
+        val totalGross = AuditAmount(BigDecimal.valueOf(visit.calculateTotalGross().amountInCents, 2))
+        val context = AuditContext(
+            customerId = customerId,
+            customerName = customerName,
+            vehicleId = vehicleId,
+            vehicleName = vehicleDisplayName,
+            visitId = visitId,
+            visitName = "Wizyta ${visit.visitNumber}",
+            appointmentId = appointmentId
+        )
+        val metadata = mapOf(
+            "visitId" to visitId.value.toString(),
+            "visitNumber" to visit.visitNumber,
+            "appointmentId" to appointmentId.value.toString(),
+            "walkIn" to walkIn.toString()
+        )
+        // Set explicitly rather than left to the request-scoped default: this runs on the
+        // IO dispatcher, where the request context is no longer visible.
+        val correlationId = UUID.randomUUID()
+
+        auditService.record(
+            AuditEvent(
+                studioId = studioId,
+                actor = actor,
+                module = AuditModule.VISIT,
+                action = AuditAction.VISIT_CREATED,
+                entityId = visitId.value.toString(),
+                entityDisplayName = "Wizyta ${visit.visitNumber} — $vehicleDisplayName",
+                metadata = metadata,
+                context = context,
+                amount = totalGross,
+                correlationId = correlationId
+            )
+        )
+
+        auditService.record(
+            AuditEvent(
+                studioId = studioId,
+                actor = actor,
+                module = AuditModule.VEHICLE,
+                action = AuditAction.VISIT_ADDED,
+                entityId = vehicleId.value.toString(),
+                entityDisplayName = vehicleDisplayName,
+                metadata = metadata,
+                context = context,
+                amount = totalGross,
+                correlationId = correlationId
+            )
+        )
     }
 
     /**

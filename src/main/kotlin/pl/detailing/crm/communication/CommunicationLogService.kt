@@ -2,6 +2,13 @@ package pl.detailing.crm.communication
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditActorResolver
+import pl.detailing.crm.audit.domain.AuditContext
+import pl.detailing.crm.audit.domain.AuditEvent
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.communication.infrastructure.CommunicationLogEntity
 import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
 import pl.detailing.crm.shared.CommunicationChannel
@@ -54,15 +61,18 @@ data class RecordCommunicationCommand(
  */
 @Service
 class CommunicationLogService(
-    private val repository: CommunicationLogJpaRepository
+    private val repository: CommunicationLogJpaRepository,
+    private val auditService: AuditService,
+    private val auditActorResolver: AuditActorResolver
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     fun record(command: RecordCommunicationCommand) {
+        val id = UUID.randomUUID()
         try {
             repository.save(
                 CommunicationLogEntity(
-                    id = UUID.randomUUID(),
+                    id = id,
                     studioId = command.studioId.value,
                     customerId = command.customerId.value,
                     visitId = command.visitId?.value,
@@ -83,5 +93,50 @@ class CommunicationLogService(
                 command.channel, command.messageType, command.customerId, command.visitId, ex.message, ex
             )
         }
+
+        recordAudit(id, command)
+    }
+
+    /**
+     * Every outbound message in the system passes through [record], so hooking the activity
+     * feed in here covers all of them at once — manual sends, automations and campaign
+     * dispatch alike — instead of relying on each of the dozens of send paths remembering
+     * to log. The communication log itself stays the detailed, per-message record; the
+     * audit entry is the one line the owner sees in the company feed.
+     */
+    private fun recordAudit(id: UUID, command: RecordCommunicationCommand) {
+        val succeeded = command.status?.let { it != CommunicationStatus.FAILED } ?: command.success
+
+        auditService.recordSync(
+            AuditEvent(
+                studioId = command.studioId,
+                // Automations and campaign dispatch run without a principal and resolve to
+                // the system actor; a message an employee sent by hand keeps their name.
+                actor = auditActorResolver.current(),
+                module = AuditModule.COMMUNICATION,
+                action = when {
+                    command.channel == CommunicationChannel.SMS && succeeded -> AuditAction.SMS_SENT
+                    command.channel == CommunicationChannel.SMS -> AuditAction.SMS_FAILED
+                    succeeded -> AuditAction.EMAIL_SENT
+                    else -> AuditAction.EMAIL_FAILED
+                },
+                entityId = id.toString(),
+                entityDisplayName = command.messageType.label,
+                changes = listOfNotNull(
+                    FieldChange("recipient", null, command.recipientAddress),
+                    command.subject?.let { FieldChange("subject", null, it) }
+                ),
+                metadata = buildMap {
+                    put("messageType", command.messageType.name)
+                    put("channel", command.channel.name)
+                    command.errorMessage?.let { put("error", it) }
+                },
+                context = AuditContext(
+                    customerId = command.customerId,
+                    visitId = command.visitId,
+                    appointmentId = command.appointmentId
+                )
+            )
+        )
     }
 }

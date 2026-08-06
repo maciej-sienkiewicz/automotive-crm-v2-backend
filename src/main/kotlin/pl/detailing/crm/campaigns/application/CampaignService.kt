@@ -3,6 +3,13 @@ package pl.detailing.crm.campaigns.application
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditActor
+import pl.detailing.crm.audit.domain.AuditActorResolver
+import pl.detailing.crm.audit.domain.AuditEvent
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceQueryService
@@ -42,7 +49,9 @@ class CampaignService(
     private val recipients: CampaignRecipientRepository,
     private val settingsRepository: CampaignSettingsRepository,
     private val audienceQuery: AudienceQueryService,
-    private val smsCreditService: SmsCreditService
+    private val smsCreditService: SmsCreditService,
+    private val auditService: AuditService,
+    private val auditActorResolver: AuditActorResolver
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -110,7 +119,11 @@ class CampaignService(
             createdAt = now,
             updatedAt = now
         )
-        return campaigns.save(campaign)
+        val saved = campaigns.save(campaign)
+
+        recordCampaignEvent(saved, userId, AuditAction.CAMPAIGN_CREATED)
+
+        return saved
     }
 
     @Transactional
@@ -130,7 +143,20 @@ class CampaignService(
             updatedBy = userId,
             updatedAt = Instant.now()
         )
-        return campaigns.save(updated)
+        val saved = campaigns.save(updated)
+
+        recordCampaignEvent(
+            campaign = saved,
+            userId = userId,
+            action = AuditAction.CAMPAIGN_UPDATED,
+            changes = listOfNotNull(
+                FieldChange("campaignName", existing.name, saved.name).takeIf { existing.name != saved.name },
+                FieldChange("messageChannel", existing.channel.name, saved.channel.name)
+                    .takeIf { existing.channel != saved.channel }
+            )
+        )
+
+        return saved
     }
 
     @Transactional
@@ -140,6 +166,8 @@ class CampaignService(
             throw ValidationException("Usunąć można tylko szkic kampanii")
         }
         campaigns.delete(id)
+
+        recordCampaignEvent(campaign, campaign.updatedBy, AuditAction.CAMPAIGN_DELETED)
     }
 
     @Transactional
@@ -177,7 +205,7 @@ class CampaignService(
         if (scheduledAt != null && scheduledAt.isBefore(Instant.now().minusSeconds(60))) {
             throw ValidationException("Termin wysyłki nie może być w przeszłości")
         }
-        return campaigns.save(
+        val saved = campaigns.save(
             campaign.copy(
                 status = CampaignStatus.SCHEDULED,
                 scheduledAt = scheduledAt,
@@ -185,6 +213,21 @@ class CampaignService(
                 updatedAt = Instant.now()
             )
         )
+
+        // Scheduling is the moment a campaign starts costing money and reaching customers,
+        // so it is the launch as far as the owner's feed is concerned — not the later,
+        // automated transition to SENDING.
+        recordCampaignEvent(
+            campaign = saved,
+            userId = userId,
+            action = AuditAction.CAMPAIGN_LAUNCHED,
+            changes = listOf(
+                FieldChange("status", campaign.status.name, CampaignStatus.SCHEDULED.name),
+                FieldChange("startDate", null, (scheduledAt ?: Instant.now()).toString())
+            )
+        )
+
+        return saved
     }
 
     @Transactional
@@ -193,9 +236,18 @@ class CampaignService(
         if (campaign.status != CampaignStatus.SCHEDULED) {
             throw ValidationException("Anulować można tylko zaplanowaną kampanię")
         }
-        return campaigns.save(
+        val saved = campaigns.save(
             campaign.copy(status = CampaignStatus.CANCELLED, updatedBy = userId, updatedAt = Instant.now())
         )
+
+        recordCampaignEvent(
+            campaign = saved,
+            userId = userId,
+            action = AuditAction.CAMPAIGN_CANCELLED,
+            changes = listOf(FieldChange("status", campaign.status.name, CampaignStatus.CANCELLED.name))
+        )
+
+        return saved
     }
 
     /** SENDING → COMPLETED, pozostali PENDING dostają status STOPPED. */
@@ -244,7 +296,52 @@ class CampaignService(
             throw ValidationException("Nieprawidłowy status kampanii dla tej operacji")
         }
         if (to == CampaignStatus.ACTIVE) campaign.validateContent()
-        return campaigns.save(campaign.copy(status = to, updatedBy = userId, updatedAt = Instant.now()))
+        val saved = campaigns.save(campaign.copy(status = to, updatedBy = userId, updatedAt = Instant.now()))
+
+        recordCampaignEvent(
+            campaign = saved,
+            userId = userId,
+            action = when (to) {
+                // Activating an automatic campaign starts it sending on its own trigger,
+                // which is the same commitment as scheduling a one-off.
+                CampaignStatus.ACTIVE -> AuditAction.CAMPAIGN_LAUNCHED
+                CampaignStatus.PAUSED, CampaignStatus.ARCHIVED -> AuditAction.CAMPAIGN_CANCELLED
+                else -> AuditAction.CAMPAIGN_UPDATED
+            },
+            changes = listOf(FieldChange("status", campaign.status.name, to.name))
+        )
+
+        return saved
+    }
+
+    /**
+     * Campaigns reach customers and spend SMS credits, so every lifecycle change belongs in
+     * the owner's feed. [AuditActorResolver] supplies the acting user's name; the campaign's
+     * own [Campaign.updatedBy] is the fallback when the security context is not reachable.
+     */
+    private fun recordCampaignEvent(
+        campaign: Campaign,
+        userId: UserId,
+        action: AuditAction,
+        changes: List<FieldChange> = emptyList()
+    ) {
+        auditService.recordSync(
+            AuditEvent(
+                studioId = campaign.studioId,
+                actor = auditActorResolver.current(AuditActor.employee(userId, null)),
+                module = AuditModule.CAMPAIGN,
+                action = action,
+                entityId = campaign.id.toString(),
+                entityDisplayName = campaign.name,
+                changes = changes,
+                metadata = mapOf(
+                    "kind" to campaign.kind.name,
+                    "channel" to campaign.channel.name,
+                    "status" to campaign.status.name,
+                    "recipientsTotal" to campaign.recipientsTotal.toString()
+                )
+            )
+        )
     }
 
     // ─── Retry ───────────────────────────────────────────────────────────────────

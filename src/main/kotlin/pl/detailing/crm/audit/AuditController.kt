@@ -2,35 +2,150 @@ package pl.detailing.crm.audit
 
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.audit.domain.AuditAction
-import pl.detailing.crm.audit.domain.AuditAction.*
+import pl.detailing.crm.audit.domain.AuditActorType
+import pl.detailing.crm.audit.domain.AuditChannel
 import pl.detailing.crm.audit.domain.AuditModule
-import pl.detailing.crm.audit.domain.AuditModule.*
-import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.AuditSeverity
 import pl.detailing.crm.audit.entity.GetEntityAuditLogsCommand
 import pl.detailing.crm.audit.entity.GetEntityAuditLogsHandler
-import pl.detailing.crm.audit.list.AuditLogListItem
+import pl.detailing.crm.audit.feed.AuditActionFilterOption
+import pl.detailing.crm.audit.feed.AuditFeedResponse
+import pl.detailing.crm.audit.feed.AuditFilterOption
+import pl.detailing.crm.audit.feed.AuditFilterOptionsResponse
+import pl.detailing.crm.audit.feed.GetAuditFeedCommand
+import pl.detailing.crm.audit.feed.GetAuditFeedHandler
 import pl.detailing.crm.audit.list.AuditLogListResult
 import pl.detailing.crm.audit.list.ListAuditLogsCommand
 import pl.detailing.crm.audit.list.ListAuditLogsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
+import java.util.UUID
 
+/**
+ * Company-wide activity history.
+ *
+ * Guarded by [Permission.AUDIT_VIEW] at class level. Studio owners bypass the check, which
+ * is the intended default — this is the owner's oversight tool, and until now every
+ * authenticated employee of the studio could read the whole log, payroll and security
+ * events included.
+ */
 @RestController
 @RequestMapping("/api/v1/audit")
+@RequiresPermission(Permission.AUDIT_VIEW)
 class AuditController(
+    private val getAuditFeedHandler: GetAuditFeedHandler,
     private val listAuditLogsHandler: ListAuditLogsHandler,
     private val getEntityAuditLogsHandler: GetEntityAuditLogsHandler
 ) {
 
     /**
-     * Global activity history endpoint.
-     * Returns all audit logs for the current studio with optional filters.
+     * The activity feed: everything that happened in the studio, newest first, with each
+     * entry already rendered for display.
      *
-     * GET /api/v1/audit/activity?page=1&size=20&modules=CUSTOMER,VEHICLE&actions=CREATE,UPDATE&userId=...&from=...&to=...
+     * ```
+     * GET /api/v1/audit/feed
+     *   ?limit=30&cursor=<nextCursor from the previous page>
+     *   &modules=VISIT,APPOINTMENT      // any of
+     *   &actions=CREATE,PHOTO_ADDED     // any of
+     *   &actorTypes=EMPLOYEE,CUSTOMER   // who acted
+     *   &severities=HIGH,CRITICAL       // "only what matters"
+     *   &channels=PUBLIC_LINK
+     *   &actorId=<user or customer id>
+     *   &customerId=…&vehicleId=…&visitId=…   // everything around one object
+     *   &correlationId=…                      // one user gesture
+     *   &module=VISIT&entityId=…              // history of a single entity
+     *   &from=2026-02-01T00:00:00Z&to=2026-02-28T23:59:59Z
+     *   &search=kowalski
+     * ```
+     *
+     * Paging is by cursor: send back [AuditFeedResponse.nextCursor] to get the next page,
+     * and stop when [AuditFeedResponse.hasMore] is false.
      */
+    @GetMapping("/feed")
+    fun getFeed(
+        @RequestParam(required = false) limit: Int?,
+        @RequestParam(required = false) cursor: String?,
+        @RequestParam(required = false) modules: String?,
+        @RequestParam(required = false) actions: String?,
+        @RequestParam(required = false) actorTypes: String?,
+        @RequestParam(required = false) severities: String?,
+        @RequestParam(required = false) channels: String?,
+        @RequestParam(required = false) actorId: String?,
+        @RequestParam(required = false) customerId: String?,
+        @RequestParam(required = false) vehicleId: String?,
+        @RequestParam(required = false) visitId: String?,
+        @RequestParam(required = false) correlationId: String?,
+        @RequestParam(required = false) module: String?,
+        @RequestParam(required = false) entityId: String?,
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) search: String?
+    ): ResponseEntity<AuditFeedResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetAuditFeedCommand(
+            studioId = principal.studioId,
+            limit = limit ?: GetAuditFeedCommand.DEFAULT_LIMIT,
+            cursor = cursor,
+            modules = parseEnumList(modules, "modules") { AuditModule.valueOf(it) },
+            actions = parseEnumList(actions, "actions") { AuditAction.valueOf(it) },
+            actorTypes = parseEnumList(actorTypes, "actorTypes") { AuditActorType.valueOf(it) },
+            severities = parseEnumList(severities, "severities") { AuditSeverity.valueOf(it) },
+            channels = parseEnumList(channels, "channels") { AuditChannel.valueOf(it) },
+            actorId = parseUuid(actorId, "actorId"),
+            customerId = parseUuid(customerId, "customerId"),
+            vehicleId = parseUuid(vehicleId, "vehicleId"),
+            visitId = parseUuid(visitId, "visitId"),
+            correlationId = parseUuid(correlationId, "correlationId"),
+            module = module?.trim()?.takeIf { it.isNotEmpty() }?.let { parseEnum(it, "module") { v -> AuditModule.valueOf(v) } },
+            entityId = entityId?.trim()?.takeIf { it.isNotEmpty() },
+            from = parseInstant(from, "from"),
+            to = parseInstant(to, "to"),
+            search = search
+        )
+
+        ResponseEntity.ok(getAuditFeedHandler.handle(command))
+    }
+
+    /**
+     * Options for the filter bar, labels included, so the UI does not ship its own copy of
+     * the enum translations.
+     *
+     * GET /api/v1/audit/filters
+     */
+    @GetMapping("/filters")
+    fun getFilterOptions(): ResponseEntity<AuditFilterOptionsResponse> = ResponseEntity.ok(
+        AuditFilterOptionsResponse(
+            modules = AuditModule.entries.map { AuditFilterOption(it.name, it.label, it.icon.name) },
+            actions = AuditAction.entries.map {
+                AuditActionFilterOption(it.name, it.label, it.icon.name, it.severity.name)
+            },
+            actorTypes = AuditActorType.entries.map { AuditFilterOption(it.name, it.label) },
+            severities = AuditSeverity.entries
+                .sortedByDescending { it.weight }
+                .map { AuditFilterOption(it.name, it.label) },
+            channels = AuditChannel.entries.map { AuditFilterOption(it.name, it.label) }
+        )
+    )
+
+    /**
+     * Page-numbered history, raw field changes, no rendering.
+     *
+     * Superseded by [getFeed] — kept so existing clients keep working. Unlike the feed it
+     * pays for a `count(*)` on every request and cannot express the actor, severity or
+     * business-context filters.
+     */
+    @Deprecated("Use GET /api/v1/audit/feed")
     @GetMapping("/activity")
     fun getActivityHistory(
         @RequestParam(defaultValue = "1") page: Int,
@@ -43,50 +158,29 @@ class AuditController(
     ): ResponseEntity<AuditActivityResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val parsedModules = modules?.split(",")?.mapNotNull { module ->
-            try { AuditModule.valueOf(module.trim().uppercase()) } catch (e: Exception) { null }
-        }
-
-        val parsedActions = actions?.split(",")?.mapNotNull { action ->
-            try { AuditAction.valueOf(action.trim().uppercase()) } catch (e: Exception) { null }
-        }
-
-        val parsedUserId = userId?.let {
-            try { UserId.fromString(it) } catch (e: Exception) { null }
-        }
-
-        val parsedFrom = from?.let {
-            try { Instant.parse(it) } catch (e: Exception) { null }
-        }
-
-        val parsedTo = to?.let {
-            try { Instant.parse(it) } catch (e: Exception) { null }
-        }
-
         val command = ListAuditLogsCommand(
             studioId = principal.studioId,
             page = maxOf(1, page),
-            pageSize = maxOf(1, minOf(100, size)),
-            modules = parsedModules?.takeIf { it.isNotEmpty() },
-            actions = parsedActions?.takeIf { it.isNotEmpty() },
-            userId = parsedUserId,
-            from = parsedFrom,
-            to = parsedTo
+            pageSize = size.coerceIn(1, 100),
+            modules = parseEnumList(modules, "modules") { AuditModule.valueOf(it) },
+            actions = parseEnumList(actions, "actions") { AuditAction.valueOf(it) },
+            userId = parseUuid(userId, "userId")?.let { UserId(it) },
+            from = parseInstant(from, "from"),
+            to = parseInstant(to, "to")
         )
 
-        val result = listAuditLogsHandler.handle(command)
-
-        ResponseEntity.ok(mapToResponse(result))
+        ResponseEntity.ok(mapToResponse(listAuditLogsHandler.handle(command)))
     }
 
     /**
-     * Entity-specific audit log endpoint.
-     * Returns all audit logs for a specific entity in a specific module.
+     * History of a single entity — the activity tab on a customer, vehicle or visit card.
      *
-     * GET /api/v1/audit/{module}/{entityId}?page=1&size=50
+     * GET /api/v1/audit/VEHICLE/550e8400-e29b-41d4-a716-446655440000
      *
-     * Example: GET /api/v1/audit/VEHICLE/550e8400-e29b-41d4-a716-446655440000
+     * Superseded by `GET /api/v1/audit/feed?module=…&entityId=…`, which returns the same
+     * rows already rendered.
      */
+    @Deprecated("Use GET /api/v1/audit/feed with module and entityId")
     @GetMapping("/{module}/{entityId}")
     fun getEntityAuditLogs(
         @PathVariable module: String,
@@ -96,187 +190,82 @@ class AuditController(
     ): ResponseEntity<AuditActivityResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val parsedModule = try {
-            AuditModule.valueOf(module.trim().uppercase())
-        } catch (e: Exception) {
-            return@runBlocking ResponseEntity.badRequest().build()
-        }
-
         val command = GetEntityAuditLogsCommand(
             studioId = principal.studioId,
-            module = parsedModule,
+            module = parseEnum(module, "module") { AuditModule.valueOf(it) },
             entityId = entityId,
             page = maxOf(1, page),
-            pageSize = maxOf(1, minOf(100, size))
+            pageSize = size.coerceIn(1, 100)
         )
 
-        val result = getEntityAuditLogsHandler.handle(command)
-
-        ResponseEntity.ok(mapToResponse(result))
+        ResponseEntity.ok(mapToResponse(getEntityAuditLogsHandler.handle(command)))
     }
 
-    /**
-     * Get available filter options (modules and actions) for the UI.
-     *
-     * GET /api/v1/audit/filters
-     */
-    @GetMapping("/filters")
-    fun getFilterOptions(): ResponseEntity<AuditFilterOptionsResponse> {
-        val modules = AuditModule.entries.map { AuditFilterOption(it.name, moduleDisplayName(it)) }
-        val actions = AuditAction.entries.map { AuditFilterOption(it.name, actionDisplayName(it)) }
-
-        return ResponseEntity.ok(AuditFilterOptionsResponse(
-            modules = modules,
-            actions = actions
-        ))
-    }
-
-    private fun mapToResponse(result: AuditLogListResult): AuditActivityResponse {
-        return AuditActivityResponse(
-            items = result.items.map { item ->
-                AuditActivityItem(
-                    id = item.id,
-                    userId = item.userId,
-                    userDisplayName = item.userDisplayName,
-                    module = item.module,
-                    entityId = item.entityId,
-                    entityDisplayName = item.entityDisplayName,
-                    action = item.action,
-                    changes = item.changes.map { change ->
-                        AuditFieldChangeResponse(
-                            field = change.field,
-                            oldValue = change.oldValue,
-                            newValue = change.newValue
-                        )
-                    },
-                    metadata = item.metadata,
-                    createdAt = item.createdAt
-                )
-            },
-            pagination = AuditPaginationResponse(
-                total = result.total,
-                page = result.page,
-                pageSize = result.pageSize,
-                totalPages = result.totalPages
+    private fun mapToResponse(result: AuditLogListResult): AuditActivityResponse = AuditActivityResponse(
+        items = result.items.map { item ->
+            AuditActivityItem(
+                id = item.id,
+                userId = item.userId,
+                userDisplayName = item.userDisplayName,
+                module = item.module,
+                entityId = item.entityId,
+                entityDisplayName = item.entityDisplayName,
+                action = item.action,
+                changes = item.changes.map { change ->
+                    AuditFieldChangeResponse(change.field, change.oldValue, change.newValue)
+                },
+                metadata = item.metadata,
+                createdAt = item.createdAt
             )
+        },
+        pagination = AuditPaginationResponse(
+            total = result.total,
+            page = result.page,
+            pageSize = result.pageSize,
+            totalPages = result.totalPages
         )
+    )
+
+    // ── Parameter parsing ───────────────────────────────────────────────────
+    // Unparseable values are rejected rather than dropped. Silently ignoring an unknown
+    // filter value returns *more* rows than asked for, which reads as "the filter does not
+    // work" and is the worst possible answer for an oversight tool.
+
+    private fun <T> parseEnumList(raw: String?, parameter: String, parse: (String) -> T): List<T>? =
+        raw?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.map { parseEnum(it, parameter, parse) }
+
+    private fun <T> parseEnum(raw: String, parameter: String, parse: (String) -> T): T = try {
+        parse(raw.trim().uppercase())
+    } catch (e: IllegalArgumentException) {
+        throw ValidationException("Nieprawidłowa wartość parametru '$parameter': $raw")
     }
 
-    private fun moduleDisplayName(module: AuditModule): String = when (module) {
-        CUSTOMER -> "Klienci"
-        VEHICLE -> "Pojazdy"
-        VISIT -> "Wizyty"
-        APPOINTMENT -> "Rezerwacje"
-        SERVICE -> "Usługi"
-        LEAD -> "Leady"
-        PROTOCOL -> "Protokoły"
-        CONSENT -> "Zgody"
-        INBOUND_CALL -> "Połączenia przychodzące"
-        APPOINTMENT_COLOR -> "Kolory rezerwacji"
-        STUDIO -> "Studio"
-        USER -> "Użytkownicy"
-        CASH_REGISTER -> "Kasa"
-        FINANCE -> "Finanse"
-        EMPLOYEE -> "Pracownicy"
-        AuditModule.TASK -> "Zadania"
-        AuditModule.SECURITY -> "Bezpieczeństwo"
-        AuditModule.DOOR_TO_DOOR -> "Door to door"
+    private fun parseUuid(raw: String?, parameter: String): UUID? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return try {
+            UUID.fromString(value)
+        } catch (e: IllegalArgumentException) {
+            throw ValidationException("Nieprawidłowy identyfikator w parametrze '$parameter': $raw")
+        }
     }
 
-    private fun actionDisplayName(action: AuditAction): String = when (action) {
-        CREATE -> "Utworzenie"
-        UPDATE -> "Aktualizacja"
-        DELETE -> "Usuniecie"
-        STATUS_CHANGE -> "Zmiana statusu"
-        PHOTO_ADDED -> "Dodanie zdjecia"
-        PHOTO_DELETED -> "Usuniecie zdjecia"
-        DOCUMENT_ADDED -> "Dodanie dokumentu"
-        DOCUMENT_DELETED -> "Usuniecie dokumentu"
-        COMMENT_ADDED -> "Dodanie komentarza"
-        COMMENT_UPDATED -> "Edycja komentarza"
-        COMMENT_DELETED -> "Usuniecie komentarza"
-        NOTE_ADDED -> "Dodanie notatki"
-        NOTE_UPDATED -> "Edycja notatki"
-        NOTE_DELETED -> "Usuniecie notatki"
-        SERVICE_ADDED -> "Dodanie uslugi"
-        SERVICE_UPDATED -> "Aktualizacja uslugi"
-        SERVICE_REMOVED -> "Usuniecie uslugi"
-        SERVICES_UPDATED -> "Aktualizacja listy uslug"
-        VISIT_CONFIRMED -> "Potwierdzenie wizyty"
-        VISIT_CANCELLED -> "Anulowanie wizyty"
-        VISIT_COMPLETED -> "Zakonczenie wizyty"
-        VISIT_REJECTED -> "Odrzucenie wizyty"
-        VISIT_MARKED_READY -> "Oznaczenie jako gotowe"
-        VISIT_ARCHIVED -> "Archiwizacja wizyty"
-        VISIT_DELETED -> "Usunięcie wizyty"
-        APPOINTMENT_CANCELLED -> "Anulowanie rezerwacji"
-        APPOINTMENT_CONVERTED -> "Konwersja rezerwacji"
-        PROTOCOL_GENERATED -> "Wygenerowanie protokolu"
-        PROTOCOL_SIGNED -> "Podpisanie protokolu"
-        CONSENT_GRANTED -> "Udzielenie zgody"
-        CONSENT_REVOKED -> "Cofniecie zgody"
-        LEAD_CONVERTED -> "Konwersja leada"
-        LEAD_ABANDONED -> "Porzucenie leada"
-        CALL_ACCEPTED -> "Przyjecie polaczenia"
-        CALL_REJECTED -> "Odrzucenie polaczenia"
-        OWNER_ADDED -> "Dodanie wlasciciela"
-        OWNER_REMOVED -> "Usuniecie wlasciciela"
-        APPOINTMENT_ADDED -> "Dodanie rezerwacji"
-        VISIT_ADDED -> "Dodanie wizyty"
-        COMPANY_UPDATED -> "Aktualizacja danych firmy"
-        COMPANY_DELETED -> "Usuniecie danych firmy"
-        APPOINTMENT_DELETED -> "Usunięcie rezerwacji"
-        APPOINTMENT_RESTORED -> "Przywrócenie rezerwacji"
-        DOCUMENT_ISSUED -> "Wydanie dokumentu"
-        DOCUMENT_STATUS_CHANGED -> "Zmiana statusu dokumentu"
-        DOCUMENT_NUMBER_UPDATED -> "Aktualizacja numeru dokumentu"
-        DOCUMENT_DELETED -> "Usunięcie dokumentu"
-        DOCUMENT_RESTORED -> "Przywrócenie dokumentu"
-        CASH_ADJUSTED -> "Dostosowanie kasy"
-        APPOINTMENT_ABANDONED -> "Porzucenie rezerwacji"
-        EMPLOYEE_TERMINATED -> "Zakończenie zatrudnienia"
-        CONTRACT_CREATED -> "Utworzenie umowy"
-        CONTRACT_ENDED -> "Zakończenie umowy"
-        COMPENSATION_SET -> "Ustawienie wynagrodzenia"
-        WORK_TIME_LOGGED -> "Zapis czasu pracy"
-        WORK_TIME_APPROVED -> "Zatwierdzenie czasu pracy"
-        WORK_TIME_REJECTED -> "Odrzucenie czasu pracy"
-        LEAVE_REQUESTED -> "Wniosek urlopowy"
-        LEAVE_APPROVED -> "Zatwierdzenie urlopu"
-        LEAVE_REJECTED -> "Odrzucenie urlopu"
-        LEAVE_CANCELLED -> "Anulowanie urlopu"
-        PAYROLL_GENERATED -> "Generowanie listy płac"
-        PAYROLL_CONFIRMED -> "Potwierdzenie listy płac"
-        PAYROLL_PAID -> "Wypłata wynagrodzenia"
-        BONUS_ADDED -> "Dodanie bonusu/dodatku"
-        BONUS_DELETED -> "Usunięcie bonusu/dodatku"
-        WORK_TIME_PERIOD_SAVED -> "Zapis okresu rozliczeniowego"
-        WORK_TIME_ENTRY_DELETED -> "Usunięcie wpisu czasu pracy"
-        AuditAction.LEAD_CONFIRMED -> "Potwierdzenie leada"
-        AuditAction.LEAD_COMPLETED -> "Zakończenie leada"
-        AuditAction.LEAD_LOST -> "Utrata leada"
-        AuditAction.LEAD_NO_SHOW -> "Brak kontaktu"
-        AuditAction.LEAD_APPOINTMENT_CREATED -> "Utworzenie rezerwacji z leada"
-        AuditAction.CROSS_TENANT_ACCESS_ATTEMPT -> "Próba nieautoryzowanego dostępu"
-        AuditAction.LOGIN_FAILURE -> "Nieudane logowanie"
-        AuditAction.LOGIN_SUCCESS -> "Zalogowanie"
-        AuditAction.ACCOUNT_LOCKED -> "Zablokowanie konta"
-        AuditAction.LEAD_USER_ASSIGNED -> "Przypisanie pracownika"
-        AuditAction.LEAD_CUSTOMER_ASSIGNED -> "Przypisanie klienta"
-        AuditAction.LEAD_LOST_REASON_UPDATED -> "Aktualizacja powodu utraty"
-        AuditAction.LEAD_QUOTE_UPDATED -> "Aktualizacja wyceny"
-        AuditAction.LEAD_COMMENT_UPDATED -> "Edycja komentarza"
-        AuditAction.LEAD_ESTIMATION_COMPLETED -> "Zakończenie wyceny AI"
-        AuditAction.LEAD_SPLIT -> "Podział leada"
-        AuditAction.LEAD_MERGED -> "Scalenie leada"
-        AuditAction.LEAD_COMMENT_ADDED -> "Dodanie komentarza"
-        AuditAction.LEAD_COMMENT_DELETED -> "Usunięcie komentarza"
-        AuditAction.LEAD_CUSTOMER_ANSWERED -> "Odpowiedź klienta (e-mail)"
-        AuditAction.LEAD_ACKNOWLEDGED -> "Potwierdzenie aktywności"
+    private fun parseInstant(raw: String?, parameter: String): Instant? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return try {
+            Instant.parse(value)
+        } catch (e: java.time.format.DateTimeParseException) {
+            throw ValidationException("Nieprawidłowa data w parametrze '$parameter' (oczekiwano ISO-8601): $raw")
+        }
     }
 }
 
-// Response DTOs
+// ── Legacy response DTOs ────────────────────────────────────────────────────
+// Used only by the deprecated endpoints above. The feed has its own, richer shape in
+// pl.detailing.crm.audit.feed.
 
 data class AuditActivityResponse(
     val items: List<AuditActivityItem>,
@@ -307,14 +296,4 @@ data class AuditPaginationResponse(
     val page: Int,
     val pageSize: Int,
     val totalPages: Int
-)
-
-data class AuditFilterOptionsResponse(
-    val modules: List<AuditFilterOption>,
-    val actions: List<AuditFilterOption>
-)
-
-data class AuditFilterOption(
-    val value: String,
-    val label: String
 )

@@ -2,13 +2,13 @@ package pl.detailing.crm.leads.history
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditModule
-import pl.detailing.crm.audit.infrastructure.AuditLogRepository
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.infrastructure.AuditFeedFilters
+import pl.detailing.crm.audit.infrastructure.AuditFeedQueryRepository
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
@@ -32,7 +32,8 @@ data class LeadStatusHistoryEntry(
     val changes: List<HistoryFieldChange>
 )
 
-private val HISTORY_ACTIONS = setOf(
+/** Status-relevant actions; comments and assignments included, routine edits not. */
+private val HISTORY_ACTIONS = listOf(
     AuditAction.CREATE,
     AuditAction.STATUS_CHANGE,
     AuditAction.LEAD_CONFIRMED,
@@ -55,69 +56,42 @@ private val HISTORY_ACTIONS = setOf(
     AuditAction.LEAD_CUSTOMER_ANSWERED
 )
 
+private const val MAX_HISTORY_ENTRIES = 500
+
 @Service
 class GetLeadStatusHistoryHandler(
-    private val auditLogRepository: AuditLogRepository
+    private val auditFeedQueryRepository: AuditFeedQueryRepository,
+    private val auditService: AuditService
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(query: GetLeadStatusHistoryQuery): List<LeadStatusHistoryEntry> =
         withContext(Dispatchers.IO) {
-            val pageable = PageRequest.of(0, 500, Sort.by(Sort.Direction.ASC, "createdAt"))
-
-            auditLogRepository.findByStudioIdAndModuleAndEntityId(
-                studioId = query.studioId.value,
-                module = AuditModule.LEAD,
-                entityId = query.leadId.value.toString(),
-                pageable = pageable
-            ).content
-                .filter { it.action in HISTORY_ACTIONS }
+            auditFeedQueryRepository.findOffsetPage(
+                filters = AuditFeedFilters(
+                    studioId = query.studioId.value,
+                    module = AuditModule.LEAD,
+                    entityId = query.leadId.value.toString(),
+                    // Filtered in SQL rather than after loading, so a noisy lead cannot push
+                    // its own status changes past the row limit.
+                    actions = HISTORY_ACTIONS
+                ),
+                offset = 0,
+                limit = MAX_HISTORY_ENTRIES
+            )
+                // The query returns newest-first; the timeline reads oldest-first.
+                .reversed()
                 .map { entry ->
                     LeadStatusHistoryEntry(
                         changedAt = entry.createdAt,
                         action = entry.action.name,
-                        changedByUserId = entry.userId.toString(),
+                        changedByUserId = entry.userId?.toString() ?: "",
                         changedByName = entry.userDisplayName,
-                        changes = parseChanges(entry.changes)
+                        // Was hand-parsed with regexes over the raw JSON; the audit service
+                        // deserializes the same payload properly and tolerates bad rows.
+                        changes = auditService.deserializeChanges(entry.changes).map { change ->
+                            HistoryFieldChange(change.field, change.oldValue, change.newValue)
+                        }
                     )
                 }
         }
-
-    private fun parseChanges(changesJson: String?): List<HistoryFieldChange> {
-        if (changesJson.isNullOrBlank()) return emptyList()
-        return try {
-            val fieldPattern = Regex(""""field"\s*:\s*"([^"]+)"""")
-            val oldPattern = Regex(""""oldValue"\s*:\s*("([^"]*)"|(null)|\d+)""")
-            val newPattern = Regex(""""newValue"\s*:\s*("([^"]*)"|(null)|\d+)""")
-
-            val fields = fieldPattern.findAll(changesJson).map { it.groupValues[1] }.toList()
-            val olds = oldPattern.findAll(changesJson).map { m ->
-                val quoted = m.groupValues[2]
-                val raw = m.groupValues[1]
-                when {
-                    raw == "null" -> null
-                    quoted.isNotEmpty() -> quoted
-                    else -> raw
-                }
-            }.toList()
-            val news = newPattern.findAll(changesJson).map { m ->
-                val quoted = m.groupValues[2]
-                val raw = m.groupValues[1]
-                when {
-                    raw == "null" -> null
-                    quoted.isNotEmpty() -> quoted
-                    else -> raw
-                }
-            }.toList()
-
-            fields.mapIndexed { i, field ->
-                HistoryFieldChange(
-                    field = field,
-                    oldValue = olds.getOrNull(i),
-                    newValue = news.getOrNull(i)
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
 }
