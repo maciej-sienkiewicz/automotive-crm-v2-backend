@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.*
@@ -360,7 +361,8 @@ class VisitController(
             sendVisitCardLinkHandler.handle(
                 pl.detailing.crm.visitcard.SendVisitCardLinkCommand(
                     visitId = command.visitId,
-                    studioId = command.studioId
+                    studioId = command.studioId,
+                    initiatedBy = AuditActor.employee(principal.userId, principal.fullName)
                 )
             )
         }.onFailure { ex ->

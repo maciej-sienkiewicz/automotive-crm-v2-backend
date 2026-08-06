@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
@@ -37,7 +38,13 @@ data class SendVisitCardLinkCommand(
     val visitId: VisitId,
     val studioId: StudioId,
     /** Optional override; when null the studio's configured channel is used. */
-    val channelOverride: VisitCardDeliveryChannel? = null
+    val channelOverride: VisitCardDeliveryChannel? = null,
+    /**
+     * The employee who triggered the send. Captured on the request thread before any
+     * coroutine dispatcher switch so the audit entry shows the real person, not "System".
+     * Null for automation-triggered sends (no logged-in principal).
+     */
+    val initiatedBy: AuditActor? = null
 )
 
 data class SendVisitCardLinkResult(
@@ -156,7 +163,8 @@ class SendVisitCardLinkHandler(
                     subject = subject,
                     bodyContent = body,
                     success = result.success,
-                    errorMessage = result.errorMessage
+                    errorMessage = result.errorMessage,
+                    initiatedBy = command.initiatedBy
                 )
             )
         }
@@ -187,7 +195,8 @@ class SendVisitCardLinkHandler(
                         subject = null,
                         bodyContent = message,
                         success = result.success,
-                        errorMessage = result.errorMessage
+                        errorMessage = result.errorMessage,
+                        initiatedBy = command.initiatedBy
                     )
                 )
             } catch (e: InsufficientSmsCreditsException) {
@@ -203,7 +212,8 @@ class SendVisitCardLinkHandler(
                         subject = null,
                         bodyContent = message,
                         success = false,
-                        errorMessage = "Brak kredytów SMS"
+                        errorMessage = "Brak kredytów SMS",
+                        initiatedBy = command.initiatedBy
                     )
                 )
             }
