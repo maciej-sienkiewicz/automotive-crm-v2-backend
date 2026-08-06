@@ -114,7 +114,7 @@ class ReservationStatusUpdateJob(
                                 field = "scheduledDate",
                                 oldValue = null,
                                 newValue = appointment.startDateTime.toString(),
-                                type = AuditValueType.DATE_TIME
+                                valueType = AuditValueType.DATE_TIME
                             )
                         ),
                         amount = if (totalGross.amountInCents > 0)
