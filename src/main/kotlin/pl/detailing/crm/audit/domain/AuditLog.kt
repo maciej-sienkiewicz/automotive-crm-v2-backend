@@ -283,6 +283,9 @@ enum class AuditAction(
     BONUS_ADDED("Dodanie bonusu", "Dodano bonus", AuditIcon.PAYROLL, AuditSeverity.CRITICAL),
     BONUS_DELETED("Usunięcie bonusu", "Usunięto bonus", AuditIcon.PAYROLL, AuditSeverity.CRITICAL),
 
+    // ── Task-specific ───────────────────────────────────────────────────────
+    TASK_CREATED("Utworzenie zadania", "Utworzono nowe zadanie", AuditIcon.TASK),
+
     // ── Campaigns ───────────────────────────────────────────────────────────
     CAMPAIGN_CREATED("Utworzenie kampanii", "Utworzono kampanię", AuditIcon.CAMPAIGN, AuditSeverity.HIGH),
     CAMPAIGN_UPDATED("Edycja kampanii", "Zmieniono kampanię", AuditIcon.CAMPAIGN),
