@@ -125,10 +125,11 @@ object AuditFieldCatalog {
         // Campaigns / communication
         "campaignName" to FieldDefinition("Nazwa kampanii", AuditValueType.TEXT),
         "recipientCount" to FieldDefinition("Liczba odbiorców", AuditValueType.NUMBER),
-        "recipient" to FieldDefinition("Odbiorca (nr telefonu)", AuditValueType.TEXT),
+        "recipient" to FieldDefinition("Odbiorca", AuditValueType.PHONE),
         "recipientName" to FieldDefinition("Odbiorca", AuditValueType.TEXT),
         "subject" to FieldDefinition("Temat", AuditValueType.TEXT),
         "messageBody" to FieldDefinition("Treść wiadomości", AuditValueType.TEXT),
+        "failureReason" to FieldDefinition("Powód", AuditValueType.TEXT),
 
         // Finance
         "documentType" to FieldDefinition("Typ dokumentu", AuditValueType.TEXT),
