@@ -137,6 +137,10 @@ object AuditFieldCatalog {
         // Appointments
         "scheduledDate" to FieldDefinition("Data rezerwacji", AuditValueType.DATE_TIME),
 
+        // Door to Door
+        "pickupAddress" to FieldDefinition("Adres odbioru", AuditValueType.TEXT),
+        "deliveryAddress" to FieldDefinition("Adres dostawy", AuditValueType.TEXT),
+
         // Misc
         "meta" to FieldDefinition("Dane dodatkowe", AuditValueType.TEXT),
         "context" to FieldDefinition("Kontekst", AuditValueType.TEXT)

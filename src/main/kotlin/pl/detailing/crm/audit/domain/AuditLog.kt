@@ -286,6 +286,10 @@ enum class AuditAction(
     // ── Task-specific ───────────────────────────────────────────────────────
     TASK_CREATED("Utworzenie zadania", "Utworzono nowe zadanie", AuditIcon.TASK),
 
+    // ── Door to Door ─────────────────────────────────────────────────────────
+    DOOR_TO_DOOR_ADDED("Dodanie obsługi Door to Door", "Dodano obsługę Door to Door do wizyty", AuditIcon.VEHICLE),
+    DOOR_TO_DOOR_UPDATED("Aktualizacja obsługi Door to Door", "Zaktualizowano obsługę Door to Door", AuditIcon.VEHICLE),
+
     // ── Campaigns ───────────────────────────────────────────────────────────
     CAMPAIGN_CREATED("Utworzenie kampanii", "Utworzono kampanię", AuditIcon.CAMPAIGN, AuditSeverity.HIGH),
     CAMPAIGN_UPDATED("Edycja kampanii", "Zmieniono kampanię", AuditIcon.CAMPAIGN),

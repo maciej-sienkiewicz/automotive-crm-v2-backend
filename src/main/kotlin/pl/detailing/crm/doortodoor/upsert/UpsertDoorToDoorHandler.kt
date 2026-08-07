@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.doortodoor.domain.DoorToDoor
 import pl.detailing.crm.doortodoor.domain.DoorToDoorAddress
@@ -14,11 +15,13 @@ import pl.detailing.crm.doortodoor.domain.DoorToDoorStatus
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorEntity
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
 import pl.detailing.crm.shared.DoorToDoorId
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 
 @Service
 class UpsertDoorToDoorHandler(
     private val doorToDoorRepository: DoorToDoorRepository,
+    private val visitRepository: VisitRepository,
     private val auditService: AuditService
 ) {
     @Transactional
@@ -59,17 +62,24 @@ class UpsertDoorToDoorHandler(
 
             val saved = doorToDoorRepository.save(entity)
 
+            val visitNumber = visitRepository
+                .findByIdAndStudioId(command.visitId.value, command.studioId.value)
+                ?.visitNumber
+
             auditService.log(
                 LogAuditCommand(
                     studioId = command.studioId,
                     userId = command.userId,
                     userDisplayName = command.userName,
                     module = AuditModule.DOOR_TO_DOOR,
-                    entityId = saved.id.toString(),
-                    entityDisplayName = "Door to Door – wizyta ${command.visitId}",
-                    action = if (existing != null) AuditAction.UPDATE else AuditAction.CREATE,
-                    changes = emptyList(),
-                    metadata = mapOf("visitId" to command.visitId.toString())
+                    entityId = command.visitId.value.toString(),
+                    entityDisplayName = visitNumber,
+                    action = if (existing != null) AuditAction.DOOR_TO_DOOR_UPDATED else AuditAction.DOOR_TO_DOOR_ADDED,
+                    changes = listOf(
+                        FieldChange("pickupAddress", null, "${command.pickupStreet}, ${command.pickupCity}"),
+                        FieldChange("deliveryAddress", null, "${command.deliveryStreet}, ${command.deliveryCity}")
+                    ),
+                    metadata = emptyMap()
                 )
             )
 
