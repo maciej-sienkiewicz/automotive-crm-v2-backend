@@ -145,7 +145,8 @@ class CommunicationLogService(
                 changes = listOfNotNull(
                     customerName?.let { FieldChange("recipientName", null, it) },
                     FieldChange("recipient", null, command.recipientAddress),
-                    command.subject?.let { FieldChange("subject", null, it) }
+                    command.subject?.let { FieldChange("subject", null, it) },
+                    if (!succeeded) command.errorMessage?.let { FieldChange("failureReason", null, it) } else null
                 ),
                 metadata = buildMap {
                     put("messageType", command.messageType.name)
