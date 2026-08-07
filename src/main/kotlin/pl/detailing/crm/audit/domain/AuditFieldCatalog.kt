@@ -138,7 +138,8 @@ object AuditFieldCatalog {
         "scheduledDate" to FieldDefinition("Data rezerwacji", AuditValueType.DATE_TIME),
 
         // Misc
-        "meta" to FieldDefinition("Dane dodatkowe", AuditValueType.TEXT)
+        "meta" to FieldDefinition("Dane dodatkowe", AuditValueType.TEXT),
+        "context" to FieldDefinition("Kontekst", AuditValueType.TEXT)
     )
 
     /**

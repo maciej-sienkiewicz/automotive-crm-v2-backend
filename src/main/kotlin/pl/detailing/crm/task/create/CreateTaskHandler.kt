@@ -56,10 +56,10 @@ class CreateTaskHandler(
                 module = AuditModule.TASK,
                 entityId = task.id.value.toString(),
                 entityDisplayName = task.title,
-                action = AuditAction.CREATE,
+                action = AuditAction.TASK_CREATED,
                 changes = listOfNotNull(
                     FieldChange("title", null, task.title),
-                    task.meta?.let { FieldChange("meta", null, it) }
+                    task.meta?.let { FieldChange("context", null, it) }
                 )
             ))
 
