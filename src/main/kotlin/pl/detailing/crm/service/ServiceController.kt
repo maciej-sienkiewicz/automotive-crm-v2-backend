@@ -44,7 +44,7 @@ class ServiceController(
 ) {
 
     @GetMapping
-    @RequiresPermission(Permission.SERVICES_VIEW)
+    @RequiresPermission(Permission.VISITS_SERVICE_PRICES_VIEW)
     fun getServices(
         @RequestParam(required = false, defaultValue = "") search: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
@@ -101,7 +101,7 @@ class ServiceController(
     }
 
     @PostMapping
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createService(@RequestBody request: CreateServiceRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -138,7 +138,7 @@ class ServiceController(
     }
 
     @PatchMapping("/{serviceId}/archive")
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun archiveService(
         @PathVariable serviceId: String
     ): ResponseEntity<Void> = runBlocking {
@@ -157,7 +157,7 @@ class ServiceController(
     }
 
     @PostMapping("/packages")
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createPackage(@RequestBody request: CreatePackageRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -198,7 +198,7 @@ class ServiceController(
     }
 
     @PostMapping("/packages/update")
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updatePackage(@RequestBody request: UpdatePackageRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -240,7 +240,7 @@ class ServiceController(
     }
 
     @PostMapping("/packages/{packageId}/sync-item-name")
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun syncPackageItemName(
         @PathVariable packageId: String,
         @RequestBody request: SyncPackageItemNameRequest
@@ -264,7 +264,7 @@ class ServiceController(
     }
 
     @PostMapping("/update")
-    @RequiresPermission(Permission.SERVICES_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateService(@RequestBody request: UpdateServiceRequest): ResponseEntity<ServiceResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 

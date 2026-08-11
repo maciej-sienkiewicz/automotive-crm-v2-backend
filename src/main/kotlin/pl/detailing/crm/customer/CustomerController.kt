@@ -250,7 +250,7 @@ class CustomerController(
     }
 
     @PostMapping
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createCustomer(@RequestBody request: CreateCustomerRequest): ResponseEntity<CustomerResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -480,7 +480,7 @@ class CustomerController(
     }
 
     @PatchMapping("/{customerId}")
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateCustomer(
         @PathVariable customerId: String,
         @RequestBody request: UpdateCustomerRequest
@@ -524,7 +524,7 @@ class CustomerController(
     }
 
     @PatchMapping("/{customerId}/company")
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateCompany(
         @PathVariable customerId: String,
         @RequestBody request: UpdateCompanyRequest
@@ -564,7 +564,7 @@ class CustomerController(
     }
 
     @DeleteMapping("/{customerId}/company")
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteCompany(@PathVariable customerId: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 

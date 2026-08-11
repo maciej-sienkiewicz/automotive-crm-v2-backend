@@ -33,7 +33,7 @@ private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
  * The main dependency chain inside the VISITS module encodes the booking desk-flow:
  *
  *   [VISITS_VIEW] → [CUSTOMERS_VIEW] → [VISITS_SERVICE_PRICES_VIEW]
- *       → [CUSTOMERS_MANAGE] → [VISITS_CREATE]
+ *       → [VISITS_CREATE]
  *
  * Rationale: you cannot create a visit without first seeing client personal data and the
  * service price list; you cannot manage client data without viewing the price list context.
@@ -124,18 +124,12 @@ enum class Permission(
         parent = VISITS_SERVICE_PRICES_VIEW, section = SECTION_SERVICES
     ),
 
-    CUSTOMERS_MANAGE(
-        PermissionModule.VISITS, "Dodawanie i edycja klientów",
-        parent = VISITS_SERVICE_PRICES_VIEW, section = SECTION_CUSTOMERS,
-        featureKeyOverride = FeatureKey.CUSTOMERS
-    ),
-
     // Booking capability — top of the desk-flow chain (VISITS_VIEW → CUSTOMERS_VIEW →
-    // VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_MANAGE → VISITS_CREATE). All destructive
-    // actions are children: you cannot delete what you cannot create.
+    // VISITS_SERVICE_PRICES_VIEW → VISITS_CREATE). All destructive actions are children:
+    // you cannot delete what you cannot create.
     VISITS_CREATE(
         PermissionModule.VISITS, "Tworzenie i edycja wizyt oraz rezerwacji",
-        parent = CUSTOMERS_MANAGE,
+        parent = VISITS_SERVICE_PRICES_VIEW,
         description = "Umawianie i edycja wizyt wraz z wpisywaniem danych pojazdu " +
             "i klienta — pełny przepływ recepcji."
     ),
@@ -219,12 +213,6 @@ enum class Permission(
         parent = TASKS_VIEW
     ),
 
-    // ── Usługi (cennik) ───────────────────────────────────────────────────────
-    // Access is also implied by Finance, Statistics and visit-creation permissions
-    // (see PermissionHierarchy.impliesOf).
-    SERVICES_VIEW(PermissionModule.SERVICES, "Podgląd cennika usług"),
-    SERVICES_MANAGE(PermissionModule.SERVICES, "Zarządzanie cennikiem usług", parent = SERVICES_VIEW),
-
     // ── Historia aktywności ──────────────────────────────────────────────────
     // The activity feed spans every module and surfaces payroll, permission and security
     // events, so it cannot ride on any module's own view permission. Owners bypass the
@@ -284,8 +272,9 @@ enum class Permission(
             "VEHICLES_DELETE" to CUSTOMERS_DELETE,
             // Customers
             "CUSTOMERS_VIEW_PERSONAL_DATA" to CUSTOMERS_VIEW,
-            "CUSTOMERS_CREATE" to CUSTOMERS_MANAGE,
-            "CUSTOMERS_EDIT" to CUSTOMERS_MANAGE,
+            "CUSTOMERS_MANAGE" to VISITS_CREATE,
+            "CUSTOMERS_CREATE" to VISITS_CREATE,
+            "CUSTOMERS_EDIT" to VISITS_CREATE,
             // Communication
             "COMMUNICATION_VIEW_LOGS" to CUSTOMERS_VIEW,
             "COMMUNICATION_SEND_SMS" to COMMUNICATION_SEND,

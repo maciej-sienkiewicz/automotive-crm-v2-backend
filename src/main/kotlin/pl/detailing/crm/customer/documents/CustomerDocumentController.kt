@@ -45,7 +45,7 @@ class CustomerDocumentController(
      * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
      */
     @PostMapping
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun initiateUpload(
         @PathVariable customerId: String,
         @RequestBody request: InitiateDocumentUploadRequest
@@ -72,7 +72,7 @@ class CustomerDocumentController(
     }
 
     @DeleteMapping("/{documentId}")
-    @RequiresPermission(Permission.CUSTOMERS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteDocument(
         @PathVariable customerId: String,
         @PathVariable documentId: String
