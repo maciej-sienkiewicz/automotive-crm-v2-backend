@@ -155,7 +155,11 @@ class TabletSignatureController(
             throw ConflictException("Żądanie podpisu zostało już zakończone")
         }
 
-        val pdfBytes = s3StorageService.downloadBytes(request.documentS3Key)
+        // Fast path: the exact bytes hashed at request creation are cached in Redis —
+        // falling back to S3 only on a cache miss (instance restart, TTL edge). Either
+        // way the bytes are re-hashed below, so the WYSIWYS guarantee is identical.
+        val pdfBytes = documentIntegrityService.getCachedDocument(request.id.value)
+            ?: s3StorageService.downloadBytes(request.documentS3Key)
         val actualSha256 = documentIntegrityService.sha256Hex(pdfBytes)
         if (!documentIntegrityService.digestsMatch(request.documentSha256, actualSha256)) {
             throw ConflictException("Integralność dokumentu została naruszona — dokument nie zostanie wyświetlony")

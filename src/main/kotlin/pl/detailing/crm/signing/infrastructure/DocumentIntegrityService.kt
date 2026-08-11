@@ -1,6 +1,8 @@
 package pl.detailing.crm.signing.infrastructure
 
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
@@ -22,11 +24,14 @@ import java.util.UUID
 @Service
 class DocumentIntegrityService(
     private val redisTemplate: StringRedisTemplate,
+    private val binaryRedisTemplate: RedisTemplate<String, ByteArray>,
     @Value("\${signing.request.ttl-minutes:15}") private val requestTtlMinutes: Long
 ) {
     companion object {
+        private val logger = LoggerFactory.getLogger(DocumentIntegrityService::class.java)
         private val SECURE_RANDOM = SecureRandom()
         private const val CHALLENGE_KEY_PREFIX = "signing:challenge:"
+        private const val DOCUMENT_CACHE_KEY_PREFIX = "signing:document-cache:"
     }
 
     fun sha256Hex(bytes: ByteArray): String =
@@ -60,12 +65,47 @@ class DocumentIntegrityService(
      * carrying the correct nonce; every subsequent attempt (replay) returns false.
      */
     fun consumeChallenge(requestId: UUID, submittedChallenge: String): Boolean {
+        evictCachedDocument(requestId)
         val stored = redisTemplate.opsForValue().getAndDelete(CHALLENGE_KEY_PREFIX + requestId)
             ?: return false
         return MessageDigest.isEqual(stored.toByteArray(), submittedChallenge.toByteArray())
     }
 
     fun invalidateChallenge(requestId: UUID) {
+        evictCachedDocument(requestId)
         redisTemplate.delete(CHALLENGE_KEY_PREFIX + requestId)
+    }
+
+    /**
+     * Cache the exact PDF bytes hashed at request creation, so the signing device can be
+     * served straight from Redis instead of a second S3 round trip (the S3 download was
+     * the dominant part of the click-to-display latency). [ttl] must match the session's
+     * lifetime; the cache is evicted together with the challenge on every terminal
+     * transition, and consumers always re-verify SHA-256 before serving — a stale or
+     * corrupted cache entry can never bypass the WYSIWYS check.
+     */
+    fun cacheDocument(requestId: UUID, pdfBytes: ByteArray, ttl: Duration) {
+        try {
+            binaryRedisTemplate.opsForValue().set(DOCUMENT_CACHE_KEY_PREFIX + requestId, pdfBytes, ttl)
+        } catch (e: Exception) {
+            // The cache is a latency optimization — delivery falls back to S3 on a miss
+            logger.warn("Failed to cache signing document for request {}: {}", requestId, e.message)
+        }
+    }
+
+    fun getCachedDocument(requestId: UUID): ByteArray? =
+        try {
+            binaryRedisTemplate.opsForValue().get(DOCUMENT_CACHE_KEY_PREFIX + requestId)
+        } catch (e: Exception) {
+            logger.warn("Failed to read cached signing document for request {}: {}", requestId, e.message)
+            null
+        }
+
+    private fun evictCachedDocument(requestId: UUID) {
+        try {
+            binaryRedisTemplate.delete(DOCUMENT_CACHE_KEY_PREFIX + requestId)
+        } catch (e: Exception) {
+            logger.warn("Failed to evict cached signing document for request {}: {}", requestId, e.message)
+        }
     }
 }

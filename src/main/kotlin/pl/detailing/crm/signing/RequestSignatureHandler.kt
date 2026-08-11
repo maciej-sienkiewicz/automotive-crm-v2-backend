@@ -46,7 +46,6 @@ class RequestSignatureHandler(
     private val s3StorageService: S3ProtocolStorageService,
     private val documentIntegrityService: DocumentIntegrityService,
     private val auditTrailService: SignatureAuditTrailService,
-    private val eventPublisher: SignatureEventPublisher,
     private val customerRepository: CustomerRepository,
     private val studioRepository: StudioRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
@@ -82,7 +81,9 @@ class RequestSignatureHandler(
                 throw ConflictException("Dla tego dokumentu istnieje już aktywne żądanie podpisu")
             }
 
-            // WYSIWYS: hash the exact bytes that will be displayed on the tablet
+            // WYSIWYS: hash the exact bytes that will be displayed on the tablet.
+            // The bytes are already in memory here — they are cached below so document
+            // delivery to the signing device does not repeat this S3 download.
             val documentBytes = s3StorageService.downloadBytes(documentS3Key)
             val documentSha256 = documentIntegrityService.sha256Hex(documentBytes)
 
@@ -143,6 +144,12 @@ class RequestSignatureHandler(
                 request.id.value, Duration.ofMinutes(ttlMinutes)
             )
 
+            // Serve-from-cache for the signing device (evicted with the challenge;
+            // delivery re-verifies SHA-256, so WYSIWYS is unaffected)
+            documentIntegrityService.cacheDocument(
+                request.id.value, documentBytes, Duration.ofMinutes(ttlMinutes)
+            )
+
             auditTrailService.append(
                 requestId = request.id.value,
                 studioId = command.studioId.value,
@@ -156,16 +163,11 @@ class RequestSignatureHandler(
                 sendSigningLinkSms(request, visitEntity.customerId, documentName)
             }
 
-            eventPublisher.publish(
-                tenantId = command.studioId.value.toString(),
-                requestId = request.id.toString(),
-                eventType = "SIGNATURE_REQUESTED",
-                tabletId = request.tabletId,
-                documentName = documentName,
-                signerName = command.signerName,
-                status = request.status.name
-            )
-
+            // NOTE: the SIGNATURE_REQUESTED event is deliberately NOT published here.
+            // This method runs inside a transaction; publishing from within it lets the
+            // tablet's immediate GET /pending race the uncommitted INSERT (it sees 204
+            // and the request waits for the next polling cycle). The controller publishes
+            // the event after this transaction has committed.
             logger.info(
                 "Signature request {} created for protocol {} (sha256={})",
                 request.id, command.protocolId, documentSha256

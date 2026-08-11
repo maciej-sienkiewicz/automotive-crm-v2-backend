@@ -97,7 +97,10 @@ class PublicSignatureController(
             throw ConflictException("Żądanie podpisu zostało już zakończone")
         }
 
-        val pdfBytes = s3StorageService.downloadBytes(request.documentS3Key)
+        // Fast path: serve the bytes cached at request creation; S3 only on a cache miss.
+        // The bytes are re-hashed below either way — WYSIWYS guarantee unchanged.
+        val pdfBytes = documentIntegrityService.getCachedDocument(request.id.value)
+            ?: s3StorageService.downloadBytes(request.documentS3Key)
         val actualSha256 = documentIntegrityService.sha256Hex(pdfBytes)
         if (!documentIntegrityService.digestsMatch(request.documentSha256, actualSha256)) {
             throw ConflictException("Integralność dokumentu została naruszona — dokument nie zostanie wyświetlony")
