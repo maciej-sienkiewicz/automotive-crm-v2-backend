@@ -51,7 +51,8 @@ class ServiceController(
         @RequestParam(required = false, defaultValue = "50") limit: Int,
         @RequestParam(required = false, defaultValue = "false") showInactive: Boolean,
         @RequestParam(required = false) sortBy: String?,
-        @RequestParam(required = false, defaultValue = "asc") sortDirection: String
+        @RequestParam(required = false, defaultValue = "asc") sortDirection: String,
+        @RequestParam(required = false) isPackage: Boolean?
     ): ResponseEntity<ServiceListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -59,6 +60,10 @@ class ServiceController(
 
         if (search.isNotBlank()) {
             services = services.filter { it.name.contains(search, ignoreCase = true) }
+        }
+
+        if (isPackage != null) {
+            services = services.filter { it.isPackage == isPackage }
         }
 
         services = when (sortBy) {
