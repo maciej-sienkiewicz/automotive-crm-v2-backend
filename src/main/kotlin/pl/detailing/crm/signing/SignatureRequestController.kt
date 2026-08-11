@@ -66,6 +66,20 @@ class SignatureRequestController(
             )
         )
 
+        // Published here — AFTER the handler's transaction has committed — because the
+        // tablet reacts to this event with an immediate GET /pending. Publishing from
+        // inside the transaction let that read race the uncommitted INSERT: the tablet
+        // saw 204 No Content and the request sat idle until the next polling cycle.
+        eventPublisher.publish(
+            tenantId = principal.studioId.value.toString(),
+            requestId = result.request.id.toString(),
+            eventType = "SIGNATURE_REQUESTED",
+            tabletId = result.request.tabletId,
+            documentName = result.request.documentName,
+            signerName = result.request.signerName,
+            status = result.request.status.name
+        )
+
         ResponseEntity.status(HttpStatus.CREATED).body(result.request.toDto())
     }
 

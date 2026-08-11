@@ -3,8 +3,11 @@ package pl.detailing.crm.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.connection.RedisConnectionFactory
+import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.listener.ChannelTopic
 import org.springframework.data.redis.listener.RedisMessageListenerContainer
+import org.springframework.data.redis.serializer.RedisSerializer
+import org.springframework.data.redis.serializer.StringRedisSerializer
 import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.CheckinDamageUpdatedMessageListener
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
@@ -24,6 +27,21 @@ import pl.detailing.crm.signing.infrastructure.SignatureRequestMessageListener
  */
 @Configuration
 class RedisConfig {
+
+    /**
+     * String-keyed template with raw byte-array values. Used by the signing flow to
+     * cache the pending PDF between "Poproś o podpis" and its delivery to the signing
+     * device, so delivery does not need a second round trip to S3.
+     */
+    @Bean
+    fun binaryRedisTemplate(connectionFactory: RedisConnectionFactory): RedisTemplate<String, ByteArray> =
+        RedisTemplate<String, ByteArray>().apply {
+            setConnectionFactory(connectionFactory)
+            keySerializer = StringRedisSerializer()
+            valueSerializer = RedisSerializer.byteArray()
+            hashKeySerializer = StringRedisSerializer()
+            hashValueSerializer = RedisSerializer.byteArray()
+        }
 
     @Bean
     fun redisMessageListenerContainer(
