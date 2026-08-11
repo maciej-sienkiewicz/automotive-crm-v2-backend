@@ -65,7 +65,9 @@ class DocumentIntegrityService(
      * carrying the correct nonce; every subsequent attempt (replay) returns false.
      */
     fun consumeChallenge(requestId: UUID, submittedChallenge: String): Boolean {
-        evictCachedDocument(requestId)
+        // NOTE: the cached document is intentionally NOT evicted here — the submit
+        // pipeline still needs those bytes to compose the signed PDF. Eviction happens
+        // when the session reaches a terminal state.
         val stored = redisTemplate.opsForValue().getAndDelete(CHALLENGE_KEY_PREFIX + requestId)
             ?: return false
         return MessageDigest.isEqual(stored.toByteArray(), submittedChallenge.toByteArray())
@@ -101,7 +103,7 @@ class DocumentIntegrityService(
             null
         }
 
-    private fun evictCachedDocument(requestId: UUID) {
+    fun evictCachedDocument(requestId: UUID) {
         try {
             binaryRedisTemplate.delete(DOCUMENT_CACHE_KEY_PREFIX + requestId)
         } catch (e: Exception) {
