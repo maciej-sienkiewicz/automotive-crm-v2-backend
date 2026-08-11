@@ -24,32 +24,37 @@ object PermissionHierarchy {
      * Catalog-level implications that cannot be edges of the tree (a node has exactly one
      * parent). Ancestors of an implied permission are pulled in by [close], so each entry
      * lists only the deepest required node of a branch.
+     *
+     * Cross-module rule (v4): every non-VISITS module root implies [Permission.VISITS_CREATE].
+     * A role cannot hold Finance, Employees, Communication, etc. without the booking desk
+     * capability — the editor auto-selects [Permission.VISITS_CREATE] (and its full ancestor
+     * chain) when any of those module roots is checked.
+     *
+     * [Permission.VISITS_CREATE] ↔ [Permission.SERVICES_VIEW] form a mutual implication
+     * (you need the catalog to book; you manage the catalog only if you can book). The BFS
+     * in [close] handles cycles via a visited-set, so this is safe.
      */
     private val implications: Map<Permission, Set<Permission>> = mapOf(
-        // The booking desk-flow is one capability: composing a visit means entering the
-        // (possibly new) customer's and vehicle's data, pricing the services (discounts),
-        // handling documents/protocols and picking services from the catalog. A role that
-        // can book but cannot see the customer is absurd.
+        // Booking desk-flow: creating a visit implies editing service prices (discounts).
+        // CUSTOMERS_MANAGE and VISITS_DOCUMENTS_MANAGE are now in the parent chain
+        // (VISITS_CREATE → CUSTOMERS_MANAGE → VISITS_SERVICE_PRICES_VIEW → …), so they
+        // no longer need to be listed here. SERVICES_VIEW is cross-module (mutual).
         Permission.VISITS_CREATE to setOf(
-            Permission.CUSTOMERS_MANAGE,
             Permission.VISITS_SERVICE_PRICES_EDIT,
-            Permission.VISITS_DOCUMENTS_MANAGE,
             Permission.SERVICES_VIEW
         ),
-        // Person-centric capabilities: their content IS customer personal data, so they
-        // imply the personal-data permission — 403/masking would make them useless.
-        Permission.VISITS_DOCUMENTS_MANAGE to setOf(Permission.CUSTOMERS_VIEW),
-        Permission.COMMUNICATION_SEND to setOf(Permission.CUSTOMERS_VIEW),
-        // An invoice carries the customer's data, is created from a visit and references
-        // the price list.
-        Permission.FINANCE_INVOICES to setOf(
-            Permission.CUSTOMERS_VIEW,
-            Permission.VISITS_VIEW,
-            Permission.SERVICES_VIEW
-        ),
-        // Financial and statistical reporting reference the service catalog.
-        Permission.FINANCE_VIEW_REPORTS to setOf(Permission.SERVICES_VIEW),
-        Permission.STATISTICS_VIEW to setOf(Permission.SERVICES_VIEW)
+        // ── Non-VISITS roots → VISITS_CREATE ────────────────────────────────────────
+        Permission.SERVICES_VIEW to setOf(Permission.VISITS_CREATE),
+        Permission.FINANCE_INVOICES to setOf(Permission.VISITS_CREATE),
+        Permission.FINANCE_VIEW_REPORTS to setOf(Permission.VISITS_CREATE),
+        Permission.EMPLOYEES_MANAGE to setOf(Permission.VISITS_CREATE),
+        Permission.EMPLOYEES_PAYROLL to setOf(Permission.VISITS_CREATE),
+        Permission.COMMUNICATION_SEND to setOf(Permission.VISITS_CREATE),
+        Permission.MARKETING_MANAGE to setOf(Permission.VISITS_CREATE),
+        Permission.STATISTICS_VIEW to setOf(Permission.VISITS_CREATE),
+        Permission.LEADS_MANAGE to setOf(Permission.VISITS_CREATE),
+        Permission.TASKS_VIEW to setOf(Permission.VISITS_CREATE),
+        Permission.AUDIT_VIEW to setOf(Permission.VISITS_CREATE),
     )
 
     /** Direct children of [permission] in declaration order. */
