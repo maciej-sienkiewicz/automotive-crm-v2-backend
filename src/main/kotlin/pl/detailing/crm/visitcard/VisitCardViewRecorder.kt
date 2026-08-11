@@ -62,7 +62,11 @@ class VisitCardViewRecorder(
                             .takeIf { it.isNotBlank() }
                     },
                     visitId = token.visitId?.let { VisitId(it) },
-                    visitName = "Wizyta ${card.visitNumber}",
+                    visitName = card.vehicle?.let { vehicle ->
+                        listOfNotNull(vehicle.brand, vehicle.model, vehicle.licensePlate)
+                            .joinToString(" ")
+                            .takeIf { it.isNotBlank() }
+                    },
                     appointmentId = token.appointmentId?.let { AppointmentId(it) }
                 ),
                 channel = AuditChannel.PUBLIC_LINK

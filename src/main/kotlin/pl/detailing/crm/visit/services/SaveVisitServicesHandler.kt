@@ -154,6 +154,7 @@ class SaveVisitServicesHandler(
             visitEntity.modelSnapshot,
             visitEntity.licensePlateSnapshot?.let { "($it)" }
         ).joinToString(" ").takeIf { it.isNotBlank() }
+        val visitDisplayName = visitEntity.title?.takeIf { it.isNotBlank() } ?: vehicleName ?: "#${visitEntity.visitNumber}"
 
         auditService.log(LogAuditCommand(
             studioId = studioId,
@@ -161,7 +162,7 @@ class SaveVisitServicesHandler(
             userDisplayName = userName ?: "",
             module = AuditModule.VISIT,
             entityId = visitId.value.toString(),
-            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            entityDisplayName = visitDisplayName,
             action = AuditAction.SERVICES_UPDATED,
             changes = changes,
             amount = AuditAmount(BigDecimal(grossAfter).movePointLeft(2)),
@@ -171,7 +172,7 @@ class SaveVisitServicesHandler(
                 vehicleId = VehicleId(visitEntity.vehicleId),
                 vehicleName = vehicleName,
                 visitId = visitId,
-                visitName = "Wizyta #${visitEntity.visitNumber}"
+                visitName = visitDisplayName
             )
         ))
 
