@@ -30,12 +30,18 @@ data class AssignCostItemsRequest(
     val itemIds: List<String>
 )
 
+data class SetStatsExclusionRequest(
+    /** true = kategoria pomijana w statystykach kosztów (KPI, wykresy, diagram kołowy). */
+    val excludeFromStats: Boolean
+)
+
 data class CostCategoryDto(
     val id: String,
     val name: String,
     val description: String?,
     val color: String?,
     val isActive: Boolean,
+    val excludeFromStats: Boolean,
     val createdAt: String,
     val updatedAt: String
 )
@@ -180,6 +186,22 @@ class CostCategoryController(
         entity.description = req.description?.trim()
         entity.color       = req.color
         entity.updatedAt   = Instant.now()
+        categoryRepository.save(entity)
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Włącza/wyłącza pomijanie kategorii w statystykach kosztów. */
+    @PutMapping("/{categoryId}/stats-exclusion")
+    @Transactional
+    fun setStatsExclusion(
+        @PathVariable categoryId: String,
+        @RequestBody req: SetStatsExclusionRequest
+    ): ResponseEntity<Void> {
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        val entity = categoryRepository.findByIdAndStudioId(UUID.fromString(categoryId), studioId)
+            ?: return ResponseEntity.notFound().build()
+        entity.excludeFromStats = req.excludeFromStats
+        entity.updatedAt        = Instant.now()
         categoryRepository.save(entity)
         return ResponseEntity.noContent().build()
     }
@@ -466,13 +488,14 @@ class CostCategoryController(
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun CostCategoryEntity.toDto() = CostCategoryDto(
-        id          = id.toString(),
-        name        = name,
-        description = description,
-        color       = color,
-        isActive    = isActive,
-        createdAt   = createdAt.toString(),
-        updatedAt   = updatedAt.toString()
+        id               = id.toString(),
+        name             = name,
+        description      = description,
+        color            = color,
+        isActive         = isActive,
+        excludeFromStats = excludeFromStats,
+        createdAt        = createdAt.toString(),
+        updatedAt        = updatedAt.toString()
     )
 
     /**

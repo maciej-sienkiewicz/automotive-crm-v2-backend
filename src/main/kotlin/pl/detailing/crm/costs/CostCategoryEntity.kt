@@ -33,6 +33,13 @@ class CostCategoryEntity(
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
 
+    /**
+     * Gdy true — koszty tej kategorii są pomijane w statystykach (KPI, wykresy),
+     * np. wewnętrzne przelewy między spółkami, które nie są realnym kosztem.
+     */
+    @Column(name = "exclude_from_stats", nullable = false)
+    var excludeFromStats: Boolean = false,
+
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
