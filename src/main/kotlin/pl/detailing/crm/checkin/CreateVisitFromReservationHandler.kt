@@ -785,7 +785,7 @@ class CreateVisitFromReservationHandler(
             vehicleId = vehicleId,
             vehicleName = vehicleDisplayName,
             visitId = visitId,
-            visitName = "#${visit.visitNumber}",
+            visitName = vehicleDisplayName,
             appointmentId = appointmentId
         )
         val metadata = mapOf(
@@ -805,7 +805,7 @@ class CreateVisitFromReservationHandler(
                 module = AuditModule.VISIT,
                 action = AuditAction.VISIT_CREATED,
                 entityId = visitId.value.toString(),
-                entityDisplayName = "Wizyta ${visit.visitNumber} — $vehicleDisplayName",
+                entityDisplayName = vehicleDisplayName,
                 metadata = metadata,
                 context = context,
                 amount = totalGross,

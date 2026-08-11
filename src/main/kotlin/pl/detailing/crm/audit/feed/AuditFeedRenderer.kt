@@ -81,7 +81,7 @@ class AuditFeedRenderer {
      */
     private fun titleOf(log: AuditLog, subject: AuditReferenceView?): String {
         val label = subject?.label ?: log.entityDisplayName
-        return if (label.isNullOrBlank()) log.action.sentence else "${log.action.sentence} — $label"
+        return if (label.isNullOrBlank()) log.action.sentence else "${log.action.sentence} - $label"
     }
 
     /** Context line, skipping whatever is already named in the title. */

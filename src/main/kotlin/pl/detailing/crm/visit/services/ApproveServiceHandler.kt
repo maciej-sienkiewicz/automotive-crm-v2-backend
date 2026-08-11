@@ -64,6 +64,7 @@ class ApproveServiceHandler(
             visitEntity.modelSnapshot,
             visitEntity.licensePlateSnapshot?.let { "($it)" }
         ).joinToString(" ").takeIf { it.isNotBlank() }
+        val visitDisplayName = visitEntity.title?.takeIf { it.isNotBlank() } ?: vehicleName ?: "#${visitEntity.visitNumber}"
 
         auditService.log(LogAuditCommand(
             studioId = studioId,
@@ -71,7 +72,7 @@ class ApproveServiceHandler(
             userDisplayName = userName ?: "",
             module = AuditModule.VISIT,
             entityId = visitId.value.toString(),
-            entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
+            entityDisplayName = visitDisplayName,
             action = AuditAction.SERVICE_UPDATED,
             changes = changes,
             amount = AuditAmount(BigDecimal(grossAfter).movePointLeft(2)),
@@ -81,7 +82,7 @@ class ApproveServiceHandler(
                 vehicleId = VehicleId(visitEntity.vehicleId),
                 vehicleName = vehicleName,
                 visitId = visitId,
-                visitName = "Wizyta #${visitEntity.visitNumber}"
+                visitName = visitDisplayName
             ),
             metadata = buildMap {
                 put("serviceItemId", serviceItemId.value.toString())
