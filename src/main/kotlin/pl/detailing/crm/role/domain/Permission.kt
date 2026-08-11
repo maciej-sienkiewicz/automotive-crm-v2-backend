@@ -6,6 +6,7 @@ import pl.detailing.crm.subscription.entitlement.FeatureKey
 private const val SECTION_SERVICES = "Usługi"
 private const val SECTION_MEDIA = "Multimedia / Zdjęcia"
 private const val SECTION_DOCUMENTS = "Dokumenty"
+private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
 
 /**
  * Hardcoded permission catalog organized as a **tree** (hierarchy). Administrators cannot
@@ -18,29 +19,36 @@ private const val SECTION_DOCUMENTS = "Dokumenty"
  * Because a parent must be declared **before** its children (Kotlin forbids forward
  * references between enum constants), the hierarchy is acyclic by construction.
  *
- * Cross-module implications that cannot be edges of a single-module tree (e.g. creating a
- * visit means entering customer data) live in
- * [pl.detailing.crm.role.permission.PermissionCheckService] as runtime expansion.
+ * Implications that cannot be edges of the tree (a node has one parent, but e.g. creating
+ * a visit also requires entering customer data, editing prices and handling documents)
+ * are part of the catalog too: [PermissionHierarchy.impliesOf]. They are expanded together
+ * with the ancestor chain by [PermissionHierarchy.close], so a stored role is always a
+ * consistent, self-contained set — there is no invisible runtime expansion.
  *
  * Invariants (enforced by tests):
  * - a child always belongs to the same [PermissionModule] as its parent,
  * - every module has at least one root permission.
  *
- * ## Business rules of the catalog (v2 consolidation)
+ * ## Business rules of the catalog (v3 consolidation)
  * A permission exists only when there is a realistic role in a detailing studio that needs
  * it *without* the neighbouring ones:
  * - **[CUSTOMERS_VIEW] is the personal-data permission** — no separate toggle. Shop-floor
  *   views (visits, calendar) work without it with `@Pii` fields masked at the
  *   serialization boundary; person-centric views (customer database, documents, invoices)
  *   hard-require it and return 403 instead of masking.
+ * - **Customers and vehicles are a section of the visits area, not a module** — the
+ *   customer database exists in this product to serve visits, so its permissions live in
+ *   the "Wizyty i kalendarz" group (keeping their own CUSTOMERS subscription gate).
  * - **The calendar is not a separate permission area** — a calendar event IS a visit or a
  *   booking (viewing = [VISITS_VIEW], booking = [VISITS_CREATE]).
  * - **Vehicles are not a standalone permission area** — reading rides on the visit and
  *   customer views, writing on [VISITS_CREATE], deleting on [CUSTOMERS_DELETE].
- * - **Create and edit are one capability**; work documentation (comments, notes, photo
- *   view/upload) is part of [VISITS_VIEW]; a document's view/generate/sign is one
- *   desk-side flow ([VISITS_DOCUMENTS_MANAGE]).
- * - Deliberately separate: statuses and prices (detailer policies differ per studio),
+ * - **Create and edit are one capability** and cover the whole booking desk-flow: entering
+ *   customer data, pricing the services (discounts) and handling documents/protocols —
+ *   [VISITS_CREATE] implies [CUSTOMERS_MANAGE], [VISITS_SERVICE_PRICES_EDIT] and
+ *   [VISITS_DOCUMENTS_MANAGE]. Work documentation (comments, notes, photo view/upload)
+ *   is part of [VISITS_VIEW].
+ * - Deliberately separate: statuses (detailer policies differ per studio),
  *   destructive actions ([VISITS_DELETE], [VISITS_MEDIA_DELETE], [CUSTOMERS_DELETE]),
  *   payroll, cash register, financial reports.
  *
@@ -75,8 +83,8 @@ enum class Permission(
     VISITS_CREATE(
         PermissionModule.VISITS, "Tworzenie i edycja wizyt oraz rezerwacji",
         parent = VISITS_VIEW,
-        description = "Umawianie i edycja wizyt wraz z wpisywaniem danych pojazdu. " +
-            "Obejmuje dodawanie i edycję klientów oraz dostęp do cennika usług."
+        description = "Umawianie i edycja wizyt wraz z wpisywaniem danych pojazdu " +
+            "i klienta — pełny przepływ recepcji."
     ),
     VISITS_CHANGE_STATUS(
         PermissionModule.VISITS, "Zmiana statusu wizyty",
@@ -114,19 +122,27 @@ enum class Permission(
         featureKeyOverride = FeatureKey.DOCUMENTS
     ),
 
-    // ── Klienci i pojazdy ────────────────────────────────────────────────────
+    // Sekcja: Klienci i pojazdy — the customer database is part of the visits area
+    // (it exists to serve visits), rendered as a section of "Wizyty i kalendarz".
+    // It keeps its own CUSTOMERS subscription gate, and CUSTOMERS_VIEW stays a separate
+    // root (not a child of VISITS_VIEW): invoicing or messaging roles need customer data
+    // without being pulled into the calendar.
     CUSTOMERS_VIEW(
-        PermissionModule.CUSTOMERS, "Podgląd klientów",
+        PermissionModule.VISITS, "Podgląd klientów",
+        section = SECTION_CUSTOMERS,
+        featureKeyOverride = FeatureKey.CUSTOMERS,
         description = "Pełne dane osobowe, pojazdy i historia komunikacji klienta. " +
             "Bez tego uprawnienia dane osobowe w widokach wizyt i kalendarza są zamaskowane."
     ),
     CUSTOMERS_MANAGE(
-        PermissionModule.CUSTOMERS, "Dodawanie i edycja klientów",
-        parent = CUSTOMERS_VIEW
+        PermissionModule.VISITS, "Dodawanie i edycja klientów",
+        parent = CUSTOMERS_VIEW, section = SECTION_CUSTOMERS,
+        featureKeyOverride = FeatureKey.CUSTOMERS
     ),
     CUSTOMERS_DELETE(
-        PermissionModule.CUSTOMERS, "Usuwanie klientów i pojazdów",
-        parent = CUSTOMERS_VIEW
+        PermissionModule.VISITS, "Usuwanie klientów i pojazdów",
+        parent = CUSTOMERS_VIEW, section = SECTION_CUSTOMERS,
+        featureKeyOverride = FeatureKey.CUSTOMERS
     ),
 
     // ── Finanse ──────────────────────────────────────────────────────────────
@@ -183,8 +199,8 @@ enum class Permission(
     ),
 
     // ── Usługi (cennik) ───────────────────────────────────────────────────────
-    // Access is also implicitly granted to any user holding a Finance, Statistics or
-    // visit-creation permission (see PermissionCheckService.expandCrossModule).
+    // Access is also implied by Finance, Statistics and visit-creation permissions
+    // (see PermissionHierarchy.impliesOf).
     SERVICES_VIEW(PermissionModule.SERVICES, "Podgląd cennika usług"),
     SERVICES_MANAGE(PermissionModule.SERVICES, "Zarządzanie cennikiem usług", parent = SERVICES_VIEW),
 
@@ -209,9 +225,8 @@ enum class Permission(
         /**
          * Codes retired by catalog restructures (flat list era + pre-consolidation tree).
          * Rows persisted with these codes (role_permissions.permission) are transparently
-         * mapped on read — no SQL migration is required (an optional cleanup script exists:
-         * `migrate-role-permissions-v2.sql`). Codes that vanished entirely (EMPLOYEES_VIEW)
-         * map to null and are dropped.
+         * mapped on read — no SQL migration is required. Codes that vanished entirely
+         * (EMPLOYEES_VIEW) map to null and are dropped.
          */
         private val legacyAliases: Map<String, Permission> = mapOf(
             // Visits — pre-consolidation tree nodes

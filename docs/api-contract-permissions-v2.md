@@ -1,86 +1,104 @@
-# Kontrakt API — Uprawnienia v2: drzewo + skonsolidowany katalog + dwa poziomy widoków
+# Kontrakt API — Uprawnienia v3: graf zależności + skonsolidowany katalog + dwa poziomy widoków
 
 Dokument dla zespołu frontendu. Zastępuje `api-contract-pii-masking.md`.
 
 ## Model w jednym akapicie
 
-Katalog uprawnień to **drzewo** (`GET /api/v1/roles/permissions` zwraca zagnieżdżone
-`nodes[].children[]` — dziecko wymaga całej ścieżki przodków; edytor ról kaskadowo
-zaznacza/odznacza wzdłuż gałęzi). Katalog został **skonsolidowany do 23 uprawnień**
-(zasada: checkbox istnieje tylko, gdy istnieje realna rola potrzebująca go bez sąsiednich).
-Dane osobowe działają **dwupoziomowo**: `CUSTOMERS_VIEW` jest jednocześnie uprawnieniem
-„dane osobowe" — widoki warsztatowe (wizyty, kalendarz) działają bez niego z polami `@Pii`
-zamaskowanymi `"***"` na granicy serializacji (nagłówek `X-Pii-Access: granted|masked`),
-a widoki osobowe (baza klientów, dokumenty, faktury, komunikacja) wymagają go twardo — 403.
+Katalog uprawnień to **graf zależności**: drzewo (`GET /api/v1/roles/permissions` zwraca
+zagnieżdżone `nodes[].children[]` — dziecko wymaga całej ścieżki przodków) **plus jawne
+implikacje** (`nodes[].implies[]` — kody wymagane dodatkowo, także z innych gałęzi
+i modułów). Edytor ról kaskadowo zaznacza/odznacza wzdłuż obu rodzajów krawędzi, a backend
+domyka zapisany zbiór do punktu stałego — rola nigdy nie jest niespójna (np. „tworzenie
+rezerwacji bez podglądu klientów" jest niewyrażalne). Katalog jest **skonsolidowany do
+25 uprawnień** (zasada: checkbox istnieje tylko, gdy istnieje realna rola potrzebująca go
+bez sąsiednich). Dane osobowe działają **dwupoziomowo**: `CUSTOMERS_VIEW` jest jednocześnie
+uprawnieniem „dane osobowe" — widoki warsztatowe (wizyty, kalendarz) działają bez niego
+z polami `@Pii` zamaskowanymi `"***"` na granicy serializacji (nagłówek
+`X-Pii-Access: granted|masked`), a widoki osobowe (baza klientów, dokumenty, faktury,
+komunikacja) wymagają go twardo — 403.
 
-## 1. Katalog (drzewo, 23 pozycje)
+## 1. Katalog (drzewo + implikacje)
+
+Moduł **KLIENCI I POJAZDY zniknął jako osobna karta** — jego uprawnienia żyją teraz jako
+sekcja „Klienci i pojazdy" wewnątrz „Wizyty i kalendarz" (baza klientów istnieje w tym
+produkcie po to, by obsługiwać wizyty). Zachowują własną bramkę subskrypcyjną
+(`featureKey: CUSTOMERS` na węzłach).
 
 ```text
 WIZYTY I KALENDARZ (feature: VISITS)
-└─ VISITS_VIEW                     Podgląd wizyt i kalendarza (komentarze, notatki,
-   │                               podgląd i dodawanie zdjęć w cenie; klient maskowany
-   │                               bez CUSTOMERS_VIEW)
-   ├─ VISITS_CREATE                Tworzenie i edycja wizyt oraz rezerwacji (z pojazdem;
-   │                               implikuje CUSTOMERS_MANAGE, SERVICES_VIEW i podgląd cen)
-   ├─ VISITS_CHANGE_STATUS         Zmiana statusu wizyty
-   ├─ VISITS_DELETE                Usuwanie wizyty (destrukcyjne — celowo osobno)
-   ├─ [Usługi] VISITS_SERVICE_PRICES_VIEW   Podgląd cen usług w wizycie
-   │           └─ VISITS_SERVICE_PRICES_EDIT  Edycja cen (rabaty)
-   ├─ [Multimedia] VISITS_MEDIA_DELETE      Usuwanie zdjęć (feature: GALLERY;
-   │                               zdjęcia to materiał dowodowy — celowo osobno)
-   └─ [Dokumenty] VISITS_DOCUMENTS_MANAGE   Dokumenty i protokoły: podgląd, generowanie,
-                                   podpis (feature: DOCUMENTS; implikuje CUSTOMERS_VIEW)
-
-KLIENCI I POJAZDY (feature: CUSTOMERS)
-└─ CUSTOMERS_VIEW                  Podgląd klientów = pełne dane osobowe, pojazdy,
-   │                               historia komunikacji
-   ├─ CUSTOMERS_MANAGE             Dodawanie i edycja klientów
-   └─ CUSTOMERS_DELETE             Usuwanie klientów i pojazdów
+├─ VISITS_VIEW                     Podgląd wizyt i kalendarza (komentarze, notatki,
+│  │                               podgląd i dodawanie zdjęć w cenie; klient maskowany
+│  │                               bez CUSTOMERS_VIEW)
+│  ├─ VISITS_CREATE                Tworzenie i edycja wizyt oraz rezerwacji
+│  │                               implies: CUSTOMERS_MANAGE, VISITS_SERVICE_PRICES_EDIT,
+│  │                                        VISITS_DOCUMENTS_MANAGE, SERVICES_VIEW
+│  ├─ VISITS_CHANGE_STATUS         Zmiana statusu wizyty
+│  ├─ VISITS_DELETE                Usuwanie wizyty (destrukcyjne — celowo osobno)
+│  ├─ [Usługi] VISITS_SERVICE_PRICES_VIEW   Podgląd cen usług w wizycie
+│  │           └─ VISITS_SERVICE_PRICES_EDIT  Edycja cen (rabaty)
+│  ├─ [Multimedia] VISITS_MEDIA_DELETE      Usuwanie zdjęć (feature: GALLERY;
+│  │                               zdjęcia to materiał dowodowy — celowo osobno)
+│  └─ [Dokumenty] VISITS_DOCUMENTS_MANAGE   Dokumenty i protokoły: podgląd, generowanie,
+│                                  podpis (feature: DOCUMENTS; implies: CUSTOMERS_VIEW)
+└─ [Klienci i pojazdy] CUSTOMERS_VIEW   Podgląd klientów = pełne dane osobowe, pojazdy,
+   │                               historia komunikacji (feature: CUSTOMERS; osobny
+   │                               korzeń — fakturowanie/komunikacja wymagają danych
+   │                               klienta bez wciągania kalendarza)
+   ├─ CUSTOMERS_MANAGE             Dodawanie i edycja klientów (feature: CUSTOMERS)
+   └─ CUSTOMERS_DELETE             Usuwanie klientów i pojazdów (feature: CUSTOMERS)
 
 FINANSE (feature: FINANCE)
-├─ FINANCE_INVOICES                Faktury: podgląd i wystawianie (implikuje CUSTOMERS_VIEW
-│  │                               i VISITS_VIEW)
+├─ FINANCE_INVOICES                Faktury: podgląd i wystawianie
+│  │                               implies: CUSTOMERS_VIEW, VISITS_VIEW, SERVICES_VIEW
 │  └─ FINANCE_MANAGE_CASH_REGISTER Zarządzanie kasą fiskalną
-└─ FINANCE_VIEW_REPORTS            Podgląd raportów finansowych
+└─ FINANCE_VIEW_REPORTS            Podgląd raportów finansowych (implies: SERVICES_VIEW)
 
-PRACOWNICY (feature: EMPLOYEES)
+PRACOWNICY
 ├─ EMPLOYEES_MANAGE                Kadry + konta logowania
 └─ EMPLOYEES_PAYROLL               Płace (podgląd i zarządzanie)
 
 KOMUNIKACJA (feature: SMS_EMAIL)
-└─ COMMUNICATION_SEND              Wysyłanie SMS i e-maili (implikuje CUSTOMERS_VIEW)
+└─ COMMUNICATION_SEND              Wysyłanie SMS i e-maili (implies: CUSTOMERS_VIEW)
 
-STATYSTYKI  └─ STATISTICS_VIEW
+MARKETING (feature: CAMPAIGNS) └─ MARKETING_MANAGE   Marketing i social media
+STATYSTYKI (feature: STATISTICS) └─ STATISTICS_VIEW  (implies: SERVICES_VIEW)
 LEADY       └─ LEADS_MANAGE        Praca z leadami (lead = kolejka pracy)
 ZADANIA     └─ TASKS_VIEW ── TASKS_MANAGE (tworzenie i przypisywanie)
 USŁUGI (cennik) └─ SERVICES_VIEW ── SERVICES_MANAGE
+HISTORIA AKTYWNOŚCI └─ AUDIT_VIEW  Podgląd historii aktywności firmy
 ```
 
-Zniknęły moduły **CALENDAR** (event kalendarza JEST wizytą/rezerwacją), **VEHICLES**
-(pojazd czyta się przez wizyty/klientów, zapisuje przez `VISITS_CREATE`, usuwa przez
-`CUSTOMERS_DELETE`), **GALLERY** i **DOCUMENTS** jako osobne moduły (żyją w drzewie wizyt
-z własnym `featureKey`).
+Zniknęły moduły **CUSTOMERS** (sekcja w wizytach, patrz wyżej), **CALENDAR** (event
+kalendarza JEST wizytą/rezerwacją), **VEHICLES** (pojazd czyta się przez wizyty/klientów,
+zapisuje przez `VISITS_CREATE`, usuwa przez `CUSTOMERS_DELETE`), **GALLERY** i **DOCUMENTS**
+jako osobne moduły (żyją w drzewie wizyt z własnym `featureKey`).
 
-### Implikacje między-modułowe (runtime, nie w drzewie)
+### Implikacje (`implies[]`) — teraz część katalogu, nie runtime
 
-Drzewo trzyma się jednego modułu; powiązania między modułami są doliczane przy
-wyznaczaniu efektywnych uprawnień (`/auth/me` zwraca już rozwinięty zbiór):
+Każdy węzeł katalogu niesie pole `implies: string[]` — kody wymagane dodatkowo poza
+łańcuchem przodków (mogą wskazywać inną gałąź lub inny moduł). Edytor ról **kaskadowo
+zaznacza** implikowane uprawnienia (wraz z ich przodkami i dalszymi implikacjami)
+i **odznacza zależne** przy odznaczaniu wymaganego. Backend i tak domyka zbiór przy
+zapisie i odczycie (`PermissionHierarchy.close`), więc role zapisane przed tą zmianą
+otrzymują implikacje automatycznie przy odczycie — bez migracji SQL.
 
-| Uprawnienie | Implikuje |
+| Uprawnienie | implies |
 |---|---|
-| `VISITS_CREATE` | `CUSTOMERS_MANAGE` (+`CUSTOMERS_VIEW`), `SERVICES_VIEW`, `VISITS_SERVICE_PRICES_VIEW` |
+| `VISITS_CREATE` | `CUSTOMERS_MANAGE` (+`CUSTOMERS_VIEW`), `VISITS_SERVICE_PRICES_EDIT` (+`VIEW`), `VISITS_DOCUMENTS_MANAGE`, `SERVICES_VIEW` — tworzenie rezerwacji to jeden przepływ recepcji: dane klienta, wycena z rabatami, dokumenty/protokoły, cennik |
 | `VISITS_DOCUMENTS_MANAGE` | `CUSTOMERS_VIEW` (dokument zawiera pełne dane klienta) |
-| `FINANCE_INVOICES` | `CUSTOMERS_VIEW`, `VISITS_VIEW` (faktura = dane kontrahenta, powstaje z wizyty) |
+| `FINANCE_INVOICES` | `CUSTOMERS_VIEW`, `VISITS_VIEW`, `SERVICES_VIEW` (faktura = dane kontrahenta, powstaje z wizyty, odwołuje się do cennika) |
+| `FINANCE_VIEW_REPORTS` | `SERVICES_VIEW` |
 | `COMMUNICATION_SEND` | `CUSTOMERS_VIEW` (wysyłka na prawdziwy numer/adres) |
-| dowolne FINANCE / STATISTICS | `SERVICES_VIEW` (raporty odwołują się do cennika) |
+| `STATISTICS_VIEW` | `SERVICES_VIEW` |
 
-W edytorze ról checkboxy spoza drzewa **nie** są zaznaczane kaskadowo — implikacje są
-doliczane serwerowo; UI może je pokazywać jako „w pakiecie" (informacyjnie).
+`GET /api/v1/auth/me` nadal zwraca efektywny (domknięty i przefiltrowany przez
+subskrypcję) zbiór — dla frontu nic się nie zmienia poza tym, że rola widziana
+w edytorze pokrywa się 1:1 z efektywnymi uprawnieniami.
 
 ### Kody usunięte
 
 `POST/PUT /api/v1/roles` przyjmuje wyłącznie aktualne kody (`400` dla starych); zapisane
-role są tłumaczone w locie, opcjonalny skrypt czyszczący: `migrate-role-permissions-v2.sql`.
+role są tłumaczone w locie.
 Najważniejsze mapowania: `CUSTOMERS_VIEW_PERSONAL_DATA→CUSTOMERS_VIEW`,
 `CUSTOMERS_CREATE/EDIT→CUSTOMERS_MANAGE`, `CALENDAR_VIEW→VISITS_VIEW`,
 `CALENDAR_MANAGE→VISITS_CREATE`, `VEHICLES_VIEW→VISITS_VIEW`,

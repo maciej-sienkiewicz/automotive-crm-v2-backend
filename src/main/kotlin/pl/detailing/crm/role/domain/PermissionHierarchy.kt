@@ -1,16 +1,56 @@
 package pl.detailing.crm.role.domain
 
 /**
- * Query helpers over the permission tree declared by [Permission.parent].
+ * Query helpers over the permission dependency graph: the tree declared by
+ * [Permission.parent] plus the catalog-level implications declared in [implications].
  *
- * The single dependency rule of the catalog: **a permission requires its whole ancestor
- * chain**. There are no cross-branch or cross-module dependencies — granting a node grants
- * (via [close]) exactly the path from the tree root down to that node.
+ * Two dependency rules:
+ * - **a permission requires its whole ancestor chain** (the tree),
+ * - **a permission may imply permissions outside its branch** ([impliesOf]) — capabilities
+ *   that are useless or absurd without one another (e.g. booking a visit without seeing
+ *   the customer). Implications may cross branches and modules.
+ *
+ * [close] expands a set over both rules until a fixpoint, so a stored role is always a
+ * consistent, self-contained set. The role editor receives the same graph
+ * (`GET /api/v1/roles/permissions` serializes `implies`) and cascades selection along it,
+ * so what the administrator sees checked is exactly what is persisted and enforced.
  */
 object PermissionHierarchy {
 
     private val childrenByParent: Map<Permission?, List<Permission>> =
         Permission.entries.groupBy { it.parent }
+
+    /**
+     * Catalog-level implications that cannot be edges of the tree (a node has exactly one
+     * parent). Ancestors of an implied permission are pulled in by [close], so each entry
+     * lists only the deepest required node of a branch.
+     */
+    private val implications: Map<Permission, Set<Permission>> = mapOf(
+        // The booking desk-flow is one capability: composing a visit means entering the
+        // (possibly new) customer's and vehicle's data, pricing the services (discounts),
+        // handling documents/protocols and picking services from the catalog. A role that
+        // can book but cannot see the customer is absurd.
+        Permission.VISITS_CREATE to setOf(
+            Permission.CUSTOMERS_MANAGE,
+            Permission.VISITS_SERVICE_PRICES_EDIT,
+            Permission.VISITS_DOCUMENTS_MANAGE,
+            Permission.SERVICES_VIEW
+        ),
+        // Person-centric capabilities: their content IS customer personal data, so they
+        // imply the personal-data permission — 403/masking would make them useless.
+        Permission.VISITS_DOCUMENTS_MANAGE to setOf(Permission.CUSTOMERS_VIEW),
+        Permission.COMMUNICATION_SEND to setOf(Permission.CUSTOMERS_VIEW),
+        // An invoice carries the customer's data, is created from a visit and references
+        // the price list.
+        Permission.FINANCE_INVOICES to setOf(
+            Permission.CUSTOMERS_VIEW,
+            Permission.VISITS_VIEW,
+            Permission.SERVICES_VIEW
+        ),
+        // Financial and statistical reporting reference the service catalog.
+        Permission.FINANCE_VIEW_REPORTS to setOf(Permission.SERVICES_VIEW),
+        Permission.STATISTICS_VIEW to setOf(Permission.SERVICES_VIEW)
+    )
 
     /** Direct children of [permission] in declaration order. */
     fun childrenOf(permission: Permission): List<Permission> =
@@ -24,6 +64,10 @@ object PermissionHierarchy {
     fun ancestorsOf(permission: Permission): List<Permission> =
         generateSequence(permission.parent) { it.parent }.toList()
 
+    /** Permissions [permission] directly implies beyond its parent chain. */
+    fun impliesOf(permission: Permission): Set<Permission> =
+        implications[permission].orEmpty()
+
     /** [permission] and every permission below it in the tree. */
     fun subtreeOf(permission: Permission): Set<Permission> {
         val result = mutableSetOf(permission)
@@ -36,20 +80,18 @@ object PermissionHierarchy {
     }
 
     /**
-     * Returns [permissions] expanded with every ancestor, so the stored set always forms
-     * complete root-to-node paths. Idempotent: `close(close(x)) == close(x)`.
-     *
-     * In-module implication: [Permission.VISITS_CREATE] implies
-     * [Permission.VISITS_SERVICE_PRICES_VIEW] — composing a visit means selecting services
-     * with their prices. It deliberately does NOT grant the whole VISITS module: deleting
-     * visits, deleting photos and price *editing* (discounts) are separate policies.
-     * Cross-module implications (customer data entry, the service catalog) live in
-     * [pl.detailing.crm.role.permission.PermissionCheckService].
+     * Returns [permissions] expanded with every ancestor and every implication, to a
+     * fixpoint: each member's parent chain and [impliesOf] set are contained in the
+     * result. Idempotent: `close(close(x)) == close(x)`.
      */
     fun close(permissions: Set<Permission>): Set<Permission> {
-        val result = permissions.flatMapTo(mutableSetOf()) { ancestorsOf(it) + it }
-        if (Permission.VISITS_CREATE in result) {
-            result.add(Permission.VISITS_SERVICE_PRICES_VIEW)
+        val result = mutableSetOf<Permission>()
+        val queue = ArrayDeque(permissions)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (!result.add(node)) continue
+            node.parent?.let { queue.add(it) }
+            queue.addAll(impliesOf(node))
         }
         return result
     }
