@@ -68,7 +68,7 @@ class AuditFeedRendererTest {
     fun `the title reads as a sentence about the subject`() {
         val item = renderer.render(log())
 
-        assertEquals("Rozpoczęto wizytę — Wizyta 2026/02/17", item.title)
+        assertEquals("Rozpoczęto wizytę - Wizyta 2026/02/17", item.title)
     }
 
     @Test
@@ -76,6 +76,35 @@ class AuditFeedRendererTest {
         val item = renderer.render(log(entityDisplayName = null))
 
         assertEquals("Rozpoczęto wizytę", item.title)
+    }
+
+    @Test
+    fun `a generic verb names the module's object`() {
+        val created = renderer.render(
+            log(module = AuditModule.SERVICE, action = AuditAction.CREATE, entityDisplayName = "Test")
+        )
+        val deleted = renderer.render(
+            log(module = AuditModule.VEHICLE, action = AuditAction.DELETE, entityDisplayName = "Bmw Seria 8")
+        )
+
+        assertEquals("Utworzono usługę - Test", created.title)
+        assertEquals("Usunięto pojazd - Bmw Seria 8", deleted.title)
+    }
+
+    @Test
+    fun `a generic verb without a subject name still names the object`() {
+        val item = renderer.render(
+            log(module = AuditModule.APPOINTMENT, action = AuditAction.CREATE, entityDisplayName = null)
+        )
+
+        assertEquals("Utworzono rezerwację", item.title)
+    }
+
+    @Test
+    fun `a specific action keeps its own noun untouched`() {
+        val item = renderer.render(log(action = AuditAction.VISIT_CANCELLED))
+
+        assertEquals("Anulowano wizytę - Wizyta 2026/02/17", item.title)
     }
 
     @Test

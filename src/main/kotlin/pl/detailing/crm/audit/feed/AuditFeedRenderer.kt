@@ -1,6 +1,7 @@
 package pl.detailing.crm.audit.feed
 
 import org.springframework.stereotype.Component
+import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditAmount
 import pl.detailing.crm.audit.domain.AuditContext
 import pl.detailing.crm.audit.domain.AuditFieldCatalog
@@ -20,6 +21,9 @@ import java.util.Locale
  */
 @Component
 class AuditFeedRenderer {
+
+    /** Verbs that do not say what they acted on; [sentenceOf] appends the module noun. */
+    private val GENERIC_VERBS = setOf(AuditAction.CREATE, AuditAction.UPDATE, AuditAction.DELETE)
 
     fun render(log: AuditLog): AuditFeedItem {
         val subject = subjectOf(log)
@@ -80,8 +84,20 @@ class AuditFeedRenderer {
      * "dodał(a)" on every single row.
      */
     private fun titleOf(log: AuditLog, subject: AuditReferenceView?): String {
+        val sentence = sentenceOf(log)
         val label = subject?.label ?: log.entityDisplayName
-        return if (label.isNullOrBlank()) log.action.sentence else "${log.action.sentence} - $label"
+        return if (label.isNullOrBlank()) sentence else "$sentence - $label"
+    }
+
+    /**
+     * The verb, with the module's object noun appended when the action alone does not
+     * name what it acted on: "Utworzono" by itself reads ambiguously in a mixed feed
+     * ("Utworzono - Test"), so generic CRUD verbs become "Utworzono usługę - Test".
+     * Specific actions ("Rozpoczęto wizytę") already carry their own noun.
+     */
+    private fun sentenceOf(log: AuditLog): String {
+        val noun = log.module.objectNoun ?: return log.action.sentence
+        return if (log.action in GENERIC_VERBS) "${log.action.sentence} $noun" else log.action.sentence
     }
 
     /** Context line, skipping whatever is already named in the title. */
