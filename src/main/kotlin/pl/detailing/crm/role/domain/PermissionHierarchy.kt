@@ -30,21 +30,14 @@ object PermissionHierarchy {
      * capability — the editor auto-selects [Permission.VISITS_CREATE] (and its full ancestor
      * chain) when any of those module roots is checked.
      *
-     * [Permission.VISITS_CREATE] ↔ [Permission.SERVICES_VIEW] form a mutual implication
-     * (you need the catalog to book; you manage the catalog only if you can book). The BFS
-     * in [close] handles cycles via a visited-set, so this is safe.
      */
     private val implications: Map<Permission, Set<Permission>> = mapOf(
         // Booking desk-flow: creating a visit implies editing service prices (discounts).
-        // CUSTOMERS_MANAGE and VISITS_DOCUMENTS_MANAGE are now in the parent chain
-        // (VISITS_CREATE → CUSTOMERS_MANAGE → VISITS_SERVICE_PRICES_VIEW → …), so they
-        // no longer need to be listed here. SERVICES_VIEW is cross-module (mutual).
+        // The parent chain pulls in VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW.
         Permission.VISITS_CREATE to setOf(
-            Permission.VISITS_SERVICE_PRICES_EDIT,
-            Permission.SERVICES_VIEW
+            Permission.VISITS_SERVICE_PRICES_EDIT
         ),
         // ── Non-VISITS roots → VISITS_CREATE ────────────────────────────────────────
-        Permission.SERVICES_VIEW to setOf(Permission.VISITS_CREATE),
         Permission.FINANCE_INVOICES to setOf(Permission.VISITS_CREATE),
         Permission.FINANCE_VIEW_REPORTS to setOf(Permission.VISITS_CREATE),
         Permission.EMPLOYEES_MANAGE to setOf(Permission.VISITS_CREATE),

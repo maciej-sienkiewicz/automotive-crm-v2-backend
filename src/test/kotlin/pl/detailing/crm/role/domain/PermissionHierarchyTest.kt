@@ -87,19 +87,15 @@ class PermissionHierarchyTest {
     @Test
     fun `creating visits carries the whole booking desk-flow but not the destructive permissions`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
-        // Parent chain: VISITS_CREATE → CUSTOMERS_MANAGE → VISITS_SERVICE_PRICES_VIEW
-        //   → CUSTOMERS_VIEW → VISITS_VIEW
+        // Parent chain: VISITS_CREATE → VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW
         // Implication: VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT (discount desk-flow)
-        // Implication: VISITS_CREATE → SERVICES_VIEW (service catalog)
         assertEquals(
             setOf(
                 Permission.VISITS_CREATE,
-                Permission.CUSTOMERS_MANAGE,
                 Permission.VISITS_SERVICE_PRICES_VIEW,
                 Permission.CUSTOMERS_VIEW,
                 Permission.VISITS_VIEW,
-                Permission.VISITS_SERVICE_PRICES_EDIT,
-                Permission.SERVICES_VIEW
+                Permission.VISITS_SERVICE_PRICES_EDIT
             ),
             closed
         )
@@ -115,14 +111,11 @@ class PermissionHierarchyTest {
     @Test
     fun `invoicing requires visit creation and carries the full booking chain`() {
         val closed = PermissionHierarchy.close(setOf(Permission.FINANCE_INVOICES))
-        // FINANCE_INVOICES → VISITS_CREATE → (parent chain) CUSTOMERS_MANAGE,
-        // VISITS_SERVICE_PRICES_VIEW, CUSTOMERS_VIEW, VISITS_VIEW
-        // + VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT, SERVICES_VIEW
+        // FINANCE_INVOICES → VISITS_CREATE → (parent chain) VISITS_SERVICE_PRICES_VIEW,
+        // CUSTOMERS_VIEW, VISITS_VIEW + VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT
         assertTrue(Permission.VISITS_CREATE in closed)
         assertTrue(Permission.CUSTOMERS_VIEW in closed)
         assertTrue(Permission.VISITS_VIEW in closed)
-        assertTrue(Permission.SERVICES_VIEW in closed)
-        assertTrue(Permission.CUSTOMERS_MANAGE in closed)
         assertTrue(Permission.VISITS_SERVICE_PRICES_EDIT in closed)
     }
 
@@ -178,12 +171,6 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `managing customers implies viewing them`() {
-        val closed = PermissionHierarchy.close(setOf(Permission.CUSTOMERS_MANAGE))
-        assertTrue(Permission.CUSTOMERS_VIEW in closed)
-    }
-
-    @Test
     fun `legacy stored codes map onto the consolidated tree`() {
         mapOf(
             // flat-list era
@@ -199,8 +186,9 @@ class PermissionHierarchyTest {
             "VEHICLES_CREATE" to Permission.VISITS_CREATE,
             "VEHICLES_DELETE" to Permission.CUSTOMERS_DELETE,
             "CUSTOMERS_VIEW_PERSONAL_DATA" to Permission.CUSTOMERS_VIEW,
-            "CUSTOMERS_CREATE" to Permission.CUSTOMERS_MANAGE,
-            "CUSTOMERS_EDIT" to Permission.CUSTOMERS_MANAGE,
+            "CUSTOMERS_MANAGE" to Permission.VISITS_CREATE,
+            "CUSTOMERS_CREATE" to Permission.VISITS_CREATE,
+            "CUSTOMERS_EDIT" to Permission.VISITS_CREATE,
             "COMMUNICATION_VIEW_LOGS" to Permission.CUSTOMERS_VIEW,
             "COMMUNICATION_SEND_SMS" to Permission.COMMUNICATION_SEND,
             "FINANCE_VIEW_INVOICES" to Permission.FINANCE_INVOICES,

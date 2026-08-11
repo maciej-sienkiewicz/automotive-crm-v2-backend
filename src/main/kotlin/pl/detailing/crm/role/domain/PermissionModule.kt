@@ -29,8 +29,6 @@ enum class PermissionModule(
     STATISTICS("Statystyki", FeatureKey.STATISTICS),
     LEADS("Leady", null),
     TASKS("Zadania", null),
-    // Service catalog (price list) — no feature gate; access is also implied by Finance/Statistics.
-    SERVICES("Usługi (cennik)", null),
     // Company-wide activity history. Deliberately its own area rather than a child of an
     // existing module: the feed cuts across all of them, and it exposes payroll and
     // security events that no single module permission implies.
