@@ -70,14 +70,58 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `creating visits implies seeing service prices but not the destructive permissions`() {
+    fun `closed set contains the implications of every member`() {
+        Permission.entries.forEach { permission ->
+            val closed = PermissionHierarchy.close(setOf(permission))
+            closed.forEach { member ->
+                val missing = PermissionHierarchy.impliesOf(member) - closed
+                assertTrue(missing.isEmpty()) {
+                    "close(${permission.name}) is missing ${missing.map { it.name }} implied by ${member.name}"
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `creating visits carries the whole booking desk-flow but not the destructive permissions`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
-        // Composing a visit means selecting services with their prices…
-        assertTrue(Permission.VISITS_SERVICE_PRICES_VIEW in closed)
-        // …but deleting visits/photos and price editing (discounts) are separate policies.
+        // Booking = entering customer data, pricing services (discounts), documents
+        // and the service catalog — a booking role without customer view is absurd.
+        assertEquals(
+            setOf(
+                Permission.VISITS_CREATE,
+                Permission.VISITS_VIEW,
+                Permission.CUSTOMERS_MANAGE,
+                Permission.CUSTOMERS_VIEW,
+                Permission.VISITS_SERVICE_PRICES_EDIT,
+                Permission.VISITS_SERVICE_PRICES_VIEW,
+                Permission.VISITS_DOCUMENTS_MANAGE,
+                Permission.SERVICES_VIEW
+            ),
+            closed
+        )
+        // Deleting visits/photos/customers and status changes stay separate policies.
         assertTrue(Permission.VISITS_DELETE !in closed)
         assertTrue(Permission.VISITS_MEDIA_DELETE !in closed)
-        assertTrue(Permission.VISITS_SERVICE_PRICES_EDIT !in closed)
+        assertTrue(Permission.CUSTOMERS_DELETE !in closed)
+        assertTrue(Permission.VISITS_CHANGE_STATUS !in closed)
+    }
+
+    @Test
+    fun `invoicing implies customer data, visit view and the price list`() {
+        val closed = PermissionHierarchy.close(setOf(Permission.FINANCE_INVOICES))
+        assertTrue(Permission.CUSTOMERS_VIEW in closed)
+        assertTrue(Permission.VISITS_VIEW in closed)
+        assertTrue(Permission.SERVICES_VIEW in closed)
+        // …but not customer editing or visit booking.
+        assertTrue(Permission.CUSTOMERS_MANAGE !in closed)
+        assertTrue(Permission.VISITS_CREATE !in closed)
+    }
+
+    @Test
+    fun `sending messages implies seeing the customer`() {
+        val closed = PermissionHierarchy.close(setOf(Permission.COMMUNICATION_SEND))
+        assertEquals(setOf(Permission.COMMUNICATION_SEND, Permission.CUSTOMERS_VIEW), closed)
     }
 
     @Test

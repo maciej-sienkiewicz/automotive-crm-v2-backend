@@ -39,8 +39,10 @@ class RoleController(
 
     /**
      * Returns the full hardcoded permission catalog as a **tree**, grouped by module.
-     * A node's children require the node itself; the frontend renders this hierarchy
-     * directly and cascades checkbox selection along the parent chain.
+     * A node's children require the node itself; a node may additionally imply
+     * permissions outside its branch ([PermissionNodeResponse.implies]). The frontend
+     * renders the hierarchy directly and cascades checkbox selection along both the
+     * parent chain and the implication edges.
      */
     @GetMapping("/permissions")
     fun getPermissionCatalog(): ResponseEntity<List<PermissionModuleTreeResponse>> {
@@ -203,6 +205,12 @@ data class PermissionNodeResponse(
     val section: String?,
     /** When non-null, this permission is gated by a different feature than its module. */
     val featureKey: String?,
+    /**
+     * Codes this permission additionally requires beyond its parent chain (possibly in
+     * another branch or module). Selecting this node must also select them, with their
+     * own ancestors and implications.
+     */
+    val implies: List<String>,
     /** Permissions that require this one. Selecting a child must select the whole ancestor chain. */
     val children: List<PermissionNodeResponse>
 )
@@ -213,6 +221,7 @@ private fun Permission.toNodeResponse(): PermissionNodeResponse = PermissionNode
     description = description,
     section = section,
     featureKey = effectiveFeatureKey?.takeIf { it != module.featureKey }?.name,
+    implies = PermissionHierarchy.impliesOf(this).map { it.name },
     children = PermissionHierarchy.childrenOf(this).map { it.toNodeResponse() }
 )
 
