@@ -164,17 +164,35 @@ class KsefInvoiceXmlParser {
 
         return (0 until nodes.length).mapNotNull { i ->
             val row = nodes.item(i) as? Element ?: return@mapNotNull null
+            val netValue = childText(row, "P_11")?.toDoubleOrNull()
+            val vatRate  = childText(row, "P_12")
             KsefXmlLine(
                 lineNumber   = childText(row, "NrWierszaFa")?.toIntOrNull() ?: (i + 1),
                 name         = childText(row, "P_7"),
                 unit         = childText(row, "P_8A"),
                 quantity     = childText(row, "P_8B")?.toDoubleOrNull(),
                 unitPriceNet = childText(row, "P_9A")?.toDoubleOrNull(),
-                netValue     = childText(row, "P_11")?.toDoubleOrNull(),
-                grossValue   = childText(row, "P_11A")?.toDoubleOrNull(),
-                vatRate      = childText(row, "P_12")
+                netValue     = netValue,
+                grossValue   = childText(row, "P_11A")?.toDoubleOrNull() ?: computeGrossValue(netValue, vatRate),
+                vatRate      = vatRate
             )
         }.sortedBy { it.lineNumber }
+    }
+
+    /**
+     * Wylicza wartość brutto gdy P_11A nie jest obecne w XML (faktury liczone od netto).
+     * Dla stawek numerycznych (23, 8, 5, 0): brutto = netto * (1 + stawka/100), zaokrąglone do 2 miejsc.
+     * Dla stawek niepieniężnych (zw, np, oo): brutto = netto (brak VAT).
+     * Zwraca null gdy netValue jest null.
+     */
+    private fun computeGrossValue(netValue: Double?, vatRate: String?): Double? {
+        if (netValue == null) return null
+        val rate = vatRate?.toDoubleOrNull()
+        return if (rate != null) {
+            Math.round(netValue * (1.0 + rate / 100.0) * 100.0) / 100.0
+        } else {
+            netValue
+        }
     }
 
     /** Tekst pierwszego bezpośredniego dziecka o podanej nazwie lokalnej (ignoruje namespace). */
