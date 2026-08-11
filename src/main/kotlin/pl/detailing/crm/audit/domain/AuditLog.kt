@@ -127,30 +127,37 @@ enum class AuditModule(
     val label: String,
     val icon: AuditIcon,
     /** Resource type that [AuditLog.entityId] refers to for events in this module. */
-    val resource: AuditResource
+    val resource: AuditResource,
+    /**
+     * Accusative-case noun for the object this module's events act on ("wizytę",
+     * "pojazd"). Appended after generic verbs so the feed reads "Utworzono usługę - X"
+     * instead of the ambiguous "Utworzono - X". Null when there is no natural object
+     * to name (the specific actions of such modules carry their own noun already).
+     */
+    val objectNoun: String? = null
 ) {
-    CUSTOMER("Klienci", AuditIcon.CUSTOMER, AuditResource.CUSTOMER),
-    VEHICLE("Pojazdy", AuditIcon.VEHICLE, AuditResource.VEHICLE),
-    VISIT("Wizyty", AuditIcon.CALENDAR, AuditResource.VISIT),
-    APPOINTMENT("Rezerwacje", AuditIcon.CALENDAR, AuditResource.APPOINTMENT),
-    SERVICE("Usługi", AuditIcon.SERVICE, AuditResource.SERVICE),
-    LEAD("Leady", AuditIcon.CUSTOMER, AuditResource.LEAD),
-    PROTOCOL("Protokoły", AuditIcon.DOCUMENT, AuditResource.PROTOCOL),
-    CONSENT("Zgody", AuditIcon.SIGNATURE, AuditResource.CUSTOMER),
-    INBOUND_CALL("Połączenia przychodzące", AuditIcon.PHONE, AuditResource.LEAD),
-    APPOINTMENT_COLOR("Kolory rezerwacji", AuditIcon.CALENDAR, AuditResource.NONE),
-    STUDIO("Studio", AuditIcon.STATUS, AuditResource.STUDIO),
-    USER("Użytkownicy", AuditIcon.USER, AuditResource.USER),
-    FINANCE("Finanse", AuditIcon.MONEY, AuditResource.FINANCIAL_DOCUMENT),
+    CUSTOMER("Klienci", AuditIcon.CUSTOMER, AuditResource.CUSTOMER, "klienta"),
+    VEHICLE("Pojazdy", AuditIcon.VEHICLE, AuditResource.VEHICLE, "pojazd"),
+    VISIT("Wizyty", AuditIcon.CALENDAR, AuditResource.VISIT, "wizytę"),
+    APPOINTMENT("Rezerwacje", AuditIcon.CALENDAR, AuditResource.APPOINTMENT, "rezerwację"),
+    SERVICE("Usługi", AuditIcon.SERVICE, AuditResource.SERVICE, "usługę"),
+    LEAD("Leady", AuditIcon.CUSTOMER, AuditResource.LEAD, "leada"),
+    PROTOCOL("Protokoły", AuditIcon.DOCUMENT, AuditResource.PROTOCOL, "protokół"),
+    CONSENT("Zgody", AuditIcon.SIGNATURE, AuditResource.CUSTOMER, "zgodę"),
+    INBOUND_CALL("Połączenia przychodzące", AuditIcon.PHONE, AuditResource.LEAD, "połączenie"),
+    APPOINTMENT_COLOR("Kolory rezerwacji", AuditIcon.CALENDAR, AuditResource.NONE, "kolor rezerwacji"),
+    STUDIO("Studio", AuditIcon.STATUS, AuditResource.STUDIO, "dane studia"),
+    USER("Użytkownicy", AuditIcon.USER, AuditResource.USER, "użytkownika"),
+    FINANCE("Finanse", AuditIcon.MONEY, AuditResource.FINANCIAL_DOCUMENT, "dokument"),
     CASH_REGISTER("Kasa", AuditIcon.MONEY, AuditResource.NONE),
-    EMPLOYEE("Pracownicy", AuditIcon.USER, AuditResource.EMPLOYEE),
-    TASK("Zadania", AuditIcon.TASK, AuditResource.TASK),
+    EMPLOYEE("Pracownicy", AuditIcon.USER, AuditResource.EMPLOYEE, "pracownika"),
+    TASK("Zadania", AuditIcon.TASK, AuditResource.TASK, "zadanie"),
     SECURITY("Bezpieczeństwo", AuditIcon.SECURITY, AuditResource.USER),
-    DOOR_TO_DOOR("Door to door", AuditIcon.VEHICLE, AuditResource.VISIT),
-    CAMPAIGN("Kampanie", AuditIcon.CAMPAIGN, AuditResource.CAMPAIGN),
-    COMMUNICATION("Komunikacja", AuditIcon.MESSAGE, AuditResource.MESSAGE),
-    WORK_TIME("Czas pracy", AuditIcon.TIME, AuditResource.WORK_TIME),
-    VISIT_CARD("Karta Wizyty", AuditIcon.LINK, AuditResource.VISIT)
+    DOOR_TO_DOOR("Door to door", AuditIcon.VEHICLE, AuditResource.VISIT, "obsługę Door to Door"),
+    CAMPAIGN("Kampanie", AuditIcon.CAMPAIGN, AuditResource.CAMPAIGN, "kampanię"),
+    COMMUNICATION("Komunikacja", AuditIcon.MESSAGE, AuditResource.MESSAGE, "wiadomość"),
+    WORK_TIME("Czas pracy", AuditIcon.TIME, AuditResource.WORK_TIME, "wpis czasu pracy"),
+    VISIT_CARD("Karta Wizyty", AuditIcon.LINK, AuditResource.VISIT, "Kartę Wizyty")
 }
 
 /**
