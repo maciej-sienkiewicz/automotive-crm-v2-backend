@@ -382,12 +382,16 @@ class CustomerController(
     }
 
     @GetMapping("/{customerId}/vehicles")
-    fun getCustomerVehicles(@PathVariable customerId: String): ResponseEntity<List<VehicleResponse>> = runBlocking {
+    fun getCustomerVehicles(
+        @PathVariable customerId: String,
+        @RequestParam(required = false, defaultValue = "false") includeDeleted: Boolean
+    ): ResponseEntity<List<VehicleResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val vehicles = getCustomerVehiclesHandler.handle(
             customerId = CustomerId.fromString(customerId),
-            studioId = principal.studioId
+            studioId = principal.studioId,
+            includeDeleted = includeDeleted
         )
 
         ResponseEntity.ok(vehicles)
