@@ -17,6 +17,8 @@ import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.ZoneId
@@ -44,7 +46,8 @@ class SendReservationCardLinkHandler(
     private val tokenService: VisitCardTokenService,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
-    private val properties: VisitCardProperties
+    private val properties: VisitCardProperties,
+    private val smsAutomationConfigRepository: SmsAutomationConfigRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -143,7 +146,11 @@ class SendReservationCardLinkHandler(
 
         if (sendSms) {
             val phone = normalizePolishPhone(customer.phone!!)
-            val message = "$studioName: strona Twojej rezerwacji ($scheduledAt): $cardUrl"
+            val smsConfig = smsAutomationConfigRepository.findByStudioId(command.studioId)
+                ?: SmsAutomationConfig.defaultFor(command.studioId)
+            val message = smsConfig.visitCardLink.messageTemplate
+                .replace("{{studio}}", studioName)
+                .replace("{{link}}", cardUrl)
             try {
                 val result = communicationGateway.sendTransactionalSms(command.studioId.value, phone, message)
                 smsSent = result.success
