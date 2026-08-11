@@ -14,43 +14,55 @@ private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
  *
  * ## Hierarchy model
  * Every permission may declare a [parent]. A permission is only meaningful when its parent
- * is also granted — e.g. *deleting a visit* requires *viewing visits*. The only dependency
+ * is also granted — e.g. *deleting a visit* requires *creating visits*. The only dependency
  * relation is the parent chain, so the whole catalog renders as a tree in the role editor.
  * Because a parent must be declared **before** its children (Kotlin forbids forward
  * references between enum constants), the hierarchy is acyclic by construction.
  *
- * Implications that cannot be edges of the tree (a node has one parent, but e.g. creating
- * a visit also requires entering customer data, editing prices and handling documents)
- * are part of the catalog too: [PermissionHierarchy.impliesOf]. They are expanded together
- * with the ancestor chain by [PermissionHierarchy.close], so a stored role is always a
- * consistent, self-contained set — there is no invisible runtime expansion.
+ * Implications that cannot be edges of the tree (a node has exactly one parent, but e.g.
+ * creating a visit also requires editing prices) are part of the catalog too:
+ * [PermissionHierarchy.impliesOf]. They are expanded together with the ancestor chain by
+ * [PermissionHierarchy.close], so a stored role is always a consistent, self-contained set —
+ * there is no invisible runtime expansion.
  *
  * Invariants (enforced by tests):
  * - a child always belongs to the same [PermissionModule] as its parent,
  * - every module has at least one root permission.
  *
- * ## Business rules of the catalog (v3 consolidation)
+ * ## Permission chain (v4 restructure)
+ * The main dependency chain inside the VISITS module encodes the booking desk-flow:
+ *
+ *   [VISITS_VIEW] → [CUSTOMERS_VIEW] → [VISITS_SERVICE_PRICES_VIEW]
+ *       → [CUSTOMERS_MANAGE] → [VISITS_CREATE]
+ *
+ * Rationale: you cannot create a visit without first seeing client personal data and the
+ * service price list; you cannot manage client data without viewing the price list context.
+ * All destructive actions ([VISITS_DELETE], [CUSTOMERS_DELETE], [VISITS_MEDIA_DELETE]) are
+ * children of [VISITS_CREATE] — you cannot delete what you cannot create.
+ *
+ * Every non-VISITS module root implies [VISITS_CREATE] (see [PermissionHierarchy]): a role
+ * cannot be granted Finance, Employees, Communication, etc. without first having the
+ * booking desk capability. [VISITS_VIEW] alone (without implying [CUSTOMERS_VIEW]) remains
+ * the minimal "detailer" scope — a shop-floor worker sees schedules with personal data
+ * masked at the serialization boundary (`@Pii`) and can change visit status.
+ *
+ * ## Business rules of the catalog
  * A permission exists only when there is a realistic role in a detailing studio that needs
  * it *without* the neighbouring ones:
- * - **[CUSTOMERS_VIEW] is the personal-data permission** — no separate toggle. Shop-floor
- *   views (visits, calendar) work without it with `@Pii` fields masked at the
- *   serialization boundary; person-centric views (customer database, documents, invoices)
- *   hard-require it and return 403 instead of masking.
- * - **Customers and vehicles are a section of the visits area, not a module** — the
- *   customer database exists in this product to serve visits, so its permissions live in
- *   the "Wizyty i kalendarz" group (keeping their own CUSTOMERS subscription gate).
+ * - **[CUSTOMERS_VIEW] is the personal-data permission** — shop-floor views (visits,
+ *   calendar) work without it with `@Pii` fields masked; person-centric views hard-require
+ *   it and return 403 instead of masking.
+ * - **Customers and vehicles are a section of the visits area, not a module** — their
+ *   permissions live in the "Wizyty i kalendarz" group (keeping their own CUSTOMERS gate).
  * - **The calendar is not a separate permission area** — a calendar event IS a visit or a
  *   booking (viewing = [VISITS_VIEW], booking = [VISITS_CREATE]).
- * - **Vehicles are not a standalone permission area** — reading rides on the visit and
- *   customer views, writing on [VISITS_CREATE], deleting on [CUSTOMERS_DELETE].
- * - **Create and edit are one capability** and cover the whole booking desk-flow: entering
- *   customer data, pricing the services (discounts) and handling documents/protocols —
- *   [VISITS_CREATE] implies [CUSTOMERS_MANAGE], [VISITS_SERVICE_PRICES_EDIT] and
- *   [VISITS_DOCUMENTS_MANAGE]. Work documentation (comments, notes, photo view/upload)
- *   is part of [VISITS_VIEW].
- * - Deliberately separate: statuses (detailer policies differ per studio),
- *   destructive actions ([VISITS_DELETE], [VISITS_MEDIA_DELETE], [CUSTOMERS_DELETE]),
- *   payroll, cash register, financial reports.
+ * - **Vehicles are not a standalone permission area** — reading rides on visit and customer
+ *   views, writing on [VISITS_CREATE], deleting on [CUSTOMERS_DELETE].
+ * - **Create and edit are one capability** — [VISITS_CREATE] implies
+ *   [VISITS_SERVICE_PRICES_EDIT] (discount desk-flow). Work documentation (comments,
+ *   notes, photo view/upload) is part of [VISITS_VIEW].
+ * - Deliberately separate: statuses (detailer policies differ per studio), payroll, cash
+ *   register, financial reports.
  *
  * ## Sections
  * [section] is a purely presentational label grouping siblings under a header in the role
@@ -74,43 +86,69 @@ enum class Permission(
     private val featureKeyOverride: FeatureKey? = null
 ) {
     // ── Wizyty i kalendarz ───────────────────────────────────────────────────
+    // Root: minimal detailer scope — calendar view with personal data masked.
     VISITS_VIEW(
         PermissionModule.VISITS, "Podgląd wizyt i kalendarza",
         description = "Lista i szczegóły wizyt, kalendarz, komentarze i notatki, " +
             "podgląd i dodawanie zdjęć. Dane osobowe klienta widoczne tylko z uprawnieniem " +
-            "„Podgląd klientów”."
+            "„Podgląd danych osobowych”."
     ),
-    VISITS_CREATE(
-        PermissionModule.VISITS, "Tworzenie i edycja wizyt oraz rezerwacji",
-        parent = VISITS_VIEW,
-        description = "Umawianie i edycja wizyt wraz z wpisywaniem danych pojazdu " +
-            "i klienta — pełny przepływ recepcji."
-    ),
+    // VISITS_CHANGE_STATUS is deliberately a child of VISITS_VIEW (not VISITS_CREATE):
+    // a shop-floor detailer marks progress without having the booking desk capability.
     VISITS_CHANGE_STATUS(
         PermissionModule.VISITS, "Zmiana statusu wizyty",
         parent = VISITS_VIEW
     ),
-    VISITS_DELETE(
-        PermissionModule.VISITS, "Usuwanie wizyty",
-        parent = VISITS_VIEW
+
+    // Sekcja: Klienci i pojazdy — personal-data gate; child of VISITS_VIEW because every
+    // booking role already implies VISITS_VIEW via the chain below, and all other modules
+    // that need customer data imply VISITS_CREATE (which contains VISITS_VIEW in its chain).
+    CUSTOMERS_VIEW(
+        PermissionModule.VISITS, "Podgląd danych osobowych",
+        parent = VISITS_VIEW, section = SECTION_CUSTOMERS,
+        featureKeyOverride = FeatureKey.CUSTOMERS,
+        description = "Pełne dane osobowe, pojazdy i historia komunikacji klienta. " +
+            "Bez tego uprawnienia dane osobowe w widokach wizyt i kalendarza są zamaskowane."
     ),
 
-    // Sekcja: Usługi
+    // Sekcja: Usługi — price list viewing is required before seeing/managing customers
+    // in the booking context, forming the natural desk-flow chain.
     VISITS_SERVICE_PRICES_VIEW(
         PermissionModule.VISITS, "Podgląd cen usług w wizycie",
-        parent = VISITS_VIEW, section = SECTION_SERVICES
+        parent = CUSTOMERS_VIEW, section = SECTION_SERVICES
     ),
+    // Price editing is implied by VISITS_CREATE (discount desk-flow) but kept as a
+    // separate tree node so it can be inspected and deselected independently.
     VISITS_SERVICE_PRICES_EDIT(
         PermissionModule.VISITS, "Edycja cen usług (rabaty)",
         parent = VISITS_SERVICE_PRICES_VIEW, section = SECTION_SERVICES
     ),
 
+    CUSTOMERS_MANAGE(
+        PermissionModule.VISITS, "Dodawanie i edycja klientów",
+        parent = VISITS_SERVICE_PRICES_VIEW, section = SECTION_CUSTOMERS,
+        featureKeyOverride = FeatureKey.CUSTOMERS
+    ),
+
+    // Booking capability — top of the desk-flow chain (VISITS_VIEW → CUSTOMERS_VIEW →
+    // VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_MANAGE → VISITS_CREATE). All destructive
+    // actions are children: you cannot delete what you cannot create.
+    VISITS_CREATE(
+        PermissionModule.VISITS, "Tworzenie i edycja wizyt oraz rezerwacji",
+        parent = CUSTOMERS_MANAGE,
+        description = "Umawianie i edycja wizyt wraz z wpisywaniem danych pojazdu " +
+            "i klienta — pełny przepływ recepcji."
+    ),
+    VISITS_DELETE(
+        PermissionModule.VISITS, "Usuwanie wizyty",
+        parent = VISITS_CREATE
+    ),
+
     // Sekcja: Multimedia — gated by the GALLERY subscription feature. Viewing and adding
-    // photos ride on VISITS_VIEW (a detailer documents damage before touching the car);
-    // deleting stays separate because photos are evidence in damage disputes.
+    // photos ride on VISITS_VIEW; deleting stays separate (photos are evidence in disputes).
     VISITS_MEDIA_DELETE(
         PermissionModule.VISITS, "Usuwanie zdjęć",
-        parent = VISITS_VIEW, section = SECTION_MEDIA,
+        parent = VISITS_CREATE, section = SECTION_MEDIA,
         featureKeyOverride = FeatureKey.GALLERY
     ),
 
@@ -118,30 +156,13 @@ enum class Permission(
     // viewing, generating and getting protocols/contracts signed happen at the same desk.
     VISITS_DOCUMENTS_MANAGE(
         PermissionModule.VISITS, "Dokumenty i protokoły (podgląd, generowanie, podpis)",
-        parent = VISITS_VIEW, section = SECTION_DOCUMENTS,
+        parent = VISITS_CREATE, section = SECTION_DOCUMENTS,
         featureKeyOverride = FeatureKey.DOCUMENTS
     ),
 
-    // Sekcja: Klienci i pojazdy — the customer database is part of the visits area
-    // (it exists to serve visits), rendered as a section of "Wizyty i kalendarz".
-    // It keeps its own CUSTOMERS subscription gate, and CUSTOMERS_VIEW stays a separate
-    // root (not a child of VISITS_VIEW): invoicing or messaging roles need customer data
-    // without being pulled into the calendar.
-    CUSTOMERS_VIEW(
-        PermissionModule.VISITS, "Podgląd klientów",
-        section = SECTION_CUSTOMERS,
-        featureKeyOverride = FeatureKey.CUSTOMERS,
-        description = "Pełne dane osobowe, pojazdy i historia komunikacji klienta. " +
-            "Bez tego uprawnienia dane osobowe w widokach wizyt i kalendarza są zamaskowane."
-    ),
-    CUSTOMERS_MANAGE(
-        PermissionModule.VISITS, "Dodawanie i edycja klientów",
-        parent = CUSTOMERS_VIEW, section = SECTION_CUSTOMERS,
-        featureKeyOverride = FeatureKey.CUSTOMERS
-    ),
     CUSTOMERS_DELETE(
         PermissionModule.VISITS, "Usuwanie klientów i pojazdów",
-        parent = CUSTOMERS_VIEW, section = SECTION_CUSTOMERS,
+        parent = VISITS_CREATE, section = SECTION_CUSTOMERS,
         featureKeyOverride = FeatureKey.CUSTOMERS
     ),
 

@@ -57,12 +57,14 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `editing service prices pulls in the visit path`() {
+    fun `editing service prices pulls in the full chain to VISITS_VIEW`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_SERVICE_PRICES_EDIT))
+        // VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW (parent chain)
         assertEquals(
             setOf(
                 Permission.VISITS_SERVICE_PRICES_EDIT,
                 Permission.VISITS_SERVICE_PRICES_VIEW,
+                Permission.CUSTOMERS_VIEW,
                 Permission.VISITS_VIEW
             ),
             closed
@@ -85,43 +87,75 @@ class PermissionHierarchyTest {
     @Test
     fun `creating visits carries the whole booking desk-flow but not the destructive permissions`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
-        // Booking = entering customer data, pricing services (discounts), documents
-        // and the service catalog — a booking role without customer view is absurd.
+        // Parent chain: VISITS_CREATE → CUSTOMERS_MANAGE → VISITS_SERVICE_PRICES_VIEW
+        //   → CUSTOMERS_VIEW → VISITS_VIEW
+        // Implication: VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT (discount desk-flow)
+        // Implication: VISITS_CREATE → SERVICES_VIEW (service catalog)
         assertEquals(
             setOf(
                 Permission.VISITS_CREATE,
-                Permission.VISITS_VIEW,
                 Permission.CUSTOMERS_MANAGE,
-                Permission.CUSTOMERS_VIEW,
-                Permission.VISITS_SERVICE_PRICES_EDIT,
                 Permission.VISITS_SERVICE_PRICES_VIEW,
-                Permission.VISITS_DOCUMENTS_MANAGE,
+                Permission.CUSTOMERS_VIEW,
+                Permission.VISITS_VIEW,
+                Permission.VISITS_SERVICE_PRICES_EDIT,
                 Permission.SERVICES_VIEW
             ),
             closed
         )
-        // Deleting visits/photos/customers and status changes stay separate policies.
+        // Destructive actions are children of VISITS_CREATE — not auto-granted upward.
         assertTrue(Permission.VISITS_DELETE !in closed)
         assertTrue(Permission.VISITS_MEDIA_DELETE !in closed)
         assertTrue(Permission.CUSTOMERS_DELETE !in closed)
+        // Status changes and documents are separate policies.
         assertTrue(Permission.VISITS_CHANGE_STATUS !in closed)
+        assertTrue(Permission.VISITS_DOCUMENTS_MANAGE !in closed)
     }
 
     @Test
-    fun `invoicing implies customer data, visit view and the price list`() {
+    fun `invoicing requires visit creation and carries the full booking chain`() {
         val closed = PermissionHierarchy.close(setOf(Permission.FINANCE_INVOICES))
+        // FINANCE_INVOICES → VISITS_CREATE → (parent chain) CUSTOMERS_MANAGE,
+        // VISITS_SERVICE_PRICES_VIEW, CUSTOMERS_VIEW, VISITS_VIEW
+        // + VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT, SERVICES_VIEW
+        assertTrue(Permission.VISITS_CREATE in closed)
         assertTrue(Permission.CUSTOMERS_VIEW in closed)
         assertTrue(Permission.VISITS_VIEW in closed)
         assertTrue(Permission.SERVICES_VIEW in closed)
-        // …but not customer editing or visit booking.
-        assertTrue(Permission.CUSTOMERS_MANAGE !in closed)
-        assertTrue(Permission.VISITS_CREATE !in closed)
+        assertTrue(Permission.CUSTOMERS_MANAGE in closed)
+        assertTrue(Permission.VISITS_SERVICE_PRICES_EDIT in closed)
     }
 
     @Test
-    fun `sending messages implies seeing the customer`() {
+    fun `sending messages requires visit creation`() {
         val closed = PermissionHierarchy.close(setOf(Permission.COMMUNICATION_SEND))
-        assertEquals(setOf(Permission.COMMUNICATION_SEND, Permission.CUSTOMERS_VIEW), closed)
+        assertTrue(Permission.VISITS_CREATE in closed)
+        assertTrue(Permission.CUSTOMERS_VIEW in closed)
+        assertTrue(Permission.VISITS_VIEW in closed)
+    }
+
+    @Test
+    fun `every non-VISITS module root requires visit creation`() {
+        val nonVisitsRoots = Permission.entries
+            .filter { it.module != PermissionModule.VISITS && it.parent == null }
+        assertTrue(nonVisitsRoots.isNotEmpty()) { "Expected non-VISITS roots to exist" }
+        nonVisitsRoots.forEach { root ->
+            val closed = PermissionHierarchy.close(setOf(root))
+            assertTrue(Permission.VISITS_CREATE in closed) {
+                "${root.name} (module=${root.module}) must imply VISITS_CREATE"
+            }
+        }
+    }
+
+    @Test
+    fun `delete permissions require visit creation`() {
+        listOf(Permission.VISITS_DELETE, Permission.CUSTOMERS_DELETE, Permission.VISITS_MEDIA_DELETE)
+            .forEach { delete ->
+                val closed = PermissionHierarchy.close(setOf(delete))
+                assertTrue(Permission.VISITS_CREATE in closed) {
+                    "${delete.name} must require VISITS_CREATE (cannot delete what you cannot create)"
+                }
+            }
     }
 
     @Test
