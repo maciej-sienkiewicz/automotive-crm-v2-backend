@@ -121,8 +121,15 @@ class SubmitSignatureHandler(
                 throw ValidationException("Podpisany dokument nie jest tożsamy z dokumentem oczekującym na podpis — proces przerwany")
             }
 
-            // Defense in depth: re-download and re-hash — storage must be unchanged too
-            val filledPdfBytes = s3StorageService.downloadBytes(request.documentS3Key)
+            // Defense in depth: the bytes the signed PDF will be composed from are re-hashed
+            // against the anchor digest. The session-pinned Redis copy (cached at request
+            // creation) is preferred over S3: the S3 object under documentS3Key may be
+            // legitimately overwritten mid-session (protocol regeneration reuses the same
+            // versioned key; consent protocols point at the shared template object), and
+            // that must not break a session the customer is actively signing. A stale or
+            // tampered copy can never pass — the hash check below gates composition.
+            val filledPdfBytes = documentIntegrityService.getCachedDocument(request.id.value)
+                ?: s3StorageService.downloadBytes(request.documentS3Key)
             val storageSha256 = documentIntegrityService.sha256Hex(filledPdfBytes)
             if (!documentIntegrityService.digestsMatch(request.documentSha256, storageSha256)) {
                 request = fail(request, "Dokument w magazynie został zmieniony po utworzeniu żądania podpisu (sha256=$storageSha256)", tabletActor, command)
@@ -261,6 +268,8 @@ class SubmitSignatureHandler(
                     timestampApplied = sealResult.timestampApplied
                 )
                 persist(request)
+                // Terminal state reached — the session-pinned document copy is no longer needed
+                documentIntegrityService.evictCachedDocument(request.id.value)
 
                 auditTrailService.append(
                     requestId = request.id.value,
