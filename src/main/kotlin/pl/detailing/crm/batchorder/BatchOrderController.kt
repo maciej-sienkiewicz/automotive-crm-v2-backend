@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.batchorder.contractor.*
 import pl.detailing.crm.batchorder.entry.CreateEntryCommand
 import pl.detailing.crm.batchorder.entry.CreateEntryHandler
@@ -32,6 +34,7 @@ import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/batch-orders")
+@RequiresPermission(Permission.BATCH_ORDERS)
 class BatchOrderController(
     private val listContractorsHandler: ListContractorsHandler,
     private val createContractorHandler: CreateContractorHandler,

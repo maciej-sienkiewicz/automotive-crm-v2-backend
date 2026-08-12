@@ -20,9 +20,14 @@ import pl.detailing.crm.user.infrastructure.UserRepository
  *    read) — so this is a plain lookup.
  * 4. If the permission maps to a feature key ([Permission.effectiveFeatureKey]),
  *    the studio must have that feature enabled in its active entitlements.
+ *
+ * Role resolution (steps 1–3) goes through [PermissionSnapshotCache] — a short-TTL Redis
+ * cache with explicit eviction on role mutations — so per-request checks (including the
+ * PII filter, which runs on every request) do not hit the database.
  */
 @Service
 class PermissionCheckService(
+    private val snapshotCache: PermissionSnapshotCache,
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
     private val entitlementService: EntitlementService
@@ -40,22 +45,15 @@ class PermissionCheckService(
      * Returns an empty set if the user has no custom role.
      */
     fun getPermissions(userId: UserId, studioId: StudioId): Set<Permission>? {
-        val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
-            ?: return emptySet()
+        val snapshot = snapshotCache.snapshot(userId, studioId)
+        if (snapshot.owner) return null
 
-        if (userEntity.isOwner) return null
-
-        val customRoleId = userEntity.customRoleId ?: return emptySet()
-
-        val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
-            ?: return emptySet()
-
-        // toDomain closes over the dependency graph (ancestors + implications), so
-        // implied permissions are feature-gated exactly like directly granted ones.
-        return roleEntity.toDomain().permissions.filterTo(mutableSetOf()) { permission ->
-            val requiredFeature = permission.effectiveFeatureKey ?: return@filterTo true
-            entitlementService.hasFeature(studioId, requiredFeature)
-        }
+        return snapshot.permissionCodes
+            .mapNotNull { Permission.fromStoredCode(it) }
+            .filterTo(mutableSetOf()) { permission ->
+                val requiredFeature = permission.effectiveFeatureKey ?: return@filterTo true
+                entitlementService.hasFeature(studioId, requiredFeature)
+            }
     }
 
     /**

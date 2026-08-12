@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
@@ -33,6 +35,7 @@ import java.time.Instant
  */
 @RestController
 @RequestMapping("/api/v1/settings/visit-card")
+@RequiresPermission(Permission.VISITS_CREATE)
 class VisitCardSettingsController(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val entitlementService: EntitlementService

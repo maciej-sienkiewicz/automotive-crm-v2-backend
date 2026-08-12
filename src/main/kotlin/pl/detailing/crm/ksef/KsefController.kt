@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.auth.KsefSessionCache
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
@@ -29,6 +31,7 @@ import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/ksef")
+@RequiresPermission(Permission.FINANCE_INVOICES)
 class KsefController(
     private val credentialsRepository: KsefCredentialsRepository,
     private val sessionCache: KsefSessionCache,

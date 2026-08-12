@@ -1,3 +1,11 @@
+> **UWAGA — dokument historyczny (v3).** Katalog przeszedł restrukturyzacje v4/v5 —
+> część opisanych tu kodów (`VISITS_CHANGE_STATUS`, `CUSTOMERS_MANAGE`,
+> `VISITS_DOCUMENTS_MANAGE`, `VISITS_SERVICE_PRICES_EDIT`) istnieje już tylko jako aliasy
+> legacy. **Źródłem prawdy jest kod:** `role/domain/Permission.kt` (katalog),
+> `role/domain/PermissionHierarchy.kt` (graf zależności) oraz
+> `GET /api/v1/roles/permissions` (kontrakt runtime). Zasady modelu (graf, domykanie,
+> dwa poziomy widoków PII) pozostają aktualne.
+
 # Kontrakt API — Uprawnienia v3: graf zależności + skonsolidowany katalog + dwa poziomy widoków
 
 Dokument dla zespołu frontendu. Zastępuje `api-contract-pii-masking.md`.

@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.smscampaigns.reminder.domain.ScheduledSmsReminder
@@ -65,6 +67,7 @@ data class SmsReminderResponse(
  */
 @RestController
 @RequestMapping("/api/visits/{visitId}/sms-reminder")
+@RequiresPermission(Permission.VISITS_CREATE)
 class VisitScheduledSmsReminderController(
     private val generateHandler: GenerateSmsContentHandler,
     private val scheduleHandler: ScheduleVisitSmsReminderHandler,

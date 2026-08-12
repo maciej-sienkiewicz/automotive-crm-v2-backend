@@ -3,6 +3,8 @@ package pl.detailing.crm.visit.smsreminder
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.VisitId
 import java.util.UUID
 
@@ -19,6 +21,7 @@ data class SetSmsReminderRequest(val suppressed: Boolean)
  */
 @RestController
 @RequestMapping("/api/visits")
+@RequiresPermission(Permission.VISITS_CREATE)
 class VisitSmsReminderController(
     private val handler: SetVisitSmsReminderHandler
 ) {

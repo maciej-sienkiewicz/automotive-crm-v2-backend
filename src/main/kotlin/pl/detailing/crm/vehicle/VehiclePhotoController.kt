@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.VehicleId
 import pl.detailing.crm.shared.VehiclePhotoId
 import pl.detailing.crm.vehicle.photos.*
@@ -15,6 +17,7 @@ import java.time.Instant
  */
 @RestController
 @RequestMapping("/api/v1/vehicles/{vehicleId}/photos")
+@RequiresPermission(Permission.VISITS_VIEW)
 class VehiclePhotoController(
     private val getVehiclePhotosHandler: GetVehiclePhotosHandler,
     private val addVehiclePhotoHandler: AddVehiclePhotoHandler,
@@ -131,6 +134,7 @@ class VehiclePhotoController(
      * DELETE /api/vehicles/{vehicleId}/photos/{photoId}
      */
     @DeleteMapping("/{photoId}")
+    @RequiresPermission(Permission.VISITS_MEDIA_DELETE)
     fun deleteVehiclePhoto(
         @PathVariable vehicleId: String,
         @PathVariable photoId: String

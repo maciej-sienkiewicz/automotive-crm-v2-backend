@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import java.time.Instant
@@ -135,6 +137,8 @@ data class ApplyAutoRulesResponse(val assignedItemCount: Int)
 
 @RestController
 @RequestMapping("/api/v1/cost-categories")
+// Cost data is financial — visible to whoever reads financial reports or statistics.
+@RequiresPermission(Permission.STATISTICS_VIEW, Permission.FINANCE_VIEW_REPORTS)
 class CostCategoryController(
     private val categoryRepository: CostCategoryRepository,
     private val assignmentRepository: CostItemAssignmentRepository,

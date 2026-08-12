@@ -3,6 +3,9 @@ package pl.detailing.crm.smscredits
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresOwner
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.smscredits.domain.SmsCreditBalance
 import pl.detailing.crm.smscredits.domain.SmsCreditPackage
@@ -104,6 +107,7 @@ class SmsCreditController(
 ) {
 
     @GetMapping("/balance")
+    @RequiresPermission(Permission.COMMUNICATION_SEND)
     fun getBalance(): ResponseEntity<SmsCreditBalanceDto> {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -113,6 +117,7 @@ class SmsCreditController(
     }
 
     @GetMapping("/packages")
+    @RequiresOwner
     fun getPackages(): ResponseEntity<List<SmsCreditPackageDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -122,6 +127,7 @@ class SmsCreditController(
     }
 
     @PostMapping("/purchase")
+    @RequiresOwner
     fun purchaseCredits(
         @RequestBody request: PurchaseCreditsRequest
     ): ResponseEntity<PurchaseCreditsResponse> {
@@ -142,6 +148,7 @@ class SmsCreditController(
     }
 
     @GetMapping("/transactions")
+    @RequiresOwner
     fun getTransactions(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int

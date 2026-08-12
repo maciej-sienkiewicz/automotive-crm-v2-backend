@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.SessionPhotoInfo
@@ -13,6 +15,7 @@ import java.util.UUID
 
 @RestController
 @RequestMapping("/api/photo-sessions")
+@RequiresPermission(Permission.VISITS_VIEW)
 class PhotoSessionController(
     private val photoSessionService: PhotoSessionService
 ) {
@@ -98,6 +101,7 @@ class PhotoSessionController(
      * DELETE /api/photo-sessions/{sessionId}/photos/{photoId}
      */
     @DeleteMapping("/{sessionId}/photos/{photoId}")
+    @RequiresPermission(Permission.VISITS_MEDIA_DELETE)
     fun deleteSessionPhoto(
         @PathVariable sessionId: String,
         @PathVariable photoId: String

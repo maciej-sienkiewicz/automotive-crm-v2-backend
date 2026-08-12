@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.role.permission.PermissionSnapshotCache
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.shared.StudioId
@@ -17,7 +18,8 @@ import pl.detailing.crm.user.infrastructure.UserRepository
 class AssignRoleHandler(
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val permissionSnapshotCache: PermissionSnapshotCache
 ) {
     /**
      * Assigns [roleId] to the user [userId] within [studioId].
@@ -47,6 +49,9 @@ class AssignRoleHandler(
         userEntity.customRoleId = roleId?.value
 
         userRepository.save(userEntity)
+
+        // Enforce the new assignment immediately — drop the user's cached snapshot.
+        permissionSnapshotCache.evictUser(userId, studioId)
 
         auditService.log(LogAuditCommand(
             studioId = studioId,

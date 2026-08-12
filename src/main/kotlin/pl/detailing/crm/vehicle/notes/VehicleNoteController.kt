@@ -5,11 +5,14 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import java.time.Instant
 import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/vehicles/{vehicleId}/notes")
+@RequiresPermission(Permission.VISITS_VIEW)
 class VehicleNoteController(
     private val vehicleNoteService: VehicleNoteService
 ) {

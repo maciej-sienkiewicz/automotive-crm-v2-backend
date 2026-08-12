@@ -4,6 +4,8 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 
 /**
  * Endpoints for photo tag management.
@@ -12,6 +14,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
  * GET /api/v1/photo-tags/suggestions — return curated tag suggestions for the UI
  */
 @RestController
+@RequiresPermission(Permission.VISITS_VIEW)
 class PhotoTagsController(
     private val updatePhotoTagsHandler: UpdatePhotoTagsHandler,
     private val getTagSuggestionsHandler: GetTagSuggestionsHandler

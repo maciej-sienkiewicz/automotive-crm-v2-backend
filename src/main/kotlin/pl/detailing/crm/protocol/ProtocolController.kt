@@ -32,6 +32,7 @@ import pl.detailing.crm.role.permission.RequiresPermission
 
 @RestController
 @RequestMapping("/api/v1")
+@RequiresPermission(Permission.VISITS_CREATE)
 class ProtocolController(
     private val createProtocolTemplateHandler: CreateProtocolTemplateHandler,
     private val getProtocolTemplatesHandler: GetProtocolTemplatesHandler,

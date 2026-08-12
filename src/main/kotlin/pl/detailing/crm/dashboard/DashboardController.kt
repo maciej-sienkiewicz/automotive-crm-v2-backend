@@ -8,6 +8,10 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RequestParam
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.dashboard.query.GetDashboardSummaryCommand
 import pl.detailing.crm.dashboard.query.GetDashboardSummaryHandler
 import pl.detailing.crm.dashboard.revenuesummary.GetDashboardRevenueSummaryCommand
@@ -17,11 +21,17 @@ import pl.detailing.crm.dashboard.reservationsummary.GetDashboardReservationSumm
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
+@RequiresPermission(Permission.VISITS_VIEW)
 class DashboardController(
     private val getDashboardSummaryHandler: GetDashboardSummaryHandler,
     private val getDashboardRevenueSummaryHandler: GetDashboardRevenueSummaryHandler,
-    private val getDashboardReservationSummaryHandler: GetDashboardReservationSummaryHandler
+    private val getDashboardReservationSummaryHandler: GetDashboardReservationSummaryHandler,
+    private val permissionCheckService: PermissionCheckService
 ) {
+
+    private fun canSeeRevenue(principal: UserPrincipal): Boolean =
+        permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.FINANCE_VIEW_REPORTS) ||
+            permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.STATISTICS_VIEW)
 
     /**
      * Get dashboard statistics and metrics
@@ -97,12 +107,14 @@ class DashboardController(
                     )
                 }
             ),
-            revenue = BusinessMetricResponse(
+            // Revenue is financial data — included only for users who can read
+            // financial reports or statistics (matches /revenue-summary's gate).
+            revenue = if (canSeeRevenue(principal)) BusinessMetricResponse(
                 currentValue = summary.revenue.currentValue / 100.0,
                 previousValue = summary.revenue.previousValue / 100.0,
                 deltaPercentage = summary.revenue.deltaPercentage,
                 unit = summary.revenue.unit
-            ),
+            ) else null,
             callActivity = BusinessMetricResponse(
                 currentValue = summary.callActivity.currentValue.toDouble(),
                 previousValue = summary.callActivity.previousValue.toDouble(),
@@ -150,7 +162,9 @@ class DashboardController(
         ))
     }
 
+    // Revenue is financial data — stricter than the operational dashboard tiles.
     @GetMapping("/revenue-summary")
+    @RequiresPermission(Permission.FINANCE_VIEW_REPORTS, Permission.STATISTICS_VIEW)
     fun getRevenueSummary(
         @RequestParam(required = false, defaultValue = "13") weeks: Int
     ): ResponseEntity<DashboardRevenueSummaryResponse> = runBlocking {
@@ -228,7 +242,8 @@ data class IncomingCallResponse(
 
 data class DashboardDataResponse(
     val stats: OperationalStatsResponse,
-    val revenue: BusinessMetricResponse,
+    /** Null when the requesting user may not see financial data. */
+    val revenue: BusinessMetricResponse?,
     val callActivity: BusinessMetricResponse,
     val recentCalls: List<IncomingCallResponse>,
     val googleReviews: Any? // Skipped, set to null
