@@ -124,9 +124,12 @@ class VisitEntity(
     var contactPersonEmail: String?,
 
     // Service items (one-to-many)
-    // LAZY: bulk queries (gallery, lists) don't need service items; callers that do
-    // either JOIN FETCH or force-load within the transaction.
-    @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    // EAGER is load-bearing: many handlers (dashboard, calendar, customer/vehicle lists)
+    // iterate serviceItems from coroutine worker threads, where the Hibernate session
+    // bound to the transaction thread is unavailable — LAZY there throws
+    // LazyInitializationException. The gallery no longer loads VisitEntity at all
+    // (see GalleryPhotoQueryDao), so EAGER doesn't affect the gallery hot path.
+    @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     var serviceItems: MutableList<VisitServiceItemEntity> = mutableListOf(),
 
     // Photos (one-to-many)
