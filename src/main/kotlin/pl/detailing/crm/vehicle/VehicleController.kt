@@ -178,6 +178,14 @@ class VehicleController(
             } else {
                 vehicles.sortedByDescending { it.stats.lastVisitDate }
             }
+            "lastActivity" -> {
+                val comparator = compareByDescending(nullsLast()) { vehicle: pl.detailing.crm.vehicle.list.VehicleListItem ->
+                    val lastVisit = vehicle.stats.lastVisitDate?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                    maxOf(lastVisit ?: Instant.EPOCH, vehicle.updatedAt)
+                }
+                if (sortDirection == "asc") vehicles.sortedWith(comparator).reversed()
+                else vehicles.sortedWith(comparator)
+            }
             "totalVisits" -> if (sortDirection == "asc") {
                 vehicles.sortedBy { it.stats.totalVisits }
             } else {
@@ -189,7 +197,10 @@ class VehicleController(
                 vehicles.sortedByDescending { it.stats.totalSpent.grossAmount }
             }
             "createdAt" -> vehicles // already sorted by default
-            else -> vehicles.sortedBy { it.licensePlate }
+            else -> vehicles.sortedWith(compareByDescending(nullsLast()) { vehicle: pl.detailing.crm.vehicle.list.VehicleListItem ->
+                val lastVisit = vehicle.stats.lastVisitDate?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                maxOf(lastVisit ?: Instant.EPOCH, vehicle.updatedAt)
+            })
         }
 
         // Paginate

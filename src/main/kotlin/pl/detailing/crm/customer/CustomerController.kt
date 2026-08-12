@@ -136,7 +136,7 @@ class CustomerController(
 
         // Sorting by a masked field is a (weak) oracle too — alphabetical order of hidden
         // names is still information. Without the permission, name sorts fall back to createdAt.
-        val nonPiiSorts = setOf("lastVisitDate", "totalVisits", "totalRevenue", "vehicleCount", "createdAt")
+        val nonPiiSorts = setOf("lastVisitDate", "lastActivity", "totalVisits", "totalRevenue", "vehicleCount", "createdAt")
         val effectiveSortBy = if (!canViewPii && sortBy !in nonPiiSorts) "createdAt" else sortBy
         customers = when (effectiveSortBy) {
             "lastName" -> if (sortDirection == "asc") {
@@ -148,6 +148,13 @@ class CustomerController(
                 customers.sortedBy { it.lastVisitDate }
             } else {
                 customers.sortedByDescending { it.lastVisitDate }
+            }
+            "lastActivity" -> {
+                val comparator = compareByDescending(nullsLast()) { customer: pl.detailing.crm.customer.list.CustomerListItem ->
+                    maxOf(customer.lastVisitDate ?: Instant.EPOCH, customer.updatedAt)
+                }
+                if (sortDirection == "asc") customers.sortedWith(comparator).reversed()
+                else customers.sortedWith(comparator)
             }
             "totalVisits" -> if (sortDirection == "asc") {
                 customers.sortedBy { it.totalVisits }
@@ -169,13 +176,17 @@ class CustomerController(
             } else {
                 customers.sortedByDescending { it.createdAt }
             }
-            else -> customers.sortedBy { it.lastName ?: "" }
+            else -> customers.sortedWith(compareByDescending(nullsLast()) { customer: pl.detailing.crm.customer.list.CustomerListItem ->
+                maxOf(customer.lastVisitDate ?: Instant.EPOCH, customer.updatedAt)
+            })
         }
 
-        // When sorting by revenue explicitly, skip the default lastVisitDate secondary sort
+        // When sorting by revenue explicitly, skip the default lastActivity secondary sort
         // so the user's chosen order is preserved as the primary criterion.
         if (sortBy != "totalRevenue") {
-            customers = customers.sortedWith(compareByDescending(nullsLast()) { it.lastVisitDate })
+            customers = customers.sortedWith(compareByDescending(nullsLast()) { customer: pl.detailing.crm.customer.list.CustomerListItem ->
+                maxOf(customer.lastVisitDate ?: Instant.EPOCH, customer.updatedAt)
+            })
         }
 
         // Primary sort: customers with both firstName and lastName filled in come first.

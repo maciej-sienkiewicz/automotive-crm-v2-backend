@@ -11,6 +11,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
+import java.time.Instant
 import java.util.UUID
 
 data class VehicleListQuery(
@@ -75,7 +76,8 @@ class ListVehiclesHandler(
                             currency = "PLN"
                         )
                     ),
-                    status = vehicleEntity.status.name.lowercase()
+                    status = vehicleEntity.status.name.lowercase(),
+                    updatedAt = vehicleEntity.updatedAt
                 )
             }
         }
@@ -110,7 +112,8 @@ data class VehicleListItem(
     val yearOfProduction: Int?,
     val owners: List<VehicleOwnerInfo>,
     val stats: VehicleStats,
-    val status: String
+    val status: String,
+    val updatedAt: Instant
 )
 
 data class VehicleOwnerInfo(
