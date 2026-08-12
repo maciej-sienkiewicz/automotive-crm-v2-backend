@@ -263,6 +263,50 @@ koszyka** (mediana obserwowanych profili). To reguła kontraktu API, nie ficzer.
 5. **Generator postów AI — zostaje**, wzbogacony o kontekst z analityki: top tematy i hasztagi
    tygodnia podpowiadane jako temat/`styleNotes`.
 
+### 5.4 Język korzyści i narracja sprzedażowa (PM)
+
+**Persona.** Właściciel studia to rzemieślnik, nie marketer: Instagram jest jego głównym kanałem
+pozyskania klienta (branża w 100% wizualna — przed/po sprzedaje usługę), ale prowadzi go
+"po godzinach", bez wiedzy analitycznej i bez czasu. Nie kupi "metryk" — kupi **czas, spokój
+i przewagę nad studiem po drugiej stronie miasta**. Punkt odniesienia cenowy: jedna dodatkowa
+powłoka ceramiczna to 2 000–5 000 zł przychodu; add-on kosztuje 32 zł/mies.
+
+**Zasada języka korzyści:** nie nazywamy metryk — nazywamy decyzje, które podejmuje za użytkownika
+system. Każdy komunikat w formule: *sytuacja klienta → co dostaje → co z tego ma*.
+
+| Co mierzymy (żargon wewnętrzny) | Co mówi produkt (język korzyści) |
+|---|---|
+| Indeks aktywności + rank/percentyl | „**W 10 sekund wiesz, czy Twój Instagram wygrywa, czy przegrywa** z konkurencją w Twoim mieście — bez scrollowania i zgadywania." |
+| ER% (normalizowany) + wykrywanie skoków | „Widzisz, **kto naprawdę przyciąga klientów, a kto kupił obserwujących**. Duży profil nie znaczy skuteczny — pokazujemy, jak jest naprawdę." |
+| Tematy treści × ER% | „**Przestań zgadywać, co wrzucić.** Sprawdzamy, które tematy — ceramika, PPF, wnętrza, przed/po — przynoszą zaangażowanie w Twojej okolicy, i mówimy Ci to wprost." |
+| Skuteczność formatów (Reels/karuzela/zdjęcie) | „Reels u Twojej konkurencji robią 3× lepszy wynik niż zdjęcia? **Dowiesz się w tydzień, nie po pół roku prób.**" |
+| Kadencja + heatmapa publikacji | „Podpowiadamy, **ile i kiedy publikować**, żeby Twoje posty trafiały wtedy, gdy Twoi klienci scrollują — na podstawie danych z Twojego rynku, nie ogólników z internetu." |
+| Detektor promocji/konkursów | „Konkurent ogłasza −20% na powłoki? **Wiesz o tym w poniedziałek rano z maila** — a nie od klienta, który już tam pojechał." |
+| Posty viralowe konkurencji | „Gdy komuś w okolicy „wystrzeli" post, dostajesz go z analizą: **co zadziałało i jak to powtórzyć u siebie**." |
+| Hashtag intelligence | „**Gotowa lista hasztagów, które działają w Twojej okolicy** — skopiuj do posta albo jednym klikiem podaj do generatora AI." |
+| Wskaźnik witryny cyfrowej | „Twój profil to Twoja wizytówka. Pokażemy, **czego w niej brakuje, zanim klient kliknie do konkurencji** — i dokładnie co poprawić." |
+| Digest tygodniowy | „**5 minut w poniedziałek zamiast godzin śledzenia Instagrama.** Czytamy konkurencję za Ciebie i przysyłamy tylko to, co wymaga Twojej decyzji." |
+| Benchmark „Ty vs rynek" | „Koniec z „chyba idzie nam okej". **Czarno na białym: jesteś 3. z 7 studiów w okolicy** i wiesz, co zrobić, żeby być wyżej." |
+
+**Narracja przewodnia (pitch):** *„Twój analityk marketingu za 32 zł miesięcznie. Czyta Instagram
+konkurencji za Ciebie i co poniedziałek mówi Ci trzy rzeczy: gdzie jesteś na tle rynku, co
+u konkurencji działa i co masz z tym zrobić."* ROI-framing: jeśli jeden insight w roku przyniesie
+jedno dodatkowe zlecenie na powłokę, add-on zwraca się ~10-krotnie.
+
+**Odpowiedzi na obiekcje (do materiałów sprzedażowych i onboardingu):**
+
+- *„Nie znam się na marketingu"* → nie musisz: system nie pokazuje wykresów do interpretacji,
+  tylko gotowe wnioski z instrukcją „co zrobić".
+- *„Sam widzę, co wrzuca konkurencja"* → gołym okiem nie widać: skuteczności względem wielkości
+  profilu, trendu obserwujących, tego które tematy i godziny działają — ani tego, co wrzucili,
+  kiedy akurat nie patrzyłeś.
+- *„Nie mam czasu"* → cała wartość mieści się w jednym mailu tygodniowo; dashboard jest opcją,
+  nie obowiązkiem.
+
+**Obietnica onboardingowa:** „Dodaj 3–5 profili konkurencji dziś — pierwszy raport dostaniesz
+w najbliższy poniedziałek rano." (Po fazie 2 warto rozważyć sync inicjalny od razu po
+zatwierdzeniu profili, by skrócić time-to-value do godzin.)
+
 ---
 
 ## 6. Redukcja szumu — architektura przetwarzania
