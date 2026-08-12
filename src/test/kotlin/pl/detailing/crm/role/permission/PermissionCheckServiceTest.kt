@@ -32,7 +32,7 @@ class PermissionCheckServiceTest {
 
     @Test
     fun `owner has every permission and getPermissions returns null`() {
-        every { snapshotCache.snapshot(userId, studioId) } returns
+        every { snapshotCache.snapshot(userId.value, studioId.value) } returns
             PermissionsSnapshot(owner = true, permissionCodes = emptyList())
 
         assertNull(service.getPermissions(userId, studioId))
@@ -41,7 +41,7 @@ class PermissionCheckServiceTest {
 
     @Test
     fun `user without a role has no permissions`() {
-        every { snapshotCache.snapshot(userId, studioId) } returns
+        every { snapshotCache.snapshot(userId.value, studioId.value) } returns
             PermissionsSnapshot(owner = false, permissionCodes = emptyList())
 
         assertEquals(emptySet<Permission>(), service.getPermissions(userId, studioId))
@@ -50,7 +50,7 @@ class PermissionCheckServiceTest {
 
     @Test
     fun `granted permission passes when its feature is enabled`() {
-        every { snapshotCache.snapshot(userId, studioId) } returns
+        every { snapshotCache.snapshot(userId.value, studioId.value) } returns
             PermissionsSnapshot(owner = false, permissionCodes = listOf(Permission.VISITS_VIEW.name))
         every { entitlementService.hasFeature(studioId, FeatureKey.VISITS) } returns true
 
@@ -60,7 +60,7 @@ class PermissionCheckServiceTest {
 
     @Test
     fun `permission is filtered out when the studio lacks the feature`() {
-        every { snapshotCache.snapshot(userId, studioId) } returns
+        every { snapshotCache.snapshot(userId.value, studioId.value) } returns
             PermissionsSnapshot(owner = false, permissionCodes = listOf(Permission.VISITS_VIEW.name))
         every { entitlementService.hasFeature(studioId, FeatureKey.VISITS) } returns false
 
@@ -69,7 +69,7 @@ class PermissionCheckServiceTest {
 
     @Test
     fun `legacy codes stored in an old snapshot are mapped, unknown codes are dropped`() {
-        every { snapshotCache.snapshot(userId, studioId) } returns
+        every { snapshotCache.snapshot(userId.value, studioId.value) } returns
             PermissionsSnapshot(
                 owner = false,
                 permissionCodes = listOf("CALENDAR_VIEW", "TOTALLY_UNKNOWN", Permission.TASKS_VIEW.name)

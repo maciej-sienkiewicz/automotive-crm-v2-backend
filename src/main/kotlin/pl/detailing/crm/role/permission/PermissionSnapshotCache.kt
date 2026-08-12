@@ -8,6 +8,7 @@ import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.user.infrastructure.UserRepository
+import java.util.UUID
 
 /**
  * Raw role-resolution result cached per (studio, user) — see [PermissionSnapshotCache].
@@ -53,9 +54,16 @@ class PermissionSnapshotCache(
         fun cacheKey(userId: UserId, studioId: StudioId) = "${studioId.value}:${userId.value}"
     }
 
-    @Cacheable(CACHE_NAME, key = "#studioId.value + ':' + #userId.value")
-    fun snapshot(userId: UserId, studioId: StudioId): PermissionsSnapshot {
-        val userEntity = userRepository.findByIdAndStudioId(userId.value, studioId.value)
+    /**
+     * Parameters are raw [UUID]s, not the [UserId]/[StudioId] value classes, on purpose:
+     * Kotlin inlines value-class parameters to their underlying type in bytecode, so a SpEL
+     * key like `#studioId.value` would be evaluated against a plain UUID and fail at runtime.
+     * With UUIDs the key expression is a plain string concatenation (UUID → toString),
+     * consistent with [cacheKey] and the [evictStudio] key pattern.
+     */
+    @Cacheable(CACHE_NAME, key = "#studioId + ':' + #userId")
+    fun snapshot(userId: UUID, studioId: UUID): PermissionsSnapshot {
+        val userEntity = userRepository.findByIdAndStudioId(userId, studioId)
             ?: return PermissionsSnapshot(owner = false, permissionCodes = emptyList())
 
         if (userEntity.isOwner) return PermissionsSnapshot(owner = true, permissionCodes = emptyList())
@@ -63,7 +71,7 @@ class PermissionSnapshotCache(
         val customRoleId = userEntity.customRoleId
             ?: return PermissionsSnapshot(owner = false, permissionCodes = emptyList())
 
-        val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId.value)
+        val roleEntity = roleRepository.findByIdAndStudioId(customRoleId, studioId)
             ?: return PermissionsSnapshot(owner = false, permissionCodes = emptyList())
 
         // toDomain closes over the dependency graph (ancestors + implications).
