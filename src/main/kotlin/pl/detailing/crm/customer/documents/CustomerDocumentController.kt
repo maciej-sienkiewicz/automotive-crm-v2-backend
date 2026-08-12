@@ -72,7 +72,7 @@ class CustomerDocumentController(
     }
 
     @DeleteMapping("/{documentId}")
-    @RequiresPermission(Permission.VISITS_CREATE)
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun deleteDocument(
         @PathVariable customerId: String,
         @PathVariable documentId: String

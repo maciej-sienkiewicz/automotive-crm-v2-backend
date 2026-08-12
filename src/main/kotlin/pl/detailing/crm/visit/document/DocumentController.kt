@@ -172,6 +172,7 @@ class DocumentController(
      * DELETE /api/documents/{id}
      */
     @DeleteMapping("/documents/{id}")
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun deleteDocument(
         @PathVariable id: String
     ): ResponseEntity<Void> = runBlocking {
