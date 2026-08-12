@@ -45,7 +45,7 @@ class PermissionCheckService(
      * Returns an empty set if the user has no custom role.
      */
     fun getPermissions(userId: UserId, studioId: StudioId): Set<Permission>? {
-        val snapshot = snapshotCache.snapshot(userId, studioId)
+        val snapshot = snapshotCache.snapshot(userId.value, studioId.value)
         if (snapshot.owner) return null
 
         return snapshot.permissionCodes
