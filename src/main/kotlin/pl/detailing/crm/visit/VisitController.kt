@@ -36,6 +36,11 @@ import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateCommand
+import pl.detailing.crm.visit.technicalnote.UpdateTechnicalNoteHandler
+import pl.detailing.crm.visit.technicalnote.UpdateTechnicalNoteCommand
+import pl.detailing.crm.visit.technicalnote.GetTechnicalNoteHistoryHandler
+import pl.detailing.crm.visit.technicalnote.GetTechnicalNoteHistoryCommand
+import pl.detailing.crm.visit.technicalnote.TechnicalNoteHistoryEntry
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
@@ -66,6 +71,8 @@ class VisitController(
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
+    private val updateTechnicalNoteHandler: UpdateTechnicalNoteHandler,
+    private val getTechnicalNoteHistoryHandler: GetTechnicalNoteHistoryHandler,
     private val permissionCheckService: PermissionCheckService
 ) {
 
@@ -426,6 +433,56 @@ class VisitController(
         updateEstimatedCompletionDateHandler.handle(command)
 
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Update (or clear) the technical note on a visit.
+     * PATCH /api/visits/{visitId}/technical-note
+     *
+     * Pass null or an empty string to clear the note.
+     * Every write is appended to visit_technical_note_history for full auditability.
+     */
+    @PatchMapping("/{visitId}/technical-note")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun updateTechnicalNote(
+        @PathVariable visitId: String,
+        @RequestBody request: UpdateTechnicalNoteRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = UpdateTechnicalNoteCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            content = request.content
+        )
+
+        updateTechnicalNoteHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Return the full change history of the technical note for a visit.
+     * GET /api/visits/{visitId}/technical-note/history
+     *
+     * Results are ordered newest-first.
+     */
+    @GetMapping("/{visitId}/technical-note/history")
+    fun getTechnicalNoteHistory(
+        @PathVariable visitId: String
+    ): ResponseEntity<TechnicalNoteHistoryResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val command = GetTechnicalNoteHistoryCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId
+        )
+
+        val result = getTechnicalNoteHistoryHandler.handle(command)
+
+        ResponseEntity.ok(TechnicalNoteHistoryResponse(entries = result.entries))
     }
 
     /**
@@ -841,6 +898,14 @@ data class UpdateVisitTitleRequest(
 
 data class UpdateEstimatedCompletionDateRequest(
     val estimatedCompletionDate: Instant?
+)
+
+data class UpdateTechnicalNoteRequest(
+    val content: String?
+)
+
+data class TechnicalNoteHistoryResponse(
+    val entries: List<TechnicalNoteHistoryEntry>
 )
 
 /**
