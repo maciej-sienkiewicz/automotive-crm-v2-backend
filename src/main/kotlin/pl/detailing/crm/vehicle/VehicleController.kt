@@ -544,7 +544,7 @@ class VehicleController(
     }
 
     @GetMapping("/{vehicleId}/documents")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun getVehicleDocuments(
         @PathVariable vehicleId: String
     ): ResponseEntity<VehicleDocumentsResponse> {
@@ -577,7 +577,7 @@ class VehicleController(
      * Returns a presigned S3 URL - frontend should PUT the file directly to that URL.
      */
     @PostMapping("/{vehicleId}/documents")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun initiateDocumentUpload(
         @PathVariable vehicleId: String,
         @RequestBody request: InitiateVehicleDocumentUploadRequest
@@ -643,7 +643,7 @@ class VehicleController(
     }
 
     @DeleteMapping("/{vehicleId}/documents/{documentId}")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteVehicleDocument(
         @PathVariable vehicleId: String,
         @PathVariable documentId: String

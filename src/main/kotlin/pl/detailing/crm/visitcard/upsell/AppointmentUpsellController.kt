@@ -40,7 +40,7 @@ class AppointmentUpsellController(
     }
 
     @PostMapping
-    @RequiresPermission(Permission.VISITS_SERVICE_PRICES_EDIT)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun create(
         @PathVariable appointmentId: String,
         @RequestBody request: CreateUpsellSuggestionRequest
@@ -56,7 +56,7 @@ class AppointmentUpsellController(
     }
 
     @DeleteMapping("/{suggestionId}")
-    @RequiresPermission(Permission.VISITS_SERVICE_PRICES_EDIT)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun delete(
         @PathVariable appointmentId: String,
         @PathVariable suggestionId: String

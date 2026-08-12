@@ -32,11 +32,6 @@ object PermissionHierarchy {
      *
      */
     private val implications: Map<Permission, Set<Permission>> = mapOf(
-        // Booking desk-flow: creating a visit implies editing service prices (discounts).
-        // The parent chain pulls in VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW.
-        Permission.VISITS_CREATE to setOf(
-            Permission.VISITS_SERVICE_PRICES_EDIT
-        ),
         // ── Non-VISITS roots → VISITS_CREATE ────────────────────────────────────────
         Permission.FINANCE_INVOICES to setOf(Permission.VISITS_CREATE),
         Permission.FINANCE_VIEW_REPORTS to setOf(Permission.VISITS_CREATE),

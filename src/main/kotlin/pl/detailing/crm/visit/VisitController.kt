@@ -318,7 +318,7 @@ class VisitController(
      * - Makes the visit immutable (cannot be cancelled anymore)
      */
     @PostMapping("/{visitId}/confirm")
-    @RequiresPermission(Permission.VISITS_CHANGE_STATUS)
+    @RequiresPermission(Permission.VISITS_VIEW)
     fun confirmVisit(
         @PathVariable visitId: String,
         @RequestBody(required = false) request: ConfirmVisitRequest?
@@ -436,7 +436,7 @@ class VisitController(
      * Appointment remains in CONFIRMED status (ready to be converted again).
      */
     @DeleteMapping("/{visitId}/cancel")
-    @RequiresPermission(Permission.VISITS_CHANGE_STATUS)
+    @RequiresPermission(Permission.VISITS_VIEW)
     fun cancelDraftVisit(
         @PathVariable visitId: String
     ): ResponseEntity<Void> = runBlocking {
