@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.permission.RequiresOwner
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import software.amazon.awssdk.core.sync.RequestBody
@@ -84,6 +85,7 @@ class CompanyController(
     }
 
     @PutMapping
+    @RequiresOwner
     fun updateCompanySettings(
         @org.springframework.web.bind.annotation.RequestBody request: UpdateCompanySettingsRequest
     ): ResponseEntity<CompanySettingsResponse> = runBlocking {
@@ -138,6 +140,7 @@ class CompanyController(
     }
 
     @PostMapping("/logo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @RequiresOwner
     fun uploadLogo(@RequestPart("file") file: MultipartFile): ResponseEntity<UploadLogoResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -178,6 +181,7 @@ class CompanyController(
     }
 
     @DeleteMapping("/logo")
+    @RequiresOwner
     fun deleteLogo(): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -221,6 +225,7 @@ class CompanyController(
     }
 
     @PatchMapping("/lead-alert-config")
+    @RequiresOwner
     fun updateLeadAlertConfig(
         @org.springframework.web.bind.annotation.RequestBody request: UpdateLeadAlertConfigRequest
     ): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
@@ -254,6 +259,7 @@ class CompanyController(
     }
 
     @PatchMapping("/sms-sender-config")
+    @RequiresOwner
     fun updateSmsSenderConfig(
         @org.springframework.web.bind.annotation.RequestBody request: UpdateSmsSenderConfigRequest
     ): ResponseEntity<SmsSenderConfigResponse> = runBlocking {
@@ -293,6 +299,7 @@ class CompanyController(
     }
 
     @PatchMapping("/idle-timeout")
+    @RequiresOwner
     fun updateIdleTimeout(
         @org.springframework.web.bind.annotation.RequestBody request: UpdateIdleTimeoutRequest
     ): ResponseEntity<IdleTimeoutResponse> = runBlocking {

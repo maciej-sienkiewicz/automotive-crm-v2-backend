@@ -3,6 +3,8 @@ package pl.detailing.crm.campaigns.api
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.campaigns.application.*
 import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
@@ -293,6 +295,7 @@ data class CampaignSettingsDto(
  */
 @RestController
 @RequestMapping("/api/v1/campaigns")
+@RequiresPermission(Permission.COMMUNICATION_SEND)
 class CampaignController(
     private val service: CampaignService,
     private val gateway: OutboundCommunicationGateway,

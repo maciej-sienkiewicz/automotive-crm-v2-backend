@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.customer.consent.addversion.AddConsentVersionCommand
 import pl.detailing.crm.customer.consent.addversion.AddConsentVersionHandler
 import pl.detailing.crm.customer.consent.create.CreateConsentCommand
@@ -32,6 +34,7 @@ import java.util.*
  */
 @RestController
 @RequestMapping("/api/v1/consents")
+@RequiresPermission(Permission.CUSTOMERS_VIEW)
 class ConsentController(
     private val createConsentHandler: CreateConsentHandler,
     private val addConsentVersionHandler: AddConsentVersionHandler,

@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.gus.application.GusCompanyService
 
 /**
@@ -20,6 +22,8 @@ import pl.detailing.crm.gus.application.GusCompanyService
  */
 @RestController
 @RequestMapping("/api/v1/gus")
+// NIP lookup serves customer/visit intake and invoicing.
+@RequiresPermission(Permission.VISITS_CREATE, Permission.FINANCE_INVOICES)
 class GusController(
     private val gusCompanyService: GusCompanyService
 ) {

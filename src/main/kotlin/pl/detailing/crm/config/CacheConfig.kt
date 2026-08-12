@@ -22,6 +22,10 @@ import java.time.Duration
  * Cache regions:
  * - "studio-entitlements" — 5-minute TTL, evicted immediately on any subscription mutation.
  *   Key: studioId (UUID as String). Value: serialized [StudioEntitlements].
+ * - "user-permissions" — 60-second TTL, evicted on role assignment/edit/deletion.
+ *   Key: "{studioId}:{userId}". Value: serialized PermissionsSnapshot. The short TTL is a
+ *   safety net for eviction paths that don't know the affected users; explicit eviction
+ *   keeps permission revocation effectively immediate.
  *
  * Uses a Redis-specific ObjectMapper with:
  *   - KotlinModule  — so Kotlin data classes deserialize via their primary constructor
@@ -55,10 +59,12 @@ class CacheConfig {
             .prefixCacheNameWith("crm:v3:")
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
+        val userPermissionsConfig = defaultConfig.entryTtl(Duration.ofSeconds(60))
 
         return RedisCacheManager.builder(connectionFactory)
             .cacheDefaults(defaultConfig)
             .withCacheConfiguration("studio-entitlements", entitlementsConfig)
+            .withCacheConfiguration("user-permissions", userPermissionsConfig)
             .build()
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
@@ -23,6 +25,7 @@ import java.time.Instant
  */
 @RestController
 @RequestMapping("/api/v1")
+@RequiresPermission(Permission.VISITS_CREATE)
 class SignatureRequestController(
     private val requestSignatureHandler: RequestSignatureHandler,
     private val lifecycleService: SignatureRequestLifecycleService,

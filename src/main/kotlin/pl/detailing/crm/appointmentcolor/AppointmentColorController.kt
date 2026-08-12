@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorCommand
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorRequest
@@ -22,6 +24,7 @@ import pl.detailing.crm.shared.ForbiddenException
 
 @RestController
 @RequestMapping("/api/v1/appointment-colors")
+@RequiresPermission(Permission.VISITS_VIEW)
 class AppointmentColorController(
     private val createAppointmentColorHandler: CreateAppointmentColorHandler,
     private val listAppointmentColorsHandler: ListAppointmentColorsHandler,
@@ -78,6 +81,7 @@ class AppointmentColorController(
     }
 
     @PostMapping
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun createColor(@RequestBody request: CreateAppointmentColorRequest): ResponseEntity<AppointmentColorResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
@@ -98,6 +102,7 @@ class AppointmentColorController(
     }
 
     @PutMapping("/{id}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun updateColor(
         @PathVariable id: String,
         @RequestBody request: UpdateAppointmentColorRequest
@@ -122,6 +127,7 @@ class AppointmentColorController(
     }
 
     @DeleteMapping("/{id}")
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteColor(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 

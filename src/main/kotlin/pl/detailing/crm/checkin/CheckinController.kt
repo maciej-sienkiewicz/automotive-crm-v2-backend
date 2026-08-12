@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
@@ -24,6 +26,7 @@ import java.util.UUID
 
 @RestController
 @RequestMapping("/api/checkin")
+@RequiresPermission(Permission.VISITS_CREATE)
 class CheckinController(
     private val createVisitFromReservationHandler: CreateVisitFromReservationHandler,
     private val generateVisitProtocolsHandler: GenerateVisitProtocolsHandler,

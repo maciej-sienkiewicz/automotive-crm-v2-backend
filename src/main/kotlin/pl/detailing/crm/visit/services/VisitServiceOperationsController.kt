@@ -4,6 +4,8 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.MoneyAmountResponse
 
@@ -12,6 +14,7 @@ import pl.detailing.crm.visit.get.MoneyAmountResponse
  */
 @RestController
 @RequestMapping("/api/visits")
+@RequiresPermission(Permission.VISITS_CREATE)
 class VisitServiceOperationsController(
     private val approveServiceHandler: ApproveServiceHandler,
     private val rejectServiceHandler: RejectServiceHandler

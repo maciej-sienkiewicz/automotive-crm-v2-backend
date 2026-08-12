@@ -3,6 +3,7 @@ package pl.detailing.crm.payments
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.permission.RequiresOwner
 import pl.detailing.crm.payments.checkout.CheckoutRequest
 import pl.detailing.crm.payments.checkout.CheckoutResponse
 import pl.detailing.crm.payments.checkout.CheckoutService
@@ -37,6 +38,7 @@ data class PaymentOrderDto(
  */
 @RestController
 @RequestMapping("/api/v1/subscription")
+@RequiresOwner
 class CheckoutController(
     private val checkoutService: CheckoutService
 ) {

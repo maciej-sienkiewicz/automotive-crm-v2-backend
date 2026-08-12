@@ -4,6 +4,8 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.email.automation.GetEmailTemplateConfigHandler
 import pl.detailing.crm.email.automation.UpdateEmailNotificationRuleCommand
 import pl.detailing.crm.email.automation.UpdateEmailTemplateConfigCommand
@@ -55,6 +57,7 @@ private fun EmailAutomationConfig.toDto() = EmailAutomationConfigDto(
  */
 @RestController
 @RequestMapping("/api/v1/email-campaigns/automation")
+@RequiresPermission(Permission.COMMUNICATION_SEND)
 class EmailAutomationController(
     private val getConfigHandler: GetEmailTemplateConfigHandler,
     private val updateConfigHandler: UpdateEmailTemplateConfigHandler

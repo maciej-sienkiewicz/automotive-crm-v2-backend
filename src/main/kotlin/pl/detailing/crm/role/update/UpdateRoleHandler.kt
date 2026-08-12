@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.role.permission.PermissionSnapshotCache
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
@@ -14,7 +15,8 @@ import java.time.Instant
 @Service
 class UpdateRoleHandler(
     private val roleRepository: RoleRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val permissionSnapshotCache: PermissionSnapshotCache
 ) {
     @Transactional
     suspend fun handle(command: UpdateRoleCommand) = withContext(Dispatchers.IO) {
@@ -43,6 +45,10 @@ class UpdateRoleHandler(
         entity.updatedAt = Instant.now()
 
         roleRepository.save(entity)
+
+        // Any number of users may hold this role — drop every cached snapshot in the studio
+        // so the new permission set is enforced immediately.
+        permissionSnapshotCache.evictStudio(command.studioId)
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

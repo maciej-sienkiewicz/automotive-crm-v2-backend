@@ -136,6 +136,15 @@ enum class Permission(
         featureKeyOverride = FeatureKey.CUSTOMERS
     ),
 
+    // Bulk contractor orders (B2B desk-flow): a child of VISITS_CREATE because closing
+    // a contractor month books/settles visits en masse — you cannot run batch orders
+    // without the booking capability.
+    BATCH_ORDERS(
+        PermissionModule.VISITS, "Zlecenia zbiorcze",
+        parent = VISITS_CREATE,
+        description = "Kontrahenci, wpisy zleceń zbiorczych, raporty i zamykanie miesiąca."
+    ),
+
     // ── Finanse ──────────────────────────────────────────────────────────────
     FINANCE_INVOICES(
         PermissionModule.FINANCE, "Faktury i dokumenty przychodowe",
