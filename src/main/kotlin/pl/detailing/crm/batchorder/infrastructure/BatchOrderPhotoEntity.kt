@@ -9,7 +9,8 @@ import java.util.UUID
     name = "batch_order_entry_photos",
     indexes = [
         Index(name = "idx_batch_order_photos_entry", columnList = "entry_id"),
-        Index(name = "idx_batch_order_photos_studio", columnList = "studio_id")
+        Index(name = "idx_batch_order_photos_studio", columnList = "studio_id"),
+        Index(name = "idx_batch_order_photos_uploaded_at", columnList = "uploaded_at")
     ]
 )
 class BatchOrderPhotoEntity(
@@ -42,5 +43,9 @@ class BatchOrderPhotoEntity(
     val uploadedBy: UUID?,
 
     @Column(name = "uploaded_by_name", length = 255)
-    val uploadedByName: String?
+    val uploadedByName: String?,
+
+    // S3 key of the pre-generated thumbnail; null until the backfill job creates it
+    @Column(name = "thumbnail_file_id", nullable = true, length = 500)
+    var thumbnailFileId: String? = null
 )

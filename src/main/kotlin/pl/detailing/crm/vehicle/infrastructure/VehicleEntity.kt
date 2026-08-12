@@ -114,7 +114,8 @@ class VehicleEntity(
 @Table(
     name = "vehicle_photos",
     indexes = [
-        Index(name = "idx_vehicle_photos_vehicle_id", columnList = "vehicle_id")
+        Index(name = "idx_vehicle_photos_vehicle_id", columnList = "vehicle_id"),
+        Index(name = "idx_vehicle_photos_uploaded_at", columnList = "uploaded_at")
     ]
 )
 class VehiclePhotoEntity(
@@ -142,7 +143,11 @@ class VehiclePhotoEntity(
     val uploadedBy: UUID? = null,
 
     @Column(name = "uploaded_by_name", nullable = true, length = 200)
-    val uploadedByName: String? = null
+    val uploadedByName: String? = null,
+
+    // S3 key of the pre-generated thumbnail; null until the backfill job creates it
+    @Column(name = "thumbnail_file_id", nullable = true, length = 500)
+    var thumbnailFileId: String? = null
 ) {
     fun toDomain(): VehiclePhoto = VehiclePhoto(
         id = VehiclePhotoId(id),
@@ -151,7 +156,8 @@ class VehiclePhotoEntity(
         description = description,
         uploadedAt = uploadedAt,
         uploadedBy = uploadedBy,
-        uploadedByName = uploadedByName
+        uploadedByName = uploadedByName,
+        thumbnailFileId = thumbnailFileId
     )
 }
 

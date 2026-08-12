@@ -2,6 +2,7 @@ package pl.detailing.crm.phototags
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.gallery.GalleryTagService
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.visit.infrastructure.VisitPhotoRepository
@@ -18,7 +19,8 @@ import java.util.UUID
 class UpdatePhotoTagsHandler(
     private val visitPhotoRepository: VisitPhotoRepository,
     private val vehiclePhotoRepository: VehiclePhotoRepository,
-    private val photoTagRepository: PhotoTagRepository
+    private val photoTagRepository: PhotoTagRepository,
+    private val galleryTagService: GalleryTagService
 ) {
 
     @Transactional
@@ -45,6 +47,8 @@ class UpdatePhotoTagsHandler(
             )
         }
         photoTagRepository.saveAll(tagEntities)
+
+        galleryTagService.evictAvailableTags(studioId)
 
         return UpdatePhotoTagsResult(tags = sanitizedTags)
     }

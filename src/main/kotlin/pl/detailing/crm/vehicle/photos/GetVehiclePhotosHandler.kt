@@ -33,7 +33,7 @@ class GetVehiclePhotosHandler(
                 fileName = photoEntity.fileName,
                 description = photoEntity.description,
                 uploadedAt = photoEntity.uploadedAt,
-                thumbnailUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId),
+                thumbnailUrl = photoSessionService.generateDownloadUrl(photoEntity.thumbnailFileId ?: photoEntity.fileId),
                 fullSizeUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId)
             )
         }

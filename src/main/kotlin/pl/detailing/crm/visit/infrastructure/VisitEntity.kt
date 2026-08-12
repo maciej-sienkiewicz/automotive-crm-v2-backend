@@ -124,7 +124,9 @@ class VisitEntity(
     var contactPersonEmail: String?,
 
     // Service items (one-to-many)
-    @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
+    // LAZY: bulk queries (gallery, lists) don't need service items; callers that do
+    // either JOIN FETCH or force-load within the transaction.
+    @OneToMany(mappedBy = "visit", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     var serviceItems: MutableList<VisitServiceItemEntity> = mutableListOf(),
 
     // Photos (one-to-many)
@@ -407,7 +409,8 @@ class VisitServiceItemEntity(
 @Table(
     name = "visit_photos",
     indexes = [
-        Index(name = "idx_visit_photos_visit_id", columnList = "visit_id")
+        Index(name = "idx_visit_photos_visit_id", columnList = "visit_id"),
+        Index(name = "idx_visit_photos_uploaded_at", columnList = "uploaded_at")
     ]
 )
 class VisitPhotoEntity(
@@ -435,7 +438,11 @@ class VisitPhotoEntity(
     val uploadedBy: UUID? = null,
 
     @Column(name = "uploaded_by_name", nullable = true, length = 200)
-    val uploadedByName: String? = null
+    val uploadedByName: String? = null,
+
+    // S3 key of the pre-generated thumbnail; null until the backfill job creates it
+    @Column(name = "thumbnail_file_id", nullable = true, length = 500)
+    var thumbnailFileId: String? = null
 ) {
     fun toDomain(): VisitPhoto = VisitPhoto(
         id = VisitPhotoId(id),
@@ -444,7 +451,8 @@ class VisitPhotoEntity(
         description = description,
         uploadedAt = uploadedAt,
         uploadedBy = uploadedBy,
-        uploadedByName = uploadedByName
+        uploadedByName = uploadedByName,
+        thumbnailFileId = thumbnailFileId
     )
 
     companion object {
@@ -457,7 +465,8 @@ class VisitPhotoEntity(
                 description = photo.description,
                 uploadedAt = photo.uploadedAt,
                 uploadedBy = photo.uploadedBy,
-                uploadedByName = photo.uploadedByName
+                uploadedByName = photo.uploadedByName,
+                thumbnailFileId = photo.thumbnailFileId
             )
     }
 }

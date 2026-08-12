@@ -45,7 +45,10 @@ class PhotoSessionService(
 
     companion object {
         private val logger = LoggerFactory.getLogger(PhotoSessionService::class.java)
-        private val PRESIGNED_URL_DURATION = Duration.ofMinutes(15)
+        // 30 min: long enough that the frontend can cache the gallery response
+        // (staleTime ~10 min) and reuse identical image URLs — identical URLs are
+        // what lets the browser serve repeat views from its HTTP cache.
+        private val PRESIGNED_URL_DURATION = Duration.ofMinutes(30)
         private val SECURE_RANDOM = SecureRandom()
 
         private val ALLOWED_CONTENT_TYPES = setOf(

@@ -26,46 +26,56 @@ class GetVehicleGalleryHandler(
 
     @Transactional(readOnly = true)
     suspend fun handle(command: GetVehicleGalleryCommand): GetVehicleGalleryResult {
-        // 1. Verify vehicle exists with studio isolation
-        val vehicleEntity = vehicleRepository.findByIdAndStudioId(
+        // 1. Verify vehicle exists with studio isolation (photos fetched in the same query)
+        val vehicleEntity = vehicleRepository.findByIdAndStudioIdWithPhotos(
             id = command.vehicleId.value,
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
-        // 2. Get photos directly attached to vehicle
-        vehicleEntity.photos.size // Force load
+        // 2. Get photos directly attached to vehicle — metadata only, no URLs yet
+        data class RawPhoto(
+            val id: String,
+            val source: PhotoSource,
+            val sourceId: String,
+            val fileName: String,
+            val description: String?,
+            val uploadedAt: Instant,
+            val fileId: String,
+            val thumbnailFileId: String?,
+            val visitNumber: String? = null
+        )
+
         val directPhotos = vehicleEntity.photos.map { photoEntity ->
-            GalleryPhotoInfo(
+            RawPhoto(
                 id = photoEntity.id.toString(),
                 source = PhotoSource.VEHICLE,
                 sourceId = command.vehicleId.value.toString(),
                 fileName = photoEntity.fileName,
                 description = photoEntity.description,
                 uploadedAt = photoEntity.uploadedAt,
-                thumbnailUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId),
-                fullSizeUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId)
+                fileId = photoEntity.fileId,
+                thumbnailFileId = photoEntity.thumbnailFileId
             )
         }
 
-        // 3. Get all visits for this vehicle
-        val visits = visitRepository.findByVehicleIdAndStudioIdExcludingDraft(
+        // 3. Get all visits for this vehicle with photos fetched in one query
+        val visits = visitRepository.findByVehicleIdAndStudioIdExcludingDraftWithPhotos(
             vehicleId = command.vehicleId.value,
             studioId = command.studioId.value
         )
 
         // 4. Collect photos from all visits
         val visitPhotos = visits.flatMap { visit ->
-            visit.photos.size // Force load
             visit.photos.map { photoEntity ->
-                GalleryPhotoInfo(
+                RawPhoto(
                     id = photoEntity.id.toString(),
                     source = PhotoSource.VISIT,
                     sourceId = visit.id.toString(),
                     fileName = photoEntity.fileName,
                     description = photoEntity.description,
                     uploadedAt = photoEntity.uploadedAt,
-                    thumbnailUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId),
-                    fullSizeUrl = photoSessionService.generateDownloadUrl(photoEntity.fileId),
+                    fileId = photoEntity.fileId,
+                    thumbnailFileId = photoEntity.thumbnailFileId,
                     visitNumber = visit.visitNumber
                 )
             }
@@ -74,13 +84,25 @@ class GetVehicleGalleryHandler(
         // 5. Combine all photos and sort by upload date (newest first)
         val allPhotos = (directPhotos + visitPhotos).sortedByDescending { it.uploadedAt }
 
-        // 6. Apply pagination
+        // 6. Apply pagination — presign URLs only for the returned page
         val totalPhotos = allPhotos.size
         val startIndex = (command.page - 1) * command.pageSize
         val endIndex = minOf(startIndex + command.pageSize, totalPhotos)
 
         val paginatedPhotos = if (startIndex < totalPhotos) {
-            allPhotos.subList(startIndex, endIndex)
+            allPhotos.subList(startIndex, endIndex).map { raw ->
+                GalleryPhotoInfo(
+                    id = raw.id,
+                    source = raw.source,
+                    sourceId = raw.sourceId,
+                    fileName = raw.fileName,
+                    description = raw.description,
+                    uploadedAt = raw.uploadedAt,
+                    thumbnailUrl = photoSessionService.generateDownloadUrl(raw.thumbnailFileId ?: raw.fileId),
+                    fullSizeUrl = photoSessionService.generateDownloadUrl(raw.fileId),
+                    visitNumber = raw.visitNumber
+                )
+            }
         } else {
             emptyList()
         }

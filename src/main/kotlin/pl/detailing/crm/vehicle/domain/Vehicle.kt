@@ -38,5 +38,7 @@ data class VehiclePhoto(
     val description: String?,
     val uploadedAt: Instant,
     val uploadedBy: java.util.UUID? = null,
-    val uploadedByName: String? = null
+    val uploadedByName: String? = null,
+    // S3 key of the pre-generated thumbnail; null when only the original exists
+    val thumbnailFileId: String? = null
 )

@@ -1,5 +1,6 @@
 package pl.detailing.crm.visit.infrastructure
 
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -17,4 +18,8 @@ interface VisitPhotoRepository : JpaRepository<VisitPhotoEntity, UUID> {
         @Param("photoId") photoId: UUID,
         @Param("studioId") studioId: UUID
     ): VisitPhotoEntity?
+
+    /** Photos without a generated thumbnail, newest first — consumed by the thumbnail backfill job. */
+    @Query("SELECT p FROM VisitPhotoEntity p WHERE p.thumbnailFileId IS NULL ORDER BY p.uploadedAt DESC")
+    fun findMissingThumbnails(pageable: Pageable): List<VisitPhotoEntity>
 }

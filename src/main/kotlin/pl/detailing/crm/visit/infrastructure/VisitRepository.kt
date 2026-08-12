@@ -92,6 +92,16 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<VisitEntity>
 
     /**
+     * Same as [findByVehicleIdAndStudioIdExcludingDraft] but eagerly fetches photos —
+     * used by the vehicle gallery to avoid one lazy-load query per visit.
+     */
+    @Query("SELECT DISTINCT v FROM VisitEntity v LEFT JOIN FETCH v.photos WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
+    fun findByVehicleIdAndStudioIdExcludingDraftWithPhotos(
+        @Param("vehicleId") vehicleId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<VisitEntity>
+
+    /**
      * Find only soft-deleted visits by vehicle, excluding DRAFT status
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.vehicleId = :vehicleId AND v.studioId = :studioId AND v.status != pl.detailing.crm.shared.VisitStatus.DRAFT AND v.deletedAt IS NOT NULL ORDER BY v.deletedAt DESC")

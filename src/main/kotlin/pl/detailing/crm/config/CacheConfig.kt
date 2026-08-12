@@ -60,11 +60,15 @@ class CacheConfig {
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
         val userPermissionsConfig = defaultConfig.entryTtl(Duration.ofSeconds(60))
+        // Distinct photo tag names per studio; evicted explicitly on tag updates,
+        // TTL is a safety net.
+        val galleryTagsConfig = defaultConfig.entryTtl(Duration.ofMinutes(10))
 
         return RedisCacheManager.builder(connectionFactory)
             .cacheDefaults(defaultConfig)
             .withCacheConfiguration("studio-entitlements", entitlementsConfig)
             .withCacheConfiguration("user-permissions", userPermissionsConfig)
+            .withCacheConfiguration("gallery-available-tags", galleryTagsConfig)
             .build()
     }
 }

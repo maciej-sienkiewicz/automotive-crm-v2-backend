@@ -46,7 +46,7 @@ class GetVisitPhotosHandler(
                 fileName = photo.fileName,
                 description = photo.description,
                 uploadedAt = photo.uploadedAt,
-                thumbnailUrl = photoSessionService.generateDownloadUrl(photo.fileId),
+                thumbnailUrl = photoSessionService.generateDownloadUrl(photo.thumbnailFileId ?: photo.fileId),
                 fullSizeUrl = photoSessionService.generateDownloadUrl(photo.fileId),
                 tags = tagsByPhotoId[photo.id.value] ?: emptyList()
             )
