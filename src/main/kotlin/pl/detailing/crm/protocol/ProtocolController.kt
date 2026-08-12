@@ -107,6 +107,7 @@ class ProtocolController(
     }
 
     @DeleteMapping("/protocol-templates/{id}")
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun deleteProtocolTemplate(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val template = protocolTemplateRepository.findByIdAndStudioId(
@@ -149,6 +150,7 @@ class ProtocolController(
     }
 
     @DeleteMapping("/protocol-rules/{id}")
+    @RequiresPermission(Permission.VISITS_DELETE)
     fun deleteProtocolRule(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         deleteProtocolRuleHandler.handle(

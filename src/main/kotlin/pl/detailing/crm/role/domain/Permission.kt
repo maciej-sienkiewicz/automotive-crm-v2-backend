@@ -118,8 +118,10 @@ enum class Permission(
             "i klienta — pełny przepływ recepcji."
     ),
     VISITS_DELETE(
-        PermissionModule.VISITS, "Usuwanie wizyty",
-        parent = VISITS_CREATE
+        PermissionModule.VISITS, "Usuwanie wizyt i dokumentów",
+        parent = VISITS_CREATE,
+        description = "Usuwanie wizyt oraz dokumentów i protokołów — akcje destrukcyjne " +
+            "wydzielone z tworzenia i edycji."
     ),
 
     // Sekcja: Multimedia — gated by the GALLERY subscription feature. Viewing and adding
@@ -172,7 +174,10 @@ enum class Permission(
     // sending (SMS + e-mail) is the action. SMS budget is a billing concern, not an
     // access-control concern.
     COMMUNICATION_SEND(
-        PermissionModule.COMMUNICATION, "Wysyłanie wiadomości do klientów (SMS i e-mail)"
+        PermissionModule.COMMUNICATION, "Wysyłanie wiadomości do klientów (SMS i e-mail)",
+        description = "Ręczne wysyłanie wiadomości. Automatyzacje skonfigurowane przez firmę " +
+            "(np. link do karty wizyty po potwierdzeniu) działają na poziomie firmy — " +
+            "wysyłają się niezależnie od uprawnień pracownika, który wywołał zdarzenie."
     ),
 
     // ── Marketing ────────────────────────────────────────────────────────────
