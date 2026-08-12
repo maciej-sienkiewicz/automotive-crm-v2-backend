@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.task.TaskDto
-import pl.detailing.crm.task.infrastructure.TaskEntity
+import pl.detailing.crm.task.domain.TaskVisibility
 import pl.detailing.crm.task.infrastructure.TaskRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.util.UUID
@@ -29,7 +29,7 @@ class ListTasksHandler(
                 else userRepository.findById(query.userId.value).orElse(null)?.customRoleId
 
             val visibleEntities = entities.filter { entity ->
-                isVisible(entity, query.userId.value, currentUserRoleId, query.isOwner)
+                TaskVisibility.isVisible(entity, query.userId.value, currentUserRoleId, query.isOwner)
             }
 
             // Collect all user IDs needed: creators, completers, and visibility assignees
@@ -84,13 +84,4 @@ class ListTasksHandler(
             result
         }
 
-    private fun isVisible(entity: TaskEntity, userId: UUID, userRoleId: UUID?, isOwner: Boolean): Boolean {
-        if (isOwner) return true
-        if (entity.createdByUserId == userId) return true
-        return when (entity.visibilityType) {
-            "USERS" -> entity.visibleToUserIds?.split(",")?.any { it.trim() == userId.toString() } == true
-            "ROLE" -> userRoleId != null && entity.visibleToRoleId == userRoleId
-            else -> true // ALL or unknown
-        }
-    }
 }

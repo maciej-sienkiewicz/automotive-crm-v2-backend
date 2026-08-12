@@ -58,6 +58,7 @@ class AuthorizationSurfaceScanTest {
         "ProfileController" to ALL_METHODS,
         "MyWorkTimeController" to ALL_METHODS,
         "PinController" to ALL_METHODS,                   // PIN user switching; unlock is owner-checked inline
+        "MyTasksController" to ALL_METHODS,               // only tasks visible to the caller (TaskVisibility)
         // ALL_USERS — intentionally available to every authenticated studio member
         "EmployeeController" to setOf("listEmployees"),   // coworker names for calendar assignment
         "EmployeeLeaveController" to setOf("leaveCalendar"), // per-day on-leave counts for the shared calendar
