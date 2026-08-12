@@ -238,7 +238,7 @@ class GenerateBatchReportHandler(
                 if (!entry.vehicleVin.isNullOrBlank()) { if (isNotEmpty()) append("\n"); append(entry.vehicleVin) }
             }.ifBlank { "-" }
 
-            val serviceLines = if (entry.services.isEmpty()) listOf("-") else entry.services.map { it.name }
+            val serviceLines = if (entry.services.isEmpty()) listOf("-") else entry.services.flatMap { wrapText(it.name, regular, tableFontSize, colServices - 4f) }
             val notesText    = (entry.notes ?: "").trim()
             val vehicleLines = vehicleText.split("\n")
             val vinLines     = vinText.split("\n")
@@ -273,7 +273,7 @@ class GenerateBatchReportHandler(
                 drawText(cs, truncateText(line, regular, tableFontSize, colVin - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
             }; colX += colVin
             serviceLines.forEachIndexed { idx, line ->
-                drawText(cs, truncateText(line, regular, tableFontSize, colServices - 4f), regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
+                drawText(cs, line, regular, tableFontSize, colX, textY - idx * (tableFontSize + 3f))
             }; colX += colServices
             drawText(cs, formatMoney(entry.netAmountCents),   regular, tableFontSize, colX, textY); colX += colNet
             drawText(cs, formatMoney(entry.grossAmountCents), regular, tableFontSize, colX, textY)
