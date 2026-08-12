@@ -5,7 +5,6 @@ import pl.detailing.crm.subscription.entitlement.FeatureKey
 // Section labels grouping siblings under a header in the role editor (presentational only).
 private const val SECTION_SERVICES = "Usługi"
 private const val SECTION_MEDIA = "Multimedia / Zdjęcia"
-private const val SECTION_DOCUMENTS = "Dokumenty"
 private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
 
 /**
@@ -59,8 +58,7 @@ private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
  * - **Vehicles are not a standalone permission area** — reading rides on visit and customer
  *   views, writing on [VISITS_CREATE], deleting on [CUSTOMERS_DELETE].
  * - **Create and edit are one capability** — [VISITS_CREATE] implies
- *   [VISITS_SERVICE_PRICES_EDIT] (discount desk-flow). Work documentation (comments,
- *   notes, photo view/upload) is part of [VISITS_VIEW].
+ *   Work documentation (comments, notes, photo view/upload) is part of [VISITS_VIEW].
  * - Deliberately separate: statuses (detailer policies differ per studio), payroll, cash
  *   register, financial reports.
  *
@@ -93,13 +91,6 @@ enum class Permission(
             "podgląd i dodawanie zdjęć. Dane osobowe klienta widoczne tylko z uprawnieniem " +
             "„Podgląd danych osobowych”."
     ),
-    // VISITS_CHANGE_STATUS is deliberately a child of VISITS_VIEW (not VISITS_CREATE):
-    // a shop-floor detailer marks progress without having the booking desk capability.
-    VISITS_CHANGE_STATUS(
-        PermissionModule.VISITS, "Zmiana statusu wizyty",
-        parent = VISITS_VIEW
-    ),
-
     // Sekcja: Klienci i pojazdy — personal-data gate; child of VISITS_VIEW because every
     // booking role already implies VISITS_VIEW via the chain below, and all other modules
     // that need customer data imply VISITS_CREATE (which contains VISITS_VIEW in its chain).
@@ -117,13 +108,6 @@ enum class Permission(
         PermissionModule.VISITS, "Podgląd cen usług w wizycie",
         parent = CUSTOMERS_VIEW, section = SECTION_SERVICES
     ),
-    // Price editing is implied by VISITS_CREATE (discount desk-flow) but kept as a
-    // separate tree node so it can be inspected and deselected independently.
-    VISITS_SERVICE_PRICES_EDIT(
-        PermissionModule.VISITS, "Edycja cen usług (rabaty)",
-        parent = VISITS_SERVICE_PRICES_VIEW, section = SECTION_SERVICES
-    ),
-
     // Booking capability — top of the desk-flow chain (VISITS_VIEW → CUSTOMERS_VIEW →
     // VISITS_SERVICE_PRICES_VIEW → VISITS_CREATE). All destructive actions are children:
     // you cannot delete what you cannot create.
@@ -144,14 +128,6 @@ enum class Permission(
         PermissionModule.VISITS, "Usuwanie zdjęć",
         parent = VISITS_CREATE, section = SECTION_MEDIA,
         featureKeyOverride = FeatureKey.GALLERY
-    ),
-
-    // Sekcja: Dokumenty — gated by the DOCUMENTS subscription feature. One desk-side flow:
-    // viewing, generating and getting protocols/contracts signed happen at the same desk.
-    VISITS_DOCUMENTS_MANAGE(
-        PermissionModule.VISITS, "Dokumenty i protokoły (podgląd, generowanie, podpis)",
-        parent = VISITS_CREATE, section = SECTION_DOCUMENTS,
-        featureKeyOverride = FeatureKey.DOCUMENTS
     ),
 
     CUSTOMERS_DELETE(
@@ -248,17 +224,17 @@ enum class Permission(
             "VISITS_NOTES_ADD" to VISITS_VIEW,
             "VISITS_MEDIA_VIEW" to VISITS_VIEW,
             "VISITS_MEDIA_UPLOAD" to VISITS_VIEW,
-            "VISITS_DOCUMENTS_VIEW" to VISITS_DOCUMENTS_MANAGE,
-            "VISITS_DOCUMENTS_CREATE" to VISITS_DOCUMENTS_MANAGE,
-            "VISITS_DOCUMENTS_SIGN" to VISITS_DOCUMENTS_MANAGE,
+            "VISITS_DOCUMENTS_VIEW" to VISITS_CREATE,
+            "VISITS_DOCUMENTS_CREATE" to VISITS_CREATE,
+            "VISITS_DOCUMENTS_SIGN" to VISITS_CREATE,
             // Visits — flat list era
             "VISITS_VIEW_PRICES" to VISITS_SERVICE_PRICES_VIEW,
             "VISITS_VIEW_COMMENTS" to VISITS_VIEW,
             "VISITS_ADD_COMMENT" to VISITS_VIEW,
-            "DOCUMENTS_VIEW" to VISITS_DOCUMENTS_MANAGE,
-            "DOCUMENTS_CREATE" to VISITS_DOCUMENTS_MANAGE,
-            "DOCUMENTS_SIGN" to VISITS_DOCUMENTS_MANAGE,
-            "DOCUMENTS_MANAGE" to VISITS_DOCUMENTS_MANAGE,
+            "DOCUMENTS_VIEW" to VISITS_CREATE,
+            "DOCUMENTS_CREATE" to VISITS_CREATE,
+            "DOCUMENTS_SIGN" to VISITS_CREATE,
+            "DOCUMENTS_MANAGE" to VISITS_CREATE,
             "GALLERY_VIEW" to VISITS_VIEW,
             "GALLERY_UPLOAD" to VISITS_VIEW,
             "GALLERY_DELETE" to VISITS_MEDIA_DELETE,
@@ -288,7 +264,11 @@ enum class Permission(
             "EMPLOYEES_MANAGE_PAYROLL" to EMPLOYEES_PAYROLL,
             // Tasks / Leads
             "TASKS_ASSIGN" to TASKS_MANAGE,
-            "LEADS_VIEW" to LEADS_MANAGE
+            "LEADS_VIEW" to LEADS_MANAGE,
+            // Permissions removed from the catalog (v5 cleanup)
+            "VISITS_CHANGE_STATUS" to VISITS_VIEW,
+            "VISITS_SERVICE_PRICES_EDIT" to VISITS_SERVICE_PRICES_VIEW,
+            "VISITS_DOCUMENTS_MANAGE" to VISITS_CREATE
         )
 
         /** Strict lookup for codes arriving from the API. Legacy aliases are not accepted. */

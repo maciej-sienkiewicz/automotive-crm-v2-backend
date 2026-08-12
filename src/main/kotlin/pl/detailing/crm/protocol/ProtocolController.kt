@@ -168,7 +168,7 @@ class ProtocolController(
     // ==================== Visit Protocols ====================
 
     @GetMapping("/visits/{visitId}/protocols")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun getVisitProtocols(@PathVariable visitId: String): ResponseEntity<List<VisitProtocolResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getVisitProtocolsHandler.handle(VisitId.fromString(visitId), principal.studioId)
@@ -176,7 +176,7 @@ class ProtocolController(
     }
 
     @PostMapping("/visits/{visitId}/protocols/generate")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun generateVisitProtocols(
         @PathVariable visitId: String,
         @RequestParam(required = false, defaultValue = "CHECK_IN") stage: String
@@ -194,7 +194,7 @@ class ProtocolController(
     }
 
     @PostMapping("/visits/{visitId}/protocols/{protocolId}/sign")
-    @RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+    @RequiresPermission(Permission.VISITS_CREATE)
     fun signVisitProtocol(
         @PathVariable visitId: String,
         @PathVariable protocolId: String,

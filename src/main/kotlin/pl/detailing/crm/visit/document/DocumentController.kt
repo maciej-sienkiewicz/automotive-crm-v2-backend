@@ -26,7 +26,7 @@ import pl.detailing.crm.role.permission.RequiresPermission
  */
 @RestController
 @RequestMapping("/api")
-@RequiresPermission(Permission.VISITS_DOCUMENTS_MANAGE)
+@RequiresPermission(Permission.VISITS_CREATE)
 class DocumentController(
     private val documentService: DocumentService
 ) {

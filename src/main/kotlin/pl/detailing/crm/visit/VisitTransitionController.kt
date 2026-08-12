@@ -26,7 +26,7 @@ import java.time.LocalDate
  */
 @RestController
 @RequestMapping("/api/visits")
-@RequiresPermission(Permission.VISITS_CHANGE_STATUS)
+@RequiresPermission(Permission.VISITS_VIEW)
 class VisitTransitionController(
     private val markVisitReadyForPickupHandler: MarkVisitReadyForPickupHandler,
     private val completeVisitHandler: CompleteVisitHandler,

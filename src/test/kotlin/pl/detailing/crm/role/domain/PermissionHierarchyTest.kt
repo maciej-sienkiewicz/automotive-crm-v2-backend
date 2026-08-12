@@ -57,21 +57,6 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `editing service prices pulls in the full chain to VISITS_VIEW`() {
-        val closed = PermissionHierarchy.close(setOf(Permission.VISITS_SERVICE_PRICES_EDIT))
-        // VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW (parent chain)
-        assertEquals(
-            setOf(
-                Permission.VISITS_SERVICE_PRICES_EDIT,
-                Permission.VISITS_SERVICE_PRICES_VIEW,
-                Permission.CUSTOMERS_VIEW,
-                Permission.VISITS_VIEW
-            ),
-            closed
-        )
-    }
-
-    @Test
     fun `closed set contains the implications of every member`() {
         Permission.entries.forEach { permission ->
             val closed = PermissionHierarchy.close(setOf(permission))
@@ -88,14 +73,12 @@ class PermissionHierarchyTest {
     fun `creating visits carries the whole booking desk-flow but not the destructive permissions`() {
         val closed = PermissionHierarchy.close(setOf(Permission.VISITS_CREATE))
         // Parent chain: VISITS_CREATE → VISITS_SERVICE_PRICES_VIEW → CUSTOMERS_VIEW → VISITS_VIEW
-        // Implication: VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT (discount desk-flow)
         assertEquals(
             setOf(
                 Permission.VISITS_CREATE,
                 Permission.VISITS_SERVICE_PRICES_VIEW,
                 Permission.CUSTOMERS_VIEW,
-                Permission.VISITS_VIEW,
-                Permission.VISITS_SERVICE_PRICES_EDIT
+                Permission.VISITS_VIEW
             ),
             closed
         )
@@ -103,20 +86,16 @@ class PermissionHierarchyTest {
         assertTrue(Permission.VISITS_DELETE !in closed)
         assertTrue(Permission.VISITS_MEDIA_DELETE !in closed)
         assertTrue(Permission.CUSTOMERS_DELETE !in closed)
-        // Status changes and documents are separate policies.
-        assertTrue(Permission.VISITS_CHANGE_STATUS !in closed)
-        assertTrue(Permission.VISITS_DOCUMENTS_MANAGE !in closed)
     }
 
     @Test
     fun `invoicing requires visit creation and carries the full booking chain`() {
         val closed = PermissionHierarchy.close(setOf(Permission.FINANCE_INVOICES))
         // FINANCE_INVOICES → VISITS_CREATE → (parent chain) VISITS_SERVICE_PRICES_VIEW,
-        // CUSTOMERS_VIEW, VISITS_VIEW + VISITS_CREATE → VISITS_SERVICE_PRICES_EDIT
+        // CUSTOMERS_VIEW, VISITS_VIEW
         assertTrue(Permission.VISITS_CREATE in closed)
         assertTrue(Permission.CUSTOMERS_VIEW in closed)
         assertTrue(Permission.VISITS_VIEW in closed)
-        assertTrue(Permission.VISITS_SERVICE_PRICES_EDIT in closed)
     }
 
     @Test
@@ -163,14 +142,6 @@ class PermissionHierarchyTest {
     }
 
     @Test
-    fun `a detailer role is expressible with two checkboxes and carries no personal data`() {
-        val detailer = PermissionHierarchy.close(
-            setOf(Permission.VISITS_VIEW, Permission.VISITS_CHANGE_STATUS)
-        )
-        assertEquals(setOf(Permission.VISITS_VIEW, Permission.VISITS_CHANGE_STATUS), detailer)
-    }
-
-    @Test
     fun `legacy stored codes map onto the consolidated tree`() {
         mapOf(
             // flat-list era
@@ -179,7 +150,7 @@ class PermissionHierarchyTest {
             "VISITS_ADD_COMMENT" to Permission.VISITS_VIEW,
             "GALLERY_UPLOAD" to Permission.VISITS_VIEW,
             "GALLERY_DELETE" to Permission.VISITS_MEDIA_DELETE,
-            "DOCUMENTS_SIGN" to Permission.VISITS_DOCUMENTS_MANAGE,
+            "DOCUMENTS_SIGN" to Permission.VISITS_CREATE,
             "CALENDAR_VIEW" to Permission.VISITS_VIEW,
             "CALENDAR_MANAGE" to Permission.VISITS_CREATE,
             "VEHICLES_VIEW" to Permission.VISITS_VIEW,
@@ -206,7 +177,11 @@ class PermissionHierarchyTest {
             "VISITS_NOTES_ADD" to Permission.VISITS_VIEW,
             "VISITS_MEDIA_VIEW" to Permission.VISITS_VIEW,
             "VISITS_MEDIA_UPLOAD" to Permission.VISITS_VIEW,
-            "VISITS_DOCUMENTS_VIEW" to Permission.VISITS_DOCUMENTS_MANAGE,
+            "VISITS_DOCUMENTS_VIEW" to Permission.VISITS_CREATE,
+            // permissions removed in v5 — resolve to their natural successors
+            "VISITS_CHANGE_STATUS" to Permission.VISITS_VIEW,
+            "VISITS_SERVICE_PRICES_EDIT" to Permission.VISITS_SERVICE_PRICES_VIEW,
+            "VISITS_DOCUMENTS_MANAGE" to Permission.VISITS_CREATE,
             // current codes resolve to themselves
             "VISITS_VIEW" to Permission.VISITS_VIEW
         ).forEach { (stored, expected) ->
