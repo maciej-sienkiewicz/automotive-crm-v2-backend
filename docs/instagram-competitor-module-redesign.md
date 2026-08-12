@@ -355,6 +355,66 @@ LLM (istniejący stack Spring AI) dostaje **wyłącznie wyliczone liczby i etyki
 treści) i pisze 2–3 zdania narracji do digestu. Dzięki temu koszt jest stały i mały, a treść
 insightu nie może "zhalucynować" liczb — liczby wstawia kod.
 
+#### 6.2.1 Atrybucja przyczyny wystrzału (kampania vs kupione zaangażowanie)
+
+Dziś użytkownik widzi pik na wykresie i sam zgaduje między "kampania" a "kupione lajki"
+(podpowiada mu to akapit prozy). Docelowo insighty `VIRAL_POST` i `FOLLOWER_SPIKE` niosą pole
+`probable_cause` wyliczane z sygnałów, które już mamy:
+
+| Sygnał (kombinacja) | `probable_cause` | Pewność |
+|---|---|---|
+| pik na poście z etykietą `is_contest` / `is_promo` | `KONKURS` / `PROMOCJA` | wysoka (przyczyna zadeklarowana w caption) |
+| pik lajków **i** komentarzy proporcjonalny do normy profilu, format Reels | `VIRAL_REELS` (organiczna dystrybucja) | średnia |
+| pik lajków przy płaskich komentarzach — stosunek lajki/komentarze > 3× norma profilu | `PODEJRZENIE_KUPIONEGO_ZAANGAŻOWANIA` | średnia |
+| skok obserwujących bez wzrostu zaangażowania (ER% spada — rozwodnienie) | `PODEJRZENIE_KUPIONYCH_OBSERWUJĄCYCH` | średnia |
+| skok obserwujących + viral post w tym samym tygodniu | `WZROST_ORGANICZNY` | średnia |
+| równomiernie podniesione zaangażowanie wielu postów bez zmiany treści | `MOŻLIWA_KAMPANIA_PŁATNA` (boosting) | niska |
+
+Zasady uczciwości: `probable_cause` prezentujemy zawsze jako **hipotezę z listą sygnałów**
+("dlaczego tak sądzimy: …"), nigdy jako fakt — zwłaszcza wariantów "podejrzenie kupionego…",
+które są zarzutem wobec konkretnej firmy. Insight linkuje do surowych danych (warstwa 3),
+żeby użytkownik mógł ocenić sam — czyli obecny ręczny scenariusz pozostaje możliwy, tylko
+system wykonuje pierwszy krok za użytkownika.
+
+**Twarde potwierdzenie kampanii płatnej — Meta Ad Library (opcja, faza 5+):** na mocy DSA
+wszystkie aktywne reklamy w UE są jawne w Ad Library; detektor `ADS_RUNNING` ("konkurent
+włączył reklamy") zamieniłby hipotezę `MOŻLIWA_KAMPANIA_PŁATNA` w fakt. Dostęp do Ad Library
+API wymaga weryfikacji tożsamości dewelopera — do zbadania razem z App Review (§8 pkt 4).
+
+#### 6.2.2 Pipeline: tematy treści × ER%
+
+1. **Trigger:** po niedzielnym syncu postów, wyłącznie dla snapshotów **nowych** (klasyfikacja
+   jest idempotentna — post klasyfikujemy raz; re-klasyfikacja tylko przy zmianie caption).
+2. **Pre-filtr deterministyczny (kod, zero kosztu):** regexy kandydatów promocji/konkursu
+   (`%`, "promocja", "rabat", "zniżka", ceny "zł", "gratis", "rozdajemy", "konkurs") ustawiają
+   `is_promo_candidate` — LLM tylko potwierdza kandydatów, nie skanuje wszystkiego.
+3. **Klasyfikacja LLM (rozszerzenie istniejącego `InstagramPostClassificationService`):**
+   batch nowych caption → structured output: `topic` (zamknięty słownik 10 etykiet + `INNE`),
+   `confidence`, `is_promo` + payload `{discount_pct?, service?, deadline?}`, `is_contest`.
+   Wynik do `instagram_post_topics`. Skala kosztu: ~12 nowych postów/profil/tydzień ×
+   gpt-4o-mini — pomijalne; `confidence < 0.6` → `INNE` (nie zgadujemy).
+4. **Agregacja (SQL, w `AggregationService`):** join `instagram_post_topics` × metryki postów
+   → mediana ER% per temat per koszyk studia w oknie; wynik w `instagram_profile_stats_weekly`
+   / dedykowanym widoku dla `GET /content?topic=` i macierzy temat×ER% w UI.
+5. **Konsumpcja:** macierz "co działa w okolicy" (ekran Treści), detektor `FORMAT_TREND`/tematyczny
+   w silniku insightów, podpowiedzi tematów dla generatora AI.
+
+#### 6.2.3 Pipeline: alert "konkurent ogłosił promocję" (poniedziałkowy mail)
+
+```
+ndz 03:00  sync postów (jak dziś)
+ndz ~03:30 klasyfikacja nowych postów (6.2.2) → is_promo=true na poście konkurenta
+ndz ~04:00 InsightEngine: PROMO_DETECTED, dedup_key=PROMO:{post_pk}, severity=wysoki,
+           payload={profil, permalink, discount_pct, service, deadline}
+pon 07:00  DigestService: e-mail (infrastruktura kampanii) z sekcją "Wymaga Twojej uwagi"
+           + insight w feedzie in-app z deep-linkiem do posta (oEmbed/permalink)
+```
+
+Świeżość: przy tygodniowym syncu najgorszy przypadek to ~8 dni od publikacji promocji do maila.
+Świadomy trade-off koszt/świeżość — jeśli beta pokaże, że to za wolno, opcją jest lekki
+codzienny odczyt pierwszej strony postów (12 szt./profil; ~7× więcej wywołań RapidAPI) tylko
+dla detekcji promocji, ewentualnie jako wariant premium. Decyzja → §8.
+
 **Reguły anty-szumowe (twarde):** dedup po `dedup_key` (np. `PROMO:{post_pk}`), max 5 insightów
 NEW na studio na tydzień (nadwyżka: tylko digest, sekcja "pozostałe"), każdy insight musi mieć
 wypełnione pole "co możesz zrobić", insighty wygasają (auto-SEEN po 30 dniach).
@@ -429,6 +489,11 @@ insight po najbliższym syncu) · churn add-onu `INSTAGRAM_MONITORING` ↓ · li
    dokumentów firmy) — od tego zależy start fazy 5.
 5. **Słownik tematów treści:** zamknięta lista 10 etykiet z §5.1 do akceptacji przez PM/klientów beta.
 6. **Digest:** e-mail, in-app, czy oba (rekomendacja: oba; e-mail reuse'uje infrastrukturę kampanii).
+7. **Świeżość alertów promocyjnych:** czy tygodniowy sync postów wystarcza dla `PROMO_DETECTED`
+   (najgorszy przypadek ~8 dni), czy dokładamy lekki codzienny odczyt pierwszej strony postów
+   (~7× więcej wywołań RapidAPI; wariant: tylko premium) — patrz §6.2.3.
+8. **Meta Ad Library** jako twarde potwierdzenie kampanii płatnych konkurencji (`ADS_RUNNING`,
+   §6.2.1) — zbadać dostęp do API przy okazji App Review.
 
 ---
 
