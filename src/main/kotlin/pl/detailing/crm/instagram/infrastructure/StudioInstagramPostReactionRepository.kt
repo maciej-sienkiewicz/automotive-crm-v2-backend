@@ -8,4 +8,6 @@ import java.util.*
 interface StudioInstagramPostReactionRepository : JpaRepository<StudioInstagramPostReactionEntity, UUID> {
 
     fun findByStudioIdAndPostId(studioId: UUID, postId: UUID): StudioInstagramPostReactionEntity?
+
+    fun findByStudioIdAndPostIdIn(studioId: UUID, postIds: Collection<UUID>): List<StudioInstagramPostReactionEntity>
 }

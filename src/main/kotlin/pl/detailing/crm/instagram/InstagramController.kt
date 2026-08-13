@@ -19,17 +19,12 @@ import pl.detailing.crm.instagram.reject.RejectInstagramProfileCommand
 import pl.detailing.crm.instagram.reject.RejectInstagramProfileHandler
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileCommand
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileHandler
-import pl.detailing.crm.instagram.summary.DailyStoryStatDto
-import pl.detailing.crm.instagram.summary.FollowerSnapshotDto
-import pl.detailing.crm.instagram.summary.GetCompetitionSummaryHandler
-import pl.detailing.crm.instagram.summary.GetCompetitionSummaryQuery
-import pl.detailing.crm.instagram.summary.InstagramProfileSummaryDto
-import pl.detailing.crm.instagram.summary.WeeklyStatDto
-import pl.detailing.crm.instagram.sync.InstagramSyncService
+import pl.detailing.crm.instagram.self.MarkSelfProfileCommand
+import pl.detailing.crm.instagram.self.MarkSelfProfileHandler
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import java.time.Instant
-import pl.detailing.crm.role.permission.RequiresPermission
-import pl.detailing.crm.role.domain.Permission
 
 @RequiresPermission(Permission.MARKETING_MANAGE)
 @RestController
@@ -41,24 +36,22 @@ class InstagramController(
     private val removeHandler: RemoveInstagramProfileHandler,
     private val listHandler: ListInstagramProfilesHandler,
     private val postsHandler: GetInstagramPostsHandler,
-    private val summaryHandler: GetCompetitionSummaryHandler,
-    private val sync: InstagramSyncService,
+    private val markSelfHandler: MarkSelfProfileHandler
 ) {
 
     @PostMapping
     fun addProfile(
         @RequestBody request: AddInstagramProfileRequest
     ): ResponseEntity<InstagramProfileResponse> = runBlocking {
-        sync.syncAllActiveProfiles()
         val principal = SecurityContextHelper.getCurrentUser()
 
-        val command = AddInstagramProfileCommand(
-            studioId = principal.studioId,
-            userId = principal.userId,
-            username = request.username
+        val result = addHandler.handle(
+            AddInstagramProfileCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                username = request.username
+            )
         )
-
-        val result = addHandler.handle(command)
 
         ResponseEntity.status(HttpStatus.CREATED).body(
             InstagramProfileResponse(
@@ -67,6 +60,7 @@ class InstagramController(
                 username = result.username,
                 status = result.status.name,
                 apiError = false,
+                isSelf = false,
                 addedAt = Instant.now()
             )
         )
@@ -75,9 +69,7 @@ class InstagramController(
     @GetMapping
     fun listProfiles(): ResponseEntity<List<InstagramProfileResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-
         val result = listHandler.handle(ListInstagramProfilesQuery(principal.studioId))
-
         ResponseEntity.ok(result.map { it.toResponse() })
     }
 
@@ -131,6 +123,28 @@ class InstagramController(
         ResponseEntity.noContent().build()
     }
 
+    /**
+     * Oznacza profil jako "Twoje studio" (punkt odniesienia benchmarku)
+     * lub zdejmuje oznaczenie. Maksymalnie jeden własny profil per studio.
+     */
+    @PostMapping("/{id}/mark-self")
+    fun markSelf(
+        @PathVariable id: String,
+        @RequestBody request: MarkSelfRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        markSelfHandler.handle(
+            MarkSelfProfileCommand(
+                studioId = principal.studioId,
+                studioProfileId = StudioInstagramProfileId.fromString(id),
+                isSelf = request.isSelf
+            )
+        )
+
+        ResponseEntity.noContent().build()
+    }
+
     @GetMapping("/{id}/posts")
     fun getPosts(@PathVariable id: String): ResponseEntity<List<InstagramPostResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -144,33 +158,6 @@ class InstagramController(
 
         ResponseEntity.ok(posts.map { it.toResponse() })
     }
-
-    /**
-     * Pobierz zagregowane statystyki aktywnych profili konkurencji.
-     *
-     * GET /api/v1/instagram/profiles/summary?weeks=N  (domyślnie 52)
-     *
-     * Odpowiedź zawiera:
-     * - Statystyki postów (avgLikes, avgComments, postsPerWeek, weeklyStats z postCount i storyCount)
-     * - Aktywność stories (storiesPerWeek, storyCount per tydzień w weeklyStats)
-     * - Metryki profilu (followerCount, hasContactData, isVerified, category, externalUrl itp.)
-     * - Historię followerów (followerHistory) do analizy trendu w oknie `weeks`
-     */
-    @GetMapping("/summary")
-    fun getCompetitionSummary(
-        @RequestParam(defaultValue = "52") weeks: Int
-    ): ResponseEntity<List<InstagramProfileSummaryResponse>> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = summaryHandler.handle(
-            GetCompetitionSummaryQuery(
-                studioId = principal.studioId,
-                weeks = weeks
-            )
-        )
-
-        ResponseEntity.ok(result.map { it.toResponse() })
-    }
 }
 
 // ---- Request / Response DTOs ----
@@ -179,12 +166,17 @@ data class AddInstagramProfileRequest(
     val username: String
 )
 
+data class MarkSelfRequest(
+    val isSelf: Boolean
+)
+
 data class InstagramProfileResponse(
     val id: String,
     val profileId: String,
     val username: String,
     val status: String,
     val apiError: Boolean,
+    val isSelf: Boolean,
     val addedAt: Instant
 )
 
@@ -202,69 +194,7 @@ data class InstagramPostResponse(
     val carouselMediaCount: Int,
     val hashtags: List<String>,
     val engagementScore: Int,
-    val imageUrl: String?
-)
-
-data class WeeklyStatResponse(
-    val weekStart: String,
-    val postCount: Int,
-    val storyCount: Int,
-    val totalLikes: Int,
-    val totalComments: Int,
-    val avgLikes: Double,
-    val avgComments: Double
-)
-
-data class DailyStoryStatResponse(
-    /** Data "YYYY-MM-DD" (UTC). */
-    val date: String,
-    val storyCount: Int
-)
-
-data class FollowerSnapshotResponse(
-    val date: String,
-    val followerCount: Int?
-)
-
-data class InstagramProfileSummaryResponse(
-    val id: String,
-    val profileId: String,
-    val username: String,
-    val status: String,
-    val apiError: Boolean,
-    val addedAt: Instant,
-    // ── Metryki postów ──
-    val postCount: Int,
-    val avgLikes: Double,
-    val avgComments: Double,
-    val avgViews: Double?,
-    val postsPerWeek: Double,
-    val lastPostAt: Instant?,
-    val weeklyStats: List<WeeklyStatResponse>,
-    val avgEngagement: Double,
-    // ── Aktywność stories ──
-    val storiesPerWeek: Double,
-    /** Dzienny rozkład stories – jeden wpis per dzień z przynajmniej 1 story. */
-    val dailyStoryStats: List<DailyStoryStatResponse>,
-    // ── Metryki profilu ──
-    val followerCount: Int?,
-    val followingCount: Int?,
-    val mediaCount: Int?,
-    /** true gdy profil ma uzupełniony publiczny e-mail lub numer telefonu. */
-    val hasContactData: Boolean,
-    val isVerified: Boolean,
-    val isBusiness: Boolean,
-    /** 1 = personal, 2 = creator, 3 = professional/business */
-    val accountType: Int?,
-    val category: String?,
-    val externalUrl: String?,
-    val biography: String?,
-    val hasHighlightReels: Boolean,
-    val totalClipsCount: Int,
-    val isPrivate: Boolean,
-    val detailsLastSyncedAt: Instant?,
-    // ── Trend followerów ──
-    val followerHistory: List<FollowerSnapshotResponse>
+    val permalink: String
 )
 
 private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
@@ -273,6 +203,7 @@ private fun InstagramProfileDto.toResponse() = InstagramProfileResponse(
     username = username,
     status = status.name,
     apiError = apiError,
+    isSelf = isSelf,
     addedAt = addedAt
 )
 
@@ -290,59 +221,5 @@ private fun InstagramPostDto.toResponse() = InstagramPostResponse(
     carouselMediaCount = carouselMediaCount,
     hashtags = hashtags,
     engagementScore = engagementScore,
-    imageUrl = imageUrl
-)
-
-private fun WeeklyStatDto.toResponse() = WeeklyStatResponse(
-    weekStart = weekStart,
-    postCount = postCount,
-    storyCount = storyCount,
-    totalLikes = totalLikes,
-    totalComments = totalComments,
-    avgLikes = avgLikes,
-    avgComments = avgComments
-)
-
-private fun DailyStoryStatDto.toResponse() = DailyStoryStatResponse(
-    date = date,
-    storyCount = storyCount
-)
-
-private fun FollowerSnapshotDto.toResponse() = FollowerSnapshotResponse(
-    date = date,
-    followerCount = followerCount
-)
-
-private fun InstagramProfileSummaryDto.toResponse() = InstagramProfileSummaryResponse(
-    id = id,
-    profileId = profileId,
-    username = username,
-    status = status.name,
-    apiError = apiError,
-    addedAt = addedAt,
-    postCount = postCount,
-    avgLikes = avgLikes,
-    avgComments = avgComments,
-    avgViews = avgViews,
-    postsPerWeek = postsPerWeek,
-    lastPostAt = lastPostAt,
-    weeklyStats = weeklyStats.map { it.toResponse() },
-    avgEngagement = avgEngagement,
-    storiesPerWeek = storiesPerWeek,
-    dailyStoryStats = dailyStoryStats.map { it.toResponse() },
-    followerCount = followerCount,
-    followingCount = followingCount,
-    mediaCount = mediaCount,
-    hasContactData = hasContactData,
-    isVerified = isVerified,
-    isBusiness = isBusiness,
-    accountType = accountType,
-    category = category,
-    externalUrl = externalUrl,
-    biography = biography,
-    hasHighlightReels = hasHighlightReels,
-    totalClipsCount = totalClipsCount,
-    isPrivate = isPrivate,
-    detailsLastSyncedAt = detailsLastSyncedAt,
-    followerHistory = followerHistory.map { it.toResponse() }
+    permalink = permalink
 )

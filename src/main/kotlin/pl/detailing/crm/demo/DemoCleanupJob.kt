@@ -13,7 +13,6 @@ import pl.detailing.crm.customer.notes.CustomerNoteRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileMetricsSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
-import pl.detailing.crm.instagram.infrastructure.InstagramStorySnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.InstagramProfileStatus
@@ -36,7 +35,6 @@ class DemoCleanupJob(
     private val studioInstagramProfileRepository: StudioInstagramProfileRepository,
     private val instagramProfileRepository: InstagramProfileRepository,
     private val instagramPostSnapshotRepository: InstagramPostSnapshotRepository,
-    private val instagramStorySnapshotRepository: InstagramStorySnapshotRepository,
     private val instagramProfileMetricsSnapshotRepository: InstagramProfileMetricsSnapshotRepository,
     private val userRepository: UserRepository,
     private val studioRepository: StudioRepository,
@@ -229,7 +227,6 @@ class DemoCleanupJob(
             )
             if (remainingRefs == 0L) {
                 instagramPostSnapshotRepository.deleteByProfileId(sp.profileId)
-                instagramStorySnapshotRepository.deleteByProfileId(sp.profileId)
                 instagramProfileMetricsSnapshotRepository.deleteByProfileId(sp.profileId)
                 instagramProfileRepository.deleteById(sp.profileId)
             }

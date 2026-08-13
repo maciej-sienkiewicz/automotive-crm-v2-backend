@@ -36,6 +36,13 @@ class StudioInstagramProfileEntity(
     @Column(name = "added_by_user_id", nullable = false, columnDefinition = "uuid")
     val addedByUserId: UUID,
 
+    /**
+     * true gdy to własny profil studia ("Ty" w benchmarku).
+     * Maksymalnie jeden profil per studio – wymuszane w MarkSelfProfileHandler.
+     */
+    @Column(name = "is_self", nullable = false)
+    var isSelf: Boolean = false,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 

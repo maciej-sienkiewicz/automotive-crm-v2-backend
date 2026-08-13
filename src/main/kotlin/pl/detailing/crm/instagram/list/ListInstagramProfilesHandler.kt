@@ -16,6 +16,7 @@ data class InstagramProfileDto(
     val username: String,
     val status: InstagramProfileStatus,
     val apiError: Boolean,
+    val isSelf: Boolean,
     val addedAt: Instant
 )
 
@@ -44,6 +45,7 @@ class ListInstagramProfilesHandler(
                 username = gp.username,
                 status = sp.status,
                 apiError = gp.apiError,
+                isSelf = sp.isSelf,
                 addedAt = sp.createdAt
             )
         }

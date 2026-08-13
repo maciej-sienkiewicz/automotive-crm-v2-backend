@@ -27,9 +27,18 @@ import pl.detailing.crm.role.domain.Permission
 @RequestMapping("/api/v1/instagram/ai")
 class InstagramPostGenerationController(
     private val inspirationService: InstagramInspirationService,
-    private val generatorService: InstagramPostGeneratorService
+    private val generatorService: InstagramPostGeneratorService,
+    @org.springframework.beans.factory.annotation.Value("\${instagram.ai.debug-endpoints.enabled:false}")
+    private val debugEndpointsEnabled: Boolean
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostGenerationController::class.java)
+
+    /** Endpointy diagnostyczne sa domyslnie wylaczone na produkcji. */
+    private fun requireDebugEnabled() {
+        if (!debugEndpointsEnabled) {
+            throw pl.detailing.crm.shared.EntityNotFoundException("Nie znaleziono zasobu.")
+        }
+    }
 
     // ── Generowanie posta ──────────────────────────────────────────────────────
 
@@ -87,6 +96,7 @@ class InstagramPostGenerationController(
     fun debugGenerate(
         @RequestBody request: GenerateInstagramPostRequest
     ): ResponseEntity<DebugInstagramPostResult> = runBlocking {
+        requireDebugEnabled()
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
 
         val principal = SecurityContextHelper.getCurrentUser()
@@ -123,6 +133,7 @@ class InstagramPostGenerationController(
     fun abTest(
         @RequestBody request: InstagramAbTestRequest
     ): ResponseEntity<InstagramAbTestResult> = runBlocking {
+        requireDebugEnabled()
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
 
         val principal = SecurityContextHelper.getCurrentUser()
@@ -189,6 +200,7 @@ class InstagramPostGenerationController(
      */
     @PostMapping("/negative-impact-test")
     fun negativeImpactTest(): ResponseEntity<InstagramNegativeImpactTestResult> = runBlocking {
+        requireDebugEnabled()
         logger.info("Starting negative impact test with hardcoded car detailing examples...")
 
         val topic = "Nowe zabezpieczenie lakieru — dlaczego warto"

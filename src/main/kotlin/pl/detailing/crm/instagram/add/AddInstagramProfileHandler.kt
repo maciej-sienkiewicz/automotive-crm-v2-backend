@@ -37,6 +37,16 @@ class AddInstagramProfileHandler(
             )
         }
 
+        // Kont prywatnych nie monitorujemy (decyzja prawna – analizujemy wyłącznie
+        // publiczną działalność marketingową firm)
+        profileRepository.findByUsername(normalised)?.let { existing ->
+            if (existing.isPrivate) {
+                throw ValidationException(
+                    "Profil @$normalised jest kontem prywatnym – monitorujemy wyłącznie publiczne profile firmowe."
+                )
+            }
+        }
+
         // Pobierz lub utwórz globalny profil
         val globalProfile = profileRepository.findByUsername(normalised)
             ?: profileRepository.save(
