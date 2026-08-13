@@ -169,6 +169,5 @@ class SendBookingConfirmationSmsHandler(
 data class SendBookingConfirmationSmsCommand(
     val appointmentId: AppointmentId,
     val studioId: StudioId,
-    val studioName: String,
     val force: Boolean = false
 )

@@ -29,8 +29,9 @@ import pl.detailing.crm.appointment.title.UpdateAppointmentTitleCommand
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.smscampaigns.bookingconfirmation.SendBookingConfirmationSmsCommand
+import pl.detailing.crm.smscampaigns.appointmentchange.SendAppointmentRescheduleConfirmationSmsCommand
+import pl.detailing.crm.smscampaigns.appointmentchange.SendAppointmentRescheduleConfirmationSmsHandler
 import pl.detailing.crm.smscampaigns.bookingconfirmation.SendBookingConfirmationSmsHandler
-import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.LocalDate
 import java.util.UUID
 import pl.detailing.crm.role.domain.Permission
@@ -50,7 +51,7 @@ class AppointmentController(
     private val getAppointmentHandler: GetAppointmentHandler,
     private val updateAppointmentTitleHandler: UpdateAppointmentTitleHandler,
     private val sendBookingConfirmationSmsHandler: SendBookingConfirmationSmsHandler,
-    private val studioRepository: StudioRepository,
+    private val sendAppointmentRescheduleConfirmationSmsHandler: SendAppointmentRescheduleConfirmationSmsHandler,
     private val updateAppointmentSmsPreferencesHandler: UpdateAppointmentSmsPreferencesHandler,
     private val createRecurringAppointmentHandler: CreateRecurringAppointmentHandler,
     private val updateRecurringAppointmentHandler: UpdateRecurringAppointmentHandler,
@@ -262,17 +263,13 @@ class AppointmentController(
         val result = createAppointmentHandler.handle(command)
 
         if (request.sendConfirmationSms) {
-            val studio = studioRepository.findByStudioId(principal.studioId.value)
-            if (studio != null) {
-                sendBookingConfirmationSmsHandler.handle(
-                    SendBookingConfirmationSmsCommand(
-                        appointmentId = result.appointmentId,
-                        studioId = principal.studioId,
-                        studioName = studio.name,
-                        force = true
-                    )
+            sendBookingConfirmationSmsHandler.handle(
+                SendBookingConfirmationSmsCommand(
+                    appointmentId = result.appointmentId,
+                    studioId = principal.studioId,
+                    force = true
                 )
-            }
+            )
         }
 
         if (request.sendVisitCard) {
@@ -317,17 +314,13 @@ class AppointmentController(
         )
 
         if (request.sendConfirmationSms) {
-            val studio = studioRepository.findByStudioId(principal.studioId.value)
-            if (studio != null) {
-                sendBookingConfirmationSmsHandler.handle(
-                    SendBookingConfirmationSmsCommand(
-                        appointmentId = result.firstAppointmentId,
-                        studioId = principal.studioId,
-                        studioName = studio.name,
-                        force = true
-                    )
+            sendBookingConfirmationSmsHandler.handle(
+                SendBookingConfirmationSmsCommand(
+                    appointmentId = result.firstAppointmentId,
+                    studioId = principal.studioId,
+                    force = true
                 )
-            }
+            )
         }
 
         if (request.sendVisitCard) {
@@ -466,6 +459,24 @@ class AppointmentController(
         )
 
         val result = updateAppointmentHandler.handle(command)
+
+        // Only a moved start date is worth an SMS — and only if the studio turned the rule
+        // on and wrote the message. The handler decides both; we just report the event.
+        result.previousStartDateTime?.let {
+            runCatching {
+                sendAppointmentRescheduleConfirmationSmsHandler.handle(
+                    SendAppointmentRescheduleConfirmationSmsCommand(
+                        appointmentId = result.appointmentId,
+                        studioId = principal.studioId
+                    )
+                )
+            }.onFailure { ex ->
+                logger.error(
+                    "Reschedule confirmation SMS failed for appointment={}: {}",
+                    result.appointmentId, ex.message, ex
+                )
+            }
+        }
 
         val editScope = scope?.let {
             try { RecurrenceEditScope.valueOf(it.uppercase()) } catch (e: IllegalArgumentException) { null }

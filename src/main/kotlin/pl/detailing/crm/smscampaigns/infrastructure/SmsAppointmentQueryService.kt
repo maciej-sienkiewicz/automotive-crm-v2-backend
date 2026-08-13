@@ -33,8 +33,9 @@ data class SmsAppointmentView(
  * Uses [EntityManager] directly so the [pl.detailing.crm.appointment.infrastructure.AppointmentRepository]
  * is not burdened with SMS-specific queries, keeping both modules independently evolvable.
  *
- * Both queries join appointments → customers → studios in a single round-trip and exclude
- * CANCELLED / ABANDONED appointments to avoid sending SMS for dead appointments.
+ * Only the PRE_VISIT rules read appointments. Everything that fires *after* a visit reads
+ * visits instead (see [SmsVisitQueryService]) — an appointment ending is not evidence that
+ * the customer ever showed up.
  */
 @Service
 class SmsAppointmentQueryService {
@@ -42,29 +43,25 @@ class SmsAppointmentQueryService {
     @PersistenceContext
     private lateinit var entityManager: EntityManager
 
+    companion object {
+        /**
+         * A reminder only makes sense for a booking that is still ahead of the customer.
+         * CANCELLED / ABANDONED are dead bookings; CONVERTED means the car is already
+         * with us, so "we are waiting for you" would be wrong.
+         */
+        private val EXCLUDED_STATUSES = listOf(
+            AppointmentStatus.CANCELLED,
+            AppointmentStatus.ABANDONED,
+            AppointmentStatus.CONVERTED
+        )
+    }
+
     /** Appointments whose [startDateTime] falls inside [windowStart, windowEnd). */
     fun findByStudioIdAndStartTimeBetween(
         studioId: StudioId,
         windowStart: Instant,
         windowEnd: Instant
-    ): List<SmsAppointmentView> = queryAppointments(
-        studioId = studioId,
-        windowStart = windowStart,
-        windowEnd = windowEnd,
-        useStartTime = true
-    )
-
-    /** Appointments whose [endDateTime] falls inside [windowStart, windowEnd). */
-    fun findByStudioIdAndEndTimeBetween(
-        studioId: StudioId,
-        windowStart: Instant,
-        windowEnd: Instant
-    ): List<SmsAppointmentView> = queryAppointments(
-        studioId = studioId,
-        windowStart = windowStart,
-        windowEnd = windowEnd,
-        useStartTime = false
-    )
+    ): List<SmsAppointmentView> = queryAppointments(studioId, windowStart, windowEnd)
 
     /**
      * Appointments across ALL studios where [sendReminderSms] was explicitly requested
@@ -77,7 +74,7 @@ class SmsAppointmentQueryService {
         windowStart: Instant,
         windowEnd: Instant
     ): List<SmsAppointmentView> {
-        val excludedStatuses = listOf(AppointmentStatus.CANCELLED, AppointmentStatus.ABANDONED)
+        val excludedStatuses = EXCLUDED_STATUSES
 
         val jpql = """
             SELECT
@@ -126,12 +123,9 @@ class SmsAppointmentQueryService {
     private fun queryAppointments(
         studioId: StudioId,
         windowStart: Instant,
-        windowEnd: Instant,
-        useStartTime: Boolean
+        windowEnd: Instant
     ): List<SmsAppointmentView> {
-        val timeField = if (useStartTime) "a.startDateTime" else "a.endDateTime"
-
-        val excludedStatuses = listOf(AppointmentStatus.CANCELLED, AppointmentStatus.ABANDONED)
+        val excludedStatuses = EXCLUDED_STATUSES
 
         val jpql = """
             SELECT
@@ -150,8 +144,8 @@ class SmsAppointmentQueryService {
             WHERE a.studioId  = :studioId
             AND   a.deletedAt IS NULL
             AND   a.status NOT IN :excludedStatuses
-            AND   $timeField >= :windowStart
-            AND   $timeField <  :windowEnd
+            AND   a.startDateTime >= :windowStart
+            AND   a.startDateTime <  :windowEnd
         """.trimIndent()
 
         val rows = entityManager.createQuery(jpql)

@@ -139,6 +139,5 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
 
 data class SendAppointmentRescheduleConfirmationSmsCommand(
     val appointmentId: AppointmentId,
-    val studioId: StudioId,
-    val studioName: String
+    val studioId: StudioId
 )

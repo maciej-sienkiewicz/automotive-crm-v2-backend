@@ -309,5 +309,11 @@ data class CreateAppointmentResult(
     val vehicleId: VehicleId?,
     val totalNet: Money,
     val totalGross: Money,
-    val totalVat: Money
+    val totalVat: Money,
+    /**
+     * Set only by the update path, and only when the edit actually moved the start of the
+     * booking — that is the one change the customer has to be told about. Null on create
+     * and on edits that left the date alone.
+     */
+    val previousStartDateTime: Instant? = null
 )

@@ -106,6 +106,5 @@ class SendVisitReadyForPickupSmsHandler(
 
 data class SendVisitReadyForPickupSmsCommand(
     val visitId: VisitId,
-    val studioId: StudioId,
-    val studioName: String = ""
+    val studioId: StudioId
 )
