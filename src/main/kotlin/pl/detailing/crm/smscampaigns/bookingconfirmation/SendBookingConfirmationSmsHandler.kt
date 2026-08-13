@@ -17,7 +17,6 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
-import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.domain.SmsTriggerType
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogEntity
@@ -41,10 +40,15 @@ class SendBookingConfirmationSmsHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     suspend fun handle(command: SendBookingConfirmationSmsCommand): Unit = withContext(Dispatchers.IO) {
-        val config = configRepository.findByStudioId(command.studioId)
-            ?: SmsAutomationConfig.defaultFor(command.studioId)
+        val rule = configRepository.findByStudioId(command.studioId)?.bookingConfirmation
+        if (rule == null || rule.messageTemplate.isBlank()) {
+            logger.debug("SendBookingConfirmationSms: no template configured [studioId={}]", command.studioId)
+            return@withContext
+        }
 
-        if (!config.bookingConfirmation.enabled && !command.force) {
+        // `force` is the operator ticking "send confirmation" on a single booking: it
+        // overrides the rule's on/off switch, never the absence of a template.
+        if (!rule.enabled && !command.force) {
             logger.debug("SendBookingConfirmationSms: rule disabled [studioId={}]", command.studioId)
             return@withContext
         }
@@ -84,11 +88,11 @@ class SendBookingConfirmationSmsHandler(
 
         val phoneNumber = normalizePolishPhone(rawPhone)
         val message = templateProcessor.process(
-            config.bookingConfirmation.messageTemplate,
+            rule.messageTemplate,
             SmsTemplateContext(
                 firstName = customer.firstName ?: "Kliencie",
-                appointmentStart = appointment.startDateTime,
-                studioName = command.studioName
+                lastName = customer.lastName ?: "",
+                appointmentStart = appointment.startDateTime
             )
         )
 

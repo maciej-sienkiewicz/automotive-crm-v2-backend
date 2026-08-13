@@ -12,13 +12,15 @@ interface SmsAutomationConfigJpaRepository : JpaRepository<SmsAutomationConfigEn
     @Query("SELECT e FROM SmsAutomationConfigEntity e WHERE e.studioId = :studioId")
     fun findByStudioId(@Param("studioId") studioId: UUID): SmsAutomationConfigEntity?
 
+    /**
+     * Only the three time-driven rules matter here — the scheduler polls for them.
+     * Event-driven rules fire from their own handlers and never need this sweep.
+     */
     @Query("""
         SELECT e FROM SmsAutomationConfigEntity e
         WHERE e.preVisitEnabled = true
            OR e.postVisitEnabled = true
            OR e.delayedReminderEnabled = true
-           OR e.bookingConfirmationEnabled = true
-           OR e.rescheduleConfirmationEnabled = true
     """)
     fun findAllWithAnyRuleEnabled(): List<SmsAutomationConfigEntity>
 }

@@ -16,14 +16,12 @@ import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
-import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
 @Service
 class SendVisitReadyForPickupEmailHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val studioRepository: StudioRepository,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
     private val emailTemplateConfigHandler: GetEmailTemplateConfigHandler,
@@ -50,22 +48,21 @@ class SendVisitReadyForPickupEmailHandler(
         val recipientEmail = customerEntity.email
         if (recipientEmail.isNullOrBlank()) return@withContext
 
-        val templateConfig = emailTemplateConfigHandler.handle(command.studioId)
-        val rule = templateConfig.visitReadyForPickup
-
-        val studioName = studioRepository.findById(command.studioId.value).map { it.name }.orElse("")
-        val firstName = customerEntity.firstName ?: "Kliencie"
-        val fullName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
-            .joinToString(" ").ifBlank { "Kliencie" }
-        val vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}"
+        val rule = emailTemplateConfigHandler.handle(command.studioId).visitReadyForPickup
+        if (!rule.sendable) {
+            logger.debug("SendVisitReadyForPickupEmail: rule disabled [studioId={}]", command.studioId)
+            return@withContext
+        }
 
         val context = EmailTemplateContext(
-            firstName = firstName,
-            fullName = fullName,
-            studioName = studioName,
-            vehicleName = vehicleName,
+            firstName = customerEntity.firstName ?: "Kliencie",
+            lastName = customerEntity.lastName.orEmpty(),
+            fullName = listOfNotNull(customerEntity.firstName, customerEntity.lastName)
+                .joinToString(" ").ifBlank { "Kliencie" },
+            vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}",
             licensePlate = visitEntity.licensePlateSnapshot,
-            visitNumber = visitEntity.visitNumber
+            visitNumber = visitEntity.visitNumber,
+            scheduledAt = visitEntity.scheduledDate
         )
 
         val subject = emailTemplateProcessor.process(rule.subjectTemplate, context)

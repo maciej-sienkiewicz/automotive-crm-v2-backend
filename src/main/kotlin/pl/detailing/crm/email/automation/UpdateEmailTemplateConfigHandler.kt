@@ -11,7 +11,9 @@ data class UpdateEmailTemplateConfigCommand(
     val studioId: StudioId,
     val visitWelcome: UpdateEmailNotificationRuleCommand,
     val visitReadyForPickup: UpdateEmailNotificationRuleCommand,
-    val batchOrderClose: UpdateEmailNotificationRuleCommand
+    val batchOrderClose: UpdateEmailNotificationRuleCommand,
+    val visitCardLink: UpdateEmailNotificationRuleCommand,
+    val reservationCardLink: UpdateEmailNotificationRuleCommand
 )
 
 data class UpdateEmailNotificationRuleCommand(
@@ -42,6 +44,16 @@ class UpdateEmailTemplateConfigHandler(
                 enabled = command.batchOrderClose.enabled,
                 subjectTemplate = command.batchOrderClose.subjectTemplate,
                 bodyTemplate = command.batchOrderClose.bodyTemplate
+            ),
+            visitCardLink = EmailNotificationRule(
+                enabled = command.visitCardLink.enabled,
+                subjectTemplate = command.visitCardLink.subjectTemplate,
+                bodyTemplate = command.visitCardLink.bodyTemplate
+            ),
+            reservationCardLink = EmailNotificationRule(
+                enabled = command.reservationCardLink.enabled,
+                subjectTemplate = command.reservationCardLink.subjectTemplate,
+                bodyTemplate = command.reservationCardLink.bodyTemplate
             )
         )
         return configRepository.save(config)

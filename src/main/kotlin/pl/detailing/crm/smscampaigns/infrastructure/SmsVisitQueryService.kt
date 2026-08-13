@@ -21,6 +21,7 @@ data class SmsVisitView(
     val customerId: UUID,
     val pickupDate: Instant,
     val customerFirstName: String?,
+    val customerLastName: String?,
     val customerPhone: String?,
     val studioName: String
 )
@@ -55,6 +56,7 @@ class SmsVisitQueryService {
                 v.customerId,
                 v.pickupDate,
                 c.firstName,
+                c.lastName,
                 c.phone,
                 s.name
             FROM VisitEntity v
@@ -81,8 +83,9 @@ class SmsVisitQueryService {
                 customerId = cols[2] as UUID,
                 pickupDate = cols[3] as Instant,
                 customerFirstName = cols[4] as String?,
-                customerPhone = cols[5] as String?,
-                studioName = cols[6] as String
+                customerLastName = cols[5] as String?,
+                customerPhone = cols[6] as String?,
+                studioName = cols[7] as String
             )
         }
     }

@@ -36,6 +36,14 @@ class SmsAutomationConfigRepositoryAdapter(
             existing.rescheduleConfirmationMessageTemplate = config.rescheduleConfirmation.messageTemplate
             existing.visitReadyForPickupEnabled = config.visitReadyForPickup.enabled
             existing.visitReadyForPickupMessageTemplate = config.visitReadyForPickup.messageTemplate
+            existing.visitCardLinkEnabled = config.visitCardLink.enabled
+            existing.visitCardLinkMessageTemplate = config.visitCardLink.messageTemplate
+            existing.reservationCardLinkEnabled = config.reservationCardLink.enabled
+            existing.reservationCardLinkMessageTemplate = config.reservationCardLink.messageTemplate
+            existing.upsellConsentEnabled = config.upsellConsent.enabled
+            existing.upsellConsentMessageTemplate = config.upsellConsent.messageTemplate
+            existing.signatureRequestEnabled = config.signatureRequest.enabled
+            existing.signatureRequestMessageTemplate = config.signatureRequest.messageTemplate
             existing.updatedAt = java.time.Instant.now()
             existing
         } else {

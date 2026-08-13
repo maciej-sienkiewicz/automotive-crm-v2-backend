@@ -17,7 +17,6 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
-import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
@@ -34,10 +33,8 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     suspend fun handle(command: SendAppointmentRescheduleConfirmationSmsCommand): Unit = withContext(Dispatchers.IO) {
-        val config = configRepository.findByStudioId(command.studioId)
-            ?: SmsAutomationConfig.defaultFor(command.studioId)
-
-        if (!config.rescheduleConfirmation.enabled) {
+        val rule = configRepository.findByStudioId(command.studioId)?.rescheduleConfirmation
+        if (rule == null || !rule.sendable) {
             logger.debug("SendAppointmentRescheduleConfirmationSms: rule disabled [studioId={}]", command.studioId)
             return@withContext
         }
@@ -77,11 +74,11 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
 
         val phoneNumber = normalizePolishPhone(rawPhone)
         val message = templateProcessor.process(
-            config.rescheduleConfirmation.messageTemplate,
+            rule.messageTemplate,
             SmsTemplateContext(
                 firstName = customer.firstName ?: "Kliencie",
-                appointmentStart = appointment.startDateTime,
-                studioName = command.studioName
+                lastName = customer.lastName ?: "",
+                appointmentStart = appointment.startDateTime
             )
         )
 

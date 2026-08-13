@@ -85,7 +85,6 @@ class CampaignMaterializer(
 
     private fun materialize(campaign: Campaign) {
         val settings = service.getSettings(campaign.studioId)
-        val studioCtx = renderer.studioContext(campaign.studioId.value)
         val now = Instant.now()
         val sendAt = shiftOutOfQuietHours(maxOf(now, campaign.scheduledAt ?: now), settings)
 
@@ -99,7 +98,7 @@ class CampaignMaterializer(
             )
             audience.forEach { row ->
                 rows += CampaignRecipientFactory.build(
-                    campaign, channel, row, sendAt, settings, studioCtx, renderer, triggerVisitId = null
+                    campaign, channel, row, sendAt, settings, renderer, triggerVisitId = null
                 )
             }
         }
@@ -152,7 +151,6 @@ object CampaignRecipientFactory {
         row: AudienceRow,
         sendAt: Instant,
         settings: CampaignSettings,
-        studioCtx: CampaignTemplateRenderer.StudioContext,
         renderer: CampaignTemplateRenderer,
         triggerVisitId: UUID?
     ): CampaignRecipient {
@@ -166,18 +164,18 @@ object CampaignRecipientFactory {
         }
         val body = when (channel) {
             RecipientChannel.SMS -> {
-                val rendered = renderer.render(campaign.smsTemplate.orEmpty(), row, studioCtx)
+                val rendered = renderer.render(campaign.smsTemplate.orEmpty(), row)
                 val footer = settings.smsFooter?.takeIf { it.isNotBlank() }
                 if (footer != null) "$rendered $footer" else rendered
             }
             RecipientChannel.EMAIL -> {
-                val rendered = renderer.render(campaign.emailBody.orEmpty(), row, studioCtx)
+                val rendered = renderer.render(campaign.emailBody.orEmpty(), row)
                 val footer = settings.emailFooter?.takeIf { it.isNotBlank() }
                 if (footer != null) "$rendered\n\n$footer" else rendered
             }
         }
         val subject = if (channel == RecipientChannel.EMAIL) {
-            renderer.render(campaign.emailSubject.orEmpty(), row, studioCtx)
+            renderer.render(campaign.emailSubject.orEmpty(), row)
         } else null
 
         return CampaignRecipient(

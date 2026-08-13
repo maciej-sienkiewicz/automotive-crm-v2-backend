@@ -97,6 +97,33 @@ class SmsAutomationConfigEntity(
     @Column(name = "visit_card_link_message_template", nullable = false, columnDefinition = "TEXT")
     var visitCardLinkMessageTemplate: String,
 
+    // ── RESERVATION CARD LINK RULE ──────────────────────────────────────────────
+    // Own template — a reservation is not a visit, so it must not reuse the visit copy.
+
+    @Column(name = "reservation_card_link_enabled", nullable = false)
+    var reservationCardLinkEnabled: Boolean = false,
+
+    @Column(name = "reservation_card_link_message_template", nullable = false, columnDefinition = "TEXT")
+    var reservationCardLinkMessageTemplate: String = "",
+
+    // ── UPSELL CONSENT RULE ─────────────────────────────────────────────────────
+    // Sent when the customer picks extra services on the public Visit / Reservation Card.
+
+    @Column(name = "upsell_consent_enabled", nullable = false)
+    var upsellConsentEnabled: Boolean = false,
+
+    @Column(name = "upsell_consent_message_template", nullable = false, columnDefinition = "TEXT")
+    var upsellConsentMessageTemplate: String = "",
+
+    // ── SIGNATURE REQUEST RULE ──────────────────────────────────────────────────
+    // Sent with the tokenized link to a document awaiting the customer's signature.
+
+    @Column(name = "signature_request_enabled", nullable = false)
+    var signatureRequestEnabled: Boolean = false,
+
+    @Column(name = "signature_request_message_template", nullable = false, columnDefinition = "TEXT")
+    var signatureRequestMessageTemplate: String = "",
+
     // ── SENDER NAME CONFIG ──────────────────────────────────────────────────────
     // Custom alphanumeric sender name (max 11 chars) submitted to SMSAPI.
     // Requires a signed authorization document from the studio owner.
@@ -153,6 +180,18 @@ class SmsAutomationConfigEntity(
         visitCardLink = SmsNotificationRule(
             enabled = visitCardLinkEnabled,
             messageTemplate = visitCardLinkMessageTemplate
+        ),
+        reservationCardLink = SmsNotificationRule(
+            enabled = reservationCardLinkEnabled,
+            messageTemplate = reservationCardLinkMessageTemplate
+        ),
+        upsellConsent = SmsNotificationRule(
+            enabled = upsellConsentEnabled,
+            messageTemplate = upsellConsentMessageTemplate
+        ),
+        signatureRequest = SmsNotificationRule(
+            enabled = signatureRequestEnabled,
+            messageTemplate = signatureRequestMessageTemplate
         )
     )
 
@@ -178,6 +217,12 @@ class SmsAutomationConfigEntity(
                 visitReadyForPickupMessageTemplate = config.visitReadyForPickup.messageTemplate,
                 visitCardLinkEnabled = config.visitCardLink.enabled,
                 visitCardLinkMessageTemplate = config.visitCardLink.messageTemplate,
+                reservationCardLinkEnabled = config.reservationCardLink.enabled,
+                reservationCardLinkMessageTemplate = config.reservationCardLink.messageTemplate,
+                upsellConsentEnabled = config.upsellConsent.enabled,
+                upsellConsentMessageTemplate = config.upsellConsent.messageTemplate,
+                signatureRequestEnabled = config.signatureRequest.enabled,
+                signatureRequestMessageTemplate = config.signatureRequest.messageTemplate,
                 updatedAt = Instant.now()
             )
     }
