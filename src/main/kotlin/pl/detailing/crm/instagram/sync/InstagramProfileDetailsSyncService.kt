@@ -3,81 +3,49 @@ package pl.detailing.crm.instagram.sync
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.instagram.infrastructure.InstagramDataProvider
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileMetricsSnapshotEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileMetricsSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
-import pl.detailing.crm.instagram.infrastructure.RapidApiException
-import pl.detailing.crm.instagram.infrastructure.RapidApiInstagramClient
+import pl.detailing.crm.instagram.infrastructure.InstagramProviderException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.*
 
 /**
- * Serwis pobierający i utrwalający szczegóły profilu Instagramowego z /user/details.
+ * Pobiera i utrwala szczegóły profilu (metryki, bio, flagi) – 1 wywołanie API na profil.
  *
  * Odpowiedzialności:
- * - Aktualizacja metryk w InstagramProfileEntity (followerCount, mediaCount, hasContactData itp.)
- * - Tworzenie dziennych snapshotów w InstagramProfileMetricsSnapshotEntity (trend followerów)
- * - Zapis instagramUserId przy pierwszym pobraniu (wymagany do story sync)
- *
- * Wywołania:
- * - [syncAllActiveProfiles] – codzienny scheduler 08:00 (przed story sync o 09:00)
- * - [syncProfile]           – jednorazowo po zatwierdzeniu profilu
+ * - aktualizacja pól w [InstagramProfileEntity] (followerCount, hasContactData itd.),
+ * - dzienny snapshot w [InstagramProfileMetricsSnapshotEntity] (historia obserwujących),
+ * - zapis instagramUserId (wymagany przez providera Looter do pobierania postów).
  */
 @Service
 class InstagramProfileDetailsSyncService(
     private val profileRepository: InstagramProfileRepository,
     private val metricsRepository: InstagramProfileMetricsSnapshotRepository,
-    private val rapidApiClient: RapidApiInstagramClient
+    private val provider: InstagramDataProvider
 ) {
     private val log = LoggerFactory.getLogger(InstagramProfileDetailsSyncService::class.java)
 
-    fun syncAllActiveProfiles() {
-        val activeProfiles = profileRepository.findAllActiveDistinct()
-
-        if (activeProfiles.isEmpty()) {
-            log.info("Instagram details sync: brak aktywnych profili do synchronizacji.")
-            return
-        }
-
-        log.info("Instagram details sync: rozpoczynam dla {} profili.", activeProfiles.size)
-
-        var success = 0
-        var errors = 0
-
-        activeProfiles.forEach { profile ->
-            try {
-                syncProfile(profile)
-                success++
-            } catch (e: Exception) {
-                log.error(
-                    "Instagram details sync: błąd dla @{}: {}",
-                    profile.username, e.message, e
-                )
-                errors++
-            }
-        }
-
-        log.info("Instagram details sync: zakończono. Sukces={}, Błędy={}", success, errors)
-    }
-
+    /** @return true gdy szczegóły zostały pobrane i zapisane. */
     @Transactional
-    fun syncProfile(profile: InstagramProfileEntity) {
+    fun syncProfile(profile: InstagramProfileEntity): Boolean {
         val details = try {
-            rapidApiClient.fetchUserDetails(profile.username)
-        } catch (e: RapidApiException) {
+            provider.fetchUserDetails(profile.username)
+        } catch (e: InstagramProviderException) {
             log.warn(
-                "Instagram details sync: błąd API dla @{} (HTTP {}): {}",
+                "Instagram details sync: błąd dostawcy dla @{} (HTTP {}): {}",
                 profile.username, e.statusCode, e.message
             )
-            return
+            return false
         }
 
         if (details == null) {
-            log.warn("Instagram details sync: @{} – brak danych z /user/details", profile.username)
-            return
+            log.warn("Instagram details sync: @{} – dostawca nie zwrócił danych profilu", profile.username)
+            return false
         }
 
         val now = Instant.now()
@@ -102,10 +70,11 @@ class InstagramProfileDetailsSyncService(
 
         saveMetricsSnapshot(profile.id, details.followerCount, details.followingCount, details.mediaCount, now)
 
-        log.info(
-            "Instagram details sync: @{} – zaktualizowano (followers={}, mediaCount={}, hasContact={})",
-            profile.username, details.followerCount, details.mediaCount, details.hasContactData
+        log.debug(
+            "Instagram details sync: @{} – followers={}, media={}, private={}",
+            profile.username, details.followerCount, details.mediaCount, details.isPrivate
         )
+        return true
     }
 
     private fun saveMetricsSnapshot(

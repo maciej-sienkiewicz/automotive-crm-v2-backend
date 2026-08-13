@@ -16,4 +16,12 @@ interface InstagramProfileMetricsSnapshotRepository : JpaRepository<InstagramPro
     ): List<InstagramProfileMetricsSnapshotEntity>
 
     fun deleteByProfileId(profileId: UUID)
+
+    fun findByProfileIdInAndSnapshotDateAfterOrderBySnapshotDateAsc(
+        profileIds: Collection<UUID>,
+        cutoffDate: LocalDate
+    ): List<InstagramProfileMetricsSnapshotEntity>
+
+    /** Retencja: usuwa snapshoty metryk starsze niż podany próg. Zwraca liczbę usuniętych. */
+    fun deleteBySnapshotDateBefore(cutoffDate: LocalDate): Long
 }

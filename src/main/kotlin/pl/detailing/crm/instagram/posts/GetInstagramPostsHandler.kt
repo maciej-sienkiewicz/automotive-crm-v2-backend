@@ -27,8 +27,8 @@ data class InstagramPostDto(
     val hashtags: List<String>,
     /** Suma lajków i komentarzy */
     val engagementScore: Int,
-    /** URL zdjęcia z image_versions2 (pierwszy kandydat); null dla starych rekordów */
-    val imageUrl: String?
+    /** Link do oryginalnego posta na Instagramie */
+    val permalink: String
 )
 
 data class GetInstagramPostsQuery(
@@ -68,7 +68,7 @@ class GetInstagramPostsHandler(
                 carouselMediaCount = p.carouselMediaCount ?: 0,
                 hashtags = p.hashtags?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
                 engagementScore = p.likeCount + p.commentCount,
-                imageUrl = p.imageUrl
+                permalink = "https://www.instagram.com/p/${p.postCode}/"
             )
         }
     }

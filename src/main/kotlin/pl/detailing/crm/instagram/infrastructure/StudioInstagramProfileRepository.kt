@@ -24,4 +24,15 @@ interface StudioInstagramProfileRepository : JpaRepository<StudioInstagramProfil
     fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<StudioInstagramProfileEntity>
 
     fun existsByStudioIdAndProfileIdAndStatus(studioId: UUID, profileId: UUID, status: InstagramProfileStatus): Boolean
+
+    fun findByStudioIdAndStatus(studioId: UUID, status: InstagramProfileStatus): List<StudioInstagramProfileEntity>
+
+    /** Własny profil studia ("Ty" w benchmarku) – maksymalnie jeden per studio. */
+    fun findByStudioIdAndIsSelfTrue(studioId: UUID): StudioInstagramProfileEntity?
+
+    /** Wszystkie studia z przynajmniej jednym aktywnym profilem – do tygodniowego przebiegu insightów. */
+    @org.springframework.data.jpa.repository.Query(
+        "SELECT DISTINCT sip.studioId FROM StudioInstagramProfileEntity sip WHERE sip.status = :status"
+    )
+    fun findDistinctStudioIdsByStatus(status: InstagramProfileStatus): List<UUID>
 }
