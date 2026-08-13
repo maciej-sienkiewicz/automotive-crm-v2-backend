@@ -27,6 +27,7 @@ services:
       MAIL_USERNAME: ${ENV_MAIL_USERNAME}
       MAIL_PASSWORD: ${ENV_MAIL_PASSWORD}
       MAIL_HOST: ${ENV_MAIL_HOST}
+      RAPIDAPI_KEY: ${ENV_RAPIDAPI_KEY}
     depends_on:
       - redis
     networks:
