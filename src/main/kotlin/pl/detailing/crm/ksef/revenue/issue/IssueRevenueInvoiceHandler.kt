@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
+import pl.detailing.crm.ksef.revenue.domain.PriceMode
 import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
 import pl.detailing.crm.ksef.revenue.domain.RevenueSource
 import pl.detailing.crm.ksef.revenue.domain.VatRate
@@ -26,12 +27,20 @@ import java.util.UUID
 
 // ── Commands ───────────────────────────────────────────────────────────────────
 
+/**
+ * Pozycja faktury — dokładnie jedno z pól [unitPriceNet] / [unitPriceGross] musi być
+ * podane. Kwota wpisana jest źródłem prawdy: przy netto brutto = netto + VAT(netto),
+ * przy brutto netto = brutto − VAT(brutto, wzór art. 106e ust. 7) — wpisana kwota
+ * nigdy nie „przeskakuje" o grosz.
+ */
 data class RevenueInvoiceItemCommand(
     val name: String,
     val unit: String? = "szt.",
     val quantity: BigDecimal = BigDecimal.ONE,
-    /** Cena jednostkowa netto w groszach. */
-    val unitPriceNet: Long,
+    /** Cena jednostkowa netto w groszach (tryb NET). */
+    val unitPriceNet: Long? = null,
+    /** Cena jednostkowa brutto w groszach (tryb GROSS). */
+    val unitPriceGross: Long? = null,
     /** Kod stawki FA(3): 23 | 8 | 5 | 0 | zw. */
     val vatRate: String
 )
@@ -68,6 +77,9 @@ data class IssueRevenueInvoiceCommand(
 private data class ComputedItem(
     val command: RevenueInvoiceItemCommand,
     val rate: VatRate,
+    val priceMode: PriceMode,
+    val unitPriceNet: Long,
+    val unitPriceGross: Long?,
     val netValue: Long,
     val vatValue: Long,
     val grossValue: Long
@@ -159,16 +171,18 @@ class IssueRevenueInvoiceHandler(
 
         val items = computed.mapIndexed { index, item ->
             KsefRevenueInvoiceItemEntity(
-                invoiceId    = invoice.id,
-                lineNumber   = index + 1,
-                name         = item.command.name.trim(),
-                unit         = item.command.unit?.trim()?.ifBlank { null },
-                quantity     = item.command.quantity,
-                unitPriceNet = item.command.unitPriceNet,
-                netValue     = item.netValue,
-                vatValue     = item.vatValue,
-                grossValue   = item.grossValue,
-                vatRate      = item.rate.faCode
+                invoiceId      = invoice.id,
+                lineNumber     = index + 1,
+                name           = item.command.name.trim(),
+                unit           = item.command.unit?.trim()?.ifBlank { null },
+                quantity       = item.command.quantity,
+                unitPriceNet   = item.unitPriceNet,
+                unitPriceGross = item.unitPriceGross,
+                priceMode      = item.priceMode,
+                netValue       = item.netValue,
+                vatValue       = item.vatValue,
+                grossValue     = item.grossValue,
+                vatRate        = item.rate.faCode
             )
         }
 
@@ -196,7 +210,11 @@ class IssueRevenueInvoiceHandler(
         }
         command.items.forEachIndexed { i, item ->
             if (item.name.isBlank()) throw ValidationException("Pozycja ${i + 1}: nazwa jest wymagana")
-            if (item.unitPriceNet < 0) throw ValidationException("Pozycja ${i + 1}: cena nie może być ujemna")
+            if ((item.unitPriceNet == null) == (item.unitPriceGross == null)) {
+                throw ValidationException("Pozycja ${i + 1}: podaj dokładnie jedną cenę — netto albo brutto")
+            }
+            val price = item.unitPriceNet ?: item.unitPriceGross!!
+            if (price < 0) throw ValidationException("Pozycja ${i + 1}: cena nie może być ujemna")
             if (item.quantity <= BigDecimal.ZERO) throw ValidationException("Pozycja ${i + 1}: ilość musi być dodatnia")
             runCatching { VatRate.fromCode(item.vatRate) }
                 .getOrElse { throw ValidationException("Pozycja ${i + 1}: ${it.message}") }
@@ -226,15 +244,36 @@ class IssueRevenueInvoiceHandler(
         }
     }
 
+    /**
+     * Kwota wpisana przez użytkownika (netto lub brutto) jest źródłem prawdy —
+     * druga kwota jest pochodną liczoną jednorazowo, bez przeliczania wstecz.
+     */
     private fun computeItems(items: List<RevenueInvoiceItemCommand>): List<ComputedItem> =
         items.map { item ->
             val rate = VatRate.fromCode(item.vatRate)
-            val netValue = BigDecimal(item.unitPriceNet)
-                .multiply(item.quantity)
-                .setScale(0, RoundingMode.HALF_UP)
-                .toLong()
-            val vatValue = rate.vatFromNet(netValue)
-            ComputedItem(item, rate, netValue, vatValue, netValue + vatValue)
+            val lineOf = { unitPrice: Long ->
+                BigDecimal(unitPrice).multiply(item.quantity).setScale(0, RoundingMode.HALF_UP).toLong()
+            }
+            if (item.unitPriceGross != null) {
+                val grossValue = lineOf(item.unitPriceGross)
+                val vatValue = rate.vatFromGross(grossValue)
+                val netValue = grossValue - vatValue
+                ComputedItem(
+                    command = item, rate = rate, priceMode = PriceMode.GROSS,
+                    unitPriceNet = item.unitPriceGross - rate.vatFromGross(item.unitPriceGross),
+                    unitPriceGross = item.unitPriceGross,
+                    netValue = netValue, vatValue = vatValue, grossValue = grossValue
+                )
+            } else {
+                val netValue = lineOf(item.unitPriceNet!!)
+                val vatValue = rate.vatFromNet(netValue)
+                ComputedItem(
+                    command = item, rate = rate, priceMode = PriceMode.NET,
+                    unitPriceNet = item.unitPriceNet,
+                    unitPriceGross = null,
+                    netValue = netValue, vatValue = vatValue, grossValue = netValue + vatValue
+                )
+            }
         }
 
     /**

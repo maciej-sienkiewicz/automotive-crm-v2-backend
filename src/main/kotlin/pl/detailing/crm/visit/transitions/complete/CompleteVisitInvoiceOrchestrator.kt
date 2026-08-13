@@ -26,11 +26,17 @@ import java.time.LocalDate
 
 // ── Commands ───────────────────────────────────────────────────────────────────
 
+/**
+ * Pozycja faktury — dokładnie jedno z pól [unitPriceNet]/[unitPriceGross].
+ * Kwota wpisana przez użytkownika jest źródłem prawdy (nie jest przeliczana wstecz).
+ */
 data class CompleteInvoiceItem(
     val name: String,
     val quantity: BigDecimal = BigDecimal.ONE,
-    /** Cena jednostkowa netto w groszach. */
-    val unitPriceNet: Long,
+    /** Cena jednostkowa netto w groszach (tryb NET). */
+    val unitPriceNet: Long? = null,
+    /** Cena jednostkowa brutto w groszach (tryb GROSS — VAT wzorem art. 106e ust. 7). */
+    val unitPriceGross: Long? = null,
     /** Kod stawki FA(3): 23 | 8 | 5 | 0 | zw. */
     val vatRate: String = "23"
 )
@@ -104,7 +110,12 @@ class CompleteVisitInvoiceOrchestrator(
         }
         invoice.items.forEachIndexed { i, item ->
             if (item.name.isBlank()) throw ValidationException("Pozycja ${i + 1}: nazwa jest wymagana")
-            if (item.unitPriceNet <= 0) throw ValidationException("Pozycja ${i + 1}: kwota musi być dodatnia")
+            if ((item.unitPriceNet == null) == (item.unitPriceGross == null)) {
+                throw ValidationException("Pozycja ${i + 1}: podaj dokładnie jedną cenę — netto albo brutto")
+            }
+            if ((item.unitPriceNet ?: item.unitPriceGross!!) <= 0) {
+                throw ValidationException("Pozycja ${i + 1}: kwota musi być dodatnia")
+            }
             runCatching { VatRate.fromCode(item.vatRate) }
                 .getOrElse { throw ValidationException("Pozycja ${i + 1}: ${it.message}") }
         }
@@ -216,11 +227,12 @@ class CompleteVisitInvoiceOrchestrator(
                 ),
                 items = invoice.items.map {
                     RevenueInvoiceItemCommand(
-                        name         = it.name.trim(),
-                        unit         = "szt.",
-                        quantity     = it.quantity,
-                        unitPriceNet = it.unitPriceNet,
-                        vatRate      = it.vatRate
+                        name           = it.name.trim(),
+                        unit           = "szt.",
+                        quantity       = it.quantity,
+                        unitPriceNet   = it.unitPriceNet,
+                        unitPriceGross = it.unitPriceGross,
+                        vatRate        = it.vatRate
                     )
                 },
                 saleDate            = LocalDate.now(),
@@ -246,19 +258,35 @@ class CompleteVisitInvoiceOrchestrator(
 
     internal data class InvoiceTotals(val net: Long, val vat: Long, val gross: Long)
 
+    /**
+     * Sumy liczone identycznie jak w module przychodowym KSeF: kwota wpisana
+     * (netto lub brutto) jest źródłem prawdy — brutto wpisane pozostaje dokładne
+     * (VAT „w stu"), netto wpisane pozostaje dokładne (VAT od netto).
+     */
     internal fun computeInvoiceTotals(items: List<CompleteInvoiceItem>): InvoiceTotals {
         var net = 0L
         var vat = 0L
+        var gross = 0L
         items.forEach { item ->
             val rate = VatRate.fromCode(item.vatRate)
-            val lineNet = BigDecimal(item.unitPriceNet)
-                .multiply(item.quantity)
-                .setScale(0, RoundingMode.HALF_UP)
-                .toLong()
-            net += lineNet
-            vat += rate.vatFromNet(lineNet)
+            val lineOf = { unitPrice: Long ->
+                BigDecimal(unitPrice).multiply(item.quantity).setScale(0, RoundingMode.HALF_UP).toLong()
+            }
+            if (item.unitPriceGross != null) {
+                val lineGross = lineOf(item.unitPriceGross)
+                val lineVat = rate.vatFromGross(lineGross)
+                net += lineGross - lineVat
+                vat += lineVat
+                gross += lineGross
+            } else {
+                val lineNet = lineOf(item.unitPriceNet!!)
+                val lineVat = rate.vatFromNet(lineNet)
+                net += lineNet
+                vat += lineVat
+                gross += lineNet + lineVat
+            }
         }
-        return InvoiceTotals(net, vat, net + vat)
+        return InvoiceTotals(net, vat, gross)
     }
 
     /** Mapowanie metody płatności wizyty na formę płatności FA(3). */

@@ -2,6 +2,7 @@ package pl.detailing.crm.ksef.revenue.xml
 
 import org.springframework.stereotype.Component
 import pl.detailing.crm.ksef.domain.PaymentForm
+import pl.detailing.crm.ksef.revenue.domain.PriceMode
 import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
 import pl.detailing.crm.ksef.revenue.domain.VatRate
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceEntity
@@ -248,6 +249,11 @@ class Fa3XmlBuilder {
         w.writeEndElement()
     }
 
+    /**
+     * Pozycja NET: cena/wartość netto (P_9A/P_11) — metoda „od netto".
+     * Pozycja GROSS: cena/wartość brutto (P_9B/P_11A) — metoda „w stu"
+     * (art. 106e ust. 7 ustawy o VAT); brutto dokładnie jak wpisał użytkownik.
+     */
     private fun writeLine(w: XMLStreamWriter, item: KsefRevenueInvoiceItemEntity) {
         w.writeStartElement("FaWiersz")
         el(w, "NrWierszaFa", item.lineNumber.toString())
@@ -255,8 +261,13 @@ class Fa3XmlBuilder {
         el(w, "P_7", item.name)
         item.unit?.takeIf { it.isNotBlank() }?.let { el(w, "P_8A", it) }
         el(w, "P_8B", item.quantity.stripTrailingZeros().toPlainString())
-        el(w, "P_9A", grosz(item.unitPriceNet))
-        el(w, "P_11", grosz(item.netValue))
+        if (item.priceMode == PriceMode.GROSS && item.unitPriceGross != null) {
+            el(w, "P_9B", grosz(item.unitPriceGross))
+            el(w, "P_11A", grosz(item.grossValue))
+        } else {
+            el(w, "P_9A", grosz(item.unitPriceNet))
+            el(w, "P_11", grosz(item.netValue))
+        }
         el(w, "P_12", item.vatRate)
         w.writeEndElement()
     }

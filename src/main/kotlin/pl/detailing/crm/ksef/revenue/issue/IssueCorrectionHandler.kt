@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
+import pl.detailing.crm.ksef.revenue.domain.PriceMode
 import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
 import pl.detailing.crm.ksef.revenue.domain.RevenueSource
 import pl.detailing.crm.ksef.revenue.domain.VatRate
@@ -159,16 +160,18 @@ class IssueCorrectionHandler(
 
         val items = correctionRows.mapIndexed { index, row ->
             KsefRevenueInvoiceItemEntity(
-                invoiceId    = correction.id,
-                lineNumber   = index + 1,
-                name         = row.name,
-                unit         = row.unit,
-                quantity     = row.quantity,
-                unitPriceNet = row.unitPriceNet,
-                netValue     = row.netValue,
-                vatValue     = row.vatValue,
-                grossValue   = row.grossValue,
-                vatRate      = row.vatRate
+                invoiceId      = correction.id,
+                lineNumber     = index + 1,
+                name           = row.name,
+                unit           = row.unit,
+                quantity       = row.quantity,
+                unitPriceNet   = row.unitPriceNet,
+                unitPriceGross = row.unitPriceGross,
+                priceMode      = row.priceMode,
+                netValue       = row.netValue,
+                vatValue       = row.vatValue,
+                grossValue     = row.grossValue,
+                vatRate        = row.vatRate
             )
         }
 
@@ -200,6 +203,8 @@ class IssueCorrectionHandler(
         val unit: String?,
         val quantity: BigDecimal,
         val unitPriceNet: Long,
+        val unitPriceGross: Long? = null,
+        val priceMode: PriceMode = PriceMode.NET,
         val netValue: Long,
         val vatValue: Long,
         val grossValue: Long,
@@ -243,7 +248,10 @@ class IssueCorrectionHandler(
         return originalItems.map { item ->
             CorrectionRow(
                 name = item.name, unit = item.unit, quantity = item.quantity,
-                unitPriceNet = -item.unitPriceNet, netValue = -item.netValue,
+                unitPriceNet = -item.unitPriceNet,
+                unitPriceGross = item.unitPriceGross?.let { -it },
+                priceMode = item.priceMode,
+                netValue = -item.netValue,
                 vatValue = -item.vatValue, grossValue = -item.grossValue, vatRate = item.vatRate
             )
         }
