@@ -3,6 +3,7 @@ package pl.detailing.crm.statistics.reports.infrastructure
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import pl.detailing.crm.statistics.reports.domain.Granularity
+import pl.detailing.crm.statistics.reports.domain.STATS_ZONE_SQL
 import pl.detailing.crm.statistics.reports.domain.StatsDataPoint
 import java.sql.Timestamp
 import java.time.Instant
@@ -70,7 +71,7 @@ class StatsRepository(
             ),
             catalog_stats AS (
                 SELECT
-                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period,
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}') AT TIME ZONE '${STATS_ZONE_SQL}' AS period,
                     COUNT(DISTINCT v.id)                                             AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
                 FROM visit_service_items vsi
@@ -80,12 +81,12 @@ class StatsRepository(
                   AND v.status = 'COMPLETED'
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
-                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC')
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
             ),
             manual_stats AS (
                 -- Manual services (service_id IS NULL) assigned to this category
                 SELECT
-                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period,
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}') AT TIME ZONE '${STATS_ZONE_SQL}' AS period,
                     COUNT(DISTINCT v.id)                                             AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
                 FROM visit_service_items vsi
@@ -102,7 +103,7 @@ class StatsRepository(
                   AND v.status = 'COMPLETED'
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
-                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC')
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
             ),
             combined AS (
                 SELECT * FROM catalog_stats
@@ -172,7 +173,7 @@ class StatsRepository(
                 WHERE s.studio_id = ?
             )
             SELECT
-                date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period,
+                date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}') AT TIME ZONE '${STATS_ZONE_SQL}' AS period,
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             FROM visit_service_items vsi
@@ -182,7 +183,7 @@ class StatsRepository(
               AND v.status = 'COMPLETED'
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC')
+            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
             ORDER BY period ASC
         """.trimIndent()
 
@@ -215,16 +216,17 @@ class StatsRepository(
     ): List<StatsDataPoint> {
         val sql = """
             SELECT
-                date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period,
+                date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}') AT TIME ZONE '${STATS_ZONE_SQL}' AS period,
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
-            FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
+            -- LEFT JOIN so visits with no service items are still counted — see getBreakdownOverview.
+            FROM visits v
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
-            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC')
+            GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
             ORDER BY period ASC
         """.trimIndent()
 
@@ -297,24 +299,32 @@ class StatsRepository(
     ): List<StatsDataPoint> {
         val sql = """
             WITH date_series AS (
-                SELECT generate_series(
-                    date_trunc('${granularity.sqlValue}', ?::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
-                    date_trunc('${granularity.sqlValue}', ?::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
+                -- The series is stepped in LOCAL wall-clock space (plain timestamp) and only
+                -- then converted to timestamptz. Stepping a timestamptz by '1 day' would add a
+                -- fixed 24h and drift by an hour across a DST switch, dropping or duplicating
+                -- a bucket twice a year.
+                SELECT gs AT TIME ZONE '${STATS_ZONE_SQL}' AS period
+                FROM generate_series(
+                    date_trunc('${granularity.sqlValue}', ?::timestamptz AT TIME ZONE '${STATS_ZONE_SQL}'),
+                    date_trunc('${granularity.sqlValue}', ?::timestamptz AT TIME ZONE '${STATS_ZONE_SQL}'),
                     '${granularity.intervalSql}'::interval
-                ) AS period
+                ) AS gs
             ),
             raw_stats AS (
                 SELECT
-                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS period,
+                    date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}') AT TIME ZONE '${STATS_ZONE_SQL}' AS period,
                     COUNT(DISTINCT v.id)                                     AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                 AS total_revenue_gross
-                FROM visit_service_items vsi
-                INNER JOIN visits v ON vsi.visit_id = v.id
+                -- LEFT JOIN, not INNER: a COMPLETED visit with no service items is still a
+                -- visit. Under an INNER JOIN it vanished from the chart while the drill-down
+                -- (which already LEFT JOINs) still listed it, so the two disagreed on orderCount.
+                FROM visits v
+                LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
                 WHERE v.studio_id = ?
                   AND v.status = 'COMPLETED'
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
-                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE 'UTC')
+                GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
             )
             SELECT
                 ds.period,

@@ -9,12 +9,12 @@ import pl.detailing.crm.shared.ServiceCategoryId
 import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.statistics.reports.domain.Granularity
+import pl.detailing.crm.statistics.reports.domain.STATS_ZONE
 import pl.detailing.crm.statistics.reports.domain.StatsDataPoint
 import pl.detailing.crm.statistics.reports.infrastructure.StatsRepository
 import pl.detailing.crm.statistics.reports.query.*
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
 
@@ -444,13 +444,13 @@ class StatsController(
 
     private fun parseDateRange(startDateStr: String, endDateStr: String): Pair<Instant, Instant> {
         val start = try {
-            LocalDate.parse(startDateStr).atStartOfDay(ZoneOffset.UTC).toInstant()
+            LocalDate.parse(startDateStr).atStartOfDay(STATS_ZONE).toInstant()
         } catch (e: Exception) {
             throw ValidationException("Nieprawidłowy format daty startDate. Oczekiwano YYYY-MM-DD, otrzymano: $startDateStr")
         }
         val end = try {
             // endDate is inclusive for the user, so we advance to start of next day
-            LocalDate.parse(endDateStr).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            LocalDate.parse(endDateStr).plusDays(1).atStartOfDay(STATS_ZONE).toInstant()
         } catch (e: Exception) {
             throw ValidationException("Nieprawidłowy format daty endDate. Oczekiwano YYYY-MM-DD, otrzymano: $endDateStr")
         }

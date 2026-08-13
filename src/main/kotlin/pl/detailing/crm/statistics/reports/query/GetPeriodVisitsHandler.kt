@@ -9,12 +9,12 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryRepository
 import pl.detailing.crm.statistics.reports.domain.Granularity
+import pl.detailing.crm.statistics.reports.domain.STATS_ZONE
 import pl.detailing.crm.statistics.reports.infrastructure.PeriodVisitRow
 import pl.detailing.crm.statistics.reports.infrastructure.StatsRepository
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.temporal.WeekFields
@@ -146,7 +146,7 @@ class GetPeriodVisitsHandler(
         val first = rows.first()
 
         val visitDate = first.actualCompletionDate
-            .atZone(ZoneOffset.UTC)
+            .atZone(STATS_ZONE)
             .format(polishDateFormatter)
 
         val clientName = when {
@@ -223,8 +223,8 @@ class GetPeriodVisitsHandler(
         } catch (e: DateTimeParseException) {
             throw ValidationException("Okres '$period' nie jest prawidłowym okresem DAILY (oczekiwano YYYY-MM-DD)")
         }
-        val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
-        return start to date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val start = date.atStartOfDay(STATS_ZONE).toInstant()
+        return start to date.plusDays(1).atStartOfDay(STATS_ZONE).toInstant()
     }
 
     private fun parseWeeklyPeriod(period: String): Pair<Instant, Instant> {
@@ -236,15 +236,15 @@ class GetPeriodVisitsHandler(
             throw ValidationException("Okres '$period' nie jest prawidłowym okresem WEEKLY (tydzień musi być 01-53)")
         }
         val monday = try {
-            LocalDate.now()
+            LocalDate.now(STATS_ZONE)
                 .with(WeekFields.ISO.weekBasedYear(), year.toLong())
                 .with(WeekFields.ISO.weekOfWeekBasedYear(), week.toLong())
                 .with(DayOfWeek.MONDAY)
         } catch (e: Exception) {
             throw ValidationException("Okres '$period' nie jest prawidłowym okresem WEEKLY")
         }
-        val start = monday.atStartOfDay(ZoneOffset.UTC).toInstant()
-        return start to monday.plusWeeks(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val start = monday.atStartOfDay(STATS_ZONE).toInstant()
+        return start to monday.plusWeeks(1).atStartOfDay(STATS_ZONE).toInstant()
     }
 
     private fun parseMonthlyPeriod(period: String): Pair<Instant, Instant> {
@@ -256,8 +256,8 @@ class GetPeriodVisitsHandler(
             throw ValidationException("Okres '$period' nie jest prawidłowym okresem MONTHLY (miesiąc musi być 01-12)")
         }
         val date = LocalDate.of(year, month, 1)
-        val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
-        return start to date.plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val start = date.atStartOfDay(STATS_ZONE).toInstant()
+        return start to date.plusMonths(1).atStartOfDay(STATS_ZONE).toInstant()
     }
 
     private fun parseQuarterlyPeriod(period: String): Pair<Instant, Instant> {
@@ -267,8 +267,8 @@ class GetPeriodVisitsHandler(
         val quarter = match.groupValues[2].toInt()
         val startMonth = (quarter - 1) * 3 + 1
         val date = LocalDate.of(year, startMonth, 1)
-        val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
-        return start to date.plusMonths(3).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val start = date.atStartOfDay(STATS_ZONE).toInstant()
+        return start to date.plusMonths(3).atStartOfDay(STATS_ZONE).toInstant()
     }
 
     private fun parseYearlyPeriod(period: String): Pair<Instant, Instant> {
@@ -277,7 +277,7 @@ class GetPeriodVisitsHandler(
         }
         val year = period.toInt()
         val date = LocalDate.of(year, 1, 1)
-        val start = date.atStartOfDay(ZoneOffset.UTC).toInstant()
-        return start to date.plusYears(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+        val start = date.atStartOfDay(STATS_ZONE).toInstant()
+        return start to date.plusYears(1).atStartOfDay(STATS_ZONE).toInstant()
     }
 }
