@@ -211,6 +211,71 @@ produktowo. Decyzja:
 - Intensywność publikacji mierzymy postami + Reels (`total_clips_count` już mamy).
 - Jeśli kiedyś wróci potrzeba — wyłącznie jako dzienny licznik agregowany, nigdy treść. Nie w tym wydaniu.
 
+### 4.4 Weryfikacja wykonalności: Instagram Looter API (RapidAPI) jako provider
+
+Zweryfikowano pełną dokumentację **Instagram Looter** (`instagram-looter2.p.rapidapi.com`) —
+kandydata na implementację `RapidApiProvider` (obok / zamiast obecnego `ig-scraper5`).
+Wniosek: **pokrywa 100% metryk z §5.1 i wszystkie detektory z §6.2**, których nie
+zarezerwowaliśmy dla oficjalnego Graph API, plus odblokowuje funkcje, których obecne
+źródło nie ma.
+
+#### Mapowanie katalogu §5.1 na endpointy
+
+| Pozycja z §5.1 / §6.2 | Endpoint(y) Looter | Status |
+|---|---|---|
+| ER% (lajki+komentarze / followers) | `/user-feeds` (`like_count`, `comment_count`) + `/profile2` (`follower_count`) | ✅ (uwaga: pole `like_and_view_counts_disabled` — obsłużyć ukryte lajki jako `null`, to też sygnał do §6.2.1) |
+| Wzrost obserwujących (historia dzienna) | `/profile2` raz dziennie — historię budujemy sami, jak dziś | ✅ |
+| Mix i skuteczność formatów | `/user-feeds` `media_type` (1=foto, 2=wideo, 8=karuzela) + `/reels` do oznaczenia, które wideo to Reels | ✅ |
+| Liczba wyświetleń wideo | `/reels` `play_count` (Reels); dla zwykłych postów wideo — do weryfikacji w polach nieudokumentowanych | ⚠️ Reels tak, zwykłe wideo do potwierdzenia |
+| Kadencja, regularność, heatmapa | `/user-feeds` `taken_at` | ✅ |
+| Tematy treści, detektor promocji/konkursów | `/user-feeds` `caption.text` → nasz pipeline LLM (§6.2.2) | ✅ |
+| Posty viralowe | liczniki z `/user-feeds` | ✅ |
+| Hashtag intelligence | captiony (jak dziś) + **bonus**: `/search?select=hashtags` daje `media_count` tagu (popularność globalna), `/tag-feeds` daje feed tagu bez limitu 30/7 dni z Graph API | ✅ szerzej niż zakładano |
+| Share of voice, indeks aktywności | pochodne z powyższych | ✅ |
+| Wskaźnik witryny cyfrowej | `/profile` V1: `bio_links[]`, `business_email`, `business_category_name`, `highlight_reel_count`; `/profile2`: `category`, `account_type`, `is_business`, `external_url` | ✅ (publiczny telefon — zweryfikować w polach nieudokumentowanych V1) |
+| Benchmark "Ty" (wariant publiczny, bez OAuth) | te same endpointy na własnym username | ✅ |
+| Benchmark "Ty" (zasięg, zapisy, demografia) | — | ❌ wyłącznie oficjalne Graph API (faza 5, bez zmian) |
+| `ADS_RUNNING` (twarde potwierdzenie reklam) | — (pole `is_ad` w `/post` dotyczy postów sponsorowanych w feedzie, nie wykryje boostingu) | ❌ nadal Meta Ad Library (§6.2.1) |
+| Stories | brak endpointu stories w Looter | ✅ zgodne z decyzją §4.3 (nie ma czego przypadkiem użyć) |
+| `permalink` do oEmbed | `shortcode` z feedów → `instagram.com/p/{shortcode}` | ✅ |
+
+Implementacyjnie: identyfikacja po `user_id` (jednorazowe `/id?username=` przy dodaniu profilu —
+mamy już kolumnę `instagram_user_id`), paginacja `max_id`/`next_max_id` na `/user-feeds`
+(analogicznie do obecnego `after_cursor`), parametr **`fields=` na każdym endpoincie** —
+używać obowiązkowo: mniejsze payloady i **techniczna realizacja minimalizacji danych z §4.2**
+(nie pobieramy pól, których nie przetwarzamy). Uwaga zgodna z naszą zasadą: dokumentacja wprost
+ostrzega, że URL-e CDN wygasają — potwierdza słuszność rezygnacji z przechowywania mediów.
+Endpointu `/post-dl` (pobieranie mediów) **nie używamy** — §4.2.
+
+#### Nowe możliwości, których nie było w planie (kandydaci do backlogu)
+
+1. **Odkrywanie konkurencji (cold start!):** `/search?select=users&query=detailing {miasto}`,
+   `/related-profiles` po dodaniu pierwszego konkurenta oraz drill-down lokalizacyjny
+   (`/search?select=places` → `/location-feeds`) — onboarding może **podpowiadać profile do
+   obserwowania** zamiast wymagać od użytkownika znajomości konkurencji z głowy. Wysoka wartość,
+   niski koszt — rekomendacja: dodać do fazy 4/5 jako "Sugerowane profile".
+2. **Wzmianki o własnym studiu:** `/user-tags` (posty, w których oznaczono konto) — monitoring
+   UGC/social proof własnego studia bez Graph API. Uwaga RODO: to treści klientów (osób
+   prywatnych) — tylko linkujemy (`shortcode`), nie przechowujemy treści.
+3. **Popularność hasztagów** (`media_count` z `/search?select=hashtags`) — ranking tagów
+   lokalnych/branżowych z realną skalą, zasila generator AI.
+
+#### Koszty i limity (plany RapidAPI)
+
+Szacunek zużycia per obserwowany profil / miesiąc: details dziennie (30) + posty tygodniowo
+(~2–3 strony × 4 = ~12) + Reels tygodniowo (4) ≈ **~46 req**; z codziennym lekkim odczytem
+pierwszej strony postów pod alerty promocyjne (§6.2.3, +30) ≈ **~76 req**.
+
+| Plan | Koszt | Req/mies. | Pojemność (sync tygodniowy) | Pojemność (z dziennym promo-checkiem) |
+|---|---|---|---|---|
+| Pro | $9.90 | 15 000 | ~320 profili | ~195 profili |
+| Ultra | $27.90 | 75 000 | ~1 600 profili | ~980 profili |
+
+Rate limit 10 req/s (Pro) czyni **codzienny lekki sync realnym kosztowo** — świeżość alertu
+`PROMO_DETECTED` można poprawić z ~8 dni do ~24 h wcześniej, niż zakładała decyzja §8 pkt 7
+(nadal do decyzji, ale bariera kosztowa jest niska). Budżet wywołań i licznik Micrometer
+z fazy 0 pozostają obowiązkowe.
+
 ---
 
 ## 5. Nowe metryki i funkcje (wartość dla właściciela studia)
