@@ -238,6 +238,31 @@ class Fa3XmlBuilderTest {
     }
 
     @Test
+    fun `pozycja wpisana brutto emituje P_9B i P_11A (metoda w stu)`() {
+        val grossItem = KsefRevenueInvoiceItemEntity(
+            invoiceId = UUID.randomUUID(),
+            lineNumber = 1,
+            name = "Detailing kompletny",
+            quantity = BigDecimal.ONE,
+            unitPriceNet = 40_650,
+            unitPriceGross = 50_000,
+            priceMode = pl.detailing.crm.ksef.revenue.domain.PriceMode.GROSS,
+            netValue = 40_650,
+            vatValue = 9_350,
+            grossValue = 50_000,
+            vatRate = "23"
+        )
+        val doc = parse(builder.build(invoice(totalGross = 50_000), listOf(grossItem)))
+
+        assertEquals("500.00", doc.text("P_9B"))
+        assertEquals("500.00", doc.text("P_11A"))
+        assertNull(doc.single("P_9A"))
+        assertNull(doc.single("P_11"))
+        assertEquals("406.50", doc.text("P_13_1"))
+        assertEquals("93.50", doc.text("P_14_1"))
+    }
+
+    @Test
     fun `znaki specjalne w nazwach sa poprawnie escapowane`() {
         val tricky = item(name = "Powłoka <ceramiczna> & \"wosk\"")
         val doc = parse(builder.build(invoice(), listOf(tricky)))

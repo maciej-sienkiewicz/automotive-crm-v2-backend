@@ -75,11 +75,12 @@ class KsefRevenueController(
                 ),
                 items = req.items.map {
                     RevenueInvoiceItemCommand(
-                        name         = it.name,
-                        unit         = it.unit ?: "szt.",
-                        quantity     = it.quantity ?: BigDecimal.ONE,
-                        unitPriceNet = it.unitPriceNet,
-                        vatRate      = it.vatRate
+                        name           = it.name,
+                        unit           = it.unit ?: "szt.",
+                        quantity       = it.quantity ?: BigDecimal.ONE,
+                        unitPriceNet   = it.unitPriceNet,
+                        unitPriceGross = it.unitPriceGross,
+                        vatRate        = it.vatRate
                     )
                 },
                 issueDate           = req.issueDate ?: LocalDate.now(),
@@ -116,7 +117,8 @@ class KsefRevenueController(
                         name         = it.name,
                         unit         = it.unit ?: "szt.",
                         quantity     = it.quantity ?: BigDecimal.ONE,
-                        unitPriceNet = it.unitPriceNet,
+                        unitPriceNet = it.unitPriceNet
+                            ?: throw ValidationException("Pozycje korekty różnicowej podaje się w kwotach netto"),
                         vatRate      = it.vatRate
                     )
                 },
@@ -446,8 +448,10 @@ data class IssueInvoiceItemRequest(
     val name: String,
     val unit: String? = null,
     val quantity: BigDecimal? = null,
-    /** Cena jednostkowa netto w groszach. */
-    val unitPriceNet: Long,
+    /** Cena jednostkowa netto w groszach — dokładnie jedno z pól netto/brutto. */
+    val unitPriceNet: Long? = null,
+    /** Cena jednostkowa brutto w groszach (VAT „w stu", brutto dokładnie jak wpisane). */
+    val unitPriceGross: Long? = null,
     /** 23 | 8 | 5 | 0 | zw */
     val vatRate: String
 )
