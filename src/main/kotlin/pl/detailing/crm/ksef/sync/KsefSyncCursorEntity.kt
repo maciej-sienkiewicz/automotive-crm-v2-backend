@@ -30,6 +30,10 @@ class KsefSyncCursorEntity(
     @Column(name = "last_expense_sync")
     val lastExpenseSync: OffsetDateTime? = null,
 
+    /** Znacznik ostatniego udanego pullu faktur sprzedażowych (SUBJECT1). */
+    @Column(name = "last_revenue_sync")
+    val lastRevenueSync: OffsetDateTime? = null,
+
     @Column(name = "sync_status", nullable = false, length = 20)
     val syncStatus: String = "IDLE",
 
@@ -43,6 +47,7 @@ class KsefSyncCursorEntity(
 
     fun toSuccess(syncedAt: OffsetDateTime) = copy(
         lastExpenseSync = syncedAt,
+        lastRevenueSync = syncedAt,
         syncStatus = "IDLE",
         lastError = null,
         updatedAt = OffsetDateTime.now()
@@ -65,8 +70,9 @@ class KsefSyncCursorEntity(
 
     private fun copy(
         lastExpenseSync: OffsetDateTime? = this.lastExpenseSync,
+        lastRevenueSync: OffsetDateTime? = this.lastRevenueSync,
         syncStatus: String = this.syncStatus,
         lastError: String? = this.lastError,
         updatedAt: OffsetDateTime = this.updatedAt
-    ) = KsefSyncCursorEntity(studioId, lastExpenseSync, syncStatus, lastError, updatedAt)
+    ) = KsefSyncCursorEntity(studioId, lastExpenseSync, lastRevenueSync, syncStatus, lastError, updatedAt)
 }

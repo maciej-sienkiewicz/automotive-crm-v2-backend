@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
 import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
+import pl.detailing.crm.ksef.revenue.sync.FetchRevenueCommand
+import pl.detailing.crm.ksef.revenue.sync.FetchRevenueInvoicesHandler
 import pl.detailing.crm.shared.StudioId
 import java.time.Duration
 import java.time.OffsetDateTime
@@ -23,6 +25,7 @@ import java.time.ZoneOffset
 @Service
 class KsefSyncService(
     private val fetchHandler: FetchKsefInvoicesHandler,
+    private val revenueFetchHandler: FetchRevenueInvoicesHandler,
     private val cursorRepository: KsefSyncCursorRepository,
     private val credentialsRepository: KsefCredentialsRepository
 ) {
@@ -78,10 +81,23 @@ class KsefSyncService(
             // przed wprowadzeniem tych danych — niezależnie od okna dat delta-syncu
             val backfilled = fetchHandler.backfillMissingDetails(studioId)
 
+            // Pull przychodów (SUBJECT1): kompletność statystyk przychodowych także dla
+            // faktur wystawionych poza CRM + detekcja podwójnego fakturowania
+            val revenueFrom = cursor.lastRevenueSync
+                ?.minusHours(OVERLAP_HOURS)
+                ?.let { if (it.isBefore(integrationStart)) integrationStart else it }
+                ?: integrationStart
+            log.info("KSeF sync studio={} REVENUE from={}", studioId, revenueFrom)
+            val revenueResult = revenueFetchHandler.handle(
+                FetchRevenueCommand(studioId = studioId, dateFrom = revenueFrom, dateTo = now, pageSize = PAGE_SIZE)
+            )
+
             cursorRepository.save(cursor.toSuccess(now))
             log.info(
-                "KSeF sync done studio={} fetched={} skipped={} backfilled={}",
-                studioId, result.fetched, result.skipped, backfilled
+                "KSeF sync done studio={} expenses: fetched={} skipped={} backfilled={} | " +
+                    "revenue: external={} matched={} duplicatesSuspected={}",
+                studioId, result.fetched, result.skipped, backfilled,
+                revenueResult.fetched, revenueResult.matched, revenueResult.duplicatesSuspected
             )
         } catch (e: Exception) {
             log.error("KSeF sync FAILED studio={}: {}", studioId, e.message, e)
