@@ -4,6 +4,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.analytics.InsightEngine
 import pl.detailing.crm.instagram.analytics.InstagramAggregationService
+import pl.detailing.crm.instagram.analytics.ReportService
+import pl.detailing.crm.instagram.analytics.SuggestionService
 import pl.detailing.crm.instagram.analytics.TopicClassificationService
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
@@ -25,7 +27,9 @@ class InstagramSyncOrchestrator(
     private val postsSyncService: InstagramSyncService,
     private val topicService: TopicClassificationService,
     private val aggregationService: InstagramAggregationService,
-    private val insightEngine: InsightEngine
+    private val insightEngine: InsightEngine,
+    private val suggestionService: SuggestionService,
+    private val reportService: ReportService
 ) {
     private val log = LoggerFactory.getLogger(InstagramSyncOrchestrator::class.java)
 
@@ -45,6 +49,9 @@ class InstagramSyncOrchestrator(
             postsSyncService.syncProfilePosts(profile, InstagramSyncService.SyncDepth.DEEP)
             postProcess(profile)
         }.onFailure { log.error("Instagram sync: błąd postów @{}: {}", profile.username, it.message, it) }
+
+        // Sugestie podobnych profili – 1 wywołanie API, cache 30 dni
+        suggestionService.refreshForProfile(profile)
 
         // Świeżo zatwierdzony profil od razu zasila wnioski (krótszy time-to-value)
         runCatching { insightEngine.runDailyForAllStudios() }
@@ -89,6 +96,7 @@ class InstagramSyncOrchestrator(
                     postsSyncService.syncProfilePosts(profile, InstagramSyncService.SyncDepth.DEEP)
                 }
                 postProcess(profile)
+                suggestionService.refreshForProfile(profile) // no-op gdy cache świeższy niż 30 dni
             } catch (e: Exception) {
                 errors++
                 log.error("Instagram weekly sync: błąd dla @{}: {}", profile.username, e.message, e)
@@ -96,6 +104,8 @@ class InstagramSyncOrchestrator(
         }
 
         insightEngine.runWeeklyForAllStudios()
+        runCatching { reportService.generateForAllStudios() }
+            .onFailure { log.error("Instagram weekly sync: błąd generowania raportów: {}", it.message, it) }
         log.info("Instagram weekly sync: zakończono ({} błędów)", errors)
     }
 

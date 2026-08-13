@@ -32,7 +32,21 @@ interface InstagramDataProvider {
      * @throws InstagramProviderException przy błędzie HTTP lub przekroczeniu budżetu wywołań
      */
     fun fetchPostsPage(username: String, instagramUserId: String?, cursor: String?): InstagramPostsPage
+
+    /**
+     * Konta podobne do podanego profilu (wg algorytmu Instagrama) – zasilają sekcję
+     * "Zaobserwuj podobne profile". Zdolność opcjonalna: dostawcy bez tego endpointu
+     * zwracają pustą listę.
+     */
+    fun fetchRelatedProfiles(username: String, instagramUserId: String?): List<RawRelatedProfile> = emptyList()
 }
+
+data class RawRelatedProfile(
+    val username: String,
+    val fullName: String?,
+    val isPrivate: Boolean,
+    val isVerified: Boolean
+)
 
 data class InstagramPostsPage(
     val posts: List<RawInstagramPost>,

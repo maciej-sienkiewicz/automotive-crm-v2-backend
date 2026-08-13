@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.instagram.infrastructure.InstagramInsightRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileMetricsSnapshotRepository
+import pl.detailing.crm.instagram.infrastructure.InstagramProfileSuggestionRepository
+import pl.detailing.crm.instagram.infrastructure.InstagramReportRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -25,6 +27,8 @@ class InstagramRetentionJob(
     private val postRepository: InstagramPostSnapshotRepository,
     private val metricsRepository: InstagramProfileMetricsSnapshotRepository,
     private val insightRepository: InstagramInsightRepository,
+    private val suggestionRepository: InstagramProfileSuggestionRepository,
+    private val reportRepository: InstagramReportRepository,
     @Value("\${instagram.retention.enabled:true}") private val enabled: Boolean,
     @Value("\${instagram.retention.months:24}") private val retentionMonths: Long
 ) {
@@ -42,6 +46,8 @@ class InstagramRetentionJob(
         val posts = postRepository.deleteByTakenAtBefore(cutoffInstant)
         val metrics = metricsRepository.deleteBySnapshotDateBefore(cutoffDate)
         val insights = insightRepository.deleteByCreatedAtBefore(insightCutoff)
+        suggestionRepository.deleteByFetchedAtBefore(Instant.now().minus(90, ChronoUnit.DAYS))
+        reportRepository.deleteByCreatedAtBefore(Instant.now().minus(400, ChronoUnit.DAYS))
 
         log.info(
             "Instagram retencja: usunięto {} postów, {} snapshotów metryk, {} insightów (próg {} mies.)",

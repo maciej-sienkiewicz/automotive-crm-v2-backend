@@ -16,7 +16,9 @@ import java.util.*
 @RestController
 @RequestMapping("/api/v1/instagram")
 class InstagramAnalyticsController(
-    private val readService: InstagramAnalyticsReadService
+    private val readService: InstagramAnalyticsReadService,
+    private val suggestionService: SuggestionService,
+    private val reportService: ReportService
 ) {
 
     @GetMapping("/overview")
@@ -85,6 +87,34 @@ class InstagramAnalyticsController(
     ): ResponseEntity<InsightsListResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         ResponseEntity.ok(readService.listInsights(principal.studioId, status?.takeIf { it.isNotBlank() }, limit))
+    }
+
+    /** Sugestie "Zaobserwuj podobne profile" z cache related-profiles. */
+    @GetMapping("/suggestions")
+    fun suggestions(): ResponseEntity<Map<String, List<ProfileSuggestionDto>>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(mapOf("suggestions" to suggestionService.suggestionsForStudio(principal.studioId)))
+    }
+
+    /** Raport za ostatni zamknięty tydzień (generowany leniwie przy pierwszym odczycie). */
+    @GetMapping("/reports/latest")
+    fun latestReport(): ResponseEntity<Map<String, ReportDto?>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(mapOf("report" to reportService.latest(principal.studioId)))
+    }
+
+    @GetMapping("/reports")
+    fun listReports(
+        @RequestParam(defaultValue = "12") limit: Int
+    ): ResponseEntity<Map<String, List<ReportBriefDto>>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(mapOf("reports" to reportService.list(principal.studioId, limit)))
+    }
+
+    @GetMapping("/reports/{id}")
+    fun reportById(@PathVariable id: String): ResponseEntity<Map<String, ReportDto?>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(mapOf("report" to reportService.byId(principal.studioId, UUID.fromString(id))))
     }
 
     @PostMapping("/insights/{id}/dismiss")

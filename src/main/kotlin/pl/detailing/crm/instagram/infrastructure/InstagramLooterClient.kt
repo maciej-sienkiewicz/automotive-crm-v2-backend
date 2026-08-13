@@ -126,6 +126,33 @@ class InstagramLooterClient(
         )
     }
 
+    override fun fetchRelatedProfiles(username: String, instagramUserId: String?): List<RawRelatedProfile> {
+        val userId = instagramUserId ?: return emptyList()
+
+        val body = get(
+            endpoint = "/related-profiles",
+            username = username,
+            url = "https://$apiHost/related-profiles?id=${encode(userId)}" +
+                "&fields=${encode("data.user.edge_related_profiles.edges[].node")}"
+        )
+
+        val edges = unwrap(body)
+            .path("data").path("user").path("edge_related_profiles").path("edges")
+
+        if (!edges.isArray) return emptyList()
+
+        return edges.mapNotNull { edge ->
+            val node = edge.path("node")
+            val relatedUsername = node.path("username").textOrNull() ?: return@mapNotNull null
+            RawRelatedProfile(
+                username = relatedUsername.lowercase(),
+                fullName = node.path("full_name").textOrNull()?.takeIf { it.isNotBlank() },
+                isPrivate = node.path("is_private").asBoolean(false),
+                isVerified = node.path("is_verified").asBoolean(false)
+            )
+        }
+    }
+
     // ── prywatne ──────────────────────────────────────────────────────────────
 
     private fun mapPost(item: JsonNode): RawInstagramPost? {
