@@ -129,9 +129,9 @@ class CompleteVisitHandler(
                 documentType      = command.documentType,
                 direction         = DocumentDirection.INCOME,
                 paymentMethod     = command.paymentMethod,
-                totalNet          = visit.calculateTotalNet().amountInCents,
-                totalVat          = visit.calculateTotalVat().amountInCents,
-                totalGross        = visit.calculateTotalGross().amountInCents,
+                totalNet          = command.documentTotalsOverride?.net ?: visit.calculateTotalNet().amountInCents,
+                totalVat          = command.documentTotalsOverride?.vat ?: visit.calculateTotalVat().amountInCents,
+                totalGross        = command.documentTotalsOverride?.gross ?: visit.calculateTotalGross().amountInCents,
                 currency          = "PLN",
                 issueDate         = LocalDate.now(),
                 dueDate           = command.dueDate ?: LocalDate.now().plusDays(14),
@@ -189,8 +189,18 @@ data class CompleteVisitCommand(
     val documentType: DocumentType = DocumentType.RECEIPT,
 
     /** Payment due date – mandatory when [paymentMethod] == [PaymentMethod.TRANSFER]. */
-    val dueDate: LocalDate? = null
+    val dueDate: LocalDate? = null,
+
+    /**
+     * Kwoty dokumentu finansowego inne niż suma usług wizyty — używane, gdy faktura
+     * pokrywa tylko część kwoty wizyty (reszta jest dokumentowana osobnym dokumentem
+     * przez [CompleteVisitInvoiceOrchestrator]). Null → kwoty liczone z usług wizyty.
+     */
+    val documentTotalsOverride: DocumentTotals? = null
 )
+
+/** Kwoty dokumentu w groszach; niezmiennik net + vat == gross. */
+data class DocumentTotals(val net: Long, val vat: Long, val gross: Long)
 
 data class CompleteVisitResult(
     val visitId: VisitId,
