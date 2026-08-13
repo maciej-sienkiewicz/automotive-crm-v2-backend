@@ -33,6 +33,18 @@ class InstagramAnalyticsReadService(
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
         const val DEFAULT_WEEKS = 12
+
+        /**
+         * Minimalna liczba INNYCH profili, żeby mediana grupy była wiarygodna.
+         * Poniżej progu benchmark = null i UI pokazuje tylko delty + CTA.
+         */
+        const val MIN_COMPARISON_GROUP = 3
+    }
+
+    /** Mediana wartości pozostałych profili (leave-one-out); null poniżej progu wiarygodności. */
+    private fun groupMedian(values: List<Double?>): Double? {
+        val present = values.filterNotNull()
+        return if (present.size >= MIN_COMPARISON_GROUP) MetricsCalculator.median(present) else null
     }
 
     // ── Wspólny kontekst koszyka ──────────────────────────────────────────────
@@ -161,9 +173,12 @@ class InstagramAnalyticsReadService(
         )
         val self = ranked.firstOrNull { it.link.isSelf }
 
-        val erMedian = MetricsCalculator.median(metrics.mapNotNull { it.erPct })
-        val ppwMedian = MetricsCalculator.median(metrics.mapNotNull { it.postsPerWeek })
-        val aiMedian = MetricsCalculator.median(metrics.map { it.activityIndex.toDouble() })
+        // Benchmark liczony wyłącznie z konkurencji (leave-one-out) i tylko przy
+        // wystarczającej grupie porównawczej – patrz MIN_COMPARISON_GROUP
+        val competitors = metrics.filter { !it.link.isSelf }
+        val erMedian = groupMedian(competitors.map { it.erPct })
+        val ppwMedian = groupMedian(competitors.map { it.postsPerWeek })
+        val aiMedian = groupMedian(competitors.map { it.activityIndex.toDouble() })
 
         val subject = self
         val erTriple = if (subject != null) triple(subject.erPct, subject.prevErPct, erMedian)
@@ -185,6 +200,7 @@ class InstagramAnalyticsReadService(
 
         return OverviewResponse(
             weeks = weeks,
+            comparisonGroupSize = metrics.size,
             lastSyncAt = basket.profiles.values.mapNotNull { it.detailsLastSyncedAt }.maxOrNull(),
             profilesCount = basket.links.size,
             hasSelf = self != null,
@@ -218,15 +234,12 @@ class InstagramAnalyticsReadService(
         val basket = loadBasket(studioId)
         val metrics = computeWindowMetrics(basket, weeks)
 
-        val erMedian = MetricsCalculator.median(metrics.mapNotNull { it.erPct })
-        val ppwMedian = MetricsCalculator.median(metrics.mapNotNull { it.postsPerWeek })
-        val followersMedian = MetricsCalculator.median(metrics.mapNotNull { it.followers })
-        val aiMedian = MetricsCalculator.median(metrics.map { it.activityIndex.toDouble() })
-
         val rows = metrics
             .sortedWith(compareByDescending<ProfileWindowMetrics> { it.link.isSelf }
                 .thenByDescending { it.activityIndex })
             .map { m ->
+                // Leave-one-out: profil nigdy nie wchodzi do własnego benchmarku
+                val others = metrics.filter { it.link.id != m.link.id }
                 val storefront = MetricsCalculator.storefrontScore(m.profile, approxLastPost(m.lastActiveWeek))
                 BenchmarkRowDto(
                     studioProfileId = m.link.id.toString(),
@@ -234,12 +247,16 @@ class InstagramAnalyticsReadService(
                     username = m.profile.username,
                     isSelf = m.link.isSelf,
                     apiError = m.profile.apiError,
-                    followers = triple(m.followers, m.prevFollowers, followersMedian),
-                    erPct = triple(m.erPct, m.prevErPct, erMedian),
-                    postsPerWeek = triple(m.postsPerWeek, m.prevPostsPerWeek, ppwMedian),
+                    followers = triple(m.followers, m.prevFollowers, groupMedian(others.map { it.followers })),
+                    erPct = triple(m.erPct, m.prevErPct, groupMedian(others.map { it.erPct })),
+                    postsPerWeek = triple(m.postsPerWeek, m.prevPostsPerWeek, groupMedian(others.map { it.postsPerWeek })),
                     regularityPct = m.regularityPct,
                     formatMix = m.formatMix,
-                    activityIndex = triple(m.activityIndex.toDouble(), m.prevActivityIndex.toDouble(), aiMedian),
+                    activityIndex = triple(
+                        m.activityIndex.toDouble(),
+                        m.prevActivityIndex.toDouble(),
+                        groupMedian(others.map { it.activityIndex.toDouble() })
+                    ),
                     storefront = StorefrontDto(storefront.score, storefront.gaps.map { it.label })
                 )
             }
@@ -295,7 +312,7 @@ class InstagramAnalyticsReadService(
                 )
             }
 
-        return BenchmarkResponse(weeks, rows, weekly, followers, annotations)
+        return BenchmarkResponse(weeks, metrics.size, rows, weekly, followers, annotations)
     }
 
     // ── Treści ────────────────────────────────────────────────────────────────

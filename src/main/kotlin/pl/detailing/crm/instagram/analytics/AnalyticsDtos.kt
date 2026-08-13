@@ -53,6 +53,8 @@ data class MiniRankRowDto(
 
 data class OverviewResponse(
     val weeks: Int,
+    /** Liczebność obserwowanej grupy – porównania dotyczą wyłącznie tej grupy. */
+    val comparisonGroupSize: Int,
     val lastSyncAt: Instant?,
     val profilesCount: Int,
     val hasSelf: Boolean,
@@ -117,6 +119,8 @@ data class ChartAnnotationDto(
 
 data class BenchmarkResponse(
     val weeks: Int,
+    /** Liczebność obserwowanej grupy – porównania dotyczą wyłącznie tej grupy. */
+    val comparisonGroupSize: Int,
     val rows: List<BenchmarkRowDto>,
     val weekly: List<WeeklyChartPointDto>,
     val followers: List<FollowerSeriesDto>,

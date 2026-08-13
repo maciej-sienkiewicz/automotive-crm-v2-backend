@@ -8,6 +8,7 @@ import pl.detailing.crm.instagram.infrastructure.InstagramPostTopicRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileMetricsSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileStatsWeeklyRepository
+import pl.detailing.crm.instagram.infrastructure.InstagramProfileSuggestionRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.InstagramProfileStatus
@@ -20,7 +21,8 @@ class RemoveInstagramProfileHandler(
     private val metricsSnapshotRepository: InstagramProfileMetricsSnapshotRepository,
     private val statsWeeklyRepository: InstagramProfileStatsWeeklyRepository,
     private val topicRepository: InstagramPostTopicRepository,
-    private val insightRepository: InstagramInsightRepository
+    private val insightRepository: InstagramInsightRepository,
+    private val suggestionRepository: InstagramProfileSuggestionRepository
 ) {
 
     /**
@@ -55,6 +57,7 @@ class RemoveInstagramProfileHandler(
             metricsSnapshotRepository.deleteByProfileId(profileId)
             statsWeeklyRepository.deleteByProfileId(profileId)
             insightRepository.deleteByProfileId(profileId)
+            suggestionRepository.deleteByProfileId(profileId)
             profileRepository.deleteById(profileId)
         }
     }
