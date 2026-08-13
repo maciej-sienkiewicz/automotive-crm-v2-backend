@@ -79,6 +79,7 @@ class StatsRepository(
                 WHERE v.studio_id = ?
                   AND vsi.service_id IN (SELECT id FROM service_family)
                   AND v.status = 'COMPLETED'
+                  AND v.deleted_at IS NULL
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
                 GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
@@ -101,6 +102,7 @@ class StatsRepository(
                 WHERE v.studio_id = ?
                   AND vsi.service_id IS NULL
                   AND v.status = 'COMPLETED'
+                  AND v.deleted_at IS NULL
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
                 GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
@@ -181,6 +183,7 @@ class StatsRepository(
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
@@ -224,6 +227,7 @@ class StatsRepository(
             LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
@@ -322,6 +326,7 @@ class StatsRepository(
                 LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
                 WHERE v.studio_id = ?
                   AND v.status = 'COMPLETED'
+                  AND v.deleted_at IS NULL
                   AND v.actual_completion_date >= ?
                   AND v.actual_completion_date < ?
                 GROUP BY date_trunc('${granularity.sqlValue}', v.actual_completion_date AT TIME ZONE '${STATS_ZONE_SQL}')
@@ -393,6 +398,7 @@ class StatsRepository(
             INNER JOIN service_family sf ON sf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             GROUP BY sf.root_id
@@ -478,6 +484,7 @@ class StatsRepository(
             INNER JOIN unassigned_family uf ON uf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             GROUP BY uf.root_id
@@ -528,6 +535,7 @@ class StatsRepository(
             WHERE v.studio_id = ?
               AND vsi.service_id IS NULL
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             GROUP BY vsi.service_name
@@ -579,6 +587,7 @@ class StatsRepository(
             LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             ORDER BY v.actual_completion_date DESC, v.id
@@ -676,6 +685,7 @@ class StatsRepository(
             LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
+              AND v.deleted_at IS NULL
               AND v.actual_completion_date >= ?
               AND v.actual_completion_date < ?
             ORDER BY v.actual_completion_date DESC, v.id
