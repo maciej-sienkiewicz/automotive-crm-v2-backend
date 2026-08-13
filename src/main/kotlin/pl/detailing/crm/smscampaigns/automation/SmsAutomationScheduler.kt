@@ -36,9 +36,15 @@ import java.util.UUID
  * Scheduled orchestrator for automated SMS sending.
  *
  * Runs every minute and processes all studios that have at least one enabled rule.
- * Each rule is handled independently:
- *   - PRE_VISIT:  fires [rule.offsetMinutes] before appointment start
- *   - POST_VISIT: fires [rule.offsetMinutes] after appointment end
+ * Each rule is handled independently, and each reads the source that actually proves the
+ * event happened:
+ *   - PRE_VISIT:        [rule.offsetMinutes] before the start of a live booking
+ *   - POST_VISIT:       [rule.offsetMinutes] after the customer collected the car
+ *   - DELAYED_REMINDER: the same anchor, months out
+ *
+ * Only PRE_VISIT looks at appointments. The two rules that talk about a visit in the past
+ * tense read COMPLETED visits, because an appointment reaching its end time says nothing
+ * about whether the customer ever turned up.
  *
  * Deduplication is enforced via the [SmsLogJpaRepository]: each
  * (appointmentId, triggerType) pair is recorded after a successful dispatch.
@@ -134,62 +140,50 @@ class SmsAutomationScheduler(
     private fun processConfig(config: SmsAutomationConfig, now: Instant) {
         if (config.preVisit.sendable) {
             val targetTime = now.plusSeconds(config.preVisit.offsetMinutes * 60L)
-            processRule(
+            processPreVisitRule(
                 studioId = config.studioId,
                 rule = config.preVisit,
-                triggerType = SmsTriggerType.PRE_VISIT,
                 windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
-                windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS),
-                useStartTime = true
+                windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
             )
         }
 
-        if (config.postVisit.sendable) {
-            val targetTime = now.minusSeconds(config.postVisit.offsetMinutes * 60L)
-            processRule(
+        // POST_VISIT and DELAYED_REMINDER both count from the moment the customer drove
+        // away, and both read completed visits. A booking that was never checked in has no
+        // visit, so neither rule can fire for it — which is the whole point.
+        listOf(
+            config.postVisit to SmsTriggerType.POST_VISIT,
+            config.delayedReminder to SmsTriggerType.DELAYED_REMINDER
+        ).forEach { (rule, triggerType) ->
+            if (!rule.sendable) return@forEach
+            val targetPickupTime = now.minusSeconds(rule.offsetMinutes * 60L)
+            processCompletedVisits(
                 studioId = config.studioId,
-                rule = config.postVisit,
-                triggerType = SmsTriggerType.POST_VISIT,
-                windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
-                windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS),
-                useStartTime = false
-            )
-        }
-
-        if (config.delayedReminder.sendable) {
-            val targetPickupTime = now.minusSeconds(config.delayedReminder.offsetMinutes * 60L)
-            processDelayedReminders(
-                studioId = config.studioId,
-                rule = config.delayedReminder,
+                rule = rule,
+                triggerType = triggerType,
                 windowStart = targetPickupTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
                 windowEnd = targetPickupTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
             )
         }
     }
 
-    private fun processRule(
+    private fun processPreVisitRule(
         studioId: StudioId,
         rule: SmsAutomationRule,
-        triggerType: SmsTriggerType,
         windowStart: Instant,
-        windowEnd: Instant,
-        useStartTime: Boolean
+        windowEnd: Instant
     ) {
-        val appointments = if (useStartTime) {
-            appointmentQueryService.findByStudioIdAndStartTimeBetween(studioId, windowStart, windowEnd)
-        } else {
-            appointmentQueryService.findByStudioIdAndEndTimeBetween(studioId, windowStart, windowEnd)
-        }
+        val appointments = appointmentQueryService.findByStudioIdAndStartTimeBetween(studioId, windowStart, windowEnd)
 
         if (appointments.isEmpty()) return
 
         logger.debug(
-            "SMS automation: {} candidate(s) for {} in studio={}",
-            appointments.size, triggerType, studioId
+            "SMS automation: {} candidate(s) for PRE_VISIT in studio={}",
+            appointments.size, studioId
         )
 
         appointments.forEach { appointment ->
-            dispatchSms(appointment, rule, triggerType, studioId)
+            dispatchSms(appointment, rule, SmsTriggerType.PRE_VISIT, studioId)
         }
     }
 
@@ -290,43 +284,45 @@ class SmsAutomationScheduler(
         }
     }
 
-    private fun processDelayedReminders(
+    private fun processCompletedVisits(
         studioId: StudioId,
         rule: SmsAutomationRule,
+        triggerType: SmsTriggerType,
         windowStart: Instant,
         windowEnd: Instant
     ) {
-        val visits = visitQueryService.findByStudioIdAndPickupDateBetween(studioId, windowStart, windowEnd)
+        val visits = visitQueryService.findCompletedByStudioIdAndPickupDateBetween(studioId, windowStart, windowEnd)
 
         if (visits.isEmpty()) return
 
         logger.debug(
-            "SMS delayed-reminder: {} candidate(s) for studio={}",
-            visits.size, studioId
+            "SMS automation: {} candidate(s) for {} in studio={}",
+            visits.size, triggerType, studioId
         )
 
         visits.forEach { visit ->
-            dispatchDelayedReminderSms(visit, rule, studioId)
+            dispatchVisitSms(visit, rule, triggerType, studioId)
         }
     }
 
-    private fun dispatchDelayedReminderSms(
+    private fun dispatchVisitSms(
         visit: SmsVisitView,
         rule: SmsAutomationRule,
+        triggerType: SmsTriggerType,
         studioId: StudioId
     ) {
         val rawPhone = visit.customerPhone ?: run {
             logger.debug(
-                "Skipping DELAYED_REMINDER SMS for visit={}: customer has no phone",
-                visit.visitId
+                "Skipping {} SMS for visit={}: customer has no phone",
+                triggerType, visit.visitId
             )
             return
         }
 
-        if (smsLogRepository.existsByAppointmentIdAndTriggerType(visit.appointmentId, SmsTriggerType.DELAYED_REMINDER)) {
+        if (smsLogRepository.existsByAppointmentIdAndTriggerType(visit.appointmentId, triggerType)) {
             logger.debug(
-                "Skipping DELAYED_REMINDER SMS for visit={}: already sent",
-                visit.visitId
+                "Skipping {} SMS for visit={}: already sent",
+                triggerType, visit.visitId
             )
             return
         }
@@ -334,10 +330,12 @@ class SmsAutomationScheduler(
         val phoneNumber = normalizePolishPhone(rawPhone)
         val message = templateProcessor.process(
             template = rule.messageTemplate,
+            // {{data}} / {{godzina}} are the visit the customer remembers, not the moment
+            // they collected the car.
             context = SmsTemplateContext(
                 firstName = visit.customerFirstName ?: "",
                 lastName = visit.customerLastName ?: "",
-                appointmentStart = visit.pickupDate
+                appointmentStart = visit.scheduledDate
             )
         )
 
@@ -346,7 +344,7 @@ class SmsAutomationScheduler(
             studioId = studioId.value,
             phoneNumber = phoneNumber,
             message = message,
-            context = "SmsAutomation trigger=DELAYED_REMINDER visit=${visit.visitId}"
+            context = "SmsAutomation trigger=$triggerType visit=${visit.visitId}"
         )
 
         smsLogRepository.save(
@@ -354,7 +352,7 @@ class SmsAutomationScheduler(
                 id = UUID.randomUUID(),
                 studioId = studioId.value,
                 appointmentId = visit.appointmentId,
-                triggerType = SmsTriggerType.DELAYED_REMINDER,
+                triggerType = triggerType,
                 phoneNumber = phoneNumber,
                 status = if (result.success) SmsLogStatus.SENT else SmsLogStatus.FAILED,
                 externalMessageId = result.externalMessageId,
@@ -369,7 +367,7 @@ class SmsAutomationScheduler(
                 customerId = CustomerId(visit.customerId),
                 visitId = VisitId(visit.visitId),
                 channel = CommunicationChannel.SMS,
-                messageType = CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER,
+                messageType = visitMessageType(triggerType),
                 recipientAddress = phoneNumber,
                 subject = null,
                 bodyContent = message,
@@ -380,14 +378,19 @@ class SmsAutomationScheduler(
 
         if (result.success) {
             logger.info(
-                "SMS sent | trigger=DELAYED_REMINDER visit={} phone={} externalId={}",
-                visit.visitId, phoneNumber, result.externalMessageId
+                "SMS sent | trigger={} visit={} phone={} externalId={}",
+                triggerType, visit.visitId, phoneNumber, result.externalMessageId
             )
         } else {
             logger.warn(
-                "SMS failed | trigger=DELAYED_REMINDER visit={} phone={} error={}",
-                visit.visitId, phoneNumber, result.errorMessage
+                "SMS failed | trigger={} visit={} phone={} error={}",
+                triggerType, visit.visitId, phoneNumber, result.errorMessage
             )
         }
+    }
+
+    private fun visitMessageType(triggerType: SmsTriggerType): CommunicationMessageType = when (triggerType) {
+        SmsTriggerType.POST_VISIT -> CommunicationMessageType.SMS_AUTOMATION_POST_VISIT
+        else -> CommunicationMessageType.SMS_AUTOMATION_DELAYED_REMINDER
     }
 }

@@ -52,6 +52,10 @@ class UpdateAppointmentHandler(
             "endDateTime" to existingEntity.endDateTime.toString()
         )
 
+        // Captured before the entity is mutated: the customer only needs to hear about a
+        // change of date, not about a note or a colour being edited.
+        val previousStart = existingEntity.startDateTime
+
         // Step 2: Validation (reuse create validation for now, as it covers core rules)
         validatorComposite.validate(command.toCreateCommand())
 
@@ -183,7 +187,8 @@ class UpdateAppointmentHandler(
             vehicleId = vehicleId,
             totalNet = updatedDomain.calculateTotalNet(),
             totalGross = updatedDomain.calculateTotalGross(),
-            totalVat = updatedDomain.calculateTotalVat()
+            totalVat = updatedDomain.calculateTotalVat(),
+            previousStartDateTime = previousStart.takeIf { it != existingEntity.startDateTime }
         )
     }
 
