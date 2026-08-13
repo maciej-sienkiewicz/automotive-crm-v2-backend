@@ -8,6 +8,8 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
+import pl.detailing.crm.email.domain.EmailAutomationConfigRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
@@ -17,9 +19,7 @@ import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
-import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
-import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -41,19 +41,21 @@ data class SendReservationCardLinkCommand(
 class SendReservationCardLinkHandler(
     private val appointmentRepository: AppointmentRepository,
     private val customerRepository: CustomerRepository,
-    private val studioRepository: StudioRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val tokenService: VisitCardTokenService,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
     private val properties: VisitCardProperties,
-    private val smsAutomationConfigRepository: SmsAutomationConfigRepository
+    private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
+    private val emailAutomationConfigRepository: EmailAutomationConfigRepository,
+    private val renderer: MessageTemplateRenderer
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
-        private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+        private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
     }
 
     suspend fun handle(command: SendReservationCardLinkCommand): SendVisitCardLinkResult = withContext(Dispatchers.IO) {
@@ -71,10 +73,6 @@ class SendReservationCardLinkHandler(
         if (channel == VisitCardDeliveryChannel.NONE) {
             return@withContext SendVisitCardLinkResult(false, false, "Wysyłka Karty Wizyty jest wyłączona w konfiguracji")
         }
-
-        val studioName = settings?.name?.takeIf { it.isNotBlank() }
-            ?: studioRepository.findByStudioId(command.studioId.value)?.name
-            ?: "Studio detailingu"
 
         val token = tokenService.getOrCreateTokenForAppointment(command.studioId, command.appointmentId)
         val cardUrl = "${properties.frontendBaseUrl.trimEnd('/')}/vc/$token"
@@ -99,25 +97,24 @@ class SendReservationCardLinkHandler(
             return@withContext SendVisitCardLinkResult(false, false, "Klient nie ma adresu e-mail ani numeru telefonu")
         }
 
-        val scheduledAt = DATE_FORMAT.format(appointment.startDateTime.atZone(WARSAW))
+        val scheduled = appointment.startDateTime.atZone(WARSAW)
+        val templateValues = mapOf(
+            "imie" to customer.firstName.orEmpty(),
+            "nazwisko" to customer.lastName.orEmpty(),
+            "imie_nazwisko" to listOfNotNull(customer.firstName, customer.lastName).joinToString(" "),
+            "data" to DATE_FORMAT.format(scheduled),
+            "godzina" to TIME_FORMAT.format(scheduled),
+            "link" to cardUrl
+        )
 
         var emailSent = false
         var smsSent = false
 
-        if (sendEmail) {
+        val emailRule = emailAutomationConfigRepository.findByStudioId(command.studioId)?.reservationCardLink
+        if (sendEmail && emailRule?.sendable == true) {
             val recipient = customer.email!!
-            val subject = "Twoja rezerwacja $scheduledAt — $studioName"
-            val body = buildString {
-                appendLine("Dzień dobry${customer.firstName?.let { " $it" } ?: ""},")
-                appendLine()
-                appendLine("przygotowaliśmy stronę Twojej rezerwacji (termin: $scheduledAt).")
-                appendLine()
-                appendLine("Znajdziesz na niej szczegóły rezerwacji i zakres usług z wyceną, a po przyjęciu pojazdu także dokumentację zdjęciową i dokumenty:")
-                appendLine(cardUrl)
-                appendLine()
-                appendLine("Pozdrawiamy,")
-                append(studioName)
-            }
+            val subject = renderer.render(emailRule.subjectTemplate, templateValues)
+            val body = renderer.render(emailRule.bodyTemplate, templateValues)
             val result = communicationGateway.sendEmail(
                 customerId = customer.id,
                 studioId = command.studioId.value,
@@ -144,13 +141,10 @@ class SendReservationCardLinkHandler(
             )
         }
 
-        if (sendSms) {
+        val smsRule = smsAutomationConfigRepository.findByStudioId(command.studioId)?.reservationCardLink
+        if (sendSms && smsRule?.sendable == true) {
             val phone = normalizePolishPhone(customer.phone!!)
-            val smsConfig = smsAutomationConfigRepository.findByStudioId(command.studioId)
-                ?: SmsAutomationConfig.defaultFor(command.studioId)
-            val message = smsConfig.visitCardLink.messageTemplate
-                .replace("{{studio}}", studioName)
-                .replace("{{link}}", cardUrl)
+            val message = renderer.render(smsRule.messageTemplate, templateValues)
             try {
                 val result = communicationGateway.sendTransactionalSms(command.studioId.value, phone, message)
                 smsSent = result.success
@@ -197,11 +191,13 @@ class SendReservationCardLinkHandler(
             command.appointmentId, channel, emailSent, smsSent
         )
 
+        val templatesReady = (sendEmail && emailRule?.sendable == true) || (sendSms && smsRule?.sendable == true)
         val message = when {
-            emailSent && smsSent -> "Karta Wizyty wysłana e-mailem i SMS-em"
-            emailSent -> "Karta Wizyty wysłana e-mailem"
-            smsSent -> "Karta Wizyty wysłana SMS-em"
-            else -> "Nie udało się wysłać Karty Wizyty"
+            emailSent && smsSent -> "Karta Rezerwacji wysłana e-mailem i SMS-em"
+            emailSent -> "Karta Rezerwacji wysłana e-mailem"
+            smsSent -> "Karta Rezerwacji wysłana SMS-em"
+            !templatesReady -> "Uzupełnij treść wiadomości w Ustawieniach → Szablony SMS / Szablony email"
+            else -> "Nie udało się wysłać Karty Rezerwacji"
         }
         SendVisitCardLinkResult(emailSent, smsSent, message)
     }

@@ -1,30 +1,26 @@
 package pl.detailing.crm.email.template
 
 import org.springframework.stereotype.Component
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
 
 /**
- * Resolves template variables inside email subject and body templates.
- *
- * Supported placeholders:
- *   {{imie}}          → customer's first name
- *   {{imie_nazwisko}} → customer's full name
- *   {{studio}}        → studio / company name
- *   {{pojazd}}        → vehicle (brand + model)
- *   {{rejestracja}}   → license plate in parentheses, or empty string when absent
- *   {{numer_wizyty}}  → visit number
+ * Builds the placeholder values for visit-driven e-mail and hands them to the shared
+ * [MessageTemplateRenderer]. Substitution itself lives in exactly one place.
  */
 @Component
-class EmailTemplateProcessor {
+class EmailTemplateProcessor(
+    private val renderer: MessageTemplateRenderer
+) {
 
-    fun process(template: String, context: EmailTemplateContext): String {
-        val plateToken = if (!context.licensePlate.isNullOrBlank()) " (${context.licensePlate})" else ""
-
-        return template
-            .replace("{{imie}}", context.firstName)
-            .replace("{{imie_nazwisko}}", context.fullName)
-            .replace("{{studio}}", context.studioName)
-            .replace("{{pojazd}}", context.vehicleName)
-            .replace("{{rejestracja}}", plateToken)
-            .replace("{{numer_wizyty}}", context.visitNumber)
-    }
+    fun process(template: String, context: EmailTemplateContext): String = renderer.render(
+        template,
+        mapOf(
+            "imie" to context.firstName,
+            "nazwisko" to context.lastName,
+            "imie_nazwisko" to context.fullName,
+            "pojazd" to context.vehicleName,
+            "rejestracja" to context.licensePlate.orEmpty(),
+            "numer_wizyty" to context.visitNumber
+        ) + MessageTemplateRenderer.scheduleValues(context.scheduledAt)
+    )
 }

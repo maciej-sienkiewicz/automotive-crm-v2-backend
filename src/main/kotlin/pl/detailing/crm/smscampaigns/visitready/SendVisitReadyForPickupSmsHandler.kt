@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -14,7 +15,6 @@ import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
-import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 
@@ -24,11 +24,18 @@ class SendVisitReadyForPickupSmsHandler(
     private val customerRepository: CustomerRepository,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
-    private val configRepository: SmsAutomationConfigRepository
+    private val configRepository: SmsAutomationConfigRepository,
+    private val renderer: MessageTemplateRenderer
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     suspend fun handle(command: SendVisitReadyForPickupSmsCommand): Unit = withContext(Dispatchers.IO) {
+        val rule = configRepository.findByStudioId(command.studioId)?.visitReadyForPickup
+        if (rule == null || !rule.sendable) {
+            logger.debug("SendVisitReadyForPickupSms: rule disabled [studioId={}]", command.studioId)
+            return@withContext
+        }
+
         val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
         if (visitEntity == null) {
             logger.warn("SendVisitReadyForPickupSms: visit not found [visitId={}]", command.visitId)
@@ -51,15 +58,17 @@ class SendVisitReadyForPickupSmsHandler(
         }
 
         val phoneNumber = normalizePolishPhone(rawPhone)
-        val firstName = customerEntity.firstName ?: "Kliencie"
 
-        val config = configRepository.findByStudioId(command.studioId)
-            ?: SmsAutomationConfig.defaultFor(command.studioId)
-        val template = config.visitReadyForPickup.messageTemplate
-        val studioName = command.studioName
-        val message = template
-            .replace("{{imie}}", firstName)
-            .replace("{{studio}}", studioName)
+        val message = renderer.render(
+            rule.messageTemplate,
+            mapOf(
+                "imie" to (customerEntity.firstName ?: "Kliencie"),
+                "nazwisko" to (customerEntity.lastName ?: ""),
+                "pojazd" to "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}",
+                "rejestracja" to visitEntity.licensePlateSnapshot.orEmpty(),
+                "numer_wizyty" to visitEntity.visitNumber
+            )
+        )
 
         val result = communicationGateway.sendSms(
             customerId = visitEntity.customerId,

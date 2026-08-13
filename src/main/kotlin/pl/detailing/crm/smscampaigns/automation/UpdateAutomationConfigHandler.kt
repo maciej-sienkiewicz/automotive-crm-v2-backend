@@ -16,7 +16,10 @@ data class UpdateAutomationConfigCommand(
     val bookingConfirmation: UpdateNotificationRuleCommand,
     val rescheduleConfirmation: UpdateNotificationRuleCommand,
     val visitReadyForPickup: UpdateNotificationRuleCommand,
-    val visitCardLink: UpdateNotificationRuleCommand
+    val visitCardLink: UpdateNotificationRuleCommand,
+    val reservationCardLink: UpdateNotificationRuleCommand,
+    val upsellConsent: UpdateNotificationRuleCommand,
+    val signatureRequest: UpdateNotificationRuleCommand
 )
 
 data class UpdateAutomationRuleCommand(
@@ -72,6 +75,18 @@ class UpdateAutomationConfigHandler(
             visitCardLink = SmsNotificationRule(
                 enabled = command.visitCardLink.enabled,
                 messageTemplate = command.visitCardLink.messageTemplate
+            ),
+            reservationCardLink = SmsNotificationRule(
+                enabled = command.reservationCardLink.enabled,
+                messageTemplate = command.reservationCardLink.messageTemplate
+            ),
+            upsellConsent = SmsNotificationRule(
+                enabled = command.upsellConsent.enabled,
+                messageTemplate = command.upsellConsent.messageTemplate
+            ),
+            signatureRequest = SmsNotificationRule(
+                enabled = command.signatureRequest.enabled,
+                messageTemplate = command.signatureRequest.messageTemplate
             )
         )
         return configRepository.save(config)

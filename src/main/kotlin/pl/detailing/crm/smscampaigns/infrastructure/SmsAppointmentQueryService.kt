@@ -21,6 +21,7 @@ data class SmsAppointmentView(
     val appointmentStart: Instant,
     val appointmentEnd: Instant,
     val customerFirstName: String?,
+    val customerLastName: String?,
     val customerPhone: String?,
     val studioName: String,
     val studioId: UUID
@@ -85,6 +86,7 @@ class SmsAppointmentQueryService {
                 a.startDateTime,
                 a.endDateTime,
                 c.firstName,
+                c.lastName,
                 c.phone,
                 s.name,
                 a.studioId
@@ -113,9 +115,10 @@ class SmsAppointmentQueryService {
                 appointmentStart = cols[2] as Instant,
                 appointmentEnd = cols[3] as Instant,
                 customerFirstName = cols[4] as String?,
-                customerPhone = cols[5] as String?,
-                studioName = cols[6] as String,
-                studioId = cols[7] as UUID
+                customerLastName = cols[5] as String?,
+                customerPhone = cols[6] as String?,
+                studioName = cols[7] as String,
+                studioId = cols[8] as UUID
             )
         }
     }
@@ -137,6 +140,7 @@ class SmsAppointmentQueryService {
                 a.startDateTime,
                 a.endDateTime,
                 c.firstName,
+                c.lastName,
                 c.phone,
                 s.name,
                 a.studioId
@@ -166,9 +170,10 @@ class SmsAppointmentQueryService {
                 appointmentStart = cols[2] as Instant,
                 appointmentEnd = cols[3] as Instant,
                 customerFirstName = cols[4] as String?,
-                customerPhone = cols[5] as String?,
-                studioName = cols[6] as String,
-                studioId = cols[7] as UUID
+                customerLastName = cols[5] as String?,
+                customerPhone = cols[6] as String?,
+                studioName = cols[7] as String,
+                studioId = cols[8] as UUID
             )
         }
     }

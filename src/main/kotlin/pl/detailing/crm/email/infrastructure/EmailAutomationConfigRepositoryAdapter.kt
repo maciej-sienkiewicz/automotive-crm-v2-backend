@@ -26,6 +26,12 @@ class EmailAutomationConfigRepositoryAdapter(
             existing.batchOrderCloseEnabled = config.batchOrderClose.enabled
             existing.batchOrderCloseSubjectTemplate = config.batchOrderClose.subjectTemplate
             existing.batchOrderCloseBodyTemplate = config.batchOrderClose.bodyTemplate
+            existing.visitCardLinkEnabled = config.visitCardLink.enabled
+            existing.visitCardLinkSubjectTemplate = config.visitCardLink.subjectTemplate
+            existing.visitCardLinkBodyTemplate = config.visitCardLink.bodyTemplate
+            existing.reservationCardLinkEnabled = config.reservationCardLink.enabled
+            existing.reservationCardLinkSubjectTemplate = config.reservationCardLink.subjectTemplate
+            existing.reservationCardLinkBodyTemplate = config.reservationCardLink.bodyTemplate
             existing.updatedAt = Instant.now()
             existing
         } else {

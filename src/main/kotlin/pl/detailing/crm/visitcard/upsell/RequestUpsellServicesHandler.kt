@@ -15,6 +15,8 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -78,6 +80,8 @@ class RequestUpsellServicesHandler(
     private val reservationConsentRepository: UpsellReservationConsentRepository,
     private val smsProvider: SmsProvider,
     private val communicationLogService: CommunicationLogService,
+    private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
+    private val renderer: MessageTemplateRenderer,
     private val auditService: AuditService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -166,7 +170,11 @@ class RequestUpsellServicesHandler(
         suggestionRepository.saveAll(selected)
 
         val normalizedPhone = normalizePolishPhone(phone)
-        val message = buildConsentSms(selected.map { it.serviceName to it.finalPriceGross })
+        val message = renderConsentSms(
+            studioId = studioId,
+            customerId = visitEntity.customerId,
+            services = selected.map { it.serviceName to it.finalPriceGross }
+        )
         val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
 
         if (smsSent) {
@@ -240,7 +248,11 @@ class RequestUpsellServicesHandler(
         suggestionRepository.saveAll(selected)
 
         val normalizedPhone = normalizePolishPhone(phone)
-        val message = buildConsentSms(selected.map { it.serviceName to it.finalPriceGross })
+        val message = renderConsentSms(
+            studioId = studioId,
+            customerId = appointment.customerId,
+            services = selected.map { it.serviceName to it.finalPriceGross }
+        )
         val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
 
         if (smsSent) {
@@ -342,6 +354,37 @@ class RequestUpsellServicesHandler(
                 "Nie możemy wysłać SMS-a z potwierdzeniem — brak numeru telefonu. Skontaktuj się z serwisem."
             )
 
+    /**
+     * Renders the studio's consent-SMS template. The customer is waiting on this SMS to
+     * confirm their own request, so an unconfigured template is an error they must see —
+     * not something we paper over with wording of our own.
+     */
+    private fun renderConsentSms(
+        studioId: StudioId,
+        customerId: UUID,
+        services: List<Pair<String, Long>>
+    ): String {
+        val rule = smsAutomationConfigRepository.findByStudioId(studioId)?.upsellConsent
+        if (rule == null || !rule.sendable) {
+            throw ValidationException(
+                "Serwis nie skonfigurował SMS-a potwierdzającego dodanie usług. Skontaktuj się z serwisem."
+            )
+        }
+
+        val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
+        return renderer.render(
+            rule.messageTemplate,
+            mapOf(
+                "imie" to customer?.firstName.orEmpty(),
+                "nazwisko" to customer?.lastName.orEmpty(),
+                "uslugi" to services.joinToString(", ") { (name, grossCents) ->
+                    "$name (w cenie ${formatPln(grossCents)} PLN)"
+                },
+                "kwota" to formatPln(services.sumOf { it.second })
+            )
+        )
+    }
+
     /** @return Triple(smsSent, externalMessageId, errorMessage) */
     private fun sendConsentSms(phone: String, message: String): Triple<Boolean, String?, String?> =
         try {
@@ -399,17 +442,6 @@ class RequestUpsellServicesHandler(
     }
 
     companion object {
-        /**
-         * Builds the consent SMS mandated by the business:
-         * "Odpisz TAK, żeby do rezerwacji dodać usługi: XXX (w cenie XXX PLN), YYY (w cenie YYY PLN)"
-         */
-        internal fun buildConsentSms(services: List<Pair<String, Long>>): String {
-            val list = services.joinToString(", ") { (name, grossCents) ->
-                "$name (w cenie ${formatPln(grossCents)} PLN)"
-            }
-            return "Odpisz TAK, żeby do rezerwacji dodać usługi: $list"
-        }
-
         private fun formatPln(cents: Long): String = "%d.%02d".format(cents / 100, cents % 100)
 
         /** +48100200300 → +48*****0300 — enough for the customer to recognise their number. */

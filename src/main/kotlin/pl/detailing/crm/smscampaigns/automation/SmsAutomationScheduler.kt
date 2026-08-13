@@ -115,9 +115,12 @@ class SmsAutomationScheduler(
 
         appointments.forEach { appointment ->
             val studioId = StudioId(appointment.studioId)
-            val config = configRepository.findByStudioId(studioId)
-                ?: SmsAutomationConfig.defaultFor(studioId)
-            val rule = config.preVisit.copy(enabled = true)
+            // The per-appointment opt-in overrides the rule's on/off switch, but never
+            // its text: with no template configured there is nothing to send.
+            val rule = configRepository.findByStudioId(studioId)
+                ?.preVisit?.copy(enabled = true)
+                ?.takeIf { it.sendable }
+                ?: return@forEach
             runCatching { dispatchSms(appointment, rule, SmsTriggerType.PRE_VISIT, studioId) }
                 .onFailure { ex ->
                     logger.error(
@@ -129,7 +132,7 @@ class SmsAutomationScheduler(
     }
 
     private fun processConfig(config: SmsAutomationConfig, now: Instant) {
-        if (config.preVisit.enabled) {
+        if (config.preVisit.sendable) {
             val targetTime = now.plusSeconds(config.preVisit.offsetMinutes * 60L)
             processRule(
                 studioId = config.studioId,
@@ -141,7 +144,7 @@ class SmsAutomationScheduler(
             )
         }
 
-        if (config.postVisit.enabled) {
+        if (config.postVisit.sendable) {
             val targetTime = now.minusSeconds(config.postVisit.offsetMinutes * 60L)
             processRule(
                 studioId = config.studioId,
@@ -153,7 +156,7 @@ class SmsAutomationScheduler(
             )
         }
 
-        if (config.delayedReminder.enabled) {
+        if (config.delayedReminder.sendable) {
             val targetPickupTime = now.minusSeconds(config.delayedReminder.offsetMinutes * 60L)
             processDelayedReminders(
                 studioId = config.studioId,
@@ -217,8 +220,8 @@ class SmsAutomationScheduler(
             template = rule.messageTemplate,
             context = SmsTemplateContext(
                 firstName = appointment.customerFirstName ?: "",
-                appointmentStart = appointment.appointmentStart,
-                studioName = appointment.studioName
+                lastName = appointment.customerLastName ?: "",
+                appointmentStart = appointment.appointmentStart
             )
         )
 
@@ -333,8 +336,8 @@ class SmsAutomationScheduler(
             template = rule.messageTemplate,
             context = SmsTemplateContext(
                 firstName = visit.customerFirstName ?: "",
-                appointmentStart = visit.pickupDate,
-                studioName = visit.studioName
+                lastName = visit.customerLastName ?: "",
+                appointmentStart = visit.pickupDate
             )
         )
 

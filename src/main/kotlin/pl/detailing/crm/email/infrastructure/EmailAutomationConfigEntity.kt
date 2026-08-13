@@ -54,6 +54,28 @@ class EmailAutomationConfigEntity(
     @Column(name = "batch_order_close_body_template", columnDefinition = "TEXT")
     var batchOrderCloseBodyTemplate: String? = null,
 
+    // ── VISIT CARD LINK ──────────────────────────────────────────────────────────
+
+    @Column(name = "visit_card_link_enabled", nullable = false)
+    var visitCardLinkEnabled: Boolean = false,
+
+    @Column(name = "visit_card_link_subject_template", nullable = false, columnDefinition = "TEXT")
+    var visitCardLinkSubjectTemplate: String = "",
+
+    @Column(name = "visit_card_link_body_template", nullable = false, columnDefinition = "TEXT")
+    var visitCardLinkBodyTemplate: String = "",
+
+    // ── RESERVATION CARD LINK ────────────────────────────────────────────────────
+
+    @Column(name = "reservation_card_link_enabled", nullable = false)
+    var reservationCardLinkEnabled: Boolean = false,
+
+    @Column(name = "reservation_card_link_subject_template", nullable = false, columnDefinition = "TEXT")
+    var reservationCardLinkSubjectTemplate: String = "",
+
+    @Column(name = "reservation_card_link_body_template", nullable = false, columnDefinition = "TEXT")
+    var reservationCardLinkBodyTemplate: String = "",
+
     // ── AUDIT ────────────────────────────────────────────────────────────────────
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
@@ -62,9 +84,8 @@ class EmailAutomationConfigEntity(
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 ) {
-    fun toDomain(): EmailAutomationConfig {
-        val defaults = EmailAutomationConfig.defaultFor(StudioId(studioId))
-        return EmailAutomationConfig(
+    fun toDomain(): EmailAutomationConfig =
+        EmailAutomationConfig(
             studioId = StudioId(studioId),
             visitWelcome = EmailNotificationRule(
                 enabled = visitWelcomeEnabled,
@@ -78,11 +99,20 @@ class EmailAutomationConfigEntity(
             ),
             batchOrderClose = EmailNotificationRule(
                 enabled = batchOrderCloseEnabled,
-                subjectTemplate = batchOrderCloseSubjectTemplate ?: defaults.batchOrderClose.subjectTemplate,
-                bodyTemplate = batchOrderCloseBodyTemplate ?: defaults.batchOrderClose.bodyTemplate
+                subjectTemplate = batchOrderCloseSubjectTemplate.orEmpty(),
+                bodyTemplate = batchOrderCloseBodyTemplate.orEmpty()
+            ),
+            visitCardLink = EmailNotificationRule(
+                enabled = visitCardLinkEnabled,
+                subjectTemplate = visitCardLinkSubjectTemplate,
+                bodyTemplate = visitCardLinkBodyTemplate
+            ),
+            reservationCardLink = EmailNotificationRule(
+                enabled = reservationCardLinkEnabled,
+                subjectTemplate = reservationCardLinkSubjectTemplate,
+                bodyTemplate = reservationCardLinkBodyTemplate
             )
         )
-    }
 
     companion object {
         fun fromDomain(config: EmailAutomationConfig, existingId: UUID? = null): EmailAutomationConfigEntity =
@@ -98,6 +128,12 @@ class EmailAutomationConfigEntity(
                 batchOrderCloseEnabled = config.batchOrderClose.enabled,
                 batchOrderCloseSubjectTemplate = config.batchOrderClose.subjectTemplate,
                 batchOrderCloseBodyTemplate = config.batchOrderClose.bodyTemplate,
+                visitCardLinkEnabled = config.visitCardLink.enabled,
+                visitCardLinkSubjectTemplate = config.visitCardLink.subjectTemplate,
+                visitCardLinkBodyTemplate = config.visitCardLink.bodyTemplate,
+                reservationCardLinkEnabled = config.reservationCardLink.enabled,
+                reservationCardLinkSubjectTemplate = config.reservationCardLink.subjectTemplate,
+                reservationCardLinkBodyTemplate = config.reservationCardLink.bodyTemplate,
                 updatedAt = Instant.now()
             )
     }

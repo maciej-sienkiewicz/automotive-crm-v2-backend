@@ -10,6 +10,8 @@ import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.communication.template.MessageTemplateKind
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceQueryService
@@ -51,7 +53,8 @@ class CampaignService(
     private val audienceQuery: AudienceQueryService,
     private val smsCreditService: SmsCreditService,
     private val auditService: AuditService,
-    private val auditActorResolver: AuditActorResolver
+    private val auditActorResolver: AuditActorResolver,
+    private val templateRenderer: MessageTemplateRenderer
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -97,9 +100,21 @@ class CampaignService(
 
     // ─── Create / update / delete ────────────────────────────────────────────
 
+    /**
+     * A campaign is written once and sent to thousands of people, so an unknown
+     * placeholder has to be caught while the studio is still looking at the wizard.
+     */
+    private fun validateTemplates(cmd: CreateCampaignCommand) {
+        val kind = MessageTemplateKind.CAMPAIGN
+        cmd.smsTemplate?.let { kind.validate(it, templateRenderer, "Treść SMS") }
+        cmd.emailSubject?.let { kind.validate(it, templateRenderer, "Temat e-maila") }
+        cmd.emailBody?.let { kind.validate(it, templateRenderer, "Treść e-maila") }
+    }
+
     @Transactional
     fun create(studioId: StudioId, userId: UserId, cmd: CreateCampaignCommand): Campaign {
         if (cmd.name.isBlank()) throw ValidationException("Nazwa kampanii nie może być pusta")
+        validateTemplates(cmd)
         val now = Instant.now()
         val campaign = Campaign(
             id = UUID.randomUUID(),
@@ -131,6 +146,7 @@ class CampaignService(
         val existing = get(id, studioId)
         existing.requireEditable()
         if (cmd.name.isBlank()) throw ValidationException("Nazwa kampanii nie może być pusta")
+        validateTemplates(cmd)
         val updated = existing.copy(
             name = cmd.name.trim(),
             channel = cmd.channel,

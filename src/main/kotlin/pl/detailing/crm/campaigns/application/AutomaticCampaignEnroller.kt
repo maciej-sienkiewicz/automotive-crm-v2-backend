@@ -45,7 +45,6 @@ class AutomaticCampaignEnroller(
     private fun enrollFor(campaign: Campaign) {
         val trigger = campaign.trigger ?: return
         val settings = service.getSettings(campaign.studioId)
-        val studioCtx = renderer.studioContext(campaign.studioId.value)
 
         val today: LocalDate = LocalDate.now(warsaw)
         // Wizyty odebrane dokładnie afterDays dni temu (okno całodniowe).
@@ -93,7 +92,6 @@ class AutomaticCampaignEnroller(
                         row = row,
                         sendAt = sendAt,
                         settings = settings,
-                        studioCtx = studioCtx,
                         renderer = renderer,
                         triggerVisitId = visit.visitId
                     )

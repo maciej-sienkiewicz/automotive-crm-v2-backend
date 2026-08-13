@@ -2,57 +2,47 @@ package pl.detailing.crm.campaigns.application
 
 import org.springframework.stereotype.Component
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
-import pl.detailing.crm.studio.settings.StudioSettingsRepository
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 
 /**
- * Substitutes campaign placeholders with per-recipient data.
+ * Builds the per-recipient placeholder values for a campaign and hands them to the
+ * shared [MessageTemplateRenderer].
  *
  * Supported placeholders (documented in the wizard UI):
- * {{imie}}, {{nazwisko}}, {{studio}}, {{telefon_studia}}, {{www}},
- * {{marka}}, {{model}}, {{ostatnia_usluga}}, {{data_ostatniej_wizyty}}, {{dni_od_wizyty}}
+ * {{imie}}, {{nazwisko}}, {{marka}}, {{model}},
+ * {{ostatnia_usluga}}, {{data_ostatniej_wizyty}}, {{dni_od_wizyty}}
+ *
+ * The studio's own name, phone and website are not placeholders — the studio knows
+ * them when it writes the campaign, so it types them straight into the text.
  */
 @Component
 class CampaignTemplateRenderer(
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val renderer: MessageTemplateRenderer
 ) {
     private val dateFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     private val warsaw: ZoneId = ZoneId.of("Europe/Warsaw")
 
-    data class StudioContext(val name: String, val phone: String, val website: String)
-
-    fun studioContext(studioId: UUID): StudioContext {
-        val settings = studioSettingsRepository.findById(studioId).orElse(null)
-        return StudioContext(
-            name = settings?.name ?: "",
-            phone = settings?.phone ?: "",
-            website = settings?.website ?: ""
-        )
-    }
-
-    fun render(template: String, row: AudienceRow, studio: StudioContext): String {
+    fun render(template: String, row: AudienceRow): String {
         val lastVisitLocal: LocalDate? = row.lastVisitDate?.atZone(warsaw)?.toLocalDate()
         val daysSince = row.lastVisitDate?.let { ChronoUnit.DAYS.between(it, Instant.now()) }
 
-        return template
-            .replace("{{imie}}", row.firstName.orEmpty())
-            .replace("{{nazwisko}}", row.lastName.orEmpty())
-            .replace("{{studio}}", studio.name)
-            .replace("{{telefon_studia}}", studio.phone)
-            .replace("{{www}}", studio.website)
-            .replace("{{marka}}", row.vehicleBrand.orEmpty())
-            .replace("{{model}}", row.vehicleModel.orEmpty())
-            .replace("{{ostatnia_usluga}}", row.lastServiceName.orEmpty())
-            .replace("{{data_ostatniej_wizyty}}", lastVisitLocal?.format(dateFormat).orEmpty())
-            .replace("{{dni_od_wizyty}}", daysSince?.toString().orEmpty())
-            // Zbitki podwójnych spacji po pustych podstawieniach
-            .replace(Regex(" {2,}"), " ")
-            .trim()
+        return renderer.render(
+            template,
+            mapOf(
+                "imie" to row.firstName.orEmpty(),
+                "nazwisko" to row.lastName.orEmpty(),
+                "marka" to row.vehicleBrand.orEmpty(),
+                "model" to row.vehicleModel.orEmpty(),
+                "ostatnia_usluga" to row.lastServiceName.orEmpty(),
+                "data_ostatniej_wizyty" to lastVisitLocal?.format(dateFormat).orEmpty(),
+                "dni_od_wizyty" to daysSince?.toString().orEmpty()
+            )
+        )
     }
 }
 

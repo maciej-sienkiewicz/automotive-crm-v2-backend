@@ -13,7 +13,7 @@ import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.studio.settings.StudioSettingsRepository
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -61,7 +61,7 @@ class CloseMonthHandler(
     private val generateBatchReportHandler: GenerateBatchReportHandler,
     private val getEmailTemplateConfigHandler: GetEmailTemplateConfigHandler,
     private val emailProvider: EmailProvider,
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val renderer: MessageTemplateRenderer
 ) {
     @Transactional
     suspend fun handle(command: CloseMonthCommand): CloseMonthResult {
@@ -133,25 +133,19 @@ class CloseMonthHandler(
                     studioId = command.studioId
                 )
 
-                val emailConfig = getEmailTemplateConfigHandler.handle(command.studioId)
-                val rule = emailConfig.batchOrderClose
-
-                val studioName = studioSettingsRepository.findById(command.studioId.value).orElse(null)?.name
-                    ?: "Studio"
+                val rule = getEmailTemplateConfigHandler.handle(command.studioId).batchOrderClose
+                check(rule.sendable) { "Szablon zestawienia zbiorczego nie jest skonfigurowany" }
 
                 val periodFmt = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-                val period = "${command.from.format(periodFmt)} – ${command.to.format(periodFmt)}"
-                val grossFormatted = "%.2f zł".format(totalGross / 100.0)
+                val values = mapOf(
+                    "kontrahent" to contractor.name,
+                    "okres" to "${command.from.format(periodFmt)} – ${command.to.format(periodFmt)}",
+                    "kwota_brutto" to "%.2f zł".format(totalGross / 100.0),
+                    "liczba_wpisow" to entriesToClose.size.toString()
+                )
 
-                fun processTemplate(template: String): String = template
-                    .replace("{{kontrahent}}", contractor.name)
-                    .replace("{{okres}}", period)
-                    .replace("{{kwota_brutto}}", grossFormatted)
-                    .replace("{{liczba_wpisow}}", entriesToClose.size.toString())
-                    .replace("{{studio}}", studioName)
-
-                val subject = processTemplate(rule.subjectTemplate)
-                val body = processTemplate(rule.bodyTemplate)
+                val subject = renderer.render(rule.subjectTemplate, values)
+                val body = renderer.render(rule.bodyTemplate, values)
 
                 val fileName = "zestawienie-${contractor.name.replace(Regex("\\s+"), "-")}-${command.from.format(DateTimeFormatter.ofPattern("yyyy-MM"))}.pdf"
 

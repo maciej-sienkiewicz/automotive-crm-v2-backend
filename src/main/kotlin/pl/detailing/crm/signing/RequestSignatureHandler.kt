@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.template.MessageTemplateRenderer
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
@@ -20,8 +22,6 @@ import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
 import pl.detailing.crm.signing.infrastructure.*
-import pl.detailing.crm.studio.infrastructure.StudioRepository
-import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visitcard.VisitCardProperties
 import java.security.SecureRandom
 import java.time.Duration
@@ -47,10 +47,10 @@ class RequestSignatureHandler(
     private val documentIntegrityService: DocumentIntegrityService,
     private val auditTrailService: SignatureAuditTrailService,
     private val customerRepository: CustomerRepository,
-    private val studioRepository: StudioRepository,
-    private val studioSettingsRepository: StudioSettingsRepository,
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
+    private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
+    private val renderer: MessageTemplateRenderer,
     private val visitCardProperties: VisitCardProperties,
     @Value("\${signing.request.ttl-minutes:15}") private val requestTtlMinutes: Long,
     @Value("\${signing.request.sms-ttl-minutes:60}") private val smsRequestTtlMinutes: Long,
@@ -183,13 +183,28 @@ class RequestSignatureHandler(
      */
     private fun sendSigningLinkSms(request: SignatureRequest, customerId: java.util.UUID, documentName: String) {
         val phone = requireNotNull(request.signerPhone)
-        val settings = studioSettingsRepository.findById(request.studioId.value).orElse(null)
-        val studioName = settings?.name?.takeIf { it.isNotBlank() }
-            ?: studioRepository.findByStudioId(request.studioId.value)?.name
-            ?: "Studio detailingu"
         val signingUrl = "${visitCardProperties.frontendBaseUrl.trimEnd('/')}/sign/${request.linkToken}"
-        val message = "$studioName: dokument „$documentName” czeka na Twój podpis. " +
-            "Otwórz link, zapoznaj się z treścią i podpisz: $signingUrl"
+
+        val rule = smsAutomationConfigRepository.findByStudioId(request.studioId)?.signatureRequest
+            ?: throw ValidationException(
+                "Nie skonfigurowano treści SMS-a z linkiem do podpisu — uzupełnij ją w Ustawieniach → Szablony SMS"
+            )
+        if (!rule.sendable) {
+            throw ValidationException(
+                "SMS z linkiem do podpisu jest wyłączony — włącz go w Ustawieniach → Szablony SMS"
+            )
+        }
+
+        val customer = customerRepository.findByIdAndStudioId(customerId, request.studioId.value)
+        val message = renderer.render(
+            rule.messageTemplate,
+            mapOf(
+                "imie" to customer?.firstName.orEmpty(),
+                "nazwisko" to customer?.lastName.orEmpty(),
+                "dokument" to documentName,
+                "link" to signingUrl
+            )
+        )
 
         val result = try {
             communicationGateway.sendTransactionalSms(request.studioId.value, phone, message)
