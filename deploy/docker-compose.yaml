@@ -48,9 +48,6 @@ services:
       - "${ENV_PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      # prometheus.yml wskazuje rule_files: alerts.yml — bez tego mountu Prometheus
-      # nie może załadować konfiguracji i pada przy starcie
-      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

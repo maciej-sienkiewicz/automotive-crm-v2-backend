@@ -1,9 +1,3 @@
-# Jawna nazwa projektu Compose. Bez niej projekt bierze nazwę z katalogu
-# (/opt/apps/{env}/app-backend → "app-backend" dla OBU środowisk), przez co
-# deploy develop z --remove-orphans adoptowałby i USUWAŁ kontenery produkcyjne
-# (inne klucze serwisów w tym samym projekcie = "osierocone").
-name: app-backend-develop
-
 services:
   detailing-crm-backend-develop:
     image: ${ENV_DETAILING_CRM_BACKEND_IMAGE}
@@ -55,9 +49,7 @@ services:
     ports:
       - "${ENV_PROMETHEUS_PORT:-9091}:9090"
     volumes:
-      # Wariant develop: scrape celuje w kontener backendu develop, etykieta środowiska 'develop'
-      - ./monitoring/prometheus/prometheus-develop.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -69,11 +61,7 @@ services:
     networks:
       - network
 
-  # Klucz serwisu z sufiksem -develop: nazwa serwisu jest aliasem DNS w sieci,
-  # a nginx-proxy-manager jest wpięty w sieć prod ORAZ develop — serwis "grafana"
-  # w obu sieciach sprawiłby, że grafana.detailboost.pl (cel http://grafana:3000)
-  # rozwiązywałby się losowo między środowiskami.
-  grafana-develop:
+  grafana:
     image: grafana/grafana:11.0.0
     container_name: detailing-crm-grafana-develop
     restart: unless-stopped
