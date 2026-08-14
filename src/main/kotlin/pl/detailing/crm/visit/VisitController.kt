@@ -652,6 +652,15 @@ class VisitController(
             email = customer.email,
             phone = customer.phone,
             companyName = customer.companyData?.name,
+            companyNip = customer.companyData?.nip,
+            companyAddress = customer.companyData?.address?.let {
+                CustomerCompanyAddressResponse(
+                    street = it.street.ifBlank { null },
+                    postalCode = it.postalCode.ifBlank { null },
+                    city = it.city.ifBlank { null },
+                    country = it.country.ifBlank { null }
+                )
+            },
             stats = CustomerStatsResponse(
                 totalVisits = stats.totalVisits,
                 totalSpent = MoneyAmountResponse(
