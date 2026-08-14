@@ -28,6 +28,8 @@ services:
       MAIL_PASSWORD: ${ENV_MAIL_PASSWORD}
       MAIL_HOST: ${ENV_MAIL_HOST}
       RAPIDAPI_KEY: ${ENV_RAPIDAPI_KEY}
+      # Środowisko KSeF (Spring: ksef.base-url) — na produkcji produkcyjne API MF.
+      KSEF_BASEURL: ${ENV_KSEF_BASE_URL:-https://api.ksef.mf.gov.pl}
     depends_on:
       - redis
     networks:

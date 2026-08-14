@@ -34,6 +34,10 @@ services:
       MAIL_PASSWORD: ${ENV_MAIL_PASSWORD}
       MAIL_HOST: ${ENV_MAIL_HOST}
       RAPIDAPI_KEY: ${ENV_RAPIDAPI_KEY}
+      # Środowisko KSeF (Spring: ksef.base-url). Na develop domyślnie środowisko
+      # TESTOWE MF — fikcyjne NIP-y, dokumenty bez skutków prawnych.
+      # Demo (przedprodukcyjne, prawdziwy NIP): https://api-demo.ksef.mf.gov.pl
+      KSEF_BASEURL: ${ENV_KSEF_BASE_URL:-https://api-test.ksef.mf.gov.pl}
     depends_on:
       - redis
     networks:
