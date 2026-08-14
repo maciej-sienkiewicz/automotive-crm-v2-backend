@@ -19,6 +19,26 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
 
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefRevenueInvoiceEntity?
 
+    /**
+     * Nasze faktury czekające na potwierdzenie z KSeF (brak numeru KSeF) o danym
+     * numerze własnym. Pull po SUBJECT1 dopasowuje po numerze KSeF; gdy wyprzedzi
+     * polling sesji, numeru KSeF jeszcze nie znamy i trzeba dopasować po numerze
+     * dokumentu — inaczej powstałby fantomowy rekord EXTERNAL o tym samym numerze.
+     */
+    @Query(
+        """
+        SELECT i FROM KsefRevenueInvoiceEntity i
+        WHERE i.studioId = :studioId
+          AND i.invoiceNumber = :invoiceNumber
+          AND i.ksefNumber IS NULL
+          AND i.ksefStatus <> pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.REJECTED
+        """
+    )
+    fun findAwaitingConfirmationByNumber(
+        @Param("studioId") studioId: UUID,
+        @Param("invoiceNumber") invoiceNumber: String
+    ): List<KsefRevenueInvoiceEntity>
+
     fun existsByStudioIdAndOriginalInvoiceIdAndKsefStatusNot(
         studioId: UUID,
         originalInvoiceId: UUID,
@@ -29,25 +49,33 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     fun findByKsefStatusIn(statuses: List<KsefRevenueStatus>): List<KsefRevenueInvoiceEntity>
 
     /**
-     * Liczba faktur CRM danego typu (VAT/KOR) w danym roku — podstawa numeracji
-     * FV/{rok}/{seq} i FK/{rok}/{seq}. Liczone po issue_date, tylko source=CRM
-     * (EXTERNAL ma numerację obcą).
+     * Najwyższy numer kolejny w serii {PREFIX}/{rok}/{seq} dla danego NIP-u sprzedawcy —
+     * podstawa numeracji FV/{rok}/{seq} i FK/{rok}/{seq}.
+     *
+     * Zakresem jest NIP sprzedawcy, a NIE studio: KSeF pilnuje unikalności numeru
+     * w obrębie NIP-u, więc dwa studia dzielące ten sam NIP nie mogą mieć własnych,
+     * niezależnych serii (skutkuje to odrzuceniem kodem 440 „Duplikat faktury").
+     *
+     * Liczy się MAX, a nie COUNT: usunięcie lub odrzucenie dokumentu nie może
+     * spowodować ponownego wydania tego samego numeru. Uwzględniamy również
+     * dokumenty EXTERNAL — jeśli faktura o takim numerze istnieje w KSeF pod naszym
+     * NIP-em, numer jest zajęty niezależnie od tego, gdzie ją wystawiono.
+     *
+     * [numberPattern] to regex POSIX, np. `^FV/2026/[0-9]+$` — rok jest brany
+     * z numeru, nie z issue_date, bo to numer decyduje o serii.
      */
     @Query(
-        """
-        SELECT COUNT(i) FROM KsefRevenueInvoiceEntity i
-        WHERE i.studioId = :studioId
-          AND i.source = pl.detailing.crm.ksef.revenue.domain.RevenueSource.CRM
-          AND i.invoiceType = :invoiceType
-          AND i.issueDate >= :yearStart AND i.issueDate < :yearEnd
-        """
+        value = """
+        SELECT COALESCE(MAX(CAST(SPLIT_PART(i.invoice_number, '/', 3) AS integer)), 0)
+        FROM ksef_revenue_invoices i
+        WHERE i.seller_nip = CAST(:sellerNip AS text)
+          AND i.invoice_number ~ CAST(:numberPattern AS text)
+    """, nativeQuery = true
     )
-    fun countCrmInvoicesInYear(
-        @Param("studioId") studioId: UUID,
-        @Param("invoiceType") invoiceType: pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType,
-        @Param("yearStart") yearStart: LocalDate,
-        @Param("yearEnd") yearEnd: LocalDate
-    ): Long
+    fun findMaxNumberSequence(
+        @Param("sellerNip") sellerNip: String,
+        @Param("numberPattern") numberPattern: String
+    ): Int
 
     /**
      * Kandydaci do pary duplikatów dla faktury EXTERNAL: faktury CRM z tym samym

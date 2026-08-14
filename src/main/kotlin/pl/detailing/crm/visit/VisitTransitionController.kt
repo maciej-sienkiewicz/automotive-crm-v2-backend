@@ -142,7 +142,8 @@ class VisitTransitionController(
                     ksefInvoiceId           = result.ksefInvoice.id.toString(),
                     ksefInvoiceNumber       = result.ksefInvoice.invoiceNumber,
                     ksefStatus              = result.ksefInvoice.ksefStatus.name,
-                    remainderDocumentNumber = result.remainderDocumentNumber
+                    remainderDocumentNumber = result.remainderDocumentNumber,
+                    ksefError               = result.ksefInvoice.lastSendError
                 )
             )
         }
@@ -368,5 +369,12 @@ data class CompleteVisitResponse(
     val ksefStatus: String? = null,
 
     /** Numer paragonu dokumentującego resztę kwoty (gdy faktura była częściowa). */
-    val remainderDocumentNumber: String? = null
+    val remainderDocumentNumber: String? = null,
+
+    /**
+     * Powód odrzucenia przez KSeF — pokazywany od razu na ekranie wydania pojazdu.
+     * Bez niego użytkownik przy statusie REJECTED wie tylko, że coś poszło nie tak,
+     * i musi szukać przyczyny w module finansów.
+     */
+    val ksefError: String? = null
 )

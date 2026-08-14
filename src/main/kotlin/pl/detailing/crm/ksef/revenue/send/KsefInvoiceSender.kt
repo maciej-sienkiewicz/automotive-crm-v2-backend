@@ -77,6 +77,13 @@ class KsefInvoiceSender(
         /** Kody statusu przetwarzania faktury w sesji KSeF. */
         private const val INVOICE_ACCEPTED_CODE = 200
 
+        /**
+         * „Duplikat faktury" — pod NIP-em sprzedawcy istnieje już dokument o tym
+         * numerze (albo o identycznej treści). Błąd trwały: ten sam XML nigdy nie
+         * przejdzie, dokument trzeba wystawić od nowa z kolejnym numerem.
+         */
+        internal const val INVOICE_DUPLICATE_CODE = 440
+
         /** Kody ApiException traktowane jako błąd trwały (walidacja żądania/dokumentu). */
         private val PERMANENT_HTTP_CODES = 400..422
     }
@@ -211,8 +218,7 @@ class KsefInvoiceSender(
             }
 
             code >= 400 -> KsefStatusOutcome.Rejected(
-                "KSeF odrzucił fakturę (kod $code): ${status.status?.description}" +
-                    (status.status?.details?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " — ") ?: "")
+                describeRejection(code, status.status?.description, status.status?.details)
             )
 
             else -> KsefStatusOutcome.StillProcessing
@@ -225,4 +231,21 @@ class KsefInvoiceSender(
 
     private fun describe(e: ApiException): String =
         "KSeF HTTP ${e.code}: ${e.message?.take(1500)}"
+
+    /**
+     * Komunikat odrzucenia widoczny dla użytkownika. Kod 440 dostaje własne
+     * wyjaśnienie, bo surowy opis z KSeF („Duplikat faktury" + numer KSeF cudzego
+     * dokumentu) nie mówi wystawiającemu, co ma z tym zrobić.
+     */
+    internal fun describeRejection(code: Int, description: String?, details: List<String>?): String {
+        val suffix = details?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " — ") ?: ""
+        if (code == INVOICE_DUPLICATE_CODE) {
+            return "KSeF odrzucił dokument jako duplikat (kod 440): pod NIP-em sprzedawcy jest już " +
+                "zarejestrowana faktura o tym numerze. Wystaw dokument ponownie — dostanie kolejny " +
+                "numer w serii. Jeżeli powtarza się to przy każdej próbie, sprawdź, czy numeracja " +
+                "w CRM nie rozjechała się z fakturami wystawionymi poza CRM na ten sam NIP. " +
+                "Szczegóły z KSeF: $description$suffix"
+        }
+        return "KSeF odrzucił fakturę (kod $code): $description$suffix"
+    }
 }
