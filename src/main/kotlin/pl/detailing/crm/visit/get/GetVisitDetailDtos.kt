@@ -76,6 +76,11 @@ data class VehicleInfoResponse(
 
 /**
  * Customer information response with stats
+ *
+ * [companyNip] i [companyAddress] pozwalają wypełnić nabywcę faktury przy wydaniu
+ * pojazdu bez przepisywania danych, które są już w kartotece. Bez nich front nie
+ * ma czym prefillować, a NIP trafiał na fakturę wyłącznie przez cichy fallback
+ * w CompleteVisitInvoiceOrchestrator — niewidoczny dla użytkownika.
  */
 data class CustomerInfoResponse(
     val id: String,
@@ -84,7 +89,24 @@ data class CustomerInfoResponse(
     @Pii val email: String?,
     @Pii val phone: String?,
     val companyName: String?,
+    val companyNip: String?,
+    val companyAddress: CustomerCompanyAddressResponse?,
     val stats: CustomerStatsResponse
+)
+
+/**
+ * Adres nabywcy na fakturze. Rozbity na pola, bo KSeF przyjmuje dwie linie
+ * adresu — front skleja je dopiero przy wysyłce.
+ *
+ * Bez [Pii], spójnie z sąsiednim `companyName`: dane firmowe kontrahenta są
+ * danymi rejestrowymi, nie danymi osobowymi klienta. Maskowanie tych pól
+ * wstawiłoby `***` na fakturę wystawianą przez pracownika bez CUSTOMERS_VIEW.
+ */
+data class CustomerCompanyAddressResponse(
+    val street: String?,
+    val postalCode: String?,
+    val city: String?,
+    val country: String?
 )
 
 /**
