@@ -30,7 +30,6 @@ import java.time.LocalDate
 class VisitTransitionController(
     private val markVisitReadyForPickupHandler: MarkVisitReadyForPickupHandler,
     private val completeVisitHandler: CompleteVisitHandler,
-    private val completeVisitInvoiceOrchestrator: CompleteVisitInvoiceOrchestrator,
     private val rejectVisitHandler: RejectVisitHandler,
     private val archiveVisitHandler: ArchiveVisitHandler
 ) {
@@ -103,48 +102,6 @@ class VisitTransitionController(
             documentType      = documentType,
             dueDate           = request.payment.dueDate
         )
-
-        // Faktura KSeF z edytowanymi pozycjami i (opcjonalnie) dokumentem reszty —
-        // orkiestrator pilnuje, że faktura + reszta == kwota wizyty (całość udokumentowana)
-        val invoiceDetails = request.invoice?.takeIf { documentType == DocumentType.INVOICE }
-        if (invoiceDetails != null) {
-            val result = completeVisitInvoiceOrchestrator.handle(
-                command,
-                CompleteInvoiceDetails(
-                    items = invoiceDetails.items.map {
-                        CompleteInvoiceItem(
-                            name         = it.name,
-                            quantity     = it.quantity ?: java.math.BigDecimal.ONE,
-                            unitPriceNet = it.unitPriceNet,
-                            vatRate      = it.vatRate ?: "23"
-                        )
-                    },
-                    buyer = CompleteInvoiceBuyer(
-                        nip          = invoiceDetails.buyerNip,
-                        name         = invoiceDetails.buyerName,
-                        addressLine1 = invoiceDetails.buyerAddressLine1,
-                        addressLine2 = invoiceDetails.buyerAddressLine2,
-                        email        = invoiceDetails.buyerEmail
-                    ),
-                    remainderPaymentMethod = invoiceDetails.remainderPaymentMethod
-                        ?.let { parsePaymentMethod(it) },
-                    exemptionLegalBasis = invoiceDetails.exemptionLegalBasis
-                )
-            )
-            return@runBlocking ResponseEntity.ok(
-                CompleteVisitResponse(
-                    visitId                 = result.completion.visitId.value.toString(),
-                    newStatus               = mapVisitStatus(result.completion.newStatus),
-                    message                 = "Visit completed successfully",
-                    financialDocumentId     = result.completion.financialDocumentId?.toString(),
-                    financialDocumentNumber = result.completion.financialDocumentNumber,
-                    ksefInvoiceId           = result.ksefInvoice.id.toString(),
-                    ksefInvoiceNumber       = result.ksefInvoice.invoiceNumber,
-                    ksefStatus              = result.ksefInvoice.ksefStatus.name,
-                    remainderDocumentNumber = result.remainderDocumentNumber
-                )
-            )
-        }
 
         val result = completeVisitHandler.handle(command)
 
@@ -283,36 +240,7 @@ data class RejectVisitRequest(
  */
 data class CompleteVisitRequest(
     val signatureObtained: Boolean = false,
-    val payment: PaymentRequest,
-
-    /**
-     * Szczegóły faktury KSeF (tylko gdy payment.invoiceType == INVOICE) — pozycje
-     * po ewentualnej edycji przez użytkownika. Gdy suma pozycji jest niższa niż
-     * kwota wizyty, wymagane [CompleteInvoiceRequestDto.remainderPaymentMethod] —
-     * reszta zostaje udokumentowana paragonem (osobnym dokumentem przychodowym).
-     */
-    val invoice: CompleteInvoiceRequestDto? = null
-)
-
-data class CompleteInvoiceItemDto(
-    val name: String,
-    val quantity: java.math.BigDecimal? = null,
-    /** Cena jednostkowa netto w groszach. */
-    val unitPriceNet: Long,
-    /** 23 | 8 | 5 | 0 | zw (domyślnie 23). */
-    val vatRate: String? = null
-)
-
-data class CompleteInvoiceRequestDto(
-    val items: List<CompleteInvoiceItemDto>,
-    val buyerNip: String? = null,
-    val buyerName: String? = null,
-    val buyerAddressLine1: String? = null,
-    val buyerAddressLine2: String? = null,
-    val buyerEmail: String? = null,
-    /** Metoda płatności dokumentu reszty (CASH | CARD | ...) — wymagana gdy faktura < kwota wizyty. */
-    val remainderPaymentMethod: String? = null,
-    val exemptionLegalBasis: String? = null
+    val payment: PaymentRequest
 )
 
 data class PaymentRequest(
@@ -353,17 +281,5 @@ data class CompleteVisitResponse(
     val financialDocumentId: String?,
 
     /** Human-readable document number, e.g. "PAR/2024/0001". */
-    val financialDocumentNumber: String?,
-
-    /** Id faktury KSeF (moduł przychodowy) — tylko przy zakończeniu z fakturą. */
-    val ksefInvoiceId: String? = null,
-
-    /** Numer własny faktury KSeF, np. FV/2026/0001. */
-    val ksefInvoiceNumber: String? = null,
-
-    /** Status wysyłki do KSeF: ACCEPTED | SUBMITTED | QUEUED_RETRY | ... */
-    val ksefStatus: String? = null,
-
-    /** Numer paragonu dokumentującego resztę kwoty (gdy faktura była częściowa). */
-    val remainderDocumentNumber: String? = null
+    val financialDocumentNumber: String?
 )
