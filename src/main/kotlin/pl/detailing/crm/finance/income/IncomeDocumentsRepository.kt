@@ -31,9 +31,15 @@ class IncomeDocumentsRepository(
      * 10 currency, 11 paymentStatus, 12 paymentLabel, 13 ksefStatus, 14 ksefNumber,
      * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt
      */
-    private val selectColumns = """
+    /**
+     * UWAGA: w natywnych zapytaniach nie wolno używać postgresowej składni rzutowania `::`,
+     * bo Hibernate traktuje `:nazwa` jako parametr nazwany i zjada jeden dwukropek
+     * (`id::text` → `id:text` → błąd składni). Stąd wszędzie CAST(... AS ...).
+     * Pilnuje tego IncomeDocumentsRepositorySqlTest.
+     */
+    internal val selectColumns = """
         SELECT
-            i.id::text                              AS id,
+            CAST(i.id AS text)                      AS id,
             'KSEF'                                  AS source_kind,
             CASE WHEN i.invoice_type = 'KOR' THEN 'CORRECTION' ELSE 'INVOICE' END AS document_type,
             i.invoice_number                        AS document_number,
@@ -50,7 +56,7 @@ class IncomeDocumentsRepository(
             i.ksef_number                           AS ksef_number,
             i.source                                AS origin,
             i.duplicate_status                      AS duplicate_status,
-            i.visit_id::text                        AS visit_id,
+            CAST(i.visit_id AS text)                AS visit_id,
             i.created_at                            AS created_at
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = CAST(:studioId AS uuid)
@@ -64,7 +70,7 @@ class IncomeDocumentsRepository(
         UNION ALL
 
         SELECT
-            d.id::text,
+            CAST(d.id AS text),
             'FINANCE',
             d.document_type,
             d.document_number,
@@ -81,7 +87,7 @@ class IncomeDocumentsRepository(
             NULL,
             d.source,
             'NONE',
-            d.visit_id::text,
+            CAST(d.visit_id AS text),
             d.created_at
         FROM financial_documents d
         WHERE d.studio_id = CAST(:studioId AS uuid)
@@ -92,7 +98,7 @@ class IncomeDocumentsRepository(
           AND (CAST(:paymentStatus AS text) IS NULL OR d.status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
-          AND :onlyKsef = FALSE
+          AND CAST(:onlyKsef AS boolean) = FALSE
     """
 
     fun findPage(filters: IncomeDocumentFilters, limit: Int, offset: Int): List<IncomeDocumentRow> {
