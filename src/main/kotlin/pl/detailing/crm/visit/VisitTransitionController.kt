@@ -113,11 +113,10 @@ class VisitTransitionController(
                 CompleteInvoiceDetails(
                     items = invoiceDetails.items.map {
                         CompleteInvoiceItem(
-                            name           = it.name,
-                            quantity       = it.quantity ?: java.math.BigDecimal.ONE,
-                            unitPriceNet   = it.unitPriceNet,
-                            unitPriceGross = it.unitPriceGross,
-                            vatRate        = it.vatRate ?: "23"
+                            name         = it.name,
+                            quantity     = it.quantity ?: java.math.BigDecimal.ONE,
+                            unitPriceNet = it.unitPriceNet,
+                            vatRate      = it.vatRate ?: "23"
                         )
                     },
                     buyer = CompleteInvoiceBuyer(
@@ -298,10 +297,8 @@ data class CompleteVisitRequest(
 data class CompleteInvoiceItemDto(
     val name: String,
     val quantity: java.math.BigDecimal? = null,
-    /** Cena jednostkowa netto w groszach — dokładnie jedno z pól netto/brutto. */
-    val unitPriceNet: Long? = null,
-    /** Cena jednostkowa brutto w groszach — brutto pozostaje dokładnie jak wpisane. */
-    val unitPriceGross: Long? = null,
+    /** Cena jednostkowa netto w groszach. */
+    val unitPriceNet: Long,
     /** 23 | 8 | 5 | 0 | zw (domyślnie 23). */
     val vatRate: String? = null
 )

@@ -70,20 +70,6 @@ enum class VatRate(val faCode: String, val rate: BigDecimal?) {
         else -> BigDecimal(netGrosz).multiply(rate).setScale(0, RoundingMode.HALF_UP).toLong()
     }
 
-    /**
-     * VAT w groszach liczony od kwoty brutto — wzór z art. 106e ust. 7 ustawy o VAT:
-     * VAT = brutto × stawka / (100 + stawka). Używany, gdy użytkownik wpisał cenę
-     * brutto (metoda „w stu"): brutto pozostaje dokładnie takie, jak wpisano,
-     * a netto = brutto − VAT.
-     */
-    fun vatFromGross(grossGrosz: Long): Long = when (rate) {
-        null -> 0L
-        else -> BigDecimal(grossGrosz)
-            .multiply(rate.movePointRight(2))
-            .divide(BigDecimal(100).add(rate.movePointRight(2)), 0, RoundingMode.HALF_UP)
-            .toLong()
-    }
-
     companion object {
         fun fromCode(code: String): VatRate =
             entries.firstOrNull { it.faCode.equals(code.trim(), ignoreCase = true) }
@@ -91,17 +77,6 @@ enum class VatRate(val faCode: String, val rate: BigDecimal?) {
                     "Nieobsługiwana stawka VAT: '$code'. Dozwolone: ${entries.joinToString { it.faCode }}"
                 )
     }
-}
-
-/**
- * Metoda cenowa pozycji — które pole wpisał użytkownik. Kwota wpisana jest źródłem
- * prawdy i nigdy nie jest przeliczana wstecz; druga kwota jest zawsze pochodną:
- * NET   → VAT = netto × stawka, brutto = netto + VAT,
- * GROSS → VAT = brutto × stawka/(100+stawka) (art. 106e ust. 7), netto = brutto − VAT.
- */
-enum class PriceMode {
-    NET,
-    GROSS
 }
 
 /** Źródło dokumentu przychodowego w ledgerze. */

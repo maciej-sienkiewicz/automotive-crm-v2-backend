@@ -2,11 +2,8 @@ package pl.detailing.crm.ksef.revenue.infrastructure
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import pl.detailing.crm.ksef.revenue.domain.PriceMode
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
@@ -40,21 +37,9 @@ class KsefRevenueInvoiceItemEntity(
     @Column(name = "quantity", nullable = false, precision = 12, scale = 3)
     val quantity: BigDecimal = BigDecimal.ONE,
 
-    /** Cena jednostkowa netto w groszach (P_9A). Dla [priceMode] GROSS — wartość pochodna. */
+    /** Cena jednostkowa netto w groszach (P_9A). */
     @Column(name = "unit_price_net", nullable = false)
     val unitPriceNet: Long,
-
-    /** Cena jednostkowa brutto w groszach (P_9B) — tylko gdy [priceMode] == GROSS. */
-    @Column(name = "unit_price_gross")
-    val unitPriceGross: Long? = null,
-
-    /**
-     * Które pole wpisał użytkownik: NET → XML metodą netto (P_9A/P_11);
-     * GROSS → XML metodą brutto (P_9B/P_11A), brutto dokładnie jak wpisane.
-     */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "price_mode", nullable = false, length = 5, columnDefinition = "VARCHAR(5) DEFAULT 'NET'")
-    val priceMode: PriceMode = PriceMode.NET,
 
     /** Wartość netto wiersza w groszach (P_11). */
     @Column(name = "net_value", nullable = false)

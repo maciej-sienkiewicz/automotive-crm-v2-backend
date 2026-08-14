@@ -65,37 +65,6 @@ class CompleteVisitInvoiceOrchestratorTest {
     }
 
     @Test
-    fun `pozycja wpisana brutto zachowuje dokladna kwote brutto`() {
-        // 500,00 zł brutto — kwota wpisana nie może „przeskoczyć" na 499,99
-        val totals = orchestrator.computeInvoiceTotals(
-            listOf(CompleteInvoiceItem(name = "Detailing", unitPriceGross = 50_000, vatRate = "23"))
-        )
-        assertEquals(50_000, totals.gross)
-        assertEquals(9_350, totals.vat)      // 50000×23/123 (w stu)
-        assertEquals(40_650, totals.net)
-        assertEquals(totals.gross, totals.net + totals.vat)
-    }
-
-    @Test
-    fun `pozycja z podwojna cena lub bez ceny jest odrzucana`() {
-        assertThrows<ValidationException> {
-            runBlocking {
-                orchestrator.handle(
-                    command(),
-                    invoiceDetails(listOf(
-                        CompleteInvoiceItem(name = "X", unitPriceNet = 100, unitPriceGross = 123)
-                    ))
-                )
-            }
-        }
-        assertThrows<ValidationException> {
-            runBlocking {
-                orchestrator.handle(command(), invoiceDetails(listOf(CompleteInvoiceItem(name = "X"))))
-            }
-        }
-    }
-
-    @Test
     fun `mapuje metody platnosci wizyty na formy FA3`() {
         assertEquals(PaymentForm.GOTOWKA, orchestrator.toPaymentForm(PaymentMethod.CASH))
         assertEquals(PaymentForm.KARTA, orchestrator.toPaymentForm(PaymentMethod.CARD))
