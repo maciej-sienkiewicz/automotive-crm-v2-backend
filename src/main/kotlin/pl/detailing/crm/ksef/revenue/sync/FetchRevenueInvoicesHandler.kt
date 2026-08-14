@@ -85,6 +85,19 @@ class FetchRevenueInvoicesHandler(
                 continue
             }
 
+            // Pull wyprzedził polling sesji: dokument jest nasz, ale numeru KSeF
+            // jeszcze nie zapisaliśmy. Dopasowanie po numerze własnym zamyka stan
+            // zamiast tworzyć fantomowy rekord EXTERNAL o tym samym numerze.
+            val awaiting = metadata.invoiceNumber
+                ?.let { repository.findAwaitingConfirmationByNumber(command.studioId.value, it) }
+                ?.firstOrNull()
+            if (awaiting != null) {
+                awaiting.markAccepted(metadata.ksefNumber)
+                repository.save(awaiting)
+                matched++
+                continue
+            }
+
             val external = toExternalEntity(command.studioId, metadata)
             repository.save(external)
             fetched++

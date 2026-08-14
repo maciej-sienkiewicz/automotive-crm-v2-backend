@@ -1,6 +1,7 @@
 package pl.detailing.crm.ksef.revenue.issue
 
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
@@ -69,7 +70,8 @@ class IssueCorrectionHandler(
     private val invoiceRepository: KsefRevenueInvoiceRepository,
     private val itemRepository: KsefRevenueInvoiceItemRepository,
     private val xmlBuilder: Fa3XmlBuilder,
-    private val dispatchService: KsefRevenueDispatchService
+    private val dispatchService: KsefRevenueDispatchService,
+    private val numberGenerator: RevenueInvoiceNumberGenerator
 ) {
     private val log = LoggerFactory.getLogger(IssueCorrectionHandler::class.java)
 
@@ -78,8 +80,23 @@ class IssueCorrectionHandler(
     }
 
     fun handle(command: IssueCorrectionCommand): KsefRevenueInvoiceEntity {
-        val correction = persistCorrection(command)
+        val correction = persistWithNumberRetry(command)
         return dispatchService.dispatch(correction)
+    }
+
+    /** Jak przy fakturze pierwotnej — kolizję numeru rozstrzyga indeks unikalny. */
+    private fun persistWithNumberRetry(command: IssueCorrectionCommand): KsefRevenueInvoiceEntity {
+        repeat(IssueRevenueInvoiceHandler.NUMBER_COLLISION_ATTEMPTS) { attempt ->
+            try {
+                return persistCorrection(command)
+            } catch (e: DataIntegrityViolationException) {
+                log.warn(
+                    "Kolizja numeru korekty (próba {}/{}): {}",
+                    attempt + 1, IssueRevenueInvoiceHandler.NUMBER_COLLISION_ATTEMPTS, e.mostSpecificCause.message
+                )
+            }
+        }
+        throw ValidationException("Nie udało się nadać unikalnego numeru korekty — spróbuj ponownie za chwilę")
     }
 
     @Transactional
@@ -117,12 +134,12 @@ class IssueCorrectionHandler(
         val totalVat = correctionRows.sumOf { it.vatValue }
         val totalGross = correctionRows.sumOf { it.grossValue }
 
-        val year = command.issueDate.year
-        val seq = invoiceRepository.countCrmInvoicesInYear(
-            command.studioId.value, RevenueInvoiceType.KOR,
-            LocalDate.of(year, 1, 1), LocalDate.of(year + 1, 1, 1)
-        ) + 1
-        val correctionNumber = "$CORRECTION_PREFIX/$year/${seq.toString().padStart(4, '0')}"
+        // Numeracja korekt idzie po NIP-ie sprzedawcy — tak samo jak faktur
+        val sellerNip = original.sellerNip
+            ?: throw ValidationException(
+                "Faktura pierwotna nie ma zapisanego NIP-u sprzedawcy — nie można nadać numeru korekty"
+            )
+        val correctionNumber = numberGenerator.next(sellerNip, CORRECTION_PREFIX, command.issueDate)
 
         val correction = KsefRevenueInvoiceEntity(
             studioId           = command.studioId.value,
@@ -186,7 +203,7 @@ class IssueCorrectionHandler(
             exemptionLegalBasis = command.exemptionLegalBasis
         )
 
-        invoiceRepository.save(correction)
+        invoiceRepository.saveAndFlush(correction)
         itemRepository.saveAll(items)
 
         log.info(

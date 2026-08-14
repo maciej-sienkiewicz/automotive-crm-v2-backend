@@ -1,6 +1,7 @@
 package pl.detailing.crm.ksef.revenue.issue
 
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.ksef.domain.PaymentForm
@@ -97,20 +98,46 @@ class IssueRevenueInvoiceHandler(
     private val itemRepository: KsefRevenueInvoiceItemRepository,
     private val settingsRepository: StudioSettingsRepository,
     private val xmlBuilder: Fa3XmlBuilder,
-    private val dispatchService: KsefRevenueDispatchService
+    private val dispatchService: KsefRevenueDispatchService,
+    private val numberGenerator: RevenueInvoiceNumberGenerator
 ) {
     private val log = LoggerFactory.getLogger(IssueRevenueInvoiceHandler::class.java)
 
     companion object {
         const val INVOICE_PREFIX = "FV"
         private val NIP_PATTERN = Regex("^\\d{10}$")
+
+        /** Ile razy ponawiamy zapis, gdy numer sprzątnął nam równoległy wątek. */
+        const val NUMBER_COLLISION_ATTEMPTS = 5
     }
 
     fun handle(command: IssueRevenueInvoiceCommand): KsefRevenueInvoiceEntity {
-        val invoice = persistInvoice(command)
+        val invoice = persistWithNumberRetry(command)
         // Wysyłka poza transakcją zapisu — długotrwała operacja sieciowa nie może
         // trzymać transakcji DB, a faktura ma przetrwać niezależnie od wyniku wysyłki
         return dispatchService.dispatch(invoice)
+    }
+
+    /**
+     * Numer jest nadawany jako MAX+1, więc dwa równoległe wystawienia dla tego samego
+     * NIP-u mogą trafić na ten sam numer. Rozstrzyga to indeks unikalny w bazie —
+     * przegrany wątek po prostu bierze kolejny numer. Lepsze to niż blokada na
+     * poziomie tabeli: kolizja jest rzadka, a serializacja kosztowałaby każdą fakturę.
+     */
+    private fun persistWithNumberRetry(command: IssueRevenueInvoiceCommand): KsefRevenueInvoiceEntity {
+        repeat(NUMBER_COLLISION_ATTEMPTS) { attempt ->
+            try {
+                return persistInvoice(command)
+            } catch (e: DataIntegrityViolationException) {
+                log.warn(
+                    "Kolizja numeru faktury (próba {}/{}): {}",
+                    attempt + 1, NUMBER_COLLISION_ATTEMPTS, e.mostSpecificCause.message
+                )
+            }
+        }
+        throw ValidationException(
+            "Nie udało się nadać unikalnego numeru faktury — spróbuj ponownie za chwilę"
+        )
     }
 
     @Transactional
@@ -131,9 +158,7 @@ class IssueRevenueInvoiceHandler(
         val totalVat = computed.sumOf { it.vatValue }
         val totalGross = computed.sumOf { it.grossValue }
 
-        val invoiceNumber = generateInvoiceNumber(
-            command.studioId.value, INVOICE_PREFIX, RevenueInvoiceType.VAT, command.issueDate
-        )
+        val invoiceNumber = numberGenerator.next(sellerNip, INVOICE_PREFIX, command.issueDate)
         val buyerNip = command.buyer.nip?.replace(Regex("[^0-9]"), "")?.takeIf { it.isNotBlank() }
 
         val invoice = KsefRevenueInvoiceEntity(
@@ -192,7 +217,10 @@ class IssueRevenueInvoiceHandler(
             exemptionLegalBasis = command.exemptionLegalBasis
         )
 
-        invoiceRepository.save(invoice)
+        // saveAndFlush: kolizja numeru ma wybuchnąć tutaj, zanim dopiszemy pozycje
+        // i zanim wrócimy do wołającego — inaczej retry dostałby wyjątek dopiero
+        // przy commicie, poza zasięgiem obsługi
+        invoiceRepository.saveAndFlush(invoice)
         itemRepository.saveAll(items)
 
         log.info(
@@ -278,22 +306,4 @@ class IssueRevenueInvoiceHandler(
                 )
             }
         }
-
-    /**
-     * Numeracja: {PREFIX}/{rok}/{seq:04d} per studio i rok, liczona po fakturach CRM.
-     * Ta sama konwencja co w module finance (count+1) — akceptowalna przy wolumenie
-     * studia; unikalność w KSeF gwarantuje para (NIP, numer).
-     */
-    private fun generateInvoiceNumber(
-        studioId: UUID,
-        prefix: String,
-        type: RevenueInvoiceType,
-        issueDate: LocalDate
-    ): String {
-        val year = issueDate.year
-        val count = invoiceRepository.countCrmInvoicesInYear(
-            studioId, type, LocalDate.of(year, 1, 1), LocalDate.of(year + 1, 1, 1)
-        )
-        return "$prefix/$year/${(count + 1).toString().padStart(4, '0')}"
-    }
 }

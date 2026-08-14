@@ -2,13 +2,14 @@ package pl.detailing.crm.ksef.revenue.issue
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import org.springframework.dao.DataIntegrityViolationException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
-import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceItemRepository
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.ksef.revenue.send.KsefRevenueDispatchService
@@ -30,8 +31,11 @@ class IssueRevenueInvoiceHandlerTest {
     private val settingsRepository = mockk<StudioSettingsRepository>()
     private val dispatchService = mockk<KsefRevenueDispatchService>()
 
+    private val numberGenerator = RevenueInvoiceNumberGenerator(invoiceRepository)
+
     private val handler = IssueRevenueInvoiceHandler(
-        invoiceRepository, itemRepository, settingsRepository, Fa3XmlBuilder(), dispatchService
+        invoiceRepository, itemRepository, settingsRepository, Fa3XmlBuilder(), dispatchService,
+        numberGenerator
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -68,17 +72,15 @@ class IssueRevenueInvoiceHandlerTest {
         exemptionLegalBasis = exemptionLegalBasis
     )
 
-    private fun stubHappyPath(existingCount: Long = 0) {
+    private fun stubHappyPath(lastSequence: Int = 0) {
         every { settingsRepository.findById(studioId.value) } returns Optional.of(settings())
-        every {
-            invoiceRepository.countCrmInvoicesInYear(studioId.value, RevenueInvoiceType.VAT, any(), any())
-        } returns existingCount
-        every { invoiceRepository.save(any()) } answers { firstArg() }
+        every { invoiceRepository.findMaxNumberSequence(any(), any()) } returns lastSequence
+        every { invoiceRepository.saveAndFlush(any()) } answers { firstArg() }
     }
 
     @Test
     fun `wystawia fakture z numeracja FV-rok-seq i policzonymi kwotami`() {
-        stubHappyPath(existingCount = 4)
+        stubHappyPath(lastSequence = 4)
 
         val invoice = handler.persistInvoice(
             command(
@@ -142,6 +144,47 @@ class IssueRevenueInvoiceHandlerTest {
         assertThrows<ValidationException> {
             handler.persistInvoice(command(paymentForm = "PRZELEW", isPaid = false))
         }
+    }
+
+    // ── Numeracja (regresja: KSeF 440 „Duplikat faktury") ──────────────────────
+
+    @Test
+    fun `numeracja jest liczona po NIP sprzedawcy, a nie po studiu`() {
+        every { settingsRepository.findById(studioId.value) } returns Optional.of(settings())
+        every { invoiceRepository.saveAndFlush(any()) } answers { firstArg() }
+        val nip = slot<String>()
+        val pattern = slot<String>()
+        every { invoiceRepository.findMaxNumberSequence(capture(nip), capture(pattern)) } returns 11
+
+        val invoice = handler.persistInvoice(command())
+
+        // NIP studia znormalizowany — to on wyznacza serię, bo w tym zakresie
+        // KSeF pilnuje unikalności numeru
+        assertEquals("1234563218", nip.captured)
+        assertEquals("^FV/2026/[0-9]+${'$'}", pattern.captured)
+        // MAX+1, nie COUNT+1 — numer odrzuconej faktury nie wraca do obiegu
+        assertEquals("FV/2026/0012", invoice.invoiceNumber)
+    }
+
+    @Test
+    fun `kolizja numeru w bazie jest ponawiana z kolejnym numerem`() {
+        every { settingsRepository.findById(studioId.value) } returns Optional.of(settings())
+        every { invoiceRepository.findMaxNumberSequence(any(), any()) } returnsMany listOf(3, 4)
+        every { dispatchService.dispatch(any()) } answers { firstArg() }
+
+        var attempts = 0
+        every { invoiceRepository.saveAndFlush(any()) } answers {
+            attempts++
+            if (attempts == 1) {
+                throw DataIntegrityViolationException("ux_ksef_revenue_invoices_seller_number")
+            }
+            firstArg()
+        }
+
+        val invoice = handler.handle(command())
+
+        assertEquals(2, attempts)
+        assertEquals("FV/2026/0005", invoice.invoiceNumber)
     }
 
     @Test
