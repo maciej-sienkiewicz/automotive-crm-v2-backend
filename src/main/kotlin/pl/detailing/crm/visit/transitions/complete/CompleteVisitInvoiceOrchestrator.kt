@@ -9,6 +9,7 @@ import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.domain.VatRate
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceEntity
@@ -94,6 +95,7 @@ class CompleteVisitInvoiceOrchestrator(
     private val completeVisitHandler: CompleteVisitHandler,
     private val issueInvoiceHandler: IssueRevenueInvoiceHandler,
     private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
+    private val financialDocumentRepository: FinancialDocumentRepository,
     private val settingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository
@@ -245,6 +247,15 @@ class CompleteVisitInvoiceOrchestrator(
                 description         = "Wizyta #${visit.visitNumber}"
             )
         )
+
+        // Powiązanie dokumentu finansowego z fakturą KSeF — zunifikowana lista
+        // dokumentów przychodowych prezentuje wtedy jeden rekord zamiast dwóch
+        completion.financialDocumentId?.let { documentId ->
+            financialDocumentRepository.findById(documentId.value).ifPresent { document ->
+                document.ksefRevenueInvoiceId = ksefInvoice.id
+                financialDocumentRepository.save(document)
+            }
+        }
 
         return CompleteVisitWithInvoiceResult(
             completion = completion,

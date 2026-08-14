@@ -130,7 +130,15 @@ class FinancialDocumentEntity(
     var updatedAt: Instant = Instant.now(),
 
     @Column(name = "deleted_at")
-    var deletedAt: Instant? = null
+    var deletedAt: Instant? = null,
+
+    /**
+     * Faktura przychodowa KSeF odpowiadająca temu dokumentowi (jeśli istnieje).
+     * Ustawiana przy zakończeniu wizyty z fakturą — zunifikowana lista dokumentów
+     * przychodowych pomija powiązane rekordy, żeby faktura nie pojawiła się dwukrotnie.
+     */
+    @Column(name = "ksef_revenue_invoice_id")
+    var ksefRevenueInvoiceId: UUID? = null
 
 ) {
     fun toDomain() = FinancialDocument(
