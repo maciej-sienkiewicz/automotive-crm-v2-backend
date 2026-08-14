@@ -23,7 +23,14 @@ import javax.xml.stream.XMLStreamWriter
 data class CorrectedInvoiceRef(
     val issueDate: LocalDate,
     val invoiceNumber: String,
-    val ksefNumber: String
+    val ksefNumber: String,
+    /**
+     * Typ skutku korekty w ewidencji (FA(3) TypKorekty):
+     * 1 = w dacie faktury pierwotnej (korekta błędu — domyślny przypadek korekty do zera),
+     * 2 = w dacie wystawienia korekty (zdarzenie późniejsze: zwrot, rabat),
+     * 3 = w innej dacie.
+     */
+    val correctionType: String = "1"
 )
 
 /**
@@ -185,10 +192,17 @@ class Fa3XmlBuilder {
 
         if (invoice.invoiceType == RevenueInvoiceType.KOR && correctedInvoice != null) {
             invoice.correctionReason?.takeIf { it.isNotBlank() }?.let { el(w, "PrzyczynaKorekty", it) }
+            // Typ skutku korekty w ewidencji: 1 = w dacie faktury pierwotnej (błąd na
+            // fakturze — najczęstszy przypadek korekty do zera), 2 = w dacie wystawienia
+            // korekty (zdarzenie późniejsze: zwrot, rabat), 3 = w innej dacie.
+            el(w, "TypKorekty", correctedInvoice.correctionType)
             w.writeStartElement("DaneFaKorygowanej")
             el(w, "DataWystFaKorygowanej", correctedInvoice.issueDate.format(DATE))
             el(w, "NrFaKorygowanej", correctedInvoice.invoiceNumber)
-            el(w, "NrKSeF", correctedInvoice.ksefNumber)
+            // NrKSeF to FLAGA typu TWybor1 (1 = faktura korygowana ma numer KSeF),
+            // a nie miejsce na sam numer — ten trafia do NrKSeFFaKorygowanej.
+            el(w, "NrKSeF", "1")
+            el(w, "NrKSeFFaKorygowanej", correctedInvoice.ksefNumber)
             w.writeEndElement()
         }
 

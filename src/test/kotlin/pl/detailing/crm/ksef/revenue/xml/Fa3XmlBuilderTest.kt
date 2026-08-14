@@ -188,9 +188,12 @@ class Fa3XmlBuilderTest {
 
         assertEquals("KOR", doc.text("RodzajFaktury"))
         assertEquals("Rezygnacja z usługi", doc.text("PrzyczynaKorekty"))
+        assertEquals("1", doc.text("TypKorekty"))
         assertEquals("2026-08-01", doc.text("DataWystFaKorygowanej"))
         assertEquals("FV/2026/0001", doc.text("NrFaKorygowanej"))
-        assertEquals("1234563218-20260801-ABCDEF123456-01", doc.text("NrKSeF"))
+        // NrKSeF to flaga (TWybor1) — numer faktury pierwotnej idzie do NrKSeFFaKorygowanej
+        assertEquals("1", doc.text("NrKSeF"))
+        assertEquals("1234563218-20260801-ABCDEF123456-01", doc.text("NrKSeFFaKorygowanej"))
         assertEquals("-1230.00", doc.text("P_15"))
         assertEquals("-1000.00", doc.text("P_13_1"))
     }
