@@ -2,6 +2,7 @@ package pl.detailing.crm.ksef.revenue.xml
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.w3c.dom.Document
@@ -238,7 +239,7 @@ class Fa3XmlBuilderTest {
     }
 
     @Test
-    fun `pozycja wpisana brutto emituje P_9B i P_11A (metoda w stu)`() {
+    fun `pozycja wpisana brutto uzywa pol metody netto, brutto pozostaje dokladne`() {
         val grossItem = KsefRevenueInvoiceItemEntity(
             invoiceId = UUID.randomUUID(),
             lineNumber = 1,
@@ -254,12 +255,48 @@ class Fa3XmlBuilderTest {
         )
         val doc = parse(builder.build(invoice(totalGross = 50_000), listOf(grossItem)))
 
-        assertEquals("500.00", doc.text("P_9B"))
-        assertEquals("500.00", doc.text("P_11A"))
-        assertNull(doc.single("P_9A"))
-        assertNull(doc.single("P_11"))
+        // Wiersz zawsze w polach metody netto (ścieżka ze wzorca MF)
+        assertEquals("406.50", doc.text("P_9A"))
+        assertEquals("406.50", doc.text("P_11"))
+        assertNull(doc.single("P_9B"))
+        assertNull(doc.single("P_11A"))
+        // Wpisana kwota brutto odtwarza się co do grosza z agregatów
         assertEquals("406.50", doc.text("P_13_1"))
         assertEquals("93.50", doc.text("P_14_1"))
+        assertEquals("500.00", doc.text("P_15"))
+    }
+
+    @Test
+    fun `Podmiot2 zawiera wymagane znaczniki JST i GV`() {
+        val doc = parse(builder.build(invoice(), listOf(item())))
+        val buyer = doc.single("Podmiot2")!!
+
+        fun childText(tag: String): String? = buyer
+            .getElementsByTagNameNS(Fa3XmlBuilder.FA3_NAMESPACE, tag)
+            .takeIf { it.length > 0 }?.item(0)?.textContent
+
+        assertEquals("2", childText("JST"))
+        assertEquals("2", childText("GV"))
+
+        // Kolejność wg sekwencji XSD: JST i GV na końcu Podmiot2
+        val children = (0 until buyer.childNodes.length)
+            .mapNotNull { buyer.childNodes.item(it) as? Element }
+            .map { it.localName }
+        assertEquals(listOf("JST", "GV"), children.takeLast(2))
+    }
+
+    @Test
+    fun `DataWytworzeniaFa ma najwyzej milisekundowa precyzje`() {
+        val doc = parse(
+            builder.build(
+                invoice(), listOf(item()),
+                generatedAt = java.time.Instant.parse("2026-08-14T09:23:12Z").plusNanos(80_038_134)
+            )
+        )
+        val stamp = doc.text("DataWytworzeniaFa")!!
+        assertEquals("2026-08-14T09:23:12.080Z", stamp)
+        val fraction = stamp.substringAfter('.', "").removeSuffix("Z")
+        assertTrue(fraction.length <= 7, "Walidator KSeF (.NET) obsługuje maks. 7 cyfr ułamka sekundy")
     }
 
     @Test

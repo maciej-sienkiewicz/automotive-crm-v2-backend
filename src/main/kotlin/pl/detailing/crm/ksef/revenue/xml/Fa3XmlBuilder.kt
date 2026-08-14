@@ -12,6 +12,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import javax.xml.stream.XMLOutputFactory
 import javax.xml.stream.XMLStreamWriter
 
@@ -101,7 +102,9 @@ class Fa3XmlBuilder {
         w.writeCharacters("FA")
         w.writeEndElement()
         el(w, "WariantFormularza", "3")
-        el(w, "DataWytworzeniaFa", generatedAt.toString())
+        // Znacznik czasu obcięty do milisekund: Instant.toString() potrafi wypisać
+        // 9 cyfr ułamka sekundy, a walidator KSeF (.NET) obsługuje najwyżej 7.
+        el(w, "DataWytworzeniaFa", generatedAt.truncatedTo(ChronoUnit.MILLIS).toString())
         el(w, "SystemInfo", SYSTEM_INFO)
         w.writeEndElement()
     }
@@ -140,6 +143,12 @@ class Fa3XmlBuilder {
             el(w, "Email", it)
             w.writeEndElement()
         }
+        // JST i GV są w FA(3) obowiązkowe dla Podmiot2 (2 = nie): odpowiednio
+        // "nabywca jest jednostką samorządu terytorialnego" i "nabywca jest
+        // członkiem grupy VAT". Ich brak = odrzucenie faktury z komunikatem
+        // "element Podmiot2 has incomplete content".
+        el(w, "JST", "2")
+        el(w, "GV", "2")
         w.writeEndElement()
     }
 
@@ -250,9 +259,14 @@ class Fa3XmlBuilder {
     }
 
     /**
-     * Pozycja NET: cena/wartość netto (P_9A/P_11) — metoda „od netto".
-     * Pozycja GROSS: cena/wartość brutto (P_9B/P_11A) — metoda „w stu"
-     * (art. 106e ust. 7 ustawy o VAT); brutto dokładnie jak wpisał użytkownik.
+     * Wiersz faktury zawsze w polach metody netto (P_9A cena jednostkowa netto,
+     * P_11 wartość netto) — ścieżka potwierdzona wzorcową fakturą MF.
+     *
+     * Tryb cenowy pozycji ([PriceMode]) rozstrzyga wyłącznie, jak policzono kwoty
+     * (patrz IssueRevenueInvoiceHandler), a nie których pól XML użyć: przy cenie
+     * wpisanej brutto netto jest pochodną („w stu"), więc suma netto + VAT daje
+     * dokładnie wpisaną kwotę brutto. Niezmiennik pilnowany przy wyliczeniu:
+     * P_11 == P_9A × P_8B.
      */
     private fun writeLine(w: XMLStreamWriter, item: KsefRevenueInvoiceItemEntity) {
         w.writeStartElement("FaWiersz")
@@ -261,13 +275,8 @@ class Fa3XmlBuilder {
         el(w, "P_7", item.name)
         item.unit?.takeIf { it.isNotBlank() }?.let { el(w, "P_8A", it) }
         el(w, "P_8B", item.quantity.stripTrailingZeros().toPlainString())
-        if (item.priceMode == PriceMode.GROSS && item.unitPriceGross != null) {
-            el(w, "P_9B", grosz(item.unitPriceGross))
-            el(w, "P_11A", grosz(item.grossValue))
-        } else {
-            el(w, "P_9A", grosz(item.unitPriceNet))
-            el(w, "P_11", grosz(item.netValue))
-        }
+        el(w, "P_9A", grosz(item.unitPriceNet))
+        el(w, "P_11", grosz(item.netValue))
         el(w, "P_12", item.vatRate)
         w.writeEndElement()
     }

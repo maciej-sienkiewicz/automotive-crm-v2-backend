@@ -273,10 +273,13 @@ class CompleteVisitInvoiceOrchestrator(
                 BigDecimal(unitPrice).multiply(item.quantity).setScale(0, RoundingMode.HALF_UP).toLong()
             }
             if (item.unitPriceGross != null) {
+                // Spójnie z IssueRevenueInvoiceHandler: netto to wielokrotność
+                // jednostkowego netto wyliczonego „w stu" (P_11 == P_9A × P_8B)
+                val unitNet = item.unitPriceGross - rate.vatFromGross(item.unitPriceGross)
                 val lineGross = lineOf(item.unitPriceGross)
-                val lineVat = rate.vatFromGross(lineGross)
-                net += lineGross - lineVat
-                vat += lineVat
+                val lineNet = lineOf(unitNet)
+                net += lineNet
+                vat += lineGross - lineNet
                 gross += lineGross
             } else {
                 val lineNet = lineOf(item.unitPriceNet!!)
