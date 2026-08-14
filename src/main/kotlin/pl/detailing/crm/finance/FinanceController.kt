@@ -18,8 +18,6 @@ import pl.detailing.crm.finance.cash.GetCashRegisterHandler
 import pl.detailing.crm.finance.cash.GetCashRegisterQuery
 import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
-import pl.detailing.crm.finance.document.ListFinancialDocumentsCommand
-import pl.detailing.crm.finance.document.ListFinancialDocumentsHandler
 import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
 import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
 import pl.detailing.crm.finance.domain.CashOperation
@@ -52,7 +50,6 @@ import pl.detailing.crm.role.permission.RequiresPermission
 @RequiresPermission(Permission.FINANCE_INVOICES)
 class FinanceController(
     private val createDocumentHandler: CreateFinancialDocumentHandler,
-    private val listDocumentsHandler: ListFinancialDocumentsHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
     private val documentRepository: FinancialDocumentRepository,
     private val adjustCashHandler: AdjustCashBalanceHandler,
@@ -64,13 +61,26 @@ class FinanceController(
     // ── Income Records (Dokumenty Przychodowe) ────────────────────────────────
 
     /**
-     * Create an income record (marks that a visit generated an external invoice).
+     * Ręczne dodanie dokumentu przychodowego (paragon lub dokument „inny").
      * POST /api/v1/finance/documents
+     *
+     * Faktur nie wystawia się tą drogą: od 2026 r. faktura B2B musi trafić do KSeF,
+     * więc jedyną ścieżką jej wystawienia jest moduł przychodowy KSeF
+     * (POST /api/v1/ksef/revenue/invoices albo zakończenie wizyty z fakturą).
      */
     @PostMapping("/documents")
     fun createDocument(@RequestBody request: CreateDocumentRequest): ResponseEntity<FinancialDocumentResponse> {
         requireManagerOrOwner()
         val principal = SecurityContextHelper.getCurrentUser()
+
+        val documentType = parseEnum<DocumentType>(request.documentType, "documentType")
+        val direction = parseEnum<DocumentDirection>(request.direction, "direction")
+        if (documentType == DocumentType.INVOICE && direction == DocumentDirection.INCOME) {
+            throw ValidationException(
+                "Faktury przychodowe wystawia się przez moduł KSeF — dokument wystawiony tutaj " +
+                    "nie trafiłby do Krajowego Systemu e-Faktur. Wybierz paragon lub dokument inny."
+            )
+        }
 
         val result = createDocumentHandler.handle(
             CreateFinancialDocumentCommand(
@@ -83,8 +93,8 @@ class FinanceController(
                 vehicleModel      = request.vehicleModel,
                 customerFirstName = request.customerFirstName,
                 customerLastName  = request.customerLastName,
-                documentType      = parseEnum<DocumentType>(request.documentType, "documentType"),
-                direction         = parseEnum<DocumentDirection>(request.direction, "direction"),
+                documentType      = documentType,
+                direction         = direction,
                 paymentMethod     = parseEnum<PaymentMethod>(request.paymentMethod, "paymentMethod"),
                 totalNet          = request.totalNet,
                 totalVat          = request.totalVat,
@@ -139,48 +149,6 @@ class FinanceController(
             )
         )
         return ResponseEntity.ok(entity.toDomain().toResponse())
-    }
-
-    /**
-     * List income records with optional filters.
-     * GET /api/v1/finance/documents
-     */
-    @GetMapping("/documents")
-    fun listDocuments(
-        @RequestParam(required = false) documentType: String?,
-        @RequestParam(required = false) direction: String?,
-        @RequestParam(required = false) status: String?,
-        @RequestParam(required = false) visitId: UUID?,
-        @RequestParam(required = false) dateFrom: LocalDate?,
-        @RequestParam(required = false) dateTo: LocalDate?,
-        @RequestParam(defaultValue = "false") includeDeleted: Boolean,
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
-    ): ResponseEntity<FinancialDocumentListResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = listDocumentsHandler.handle(
-            ListFinancialDocumentsCommand(
-                studioId       = principal.studioId,
-                documentType   = documentType?.let { parseEnum<DocumentType>(it, "documentType") },
-                direction      = direction?.let    { parseEnum<DocumentDirection>(it, "direction") },
-                status         = status?.let       { parseEnum<DocumentStatus>(it, "status") },
-                visitId        = visitId?.let { VisitId(it) },
-                dateFrom       = dateFrom,
-                dateTo         = dateTo,
-                includeDeleted = includeDeleted,
-                page           = maxOf(1, page),
-                pageSize       = size.coerceIn(1, 100)
-            )
-        )
-        return ResponseEntity.ok(
-            FinancialDocumentListResponse(
-                documents = result.documents.map { it.toResponse() },
-                total     = result.total,
-                page      = result.page,
-                pageSize  = result.pageSize
-            )
-        )
     }
 
     /** GET /api/v1/finance/documents/{id} */
@@ -463,12 +431,6 @@ data class FinancialDocumentResponse(
     val deletedAt: Instant?
 )
 
-data class FinancialDocumentListResponse(
-    val documents: List<FinancialDocumentResponse>,
-    val total: Long,
-    val page: Int,
-    val pageSize: Int
-)
 
 data class CashRegisterResponse(val id: String, val balance: Long, val currency: String, val updatedAt: Instant)
 

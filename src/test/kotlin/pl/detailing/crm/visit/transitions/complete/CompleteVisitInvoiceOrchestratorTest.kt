@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceHandler
@@ -29,13 +30,14 @@ class CompleteVisitInvoiceOrchestratorTest {
     private val completeVisitHandler = mockk<CompleteVisitHandler>()
     private val issueInvoiceHandler = mockk<IssueRevenueInvoiceHandler>()
     private val createFinancialDocumentHandler = mockk<CreateFinancialDocumentHandler>()
+    private val financialDocumentRepository = mockk<FinancialDocumentRepository>(relaxed = true)
     private val settingsRepository = mockk<StudioSettingsRepository>()
     private val visitRepository = mockk<VisitRepository>()
     private val customerRepository = mockk<CustomerRepository>()
 
     private val orchestrator = CompleteVisitInvoiceOrchestrator(
         completeVisitHandler, issueInvoiceHandler, createFinancialDocumentHandler,
-        settingsRepository, visitRepository, customerRepository
+        financialDocumentRepository, settingsRepository, visitRepository, customerRepository
     )
 
     private val studioId = StudioId(UUID.randomUUID())
