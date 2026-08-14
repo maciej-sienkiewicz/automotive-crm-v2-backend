@@ -1,7 +1,7 @@
 # Jawna nazwa projektu Compose. Bez niej projekt bierze nazwę z katalogu
 # (/opt/apps/{env}/app-backend → "app-backend" dla OBU środowisk), przez co
 # deploy develop z --remove-orphans adoptowałby i USUWAŁ kontenery produkcyjne
-# (inne klucze serwisów w tym samym projekcie = "osierocone").
+# (inne klucze serwisów w tym samym projekcie = "osierocon").
 name: app-backend-develop
 
 services:
