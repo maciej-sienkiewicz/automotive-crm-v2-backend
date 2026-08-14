@@ -255,14 +255,17 @@ class IssueRevenueInvoiceHandler(
                 BigDecimal(unitPrice).multiply(item.quantity).setScale(0, RoundingMode.HALF_UP).toLong()
             }
             if (item.unitPriceGross != null) {
+                // Cena jednostkowa netto jest pochodną ceny brutto („w stu"), a wartości
+                // wiersza to jej wielokrotności — dzięki temu P_11 == P_9A × P_8B
+                // (reguła KSeF), a netto + VAT daje dokładnie wpisaną kwotę brutto.
+                val unitNet = item.unitPriceGross - rate.vatFromGross(item.unitPriceGross)
                 val grossValue = lineOf(item.unitPriceGross)
-                val vatValue = rate.vatFromGross(grossValue)
-                val netValue = grossValue - vatValue
+                val netValue = lineOf(unitNet)
                 ComputedItem(
                     command = item, rate = rate, priceMode = PriceMode.GROSS,
-                    unitPriceNet = item.unitPriceGross - rate.vatFromGross(item.unitPriceGross),
+                    unitPriceNet = unitNet,
                     unitPriceGross = item.unitPriceGross,
-                    netValue = netValue, vatValue = vatValue, grossValue = grossValue
+                    netValue = netValue, vatValue = grossValue - netValue, grossValue = grossValue
                 )
             } else {
                 val netValue = lineOf(item.unitPriceNet!!)
