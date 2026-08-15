@@ -130,6 +130,41 @@ class Fa3XmlBuilderTest {
         assertEquals(3, doc.getElementsByTagNameNS(Fa3XmlBuilder.FA3_NAMESPACE, "FaWiersz").length)
     }
 
+    /**
+     * Regresja: P_12 to enumeracja TStawkaPodatku, która nie zna wartości „0" —
+     * stawka zerowa musi być doprecyzowana jako krajowa („0 KR"). Wcześniej KSeF
+     * odrzucał taką fakturę kodem 450 (Enumeration constraint failed).
+     */
+    @Test
+    fun `stawka zerowa trafia do P_12 jako 0 KR i do agregatu P_13_6_1`() {
+        val items = listOf(
+            item(line = 1, net = 100_000, vat = 23_000, rate = "23"),
+            item(line = 2, name = "Usługa 0%", net = 50_000, vat = 0, rate = "0")
+        )
+        val doc = parse(builder.build(invoice(totalGross = 173_000), items))
+
+        val rates = doc.getElementsByTagNameNS(Fa3XmlBuilder.FA3_NAMESPACE, "P_12")
+        assertEquals(2, rates.length)
+        assertEquals("23", rates.item(0).textContent)
+        assertEquals("0 KR", rates.item(1).textContent)
+
+        assertEquals("500.00", doc.text("P_13_6_1"))  // podstawa stawki 0% krajowej
+        assertNull(doc.single("P_14_6_1"))            // stawka 0% nie ma pola podatku
+    }
+
+    @Test
+    fun `pozycja zapisana juz w formie P_12 nie jest podwojnie mapowana`() {
+        // Pozycje sprzed zmiany kodu (albo z importu) mogą trzymać wprost „0 KR"
+        val doc = parse(
+            builder.build(
+                invoice(totalGross = 50_000),
+                listOf(item(net = 50_000, vat = 0, rate = "0 KR"))
+            )
+        )
+        assertEquals("0 KR", doc.text("P_12"))
+        assertEquals("500.00", doc.text("P_13_6_1"))
+    }
+
     // ── B2C ────────────────────────────────────────────────────────────────────
 
     @Test

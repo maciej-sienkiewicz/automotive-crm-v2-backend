@@ -207,7 +207,7 @@ class IssueRevenueInvoiceHandler(
                 netValue       = item.netValue,
                 vatValue       = item.vatValue,
                 grossValue     = item.grossValue,
-                vatRate        = item.rate.faCode
+                vatRate        = item.rate.code
             )
         }
 

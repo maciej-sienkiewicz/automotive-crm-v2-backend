@@ -52,17 +52,23 @@ enum class RevenueInvoiceType {
 /**
  * Stawki VAT wspierane przy wystawianiu faktur FA(3).
  *
- * [faCode] — wartość pola P_12 w wierszu faktury.
- * [aggregateIndex] — sufiks pól agregatów podstawy/podatku w sekcji Fa:
- *   23% → P_13_1/P_14_1, 8% → P_13_2/P_14_2, 5% → P_13_3/P_14_3,
- *   0% (krajowe) → P_13_6_1 (bez pola podatku), zw → P_13_7 (bez pola podatku).
+ * [code] — kod używany w API, UI i kolumnie `vat_rate`. Krótki i stabilny.
+ * [p12Code] — wartość pola P_12 w wierszu faktury, dokładnie taka, jakiej wymaga
+ *   enumeracja TStawkaPodatku ze schematu FA(3). Dla stawki 0% te dwa kody się
+ *   różnią: FA(3) nie dopuszcza samego „0" — rozdziela stawkę zerową na krajową
+ *   („0 KR"), wewnątrzwspólnotową („0 WDT") i eksportową („0 EX"), bo od tego
+ *   zależy pole agregatu. Usługi detailingowe to zawsze sprzedaż krajowa.
+ *
+ * Agregaty podstawy/podatku w sekcji Fa: 23% → P_13_1/P_14_1, 8% → P_13_2/P_14_2,
+ * 5% → P_13_3/P_14_3, 0% krajowe → P_13_6_1, zw → P_13_7 (stawki bez podatku
+ * nie mają pola P_14).
  */
-enum class VatRate(val faCode: String, val rate: BigDecimal?) {
-    RATE_23("23", BigDecimal("0.23")),
-    RATE_8("8", BigDecimal("0.08")),
-    RATE_5("5", BigDecimal("0.05")),
-    RATE_0("0", BigDecimal.ZERO),
-    ZW("zw", null);
+enum class VatRate(val code: String, val p12Code: String, val rate: BigDecimal?) {
+    RATE_23("23", "23", BigDecimal("0.23")),
+    RATE_8("8", "8", BigDecimal("0.08")),
+    RATE_5("5", "5", BigDecimal("0.05")),
+    RATE_0("0", "0 KR", BigDecimal.ZERO),
+    ZW("zw", "zw", null);
 
     /** VAT w groszach od podstawy netto w groszach (zaokrąglenie HALF_UP jak w przepisach). */
     fun vatFromNet(netGrosz: Long): Long = when (rate) {
@@ -85,11 +91,19 @@ enum class VatRate(val faCode: String, val rate: BigDecimal?) {
     }
 
     companion object {
-        fun fromCode(code: String): VatRate =
-            entries.firstOrNull { it.faCode.equals(code.trim(), ignoreCase = true) }
-                ?: throw IllegalArgumentException(
-                    "Nieobsługiwana stawka VAT: '$code'. Dozwolone: ${entries.joinToString { it.faCode }}"
-                )
+        /**
+         * Rozpoznaje zarówno kod wewnętrzny, jak i wartość P_12 ze schematu —
+         * dzięki temu odczyt starszych pozycji i dokumentów spoza CRM nie wywraca
+         * się na zapisie „0 KR" zamiast „0".
+         */
+        fun fromCode(code: String): VatRate {
+            val normalized = code.trim().replace(Regex("\\s+"), " ")
+            return entries.firstOrNull {
+                it.code.equals(normalized, ignoreCase = true) || it.p12Code.equals(normalized, ignoreCase = true)
+            } ?: throw IllegalArgumentException(
+                "Nieobsługiwana stawka VAT: '$code'. Dozwolone: ${entries.joinToString { it.code }}"
+            )
+        }
     }
 }
 

@@ -246,7 +246,7 @@ class IssueCorrectionHandler(
                 CorrectionRow(
                     name = item.name.trim(), unit = item.unit, quantity = item.quantity,
                     unitPriceNet = item.unitPriceNet, netValue = net, vatValue = vat,
-                    grossValue = net + vat, vatRate = rate.faCode
+                    grossValue = net + vat, vatRate = rate.code
                 )
             }
         }

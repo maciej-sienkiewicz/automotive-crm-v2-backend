@@ -42,7 +42,9 @@ data class CorrectedInvoiceRef(
  * - faktura VAT i korekta (KOR) metodą różnicową (wiersze i agregaty niosą różnicę,
  *   przy korekcie do zera — wartości ujemne),
  * - nabywca B2B (NIP) i B2C (BrakID=1),
- * - stawki VAT: 23, 8, 5, 0 (krajowe) oraz zw (wymaga podstawy zwolnienia P_19A),
+ * - stawki VAT: 23, 8, 5, 0 krajowa (P_12 = „0 KR") oraz zw (wymaga podstawy
+ *   zwolnienia P_19A). Poza zakresem: 0 WDT / 0 EX, oo, np I, np II — dotyczą
+ *   transakcji zagranicznych i odwrotnego obciążenia, których nie obsługujemy,
  * - płatność: zapłacono / termin płatności, forma płatności, rachunek bankowy.
  *
  * Kwoty wejściowe w groszach (Long) — serializowane do formatu dziesiętnego
@@ -291,7 +293,9 @@ class Fa3XmlBuilder {
         el(w, "P_8B", item.quantity.stripTrailingZeros().toPlainString())
         el(w, "P_9A", grosz(item.unitPriceNet))
         el(w, "P_11", grosz(item.netValue))
-        el(w, "P_12", item.vatRate)
+        // P_12 musi być wartością z enumeracji TStawkaPodatku, nie kodem wewnętrznym:
+        // dla stawki 0% schemat wymaga „0 KR" (krajowa), samo „0" jest odrzucane
+        el(w, "P_12", VatRate.fromCode(item.vatRate).p12Code)
         w.writeEndElement()
     }
 

@@ -42,4 +42,33 @@ class VatRateTest {
         assertEquals(VatRate.ZW, VatRate.fromCode(" zw "))
         assertThrows<IllegalArgumentException> { VatRate.fromCode("19") }
     }
+
+    /**
+     * Enumeracja TStawkaPodatku ze schematu FA(3) nie dopuszcza samego „0" —
+     * stawka zerowa jest rozbita na krajową, WDT i eksportową. Faktura z P_12=0
+     * wracała z KSeF z kodem 450 (Enumeration constraint failed).
+     */
+    @Test
+    fun `stawka zerowa idzie do P_12 jako 0 KR, a nie jako 0`() {
+        assertEquals("0", VatRate.RATE_0.code)
+        assertEquals("0 KR", VatRate.RATE_0.p12Code)
+    }
+
+    @Test
+    fun `pozostale stawki maja kod wewnetrzny rowny wartosci P_12`() {
+        listOf(VatRate.RATE_23, VatRate.RATE_8, VatRate.RATE_5, VatRate.ZW).forEach {
+            assertEquals(it.code, it.p12Code, "Stawka ${it.name} nie powinna mieć osobnego kodu P_12")
+        }
+    }
+
+    @Test
+    fun `stawke zerowa mozna podac zarowno kodem wewnetrznym jak i wartoscia z P_12`() {
+        assertEquals(VatRate.RATE_0, VatRate.fromCode("0"))
+        assertEquals(VatRate.RATE_0, VatRate.fromCode("0 KR"))
+        assertEquals(VatRate.RATE_0, VatRate.fromCode("0 kr"))
+        assertEquals(VatRate.RATE_0, VatRate.fromCode(" 0  KR "))
+        // Stawki spoza zakresu modułu nie mogą przejść po cichu jako krajowe zero
+        assertThrows<IllegalArgumentException> { VatRate.fromCode("0 WDT") }
+        assertThrows<IllegalArgumentException> { VatRate.fromCode("0 EX") }
+    }
 }
