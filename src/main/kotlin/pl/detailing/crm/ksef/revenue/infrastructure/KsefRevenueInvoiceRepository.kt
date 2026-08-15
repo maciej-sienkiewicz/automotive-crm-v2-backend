@@ -198,6 +198,37 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         @Param("dateTo") dateTo: LocalDate
     ): Array<Any?>
 
+    /**
+     * Suma brutto faktur przychodowych o danym statusie płatności — podstawa kafla
+     * „Przychody" i „Należności" w module finansów.
+     *
+     * Korekty (KOR) niosą kwoty ze znakiem, więc korekta do zera realnie zeruje
+     * przychód z faktury pierwotnej. Filtry statusów są te same co w statystykach:
+     * liczy się dokument istniejący w KSeF lub będący w drodze (offline24),
+     * z pominięciem odrzuconych i potwierdzonych duplikatów.
+     *
+     * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumGross],
+     * żeby obie strony sumy mówiły o tym samym okresie.
+     */
+    @Query(
+        value = """
+        SELECT COALESCE(SUM(i.total_gross), 0)
+        FROM ksef_revenue_invoices i
+        WHERE i.studio_id = :studioId
+          AND i.payment_status = CAST(:paymentStatus AS text)
+          AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
+          AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
+          AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
+    """, nativeQuery = true
+    )
+    fun sumGrossByPaymentStatus(
+        @Param("studioId") studioId: UUID,
+        @Param("paymentStatus") paymentStatus: String,
+        @Param("dateFrom") dateFrom: LocalDate?,
+        @Param("dateTo") dateTo: LocalDate?
+    ): Long
+
     fun countByStudioIdAndSourceAndKsefStatus(
         studioId: UUID,
         source: RevenueSource,

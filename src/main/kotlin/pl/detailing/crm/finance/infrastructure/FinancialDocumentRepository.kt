@@ -62,12 +62,20 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
         pageable: Pageable
     ): Page<FinancialDocumentEntity>
 
+    /**
+     * Suma brutto dokumentów finansowych. Dokumenty powiązane z fakturą w ledgerze
+     * KSeF (ksefRevenueInvoiceId) są pomijane — reprezentuje je tam już rekord
+     * faktury, a to on niesie korekty. Liczenie obu stron dawałoby podwójny
+     * przychód i ignorowałoby korekty. Kolumna dotyczy wyłącznie kierunku INCOME,
+     * więc dla EXPENSE warunek jest bezskutkowy.
+     */
     @Query("""
         SELECT COALESCE(SUM(d.totalGross), 0) FROM FinancialDocumentEntity d
         WHERE d.studioId  = :studioId
           AND d.direction = :direction
           AND d.status    = :status
           AND d.deletedAt IS NULL
+          AND d.ksefRevenueInvoiceId IS NULL
           AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
           AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
     """)
