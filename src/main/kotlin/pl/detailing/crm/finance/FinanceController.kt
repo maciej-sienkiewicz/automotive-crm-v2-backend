@@ -299,11 +299,11 @@ class FinanceController(
             FinanceSummaryResponse(
                 dateFrom           = result.dateFrom?.toString(),
                 dateTo             = result.dateTo?.toString(),
-                totalRevenue       = result.totalRevenue.amountInCents,
-                totalCosts         = result.totalCosts.amountInCents,
-                profit             = result.profit.amountInCents,
-                pendingReceivables = result.pendingReceivables.amountInCents,
-                pendingPayables    = result.pendingPayables.amountInCents,
+                totalRevenue       = result.totalRevenue,
+                totalCosts         = result.totalCosts,
+                profit             = result.profit,
+                pendingReceivables = result.pendingReceivables,
+                pendingPayables    = result.pendingPayables,
                 overdueReceivables = result.overdueReceivables,
                 overduePayables    = result.overduePayables
             )

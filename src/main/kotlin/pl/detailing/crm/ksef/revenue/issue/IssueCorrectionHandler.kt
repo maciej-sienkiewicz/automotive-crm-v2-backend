@@ -22,6 +22,7 @@ import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -168,7 +169,12 @@ class IssueCorrectionHandler(
             totalVat           = totalVat,
             totalGross         = totalGross,
             paymentForm        = original.paymentForm,
-            paymentStatus      = "PENDING",
+            // Korekta dziedziczy status płatności faktury pierwotnej, żeby oba
+            // dokumenty trafiały do tego samego kafla i wzajemnie się znosiły:
+            // korekta do zera faktury opłaconej ma zerować „Przychody", a nie
+            // wisieć w „Należnościach" jako osobna kwota ujemna.
+            paymentStatus      = original.paymentStatus,
+            paidAt             = original.paidAt?.let { Instant.now() },
             visitId            = original.visitId,
             customerId         = original.customerId,
             description        = "Korekta do ${original.invoiceNumber} ($originalKsefNumber)",
