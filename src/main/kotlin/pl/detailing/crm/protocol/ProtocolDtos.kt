@@ -68,52 +68,6 @@ data class ProtocolTemplateVerificationResponse(
     val problems: List<String>
 )
 
-// ─── Template requirements (content of the "Dowiedz się więcej" modal) ───────
-
-data class ProtocolTemplateRequirementsResponse(
-    val supportedFormats: List<TemplateFormatInfo>,
-    val fields: List<TemplateFieldRequirement>,
-    val signature: SignatureRequirements,
-    val logo: LogoRequirements,
-    val instructions: TemplateInstructions
-)
-
-data class TemplateFormatInfo(
-    val format: String,
-    val contentType: String,
-    val description: String,
-    val limitations: List<String>
-)
-
-data class TemplateFieldRequirement(
-    /** Field name expected in the file (AcroForm field name / data-field attribute). */
-    val fieldName: String,
-    val label: String,
-    val crmDataKey: String?,
-    val fieldType: String,
-    val required: Boolean
-)
-
-data class SignatureRequirements(
-    val customerFieldName: String,
-    val companyFieldName: String,
-    val notes: List<String>
-)
-
-data class LogoRequirements(
-    val formats: List<String>,
-    val minWidthPx: Int,
-    val recommendedWidthPx: Int,
-    val minAspectRatio: String,
-    val maxAspectRatio: String,
-    val maxBoxMm: String
-)
-
-data class TemplateInstructions(
-    val pdf: List<String>,
-    val html: List<String>
-)
-
 data class ProtocolRuleResponse(
     val id: String,
     val protocolTemplateId: String,

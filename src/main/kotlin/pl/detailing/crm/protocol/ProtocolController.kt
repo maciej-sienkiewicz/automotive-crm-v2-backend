@@ -21,7 +21,6 @@ import pl.detailing.crm.protocol.template.CreateProtocolTemplateCommand
 import pl.detailing.crm.protocol.template.CreateProtocolTemplateHandler
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.protocol.template.GetProtocolTemplatesHandler
-import pl.detailing.crm.protocol.template.ProtocolTemplateRequirementsProvider
 import pl.detailing.crm.protocol.template.VerifyProtocolTemplateCommand
 import pl.detailing.crm.protocol.template.VerifyProtocolTemplateHandler
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
@@ -41,7 +40,6 @@ import pl.detailing.crm.role.permission.RequiresPermission
 class ProtocolController(
     private val createProtocolTemplateHandler: CreateProtocolTemplateHandler,
     private val verifyProtocolTemplateHandler: VerifyProtocolTemplateHandler,
-    private val templateRequirementsProvider: ProtocolTemplateRequirementsProvider,
     private val defaultTemplateProvisioner: DefaultProtocolTemplateProvisioner,
     private val getProtocolTemplatesHandler: GetProtocolTemplatesHandler,
     private val createProtocolRuleHandler: CreateProtocolRuleHandler,
@@ -128,15 +126,6 @@ class ProtocolController(
                 )
             )
         }
-
-    /**
-     * Template configuration requirements — the content source for the
-     * "Dowiedz się więcej" modal on the Dokumenty i podpisy settings tab.
-     */
-    @GetMapping("/protocol-templates/requirements")
-    fun getProtocolTemplateRequirements(): ResponseEntity<ProtocolTemplateRequirementsResponse> {
-        return ResponseEntity.ok(templateRequirementsProvider.requirements())
-    }
 
     @PatchMapping("/protocol-templates/{id}")
     fun updateProtocolTemplate(
