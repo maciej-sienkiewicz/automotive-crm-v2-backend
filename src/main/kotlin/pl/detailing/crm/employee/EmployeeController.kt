@@ -22,6 +22,8 @@ import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
 import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.role.domain.Permission
 
 @RestController
@@ -36,7 +38,9 @@ class EmployeeController(
     private val deleteEmployeeAccountHandler: DeleteEmployeeAccountHandler,
     private val deleteEmployeeHandler: DeleteEmployeeHandler,
     private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val roleRepository: RoleRepository,
+    private val permissionCheckService: PermissionCheckService
 ) {
 
     // Deliberately NOT permission-gated: the coworker list (names) is needed by
@@ -63,8 +67,24 @@ class EmployeeController(
             employees.subList(start, minOf(start + limit, totalItems))
         } else emptyList()
 
+        // Role is management information, and this endpoint is deliberately open so the
+        // calendar can read coworker names. Enrich only for callers who administer the
+        // team; everyone else keeps the plain name list they had before.
+        val roleByUser: Map<String, RoleRef> =
+            if (permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.EMPLOYEES_MANAGE)) {
+                val roleNames = roleRepository.findByStudioId(principal.studioId.value)
+                    .associate { it.id to it.name }
+                userRepository.findByStudioId(principal.studioId.value)
+                    .mapNotNull { user ->
+                        val roleId = user.customRoleId ?: return@mapNotNull null
+                        val name = roleNames[roleId] ?: return@mapNotNull null
+                        user.id.toString() to RoleRef(roleId.toString(), name)
+                    }
+                    .toMap()
+            } else emptyMap()
+
         ResponseEntity.ok(EmployeeListResponse(
-            items = paginatedItems.map { it.toListItem() },
+            items = paginatedItems.map { it.toListItem(roleByUser) },
             pagination = EmployeePaginationInfo(
                 currentPage = page,
                 totalPages = if (limit > 0) (totalItems + limit - 1) / limit else 1,
@@ -252,7 +272,18 @@ data class EmployeeListItem(
     val fullName: String,
     val email: String?,
     val phone: String?,
-    val hasAccount: Boolean
+    val hasAccount: Boolean,
+    /**
+     * The account's role, when the caller administers the team. Null covers three
+     * different states the UI must tell apart, using [hasAccount]: no account at all,
+     * an account with no role (no access), or a caller not allowed to see roles.
+     */
+    val role: RoleRef? = null
+)
+
+data class RoleRef(
+    val id: String,
+    val name: String
 )
 
 data class EmployeeListResponse(
@@ -291,14 +322,15 @@ data class EmployeeDetailResponse(
 // Domain → Response mapping extensions
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun Employee.toListItem() = EmployeeListItem(
+private fun Employee.toListItem(roleByUser: Map<String, RoleRef> = emptyMap()) = EmployeeListItem(
     id = id.toString(),
     firstName = firstName,
     lastName = lastName,
     fullName = fullName(),
     email = email,
     phone = phone,
-    hasAccount = userId != null
+    hasAccount = userId != null,
+    role = userId?.let { roleByUser[it.toString()] }
 )
 
 private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) = EmployeeDetailResponse(
