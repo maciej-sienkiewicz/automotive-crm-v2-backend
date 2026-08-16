@@ -82,13 +82,16 @@ class CapabilityCoverageScanTest {
 
                 handlerMethods.forEach { method ->
                     val effective = method.getAnnotation(RequiresCapability::class.java) ?: classAnnotation
+                    val referencedFeatures = effective
+                        ?.let { it.value.requiredFeatures + it.value.anyOfFeatures }
+                        .orEmpty()
                     when {
                         effective == null ->
                             violations += "${controller.simpleName}.${method.name}: no @RequiresCapability " +
                                 "(module package requires feature $expectedFeature)"
-                        expectedFeature !in effective.value.requiredFeatures ->
+                        expectedFeature !in referencedFeatures ->
                             violations += "${controller.simpleName}.${method.name}: capability " +
-                                "${effective.value} does not require $expectedFeature — wrong module mapping"
+                                "${effective.value} does not reference $expectedFeature — wrong module mapping"
                     }
                 }
             }

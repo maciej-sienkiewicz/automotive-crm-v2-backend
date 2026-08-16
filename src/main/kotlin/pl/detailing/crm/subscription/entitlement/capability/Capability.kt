@@ -13,10 +13,14 @@ import pl.detailing.crm.subscription.entitlement.FeatureKey
  *        └─ CAPABILITY          — what the system actually enforces
  * ```
  *
- * A capability is defined as a conjunction (AND) over [FeatureKey]s, which is
- * what makes cross-module rules first-class citizens instead of ad-hoc ifs:
- * [SIGNATURE_REMOTE_REQUEST] requires BOTH e-signatures and the communication
- * module, because sending a signing link to the customer's phone is an SMS send.
+ * A capability is a flat expression over [FeatureKey]s:
+ *   satisfied ⇔ ALL of [requiredFeatures] are entitled
+ *               AND ([anyOfFeatures] is empty OR at least ONE of them is entitled)
+ *
+ * The AND part makes cross-module rules first-class citizens instead of ad-hoc
+ * ifs ([SIGNATURE_REMOTE_REQUEST] needs both e-signatures and communication);
+ * the OR part models shared infrastructure usable by several modules
+ * ([COMM_SMS_CREDITS] — credits make sense with ANY module that sends SMS).
  *
  * Enforcement points never inspect modules or plans directly — they ask
  * [CapabilityService] about a capability. Repackaging the price list
@@ -27,7 +31,8 @@ import pl.detailing.crm.subscription.entitlement.FeatureKey
  */
 enum class CapabilityKey(
     val displayName: String,
-    val requiredFeatures: Set<FeatureKey>
+    val requiredFeatures: Set<FeatureKey>,
+    val anyOfFeatures: Set<FeatureKey> = emptySet()
 ) {
     /** Transactional SMS/e-mail: reservation confirmations, reminders, visit-card links, pickup notifications. */
     COMM_SEND_TRANSACTIONAL(
@@ -39,6 +44,17 @@ enum class CapabilityKey(
     COMM_SEND_CAMPAIGN(
         "Kampanie marketingowe SMS i e-mail",
         setOf(FeatureKey.CAMPAIGNS)
+    ),
+
+    /**
+     * Buying and managing SMS credits — shared infrastructure of every module
+     * that sends SMS. Gating this on the communication module alone would brick
+     * a campaigns-only or signatures-only studio (their sends consume credits too).
+     */
+    COMM_SMS_CREDITS(
+        "Kredyty SMS",
+        requiredFeatures = emptySet(),
+        anyOfFeatures = setOf(FeatureKey.SMS_EMAIL, FeatureKey.CAMPAIGNS, FeatureKey.E_SIGNATURES)
     ),
 
     /** Collecting a signature on a studio-owned device (paired tablet). */
@@ -94,7 +110,20 @@ enum class CapabilityKey(
     );
 
     init {
-        require(requiredFeatures.isNotEmpty()) { "Capability $name must require at least one feature" }
+        require(requiredFeatures.isNotEmpty() || anyOfFeatures.isNotEmpty()) {
+            "Capability $name must reference at least one feature"
+        }
+    }
+
+    /**
+     * The features the given entitlement set lacks for this capability; empty
+     * means satisfied. When the OR group is unsatisfied, ALL its features are
+     * reported — each is a valid way to unlock, and the upsell offers every one.
+     */
+    fun missingFeaturesFor(enabled: Set<FeatureKey>): Set<FeatureKey> {
+        val missingRequired = requiredFeatures - enabled
+        val anyOfSatisfied = anyOfFeatures.isEmpty() || anyOfFeatures.any { it in enabled }
+        return if (anyOfSatisfied) missingRequired else missingRequired + anyOfFeatures
     }
 }
 

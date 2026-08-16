@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.DependsOn
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -24,6 +23,11 @@ import java.util.UUID
  * cost is one indexed anti-join query. It intentionally does NOT touch billing
  * status (`studios.subscription_status`) — that remains the billing lifecycle's
  * concern.
+ *
+ * Runs WITHOUT a transaction (@Transactional on @PostConstruct is a silent
+ * no-op — init callbacks execute on the raw bean before proxying). That is
+ * acceptable here: every statement is individually idempotent and a partial
+ * run simply completes on the next boot.
  */
 @Component
 @DependsOn("entitlementDataSeeder")
@@ -33,8 +37,25 @@ class StudioSubscriptionBackfill(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @PostConstruct
-    @Transactional
     fun backfillMissingPlanRows() {
+        // ON CONFLICT below needs a unique constraint on studio_id. The entity
+        // declares one, but databases created by older ddl-auto=update runs may
+        // lack it (prod runs ddl-auto=validate, which does not verify constraints).
+        // Creating it here is idempotent; failure (pre-existing duplicates) must
+        // scream, not take the application down.
+        try {
+            jdbcTemplate.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_studio_subscription_plans_studio " +
+                "ON studio_subscription_plans (studio_id)"
+            )
+        } catch (e: Exception) {
+            logger.error(
+                "Cannot ensure unique index on studio_subscription_plans.studio_id — " +
+                "likely duplicate rows exist. Backfill skipped; deduplicate manually.", e
+            )
+            return
+        }
+
         val basicPlanId = jdbcTemplate.query(
             "SELECT id FROM subscription_plans WHERE plan_key = 'BASIC'"
         ) { rs, _ -> rs.getObject("id", UUID::class.java) }.firstOrNull()

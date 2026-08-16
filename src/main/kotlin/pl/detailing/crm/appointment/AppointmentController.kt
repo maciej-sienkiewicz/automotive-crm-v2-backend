@@ -70,10 +70,9 @@ class AppointmentController(
      */
     private fun requireCommunicationModuleForRequestedNotifications(
         studioId: StudioId,
-        sendConfirmationSms: Boolean,
-        sendVisitCard: Boolean
+        vararg notificationRequested: Boolean
     ) {
-        if (sendConfirmationSms || sendVisitCard) {
+        if (notificationRequested.any { it }) {
             capabilityService.requireCapability(
                 studioId,
                 pl.detailing.crm.subscription.entitlement.capability.CapabilityKey.COMM_SEND_TRANSACTIONAL
@@ -180,7 +179,7 @@ class AppointmentController(
         // Reject explicitly requested notifications BEFORE the booking is created —
         // a silent skip would leave the user believing the customer was informed.
         requireCommunicationModuleForRequestedNotifications(
-            principal.studioId, request.sendConfirmationSms, request.sendVisitCard
+            principal.studioId, request.sendConfirmationSms, request.sendVisitCard, request.sendReminderSms
         )
 
         // Map request to command
@@ -318,7 +317,7 @@ class AppointmentController(
         val principal = SecurityContextHelper.getCurrentUser()
 
         requireCommunicationModuleForRequestedNotifications(
-            principal.studioId, request.sendConfirmationSms, request.sendVisitCard
+            principal.studioId, request.sendConfirmationSms, request.sendVisitCard, request.sendReminderSms
         )
 
         val baseRequest = request.toBaseRequest()
@@ -657,6 +656,7 @@ class AppointmentController(
     ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
+        requireCommunicationModuleForRequestedNotifications(principal.studioId, request.sendReminderSms)
 
         updateAppointmentSmsPreferencesHandler.handle(
             UpdateAppointmentSmsPreferencesCommand(
