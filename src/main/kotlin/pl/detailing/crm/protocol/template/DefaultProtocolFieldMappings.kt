@@ -28,5 +28,17 @@ object DefaultProtocolFieldMappings {
         "price" to CrmDataKey.TOTAL_GROSS_AMOUNT,
         "keys" to CrmDataKey.VEHICLE_KEYS_RECEIVED,
         "documents" to CrmDataKey.VEHICLE_DOCUMENTS_RECEIVED
+    ) + getSupplementaryMappings()
+
+    /**
+     * Header-section mappings added after the original 15: provider name
+     * (Usługodawca), protocol number and the employee who received the vehicle.
+     * Filled when the template contains the fields, but NOT required by
+     * verification — templates uploaded before these existed stay valid.
+     */
+    fun getSupplementaryMappings(): Map<String, CrmDataKey> = linkedMapOf(
+        "protocolnumber" to CrmDataKey.VISIT_NUMBER,
+        "receivedby" to CrmDataKey.RECEIVED_BY_NAME,
+        "provider" to CrmDataKey.PROVIDER_NAME
     )
 }
