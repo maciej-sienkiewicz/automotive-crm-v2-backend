@@ -13,6 +13,8 @@ import pl.detailing.crm.email.automation.UpdateEmailNotificationRuleCommand
 import pl.detailing.crm.email.automation.UpdateEmailTemplateConfigCommand
 import pl.detailing.crm.email.automation.UpdateEmailTemplateConfigHandler
 import pl.detailing.crm.email.domain.EmailAutomationConfig
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── Request / Response DTOs ──────────────────────────────────────────────────
 
@@ -60,6 +62,7 @@ private fun EmailNotificationRuleDto.toCommand() =
  * A template using a placeholder the message cannot fill is rejected here rather than
  * shipped to a customer as literal `{{...}}`.
  */
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/v1/email-campaigns/automation")
 @RequiresPermission(Permission.COMMUNICATION_SEND)

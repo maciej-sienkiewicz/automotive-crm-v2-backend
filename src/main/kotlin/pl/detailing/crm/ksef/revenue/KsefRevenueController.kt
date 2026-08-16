@@ -34,6 +34,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 /**
  * API modułu faktur przychodowych KSeF.
@@ -42,6 +44,7 @@ import java.util.UUID
  * z fakturami sprzedażowymi pobranymi z KSeF, a wystawionymi poza CRM
  * (source=EXTERNAL). Wystawienie = utworzenie + automatyczna wysyłka do KSeF.
  */
+@RequiresCapability(CapabilityKey.FINANCE_KSEF)
 @RestController
 @RequestMapping("/api/v1/ksef/revenue")
 @RequiresPermission(Permission.FINANCE_INVOICES)

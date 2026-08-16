@@ -15,6 +15,8 @@ import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.infrastructure.SignatureEventPublisher
 import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
 import pl.detailing.crm.signing.infrastructure.TabletSessionService
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 import java.time.Instant
 
 /**
@@ -25,6 +27,7 @@ import java.time.Instant
  */
 @RestController
 @RequestMapping("/api/v1")
+@RequiresCapability(CapabilityKey.SIGNATURE_LOCAL)
 @RequiresPermission(Permission.VISITS_CREATE)
 class SignatureRequestController(
     private val requestSignatureHandler: RequestSignatureHandler,

@@ -20,6 +20,8 @@ import pl.detailing.crm.ksef.revenue.issue.RevenueInvoiceItemCommand
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -98,7 +100,8 @@ class CompleteVisitInvoiceOrchestrator(
     private val financialDocumentRepository: FinancialDocumentRepository,
     private val settingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val capabilityService: CapabilityService
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitInvoiceOrchestrator::class.java)
 
@@ -106,6 +109,10 @@ class CompleteVisitInvoiceOrchestrator(
         command: CompleteVisitCommand,
         invoice: CompleteInvoiceDetails
     ): CompleteVisitWithInvoiceResult {
+        // Point-of-effect (W1): issuing a KSeF invoice is the finance module.
+        // Checked before any state changes — the caller receives 402 with upsell.
+        capabilityService.requireCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)
+
         // ── 1. Pre-walidacja (nic jeszcze nie zmieniamy) ───────────────────────
         if (invoice.items.isEmpty()) {
             throw ValidationException("Faktura musi mieć co najmniej jedną pozycję")

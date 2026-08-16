@@ -15,6 +15,8 @@ import pl.detailing.crm.smscredits.domain.SmsCreditTransactionType
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ private fun SmsCreditTransaction.toDto() = SmsCreditTransactionDto(
  * POST /api/v1/sms-credits/purchase         → buy credits (OWNER only)
  * GET  /api/v1/sms-credits/transactions     → transaction history (OWNER, MANAGER)
  */
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/v1/sms-credits")
 class SmsCreditController(

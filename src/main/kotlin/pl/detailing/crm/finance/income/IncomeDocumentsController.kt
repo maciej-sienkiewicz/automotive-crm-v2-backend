@@ -11,12 +11,15 @@ import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.LocalDate
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 /**
  * Zunifikowana lista dokumentów przychodowych — faktury i korekty z ledgera KSeF
  * razem z paragonami i dokumentami „inne" z modułu finansowego, w jednym,
  * stronicowanym widoku.
  */
+@RequiresCapability(CapabilityKey.FINANCE_ACCESS)
 @RestController
 @RequestMapping("/api/v1/finance/income-documents")
 @RequiresPermission(Permission.FINANCE_INVOICES)

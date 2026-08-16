@@ -17,6 +17,8 @@ import java.time.Instant
 import java.time.LocalDate
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ─── Response bodies ─────────────────────────────────────────────────────────
 
@@ -145,6 +147,7 @@ data class PeriodDetailResponse(
 // ─── Controller ──────────────────────────────────────────────────────────────
 
 @RequiresPermission(Permission.STATISTICS_VIEW)
+@RequiresCapability(CapabilityKey.STATS_VIEW)
 @RestController
 @RequestMapping("/api/v1/statistics")
 class StatsController(

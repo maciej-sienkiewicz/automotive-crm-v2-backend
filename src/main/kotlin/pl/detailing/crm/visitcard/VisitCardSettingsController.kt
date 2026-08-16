@@ -14,9 +14,9 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
-import pl.detailing.crm.subscription.entitlement.EntitlementService
-import pl.detailing.crm.subscription.entitlement.FeatureKey
-import pl.detailing.crm.subscription.entitlement.RequiresFeature
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 import java.time.Instant
 
 /**
@@ -38,7 +38,7 @@ import java.time.Instant
 @RequiresPermission(Permission.VISITS_CREATE)
 class VisitCardSettingsController(
     private val studioSettingsRepository: StudioSettingsRepository,
-    private val entitlementService: EntitlementService
+    private val capabilityService: CapabilityService
 ) {
 
     @GetMapping
@@ -51,13 +51,13 @@ class VisitCardSettingsController(
             VisitCardSettingsResponse(
                 enabled = settings?.visitCardEnabled ?: true,
                 sendByDefault = settings?.visitCardSendByDefault ?: false,
-                smsModuleActive = entitlementService.hasFeature(principal.studioId, FeatureKey.SMS_EMAIL)
+                smsModuleActive = capabilityService.hasCapability(principal.studioId, CapabilityKey.COMM_SEND_TRANSACTIONAL)
             )
         )
     }
 
     @PutMapping
-    @RequiresFeature(FeatureKey.SMS_EMAIL)
+    @RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
     fun updateSettings(
         @RequestBody request: UpdateVisitCardSettingsRequest
     ): ResponseEntity<VisitCardSettingsResponse> = runBlocking {

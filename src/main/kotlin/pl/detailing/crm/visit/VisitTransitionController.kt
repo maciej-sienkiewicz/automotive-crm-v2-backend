@@ -13,6 +13,8 @@ import pl.detailing.crm.visit.transitions.reject.*
 import pl.detailing.crm.visit.transitions.archive.*
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import java.time.LocalDate
 
 /**
@@ -32,7 +34,8 @@ class VisitTransitionController(
     private val completeVisitHandler: CompleteVisitHandler,
     private val completeVisitInvoiceOrchestrator: CompleteVisitInvoiceOrchestrator,
     private val rejectVisitHandler: RejectVisitHandler,
-    private val archiveVisitHandler: ArchiveVisitHandler
+    private val archiveVisitHandler: ArchiveVisitHandler,
+    private val capabilityService: CapabilityService
 ) {
 
     /**
@@ -49,6 +52,14 @@ class VisitTransitionController(
         @RequestBody request: MarkReadyForPickupRequest
     ): ResponseEntity<VisitStatusChangeResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+
+        // The transition itself is BASIC; the customer notification is the
+        // communication module. An explicit sms/email request without the module
+        // is rejected with 402 BEFORE the transition — never silently dropped
+        // (the caller believes the customer was notified) and never sent for free.
+        if (request.sms || request.email) {
+            capabilityService.requireCapability(principal.studioId, CapabilityKey.COMM_SEND_TRANSACTIONAL)
+        }
 
         val command = MarkVisitReadyForPickupCommand(
             studioId = principal.studioId,

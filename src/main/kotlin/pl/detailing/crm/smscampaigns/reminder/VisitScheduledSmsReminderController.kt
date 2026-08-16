@@ -15,6 +15,8 @@ import pl.detailing.crm.smscampaigns.reminder.domain.ScheduledSmsReminderStatus
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 
@@ -65,6 +67,7 @@ data class SmsReminderResponse(
  * PUT    /api/visits/{visitId}/sms-reminder/{id}      → update content / scheduled time
  * DELETE /api/visits/{visitId}/sms-reminder/{id}      → cancel pending reminder
  */
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/visits/{visitId}/sms-reminder")
 @RequiresPermission(Permission.VISITS_CREATE)

@@ -28,7 +28,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
+@RequiresCapability(CapabilityKey.FINANCE_KSEF)
 @RestController
 @RequestMapping("/api/v1/ksef")
 @RequiresPermission(Permission.FINANCE_INVOICES)

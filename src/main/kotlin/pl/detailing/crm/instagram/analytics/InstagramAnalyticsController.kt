@@ -7,12 +7,15 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import java.util.*
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 /**
  * API v2 analityki konkurencji. Kontrakt: każda metryka jako [MetricTriple]
  * (wartość + delta + benchmark) – frontend nie pokazuje liczb bez kontekstu.
  */
 @RequiresPermission(Permission.MARKETING_MANAGE)
+@RequiresCapability(CapabilityKey.INSTAGRAM_MONITOR)
 @RestController
 @RequestMapping("/api/v1/instagram")
 class InstagramAnalyticsController(

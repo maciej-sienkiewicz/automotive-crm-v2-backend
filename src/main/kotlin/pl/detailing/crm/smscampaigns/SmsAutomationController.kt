@@ -14,6 +14,8 @@ import pl.detailing.crm.smscampaigns.automation.UpdateNotificationRuleCommand
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── Request / Response DTOs ──────────────────────────────────────────────────
 
@@ -73,6 +75,7 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
  * cannot fill is rejected here rather than shipped to a customer as literal `{{...}}`.
  */
 @RequiresPermission(Permission.COMMUNICATION_SEND)
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/v1/sms-campaigns/automation")
 class SmsAutomationController(

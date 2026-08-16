@@ -7,6 +7,8 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.VisitId
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 data class SetSmsReminderRequest(val suppressed: Boolean)
 
@@ -19,6 +21,7 @@ data class SetSmsReminderRequest(val suppressed: Boolean)
  * Request:  { "suppressed": true }
  * Response: { "visitId": "...", "smsReminderSuppressed": true }
  */
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/visits")
 @RequiresPermission(Permission.VISITS_CREATE)
