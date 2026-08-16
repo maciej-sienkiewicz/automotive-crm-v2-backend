@@ -26,6 +26,16 @@ data class SmsCreditBalance(
         updatedAt = Instant.now()
     )
 
+    /**
+     * Credits granted rather than bought — the starter pack that comes with the
+     * communication module. Counted in [totalPurchased] alongside real purchases,
+     * which is also what makes "has this studio ever been credited?" a cheap check.
+     */
+    fun afterGrant(amount: Int): SmsCreditBalance = afterPurchase(amount)
+
+    /** True for a studio that has never had a single credit, bought or granted. */
+    fun neverCredited(): Boolean = totalPurchased == 0 && availableCredits == 0
+
     fun afterPurchase(amount: Int): SmsCreditBalance = copy(
         availableCredits = availableCredits + amount,
         totalPurchased = totalPurchased + amount,
