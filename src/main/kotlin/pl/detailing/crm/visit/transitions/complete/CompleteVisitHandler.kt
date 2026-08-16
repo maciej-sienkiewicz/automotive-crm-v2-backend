@@ -16,6 +16,8 @@ import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -26,12 +28,21 @@ class CompleteVisitHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val auditService: AuditService,
-    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler
+    private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
+    private val capabilityService: CapabilityService
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
     @Transactional
     suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult = withContext(Dispatchers.IO) {
+        // Completing a visit is a BASIC operation; issuing a financial document is the
+        // finance module. An EXPLICIT invoice request without the module is a 402
+        // (the UI shows the upsell instead of the invoice form); the default receipt
+        // auto-issue degrades to "close without a document" — see issueFinancialDocument.
+        if (command.documentType == DocumentType.INVOICE) {
+            capabilityService.requireCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)
+        }
+
         val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
@@ -106,6 +117,17 @@ class CompleteVisitHandler(
         visit: Visit,
         customer: CustomerEntity?
     ): FinancialDocument? {
+        // Without the finance module the studio has no finance views — creating
+        // documents it can never see would only corrupt future bookkeeping. The visit
+        // still completes; the response carries financialDocumentId = null and the
+        // frontend's "close without invoice" path owns the UX.
+        if (!capabilityService.hasCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)) {
+            log.info(
+                "Visit {} completed without financial document — FINANCE module not entitled for studio={}",
+                command.visitId, command.studioId
+            )
+            return null
+        }
         if (visit.serviceItems.isEmpty()) {
             log.info("Visit {} has no service items – skipping financial document creation", command.visitId)
             return null

@@ -9,8 +9,11 @@ import pl.detailing.crm.shared.InstagramPostReaction
 import pl.detailing.crm.shared.InstagramPostSnapshotId
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 @RequiresPermission(Permission.MARKETING_MANAGE)
+@RequiresCapability(CapabilityKey.INSTAGRAM_MONITOR)
 @RestController
 @RequestMapping("/api/v1/instagram/posts")
 class InstagramPostController(

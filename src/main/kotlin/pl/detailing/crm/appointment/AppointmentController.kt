@@ -58,21 +58,37 @@ class AppointmentController(
     private val deleteRecurringAppointmentHandler: DeleteRecurringAppointmentHandler,
     private val getRecurrenceSeriesHandler: GetRecurrenceSeriesHandler,
     private val sendReservationCardLinkHandler: pl.detailing.crm.visitcard.SendReservationCardLinkHandler,
-    private val entitlementService: pl.detailing.crm.subscription.entitlement.EntitlementService
+    private val capabilityService: pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 ) {
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
 
     /**
+     * Rejects the booking request with 402 (MODULE_REQUIRED + upsell payload) when the
+     * caller explicitly asked for customer notifications the studio's plan cannot send.
+     * Runs BEFORE any state is created, replacing the old fail-soft skip that let the
+     * user believe a message had been delivered.
+     */
+    private fun requireCommunicationModuleForRequestedNotifications(
+        studioId: StudioId,
+        sendConfirmationSms: Boolean,
+        sendVisitCard: Boolean
+    ) {
+        if (sendConfirmationSms || sendVisitCard) {
+            capabilityService.requireCapability(
+                studioId,
+                pl.detailing.crm.subscription.entitlement.capability.CapabilityKey.COMM_SEND_TRANSACTIONAL
+            )
+        }
+    }
+
+    /**
      * Best-effort delivery of the reservation card link right after booking
-     * ("Wyślij Kartę Wizyty do klienta" checkbox). Requires the SMS module;
-     * the handler itself additionally honours the studio's visit-card settings.
+     * ("Wyślij Kartę Wizyty do klienta" checkbox). Module entitlement was verified
+     * up front by [requireCommunicationModuleForRequestedNotifications]; the handler
+     * itself additionally honours the studio's visit-card settings.
      * Never fails the booking that was just created.
      */
     private suspend fun sendVisitCardAfterBooking(appointmentId: AppointmentId, studioId: StudioId) {
-        if (!entitlementService.hasFeature(studioId, pl.detailing.crm.subscription.entitlement.FeatureKey.SMS_EMAIL)) {
-            logger.warn("sendVisitCard requested without SMS module — skipped [studioId={}]", studioId)
-            return
-        }
         try {
             sendReservationCardLinkHandler.handle(
                 pl.detailing.crm.visitcard.SendReservationCardLinkCommand(
@@ -160,6 +176,12 @@ class AppointmentController(
     fun createAppointment(@RequestBody request: CreateAppointmentRequest): ResponseEntity<AppointmentCreateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
+        // Booking is BASIC; notifying the customer is the communication module.
+        // Reject explicitly requested notifications BEFORE the booking is created —
+        // a silent skip would leave the user believing the customer was informed.
+        requireCommunicationModuleForRequestedNotifications(
+            principal.studioId, request.sendConfirmationSms, request.sendVisitCard
+        )
 
         // Map request to command
         val command = CreateAppointmentCommand(
@@ -295,6 +317,9 @@ class AppointmentController(
     ): ResponseEntity<CreateRecurringAppointmentResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
+        requireCommunicationModuleForRequestedNotifications(
+            principal.studioId, request.sendConfirmationSms, request.sendVisitCard
+        )
 
         val baseRequest = request.toBaseRequest()
         val baseCommand = buildCreateCommand(baseRequest, principal)

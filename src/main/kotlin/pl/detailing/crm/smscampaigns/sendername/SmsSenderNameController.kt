@@ -19,6 +19,8 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigJpaReposi
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,7 @@ data class UpdateSenderNameRequest(
 // ── Controller ────────────────────────────────────────────────────────────────
 
 @RequiresPermission(Permission.COMMUNICATION_SEND)
+@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
 @RestController
 @RequestMapping("/api/v1/sms-campaigns/sender-name")
 class SmsSenderNameController(

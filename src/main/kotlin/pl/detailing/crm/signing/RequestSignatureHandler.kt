@@ -22,6 +22,8 @@ import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
 import pl.detailing.crm.signing.infrastructure.*
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.visitcard.VisitCardProperties
 import java.security.SecureRandom
 import java.time.Duration
@@ -52,6 +54,7 @@ class RequestSignatureHandler(
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
     private val visitCardProperties: VisitCardProperties,
+    private val capabilityService: CapabilityService,
     @Value("\${signing.request.ttl-minutes:15}") private val requestTtlMinutes: Long,
     @Value("\${signing.request.sms-ttl-minutes:60}") private val smsRequestTtlMinutes: Long,
     @Value("\${signing.request.default-declaration:O\u015Bwiadczam, \u017Ce zapozna\u0142em/zapozna\u0142am si\u0119 z tre\u015Bci\u0105 niniejszego dokumentu, rozumiem jego tre\u015B\u0107 i akceptuj\u0119 zawarte w nim ustalenia.}")
@@ -62,6 +65,16 @@ class RequestSignatureHandler(
     @Transactional
     suspend fun handle(command: RequestSignatureCommand): RequestSignatureResult =
         withContext(Dispatchers.IO) {
+            // Point-of-effect (W1) entitlement check — catches every caller, current and
+            // future. TABLET needs the e-signatures module; SMS_LINK is the cross-module
+            // rule: the signing link travels by SMS, so it additionally requires the
+            // communication module (SIGNATURE_REMOTE_REQUEST = E_SIGNATURES ∧ SMS_EMAIL).
+            val requiredCapability = when (command.channel) {
+                SignatureChannel.TABLET -> CapabilityKey.SIGNATURE_LOCAL
+                SignatureChannel.SMS_LINK -> CapabilityKey.SIGNATURE_REMOTE_REQUEST
+            }
+            capabilityService.requireCapability(command.studioId, requiredCapability)
+
             val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
                 command.visitId.value, command.protocolId.value, command.studioId.value
             ) ?: throw NotFoundException("Protokół nie został znaleziony")

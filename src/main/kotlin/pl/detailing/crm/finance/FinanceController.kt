@@ -44,7 +44,10 @@ import java.time.LocalDate
 import java.util.UUID
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
+@RequiresCapability(CapabilityKey.FINANCE_ACCESS)
 @RestController
 @RequestMapping("/api/v1/finance")
 @RequiresPermission(Permission.FINANCE_INVOICES)

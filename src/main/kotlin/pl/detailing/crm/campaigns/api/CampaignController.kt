@@ -10,11 +10,14 @@ import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
 import pl.detailing.crm.communication.OutboundCommunicationGateway
+import pl.detailing.crm.communication.OutboundMessageCategory
 import pl.detailing.crm.email.provider.EmailProvider
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.LocalTime
 import java.util.UUID
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -293,6 +296,7 @@ data class CampaignSettingsDto(
 /**
  * REST surface of the campaigns module (docs/campaigns-module-design.md §8).
  */
+@RequiresCapability(CapabilityKey.COMM_SEND_CAMPAIGN)
 @RestController
 @RequestMapping("/api/v1/campaigns")
 @RequiresPermission(Permission.COMMUNICATION_SEND)
@@ -440,7 +444,10 @@ class CampaignController(
             RecipientChannel.SMS -> {
                 val body = request.smsTemplate
                     ?: throw ValidationException("Treść SMS nie może być pusta")
-                val r = gateway.sendTransactionalSms(principal.studioId.value, request.address, body)
+                val r = gateway.sendTransactionalSms(
+                    principal.studioId.value, request.address, body,
+                    category = OutboundMessageCategory.CAMPAIGN
+                )
                 r.success to r.errorMessage
             }
             RecipientChannel.EMAIL -> {

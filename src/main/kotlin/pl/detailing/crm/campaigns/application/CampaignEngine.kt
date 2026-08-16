@@ -9,6 +9,7 @@ import pl.detailing.crm.campaigns.infrastructure.AudienceQueryService
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
+import pl.detailing.crm.communication.OutboundMessageCategory
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.*
 import java.time.Instant
@@ -286,7 +287,8 @@ class CampaignDispatcher(
                         studioId = recipient.studioId,
                         phoneNumber = recipient.address,
                         message = recipient.renderedBody,
-                        context = "Campaign=${recipient.campaignId}"
+                        context = "Campaign=${recipient.campaignId}",
+                        category = OutboundMessageCategory.CAMPAIGN
                     )
                     r.success to r.errorMessage
                 } catch (ex: InsufficientSmsCreditsException) {
@@ -321,7 +323,8 @@ class CampaignDispatcher(
                     to = recipient.address,
                     subject = recipient.renderedSubject.orEmpty(),
                     bodyText = recipient.renderedBody,
-                    context = "Campaign=${recipient.campaignId}"
+                    context = "Campaign=${recipient.campaignId}",
+                    category = OutboundMessageCategory.CAMPAIGN
                 )
                 r.success to r.errorMessage
             }

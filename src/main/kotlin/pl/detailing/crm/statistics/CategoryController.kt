@@ -24,6 +24,8 @@ import pl.detailing.crm.statistics.category.list.ListCategoriesHandler
 import pl.detailing.crm.statistics.category.update.UpdateCategoryCommand
 import pl.detailing.crm.statistics.category.update.UpdateCategoryHandler
 import java.time.Instant
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 
 // ─── Request bodies ──────────────────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ data class CategoryListResponse(
 
 // ─── Controller ──────────────────────────────────────────────────────────────
 
+@RequiresCapability(CapabilityKey.STATS_VIEW)
 @RestController
 @RequestMapping("/api/v1/service-categories")
 @RequiresPermission(Permission.STATISTICS_VIEW)
