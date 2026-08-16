@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.create.CreateAppointmentHandler
 import pl.detailing.crm.appointment.domain.*
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
@@ -21,7 +22,8 @@ class CreateRecurringAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
     private val auditService: AuditService,
-    private val createAppointmentHandler: CreateAppointmentHandler
+    private val createAppointmentHandler: CreateAppointmentHandler,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     companion object {
@@ -55,13 +57,21 @@ class CreateRecurringAppointmentHandler(
                 createdAt = Instant.now()
             )
 
-            // Step 3: persist series
-            recurrenceSeriesRepository.save(RecurrenceSeriesEntity.fromDomain(series))
-
-            // Step 4: generate occurrence dates (excluding index 0 which is the first appointment)
+            // Step 4: generate occurrence dates (excluding index 0 which is the first
+            // appointment). Pure computation, so it stays outside the transaction.
             val templateStart = command.base.schedule.startDateTime
             val templateEnd = command.base.schedule.endDateTime
             val allDates = series.generateOccurrenceDates(templateStart, templateEnd)
+
+            // Steps 3, 5 and 7 in ONE real transaction (TransactionTemplate — the body of
+            // a `@Transactional suspend` function on Dispatchers.IO escapes the
+            // interceptor-managed transaction; see AuditLogWriter). Split, the series row
+            // and its first appointment could commit while the bulk insert of the
+            // remaining occurrences failed — a series the calendar draws as recurring
+            // with exactly one occurrence, and no way to regenerate the rest.
+            transactionTemplate.execute {
+            // Step 3: persist series
+            recurrenceSeriesRepository.save(RecurrenceSeriesEntity.fromDomain(series))
 
             // Step 5: link first appointment to series (index 0)
             val firstEntity = appointmentRepository.findByIdAndStudioId(
@@ -117,6 +127,7 @@ class CreateRecurringAppointmentHandler(
             }
 
             appointmentRepository.saveAll(additionalEntities)
+            }
 
             // Step 8: audit log
             auditService.log(LogAuditCommand(
