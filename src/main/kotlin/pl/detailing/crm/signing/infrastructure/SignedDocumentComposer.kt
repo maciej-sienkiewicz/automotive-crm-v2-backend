@@ -315,14 +315,23 @@ class SignedDocumentComposer(
         return null
     }
 
-    /** Scale the signature to fit the target box without distorting the strokes. */
+    /**
+     * Scale the signature to fill the target box without distorting the strokes.
+     *
+     * The scale is unconstrained in both directions: a large tablet capture is
+     * shrunk to fit, and a small one is enlarged until it touches the box on its
+     * longer axis — so the signature always uses the field area fully and looks
+     * consistent regardless of the capture resolution of the signing device.
+     * (Signature PNGs are stroke drawings on a transparent background; moderate
+     * upscaling stays visually clean.)
+     */
     private fun fitPreservingAspect(
         imageWidth: Float,
         imageHeight: Float,
         maxWidth: Float,
         maxHeight: Float
     ): Pair<Float, Float> {
-        val scale = minOf(maxWidth / imageWidth, maxHeight / imageHeight, 1f)
+        val scale = minOf(maxWidth / imageWidth, maxHeight / imageHeight)
         return imageWidth * scale to imageHeight * scale
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -27,7 +28,8 @@ class DemoAccountService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val mobileTokenService: MobileTokenService,
-    private val securityContextRepository: SecurityContextRepository
+    private val securityContextRepository: SecurityContextRepository,
+    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -87,6 +89,14 @@ class DemoAccountService(
         )
 
         demoDataInitializer.seed(studioId.value, userId.value)
+
+        // Demo studios follow the same invariant as real ones: a check-in
+        // protocol template is always present. Failure must not break demo setup.
+        try {
+            defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
+        } catch (e: Exception) {
+            logger.error("Failed to seed default protocol template for demo studio {}: {}", studioId, e.message, e)
+        }
 
         val userPrincipal = UserPrincipal(
             userId = userId,

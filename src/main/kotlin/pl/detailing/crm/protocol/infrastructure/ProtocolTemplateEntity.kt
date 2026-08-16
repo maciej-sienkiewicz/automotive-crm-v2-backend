@@ -2,6 +2,8 @@ package pl.detailing.crm.protocol.infrastructure
 
 import jakarta.persistence.*
 import pl.detailing.crm.protocol.domain.ProtocolTemplate
+import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
+import pl.detailing.crm.protocol.domain.ProtocolTemplateVerificationStatus
 import pl.detailing.crm.shared.ProtocolTemplateId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -10,7 +12,8 @@ import java.util.*
 
 /**
  * JPA entity for ProtocolTemplate.
- * Represents a fillable PDF template (AcroForm) for visit protocols.
+ * Represents a fillable template (AcroForm PDF or HTML with data-field
+ * placeholders) for visit protocols.
  */
 @Entity
 @Table(
@@ -37,6 +40,17 @@ class ProtocolTemplateEntity(
     @Column(name = "s3_key", nullable = false, length = 500)
     var s3Key: String,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "file_format", nullable = false, length = 10)
+    var fileFormat: ProtocolTemplateFormat = ProtocolTemplateFormat.PDF,
+
+    @Column(name = "is_default", nullable = false)
+    var isDefault: Boolean = false,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "verification_status", nullable = false, length = 20)
+    var verificationStatus: ProtocolTemplateVerificationStatus = ProtocolTemplateVerificationStatus.PENDING,
+
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
 
@@ -58,6 +72,9 @@ class ProtocolTemplateEntity(
         name = name,
         description = description,
         s3Key = s3Key,
+        fileFormat = fileFormat,
+        isDefault = isDefault,
+        verificationStatus = verificationStatus,
         isActive = isActive,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
@@ -73,6 +90,9 @@ class ProtocolTemplateEntity(
                 name = template.name,
                 description = template.description,
                 s3Key = template.s3Key,
+                fileFormat = template.fileFormat,
+                isDefault = template.isDefault,
+                verificationStatus = template.verificationStatus,
                 isActive = template.isActive,
                 createdBy = template.createdBy.value,
                 updatedBy = template.updatedBy.value,

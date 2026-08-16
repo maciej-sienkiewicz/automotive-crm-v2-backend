@@ -46,11 +46,16 @@ class S3ProtocolStorageService(
     }
 
     /**
-     * Generate a presigned URL for uploading a protocol template PDF.
+     * Generate a presigned URL for uploading a protocol template file (PDF or HTML).
      */
-    fun generateTemplateUploadUrl(studioId: UUID, templateId: UUID): String {
-        val s3Key = buildTemplateS3Key(studioId, templateId)
-        return generateUploadUrl(s3Key, "application/pdf")
+    fun generateTemplateUploadUrl(
+        studioId: UUID,
+        templateId: UUID,
+        format: pl.detailing.crm.protocol.domain.ProtocolTemplateFormat =
+            pl.detailing.crm.protocol.domain.ProtocolTemplateFormat.PDF
+    ): String {
+        val s3Key = buildTemplateS3Key(studioId, templateId, format)
+        return generateUploadUrl(s3Key, format.contentType)
     }
 
     /**
@@ -98,8 +103,13 @@ class S3ProtocolStorageService(
     /**
      * Build S3 key for a protocol template.
      */
-    fun buildTemplateS3Key(studioId: UUID, templateId: UUID): String {
-        return "$studioId/protocols/templates/$templateId.pdf"
+    fun buildTemplateS3Key(
+        studioId: UUID,
+        templateId: UUID,
+        format: pl.detailing.crm.protocol.domain.ProtocolTemplateFormat =
+            pl.detailing.crm.protocol.domain.ProtocolTemplateFormat.PDF
+    ): String {
+        return "$studioId/protocols/templates/$templateId.${format.fileExtension}"
     }
 
     /**
@@ -109,6 +119,13 @@ class S3ProtocolStorageService(
      */
     fun buildFilledPdfS3Key(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
         return "$studioId/protocols/visits/$visitId/filled/PPP_${visitNumber}_$version.pdf"
+    }
+
+    /**
+     * Build S3 key for a filled HTML protocol (HTML-format templates).
+     */
+    fun buildFilledHtmlS3Key(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
+        return "$studioId/protocols/visits/$visitId/filled/PPP_${visitNumber}_$version.html"
     }
 
     /**

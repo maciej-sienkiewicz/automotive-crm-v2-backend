@@ -35,4 +35,7 @@ interface ProtocolTemplateRepository : JpaRepository<ProtocolTemplateEntity, UUI
         @Param("studioId") studioId: UUID,
         @Param("name") name: String
     ): Boolean
+
+    @Query("SELECT pt FROM ProtocolTemplateEntity pt WHERE pt.studioId = :studioId AND pt.isDefault = true")
+    fun findDefaultByStudioId(@Param("studioId") studioId: UUID): ProtocolTemplateEntity?
 }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -24,12 +25,26 @@ import java.time.temporal.ChronoUnit
 class SubscriptionService(
     private val studioRepository: StudioRepository,
     private val entitlementService: EntitlementService,
-    private val studioProvisioningService: StudioProvisioningService
+    private val studioProvisioningService: StudioProvisioningService,
+    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private const val TRIAL_DURATION_DAYS = 60L
+    }
+
+    /**
+     * Seed the default vehicle-acceptance protocol template for a freshly created
+     * studio. Failure must never break signup — the startup backfill and the
+     * delete-time guards will heal the studio later.
+     */
+    private fun seedDefaultProtocolTemplate(studioId: StudioId) {
+        try {
+            defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
+        } catch (e: Exception) {
+            logger.error("Failed to seed default protocol template for studio {}: {}", studioId, e.message, e)
+        }
     }
 
     // ─── Studio creation ──────────────────────────────────────────────────────
@@ -46,7 +61,9 @@ class SubscriptionService(
      * captured payment.
      */
     suspend fun createStudio(name: String): Studio = withContext(Dispatchers.IO) {
-        studioProvisioningService.provisionStudio(name)
+        val studio = studioProvisioningService.provisionStudio(name)
+        seedDefaultProtocolTemplate(studio.id)
+        studio
     }
 
     /** Starts the free trial for a studio that has never used one. */
