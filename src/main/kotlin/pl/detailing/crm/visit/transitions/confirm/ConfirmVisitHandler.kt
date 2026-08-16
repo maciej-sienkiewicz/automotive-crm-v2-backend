@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
@@ -26,7 +27,8 @@ class ConfirmVisitHandler(
     private val visitRepository: VisitRepository,
     private val appointmentRepository: AppointmentRepository,
     private val auditService: AuditService,
-    private val leadSyncService: LeadSyncService
+    private val leadSyncService: LeadSyncService,
+    private val transactionTemplate: TransactionTemplate
 ) {
     @Transactional
     suspend fun handle(command: ConfirmVisitCommand): ConfirmVisitResult =
@@ -42,31 +44,38 @@ class ConfirmVisitHandler(
                 throw ValidationException("Potwierdzić można tylko wizyty o statusie DRAFT. Aktualny status: ${visitEntity.status}")
             }
 
-            // Update visit status to IN_PROGRESS
-            visitEntity.status = VisitStatus.IN_PROGRESS
-            visitEntity.updatedBy = command.userId.value
-            visitEntity.updatedAt = Instant.now()
-            visitRepository.save(visitEntity)
+            // Visit, appointment and lead move together (TransactionTemplate — the body
+            // of a `@Transactional suspend` function on Dispatchers.IO escapes the
+            // interceptor-managed transaction; see AuditLogWriter). Split, a confirmed
+            // visit could sit against an appointment still short of CONVERTED, and the
+            // check-in flow and the delete guard then disagree about the same booking.
+            transactionTemplate.execute {
+                // Update visit status to IN_PROGRESS
+                visitEntity.status = VisitStatus.IN_PROGRESS
+                visitEntity.updatedBy = command.userId.value
+                visitEntity.updatedAt = Instant.now()
+                visitRepository.save(visitEntity)
 
-            // Update appointment status to CONVERTED and sync linked lead
-            if (visitEntity.appointmentId != null) {
-                val appointmentEntity = appointmentRepository.findByIdAndStudioId(
-                    visitEntity.appointmentId!!,
-                    command.studioId.value
-                )
-                if (appointmentEntity != null) {
-                    appointmentEntity.status = AppointmentStatus.CONVERTED
-                    appointmentEntity.updatedBy = command.userId.value
-                    appointmentEntity.updatedAt = Instant.now()
-                    appointmentRepository.save(appointmentEntity)
-
-                    leadSyncService.markCompleted(
-                        appointmentId = visitEntity.appointmentId!!,
-                        visitId = command.visitId.value,
-                        studioId = command.studioId.value,
-                        userId = command.userId.value,
-                        userDisplayName = command.userName ?: ""
+                // Update appointment status to CONVERTED and sync linked lead
+                if (visitEntity.appointmentId != null) {
+                    val appointmentEntity = appointmentRepository.findByIdAndStudioId(
+                        visitEntity.appointmentId!!,
+                        command.studioId.value
                     )
+                    if (appointmentEntity != null) {
+                        appointmentEntity.status = AppointmentStatus.CONVERTED
+                        appointmentEntity.updatedBy = command.userId.value
+                        appointmentEntity.updatedAt = Instant.now()
+                        appointmentRepository.save(appointmentEntity)
+
+                        leadSyncService.markCompleted(
+                            appointmentId = visitEntity.appointmentId!!,
+                            visitId = command.visitId.value,
+                            studioId = command.studioId.value,
+                            userId = command.userId.value,
+                            userDisplayName = command.userName ?: ""
+                        )
+                    }
                 }
             }
 

@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.service.domain.ServicePackageItem
 import pl.detailing.crm.service.domain.ServicePackageItemId
@@ -20,7 +21,8 @@ class CreatePackageHandler(
     private val validatorComposite: CreateServiceValidatorComposite,
     private val serviceRepository: ServiceRepository,
     private val packageItemRepository: ServicePackageItemRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -62,8 +64,6 @@ class CreatePackageHandler(
             updatedAt = Instant.now()
         )
 
-        serviceRepository.save(ServiceEntity.fromDomain(packageService))
-
         val itemEntities = command.serviceIds.mapIndexed { index, serviceId ->
             val serviceEntity = serviceRepository.findByIdAndStudioId(serviceId.value, command.studioId.value)
                 ?: throw EntityNotFoundException("Usługa ${serviceId.value} nie została znaleziona")
@@ -78,7 +78,14 @@ class CreatePackageHandler(
             )
             ServicePackageItemEntity.fromDomain(item)
         }
-        packageItemRepository.saveAll(itemEntities)
+        // Package header and its items land together (TransactionTemplate — the body of a
+        // `@Transactional suspend` function on Dispatchers.IO escapes the
+        // interceptor-managed transaction; see AuditLogWriter). Split, a failure could
+        // leave a package with no line items, sellable at an empty price.
+        transactionTemplate.execute {
+            serviceRepository.save(ServiceEntity.fromDomain(packageService))
+            packageItemRepository.saveAll(itemEntities)
+        }
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

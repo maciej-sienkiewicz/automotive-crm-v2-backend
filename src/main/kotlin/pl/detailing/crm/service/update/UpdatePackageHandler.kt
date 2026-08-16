@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.service.domain.ServicePackageItem
 import pl.detailing.crm.service.domain.ServicePackageItemId
@@ -19,7 +20,8 @@ import java.time.Instant
 class UpdatePackageHandler(
     private val serviceRepository: ServiceRepository,
     private val packageItemRepository: ServicePackageItemRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -37,10 +39,6 @@ class UpdatePackageHandler(
         }
 
         validatePackageItems(command)
-
-        oldPackageEntity.isActive = false
-        oldPackageEntity.updatedAt = Instant.now()
-        serviceRepository.save(oldPackageEntity)
 
         // Manual-price packages must not carry a catalog price — any price sent by the client is dropped
         val netAmount = if (command.requireManualPrice) Money.ZERO else command.basePriceNet
@@ -64,8 +62,6 @@ class UpdatePackageHandler(
             createdAt = Instant.now(),
             updatedAt = Instant.now()
         )
-        serviceRepository.save(ServiceEntity.fromDomain(newPackage))
-
         val itemEntities = command.serviceIds.mapIndexed { index, serviceId ->
             val serviceEntity = serviceRepository.findByIdAndStudioId(serviceId.value, command.studioId.value)
                 ?: throw EntityNotFoundException("Usługa ${serviceId.value} nie została znaleziona")
@@ -81,7 +77,20 @@ class UpdatePackageHandler(
                 )
             )
         }
-        packageItemRepository.saveAll(itemEntities)
+        // Archiving the old package, writing the new one and filling its items is one
+        // change (TransactionTemplate — the body of a `@Transactional suspend` function
+        // on Dispatchers.IO escapes the interceptor-managed transaction; see
+        // AuditLogWriter). Split, the old package could be archived and the new one left
+        // with zero line items — sellable at an empty price. Everything above is pure
+        // computation and reads, so only the writes belong inside.
+        transactionTemplate.execute {
+            oldPackageEntity.isActive = false
+            oldPackageEntity.updatedAt = Instant.now()
+            serviceRepository.save(oldPackageEntity)
+
+            serviceRepository.save(ServiceEntity.fromDomain(newPackage))
+            packageItemRepository.saveAll(itemEntities)
+        }
 
         val oldValues = mapOf(
             "name" to oldPackageEntity.name,

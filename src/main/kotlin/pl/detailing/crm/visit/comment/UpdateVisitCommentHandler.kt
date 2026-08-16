@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.comment
 import org.apache.coyote.BadRequestException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -19,7 +20,8 @@ class UpdateVisitCommentHandler(
     private val visitCommentRepository: VisitCommentRepository,
     private val visitCommentRevisionRepository: VisitCommentRevisionRepository,
     private val userRepository: UserRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
     @Transactional
     suspend fun handle(command: UpdateVisitCommentCommand): UpdateVisitCommentResult {
@@ -65,15 +67,21 @@ class UpdateVisitCommentHandler(
             changedAt = Instant.now()
         )
 
-        val revisionEntity = VisitCommentRevisionEntity.fromDomain(revision)
-        visitCommentRevisionRepository.save(revisionEntity)
+        // Revision and edit are one change (TransactionTemplate — the body of a
+        // `@Transactional suspend` function escapes the interceptor-managed transaction;
+        // see AuditLogWriter). Split, the edited text could persist with no revision
+        // recorded, so the comment's history would silently lose an entry.
+        transactionTemplate.execute {
+            val revisionEntity = VisitCommentRevisionEntity.fromDomain(revision)
+            visitCommentRevisionRepository.save(revisionEntity)
 
-        // Step 7: Update comment
-        commentEntity.content = command.newContent
-        commentEntity.updatedBy = command.userId.value
-        commentEntity.updatedByName = userName
-        commentEntity.updatedAt = Instant.now()
-        visitCommentRepository.save(commentEntity)
+            // Step 7: Update comment
+            commentEntity.content = command.newContent
+            commentEntity.updatedBy = command.userId.value
+            commentEntity.updatedByName = userName
+            commentEntity.updatedAt = Instant.now()
+            visitCommentRepository.save(commentEntity)
+        }
 
         // Step 8: Audit log
         auditService.log(LogAuditCommand(

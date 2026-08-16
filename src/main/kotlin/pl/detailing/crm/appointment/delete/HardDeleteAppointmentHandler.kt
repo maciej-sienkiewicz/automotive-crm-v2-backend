@@ -2,9 +2,9 @@ package pl.detailing.crm.appointment.delete
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
@@ -28,10 +28,9 @@ class HardDeleteAppointmentHandler(
     private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository,
     private val scheduledSmsReminderJpaRepository: ScheduledSmsReminderJpaRepository,
     private val smsLogJpaRepository: SmsLogJpaRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
-    private val logger = LoggerFactory.getLogger(javaClass)
-
     @Transactional
     suspend fun handle(command: HardDeleteAppointmentCommand): Unit = withContext(Dispatchers.IO) {
         val appointmentEntity = appointmentRepository.findByIdAndStudioIdIncludingDeleted(
@@ -62,24 +61,24 @@ class HardDeleteAppointmentHandler(
 
         val appointmentTitle = appointmentEntity.appointmentTitle ?: command.appointmentId.value.toString()
 
-        // 1. Usuń zaplanowane przypomnienia SMS
-        try {
+        // All three deletions in ONE real transaction (TransactionTemplate — the body of
+        // a `@Transactional suspend` function running on Dispatchers.IO escapes the
+        // interceptor-managed transaction; see AuditLogWriter). The try/catch blocks
+        // below used to swallow a failure and commit whatever had already succeeded,
+        // so a booking could survive while its customer's SMS reminders quietly vanished.
+        // Letting the exception out now rolls the whole delete back instead.
+        transactionTemplate.execute {
+            // 1. Usuń zaplanowane przypomnienia SMS
             val reminders = scheduledSmsReminderJpaRepository.findAllByAppointmentId(command.appointmentId.value)
             scheduledSmsReminderJpaRepository.deleteAll(reminders)
-        } catch (e: Exception) {
-            logger.error("Failed to delete SMS reminders for appointment ${command.appointmentId}: ${e.message}", e)
-        }
 
-        // 2. Usuń logi SMS
-        try {
+            // 2. Usuń logi SMS
             val smsLogs = smsLogJpaRepository.findAllByAppointmentId(command.appointmentId.value)
             smsLogJpaRepository.deleteAll(smsLogs)
-        } catch (e: Exception) {
-            logger.error("Failed to delete SMS logs for appointment ${command.appointmentId}: ${e.message}", e)
-        }
 
-        // 3. Usuń rezerwację (kaskadowo usuwa line items)
-        appointmentRepository.delete(appointmentEntity)
+            // 3. Usuń rezerwację (kaskadowo usuwa line items)
+            appointmentRepository.delete(appointmentEntity)
+        }
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

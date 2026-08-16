@@ -60,10 +60,16 @@ class SubscriptionService(
      * cause of "Studio nie ma aktywnego planu subskrypcji" thrown after a
      * captured payment.
      */
-    suspend fun createStudio(name: String): Studio = withContext(Dispatchers.IO) {
+    /**
+     * Not `suspend` on purpose: its only caller (SignupHandler) already runs on
+     * Dispatchers.IO and needs to invoke this inside a TransactionTemplate, so that the
+     * studio and its owner commit together. Both calls below are plain blocking
+     * functions, so dropping the extra dispatcher hop changes nothing at runtime.
+     */
+    fun createStudio(name: String): Studio {
         val studio = studioProvisioningService.provisionStudio(name)
         seedDefaultProtocolTemplate(studio.id)
-        studio
+        return studio
     }
 
     /** Starts the free trial for a studio that has never used one. */
