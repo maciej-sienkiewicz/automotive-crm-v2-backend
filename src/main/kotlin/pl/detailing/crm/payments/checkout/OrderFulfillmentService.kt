@@ -1,5 +1,6 @@
 package pl.detailing.crm.payments.checkout
 
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -11,6 +12,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import pl.detailing.crm.subscription.management.PendingPlanChangeRepository
 import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
 import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
@@ -21,16 +23,20 @@ import java.time.temporal.ChronoUnit
 /**
  * Applies the business effect of a PAID [PaymentOrderEntity].
  *
- * Called exactly once per order by the P24 webhook (or synchronously by the
- * checkout in mock mode). Idempotency is guaranteed by the caller flipping the
- * order status PENDING → PAID inside the same transaction.
+ * Failure semantics: [fulfill] joins the caller's transaction (the PENDING→PAID
+ * flip in CheckoutService.completeOrder), so a failure here rolls the flip back
+ * and the order stays PENDING — the P24 webhook retry re-drives fulfillment.
+ * "PAID without activation" is therefore never a persistent state; every failure
+ * is additionally counted (`subscription.fulfillment.failures`) and logged with
+ * full order context so a stuck retry loop pages someone instead of rotting.
  */
 @Service
 class OrderFulfillmentService(
     private val studioRepository: StudioRepository,
     private val entitlementService: EntitlementService,
     private val paymentLogRepository: SubscriptionPaymentLogRepository,
-    private val pendingPlanChangeRepository: PendingPlanChangeRepository
+    private val pendingPlanChangeRepository: PendingPlanChangeRepository,
+    private val meterRegistry: MeterRegistry
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -42,11 +48,21 @@ class OrderFulfillmentService(
     fun fulfill(order: PaymentOrderEntity) {
         val studioId = StudioId(order.studioId)
 
-        when (order.type) {
-            PaymentOrderType.INITIAL_PURCHASE -> fulfillInitialPurchase(order, studioId)
-            PaymentOrderType.RENEWAL -> fulfillRenewal(order, studioId)
-            PaymentOrderType.PLAN_UPGRADE -> fulfillPlanUpgrade(order, studioId)
-            PaymentOrderType.ADD_ON_PURCHASE -> fulfillAddOnPurchase(order, studioId)
+        try {
+            when (order.type) {
+                PaymentOrderType.INITIAL_PURCHASE -> fulfillInitialPurchase(order, studioId)
+                PaymentOrderType.RENEWAL -> fulfillRenewal(order, studioId)
+                PaymentOrderType.PLAN_UPGRADE -> fulfillPlanUpgrade(order, studioId)
+                PaymentOrderType.ADD_ON_PURCHASE -> fulfillAddOnPurchase(order, studioId)
+            }
+        } catch (ex: Exception) {
+            meterRegistry.counter("subscription.fulfillment.failures", "orderType", order.type.name).increment()
+            logger.error(
+                "Fulfillment FAILED orderId={} type={} studio={} amountCents={} — transaction will roll " +
+                "back to PENDING and be re-driven by the P24 webhook retry. Investigate before retries exhaust.",
+                order.id, order.type, studioId, order.amountCents, ex
+            )
+            throw ex
         }
 
         entitlementService.evictEntitlementsCache(studioId)
@@ -92,6 +108,10 @@ class OrderFulfillmentService(
     }
 
     private fun fulfillAddOnPurchase(order: PaymentOrderEntity, studioId: StudioId) {
+        // Self-heal instead of exploding after the money is captured: checkout already
+        // validates the plan row exists, but if provisioning drifted between checkout
+        // and webhook, re-establish the invariant and deliver what was paid for.
+        entitlementService.ensurePlanAssigned(studioId, order.planKey ?: PlanKey.BASIC)
         order.addOnKeys.forEach { entitlementService.activateAddOn(studioId, it) }
         log(order, SubscriptionEventType.ADD_ON_ACTIVATION, order.description)
     }

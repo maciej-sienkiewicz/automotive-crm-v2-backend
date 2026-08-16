@@ -1,5 +1,6 @@
 package pl.detailing.crm.subscription.entitlement
 
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.CacheEvict
 import org.springframework.cache.annotation.Cacheable
@@ -23,7 +24,8 @@ import pl.detailing.crm.subscription.entitlement.infrastructure.*
 class EntitlementService(
     private val studioSubscriptionPlanRepository: StudioSubscriptionPlanRepository,
     private val planRepository: PlanJpaRepository,
-    private val addOnRepository: AddOnJpaRepository
+    private val addOnRepository: AddOnJpaRepository,
+    private val meterRegistry: MeterRegistry
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -31,8 +33,13 @@ class EntitlementService(
 
     /**
      * Returns the cached entitlements for the given studio.
-     * Falls back to BASIC plan entitlements if no explicit plan has been assigned yet
-     * (e.g., during trial period before first purchase).
+     *
+     * INVARIANT (see [ensurePlanAssigned]): every studio has exactly one
+     * `studio_subscription_plans` row from the moment it is created. A missing row
+     * is therefore a DATA ERROR, not a normal state. We still degrade gracefully
+     * (BASIC feature set, so the studio keeps working) but we log at ERROR level
+     * and bump the `entitlements.missing.plan.row` counter — that metric must be
+     * wired to an alert; it means provisioning or a migration has failed.
      */
     @Cacheable(value = ["studio-entitlements"], key = "#studioId.toString()")
     @Transactional(readOnly = true)
@@ -40,7 +47,7 @@ class EntitlementService(
         logger.debug("Loading entitlements from DB for studio={}", studioId)
 
         val subscription = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
-            ?: return defaultTrialEntitlements()
+            ?: return degradedEntitlements(studioId)
 
         val planFeatures = subscription.plan.features.map { it.key }.toSet()
         val addOnFeatures = subscription.activeAddOns.flatMap { it.addOn.features.map { f -> f.key } }.toSet()
@@ -57,6 +64,15 @@ class EntitlementService(
     fun hasFeature(studioId: StudioId, featureKey: FeatureKey): Boolean =
         getEntitlements(studioId).hasFeature(featureKey)
 
+    /**
+     * True when the studio satisfies the provisioning invariant (has its plan row).
+     * Used by checkout to reject an add-on purchase BEFORE any money moves —
+     * feasibility must be validated before payment, never after.
+     */
+    @Transactional(readOnly = true)
+    fun hasPlanAssigned(studioId: StudioId): Boolean =
+        studioSubscriptionPlanRepository.findByStudioId(studioId.value) != null
+
     @Transactional(readOnly = true)
     fun getAllPlans(): List<Plan> = planRepository.findAllByIsActiveTrue()
         .sortedBy { it.displayOrder }
@@ -65,6 +81,26 @@ class EntitlementService(
     @Transactional(readOnly = true)
     fun getAllAddOns(): List<AddOn> = addOnRepository.findAllByIsActiveTrue()
         .map { it.toDomain() }
+
+    /**
+     * Idempotently guarantees the provisioning invariant: "every studio has exactly
+     * one subscription-plan row". Called from studio creation (signup), trial start
+     * and the startup backfill. Safe to call on every one of those paths — an
+     * existing row is never overwritten.
+     */
+    @Transactional
+    @CacheEvict(value = ["studio-entitlements"], key = "#studioId.toString()")
+    fun ensurePlanAssigned(studioId: StudioId, defaultPlanKey: PlanKey = PlanKey.BASIC) {
+        if (studioSubscriptionPlanRepository.findByStudioId(studioId.value) != null) return
+
+        val plan = planRepository.findByKey(defaultPlanKey)
+            ?: throw EntityNotFoundException("Plan nie został znaleziony: $defaultPlanKey")
+
+        studioSubscriptionPlanRepository.save(
+            StudioSubscriptionPlanEntity(studioId = studioId.value, plan = plan)
+        )
+        logger.info("Provisioned default plan={} for studio={}", defaultPlanKey, studioId)
+    }
 
     // ── Plan / Add-on management ──────────────────────────────────────────────
 
@@ -135,20 +171,35 @@ class EntitlementService(
     // ── Internal ──────────────────────────────────────────────────────────────
 
     /**
-     * Studios on a free trial get access to the full BASIC plan features
-     * without requiring a [StudioSubscriptionPlanEntity] row.
+     * Loud degraded mode for a studio violating the provisioning invariant.
+     *
+     * Grants the BASIC feature set so the studio's core operations keep working,
+     * but NEVER silently: before this change the fallback masked missing rows for
+     * weeks — the studio looked healthy in every read path and add-on purchases
+     * exploded only AFTER the payment was taken ("Studio nie ma aktywnego planu
+     * subskrypcji"). The ERROR log + counter make the drift visible immediately.
      */
-    private fun defaultTrialEntitlements() = StudioEntitlements(
-        planKey = PlanKey.BASIC,
-        planName = PlanKey.BASIC.displayName,
-        enabledFeatures = setOf(
-            FeatureKey.CALENDAR,
-            FeatureKey.VISITS,
-            FeatureKey.CUSTOMERS,
-            FeatureKey.VEHICLES,
-            FeatureKey.DOCUMENTS,
-            FeatureKey.GALLERY
-        ),
-        activeAddOnKeys = emptySet()
-    )
+    private fun degradedEntitlements(studioId: StudioId): StudioEntitlements {
+        logger.error(
+            "INVARIANT VIOLATION: studio={} has no studio_subscription_plans row — " +
+            "serving degraded BASIC entitlements. Provisioning or backfill has failed; " +
+            "run StudioSubscriptionBackfill or investigate signup flow.",
+            studioId
+        )
+        meterRegistry.counter("entitlements.missing.plan.row").increment()
+
+        return StudioEntitlements(
+            planKey = PlanKey.BASIC,
+            planName = PlanKey.BASIC.displayName,
+            enabledFeatures = setOf(
+                FeatureKey.CALENDAR,
+                FeatureKey.VISITS,
+                FeatureKey.CUSTOMERS,
+                FeatureKey.VEHICLES,
+                FeatureKey.DOCUMENTS,
+                FeatureKey.GALLERY
+            ),
+            activeAddOnKeys = emptySet()
+        )
+    }
 }
