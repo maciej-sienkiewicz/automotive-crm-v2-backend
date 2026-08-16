@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.protocol.domain.ProtocolFieldMapping
 import pl.detailing.crm.protocol.domain.ProtocolTemplate
+import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
+import pl.detailing.crm.protocol.domain.ProtocolTemplateVerificationStatus
 import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity
@@ -35,20 +37,27 @@ class CreateProtocolTemplateHandler(
 
             val templateId = ProtocolTemplateId.random()
 
-            // Generate S3 upload URL
-            val s3Key = s3StorageService.buildTemplateS3Key(command.studioId.value, templateId.value)
+            // Generate S3 upload URL (format-aware key + content type)
+            val s3Key = s3StorageService.buildTemplateS3Key(
+                command.studioId.value, templateId.value, command.fileFormat
+            )
             val uploadUrl = s3StorageService.generateTemplateUploadUrl(
                 command.studioId.value,
-                templateId.value
+                templateId.value,
+                command.fileFormat
             )
 
-            // Create template
+            // Create template. Verification stays PENDING until the file is uploaded
+            // to S3 and POST /protocol-templates/{id}/verify confirms the required fields.
             val template = ProtocolTemplate(
                 id = templateId,
                 studioId = command.studioId,
                 name = command.name.trim(),
                 description = command.description?.trim(),
                 s3Key = s3Key,
+                fileFormat = command.fileFormat,
+                isDefault = false,
+                verificationStatus = ProtocolTemplateVerificationStatus.PENDING,
                 isActive = true,
                 createdBy = command.userId,
                 updatedBy = command.userId,
@@ -97,7 +106,8 @@ data class CreateProtocolTemplateCommand(
     val studioId: StudioId,
     val userId: UserId,
     val name: String,
-    val description: String?
+    val description: String?,
+    val fileFormat: ProtocolTemplateFormat = ProtocolTemplateFormat.PDF
 )
 
 data class CreateProtocolTemplateResult(

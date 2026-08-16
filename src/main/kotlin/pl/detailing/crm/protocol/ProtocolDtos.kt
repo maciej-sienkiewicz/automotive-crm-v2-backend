@@ -5,7 +5,9 @@ import java.time.Instant
 
 data class CreateProtocolTemplateRequest(
     val name: String,
-    val description: String?
+    val description: String?,
+    /** Template file format: "PDF" (default) or "HTML". */
+    val fileFormat: String? = null
 )
 
 data class UpdateProtocolTemplateRequest(
@@ -40,9 +42,76 @@ data class ProtocolTemplateResponse(
     val name: String,
     val description: String?,
     val templateUrl: String?,
+    val fileFormat: String,
+    val isDefault: Boolean,
+    val verificationStatus: String,
     val isActive: Boolean,
     val createdAt: String,
     val updatedAt: String
+)
+
+// ─── Template verification ────────────────────────────────────────────────────
+
+data class ProtocolTemplateVerificationResponse(
+    val templateId: String,
+    val fileFormat: String,
+    val verificationStatus: String,
+    /** All field names required by the visit pipeline. */
+    val requiredFields: List<String>,
+    /** Required fields actually present in the uploaded file. */
+    val foundFields: List<String>,
+    /** Required fields absent from the uploaded file — empty when VERIFIED. */
+    val missingFields: List<String>,
+    /** Optional fields (e.g. company_signature) that were detected. */
+    val optionalFieldsFound: List<String>,
+    /** Non-field problems: unparseable file, missing AcroForm, bad signature box, etc. */
+    val problems: List<String>
+)
+
+// ─── Template requirements (content of the "Dowiedz się więcej" modal) ───────
+
+data class ProtocolTemplateRequirementsResponse(
+    val supportedFormats: List<TemplateFormatInfo>,
+    val fields: List<TemplateFieldRequirement>,
+    val signature: SignatureRequirements,
+    val logo: LogoRequirements,
+    val instructions: TemplateInstructions
+)
+
+data class TemplateFormatInfo(
+    val format: String,
+    val contentType: String,
+    val description: String,
+    val limitations: List<String>
+)
+
+data class TemplateFieldRequirement(
+    /** Field name expected in the file (AcroForm field name / data-field attribute). */
+    val fieldName: String,
+    val label: String,
+    val crmDataKey: String?,
+    val fieldType: String,
+    val required: Boolean
+)
+
+data class SignatureRequirements(
+    val customerFieldName: String,
+    val companyFieldName: String,
+    val notes: List<String>
+)
+
+data class LogoRequirements(
+    val formats: List<String>,
+    val minWidthPx: Int,
+    val recommendedWidthPx: Int,
+    val minAspectRatio: String,
+    val maxAspectRatio: String,
+    val maxBoxMm: String
+)
+
+data class TemplateInstructions(
+    val pdf: List<String>,
+    val html: List<String>
 )
 
 data class ProtocolRuleResponse(

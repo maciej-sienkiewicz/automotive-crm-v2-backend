@@ -16,9 +16,14 @@ import pl.detailing.crm.protocol.rule.CreateProtocolRuleHandler
 import pl.detailing.crm.protocol.rule.DeleteProtocolRuleCommand
 import pl.detailing.crm.protocol.rule.DeleteProtocolRuleHandler
 import pl.detailing.crm.protocol.rule.GetProtocolRulesHandler
+import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
 import pl.detailing.crm.protocol.template.CreateProtocolTemplateCommand
 import pl.detailing.crm.protocol.template.CreateProtocolTemplateHandler
+import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.protocol.template.GetProtocolTemplatesHandler
+import pl.detailing.crm.protocol.template.ProtocolTemplateRequirementsProvider
+import pl.detailing.crm.protocol.template.VerifyProtocolTemplateCommand
+import pl.detailing.crm.protocol.template.VerifyProtocolTemplateHandler
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.GetVisitProtocolsHandler
@@ -35,6 +40,9 @@ import pl.detailing.crm.role.permission.RequiresPermission
 @RequiresPermission(Permission.VISITS_CREATE)
 class ProtocolController(
     private val createProtocolTemplateHandler: CreateProtocolTemplateHandler,
+    private val verifyProtocolTemplateHandler: VerifyProtocolTemplateHandler,
+    private val templateRequirementsProvider: ProtocolTemplateRequirementsProvider,
+    private val defaultTemplateProvisioner: DefaultProtocolTemplateProvisioner,
     private val getProtocolTemplatesHandler: GetProtocolTemplatesHandler,
     private val createProtocolRuleHandler: CreateProtocolRuleHandler,
     private val deleteProtocolRuleHandler: DeleteProtocolRuleHandler,
@@ -71,16 +79,63 @@ class ProtocolController(
         @RequestBody request: CreateProtocolTemplateRequest
     ): ResponseEntity<ProtocolTemplateResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val fileFormat = request.fileFormat
+            ?.let {
+                runCatching { ProtocolTemplateFormat.valueOf(it.uppercase()) }.getOrElse {
+                    throw ValidationException("Nieobsługiwany format szablonu: '${request.fileFormat}'. Dozwolone: PDF, HTML")
+                }
+            }
+            ?: ProtocolTemplateFormat.PDF
         val result = createProtocolTemplateHandler.handle(
             CreateProtocolTemplateCommand(
                 studioId = principal.studioId,
                 userId = principal.userId,
                 name = request.name,
-                description = request.description
+                description = request.description,
+                fileFormat = fileFormat
             )
         )
         ResponseEntity.status(HttpStatus.CREATED)
             .body(toProtocolTemplateResponse(result.template, principal.studioId, result.uploadUrl))
+    }
+
+    /**
+     * Verify an uploaded template file (PDF or HTML) against the required field set.
+     * Called by the frontend right after the S3 upload completes; persists the verdict
+     * (VERIFIED/REJECTED) on the template and returns the detailed field report.
+     */
+    @PostMapping("/protocol-templates/{id}/verify")
+    fun verifyProtocolTemplate(@PathVariable id: String): ResponseEntity<ProtocolTemplateVerificationResponse> =
+        runBlocking {
+            val principal = SecurityContextHelper.getCurrentUser()
+            val result = verifyProtocolTemplateHandler.handle(
+                VerifyProtocolTemplateCommand(
+                    studioId = principal.studioId,
+                    userId = principal.userId,
+                    templateId = UUID.fromString(id)
+                )
+            )
+            ResponseEntity.ok(
+                ProtocolTemplateVerificationResponse(
+                    templateId = result.template.id.toString(),
+                    fileFormat = result.template.fileFormat.name,
+                    verificationStatus = result.template.verificationStatus.name,
+                    requiredFields = result.verification.requiredFields,
+                    foundFields = result.verification.foundFields,
+                    missingFields = result.verification.missingFields,
+                    optionalFieldsFound = result.verification.optionalFieldsFound,
+                    problems = result.verification.problems
+                )
+            )
+        }
+
+    /**
+     * Template configuration requirements — the content source for the
+     * "Dowiedz się więcej" modal on the Dokumenty i podpisy settings tab.
+     */
+    @GetMapping("/protocol-templates/requirements")
+    fun getProtocolTemplateRequirements(): ResponseEntity<ProtocolTemplateRequirementsResponse> {
+        return ResponseEntity.ok(templateRequirementsProvider.requirements())
     }
 
     @PatchMapping("/protocol-templates/{id}")
@@ -103,6 +158,18 @@ class ProtocolController(
         protocolTemplateRepository.save(
             pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity.fromDomain(updated)
         )
+
+        // Deactivating a template may have removed the studio's last active
+        // check-in template — restore the default one if so. The guard may
+        // reactivate this very template (when it is the default), so respond
+        // with the state re-read after the guard ran.
+        if (request.isActive == false) {
+            defaultTemplateProvisioner.ensureDefaultCheckInTemplate(principal.studioId)
+            val fresh = protocolTemplateRepository.findByIdAndStudioId(
+                UUID.fromString(id), principal.studioId.value
+            )?.toDomain() ?: updated
+            return@runBlocking ResponseEntity.ok(toProtocolTemplateResponse(fresh, principal.studioId))
+        }
         ResponseEntity.ok(toProtocolTemplateResponse(updated, principal.studioId))
     }
 
@@ -114,6 +181,11 @@ class ProtocolController(
             UUID.fromString(id), principal.studioId.value
         ) ?: throw NotFoundException("Szablon protokołu nie został znaleziony")
         protocolTemplateRepository.delete(template)
+
+        // Invariant guard: a studio must never be left without a check-in template.
+        // If the deleted template was the last active one (default or custom),
+        // the default template is re-provisioned immediately.
+        defaultTemplateProvisioner.ensureDefaultCheckInTemplate(principal.studioId)
         ResponseEntity.noContent().build()
     }
 
@@ -156,6 +228,9 @@ class ProtocolController(
         deleteProtocolRuleHandler.handle(
             DeleteProtocolRuleCommand(ruleId = ProtocolRuleId.fromString(id), studioId = principal.studioId)
         )
+        // Removing a rule can detach the studio's last check-in template — the call
+        // runs after the delete transaction committed, so the guard sees fresh state.
+        defaultTemplateProvisioner.ensureDefaultCheckInTemplate(principal.studioId)
         ResponseEntity.noContent().build()
     }
 
@@ -231,6 +306,9 @@ class ProtocolController(
             name = template.name,
             description = template.description,
             templateUrl = url,
+            fileFormat = template.fileFormat.name,
+            isDefault = template.isDefault,
+            verificationStatus = template.verificationStatus.name,
             isActive = template.isActive,
             createdAt = template.createdAt.toString(),
             updatedAt = template.updatedAt.toString()

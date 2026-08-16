@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
+import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
@@ -19,6 +20,7 @@ class GenerateVisitProtocolsHandler(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val crmDataResolver: CrmDataResolver,
     private val pdfProcessingService: PdfProcessingService,
+    private val htmlProtocolFillService: HtmlProtocolFillService,
     private val s3StorageService: S3ProtocolStorageService,
     private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
     private val protocolTemplateRepository: ProtocolTemplateRepository,
@@ -136,16 +138,42 @@ class GenerateVisitProtocolsHandler(
                 mapping.pdfFieldName to (crmData[mapping.crmDataKey] ?: "")
             }
 
-            val templateS3Key = s3StorageService.buildTemplateS3Key(studioId.value, templateId.value)
-            val filledPdfS3Key = s3StorageService.buildFilledPdfS3Key(
-                studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.version
-            )
+            val template = protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)
+                ?.toDomain()
+                ?: throw EntityNotFoundException("Szablon protokołu nie został znaleziony: $templateId")
 
-            pdfProcessingService.fillPdfForm(templateS3Key, fieldValues, filledPdfS3Key)
+            val filledS3Key = when (template.fileFormat) {
+                ProtocolTemplateFormat.PDF -> {
+                    val filledPdfS3Key = s3StorageService.buildFilledPdfS3Key(
+                        studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.version
+                    )
+                    pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key)
+                    filledPdfS3Key
+                }
+                ProtocolTemplateFormat.HTML -> {
+                    val filledHtmlS3Key = s3StorageService.buildFilledHtmlS3Key(
+                        studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.version
+                    )
+                    val templateHtml = String(s3StorageService.downloadBytes(template.s3Key), Charsets.UTF_8)
+                    val checkboxFields = fieldMappings
+                        .filter {
+                            it.crmDataKey == CrmDataKey.VEHICLE_KEYS_RECEIVED ||
+                                it.crmDataKey == CrmDataKey.VEHICLE_DOCUMENTS_RECEIVED
+                        }
+                        .map { it.pdfFieldName }
+                        .toSet()
+                    val filledHtml = htmlProtocolFillService.fill(templateHtml, fieldValues, checkboxFields)
+                    s3StorageService.uploadBytes(
+                        filledHtmlS3Key, filledHtml.toByteArray(Charsets.UTF_8), "text/html"
+                    )
+                    filledHtmlS3Key
+                }
+            }
 
-            val updated = visitProtocol.markAsReadyForSignature(filledPdfS3Key)
+            val updated = visitProtocol.markAsReadyForSignature(filledS3Key)
             visitProtocolRepository.save(VisitProtocolEntity.fromDomain(updated))
 
+            val fileExtension = template.fileFormat.fileExtension
             try {
                 val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
                 if (visitEntity != null) {
@@ -154,8 +182,8 @@ class GenerateVisitProtocolsHandler(
                         customerId = visitEntity.customerId,
                         documentType = DocumentType.PROTOCOL,
                         name = "PPP_${visitNumber}_${visitProtocol.version}",
-                        s3Key = filledPdfS3Key,
-                        fileName = "PPP_${visitNumber}_${visitProtocol.version}.pdf",
+                        s3Key = filledS3Key,
+                        fileName = "PPP_${visitNumber}_${visitProtocol.version}.$fileExtension",
                         createdBy = visitEntity.createdBy,
                         createdByName = "System",
                         category = "protocol"
