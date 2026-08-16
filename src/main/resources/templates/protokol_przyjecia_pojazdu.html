@@ -93,6 +93,39 @@
   /* --- Szare pole formularza --- */
   .box { background: var(--gray); }
 
+  /* ------------------------------------------------------------
+     Wartości wpisywane w pola — odwzorowanie tego, co robi backend
+     (PdfProcessingService + PDFBox AppearanceGeneratorHelper):
+     - czcionka: Liberation Sans Regular (classpath /fonts/…,
+       metrycznie identyczna z Arial — stąd fallback), kolor czarny
+       (DA "0 g"), rozmiar ograniczony do MAX_FIELD_FONT_SIZE = 7pt
+     - wcięcie poziome: 2 × max(1pt, szer. ramki) = 2pt przy polach
+       bez ramki (clipRect + contentRect w PDFBox)
+     - jedna linia: wyśrodkowana w pionie (po wysokości wersalików)
+     - multiline: tekst od górnej krawędzi, interlinia = wysokość
+       bounding boxu fontu (Liberation Sans: 1.2832 em ≈ 8.98pt)
+     ------------------------------------------------------------ */
+  .box, .checkbox {
+    font-family: 'Liberation Sans', Arial, Helvetica, sans-serif;
+    font-size: 7pt;
+    color: #000;
+    overflow: hidden;
+  }
+  .meta-col .box, .field-row .box, .cost .box, .checkbox {
+    display: flex;
+    align-items: center;
+    line-height: 1;
+  }
+  .meta-col .box, .field-row .box, .cost .box {
+    padding: 0 2pt;
+    white-space: nowrap;
+  }
+  .checkbox { justify-content: center; }
+  .notes .box {
+    padding: 2pt;
+    line-height: 1.2832;
+  }
+
   /* ============ Nagłówek: logo + USŁUGODAWCA ============ */
   .header { position: relative; height: 68.65pt; }
   .header .logo {
