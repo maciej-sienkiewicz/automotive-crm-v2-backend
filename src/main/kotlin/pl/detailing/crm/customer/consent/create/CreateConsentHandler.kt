@@ -24,7 +24,8 @@ import java.time.Instant
 class CreateConsentHandler(
     private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val consentTemplateRepository: ConsentTemplateRepository,
-    private val s3StorageService: S3ConsentStorageService
+    private val s3StorageService: S3ConsentStorageService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -46,8 +47,6 @@ class CreateConsentHandler(
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )
-            consentDefinitionRepository.save(ConsentDefinitionEntity.fromDomain(definition))
-
             val s3Key = s3StorageService.buildS3Key(command.studioId.value, definition.id.value, 1)
             val uploadUrl = s3StorageService.generateUploadUrl(command.studioId.value, definition.id.value, 1)
 
@@ -62,7 +61,16 @@ class CreateConsentHandler(
                 createdBy = command.createdBy,
                 createdAt = Instant.now()
             )
-            consentTemplateRepository.save(ConsentTemplateEntity.fromDomain(template))
+            // Definition and its version-1 template land together (TransactionTemplate —
+            // the body of a `@Transactional suspend` function on Dispatchers.IO escapes
+            // the interceptor-managed transaction; see AuditLogWriter). Split, a consent
+            // could exist with no template row: assignable, but impossible to render or
+            // sign. The S3 key and upload URL above are derived from an id generated
+            // locally, so they cost nothing and need no transaction.
+            transactionTemplate.execute {
+                consentDefinitionRepository.save(ConsentDefinitionEntity.fromDomain(definition))
+                consentTemplateRepository.save(ConsentTemplateEntity.fromDomain(template))
+            }
 
             CreateConsentResult(
                 definitionId = definition.id,
