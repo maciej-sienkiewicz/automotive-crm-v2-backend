@@ -8,6 +8,7 @@ import pl.detailing.crm.subscription.entitlement.domain.AddOn
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.Plan
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.subscription.management.AddOnActivationPreview
 import pl.detailing.crm.subscription.management.ChangeType
 import pl.detailing.crm.subscription.management.PlanChangePreview
@@ -31,10 +32,37 @@ data class UpsellDto(
     val isAvailable: Boolean
 )
 
+/**
+ * [capabilities] is the contract the UI gates on: the RESOLVED decision per
+ * business action, including which features are missing and what to buy.
+ * The frontend must never re-evaluate capability expressions itself —
+ * cross-module rules live only in the backend catalog.
+ * [features] is kept for backward compatibility with older gate components.
+ */
 data class EntitlementsResponse(
     val plan: PlanSummaryDto,
     val features: Map<String, FeatureStatusDto>,
+    val capabilities: Map<String, CapabilityStatusDto>,
     val activeAddOns: List<String>
+)
+
+data class CapabilityStatusDto(
+    val enabled: Boolean,
+    val displayName: String,
+    val missingFeatures: List<MissingFeatureItemDto>,
+    val upsell: List<CapabilityUpsellDto>
+)
+
+data class MissingFeatureItemDto(
+    val key: String,
+    val displayName: String
+)
+
+data class CapabilityUpsellDto(
+    val addOnKey: String,
+    val addOnName: String,
+    val monthlyPriceGrossCents: Long?,
+    val isAvailable: Boolean
 )
 
 data class PlanSummaryDto(
@@ -172,6 +200,7 @@ data class AddOnActivationPreviewDto(
 @RestController
 class EntitlementsController(
     private val entitlementService: EntitlementService,
+    private val capabilityService: CapabilityService,
     private val pricingService: PricingService,
     private val planManagementService: PlanManagementService,
     private val subscriptionService: SubscriptionService
@@ -193,6 +222,23 @@ class EntitlementsController(
 
         val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
         val featureMap = buildFeatureMap(entitlements, allAddOns)
+        val capabilityMap = capabilityService.resolve(studioId).decisions.entries.associate { (key, decision) ->
+            key.name to CapabilityStatusDto(
+                enabled = decision.enabled,
+                displayName = key.displayName,
+                missingFeatures = decision.missingFeatures.map {
+                    MissingFeatureItemDto(key = it.name, displayName = it.displayName)
+                },
+                upsell = decision.upsell.map {
+                    CapabilityUpsellDto(
+                        addOnKey = it.addOnKey,
+                        addOnName = it.addOnName,
+                        monthlyPriceGrossCents = it.monthlyPriceGrossCents,
+                        isAvailable = it.isAvailable
+                    )
+                }
+            )
+        }
 
         return ResponseEntity.ok(
             EntitlementsResponse(
@@ -202,6 +248,7 @@ class EntitlementsController(
                     monthlyPriceGrossCents = planSummary.monthlyPriceGrossCents
                 ),
                 features = featureMap,
+                capabilities = capabilityMap,
                 activeAddOns = entitlements.activeAddOnKeys.map { it.name }
             )
         )
