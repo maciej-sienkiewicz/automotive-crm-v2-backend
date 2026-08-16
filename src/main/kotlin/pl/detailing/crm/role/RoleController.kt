@@ -9,6 +9,7 @@ import pl.detailing.crm.role.assign.AssignRoleHandler
 import pl.detailing.crm.role.create.CreateRoleCommand
 import pl.detailing.crm.role.create.CreateRoleHandler
 import pl.detailing.crm.role.delete.DeleteRoleHandler
+import pl.detailing.crm.role.delete.ReassignTarget
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.domain.PermissionModule
@@ -19,7 +20,9 @@ import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.update.UpdateRoleCommand
 import pl.detailing.crm.role.update.UpdateRoleHandler
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
+import java.util.UUID
 
 // Role administration is part of account management (EMPLOYEES_MANAGE);
 // deleting a role additionally stays owner-only (checked in the handler below).
@@ -32,7 +35,8 @@ class RoleController(
     private val deleteRoleHandler: DeleteRoleHandler,
     private val getRoleHandler: GetRoleHandler,
     private val listRolesHandler: ListRolesHandler,
-    private val assignRoleHandler: AssignRoleHandler
+    private val assignRoleHandler: AssignRoleHandler,
+    private val userRepository: UserRepository
 ) {
 
     // ── Permission catalog ────────────────────────────────────────────────────
@@ -65,14 +69,42 @@ class RoleController(
     fun listRoles(): ResponseEntity<List<RoleResponse>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val roles = listRolesHandler.handle(principal.studioId)
-        ResponseEntity.ok(roles.map { it.toResponse() })
+        val counts = userRepository.countAssignmentsByRole(principal.studioId.value)
+            .associate { it.roleId to it.userCount }
+        ResponseEntity.ok(roles.map { it.toResponse(counts[it.id.value] ?: 0L) })
     }
 
     @GetMapping("/{roleId}")
     fun getRole(@PathVariable roleId: String): ResponseEntity<RoleResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val role = getRoleHandler.handle(RoleId.fromString(roleId), principal.studioId)
-        ResponseEntity.ok(role.toResponse())
+        val assigned = userRepository
+            .findByCustomRoleIdAndStudioId(role.id.value, principal.studioId.value).size.toLong()
+        ResponseEntity.ok(role.toResponse(assigned))
+    }
+
+    /**
+     * Who currently holds this role. Backs the "review the people" step of the
+     * hand-over dialog, so deleting a role can show names instead of a bare count.
+     */
+    @GetMapping("/{roleId}/users")
+    fun listRoleUsers(@PathVariable roleId: String): ResponseEntity<List<RoleUserResponse>> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val role = getRoleHandler.handle(RoleId.fromString(roleId), principal.studioId)
+        val users = userRepository
+            .findByCustomRoleIdAndStudioId(role.id.value, principal.studioId.value)
+            .sortedWith(compareBy({ it.lastName }, { it.firstName }))
+            .map {
+                RoleUserResponse(
+                    userId = it.id.toString(),
+                    firstName = it.firstName,
+                    lastName = it.lastName,
+                    fullName = "${it.firstName} ${it.lastName}".trim(),
+                    email = it.email,
+                    isActive = it.isActive
+                )
+            }
+        ResponseEntity.ok(users)
     }
 
     @PostMapping
@@ -125,8 +157,19 @@ class RoleController(
         ResponseEntity.ok(role.toResponse())
     }
 
+    /**
+     * Deletes a role.
+     *
+     * [reassignTo] decides what happens to the people holding it: omit it and a role
+     * with holders is refused (unchanged behaviour), pass another role's id to move them,
+     * or pass [REASSIGN_TARGET_NONE] to leave them without a role. Hand-over and delete
+     * are one transaction.
+     */
     @DeleteMapping("/{roleId}")
-    fun deleteRole(@PathVariable roleId: String): ResponseEntity<Void> = runBlocking {
+    fun deleteRole(
+        @PathVariable roleId: String,
+        @RequestParam(required = false) reassignTo: String?
+    ): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usuwać role")
@@ -136,7 +179,14 @@ class RoleController(
             studioId = principal.studioId,
             roleId = RoleId.fromString(roleId),
             requestedBy = principal.userId,
-            requestedByName = principal.fullName
+            requestedByName = principal.fullName,
+            reassignTo = reassignTo?.trim()?.takeIf { it.isNotEmpty() }?.let { target ->
+                if (target.equals(REASSIGN_TARGET_NONE, ignoreCase = true)) {
+                    ReassignTarget.ClearAssignment
+                } else {
+                    ReassignTarget.ToRole(RoleId.fromString(target))
+                }
+            }
         )
         ResponseEntity.noContent().build()
     }
@@ -162,6 +212,11 @@ class RoleController(
             requestedByName = principal.fullName
         )
         ResponseEntity.noContent().build()
+    }
+
+    companion object {
+        /** `?reassignTo=none` — holders keep their account but end up with no role. */
+        const val REASSIGN_TARGET_NONE = "none"
     }
 }
 
@@ -231,6 +286,11 @@ data class RoleResponse(
     val description: String?,
     val permissions: List<RolePermissionResponse>,
     val trackWorkTime: Boolean,
+    /**
+     * How many accounts currently hold this role. Lets the UI show the conflict
+     * ("used by 4 people") before someone tries to delete it, instead of after.
+     */
+    val assignedUserCount: Long,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -242,9 +302,18 @@ data class RolePermissionResponse(
     val moduleDisplayName: String
 )
 
+data class RoleUserResponse(
+    val userId: String,
+    val firstName: String,
+    val lastName: String,
+    val fullName: String,
+    val email: String,
+    val isActive: Boolean
+)
+
 // ── Domain → Response mapping ─────────────────────────────────────────────────
 
-private fun Role.toResponse() = RoleResponse(
+private fun Role.toResponse(assignedUserCount: Long = 0L) = RoleResponse(
     id = id.toString(),
     name = name,
     description = description,
@@ -259,6 +328,7 @@ private fun Role.toResponse() = RoleResponse(
             )
         },
     trackWorkTime = trackWorkTime,
+    assignedUserCount = assignedUserCount,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
