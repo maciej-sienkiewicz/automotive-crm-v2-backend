@@ -324,36 +324,62 @@ class PdfProcessingService(
     }
 
     /**
-     * Ensure every field widget annotation is referenced by a page's /Annots array.
+     * Ensure every field widget annotation is referenced by a page's /Annots array
+     * AND carries a /P page reference.
      *
      * A widget that no page references cannot be rendered by any viewer and is silently
      * skipped (then deleted) by flatten(). Orphaned widgets are attached to the page they
      * point to via /P, or to the first page when the reference is missing (protocol
      * templates are single-page).
+     *
+     * The /P repair is just as critical as the /Annots one: PDFBox's
+     * PDAcroForm.flatten(fields, ...) builds its page→widget map from /P references,
+     * and when ANY widget of the fields being flattened lacks /P it falls back to
+     * treating EVERY widget annotation on every page as a flatten target — which
+     * strips the kept signature fields' widgets from the page. The signature then
+     * gets stamped at the blind fallback position (bottom-left) and the company
+     * signature is dropped entirely. Templates authored by tools that omit /P
+     * (e.g. PyMuPDF) trigger exactly this without the repair.
      */
     private fun attachOrphanWidgetsToPages(document: PDDocument, acroForm: PDAcroForm) {
         if (document.numberOfPages == 0) return
 
-        val annotatedWidgets = document.pages
-            .flatMap { page -> page.annotations.map { it.cosObject } }
-            .toSet()
+        val widgetToPage: Map<org.apache.pdfbox.cos.COSDictionary, PDPage> = buildMap {
+            for (page in document.pages) {
+                for (annotation in page.annotations) {
+                    put(annotation.cosObject, page)
+                }
+            }
+        }
 
-        var repaired = 0
+        var attached = 0
+        var pageRefsRepaired = 0
         for (field in acroForm.fieldTree) {
             if (field !is org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField) continue
             for (widget in field.widgets) {
-                if (widget.cosObject in annotatedWidgets) continue
-
-                val page = widget.page ?: document.getPage(0).also { widget.page = it }
-                page.annotations.add(widget)
-                repaired++
+                val annotatedPage = widgetToPage[widget.cosObject]
+                if (annotatedPage == null) {
+                    val page = widget.page ?: document.getPage(0).also { widget.page = it }
+                    page.annotations.add(widget)
+                    attached++
+                } else if (widget.page == null) {
+                    widget.page = annotatedPage
+                    pageRefsRepaired++
+                }
             }
         }
-        if (repaired > 0) {
+        if (attached > 0) {
             logger.warn(
-                "PDF flatten: attached $repaired orphaned field widget(s) to page /Annots — " +
+                "PDF flatten: attached $attached orphaned field widget(s) to page /Annots — " +
                     "the template is malformed (widgets missing from page annotations); " +
                     "without the repair flatten() would produce a blank document"
+            )
+        }
+        if (pageRefsRepaired > 0) {
+            logger.warn(
+                "PDF flatten: repaired $pageRefsRepaired widget /P page reference(s) — " +
+                    "without the repair flatten() would strip the preserved signature " +
+                    "field widgets from the page"
             )
         }
     }

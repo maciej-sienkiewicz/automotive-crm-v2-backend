@@ -40,10 +40,13 @@ class ProtocolTemplateVerificationService {
 
         /** Fields the auto-fill pipeline maps by default — all must exist in the file. */
         fun requiredFieldNames(): List<String> =
-            DefaultProtocolFieldMappings.getDefaultMappings().keys.toList() + CUSTOMER_SIGNATURE_FIELD
+            (DefaultProtocolFieldMappings.getDefaultMappings().keys -
+                DefaultProtocolFieldMappings.getSupplementaryMappings().keys).toList() +
+                CUSTOMER_SIGNATURE_FIELD
 
         /** Fields that improve the document but do not block verification. */
-        fun optionalFieldNames(): List<String> = listOf(COMPANY_SIGNATURE_FIELD)
+        fun optionalFieldNames(): List<String> =
+            DefaultProtocolFieldMappings.getSupplementaryMappings().keys.toList() + COMPANY_SIGNATURE_FIELD
     }
 
     data class VerificationResult(

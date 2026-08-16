@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.CrmDataKey
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -26,7 +27,8 @@ class CrmDataResolver(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
-    private val studioRepository: StudioRepository
+    private val studioRepository: StudioRepository,
+    private val userRepository: UserRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -115,6 +117,18 @@ class CrmDataResolver(
                     }
                 put(CrmDataKey.SERVICES_LIST, servicesList)
                 put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
+
+                // Provider (Usługodawca) — the studio itself, unlike STUDIO_NAME
+                // which historically carries the customer's company name for the
+                // "Nazwa firmy" field in the KLIENT section.
+                put(CrmDataKey.PROVIDER_NAME, studio?.name ?: "")
+
+                // Employee who registered the visit (Osoba przyjmująca pojazd)
+                val receivedBy = visit.createdBy?.let { userId ->
+                    userRepository.findByIdAndStudioId(userId, studioId.value)
+                        ?.let { "${it.firstName} ${it.lastName}".trim() }
+                } ?: ""
+                put(CrmDataKey.RECEIVED_BY_NAME, receivedBy)
 
                 // Current date/time
                 val now = Instant.now()
