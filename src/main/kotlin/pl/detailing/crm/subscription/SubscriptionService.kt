@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.subscription.entitlement.EntitlementService
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -23,7 +24,8 @@ import java.util.UUID
  */
 @Service
 class SubscriptionService(
-    private val studioRepository: StudioRepository
+    private val studioRepository: StudioRepository,
+    private val entitlementService: EntitlementService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -33,7 +35,16 @@ class SubscriptionService(
 
     // ─── Studio creation ──────────────────────────────────────────────────────
 
-    /** Creates a studio with no plan — user must explicitly choose trial or paid plan. */
+    /**
+     * Creates a studio with no billing plan chosen yet.
+     *
+     * PROVISIONING INVARIANT: the studio gets its `studio_subscription_plans` row
+     * (BASIC feature-plan) in the same transaction. Billing status (NO_PLAN →
+     * trial/paid) and the feature-plan row are separate concerns — the row must
+     * exist from day one so add-on purchases and entitlement reads never depend
+     * on a silent fallback. This closes the root cause of
+     * "Studio nie ma aktywnego planu subskrypcji" thrown after a captured payment.
+     */
     suspend fun createStudio(name: String): Studio = withContext(Dispatchers.IO) {
         val studio = Studio(
             id = StudioId.random(),
@@ -46,6 +57,7 @@ class SubscriptionService(
             emailAlias = UUID.randomUUID().toString().replace("-", "")
         )
         studioRepository.save(StudioEntity.fromDomain(studio))
+        entitlementService.ensurePlanAssigned(studio.id)
         studio
     }
 
@@ -65,26 +77,11 @@ class SubscriptionService(
         entity.trialUsed = true
         studioRepository.save(entity)
 
+        // Legacy studios created before the provisioning invariant may lack the row.
+        entitlementService.ensurePlanAssigned(studioId)
+
         logger.info("Studio={} started free trial, ends at {}", studioId, trialEndsAt)
         entity.toDomain().toSubscriptionInfo()
-    }
-
-    suspend fun createStudioWithTrial(name: String): Studio = withContext(Dispatchers.IO) {
-        val trialEndsAt = Instant.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
-
-        val studio = Studio(
-            id = StudioId.random(),
-            name = name,
-            subscriptionStatus = SubscriptionStatus.TRIALING,
-            trialEndsAt = trialEndsAt,
-            subscriptionEndsAt = null,
-            trialUsed = true,
-            createdAt = Instant.now(),
-            emailAlias = UUID.randomUUID().toString().replace("-", "")
-        )
-
-        studioRepository.save(StudioEntity.fromDomain(studio))
-        studio
     }
 
     // ─── Status ───────────────────────────────────────────────────────────────

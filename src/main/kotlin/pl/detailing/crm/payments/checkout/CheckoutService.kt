@@ -242,6 +242,14 @@ class CheckoutService(
         val addOnKey = request.addOnKeys.singleOrNull()
             ?: throw ValidationException("Wybierz dokładnie jeden moduł do dokupienia.")
 
+        // Feasibility BEFORE payment: an add-on needs a plan row to attach to.
+        // Failing here costs the user a click; failing in fulfillment costs them money.
+        if (!entitlementService.hasPlanAssigned(studioId)) {
+            throw ValidationException(
+                "Studio nie ma przypisanego pakietu — wybierz pakiet (BASIC lub FULL) przed dokupieniem modułu."
+            )
+        }
+
         val entitlements = entitlementService.getEntitlements(studioId)
         if (entitlements.planKey == PlanKey.FULL) {
             throw ValidationException("Pakiet FULL zawiera już wszystkie moduły.")
