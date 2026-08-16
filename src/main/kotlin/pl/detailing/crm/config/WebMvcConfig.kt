@@ -9,10 +9,16 @@ class WebMvcConfig(
     private val subscriptionInterceptor: SubscriptionInterceptor
 ) : WebMvcConfigurer {
 
+    /**
+     * SINGLE SOURCE OF TRUTH for billing-gate exclusions. SubscriptionInterceptor
+     * intentionally holds no path list — add new exclusions only here, with a
+     * comment explaining why the path must work for a not-yet-paying studio.
+     */
     override fun addInterceptors(registry: InterceptorRegistry) {
         registry.addInterceptor(subscriptionInterceptor)
             .addPathPatterns("/api/**")
             .excludePathPatterns(
+                // Authentication itself must work regardless of billing state
                 "/api/auth/**",
                 "/api/v1/auth/**",
                 "/api/health",
@@ -24,20 +30,13 @@ class WebMvcConfig(
                 // CardDAV uses HTTP Basic auth (stateless), not session-based auth.
                 // SecurityContextHelper.getCurrentStudioId() is incompatible with CardDavUserDetails.
                 "/api/v1/carddav/**",
-                // Entitlements and pricing are always accessible (needed for expired/trial studios)
+                // Entitlements read must work for expired/trial studios (renders the paywall)
                 "/api/v1/me/entitlements",
-                "/api/v1/subscription/my-plan",
-                "/api/v1/subscription/feature-plans",
-                "/api/v1/subscription/add-ons",
-                "/api/v1/subscription/calculate-price",
-                "/api/v1/subscription/preview-plan-change",
-                "/api/v1/subscription/preview-add-on",
-                "/api/v1/subscription/payment-history",
-                "/api/v1/subscription/start-trial",
-                "/api/v1/subscription/status",
-                // Checkout must work for expired studios — that's when they need to pay
-                "/api/v1/subscription/checkout",
-                "/api/v1/subscription/orders/**",
+                // The entire subscription-management surface must be reachable when the
+                // subscription is inactive — that is exactly when the studio needs to
+                // browse plans, start a trial, pay or renew.
+                "/api/subscription/**",
+                "/api/v1/subscription/**",
                 // Przelewy24 server-to-server notifications (no session at all)
                 "/api/v1/payments/**"
             )
