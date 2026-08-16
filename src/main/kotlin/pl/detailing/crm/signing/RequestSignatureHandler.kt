@@ -6,9 +6,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
+import pl.detailing.crm.smscampaigns.domain.SmsNotificationRule
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
@@ -55,6 +57,7 @@ class RequestSignatureHandler(
     private val renderer: MessageTemplateRenderer,
     private val visitCardProperties: VisitCardProperties,
     private val capabilityService: CapabilityService,
+    private val transactionTemplate: TransactionTemplate,
     @Value("\${signing.request.ttl-minutes:15}") private val requestTtlMinutes: Long,
     @Value("\${signing.request.sms-ttl-minutes:60}") private val smsRequestTtlMinutes: Long,
     @Value("\${signing.request.default-declaration:O\u015Bwiadczam, \u017Ce zapozna\u0142em/zapozna\u0142am si\u0119 z tre\u015Bci\u0105 niniejszego dokumentu, rozumiem jego tre\u015B\u0107 i akceptuj\u0119 zawarte w nim ustalenia.}")
@@ -92,6 +95,14 @@ class RequestSignatureHandler(
             )
             if (active.isNotEmpty()) {
                 throw ConflictException("Dla tego dokumentu istnieje już aktywne żądanie podpisu")
+            }
+
+            // Fail before doing any work when the SMS text this channel depends on is
+            // missing. This used to surface only at delivery time, after the request row
+            // had been written — and since that write was never rolled back, the studio
+            // was left with an active session it could not use and could not replace.
+            if (command.channel == SignatureChannel.SMS_LINK) {
+                requireSigningSmsTemplate(command.studioId)
             }
 
             // WYSIWYS: hash the exact bytes that will be displayed on the tablet.
@@ -150,31 +161,46 @@ class RequestSignatureHandler(
                 failureReason = null,
                 updatedAt = now
             )
-            signatureRequestRepository.save(SignatureRequestEntity.fromDomain(request))
+            // The body of a `@Transactional suspend` function running on Dispatchers.IO
+            // escapes the interceptor-managed transaction (see AuditLogWriter for the why),
+            // so the template is used deliberately here — same shape as
+            // CancelDraftVisitHandler. Without it every repository call committed on its
+            // own and a failed SMS left the request row behind, blocking the single active
+            // slot for the whole TTL.
+            val challenge = transactionTemplate.execute {
+                signatureRequestRepository.save(SignatureRequestEntity.fromDomain(request))
 
-            // Single-use anti-replay challenge, delivered to the signing device with the document
-            val challenge = documentIntegrityService.issueChallenge(
-                request.id.value, Duration.ofMinutes(ttlMinutes)
-            )
+                // Single-use anti-replay challenge, delivered to the signing device with the document
+                val issued = documentIntegrityService.issueChallenge(
+                    request.id.value, Duration.ofMinutes(ttlMinutes)
+                )
 
-            // Serve-from-cache for the signing device (evicted with the challenge;
-            // delivery re-verifies SHA-256, so WYSIWYS is unaffected)
-            documentIntegrityService.cacheDocument(
-                request.id.value, documentBytes, Duration.ofMinutes(ttlMinutes)
-            )
+                // Serve-from-cache for the signing device (evicted with the challenge;
+                // delivery re-verifies SHA-256, so WYSIWYS is unaffected)
+                documentIntegrityService.cacheDocument(
+                    request.id.value, documentBytes, Duration.ofMinutes(ttlMinutes)
+                )
 
-            auditTrailService.append(
-                requestId = request.id.value,
-                studioId = command.studioId.value,
-                eventType = SignatureAuditEventType.REQUEST_CREATED,
-                actor = "${command.userName} [${command.userId.value}]",
-                ipAddress = command.employeeIpAddress,
-                details = "dokument=$documentName, sha256=$documentSha256, wizyta=${visitEntity.visitNumber}, kanał=${command.channel}"
-            )
+                auditTrailService.append(
+                    requestId = request.id.value,
+                    studioId = command.studioId.value,
+                    eventType = SignatureAuditEventType.REQUEST_CREATED,
+                    actor = "${command.userName} [${command.userId.value}]",
+                    ipAddress = command.employeeIpAddress,
+                    details = "dokument=$documentName, sha256=$documentSha256, wizyta=${visitEntity.visitNumber}, kanał=${command.channel}"
+                )
 
-            if (command.channel == SignatureChannel.SMS_LINK) {
-                sendSigningLinkSms(request, visitEntity.customerId, documentName)
-            }
+                // Inside the transaction on purpose: a link the customer can never
+                // receive must not leave an active session behind. Trade-off: the
+                // communication-log row for a failed delivery now rolls back with the
+                // request it described. The common failures — no template, template
+                // disabled — are refused before this point and never reach the log.
+                if (command.channel == SignatureChannel.SMS_LINK) {
+                    sendSigningLinkSms(request, visitEntity.customerId, documentName)
+                }
+
+                issued
+            } ?: error("Transakcja żądania podpisu nie zwróciła wyniku")
 
             // NOTE: the SIGNATURE_REQUESTED event is deliberately NOT published here.
             // This method runs inside a transaction; publishing from within it lets the
@@ -190,15 +216,15 @@ class RequestSignatureHandler(
         }
 
     /**
-     * Deliver the tokenized signing link by SMS. Any delivery failure throws, rolling back
-     * the whole request — a session the customer can never reach must not stay active
-     * (it would block the "one active request per document" slot for 60 minutes).
+     * The SMS text this channel depends on, or a refusal naming what to fix.
+     *
+     * Called once before anything is written, so a studio that never configured the
+     * message is turned away for free, and once again at delivery time from the value
+     * this returns — the config is a single row and the second read is the one that
+     * matters for correctness.
      */
-    private fun sendSigningLinkSms(request: SignatureRequest, customerId: java.util.UUID, documentName: String) {
-        val phone = requireNotNull(request.signerPhone)
-        val signingUrl = "${visitCardProperties.frontendBaseUrl.trimEnd('/')}/sign/${request.linkToken}"
-
-        val rule = smsAutomationConfigRepository.findByStudioId(request.studioId)?.signatureRequest
+    private fun requireSigningSmsTemplate(studioId: StudioId): SmsNotificationRule {
+        val rule = smsAutomationConfigRepository.findByStudioId(studioId)?.signatureRequest
             ?: throw ValidationException(
                 "Nie skonfigurowano treści SMS-a z linkiem do podpisu — uzupełnij ją w Ustawieniach → Szablony SMS"
             )
@@ -207,6 +233,22 @@ class RequestSignatureHandler(
                 "SMS z linkiem do podpisu jest wyłączony — włącz go w Ustawieniach → Szablony SMS"
             )
         }
+        return rule
+    }
+
+    /**
+     * Deliver the tokenized signing link by SMS. Any delivery failure throws, rolling back
+     * the whole request — a session the customer can never reach must not stay active
+     * (it would block the "one active request per document" slot for 60 minutes).
+     *
+     * The rollback is real only because the caller runs this inside a TransactionTemplate;
+     * the enclosing `@Transactional suspend` annotation alone never opened one.
+     */
+    private fun sendSigningLinkSms(request: SignatureRequest, customerId: java.util.UUID, documentName: String) {
+        val phone = requireNotNull(request.signerPhone)
+        val signingUrl = "${visitCardProperties.frontendBaseUrl.trimEnd('/')}/sign/${request.linkToken}"
+
+        val rule = requireSigningSmsTemplate(request.studioId)
 
         val customer = customerRepository.findByIdAndStudioId(customerId, request.studioId.value)
         val message = renderer.render(
