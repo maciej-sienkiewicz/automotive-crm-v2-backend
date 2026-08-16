@@ -1,6 +1,8 @@
 package pl.detailing.crm.shared
 
 import pl.detailing.crm.subscription.entitlement.FeatureKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityUpsellOption
 import java.io.Serializable
 import java.util.*
 
@@ -786,6 +788,21 @@ class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : 
 class FeatureLockedException(
     val featureKey: FeatureKey,
     message: String = "Moduł '${featureKey.displayName}' nie jest dostępny w Twoim planie."
+) : BusinessException(message)
+
+/**
+ * Thrown when a studio attempts an action whose capability expression is not
+ * satisfied by its entitlements. Mapped to HTTP 402 with code MODULE_REQUIRED.
+ *
+ * Always constructed by [pl.detailing.crm.subscription.entitlement.capability.CapabilityService]
+ * so the payload (missing features + checkout-ready upsell) is computed in one place.
+ */
+class CapabilityLockedException(
+    val capability: CapabilityKey,
+    val missingFeatures: Set<FeatureKey>,
+    val upsell: List<CapabilityUpsellOption>,
+    message: String = "Funkcja '${capability.displayName}' wymaga modułu: " +
+            missingFeatures.joinToString(", ") { it.displayName }
 ) : BusinessException(message)
 
 /**

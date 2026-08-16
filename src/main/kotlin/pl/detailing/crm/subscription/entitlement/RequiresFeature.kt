@@ -18,4 +18,10 @@ package pl.detailing.crm.subscription.entitlement
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 @MustBeDocumented
+@Deprecated(
+    "Feature keys are an implementation detail of the price list. Declare the business " +
+    "action instead via @RequiresCapability — capabilities support cross-module rules " +
+    "and produce the richer MODULE_REQUIRED 402 payload.",
+    ReplaceWith("RequiresCapability", "pl.detailing.crm.subscription.entitlement.capability.RequiresCapability")
+)
 annotation class RequiresFeature(val value: FeatureKey)

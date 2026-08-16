@@ -138,14 +138,49 @@ class GlobalExceptionHandler(
             ))
     }
 
+    /**
+     * HTTP 402 — the studio owns the module but has run out of SMS credits.
+     * Distinguished from a missing module by [PaywallErrorResponse.code]:
+     * INSUFFICIENT_CREDITS → "top up credits", MODULE_REQUIRED → "buy the module".
+     */
     @ExceptionHandler(InsufficientSmsCreditsException::class)
-    fun handleInsufficientSmsCredits(ex: InsufficientSmsCreditsException): ResponseEntity<ErrorResponse> {
+    fun handleInsufficientSmsCredits(ex: InsufficientSmsCreditsException): ResponseEntity<PaywallErrorResponse> {
         return ResponseEntity
             .status(HttpStatus.PAYMENT_REQUIRED)
-            .body(ErrorResponse(
+            .body(PaywallErrorResponse(
+                code = PaywallErrorResponse.CODE_INSUFFICIENT_CREDITS,
                 error = "Niewystarczające kredyty SMS",
-                message = ex.message ?: "Brak kredytów SMS",
-                timestamp = Instant.now().toString()
+                message = ex.message ?: "Brak kredytów SMS"
+            ))
+    }
+
+    /**
+     * HTTP 402 — the action's capability expression is not satisfied by the studio's
+     * entitlements. The payload is checkout-ready: it names the exact missing
+     * features and the add-ons that provide them, so the frontend renders a
+     * precise upsell surface instead of a generic error.
+     */
+    @ExceptionHandler(CapabilityLockedException::class)
+    fun handleCapabilityLocked(ex: CapabilityLockedException): ResponseEntity<PaywallErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.PAYMENT_REQUIRED)
+            .body(PaywallErrorResponse(
+                code = PaywallErrorResponse.CODE_MODULE_REQUIRED,
+                error = "Moduł niedostępny w Twoim planie",
+                message = ex.message ?: "Ta funkcja wymaga dodatkowego modułu.",
+                capability = ex.capability.name,
+                capabilityDisplayName = ex.capability.displayName,
+                missingFeatures = ex.missingFeatures.map {
+                    MissingFeatureDto(key = it.name, displayName = it.displayName)
+                },
+                upsell = ex.upsell.map {
+                    PaywallUpsellOptionDto(
+                        addOnKey = it.addOnKey,
+                        addOnName = it.addOnName,
+                        monthlyPriceGrossCents = it.monthlyPriceGrossCents,
+                        isAvailable = it.isAvailable
+                    )
+                }
             ))
     }
 
@@ -259,11 +294,49 @@ data class AlreadyLinkedResponse(
 /**
  * Returned with HTTP 402 when a studio accesses a locked feature.
  * The [status] field is a stable string contract for frontend feature-gate logic.
+ *
+ * Legacy shape kept for the deprecated @RequiresFeature path; new code throws
+ * CapabilityLockedException and gets [PaywallErrorResponse] instead.
  */
 data class FeatureLockedResponse(
     val status: String = "FEATURE_LOCKED",
+    val code: String = PaywallErrorResponse.CODE_MODULE_REQUIRED,
     val feature: String,
     val featureDisplayName: String,
     val message: String,
     val timestamp: String = Instant.now().toString()
+)
+
+/**
+ * The single 402 contract for the frontend. Every HTTP 402 body carries a
+ * machine-readable [code]; the frontend MUST branch on it, never on the message:
+ *  - [CODE_MODULE_REQUIRED]      → render the module upsell (fields below populated)
+ *  - [CODE_INSUFFICIENT_CREDITS] → render the "top up SMS credits" prompt
+ */
+data class PaywallErrorResponse(
+    val code: String,
+    val error: String,
+    val message: String,
+    val capability: String? = null,
+    val capabilityDisplayName: String? = null,
+    val missingFeatures: List<MissingFeatureDto> = emptyList(),
+    val upsell: List<PaywallUpsellOptionDto> = emptyList(),
+    val timestamp: String = Instant.now().toString()
+) {
+    companion object {
+        const val CODE_MODULE_REQUIRED = "MODULE_REQUIRED"
+        const val CODE_INSUFFICIENT_CREDITS = "INSUFFICIENT_CREDITS"
+    }
+}
+
+data class MissingFeatureDto(
+    val key: String,
+    val displayName: String
+)
+
+data class PaywallUpsellOptionDto(
+    val addOnKey: String,
+    val addOnName: String,
+    val monthlyPriceGrossCents: Long?,
+    val isAvailable: Boolean
 )
