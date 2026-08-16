@@ -11,7 +11,9 @@ import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.smscampaigns.CommunicationOnboardingService
 import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.entitlement.FeatureKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import pl.detailing.crm.subscription.management.PendingPlanChangeRepository
 import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
@@ -36,6 +38,7 @@ class OrderFulfillmentService(
     private val entitlementService: EntitlementService,
     private val paymentLogRepository: SubscriptionPaymentLogRepository,
     private val pendingPlanChangeRepository: PendingPlanChangeRepository,
+    private val communicationOnboardingService: CommunicationOnboardingService,
     private val meterRegistry: MeterRegistry
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -55,6 +58,12 @@ class OrderFulfillmentService(
                 PaymentOrderType.PLAN_UPGRADE -> fulfillPlanUpgrade(order, studioId)
                 PaymentOrderType.ADD_ON_PURCHASE -> fulfillAddOnPurchase(order, studioId)
             }
+
+            // Whatever was bought, if the studio can now send messages, make the
+            // feature actually usable: templates on, starter credits in. Checked on
+            // the resulting entitlements rather than on the order, because messaging
+            // arrives both as an add-on and as part of the FULL plan.
+            provisionCommunicationIfEnabled(studioId)
         } catch (ex: Exception) {
             meterRegistry.counter("subscription.fulfillment.failures", "orderType", order.type.name).increment()
             logger.error(
@@ -114,6 +123,17 @@ class OrderFulfillmentService(
         entitlementService.ensurePlanAssigned(studioId, order.planKey ?: PlanKey.BASIC)
         order.addOnKeys.forEach { entitlementService.activateAddOn(studioId, it) }
         log(order, SubscriptionEventType.ADD_ON_ACTIVATION, order.description)
+    }
+
+    /**
+     * Runs the communication module's onboarding when the studio holds SMS_EMAIL
+     * after fulfillment. Safe to reach on every order — the service itself is
+     * idempotent, and a studio that already had messaging simply keeps what it had.
+     */
+    private fun provisionCommunicationIfEnabled(studioId: StudioId) {
+        val entitlements = entitlementService.getEntitlements(studioId)
+        if (!entitlements.hasFeature(FeatureKey.SMS_EMAIL)) return
+        communicationOnboardingService.onCommunicationEnabled(studioId, entitlements.planKey)
     }
 
     // ─────────────────────────────────────────────────────────────────────────

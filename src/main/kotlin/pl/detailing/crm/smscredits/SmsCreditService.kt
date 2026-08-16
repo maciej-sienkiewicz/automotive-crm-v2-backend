@@ -106,6 +106,49 @@ class SmsCreditService(
         logger.info("Refunded 1 SMS credit for studio={} reason='{}'", studioId, reason)
     }
 
+    // ─── Grants ───────────────────────────────────────────────────────────────
+
+    /**
+     * Credits the studio's starter pack, once and only once.
+     *
+     * Activating the communication module without credits would hand the studio a
+     * feature that refuses on first use, so the pack ships with the module. The
+     * "never credited" guard makes this safe to call from a payment webhook, which
+     * can legitimately fire more than once for the same order.
+     *
+     * Returns true when credits were actually added.
+     */
+    @Transactional
+    fun grantStarterCredits(studioId: StudioId, amount: Int, description: String): Boolean {
+        if (amount <= 0) return false
+
+        val current = creditRepository.findBalanceByStudioIdForUpdate(studioId)
+            ?: SmsCreditBalance.empty(studioId)
+
+        if (!current.neverCredited()) {
+            logger.debug("Studio={} already has SMS credit history — starter pack skipped", studioId)
+            return false
+        }
+
+        val savedBalance = creditRepository.saveBalance(current.afterGrant(amount))
+
+        creditRepository.saveTransaction(
+            SmsCreditTransaction(
+                id = UUID.randomUUID(),
+                studioId = studioId,
+                type = SmsCreditTransactionType.BONUS,
+                amount = amount,
+                balanceAfter = savedBalance.availableCredits,
+                description = description,
+                referenceId = null,
+                createdAt = Instant.now()
+            )
+        )
+
+        logger.info("Studio={} granted {} starter SMS credits", studioId, amount)
+        return true
+    }
+
     // ─── Purchase ─────────────────────────────────────────────────────────────
 
     @Transactional
