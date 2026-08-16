@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.Vehicle
@@ -19,7 +20,8 @@ class CreateVehicleHandler(
     private val validatorComposite: CreateVehicleValidatorComposite,
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -43,21 +45,28 @@ class CreateVehicleHandler(
             updatedAt = Instant.now()
         )
 
-        val vehicleEntity = VehicleEntity.fromDomain(vehicle)
-        vehicleRepository.save(vehicleEntity)
+        // Vehicle and its owners in ONE real transaction (TransactionTemplate — the body
+        // of a `@Transactional suspend` function on Dispatchers.IO escapes the
+        // interceptor-managed transaction; see AuditLogWriter). Otherwise a failure
+        // while linking owners left an ownerless vehicle that still occupied the plate,
+        // so the user could not simply add the car again.
+        transactionTemplate.execute {
+            val vehicleEntity = VehicleEntity.fromDomain(vehicle)
+            vehicleRepository.save(vehicleEntity)
 
-        command.ownerIds
-            .forEach {
-                val vehicleOwner = VehicleOwner(
-                    vehicleId = vehicle.id,
-                    customerId = it,
-                    ownershipRole = OwnershipRole.PRIMARY,
-                    assignedAt = Instant.now()
-                )
+            command.ownerIds
+                .forEach {
+                    val vehicleOwner = VehicleOwner(
+                        vehicleId = vehicle.id,
+                        customerId = it,
+                        ownershipRole = OwnershipRole.PRIMARY,
+                        assignedAt = Instant.now()
+                    )
 
-                val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
-                vehicleOwnerRepository.save(vehicleOwnerEntity)
-            }
+                    val vehicleOwnerEntity = VehicleOwnerEntity.fromDomain(vehicleOwner)
+                    vehicleOwnerRepository.save(vehicleOwnerEntity)
+                }
+        }
 
         val displayName = listOfNotNull(vehicle.brand, vehicle.model, vehicle.licensePlate).joinToString(" ")
 

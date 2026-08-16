@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.auth.PasswordPolicy
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -21,7 +22,8 @@ class ResetPasswordHandler(
     private val tokenService: PasswordResetTokenService,
     private val passwordEncoder: PasswordEncoder,
     private val passwordPolicy: PasswordPolicy,
-    private val redisTemplate: StringRedisTemplate
+    private val redisTemplate: StringRedisTemplate,
+    private val transactionTemplate: TransactionTemplate
 ) {
     companion object {
         // Mirrors the keys used by LoginHandler so a successful reset also lifts any lockout.
@@ -36,14 +38,20 @@ class ResetPasswordHandler(
         // Validate the password first so a weak password does not burn the token.
         passwordPolicy.validate(request.password, request.confirmPassword)
 
-        val userId = tokenService.consumeToken(request.token)
-            ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
+        // Burning the token and storing the new hash must be one transaction. Split —
+        // which is what a `@Transactional suspend` function on Dispatchers.IO gives you,
+        // see AuditLogWriter — a failure after consumeToken left the user locked out
+        // with a spent link and no new password, forcing a whole new reset.
+        val userEntity = transactionTemplate.execute {
+            val userId = tokenService.consumeToken(request.token)
+                ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
 
-        val userEntity = userRepository.findById(userId).orElse(null)
-            ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
+            val user = userRepository.findById(userId).orElse(null)
+                ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
 
-        userEntity.passwordHash = passwordEncoder.encode(request.password)
-        userRepository.save(userEntity)
+            user.passwordHash = passwordEncoder.encode(request.password)
+            userRepository.save(user)
+        } ?: throw ValidationException("Nie udało się zresetować hasła. Spróbuj ponownie.")
 
         // The user just proved control of their inbox — clear any active lockout.
         val email = userEntity.email.lowercase().trim()

@@ -2,6 +2,7 @@ package pl.detailing.crm.visit.technicalnote
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -11,7 +12,8 @@ import java.time.Instant
 class UpdateTechnicalNoteHandler(
     private val visitRepository: VisitRepository,
     private val historyRepository: VisitTechnicalNoteHistoryRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -24,28 +26,34 @@ class UpdateTechnicalNoteHandler(
         val oldContent = visitEntity.technicalNotes
         val newContent = command.content?.takeIf { it.isNotBlank() }
 
-        visitEntity.technicalNotes = newContent
-        visitEntity.updatedBy = command.userId.value
-        visitEntity.updatedAt = Instant.now()
-        visitRepository.save(visitEntity)
-
         val historyAction = when {
             oldContent == null && newContent != null -> "CREATED"
             newContent == null -> "CLEARED"
             else -> "UPDATED"
         }
 
-        historyRepository.save(
-            VisitTechnicalNoteHistoryEntity(
-                visitId = command.visitId.value,
-                studioId = command.studioId.value,
-                content = newContent,
-                action = historyAction,
-                changedById = command.userId.value,
-                changedByName = command.userName,
-                changedAt = Instant.now()
+        // The note and its history row are one change (TransactionTemplate — the body of
+        // a `@Transactional suspend` function escapes the interceptor-managed
+        // transaction; see AuditLogWriter). Split, the note could change with no history
+        // entry, quietly holing the change log the studio relies on in disputes.
+        transactionTemplate.execute {
+            visitEntity.technicalNotes = newContent
+            visitEntity.updatedBy = command.userId.value
+            visitEntity.updatedAt = Instant.now()
+            visitRepository.save(visitEntity)
+
+            historyRepository.save(
+                VisitTechnicalNoteHistoryEntity(
+                    visitId = command.visitId.value,
+                    studioId = command.studioId.value,
+                    content = newContent,
+                    action = historyAction,
+                    changedById = command.userId.value,
+                    changedByName = command.userName,
+                    changedAt = Instant.now()
+                )
             )
-        )
+        }
 
         val auditAction = when (historyAction) {
             "CREATED" -> AuditAction.NOTE_ADDED

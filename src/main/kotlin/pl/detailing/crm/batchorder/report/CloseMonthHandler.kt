@@ -2,6 +2,7 @@ package pl.detailing.crm.batchorder.report
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryRepository
@@ -61,7 +62,8 @@ class CloseMonthHandler(
     private val generateBatchReportHandler: GenerateBatchReportHandler,
     private val getEmailTemplateConfigHandler: GetEmailTemplateConfigHandler,
     private val emailProvider: EmailProvider,
-    private val renderer: MessageTemplateRenderer
+    private val renderer: MessageTemplateRenderer,
+    private val transactionTemplate: TransactionTemplate
 ) {
     @Transactional
     suspend fun handle(command: CloseMonthCommand): CloseMonthResult {
@@ -112,14 +114,20 @@ class CloseMonthHandler(
             emailTo = resolvedEmailTo,
             closedAt = Instant.now()
         )
-        closeHistoryRepository.save(historyEntity)
+        // The close record and the entries it closes must land together. Split across
+        // two commits — which is what a `@Transactional suspend` function gives you,
+        // see AuditLogWriter — a failure here could record a closed month whose entries
+        // stayed open, and the same work would be billed again next time.
+        transactionTemplate.execute {
+            closeHistoryRepository.save(historyEntity)
 
-        entriesToClose.forEach { entry ->
-            entry.isClosed = true
-            entry.closeHistoryId = historyId
-            entry.updatedAt = Instant.now()
+            entriesToClose.forEach { entry ->
+                entry.isClosed = true
+                entry.closeHistoryId = historyId
+                entry.updatedAt = Instant.now()
+            }
+            entryRepository.saveAll(entriesToClose)
         }
-        entryRepository.saveAll(entriesToClose)
 
         var emailSent = false
         if (resolvedEmailTo != null) {

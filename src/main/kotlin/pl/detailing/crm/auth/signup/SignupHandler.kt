@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.domain.User
@@ -19,7 +20,8 @@ class SignupHandler(
     private val subscriptionService: SubscriptionService,
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val mobileTokenService: MobileTokenService
+    private val mobileTokenService: MobileTokenService,
+    private val transactionTemplate: TransactionTemplate
 ) {
 
     @Transactional
@@ -37,6 +39,12 @@ class SignupHandler(
             passwordHash = passwordEncoder.encode(request.password)
         )
 
+        // Studio and its owner are created together (TransactionTemplate — the body of a
+        // `@Transactional suspend` function on Dispatchers.IO escapes the
+        // interceptor-managed transaction; see AuditLogWriter). Split, a failure could
+        // leave an orphan studio with no owner: nobody can sign in, and the e-mail is
+        // taken by an account that was never created.
+        val (studio, user) = transactionTemplate.execute {
         val studio = subscriptionService.createStudio(command.studioName)
 
         val user = User(
@@ -55,6 +63,9 @@ class SignupHandler(
 
         val userEntity = UserEntity.fromDomain(user)
         userRepository.save(userEntity)
+
+        studio to user
+        } ?: error("Transakcja rejestracji nie zwróciła wyniku")
 
         SignupResult(
             userId = user.id,

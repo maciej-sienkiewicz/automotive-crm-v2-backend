@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.inbound.infrastructure.CallLogRepository
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.infrastructure.LeadEntity
@@ -18,7 +19,8 @@ class AcceptCallHandler(
     private val validatorComposite: AcceptCallValidatorComposite,
     private val callLogRepository: CallLogRepository,
     private val leadRepository: LeadRepository,
-    private val soleUserResolver: SoleUserResolver
+    private val soleUserResolver: SoleUserResolver,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val log = LoggerFactory.getLogger(AcceptCallHandler::class.java)
 
@@ -33,13 +35,6 @@ class AcceptCallHandler(
                 command.callId.value,
                 command.studioId.value
             )!!
-
-            // Transition to ACCEPTED
-            callLogEntity.status = CallLogStatus.ACCEPTED
-            callLogEntity.updatedAt = Instant.now()
-
-            // Save call log
-            callLogRepository.save(callLogEntity)
 
             val autoAssignee = soleUserResolver.resolveForStudio(callLogEntity.studioId)
 
@@ -67,8 +62,19 @@ class AcceptCallHandler(
                 updatedAt = Instant.now()
             )
 
-            val leadEntity = LeadEntity.fromDomain(lead)
-            leadRepository.save(leadEntity)
+            // Accepting the call and creating its lead land together (TransactionTemplate —
+            // the body of a `@Transactional suspend` function on Dispatchers.IO escapes
+            // the interceptor-managed transaction; see AuditLogWriter). Split, a call
+            // could read as accepted with no lead to work on.
+            transactionTemplate.execute {
+                // Transition to ACCEPTED
+                callLogEntity.status = CallLogStatus.ACCEPTED
+                callLogEntity.updatedAt = Instant.now()
+                callLogRepository.save(callLogEntity)
+
+                val leadEntity = LeadEntity.fromDomain(lead)
+                leadRepository.save(leadEntity)
+            }
 
             log.info("[INBOUND] Created lead from accepted call: callId={}, leadId={}, phone={}",
                 command.callId.value, lead.id.value, callLogEntity.phoneNumber)

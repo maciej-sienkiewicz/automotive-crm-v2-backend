@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.auth.passwordreset.PasswordResetProperties
 import pl.detailing.crm.auth.passwordreset.PasswordResetTokenService
@@ -25,7 +26,8 @@ class ProvisionEmployeeAccountHandler(
     private val tokenService: PasswordResetTokenService,
     private val emailProvider: EmailProvider,
     private val auditService: AuditService,
-    private val properties: PasswordResetProperties
+    private val properties: PasswordResetProperties,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -58,12 +60,22 @@ class ProvisionEmployeeAccountHandler(
             createdAt = Instant.now(),
             customRoleId = command.roleId?.value
         )
-        userRepository.save(userEntity)
+        // One real transaction (TransactionTemplate — the body of a `@Transactional
+        // suspend` function running on Dispatchers.IO escapes the interceptor-managed
+        // transaction; see AuditLogWriter). Without it a failure after the users row
+        // was written left that row holding the employee's e-mail, and the uniqueness
+        // guard above then rejected every retry — the employee could never be invited.
+        val rawToken = transactionTemplate.execute {
+            userRepository.save(userEntity)
 
-        employeeEntity.userId = userId
-        employeeRepository.save(employeeEntity)
+            employeeEntity.userId = userId
+            employeeRepository.save(employeeEntity)
 
-        val rawToken = tokenService.issueToken(userId)
+            tokenService.issueToken(userId)
+        } ?: error("Transakcja tworzenia konta pracownika nie zwróciła wyniku")
+
+        // Delivery is best-effort and deliberately outside the transaction: a bounced
+        // invitation must not undo an account that exists, and the link can be re-sent.
         val setupLink = "${properties.frontendBaseUrl.trimEnd('/')}/confirm-password?token=$rawToken"
 
         val emailResult = emailProvider.send(

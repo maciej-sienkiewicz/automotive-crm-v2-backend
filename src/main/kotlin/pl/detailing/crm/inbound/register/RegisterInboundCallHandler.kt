@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.inbound.domain.CallLog
 import pl.detailing.crm.inbound.infrastructure.CallLogEntity
 import pl.detailing.crm.inbound.infrastructure.CallLogRepository
@@ -21,7 +22,8 @@ class RegisterInboundCallHandler(
     private val callLogRepository: CallLogRepository,
     private val leadRepository: LeadRepository,
     private val eventPublisher: ApplicationEventPublisher,
-    private val soleUserResolver: SoleUserResolver
+    private val soleUserResolver: SoleUserResolver,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val log = LoggerFactory.getLogger(RegisterInboundCallHandler::class.java)
     @Transactional
@@ -45,10 +47,6 @@ class RegisterInboundCallHandler(
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )
-
-            // Save call log entity
-            val entity = CallLogEntity.fromDomain(callLog)
-            callLogRepository.save(entity)
 
             val autoAssignee = soleUserResolver.resolveForStudio(command.studioId.value)
 
@@ -76,8 +74,18 @@ class RegisterInboundCallHandler(
                 updatedAt = Instant.now()
             )
 
-            val leadEntity = LeadEntity.fromDomain(lead)
-            leadRepository.save(leadEntity)
+            // Call log and lead land together (TransactionTemplate — the body of a
+            // `@Transactional suspend` function on Dispatchers.IO escapes the
+            // interceptor-managed transaction; see AuditLogWriter). Split, a call could
+            // be logged with no lead behind it, so the inbound queue and the pipeline
+            // disagree and the call reads as unhandled.
+            transactionTemplate.execute {
+                val entity = CallLogEntity.fromDomain(callLog)
+                callLogRepository.save(entity)
+
+                val leadEntity = LeadEntity.fromDomain(lead)
+                leadRepository.save(leadEntity)
+            }
 
             log.info("[INBOUND] Created lead from inbound call: callId={}, leadId={}, phone={}, requiresVerification=true",
                 callLog.id.value, lead.id.value, normalizedPhone)
