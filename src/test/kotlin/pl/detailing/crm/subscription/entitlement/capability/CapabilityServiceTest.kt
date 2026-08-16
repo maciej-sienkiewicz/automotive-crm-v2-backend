@@ -117,7 +117,34 @@ class CapabilityServiceTest {
     @Test
     fun `every capability expression is non-empty and references real features`() {
         CapabilityKey.entries.forEach { capability ->
-            assertTrue(capability.requiredFeatures.isNotEmpty(), "capability ${capability.name} has empty expression")
+            assertTrue(
+                capability.requiredFeatures.isNotEmpty() || capability.anyOfFeatures.isNotEmpty(),
+                "capability ${capability.name} has empty expression"
+            )
         }
+    }
+
+    // ── OR expressions: shared infrastructure capabilities ───────────────────
+
+    @Test
+    fun `sms credits are usable with ANY sms-sending module`() {
+        stubEntitlements(FeatureKey.CAMPAIGNS)
+        assertTrue(service.hasCapability(studioId, CapabilityKey.COMM_SMS_CREDITS))
+
+        stubEntitlements(FeatureKey.E_SIGNATURES)
+        assertTrue(service.hasCapability(studioId, CapabilityKey.COMM_SMS_CREDITS))
+
+        stubEntitlements(FeatureKey.CALENDAR)
+        assertFalse(service.hasCapability(studioId, CapabilityKey.COMM_SMS_CREDITS))
+    }
+
+    @Test
+    fun `unsatisfied OR group reports every unlocking feature as missing`() {
+        stubEntitlements(FeatureKey.CALENDAR)
+        val decision = service.resolveOne(studioId, CapabilityKey.COMM_SMS_CREDITS)
+        assertEquals(
+            setOf(FeatureKey.SMS_EMAIL, FeatureKey.CAMPAIGNS, FeatureKey.E_SIGNATURES),
+            decision.missingFeatures
+        )
     }
 }

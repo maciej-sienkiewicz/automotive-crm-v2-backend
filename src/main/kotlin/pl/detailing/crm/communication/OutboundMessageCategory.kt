@@ -13,5 +13,13 @@ import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
  */
 enum class OutboundMessageCategory(val requiredCapability: CapabilityKey) {
     TRANSACTIONAL(CapabilityKey.COMM_SEND_TRANSACTIONAL),
-    CAMPAIGN(CapabilityKey.COMM_SEND_CAMPAIGN)
+    CAMPAIGN(CapabilityKey.COMM_SEND_CAMPAIGN),
+
+    /**
+     * Internal message to studio STAFF (signature-onboarding link). Belongs to the
+     * e-signatures module that triggers it — an e-signatures-only studio must be
+     * able to onboard employee signatures, and business rule "no customer
+     * messaging without the communication module" concerns customers, not staff.
+     */
+    SIGNATURE_ONBOARDING(CapabilityKey.SIGNATURE_LOCAL)
 }

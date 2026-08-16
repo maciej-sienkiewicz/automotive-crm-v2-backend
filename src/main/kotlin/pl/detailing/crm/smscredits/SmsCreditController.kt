@@ -101,7 +101,7 @@ private fun SmsCreditTransaction.toDto() = SmsCreditTransactionDto(
  * POST /api/v1/sms-credits/purchase         → buy credits (OWNER only)
  * GET  /api/v1/sms-credits/transactions     → transaction history (OWNER, MANAGER)
  */
-@RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
+@RequiresCapability(CapabilityKey.COMM_SMS_CREDITS)
 @RestController
 @RequestMapping("/api/v1/sms-credits")
 class SmsCreditController(

@@ -39,7 +39,7 @@ class CapabilityService(
     /** The features the studio lacks for this capability; empty means allowed. */
     fun missingFeatures(studioId: StudioId, capability: CapabilityKey): Set<FeatureKey> {
         val enabled = entitlementService.getEntitlements(studioId).enabledFeatures
-        return capability.requiredFeatures - enabled
+        return capability.missingFeaturesFor(enabled)
     }
 
     /**
@@ -70,15 +70,21 @@ class CapabilityService(
             capability = capability,
             enabled = false,
             missingFeatures = missing,
-            upsell = upsellOptionsFor(missing)
+            upsell = upsellOptionsFor(missing, entitlementService.getAllAddOns())
         )
     }
 
-    /** Resolves the full capability map for a studio — one entitlement lookup, N set operations. */
+    /**
+     * Resolves the full capability map for a studio.
+     * One entitlement lookup (Redis-cached) + at most one add-on catalog read,
+     * fetched lazily only when some capability is disabled and shared by all of them.
+     */
     fun resolve(studioId: StudioId): StudioCapabilities {
         val enabled = entitlementService.getEntitlements(studioId).enabledFeatures
+        val addOnCatalog by lazy { entitlementService.getAllAddOns() }
+
         val decisions = CapabilityKey.entries.associateWith { capability ->
-            val missing = capability.requiredFeatures - enabled
+            val missing = capability.missingFeaturesFor(enabled)
             if (missing.isEmpty()) {
                 CapabilityDecision.allowed(capability)
             } else {
@@ -86,7 +92,7 @@ class CapabilityService(
                     capability = capability,
                     enabled = false,
                     missingFeatures = missing,
-                    upsell = upsellOptionsFor(missing)
+                    upsell = upsellOptionsFor(missing, addOnCatalog)
                 )
             }
         }
@@ -95,12 +101,14 @@ class CapabilityService(
 
     /**
      * Maps missing features to the purchasable add-ons that provide them.
-     * A feature can be provided by at most one add-on in the current catalog;
-     * features provided only by a plan upgrade produce no add-on option — the
+     * Features provided only by a plan upgrade produce no add-on option — the
      * frontend then falls back to the plan-upgrade CTA.
      */
-    private fun upsellOptionsFor(missing: Set<FeatureKey>): List<CapabilityUpsellOption> =
-        entitlementService.getAllAddOns()
+    private fun upsellOptionsFor(
+        missing: Set<FeatureKey>,
+        addOnCatalog: List<pl.detailing.crm.subscription.entitlement.domain.AddOn>
+    ): List<CapabilityUpsellOption> =
+        addOnCatalog
             .filter { addOn -> addOn.features.any { it in missing } }
             .map { addOn ->
                 CapabilityUpsellOption(

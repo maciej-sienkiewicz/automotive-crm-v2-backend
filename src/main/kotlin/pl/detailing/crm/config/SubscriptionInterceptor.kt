@@ -1,5 +1,6 @@
 package pl.detailing.crm.config
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import kotlinx.coroutines.runBlocking
@@ -10,6 +11,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.subscription.SubscriptionService
+import java.time.Instant
 
 /**
  * Coarse-grained billing gate: blocks every API call of a studio whose billing
@@ -29,7 +31,8 @@ import pl.detailing.crm.subscription.SubscriptionService
  */
 @Component
 class SubscriptionInterceptor(
-    private val subscriptionService: SubscriptionService
+    private val subscriptionService: SubscriptionService,
+    private val objectMapper: ObjectMapper
 ) : HandlerInterceptor {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -78,7 +81,14 @@ class SubscriptionInterceptor(
         response.status = status
         response.contentType = "application/json;charset=UTF-8"
         response.writer.write(
-            """{"code":"$code","error":"$error","message":"${message.replace("\"", "\\\"")}","timestamp":"${java.time.Instant.now()}"}"""
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "code" to code,
+                    "error" to error,
+                    "message" to message,
+                    "timestamp" to Instant.now().toString()
+                )
+            )
         )
     }
 }

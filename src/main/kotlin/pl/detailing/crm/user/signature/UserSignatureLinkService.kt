@@ -1,5 +1,6 @@
 package pl.detailing.crm.user.signature
 
+import pl.detailing.crm.communication.OutboundMessageCategory
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -70,7 +71,10 @@ class UserSignatureLinkService(
         val fullName = "${entity.firstName} ${entity.lastName}".trim()
         val message = "Cześć $fullName! Kliknij link, aby narysować swój podpis: $signingUrl (ważny 30 min)"
 
-        val result = communicationGateway.sendTransactionalSms(studioId.value, phone, message)
+        val result = communicationGateway.sendTransactionalSms(
+            studioId.value, phone, message,
+            category = OutboundMessageCategory.SIGNATURE_ONBOARDING
+        )
         if (!result.success) {
             redisTemplate.delete(KEY_PREFIX + token)
             throw ValidationException("Nie udało się wysłać SMS: ${result.errorMessage ?: "błąd dostawcy"}")

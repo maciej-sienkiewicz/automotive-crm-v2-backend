@@ -7,12 +7,10 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
-import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 
 /**
  * Subscription lifecycle: studio creation, trial management, status queries
@@ -25,7 +23,8 @@ import java.util.UUID
 @Service
 class SubscriptionService(
     private val studioRepository: StudioRepository,
-    private val entitlementService: EntitlementService
+    private val entitlementService: EntitlementService,
+    private val studioProvisioningService: StudioProvisioningService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -38,27 +37,16 @@ class SubscriptionService(
     /**
      * Creates a studio with no billing plan chosen yet.
      *
-     * PROVISIONING INVARIANT: the studio gets its `studio_subscription_plans` row
-     * (BASIC feature-plan) in the same transaction. Billing status (NO_PLAN →
-     * trial/paid) and the feature-plan row are separate concerns — the row must
-     * exist from day one so add-on purchases and entitlement reads never depend
-     * on a silent fallback. This closes the root cause of
-     * "Studio nie ma aktywnego planu subskrypcji" thrown after a captured payment.
+     * PROVISIONING INVARIANT: the studio and its `studio_subscription_plans` row
+     * (BASIC feature-plan) are created atomically by [StudioProvisioningService].
+     * Billing status (NO_PLAN → trial/paid) and the feature-plan row are separate
+     * concerns — the row must exist from day one so add-on purchases and
+     * entitlement reads never depend on a silent fallback. This closes the root
+     * cause of "Studio nie ma aktywnego planu subskrypcji" thrown after a
+     * captured payment.
      */
     suspend fun createStudio(name: String): Studio = withContext(Dispatchers.IO) {
-        val studio = Studio(
-            id = StudioId.random(),
-            name = name,
-            subscriptionStatus = SubscriptionStatus.NO_PLAN,
-            trialEndsAt = null,
-            subscriptionEndsAt = null,
-            trialUsed = false,
-            createdAt = Instant.now(),
-            emailAlias = UUID.randomUUID().toString().replace("-", "")
-        )
-        studioRepository.save(StudioEntity.fromDomain(studio))
-        entitlementService.ensurePlanAssigned(studio.id)
-        studio
+        studioProvisioningService.provisionStudio(name)
     }
 
     /** Starts the free trial for a studio that has never used one. */
