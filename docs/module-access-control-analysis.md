@@ -274,3 +274,33 @@ Redis (`studio-entitlements`, TTL 5 min) + fallback trialowy sprawiają, że **�
 | **4. Wymuszenie trwałości** | Rozszerzony `AuthorizationSurfaceScanTest` (pokrycie capabilities), lint na froncie, generowanie macierzy z katalogu, usunięcie mechanizmów równoległych, migracje Flyway dla tabel entitlementowych | Nowy moduł nie może powstać „dziurawy" — szczelność pilnowana przez build, nie przez ludzi |
 
 Miary sukcesu: 0 endpointów mutujących bez deklaracji capability (poza allowlistą), 0 zamówień PAID bez aktywacji > 15 min, 100% akcji skutkowych z macierzy zgatych na obu warstwach, konwersja upsellu mierzona per powierzchnia (widok vs moment intencji).
+
+---
+
+## 6. Status wdrożenia (aktualizacja po implementacji)
+
+Fazy 1–4 zostały zaimplementowane na gałęzi `claude/saas-crm-module-access-control-yffiwa` w obu repozytoriach. Skrót mapowania na kod:
+
+| Element planu | Implementacja |
+|---|---|
+| Katalog capabilities (AND + grupy OR) | `subscription/entitlement/capability/Capability.kt` (`COMM_SMS_CREDITS` jako przykład OR — kredyty odblokowuje dowolny moduł wysyłający SMS-y) |
+| Jeden mózg decyzyjny | `CapabilityService` (`hasCapability` / `requireCapability` / `resolve`) |
+| W2: API | `@RequiresCapability` + `CapabilityAuthorizationAspect` (`@Order(0)` — przed RBAC, właściciel NIE omija) |
+| Kontrakt 402 | `CapabilityLockedException` → `PaywallErrorResponse` z `code` (`MODULE_REQUIRED` vs `INSUFFICIENT_CREDITS`), `missingFeatures`, `upsell` |
+| W1: punkty skutku | `OutboundCommunicationGateway` (kategorie TRANSACTIONAL/CAMPAIGN/SIGNATURE_ONBOARDING), `RequestSignatureHandler` (reguła krzyżowa), `CompleteVisitHandler`/`CompleteVisitInvoiceOrchestrator`, `markReadyForPickup`, tworzenie rezerwacji |
+| Inwariant prowizjonowania | `StudioProvisioningService` (atomowo studio + wiersz planu), `ensurePlanAssigned`, `StudioSubscriptionBackfill` (start, idempotentny, dotwarza unikalny indeks), degraded fallback z logiem ERROR + metryką `entitlements.missing.plan.row` |
+| RCA błędu aktywacji | walidacja przed checkoutem, samonaprawa w `fulfillAddOnPurchase`, licznik `subscription.fulfillment.failures` |
+| Fail-closed | `SubscriptionInterceptor` (nieoczekiwany błąd → 503; kody `SUBSCRIPTION_INACTIVE`/`SUBSCRIPTION_CHECK_UNAVAILABLE`), jedno źródło wykluczeń w `WebMvcConfig` |
+| Cykl życia / rekoncyliacja | `SubscriptionLifecycleScheduler` (ożywione `expireTrials`/`expireSubscriptions`), `SubscriptionReconciliationJob` (3 gauge'y driftu) |
+| Wymuszenie trwałości | `CapabilityCoverageScanTest` — kontroler płatnego modułu bez poprawnego `@RequiresCapability` = czerwony build |
+| Frontend | `useCapability` + `RequireCapability` (hide/disable/upsell), `PaywallListener` (globalny 402→dialog zakupowy), neutralizacja stanu w `MarkReadyDialog`/check-inie, gating podpisów per kanał z tooltipem brakującego modułu, `FinanceUpsellPanel` przy wydaniu pojazdu ze ścieżką „bez faktury", likwidacja `smsModuleActive` |
+
+### Uwagi operacyjne przed wdrożeniem
+
+1. **Alerty**: podpiąć alerting pod `entitlements.missing.plan.row`, `subscription.fulfillment.failures`, `communication.blocked.module` i trzy gauge'y `subscription.reconciliation.*` — to jest system wczesnego ostrzegania, który wcześniej nie istniał.
+2. **Świadome decyzje produktowe zakodowane w tej zmianie** (do ewentualnej rewizji):
+   - retry/sync KSeF dla JUŻ wystawionych faktur nie jest blokowany po utracie modułu (obowiązek dostarczenia wystawionej faktury do KSeF > gating),
+   - kopiowanie linku Karty Wizyty pozostaje dostępne bez modułu komunikacji — zablokowana jest wyłącznie wysyłka,
+   - zamknięcie wizyty bez modułu finansowego działa w trybie uproszczonym (bez dokumentu) — operacja rdzeniowa BASIC nie jest zakładnikiem sprzedaży,
+   - SMS onboardingowy podpisu pracownika należy do modułu podpisów (wiadomość do personelu, nie do klienta).
+3. **Weryfikacja builda backendu**: środowisko wykonawcze nie ma dostępu do GitHub Packages (`pl.akmf.ksef-sdk:ksef-client` wymaga PAT z `read:packages`), więc backend zweryfikowano statycznie + przeglądem; przed merge należy przepuścić gałąź przez CI (Jenkins ma poświadczenia). Frontend: pełny build Vite przechodzi, zmienione pliki bez błędów TS.
