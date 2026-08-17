@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
-import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -26,7 +25,6 @@ import java.time.Instant
 class ConfirmVisitHandler(
     private val visitRepository: VisitRepository,
     private val appointmentRepository: AppointmentRepository,
-    private val auditService: AuditService,
     private val leadSyncService: LeadSyncService,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -79,16 +77,10 @@ class ConfirmVisitHandler(
                 }
             }
 
-            auditService.log(LogAuditCommand(
-                studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userName ?: "",
-                module = AuditModule.VISIT,
-                entityId = command.visitId.value.toString(),
-                entityDisplayName = "Wizyta #${visitEntity.visitNumber}",
-                action = AuditAction.VISIT_CONFIRMED,
-                changes = listOf(FieldChange("status", VisitStatus.DRAFT.name, VisitStatus.IN_PROGRESS.name))
-            ))
+            // No separate audit entry: DRAFT → IN_PROGRESS is always the tail of the
+            // check-in flow, and the flow already logged VISIT_CREATED ("Rozpoczęto
+            // wizytę") seconds earlier. A second "Potwierdzono wizytę" row for the same
+            // business action was pure feed noise.
 
             ConfirmVisitResult(visitId = command.visitId)
         }

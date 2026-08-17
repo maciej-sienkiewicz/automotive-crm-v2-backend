@@ -104,6 +104,7 @@ data class LogAuditCommand(
 @Service
 class AuditService(
     private val auditLogWriter: AuditLogWriter,
+    private val auditLogRepository: pl.detailing.crm.audit.infrastructure.AuditLogRepository,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(AuditService::class.java)
@@ -143,6 +144,33 @@ class AuditService(
 
     /** Compatibility wrapper — see [LogAuditCommand]. */
     fun logSync(command: LogAuditCommand) = recordSync(command.toEvent())
+
+    /**
+     * Merges extra metadata keys into the newest stored entry of ([action], visit) —
+     * used by multi-step flows (check-in → protocol signature) to keep ONE activity
+     * entry per business action instead of a burst of near-duplicates.
+     *
+     * Like [record], never throws. @return true when an entry was found and enriched;
+     * false lets the caller fall back to logging its own entry.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    fun enrichLatestEntry(
+        studioId: StudioId,
+        action: AuditAction,
+        visitId: java.util.UUID,
+        patch: Map<String, String>
+    ): Boolean = try {
+        val id = auditLogRepository.findLatestIdByStudioIdAndActionAndVisitId(
+            studioId.value, action.name, visitId
+        )
+        id != null && auditLogRepository.mergeMetadata(id, objectMapper.writeValueAsString(patch)) > 0
+    } catch (e: Exception) {
+        logger.error(
+            "Failed to enrich audit entry: studioId={}, action={}, visitId={}, patch={}",
+            studioId, action, visitId, patch, e
+        )
+        false
+    }
 
     private fun toEntity(event: AuditEvent): AuditLogEntity {
         val request = AuditRequestContext.capture()
