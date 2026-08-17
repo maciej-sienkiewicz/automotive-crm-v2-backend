@@ -36,5 +36,21 @@ class KsefCredentialsEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: Instant = Instant.now()
+    val updatedAt: Instant = Instant.now(),
+
+    /** When the token was last verified against KSeF (null = never verified). */
+    @Column(name = "last_verified_at")
+    var lastVerifiedAt: Instant? = null,
+
+    /** Result of the last verification: did KSeF accept the token at all? */
+    @Column(name = "verified_token_valid")
+    var verifiedTokenValid: Boolean? = null,
+
+    /**
+     * Comma-separated permission names (KSeF values, e.g. "InvoiceRead,InvoiceWrite")
+     * detected during the last verification. Empty string = token valid but the
+     * permission list could not be determined.
+     */
+    @Column(name = "verified_permissions", length = 500)
+    var verifiedPermissions: String? = null
 )
