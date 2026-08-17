@@ -81,6 +81,13 @@ class StudioSettingsEntity(
     @Column(name = "visit_number_sequence_length", nullable = false)
     var visitNumberSequenceLength: Int = 5,
 
+    /**
+     * Digit count of the template's {RAND} placeholder — only meaningful for formats
+     * using {RAND} instead of {SEQ} (see [pl.detailing.crm.shared.numbering.NumberingTemplate]).
+     */
+    @Column(name = "visit_number_random_length", nullable = false)
+    var visitNumberRandomLength: Int = 6,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )
