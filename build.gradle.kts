@@ -81,7 +81,7 @@ dependencies {
     implementation("org.bouncycastle:bcutil-jdk18on:1.78.1")
 
     // KSeF SDK – official Java client for the Polish National e-Invoicing System
-    implementation("pl.akmf.ksef-sdk:ksef-client:3.0.17")
+    implementation("pl.akmf.ksef-sdk:ksef-client:3.0.18")
 
     // SMSAPI Java SDK – automated SMS dispatch
     implementation("pl.smsapi:smsapi-lib:3.0.1")
