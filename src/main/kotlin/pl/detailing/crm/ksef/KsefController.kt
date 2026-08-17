@@ -10,6 +10,7 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.auth.KsefSessionCache
+import pl.detailing.crm.ksef.auth.KsefTokenVerifier
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
@@ -39,6 +40,7 @@ class KsefController(
     private val credentialsRepository: KsefCredentialsRepository,
     private val sessionCache: KsefSessionCache,
     private val ksefAuthService: KsefAuthService,
+    private val tokenVerifier: KsefTokenVerifier,
     private val fetchHandler: FetchKsefInvoicesHandler,
     private val invoiceRepository: KsefInvoiceRepository,
     private val invoiceItemRepository: KsefInvoiceItemRepository,
@@ -80,6 +82,32 @@ class KsefController(
         credentialsRepository.deleteByStudioId(principal.studioId.value)
         sessionCache.invalidate(principal.studioId)
         return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Verifies the currently saved token against KSeF: authenticates with a fresh
+     * session and reads which permissions the token actually carries, so the
+     * settings view can show "token OK, but missing InvoiceWrite" instead of the
+     * studio discovering it at their first invoice. The result is persisted on the
+     * credentials row and also returned by GET /credentials.
+     */
+    @PostMapping("/credentials/verify")
+    @Transactional
+    fun verifyCredentials(): ResponseEntity<KsefTokenVerificationResponse> {
+        requireOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val credentials = credentialsRepository.findByStudioId(principal.studioId.value)
+            ?: return ResponseEntity.notFound().build()
+
+        val result = tokenVerifier.verify(principal.studioId)
+
+        credentials.lastVerifiedAt = Instant.now()
+        credentials.verifiedTokenValid = result.tokenValid
+        credentials.verifiedPermissions =
+            if (result.permissionsKnown) result.permissions.joinToString(",") else null
+        credentialsRepository.save(credentials)
+
+        return ResponseEntity.ok(credentials.toVerificationResponse(result.errorMessage))
     }
 
     // ── Sync ───────────────────────────────────────────────────────────────────
@@ -384,11 +412,32 @@ class KsefController(
             ?: throw NotFoundException("Dokument kosztowy $id nie istnieje")
 
     private fun KsefCredentialsEntity.toResponse() = KsefCredentialsResponse(
-        nip         = nip,
-        tokenMasked = maskToken(ksefToken),
-        createdAt   = createdAt,
-        updatedAt   = updatedAt
+        nip          = nip,
+        tokenMasked  = maskToken(ksefToken),
+        createdAt    = createdAt,
+        updatedAt    = updatedAt,
+        verification = if (lastVerifiedAt == null) null else toVerificationResponse(errorMessage = null)
     )
+
+    /**
+     * Maps persisted verification state to the user-facing capability checklist.
+     * There is no separate UPO permission in KSeF — UPO is available for sessions
+     * the token opened itself, so InvoiceWrite implies it.
+     */
+    private fun KsefCredentialsEntity.toVerificationResponse(errorMessage: String?): KsefTokenVerificationResponse {
+        val permissions = verifiedPermissions?.split(",")?.filter { it.isNotBlank() }
+        val canIssue = permissions?.contains("InvoiceWrite") == true
+        return KsefTokenVerificationResponse(
+            tokenValid       = verifiedTokenValid == true,
+            permissionsKnown = permissions != null,
+            canIssueInvoices = canIssue,
+            canReadInvoices  = permissions?.contains("InvoiceRead") == true,
+            canGenerateUpo   = canIssue,
+            permissions      = permissions.orEmpty(),
+            checkedAt        = lastVerifiedAt,
+            errorMessage     = errorMessage
+        )
+    }
 
     private fun maskToken(token: String): String =
         if (token.length <= 8) "****" else token.take(4) + "****" + token.takeLast(4)
@@ -494,7 +543,24 @@ data class KsefCredentialsResponse(
     val nip: String,
     val tokenMasked: String,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    /** Last token-verification result, or null if the token was never verified. */
+    val verification: KsefTokenVerificationResponse?
+)
+
+data class KsefTokenVerificationResponse(
+    /** Did KSeF accept the token during authentication? */
+    val tokenValid: Boolean,
+    /** False = token authenticated but the permission list could not be read. */
+    val permissionsKnown: Boolean,
+    val canIssueInvoices: Boolean,
+    val canReadInvoices: Boolean,
+    /** UPO has no own permission in KSeF — it follows from InvoiceWrite. */
+    val canGenerateUpo: Boolean,
+    /** Raw KSeF permission names, e.g. ["InvoiceRead", "InvoiceWrite"]. */
+    val permissions: List<String>,
+    val checkedAt: Instant?,
+    val errorMessage: String?
 )
 
 data class KsefSyncStatusResponse(
