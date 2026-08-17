@@ -788,6 +788,15 @@ class AlreadyLinkedException(
     val linkedLeadName: String?,
     message: String = "Zasób jest już przypisany do innego leada"
 ) : BusinessException(message)
+class VehiclePlateExistsException(
+    val vehicleId: String,
+    val brand: String,
+    val model: String,
+    val year: Int?,
+    val licensePlate: String?,
+    val primaryOwnerName: String?,
+    message: String = "Pojazd o tym numerze rejestracyjnym już istnieje w bazie"
+) : BusinessException(message)
 class InsufficientSmsCreditsException(message: String = "Brak kredytów SMS") : BusinessException(message)
 class FeatureLockedException(
     val featureKey: FeatureKey,

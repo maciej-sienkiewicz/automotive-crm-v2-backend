@@ -223,33 +223,7 @@ class AppointmentController(
                     )
                 }
             },
-            vehicle = when (request.vehicle.mode) {
-                VehicleMode.EXISTING -> {
-                    VehicleIdentity.Existing(
-                        vehicleId = VehicleId.fromString(request.vehicle.id!!)
-                    )
-                }
-                VehicleMode.NEW -> {
-                    val newData = request.vehicle.newData!!
-                    VehicleIdentity.New(
-                        brand = newData.brand,
-                        model = newData.model,
-                        year = newData.year,
-                        licensePlate = newData.licensePlate
-                    )
-                }
-                VehicleMode.UPDATE -> {
-                    val updateData = request.vehicle.updateData!!
-                    VehicleIdentity.Update(
-                        vehicleId = VehicleId.fromString(request.vehicle.id!!),
-                        brand = updateData.brand,
-                        model = updateData.model,
-                        year = updateData.year,
-                        licensePlate = updateData.licensePlate
-                    )
-                }
-                VehicleMode.NONE -> VehicleIdentity.None
-            },
+            vehicle = mapVehicleIdentity(request.vehicle),
             services = request.services.map { service ->
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
@@ -427,33 +401,7 @@ class AppointmentController(
                     )
                 }
             },
-            vehicle = when (request.vehicle.mode) {
-                VehicleMode.EXISTING -> {
-                    VehicleIdentity.Existing(
-                        vehicleId = VehicleId.fromString(request.vehicle.id!!)
-                    )
-                }
-                VehicleMode.NEW -> {
-                    val newData = request.vehicle.newData!!
-                    VehicleIdentity.New(
-                        brand = newData.brand,
-                        model = newData.model,
-                        year = newData.year,
-                        licensePlate = newData.licensePlate
-                    )
-                }
-                VehicleMode.UPDATE -> {
-                    val updateData = request.vehicle.updateData!!
-                    VehicleIdentity.Update(
-                        vehicleId = VehicleId.fromString(request.vehicle.id!!),
-                        brand = updateData.brand,
-                        model = updateData.model,
-                        year = updateData.year,
-                        licensePlate = updateData.licensePlate
-                    )
-                }
-                VehicleMode.NONE -> VehicleIdentity.None
-            },
+            vehicle = mapVehicleIdentity(request.vehicle),
             services = request.services.map { service ->
                 ServiceLineItemCommand(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
@@ -695,6 +643,49 @@ class AppointmentController(
         ResponseEntity.noContent().build()
     }
 
+    /**
+     * Single mapping of the vehicle identity request → command, shared by create, update
+     * and recurring flows so LINK_EXISTING / duplicate-override semantics cannot drift.
+     */
+    private fun mapVehicleIdentity(vehicle: VehicleIdentityRequest): VehicleIdentity = when (vehicle.mode) {
+        VehicleMode.EXISTING -> VehicleIdentity.Existing(
+            vehicleId = VehicleId.fromString(vehicle.id!!)
+        )
+        VehicleMode.NEW -> {
+            val newData = vehicle.newData!!
+            VehicleIdentity.New(
+                brand = newData.brand,
+                model = newData.model,
+                year = newData.year,
+                licensePlate = newData.licensePlate,
+                duplicateOverrideVehicleId = vehicle.duplicateOverrideVehicleId?.let { VehicleId.fromString(it) }
+            )
+        }
+        VehicleMode.UPDATE -> {
+            val updateData = vehicle.updateData!!
+            VehicleIdentity.Update(
+                vehicleId = VehicleId.fromString(vehicle.id!!),
+                brand = updateData.brand,
+                model = updateData.model,
+                year = updateData.year,
+                licensePlate = updateData.licensePlate
+            )
+        }
+        VehicleMode.LINK_EXISTING -> VehicleIdentity.LinkExisting(
+            vehicleId = VehicleId.fromString(
+                vehicle.id ?: throw BadRequestException("vehicle.id is required for LINK_EXISTING mode")
+            ),
+            ownership = when (vehicle.ownership) {
+                "ADD_CO_OWNER" -> VehicleOwnershipAction.ADD_CO_OWNER
+                "TRANSFER_PRIMARY" -> VehicleOwnershipAction.TRANSFER_PRIMARY
+                else -> throw BadRequestException(
+                    "vehicle.ownership must be ADD_CO_OWNER or TRANSFER_PRIMARY for LINK_EXISTING mode"
+                )
+            }
+        )
+        VehicleMode.NONE -> VehicleIdentity.None
+    }
+
     private fun buildCreateCommand(
         request: CreateAppointmentRequest,
         principal: pl.detailing.crm.auth.UserPrincipal
@@ -713,12 +704,7 @@ class AppointmentController(
                 CustomerIdentity.Update(CustomerId.fromString(request.customer.id ?: throw BadRequestException("customer.id is required for UPDATE mode")), d.firstName, d.lastName, d.phone, d.email, d.company?.name, d.company?.nip, d.company?.regon, d.company?.address)
             }
         },
-        vehicle = when (request.vehicle.mode) {
-            VehicleMode.EXISTING -> VehicleIdentity.Existing(VehicleId.fromString(request.vehicle.id!!))
-            VehicleMode.NEW -> { val d = request.vehicle.newData!!; VehicleIdentity.New(d.brand, d.model, d.year, d.licensePlate) }
-            VehicleMode.UPDATE -> { val d = request.vehicle.updateData!!; VehicleIdentity.Update(VehicleId.fromString(request.vehicle.id!!), d.brand, d.model, d.year, d.licensePlate) }
-            VehicleMode.NONE -> VehicleIdentity.None
-        },
+        vehicle = mapVehicleIdentity(request.vehicle),
         services = request.services.map {
             ServiceLineItemCommand(it.serviceId?.let { sid -> ServiceId.fromString(sid) }, it.serviceName, it.basePriceNet, it.vatRate, it.adjustment.type, it.adjustment.value, it.note)
         },
