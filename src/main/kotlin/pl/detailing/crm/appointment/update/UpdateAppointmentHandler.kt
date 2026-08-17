@@ -125,6 +125,8 @@ class UpdateAppointmentHandler(
         existingEntity.appointmentTitle = command.appointmentTitle
         existingEntity.appointmentColorId = command.appointmentColorId.value
         existingEntity.note = command.note
+        existingEntity.internalNote = command.internalNote
+        existingEntity.protocolNote = command.protocolNote
         existingEntity.isAllDay = command.schedule.isAllDay
         existingEntity.startDateTime = command.schedule.startDateTime
         existingEntity.endDateTime = command.schedule.endDateTime

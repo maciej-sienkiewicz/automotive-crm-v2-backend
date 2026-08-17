@@ -15,6 +15,10 @@ data class CreateAppointmentRequest(
     val appointmentTitle: String?,
     val appointmentColorId: String,
     val note: String?,
+    /** Visible only inside the CRM, never printed on the pickup protocol. */
+    val internalNote: String? = null,
+    /** Printed on the vehicle pickup protocol. */
+    val protocolNote: String? = null,
     val sendConfirmationSms: Boolean = false,
     val sendReminderSms: Boolean = false,
     /** Send the customer their Visit Card link via SMS right after booking. Requires SMS_EMAIL feature. */

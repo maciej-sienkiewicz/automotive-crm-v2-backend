@@ -57,6 +57,12 @@ class AppointmentEntity(
     @Column(name = "note", columnDefinition = "TEXT")
     var note: String?,
 
+    @Column(name = "internal_note", columnDefinition = "TEXT")
+    var internalNote: String? = null,
+
+    @Column(name = "protocol_note", columnDefinition = "TEXT")
+    var protocolNote: String? = null,
+
     @Column(name = "send_reminder_sms", nullable = false)
     var sendReminderSms: Boolean = false,
 
