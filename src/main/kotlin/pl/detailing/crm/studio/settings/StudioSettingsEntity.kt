@@ -69,6 +69,18 @@ class StudioSettingsEntity(
     @Column(name = "idle_timeout_seconds", nullable = false)
     var idleTimeoutSeconds: Int = 0,
 
+    /**
+     * Visit number template, e.g. "VIS-{YYYY}-{SEQ}". Null/blank = use
+     * [pl.detailing.crm.visit.convert.VisitNumberGenerator.DEFAULT_FORMAT].
+     * See [pl.detailing.crm.shared.numbering.NumberingTemplate] for placeholder syntax.
+     */
+    @Column(name = "visit_number_format", length = 100)
+    var visitNumberFormat: String? = null,
+
+    /** Zero-padding width of the template's {SEQ} placeholder. */
+    @Column(name = "visit_number_sequence_length", nullable = false)
+    var visitNumberSequenceLength: Int = 5,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )

@@ -2,37 +2,43 @@ package pl.detailing.crm.visit.convert
 
 import org.springframework.stereotype.Service
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.numbering.NumberingTemplate
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
-import java.time.Year
+import java.time.LocalDate
 
 /**
- * Generates unique visit numbers in format: VIS-YYYY-NNNNN
- * Example: VIS-2025-00042
+ * Generates visit numbers from the studio's configurable format
+ * (Ustawienia → Dane firmy → Numeracja wizyt), falling back to the legacy
+ * VIS-YYYY-NNNNN shape when the studio hasn't customized it.
+ *
+ * See [NumberingTemplate] for the placeholder syntax and how the reset period
+ * follows from which date tokens are used, and
+ * [pl.detailing.crm.checkin.CreateVisitFromReservationHandler.persistVisitRetryingOnDuplicateNumber]
+ * for the concurrency handling: this generator reads max+1 without locking, so the
+ * unique (studio_id, visit_number) index — not this class — is the actual race guard.
  */
 @Service
 class VisitNumberGenerator(
-    private val visitRepository: VisitRepository
+    private val visitRepository: VisitRepository,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
-    fun generateVisitNumber(studioId: StudioId): String {
-        val currentYear = Year.now().value
-        val yearPattern = "VIS-$currentYear-%"
+    companion object {
+        const val DEFAULT_FORMAT = "VIS-{YYYY}-{SEQ}"
+        const val DEFAULT_SEQUENCE_LENGTH = 5
+    }
 
-        // Find latest visit number for current year
-        val latestNumbers = visitRepository.findLatestVisitNumberForYear(
-            studioId.value,
-            yearPattern
+    fun generateVisitNumber(studioId: StudioId): String {
+        val settings = studioSettingsRepository.findById(studioId.value).orElse(null)
+        val template = NumberingTemplate(
+            template = settings?.visitNumberFormat?.takeIf { it.isNotBlank() } ?: DEFAULT_FORMAT,
+            sequenceLength = settings?.visitNumberSequenceLength ?: DEFAULT_SEQUENCE_LENGTH
         )
 
-        val nextSequence = if (latestNumbers.isEmpty()) {
-            1
-        } else {
-            // Extract sequence number from latest visit number
-            val latestNumber = latestNumbers.first()
-            val sequencePart = latestNumber.substringAfterLast("-")
-            sequencePart.toIntOrNull()?.plus(1) ?: 1
-        }
+        val today = LocalDate.now()
+        val existingNumbers = visitRepository.findVisitNumbersLike(studioId.value, template.likePattern(today))
+        val nextSequence = (existingNumbers.mapNotNull { template.extractSequence(it, today) }.maxOrNull() ?: 0) + 1
 
-        // Format: VIS-YYYY-NNNNN (5 digits, zero-padded)
-        return "VIS-$currentYear-${nextSequence.toString().padStart(5, '0')}"
+        return template.render(today, nextSequence)
     }
 }
