@@ -1,14 +1,10 @@
 package pl.detailing.crm.ksef.auth
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.akmf.ksef.sdk.client.interfaces.KSeFClient
-import pl.akmf.ksef.sdk.client.model.permission.search.PermissionState
-import pl.akmf.ksef.sdk.client.model.permission.search.QueryPersonalGrantRequest
+import pl.akmf.ksef.sdk.client.model.auth.AuthenticationTokenStatus
 import pl.detailing.crm.shared.StudioId
-import java.util.Base64
 
 /**
  * Verifies the studio's saved KSeF token: is it accepted by KSeF at all, and
@@ -16,15 +12,22 @@ import java.util.Base64
  * tell the owner "your token works, but it can't issue invoices" instead of
  * failing later at the first invoice.
  *
- * Permission detection, in order of preference:
- * 1. The access-token JWT returned by the auth flow — KSeF embeds the effective
- *    permissions of the authenticated context in its payload claims. We scan the
- *    whole payload for known permission names rather than assuming a specific
- *    claim key, so a claim rename on the KSeF side degrades to the fallback
- *    instead of a wrong "no permissions" answer.
- * 2. GET-style query POST /permissions/query/personal/grants (SDK
- *    [KSeFClient.searchPersonalGrantPermission]) — an extra API call, but an
- *    explicit contract.
+ * Permission source: [KSeFClient.getKsefToken] returns [AuthenticationToken.requestedPermissions]
+ * for a KSeF-side token, which is the token's OWN authoritative permission list —
+ * not something inferred from the access-token JWT or from person-to-person
+ * permission grants (those are a different KSeF concept entirely: delegated
+ * permissions between people/entities, not a self-generated API token's own
+ * scope, and were empty for every self-generated token during manual testing).
+ *
+ * The catch: KSeF's token API identifies tokens by a `referenceNumber` assigned
+ * at generation time, which we never see — the owner pastes the raw token value
+ * from the KSeF portal, not its reference number. So instead of looking up "the"
+ * token directly, we list this context's ACTIVE tokens via [KSeFClient.queryKsefTokens]
+ * right after authenticating with it, and take the one with the most recent
+ * `lastUseDate` — that's the token we just used, since authenticating updates it.
+ * This is a heuristic, not an exact match, so a studio with several tokens
+ * authenticating concurrently could in theory pick the wrong one; noted in case
+ * this needs tightening later.
  *
  * Note there is no separate "UPO" permission in KSeF: UPO is downloadable for
  * sessions the token itself opened, so InvoiceWrite covers it. The controller
@@ -34,27 +37,19 @@ import java.util.Base64
 class KsefTokenVerifier(
     private val ksefAuthService: KsefAuthService,
     private val ksefClient: KSeFClient,
-    private val sessionCache: KsefSessionCache,
-    private val objectMapper: ObjectMapper
+    private val sessionCache: KsefSessionCache
 ) {
     private val log = LoggerFactory.getLogger(KsefTokenVerifier::class.java)
 
     companion object {
-        /** Permission names as KSeF spells them (TokenPermissionType values in the SDK). */
-        val KNOWN_PERMISSIONS = setOf(
-            "InvoiceRead", "InvoiceWrite",
-            "CredentialsRead", "CredentialsManage",
-            "SubunitManage", "EnforcementOperations",
-            "Introspection", "PeppolId", "VatUeManage"
-        )
-        private const val GRANTS_PAGE_SIZE = 100
+        private const val TOKENS_PAGE_SIZE = 50
     }
 
     data class VerificationResult(
         val tokenValid: Boolean,
-        /** Detected permission names (KSeF spelling). Meaningful only when [permissionsKnown]. */
+        /** Detected permission names (KSeF spelling, e.g. "InvoiceWrite"). Meaningful only when [permissionsKnown]. */
         val permissions: Set<String>,
-        /** False when the token authenticated but neither source yielded a permission list. */
+        /** False when the token authenticated but its entry couldn't be matched among the context's active tokens. */
         val permissionsKnown: Boolean,
         val errorMessage: String?
     )
@@ -82,59 +77,33 @@ class KsefTokenVerifier(
             )
         }
 
-        val fromJwt = permissionsFromAccessToken(session.accessToken)
-        if (fromJwt.isNotEmpty()) {
-            return VerificationResult(tokenValid = true, permissions = fromJwt, permissionsKnown = true, errorMessage = null)
-        }
-
         return try {
-            val fromApi = permissionsFromGrantsApi(session.accessToken)
-            VerificationResult(tokenValid = true, permissions = fromApi, permissionsKnown = true, errorMessage = null)
+            val tokens = ksefClient.queryKsefTokens(
+                listOf(AuthenticationTokenStatus.ACTIVE), null, null, null, null,
+                TOKENS_PAGE_SIZE, session.accessToken
+            ).tokens.orEmpty()
+
+            val justUsed = tokens.maxByOrNull { it.lastUseDate ?: it.dateCreated }
+            if (justUsed == null) {
+                log.warn("KSeF authenticated for studio {} but no active tokens were returned", studioId)
+                VerificationResult(
+                    tokenValid = true,
+                    permissions = emptySet(),
+                    permissionsKnown = false,
+                    errorMessage = "Token jest poprawny, ale nie udało się odnaleźć jego uprawnień na liście tokenów w KSeF."
+                )
+            } else {
+                val permissions = justUsed.requestedPermissions.orEmpty().mapNotNull { it.value }.toSet()
+                VerificationResult(tokenValid = true, permissions = permissions, permissionsKnown = true, errorMessage = null)
+            }
         } catch (e: Exception) {
-            log.warn("KSeF personal-grants query failed for studio {}: {}", studioId, e.message)
+            log.warn("KSeF queryKsefTokens failed for studio {}: {}", studioId, e.message)
             VerificationResult(
                 tokenValid = true,
                 permissions = emptySet(),
                 permissionsKnown = false,
-                errorMessage = "Token jest poprawny, ale nie udało się odczytać listy uprawnień."
+                errorMessage = "Token jest poprawny, ale nie udało się odczytać listy jego uprawnień."
             )
         }
-    }
-
-    /**
-     * Decodes the JWT payload (no signature check — we received the token
-     * directly from KSeF over TLS) and collects every known permission name
-     * appearing anywhere in it.
-     */
-    private fun permissionsFromAccessToken(accessToken: String): Set<String> = try {
-        val parts = accessToken.split(".")
-        if (parts.size < 2) emptySet()
-        else {
-            val payload = String(Base64.getUrlDecoder().decode(parts[1]))
-            val found = mutableSetOf<String>()
-            collectKnownPermissions(objectMapper.readTree(payload), found)
-            found
-        }
-    } catch (e: Exception) {
-        log.debug("Could not decode KSeF access token payload: {}", e.message)
-        emptySet()
-    }
-
-    private fun collectKnownPermissions(node: JsonNode, out: MutableSet<String>) {
-        when {
-            node.isTextual -> KNOWN_PERMISSIONS.firstOrNull { it.equals(node.asText(), ignoreCase = true) }
-                ?.let { out.add(it) }
-            node.isArray || node.isObject -> node.forEach { collectKnownPermissions(it, out) }
-        }
-    }
-
-    private fun permissionsFromGrantsApi(accessToken: String): Set<String> {
-        val response = ksefClient.searchPersonalGrantPermission(
-            QueryPersonalGrantRequest(), 0, GRANTS_PAGE_SIZE, accessToken
-        )
-        return response.permissions.orEmpty()
-            .filter { it.permissionState == null || it.permissionState == PermissionState.ACTIVE }
-            .mapNotNull { it.permissionScope?.value }
-            .toSet()
     }
 }
