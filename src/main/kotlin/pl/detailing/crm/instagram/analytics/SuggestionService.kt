@@ -19,6 +19,8 @@ data class ProfileSuggestionDto(
     val username: String,
     val fullName: String?,
     val isVerified: Boolean,
+    /** Liczba obserwujących sugerowanego konta; null gdy wzbogacenie się nie powiodło. */
+    val followerCount: Int?,
     /** Ile obserwowanych profili "poleca" to konto – im więcej, tym trafniejsza sugestia. */
     val recommendedByCount: Int,
     /** Username profilu źródłowego (do etykiety "podobny do @x"). */
@@ -45,6 +47,13 @@ class SuggestionService(
         const val TTL_DAYS = 30L
         const val MAX_PER_PROFILE = 10
         const val MAX_FOR_STUDIO = 8
+
+        /**
+         * Minimalna wielkość sugerowanego konta. Related-profiles Instagrama potrafi
+         * podpowiadać mikro-profile (~100 obserwujących) z drugiego końca kraju —
+         * poniżej progu sugestia jest szumem, nie benchmarkiem.
+         */
+        const val MIN_FOLLOWERS = 1_000
     }
 
     /** Pobiera i cache'uje sugestie dla profilu; pomija, gdy cache świeższy niż TTL. */
@@ -74,6 +83,10 @@ class SuggestionService(
                         suggestedUsername = it.username,
                         fullName = it.fullName?.take(150),
                         isVerified = it.isVerified,
+                        // Related-profiles nie zwraca liczby obserwujących — dociągamy ją
+                        // jednym wywołaniem profilu per sugestia. Koszt ograniczony:
+                        // ≤ MAX_PER_PROFILE wywołań na profil raz na TTL_DAYS.
+                        followerCount = fetchFollowerCount(it.username),
                         fetchedAt = now
                     )
                 }
@@ -101,6 +114,9 @@ class SuggestionService(
 
         return suggestionRepository.findByProfileIdIn(activeIds)
             .filter { it.suggestedUsername !in observedUsernames }
+            // Mikro-konta odpadają; konta bez znanej wielkości (null) zostają,
+            // ale ranking spycha je za te o potwierdzonej skali.
+            .filter { it.followerCount == null || it.followerCount >= MIN_FOLLOWERS }
             .groupBy { it.suggestedUsername }
             .map { (username, rows) ->
                 val first = rows.first()
@@ -108,12 +124,24 @@ class SuggestionService(
                     username = username,
                     fullName = rows.firstNotNullOfOrNull { it.fullName },
                     isVerified = first.isVerified,
+                    followerCount = rows.firstNotNullOfOrNull { it.followerCount },
                     recommendedByCount = rows.map { it.profileId }.distinct().size,
                     similarTo = sourceUsernames[first.profileId] ?: ""
                 )
             }
-            .sortedWith(compareByDescending<ProfileSuggestionDto> { it.recommendedByCount }
-                .thenByDescending { it.isVerified })
+            .sortedWith(
+                compareByDescending<ProfileSuggestionDto> { it.recommendedByCount }
+                    .thenByDescending { it.followerCount ?: -1 }
+                    .thenByDescending { it.isVerified }
+            )
             .take(MAX_FOR_STUDIO)
+    }
+
+    /** Wzbogacenie sugestii o liczbę obserwujących; porażka nie blokuje zapisu sugestii. */
+    private fun fetchFollowerCount(username: String): Int? = try {
+        provider.fetchUserDetails(username)?.followerCount
+    } catch (e: Exception) {
+        log.debug("Instagram sugestie: brak liczby obserwujących dla @{}: {}", username, e.message)
+        null
     }
 }

@@ -27,8 +27,19 @@ class InstagramAnalyticsReadService(
     private val postRepository: InstagramPostSnapshotRepository,
     private val topicRepository: InstagramPostTopicRepository,
     private val reactionRepository: StudioInstagramPostReactionRepository,
-    private val insightRepository: InstagramInsightRepository
+    private val insightRepository: InstagramInsightRepository,
+    @org.springframework.beans.factory.annotation.Value("\${instagram.daily-sync.cron:0 30 6 * * *}")
+    private val dailySyncCron: String,
+    @org.springframework.beans.factory.annotation.Value("\${instagram.sync.cron:0 0 3 * * SUN}")
+    private val deepSyncCron: String
 ) {
+
+    /** Najbliższe odpalenie crona wg zegara serwera (tak samo interpretuje go @Scheduled). */
+    private fun nextFire(cron: String): Instant? = runCatching {
+        org.springframework.scheduling.support.CronExpression.parse(cron)
+            .next(java.time.ZonedDateTime.now())
+            ?.toInstant()
+    }.getOrNull()
 
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
@@ -190,7 +201,10 @@ class InstagramAnalyticsReadService(
         else MetricTriple(aiMedian, null, null, null)
 
         val storefront = subject?.let {
-            val score = MetricsCalculator.storefrontScore(it.profile, approxLastPost(it.lastActiveWeek))
+            // Real last-post timestamp from post snapshots — the week-level approximation
+            // could mark a freshly-posting profile as stale when aggregates lagged behind.
+            val lastPostAt = postRepository.findFirstByProfileIdOrderByTakenAtDesc(it.profile.id)?.takenAt
+            val score = MetricsCalculator.storefrontScore(it.profile, lastPostAt)
             StorefrontDto(score.score, score.gaps.map { g -> g.label })
         }
 
@@ -202,6 +216,8 @@ class InstagramAnalyticsReadService(
             weeks = weeks,
             comparisonGroupSize = metrics.size,
             lastSyncAt = basket.profiles.values.mapNotNull { it.detailsLastSyncedAt }.maxOrNull(),
+            nextDailySyncAt = nextFire(dailySyncCron),
+            nextDeepSyncAt = nextFire(deepSyncCron),
             profilesCount = basket.links.size,
             hasSelf = self != null,
             selfUsername = self?.profile?.username,
@@ -233,6 +249,9 @@ class InstagramAnalyticsReadService(
     fun benchmark(studioId: StudioId, weeks: Int): BenchmarkResponse {
         val basket = loadBasket(studioId)
         val metrics = computeWindowMetrics(basket, weeks)
+        val lastPostAtByProfile = postRepository
+            .findLastPostAtByProfileIds(basket.links.map { it.profileId })
+            .associate { it.profileId to it.lastPostAt }
 
         val rows = metrics
             .sortedWith(compareByDescending<ProfileWindowMetrics> { it.link.isSelf }
@@ -240,7 +259,7 @@ class InstagramAnalyticsReadService(
             .map { m ->
                 // Leave-one-out: profil nigdy nie wchodzi do własnego benchmarku
                 val others = metrics.filter { it.link.id != m.link.id }
-                val storefront = MetricsCalculator.storefrontScore(m.profile, approxLastPost(m.lastActiveWeek))
+                val storefront = MetricsCalculator.storefrontScore(m.profile, lastPostAtByProfile[m.profile.id])
                 BenchmarkRowDto(
                     studioProfileId = m.link.id.toString(),
                     profileId = m.profile.id.toString(),
@@ -510,7 +529,78 @@ class InstagramAnalyticsReadService(
         )
     }
 
-    /** Przybliżenie daty ostatniego posta z granulacji tygodniowej (do oceny świeżości profilu). */
-    private fun approxLastPost(lastActiveWeek: LocalDate?): Instant? =
-        lastActiveWeek?.plusDays(6)?.atStartOfDay(ZoneOffset.UTC)?.toInstant()
+    // ── Wyjaśnienie tygodnia (klik w słupek "Przyrost obserwujących") ─────────
+
+    @Transactional(readOnly = true)
+    fun weekDetail(studioId: StudioId, profileIdStr: String, weekStartStr: String): WeekDetailResponse {
+        val basket = loadBasket(studioId)
+        val profileId = UUID.fromString(profileIdStr)
+        val link = basket.links.firstOrNull { it.profileId == profileId }
+            ?: throw EntityNotFoundException("Profil nie należy do obserwowanego koszyka")
+        val profile = basket.profiles[profileId]
+            ?: throw EntityNotFoundException("Profil nie został znaleziony")
+
+        // Normalizacja do poniedziałku ISO — front może kliknąć słupek dzienny.
+        val requested = LocalDate.parse(weekStartStr)
+        val weekStart = requested.minusDays(((requested.dayOfWeek.value + 6) % 7).toLong())
+        val weekEnd = weekStart.plusDays(7)
+        val weekStartInstant = weekStart.atStartOfDay(ZoneOffset.UTC).toInstant()
+        val weekEndInstant = weekEnd.atStartOfDay(ZoneOffset.UTC).toInstant()
+
+        // Delta obserwujących w tygodniu — z dziennych snapshotów.
+        val snapshots = metricsRepository.findByProfileIdAndSnapshotDateAfterOrderBySnapshotDateAsc(
+            profileId, weekStart.minusDays(1)
+        ).filter { it.snapshotDate < weekEnd && it.followerCount != null }
+        val followerDelta = if (snapshots.size >= 2) {
+            snapshots.last().followerCount!! - snapshots.first().followerCount!!
+        } else null
+
+        // Posty opublikowane w tym tygodniu.
+        val weekPosts = postRepository.findByProfileIdAndTakenAtAfter(profileId, weekStartInstant)
+            .filter { it.takenAt < weekEndInstant }
+            .sortedByDescending { it.takenAt }
+
+        // Kontekst: mediany profilu z 8 tygodni — do wykrycia "wyraźnego skoku".
+        val contextPosts = postRepository.findByProfileIdAndTakenAtAfter(
+            profileId, weekStartInstant.minus(56, java.time.temporal.ChronoUnit.DAYS)
+        )
+        val medianEngagement = MetricsCalculator.median(
+            contextPosts.map { (it.likeCount + it.commentCount).toDouble() }
+        )
+        val medianViews = MetricsCalculator.median(
+            contextPosts.mapNotNull { it.viewCount?.toDouble() }
+        )
+
+        // Insighty (promocja/konkurs/viral/spike) przypisane do tego profilu i tygodnia.
+        val weekInsights = insightRepository.findByStudioIdAndCreatedAtAfterOrderByCreatedAtDesc(
+            studioId.value, weekStartInstant
+        ).filter {
+            it.profileId == profileId &&
+                it.createdAt < weekEndInstant.plus(7, java.time.temporal.ChronoUnit.DAYS) &&
+                it.type in setOf("PROMO_DETECTED", "CONTEST_DETECTED", "VIRAL_POST", "FOLLOWER_SPIKE")
+        }.map { WeekDetailInsightDto(type = it.type, title = it.title) }
+
+        return WeekDetailResponse(
+            profileId = profileIdStr,
+            username = profile.username,
+            weekStart = weekStart.toString(),
+            followerDelta = followerDelta,
+            medianEngagement = medianEngagement,
+            medianViews = medianViews,
+            posts = weekPosts.map { post ->
+                WeekDetailPostDto(
+                    postId = post.id.toString(),
+                    permalink = "https://www.instagram.com/p/${post.postCode}/",
+                    takenAt = post.takenAt,
+                    format = MetricsCalculator.formatBucket(post.productType),
+                    caption = post.caption?.take(120),
+                    likeCount = post.likeCount,
+                    commentCount = post.commentCount,
+                    viewCount = post.viewCount,
+                    engagement = post.likeCount + post.commentCount
+                )
+            },
+            insights = weekInsights
+        )
+    }
 }
