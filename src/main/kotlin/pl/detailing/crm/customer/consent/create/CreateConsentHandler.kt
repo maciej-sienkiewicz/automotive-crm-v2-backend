@@ -4,6 +4,7 @@ import jakarta.transaction.Transactional
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.customer.consent.domain.ConsentDefinition
 import pl.detailing.crm.customer.consent.domain.ConsentTemplate
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionEntity
