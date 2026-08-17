@@ -116,6 +116,20 @@ class AuditFeedRenderer {
 
         log.amount?.let { parts += "Kwota: ${renderAmount(it).display}" }
 
+        // Check-in is one activity entry; its sub-steps live in metadata (see
+        // CreateVisitFromReservationHandler.recordCheckIn and the signing-flow
+        // enrichment) and are surfaced here instead of as separate feed rows.
+        if (log.action == AuditAction.VISIT_CREATED) {
+            log.metadata["photosCount"]?.toIntOrNull()?.takeIf { it > 0 }
+                ?.let { parts += "Zdjęcia: $it" }
+            log.metadata["damagePointsCount"]?.toIntOrNull()?.takeIf { it > 0 }
+                ?.let { parts += "Uszkodzenia: $it" }
+            if (log.metadata["protocolSigned"] == "true") {
+                val signer = log.metadata["protocolSignerName"]?.takeIf { it.isNotBlank() }
+                parts += if (signer != null) "Protokół podpisany przez: $signer" else "Protokół podpisany"
+            }
+        }
+
         return parts.joinToString(" · ").takeIf { it.isNotEmpty() }
     }
 

@@ -279,24 +279,44 @@ class SubmitSignatureHandler(
                     details = "signedPdfS3Key=$signedPdfS3Key, pieczęć=${sealResult.sealApplied}, znacznikCzasu=${sealResult.timestampApplied}"
                 )
 
-                auditService.log(LogAuditCommand(
-                    studioId = request.studioId,
-                    userId = request.requestedBy,
-                    userDisplayName = request.requestedByName,
-                    module = AuditModule.VISIT,
-                    entityId = request.visitId.value.toString(),
-                    entityDisplayName = visitEntity.visitNumber,
-                    action = AuditAction.PROTOCOL_SIGNED,
-                    metadata = mapOf(
-                        "protocolId" to request.protocolId.toString(),
-                        "signatureRequestId" to request.id.toString(),
-                        "documentSha256" to request.documentSha256,
-                        "signerName" to request.signerName,
-                        "signerIp" to (command.ipAddress ?: ""),
-                        "sealApplied" to sealResult.sealApplied.toString(),
-                        "timestampApplied" to sealResult.timestampApplied.toString()
+                // A signature captured while the visit is still DRAFT is part of the
+                // check-in flow — one business action, one activity entry: enrich the
+                // VISIT_CREATED ("Rozpoczęto wizytę") row instead of logging a separate
+                // "Podpisano protokół" duplicate. Signatures on already-running visits
+                // (e.g. remote signing later) keep their own entry. The signing module's
+                // compliance trail (auditTrailService above) is unaffected either way.
+                val enrichedCheckInEntry = visitEntity.status == VisitStatus.DRAFT &&
+                    auditService.enrichLatestEntry(
+                        studioId = request.studioId,
+                        action = AuditAction.VISIT_CREATED,
+                        visitId = request.visitId.value,
+                        patch = mapOf(
+                            "protocolSigned" to "true",
+                            "protocolSignerName" to request.signerName,
+                            "protocolSignedAt" to signedAt.toString()
+                        )
                     )
-                ))
+
+                if (!enrichedCheckInEntry) {
+                    auditService.log(LogAuditCommand(
+                        studioId = request.studioId,
+                        userId = request.requestedBy,
+                        userDisplayName = request.requestedByName,
+                        module = AuditModule.VISIT,
+                        entityId = request.visitId.value.toString(),
+                        entityDisplayName = visitEntity.visitNumber,
+                        action = AuditAction.PROTOCOL_SIGNED,
+                        metadata = mapOf(
+                            "protocolId" to request.protocolId.toString(),
+                            "signatureRequestId" to request.id.toString(),
+                            "documentSha256" to request.documentSha256,
+                            "signerName" to request.signerName,
+                            "signerIp" to (command.ipAddress ?: ""),
+                            "sealApplied" to sealResult.sealApplied.toString(),
+                            "timestampApplied" to sealResult.timestampApplied.toString()
+                        )
+                    ))
+                }
 
                 eventPublisher.publish(
                     tenantId = request.studioId.value.toString(),

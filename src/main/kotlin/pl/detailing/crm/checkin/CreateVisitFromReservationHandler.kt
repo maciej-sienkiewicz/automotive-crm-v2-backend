@@ -349,7 +349,9 @@ class CreateVisitFromReservationHandler(
                 vehicleDisplayName = vehicleDisplayName,
                 customerId = customerId,
                 appointmentId = appointment.id,
-                walkIn = false
+                walkIn = false,
+                photosCount = command.photoIds.size,
+                damagePointsCount = command.damagePoints.size
             )
 
             // Step 9.4: Register damage map as a document if it was generated
@@ -593,7 +595,9 @@ class CreateVisitFromReservationHandler(
                 vehicleDisplayName = vehicleDisplayName,
                 customerId = customerId,
                 appointmentId = appointment.id,
-                walkIn = true
+                walkIn = true,
+                photosCount = command.photoIds.size,
+                damagePointsCount = command.damagePoints.size
             )
 
             // Step 10.2: Register damage map document if generated
@@ -753,12 +757,12 @@ class CreateVisitFromReservationHandler(
     /**
      * Records a vehicle check-in in the activity feed.
      *
-     * Two entries, because they answer different questions. The [AuditModule.VISIT] entry
-     * is the event the owner watches for — a car came in, here is the customer, the vehicle
-     * and the value of the work — and it carries the amount, which used to be missing
-     * entirely. The [AuditModule.VEHICLE] entry keeps the vehicle's own history complete,
-     * so the vehicle card still lists every time it was brought in. Both share a
-     * correlation id, so the feed can collapse them into one row.
+     * Exactly ONE entry. The [AuditModule.VISIT] / VISIT_CREATED row carries the full
+     * context (customer, vehicle, visit, appointment, amount), and the feed filters by
+     * those context columns — the vehicle card's history query matches on context
+     * vehicle_id, so a separate VEHICLE-module duplicate is unnecessary noise.
+     * Check-in details (photos, damage points, and — enriched later by the signing
+     * flow — protocol signature) live in this row's metadata.
      */
     private suspend fun recordCheckIn(
         studioId: StudioId,
@@ -770,7 +774,9 @@ class CreateVisitFromReservationHandler(
         vehicleDisplayName: String,
         customerId: CustomerId,
         appointmentId: AppointmentId,
-        walkIn: Boolean
+        walkIn: Boolean,
+        photosCount: Int,
+        damagePointsCount: Int
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId.value, studioId.value)
         val customerName = listOfNotNull(customer?.firstName, customer?.lastName)
@@ -792,7 +798,9 @@ class CreateVisitFromReservationHandler(
             "visitId" to visitId.value.toString(),
             "visitNumber" to visit.visitNumber,
             "appointmentId" to appointmentId.value.toString(),
-            "walkIn" to walkIn.toString()
+            "walkIn" to walkIn.toString(),
+            "photosCount" to photosCount.toString(),
+            "damagePointsCount" to damagePointsCount.toString()
         )
         // Set explicitly rather than left to the request-scoped default: this runs on the
         // IO dispatcher, where the request context is no longer visible.
@@ -813,20 +821,6 @@ class CreateVisitFromReservationHandler(
             )
         )
 
-        auditService.record(
-            AuditEvent(
-                studioId = studioId,
-                actor = actor,
-                module = AuditModule.VEHICLE,
-                action = AuditAction.VISIT_ADDED,
-                entityId = vehicleId.value.toString(),
-                entityDisplayName = vehicleDisplayName,
-                metadata = metadata,
-                context = context,
-                amount = totalGross,
-                correlationId = correlationId
-            )
-        )
     }
 
     /**
