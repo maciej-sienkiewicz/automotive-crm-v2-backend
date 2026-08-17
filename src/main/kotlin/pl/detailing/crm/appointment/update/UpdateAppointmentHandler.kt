@@ -31,7 +31,8 @@ class UpdateAppointmentHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val serviceRepository: ServiceRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val vehicleResolver: AppointmentVehicleResolver
 ) {
 
     @Transactional
@@ -69,8 +70,14 @@ class UpdateAppointmentHandler(
         // Step 4: Identity Resolution - Vehicle (reusing create logic)
         val vehicleId = when (val identity = command.vehicle) {
             is VehicleIdentity.Existing -> identity.vehicleId
-            is VehicleIdentity.New -> createVehicle(identity, customerId, command.studioId, command.userId)
+            is VehicleIdentity.New -> {
+                vehicleResolver.ensureNoPlateCollision(identity, command.studioId)
+                createVehicle(identity, customerId, command.studioId, command.userId)
+            }
             is VehicleIdentity.Update -> updateVehicle(identity, command.studioId, command.userId)
+            is VehicleIdentity.LinkExisting -> vehicleResolver.linkExisting(
+                identity, customerId, command.studioId, command.userId, command.userName
+            )
             VehicleIdentity.None -> null
         }
 

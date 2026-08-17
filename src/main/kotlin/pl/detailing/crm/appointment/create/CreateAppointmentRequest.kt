@@ -66,13 +66,19 @@ data class VehicleIdentityRequest(
     val mode: VehicleMode,
     val id: String?,
     val newData: NewVehicleDataRequest?,
-    val updateData: NewVehicleDataRequest? // Reusing the same structure as NewVehicleDataRequest
+    val updateData: NewVehicleDataRequest?, // Reusing the same structure as NewVehicleDataRequest
+    /** Required for LINK_EXISTING: ADD_CO_OWNER or TRANSFER_PRIMARY. */
+    val ownership: String? = null,
+    /** For NEW: id of the colliding vehicle the user explicitly dismissed as "a different vehicle". */
+    val duplicateOverrideVehicleId: String? = null
 )
 
 enum class VehicleMode {
     EXISTING,
     NEW,
     UPDATE,
+    /** Attach an existing vehicle (found e.g. by plate lookup) and resolve its ownership. */
+    LINK_EXISTING,
     NONE
 }
 

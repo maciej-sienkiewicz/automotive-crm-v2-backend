@@ -16,6 +16,8 @@ import pl.detailing.crm.vehicle.get.GetVehicleDetailHandler
 import pl.detailing.crm.vehicle.list.ListVehiclesHandler
 import pl.detailing.crm.vehicle.list.VehicleListItem
 import pl.detailing.crm.vehicle.list.VehicleListQuery
+import pl.detailing.crm.vehicle.lookup.LookupVehicleByPlateHandler
+import pl.detailing.crm.vehicle.lookup.VehiclePlateLookupResponse
 import pl.detailing.crm.vehicle.owner.AssignOwnerCommand
 import pl.detailing.crm.vehicle.owner.AssignOwnerHandler
 import pl.detailing.crm.vehicle.owner.RemoveOwnerCommand
@@ -55,8 +57,21 @@ class VehicleController(
     private val getVehicleAppointmentsHandler: GetVehicleAppointmentsHandler,
     private val getVehicleDocumentsHandler: GetVehicleDocumentsHandler,
     private val vehicleDocumentService: VehicleDocumentService,
-    private val getVehicleCommentsHandler: GetVehicleCommentsHandler
+    private val getVehicleCommentsHandler: GetVehicleCommentsHandler,
+    private val lookupVehicleByPlateHandler: LookupVehicleByPlateHandler
 ) {
+
+    /**
+     * Live duplicate detection for "add new vehicle" forms. Matches by normalized
+     * license plate (case- and whitespace-insensitive) among active vehicles.
+     */
+    @GetMapping("/lookup")
+    fun lookupByPlate(
+        @RequestParam licensePlate: String
+    ): ResponseEntity<VehiclePlateLookupResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(lookupVehicleByPlateHandler.handle(principal.studioId, licensePlate))
+    }
 
     @GetMapping
     fun getVehicles(

@@ -116,6 +116,21 @@ class GlobalExceptionHandler(
             ))
     }
 
+    @ExceptionHandler(VehiclePlateExistsException::class)
+    fun handleVehiclePlateExists(ex: VehiclePlateExistsException): ResponseEntity<VehiclePlateExistsResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(VehiclePlateExistsResponse(
+                vehicleId = ex.vehicleId,
+                brand = ex.brand,
+                model = ex.model,
+                year = ex.year,
+                licensePlate = ex.licensePlate,
+                primaryOwnerName = ex.primaryOwnerName,
+                message = ex.message ?: "Pojazd o tym numerze rejestracyjnym już istnieje w bazie"
+            ))
+    }
+
     @ExceptionHandler(AlreadyLinkedException::class)
     fun handleAlreadyLinked(ex: AlreadyLinkedException): ResponseEntity<AlreadyLinkedResponse> {
         return ResponseEntity
@@ -289,6 +304,22 @@ data class AlreadyLinkedResponse(
     val code: String,
     val linkedLeadId: String,
     val linkedLeadName: String?
+)
+
+/**
+ * Returned with HTTP 409 when creating a vehicle whose license plate already exists.
+ * Carries enough of the existing vehicle for the frontend to render the collision
+ * card (link as co-owner / transfer / it's a different vehicle) without a second request.
+ */
+data class VehiclePlateExistsResponse(
+    val code: String = "VEHICLE_PLATE_EXISTS",
+    val vehicleId: String,
+    val brand: String,
+    val model: String,
+    val year: Int?,
+    val licensePlate: String?,
+    val primaryOwnerName: String?,
+    val message: String
 )
 
 /**

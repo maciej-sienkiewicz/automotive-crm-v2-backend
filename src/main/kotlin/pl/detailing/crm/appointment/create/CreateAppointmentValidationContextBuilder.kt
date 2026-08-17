@@ -72,6 +72,12 @@ class CreateAppointmentValidationContextBuilder(
                             command.studioId.value
                         )
                     }
+                    is VehicleIdentity.LinkExisting -> {
+                        vehicleRepository.findByIdAndStudioId(
+                            identity.vehicleId.value,
+                            command.studioId.value
+                        )
+                    }
                     is VehicleIdentity.New, VehicleIdentity.None -> null
                 }
             }

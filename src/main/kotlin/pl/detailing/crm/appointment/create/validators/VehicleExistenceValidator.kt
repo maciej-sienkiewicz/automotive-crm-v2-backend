@@ -23,6 +23,13 @@ class VehicleExistenceValidator {
                     )
                 }
             }
+            is VehicleIdentity.LinkExisting -> {
+                if (context.existingVehicle == null) {
+                    throw EntityNotFoundException(
+                        "Pojazd o ID '${identity.vehicleId}' nie został znaleziony w tym studiu"
+                    )
+                }
+            }
             is VehicleIdentity.New, VehicleIdentity.None -> {
                 // No validation needed for new or no vehicle
             }

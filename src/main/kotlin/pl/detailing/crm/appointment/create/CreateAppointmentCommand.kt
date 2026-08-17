@@ -57,13 +57,27 @@ sealed class CustomerIdentity {
     ) : CustomerIdentity()
 }
 
+/** How to resolve ownership when linking an existing vehicle to the appointment's customer. */
+enum class VehicleOwnershipAction {
+    /** Keep current owners, add this customer as CO_OWNER (spouse arrives with the family car). */
+    ADD_CO_OWNER,
+    /** Vehicle was sold/handed over: previous owners are unlinked, this customer becomes PRIMARY. */
+    TRANSFER_PRIMARY
+}
+
 sealed class VehicleIdentity {
     data class Existing(val vehicleId: VehicleId) : VehicleIdentity()
     data class New(
         val brand: String,
         val model: String,
         val year: Int?,
-        val licensePlate: String?
+        val licensePlate: String?,
+        /**
+         * The user saw the plate-collision card for this vehicle id and explicitly chose
+         * "it's a different vehicle". Without it a matching plate is rejected with 409
+         * VEHICLE_PLATE_EXISTS instead of silently creating a duplicate.
+         */
+        val duplicateOverrideVehicleId: VehicleId? = null
     ) : VehicleIdentity()
     data class Update(
         val vehicleId: VehicleId,
@@ -71,6 +85,11 @@ sealed class VehicleIdentity {
         val model: String,
         val year: Int?,
         val licensePlate: String?
+    ) : VehicleIdentity()
+    /** Attach a vehicle that already exists in the studio, resolving ownership explicitly. */
+    data class LinkExisting(
+        val vehicleId: VehicleId,
+        val ownership: VehicleOwnershipAction
     ) : VehicleIdentity()
     object None : VehicleIdentity()
 }
