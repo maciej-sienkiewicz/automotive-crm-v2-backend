@@ -333,12 +333,15 @@ class CompanyController(
         }
         val format = settings?.visitNumberFormat?.takeIf { it.isNotBlank() } ?: VisitNumberGenerator.DEFAULT_FORMAT
         val sequenceLength = settings?.visitNumberSequenceLength ?: VisitNumberGenerator.DEFAULT_SEQUENCE_LENGTH
+        val randomLength = settings?.visitNumberRandomLength ?: VisitNumberGenerator.DEFAULT_RANDOM_LENGTH
+        val template = NumberingTemplate(format, sequenceLength, randomLength)
 
         ResponseEntity.ok(
             VisitNumberingConfigResponse(
                 format = format,
                 sequenceLength = sequenceLength,
-                preview = NumberingTemplate(format, sequenceLength).render(LocalDate.now(), 1)
+                randomLength = randomLength,
+                preview = previewOf(template)
             )
         )
     }
@@ -356,11 +359,14 @@ class CompanyController(
         if (request.sequenceLength !in 1..10) {
             errors += "Długość numeru porządkowego musi być między 1 a 10 cyfr"
         }
+        if (request.randomLength !in 1..12) {
+            errors += "Długość numeru losowego musi być między 1 a 12 cyfr"
+        }
         if (errors.isNotEmpty()) throw ValidationException(errors.joinToString("; "))
 
         // Constructing it is itself the final validation pass (catches anything the
         // static check above didn't, e.g. future rule additions) and gives us the preview.
-        val template = NumberingTemplate(format, request.sequenceLength)
+        val template = NumberingTemplate(format, request.sequenceLength, request.randomLength)
 
         val settings = withContext(Dispatchers.IO) {
             studioSettingsRepository.findById(studioId).orElse(null)
@@ -368,6 +374,7 @@ class CompanyController(
         }
         settings.visitNumberFormat = format
         settings.visitNumberSequenceLength = request.sequenceLength
+        settings.visitNumberRandomLength = request.randomLength
         settings.updatedAt = Instant.now()
 
         val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
@@ -376,9 +383,16 @@ class CompanyController(
             VisitNumberingConfigResponse(
                 format = saved.visitNumberFormat!!,
                 sequenceLength = saved.visitNumberSequenceLength,
-                preview = template.render(LocalDate.now(), 1)
+                randomLength = saved.visitNumberRandomLength,
+                preview = previewOf(template)
             )
         )
+    }
+
+    /** {SEQ} previews as sequence 1; {RAND} previews with a freshly drawn example — not idempotent by design. */
+    private fun previewOf(template: NumberingTemplate): String = when (template.kind) {
+        NumberingTemplate.Kind.RANDOM -> template.renderRandom(LocalDate.now())
+        NumberingTemplate.Kind.SEQUENTIAL -> template.render(LocalDate.now(), 1)
     }
 
     private fun generateLogoPresignedUrl(s3Key: String): String {
@@ -457,11 +471,13 @@ data class UpdateIdleTimeoutRequest(val idleTimeoutSeconds: Int)
 data class VisitNumberingConfigResponse(
     val format: String,
     val sequenceLength: Int,
-    /** Example number for today's date with sequence 1 — drives the settings UI preview. */
+    val randomLength: Int,
+    /** Example number for today's date — sequence 1 for {SEQ} formats, a fresh draw for {RAND} ones. */
     val preview: String
 )
 
 data class UpdateVisitNumberingConfigRequest(
     val format: String,
-    val sequenceLength: Int
+    val sequenceLength: Int,
+    val randomLength: Int
 )
