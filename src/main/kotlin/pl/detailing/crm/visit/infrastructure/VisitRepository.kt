@@ -129,18 +129,20 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): VisitEntity?
 
     /**
-     * Get next visit number sequence for studio
-     * Format: VIS-YYYY-NNNNN
+     * All visit numbers matching the current period's rendered prefix/suffix (see
+     * [pl.detailing.crm.shared.numbering.NumberingTemplate.likePattern]) — feeds
+     * [pl.detailing.crm.visit.convert.VisitNumberGenerator]'s max+1 computation.
+     * Fetches the whole matching set rather than relying on lexicographic ORDER BY,
+     * since a studio can change the sequence's zero-padding width mid-period.
      */
     @Query("""
         SELECT v.visitNumber FROM VisitEntity v
         WHERE v.studioId = :studioId
-        AND v.visitNumber LIKE :yearPattern
-        ORDER BY v.visitNumber DESC
+        AND v.visitNumber LIKE :pattern ESCAPE '\'
     """)
-    fun findLatestVisitNumberForYear(
+    fun findVisitNumbersLike(
         @Param("studioId") studioId: UUID,
-        @Param("yearPattern") yearPattern: String
+        @Param("pattern") pattern: String
     ): List<String>
 
     /**

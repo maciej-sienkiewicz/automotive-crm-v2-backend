@@ -12,7 +12,11 @@ import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.permission.RequiresOwner
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.shared.numbering.NumberingTemplate
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.visit.convert.VisitNumberGenerator
+import java.time.LocalDate
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
@@ -321,6 +325,62 @@ class CompanyController(
         ResponseEntity.ok(IdleTimeoutResponse(idleTimeoutSeconds = saved.idleTimeoutSeconds))
     }
 
+    @GetMapping("/visit-numbering-config")
+    fun getVisitNumberingConfig(): ResponseEntity<VisitNumberingConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        val format = settings?.visitNumberFormat?.takeIf { it.isNotBlank() } ?: VisitNumberGenerator.DEFAULT_FORMAT
+        val sequenceLength = settings?.visitNumberSequenceLength ?: VisitNumberGenerator.DEFAULT_SEQUENCE_LENGTH
+
+        ResponseEntity.ok(
+            VisitNumberingConfigResponse(
+                format = format,
+                sequenceLength = sequenceLength,
+                preview = NumberingTemplate(format, sequenceLength).render(LocalDate.now(), 1)
+            )
+        )
+    }
+
+    @PatchMapping("/visit-numbering-config")
+    @RequiresOwner
+    fun updateVisitNumberingConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateVisitNumberingConfigRequest
+    ): ResponseEntity<VisitNumberingConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        val format = request.format.trim()
+        val errors = NumberingTemplate.validate(format).toMutableList()
+        if (request.sequenceLength !in 1..10) {
+            errors += "Długość numeru porządkowego musi być między 1 a 10 cyfr"
+        }
+        if (errors.isNotEmpty()) throw ValidationException(errors.joinToString("; "))
+
+        // Constructing it is itself the final validation pass (catches anything the
+        // static check above didn't, e.g. future rule additions) and gives us the preview.
+        val template = NumberingTemplate(format, request.sequenceLength)
+
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+        settings.visitNumberFormat = format
+        settings.visitNumberSequenceLength = request.sequenceLength
+        settings.updatedAt = Instant.now()
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+
+        ResponseEntity.ok(
+            VisitNumberingConfigResponse(
+                format = saved.visitNumberFormat!!,
+                sequenceLength = saved.visitNumberSequenceLength,
+                preview = template.render(LocalDate.now(), 1)
+            )
+        )
+    }
+
     private fun generateLogoPresignedUrl(s3Key: String): String {
         val getObjectRequest = GetObjectRequest.builder()
             .bucket(bucketName)
@@ -393,3 +453,15 @@ data class SmsSenderConfigResponse(
 data class IdleTimeoutResponse(val idleTimeoutSeconds: Int)
 
 data class UpdateIdleTimeoutRequest(val idleTimeoutSeconds: Int)
+
+data class VisitNumberingConfigResponse(
+    val format: String,
+    val sequenceLength: Int,
+    /** Example number for today's date with sequence 1 — drives the settings UI preview. */
+    val preview: String
+)
+
+data class UpdateVisitNumberingConfigRequest(
+    val format: String,
+    val sequenceLength: Int
+)
