@@ -39,6 +39,13 @@ class InstagramProfileSuggestionEntity(
     @Column(name = "is_verified", nullable = false)
     val isVerified: Boolean,
 
+    /**
+     * Liczba obserwujących sugerowanego konta w momencie pobrania sugestii.
+     * Null = wzbogacenie się nie powiodło (konto nadal pokazywane, ale niżej w rankingu).
+     */
+    @Column(name = "follower_count", nullable = true)
+    val followerCount: Int? = null,
+
     @Column(name = "fetched_at", nullable = false, columnDefinition = "timestamp with time zone")
     val fetchedAt: Instant
 )

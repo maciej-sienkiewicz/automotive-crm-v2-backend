@@ -56,6 +56,10 @@ data class OverviewResponse(
     /** Liczebność obserwowanej grupy – porównania dotyczą wyłącznie tej grupy. */
     val comparisonGroupSize: Int,
     val lastSyncAt: Instant?,
+    /** Najbliższa lekka synchronizacja (dzienna: metryki profili + najnowsze posty). */
+    val nextDailySyncAt: Instant?,
+    /** Najbliższa pełna synchronizacja (tygodniowa: głęboka historia + insighty + raport). */
+    val nextDeepSyncAt: Instant?,
     val profilesCount: Int,
     val hasSelf: Boolean,
     val selfUsername: String?,
@@ -125,6 +129,36 @@ data class BenchmarkResponse(
     val weekly: List<WeeklyChartPointDto>,
     val followers: List<FollowerSeriesDto>,
     val annotations: List<ChartAnnotationDto>
+)
+
+// ── Wyjaśnienie tygodnia (klik w słupek przyrostu obserwujących) ─────────────
+
+data class WeekDetailPostDto(
+    val postId: String,
+    val permalink: String,
+    val takenAt: Instant,
+    /** REELS | CAROUSEL | PHOTO */
+    val format: String,
+    val caption: String?,
+    val likeCount: Int,
+    val commentCount: Int,
+    val viewCount: Long?,
+    val engagement: Int
+)
+
+data class WeekDetailInsightDto(val type: String, val title: String)
+
+data class WeekDetailResponse(
+    val profileId: String,
+    val username: String,
+    val weekStart: String,
+    val followerDelta: Int?,
+    /** Mediana reakcji (lajki+komentarze) posta tego profilu z 8 tygodni — kontekst dla "skoku". */
+    val medianEngagement: Double?,
+    /** Mediana wyświetleń (tylko posty z licznikiem) z 8 tygodni. */
+    val medianViews: Double?,
+    val posts: List<WeekDetailPostDto>,
+    val insights: List<WeekDetailInsightDto>
 )
 
 // ── Treści ────────────────────────────────────────────────────────────────────

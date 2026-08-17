@@ -323,8 +323,11 @@ class InsightEngine(
             )
         }
 
-        // Wizytówka profilu
-        val storefront = MetricsCalculator.storefrontScore(selfProfile, lastPostAt = null)
+        // Wizytówka profilu. lastPostAt MUSI pochodzić z realnych snapshotów postów —
+        // przekazanie null oznaczałoby "nigdy nie postował" i gap "Opublikuj coś"
+        // pojawiałby się bezwarunkowo (naprawiony bug).
+        val lastPostAt = postRepository.findFirstByProfileIdOrderByTakenAtDesc(selfProfileId)?.takenAt
+        val storefront = MetricsCalculator.storefrontScore(selfProfile, lastPostAt)
         if (storefront.score < 70 && storefront.gaps.isNotEmpty()) {
             val month = weekStart.toString().substring(0, 7)
             val topGaps = storefront.gaps.sortedByDescending { it.points }.take(2).joinToString("; ") { it.label }

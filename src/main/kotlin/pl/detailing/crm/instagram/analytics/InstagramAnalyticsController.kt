@@ -40,6 +40,16 @@ class InstagramAnalyticsController(
         ResponseEntity.ok(readService.benchmark(principal.studioId, weeks.coerceIn(4, 52)))
     }
 
+    /** Wyjaśnienie tygodnia dla kliknięcia w słupek przyrostu obserwujących. */
+    @GetMapping("/benchmark/week-detail")
+    fun weekDetail(
+        @RequestParam profileId: String,
+        @RequestParam weekStart: String
+    ): ResponseEntity<WeekDetailResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(readService.weekDetail(principal.studioId, profileId, weekStart))
+    }
+
     @GetMapping("/content")
     fun content(
         @RequestParam(defaultValue = "12") weeks: Int,
