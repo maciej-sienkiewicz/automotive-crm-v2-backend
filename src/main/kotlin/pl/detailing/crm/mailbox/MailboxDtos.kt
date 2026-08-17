@@ -56,10 +56,11 @@ data class ThreadMessageResponse(
 )
 
 data class LeadThreadResponse(
-    val threadId: UUID,
+    /** Null when the lead has no e-mail conversation — an empty state for the UI, not an error. */
+    val threadId: UUID?,
     val leadId: UUID?,
-    val classification: String,
-    val lastMessageAt: Instant,
+    val classification: String?,
+    val lastMessageAt: Instant?,
     val lastDirection: String?,
     val canReplyFromCrm: Boolean,
     val messages: List<ThreadMessageResponse>

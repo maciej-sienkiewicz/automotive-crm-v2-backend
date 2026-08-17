@@ -30,13 +30,24 @@ data class ThreadMessageView(
 )
 
 data class LeadThreadView(
-    val threadId: UUID,
+    /** Null when the lead has no e-mail conversation behind it (manual lead, or created before the mailbox module). */
+    val threadId: UUID?,
     val leadId: UUID?,
-    val classification: String,
-    val lastMessageAt: Instant,
+    val classification: String?,
+    val lastMessageAt: Instant?,
     val lastDirection: String?,
     val canReplyFromCrm: Boolean,
     val messages: List<ThreadMessageView>
+)
+
+private val EMPTY_THREAD = LeadThreadView(
+    threadId = null,
+    leadId = null,
+    classification = null,
+    lastMessageAt = null,
+    lastDirection = null,
+    canReplyFromCrm = false,
+    messages = emptyList()
 )
 
 /**
@@ -52,7 +63,7 @@ class GetLeadThreadHandler(
     suspend fun handle(query: GetLeadThreadQuery): LeadThreadView = withContext(Dispatchers.IO) {
         val thread = threadRepository.findByLeadId(query.leadId)
             ?.takeIf { it.studioId == query.studioId.value }
-            ?: throw NotFoundException("Ten lead nie ma powiązanego wątku e-mail")
+            ?: return@withContext EMPTY_THREAD
 
         val messages = messageRepository.findByThreadIdOrderBySentAtAsc(thread.id).map {
             ThreadMessageView(
