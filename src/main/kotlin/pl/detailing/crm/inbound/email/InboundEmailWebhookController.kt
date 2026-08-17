@@ -34,8 +34,14 @@ class InboundEmailWebhookController(
             ProcessInboundEmailCommand(
                 alias = request.alias.trim(),
                 from = request.from.trim(),
+                fromName = request.fromName?.trim(),
                 subject = request.subject?.trim(),
-                body = request.body.trim()
+                body = request.body.trim(),
+                bodyHtml = request.bodyHtml,
+                messageId = request.messageId?.trim(),
+                inReplyTo = request.inReplyTo?.trim(),
+                references = request.references.orEmpty(),
+                headers = request.headers.orEmpty()
             )
         )
 
@@ -49,11 +55,22 @@ class InboundEmailWebhookController(
     }
 }
 
+/**
+ * Everything beyond alias/from/subject/body is optional: a worker deployment that does not
+ * forward the RFC 5322 headers yet keeps working, it just falls back to subject-based
+ * threading instead of the deterministic Message-ID chain.
+ */
 data class CloudflareEmailRequest(
     val alias: String,
     val from: String,
+    val fromName: String? = null,
     val subject: String?,
-    val body: String
+    val body: String,
+    val bodyHtml: String? = null,
+    val messageId: String? = null,
+    val inReplyTo: String? = null,
+    val references: List<String>? = null,
+    val headers: Map<String, String>? = null
 )
 
 data class CloudflareEmailResponse(

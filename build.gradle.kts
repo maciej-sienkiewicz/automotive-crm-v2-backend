@@ -75,6 +75,9 @@ dependencies {
     implementation("com.drewnoakes:metadata-extractor:2.19.0")
     implementation("net.coobird:thumbnailator:0.4.20")
 
+    // jsoup – HTML e-mail denoising (quoted history + signature stripping before storage and LLM calls)
+    implementation("org.jsoup:jsoup:1.17.2")
+
     // BouncyCastle – PAdES qualified electronic seal (CMS/CAdES) + RFC 3161 qualified timestamps
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
