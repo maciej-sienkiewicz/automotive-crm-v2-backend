@@ -76,6 +76,8 @@ class GetAppointmentHandler(
                 ),
                 status = appointment.status,
                 note = appointment.note,
+                internalNote = appointment.internalNote,
+                protocolNote = appointment.protocolNote,
                 totalNet = totalNet.amountInCents,
                 totalGross = totalGross.amountInCents,
                 totalVat = totalVat.amountInCents,

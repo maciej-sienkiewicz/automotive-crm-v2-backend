@@ -290,6 +290,8 @@ data class AppointmentListItem(
     val appointmentColor: AppointmentColorInfo,
     val status: AppointmentStatus,
     val note: String?,
+    val internalNote: String? = null,
+    val protocolNote: String? = null,
     val totalNet: Long,
     val totalGross: Long,
     val totalVat: Long,

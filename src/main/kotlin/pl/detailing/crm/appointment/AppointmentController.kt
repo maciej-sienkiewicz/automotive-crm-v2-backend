@@ -269,6 +269,8 @@ class AppointmentController(
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
             note = request.note,
+            internalNote = request.internalNote,
+            protocolNote = request.protocolNote,
             sendReminderSms = request.sendReminderSms,
             doorToDoor = request.doorToDoor?.let {
                 DoorToDoorAppointmentCommand(
@@ -471,6 +473,8 @@ class AppointmentController(
             appointmentTitle = request.appointmentTitle,
             appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
             note = request.note,
+            internalNote = request.internalNote,
+            protocolNote = request.protocolNote,
             doorToDoor = request.doorToDoor?.let {
                 DoorToDoorAppointmentCommand(
                     pickupCity = it.pickupCity,
@@ -722,6 +726,8 @@ class AppointmentController(
         appointmentTitle = request.appointmentTitle,
         appointmentColorId = AppointmentColorId.fromString(request.appointmentColorId),
         note = request.note,
+        internalNote = request.internalNote,
+        protocolNote = request.protocolNote,
         sendReminderSms = request.sendReminderSms
     )
 }

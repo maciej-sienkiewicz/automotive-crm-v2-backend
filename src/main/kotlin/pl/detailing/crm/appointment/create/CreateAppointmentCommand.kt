@@ -18,6 +18,8 @@ data class CreateAppointmentCommand(
     val appointmentTitle: String?,
     val appointmentColorId: AppointmentColorId,
     val note: String?,
+    val internalNote: String? = null,
+    val protocolNote: String? = null,
     val sendReminderSms: Boolean = false,
     val doorToDoor: DoorToDoorAppointmentCommand? = null
 )
