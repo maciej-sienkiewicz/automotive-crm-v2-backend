@@ -36,7 +36,7 @@ class SmsApiProvider(
          * SMSAPI treats `from` as the message type as well as the header: this reserved value
          * sends the message from one of SMSAPI's own numbers, with no sender name at all.
          */
-        const val ECO_SENDER = "ECO"
+        const val ECO_SENDER = "2WAY"
     }
 
     private val smsFactory: SmsFactory by lazy {
