@@ -16,6 +16,7 @@ import pl.detailing.crm.mailbox.domain.MailThreadClassification
 import pl.detailing.crm.mailbox.domain.SubjectNormalizer
 import pl.detailing.crm.mailbox.domain.ThreadingService
 import pl.detailing.crm.mailbox.infrastructure.MailAutodiscoverService
+import pl.detailing.crm.mailbox.infrastructure.MailHostProbeResult
 import pl.detailing.crm.mailbox.infrastructure.MailProviderDetection
 import pl.detailing.crm.mailbox.infrastructure.MailMessageEntity
 import pl.detailing.crm.mailbox.infrastructure.MailMessageRepository
@@ -335,11 +336,21 @@ class MailboxEncryptionServiceTest {
 private class FakeAutodiscover(
     private val ispdb: Map<String, MailProviderDetection> = emptyMap(),
     private val dns: Map<Pair<String, String>, List<String>> = emptyMap(),
-    private val reachableHosts: Set<String> = emptySet()
+    /** Hosts that answer plain TCP (used by the SRV-target check). */
+    private val reachableHosts: Set<String> = emptySet(),
+    /** Hosts whose TLS certificate actually covers them. */
+    private val verifiedHosts: Set<String> = emptySet(),
+    /** Hosts that answer TLS but with a certificate for a different name (shared hosting). */
+    private val certMismatchHosts: Set<String> = emptySet()
 ) : MailAutodiscoverService() {
     override fun fetchFromIspdb(domain: String): MailProviderDetection? = ispdb[domain]
     override fun dnsRecords(name: String, type: String): List<String> = dns[name to type] ?: emptyList()
     override fun tcpReachable(host: String, port: Int): Boolean = host in reachableHosts
+    override fun probeMailHost(host: String, port: Int): MailHostProbeResult = when {
+        host in verifiedHosts -> MailHostProbeResult.VERIFIED
+        host in certMismatchHosts -> MailHostProbeResult.CERTIFICATE_MISMATCH
+        else -> MailHostProbeResult.UNREACHABLE
+    }
 }
 
 class MailAutodiscoverCascadeTest {
@@ -349,7 +360,7 @@ class MailAutodiscoverCascadeTest {
         // home.pl: MX = pocztaNNNNNNN.home.pl and that very host serves IMAP/SMTP.
         val service = FakeAutodiscover(
             dns = mapOf(("sienkiewicz-maciej.pl" to "MX") to listOf("10 poczta2634742.home.pl.")),
-            reachableHosts = setOf("poczta2634742.home.pl")
+            verifiedHosts = setOf("poczta2634742.home.pl")
         )
 
         val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
@@ -358,6 +369,39 @@ class MailAutodiscoverCascadeTest {
         assertEquals(993, detection.imapPort)
         assertEquals("poczta2634742.home.pl", detection.smtpHost)
         assertEquals(465, detection.smtpPort)
+    }
+
+    @Test
+    fun `certificate mismatch on the mx host falls back to its reverse-dns name`() {
+        // carslab.pl: MX = mail.carslab.pl, but that shared-hosting box's certificate is
+        // issued for its cyber-folks.pl identity, discoverable only via reverse DNS.
+        val service = FakeAutodiscover(
+            dns = mapOf(
+                ("carslab.pl" to "MX") to listOf("10 mail.carslab.pl."),
+                ("mail.carslab.pl" to "A") to listOf("185.204.218.116"),
+                ("116.218.204.185.in-addr.arpa" to "PTR") to listOf("s190.cyber-folks.pl.")
+            ),
+            certMismatchHosts = setOf("mail.carslab.pl"),
+            verifiedHosts = setOf("s190.cyber-folks.pl")
+        )
+
+        val detection = service.detect("kontakt@carslab.pl")
+
+        assertEquals("s190.cyber-folks.pl", detection.imapHost)
+        assertEquals("s190.cyber-folks.pl", detection.smtpHost)
+    }
+
+    @Test
+    fun `certificate mismatch without a usable ptr falls through to the blind guess`() {
+        val service = FakeAutodiscover(
+            dns = mapOf(("firma.pl" to "MX") to listOf("10 mail.firma.pl.")),
+            certMismatchHosts = setOf("mail.firma.pl")
+            // no A/PTR records configured — reverse lookup yields nothing
+        )
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("imap.firma.pl", detection.imapHost)
     }
 
     @Test
@@ -412,7 +456,7 @@ class MailAutodiscoverCascadeTest {
                 ("sienkiewicz-maciej.pl" to "MX") to listOf("10 poczta2634742.home.pl.")
             ),
             // cel SRV (serwer WWW) nie odpowiada na 993; host MX — tak
-            reachableHosts = setOf("poczta2634742.home.pl")
+            verifiedHosts = setOf("poczta2634742.home.pl")
         )
 
         val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
@@ -423,7 +467,7 @@ class MailAutodiscoverCascadeTest {
 
     @Test
     fun `convention guess is returned only when the host actually answers`() {
-        val service = FakeAutodiscover(reachableHosts = setOf("mail.firma.pl"))
+        val service = FakeAutodiscover(verifiedHosts = setOf("mail.firma.pl"))
 
         val detection = service.detect("biuro@firma.pl")
 

@@ -14,6 +14,21 @@ import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.Hashtable
 import javax.naming.directory.InitialDirContext
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLSocket
+
+/**
+ * Outcome of probing a host for a real, correctly-named IMAPS endpoint.
+ *
+ * A bare TCP-connect success is not enough evidence: shared hosting often answers on 993
+ * with a TLS certificate that covers the provider's own box name, not the client's domain
+ * (e.g. carslab.pl's MX is mail.carslab.pl, but the certificate on that IP is issued for
+ * s190.cyber-folks.pl). CERTIFICATE_MISMATCH lets the caller fall back to the box's reverse
+ * DNS name, which is what the certificate actually covers.
+ */
+internal enum class MailHostProbeResult { VERIFIED, CERTIFICATE_MISMATCH, UNREACHABLE }
 
 data class MailProviderDetection(
     val providerType: MailProviderType,
@@ -64,11 +79,13 @@ class MailAutodiscoverService {
 
             // Providers like home.pl give every account its own mail host (pocztaNNNNNNN.home.pl)
             // and the MX points straight at it — the MX host itself IS the IMAP/SMTP server.
-            // No static name can express that, so the MX host answering on IMAPS is the most
-            // specific result available and wins.
-            mxHosts.firstOrNull { tcpReachable(it, IMAPS_PORT) }?.let { mx ->
-                log.debug("MX host {} answers on {} — using it directly for {}", mx, IMAPS_PORT, domain)
-                return imapDetection(mx, IMAPS_PORT, mx, 465)
+            // No static name can express that, so a verified MX host is the most specific
+            // result available and wins.
+            for (mx in mxHosts) {
+                verifiedMailHost(mx)?.let { host ->
+                    log.debug("MX host {} resolves to a verified mail server {} for {}", mx, host, domain)
+                    return imapDetection(host, IMAPS_PORT, host, 465)
+                }
             }
 
             // Hosters whose MX is not the mail server (OVH relays) — works even when the ISPDB is down.
@@ -87,8 +104,8 @@ class MailAutodiscoverService {
             }
         }
 
-        // Convention guess, but verified: only a host that actually accepts a TCP connection
-        // on the IMAPS port is worth pre-filling.
+        // Convention guess, but verified: only a host with a matching TLS certificate is
+        // worth pre-filling.
         probedGuess(domain, mxHosts)?.let { return it }
 
         // Absolute last resort — a seed for the manual-configuration form.
@@ -205,10 +222,10 @@ class MailAutodiscoverService {
         val candidates = (listOf("imap.$domain", "mail.$domain", "poczta.$domain") + mxHosts)
             .distinct()
             .take(MAX_PROBED_CANDIDATES)
-        val reachable = candidates.firstOrNull { tcpReachable(it, IMAPS_PORT) } ?: return null
-        log.debug("Probe hit for {}: {}", domain, reachable)
-        val smtpHost = if (reachable.startsWith("imap.")) reachable.replaceFirst("imap.", "smtp.") else reachable
-        return imapDetection(reachable, IMAPS_PORT, smtpHost, 587)
+        val verified = candidates.firstNotNullOfOrNull { verifiedMailHost(it) } ?: return null
+        log.debug("Probe hit for {}: {}", domain, verified)
+        val smtpHost = if (verified.startsWith("imap.")) verified.replaceFirst("imap.", "smtp.") else verified
+        return imapDetection(verified, IMAPS_PORT, smtpHost, 587)
     }
 
     protected open fun tcpReachable(host: String, port: Int): Boolean = try {
@@ -220,10 +237,71 @@ class MailAutodiscoverService {
         false
     }
 
+    /**
+     * Verifies that [host] is a real IMAPS endpoint whose certificate actually covers it —
+     * a raw TCP-open port proves nothing on shared hosting. On a certificate/hostname
+     * mismatch, falls back to the reverse-DNS name of the same IP, which is what the box's
+     * own certificate is issued for.
+     */
+    private fun verifiedMailHost(host: String, port: Int = IMAPS_PORT): String? =
+        when (probeMailHost(host, port)) {
+            MailHostProbeResult.VERIFIED -> host
+            MailHostProbeResult.CERTIFICATE_MISMATCH -> {
+                val ptrHost = reverseDnsHostname(host)
+                if (ptrHost != null && ptrHost != host && probeMailHost(ptrHost, port) == MailHostProbeResult.VERIFIED) {
+                    log.debug("Certificate on {} does not cover it — using its reverse-DNS name {} instead", host, ptrHost)
+                    ptrHost
+                } else {
+                    null
+                }
+            }
+            MailHostProbeResult.UNREACHABLE -> null
+        }
+
+    /** Full TLS handshake with hostname verification — not just a TCP connect. */
+    internal open fun probeMailHost(host: String, port: Int): MailHostProbeResult = try {
+        Socket().use { plain ->
+            plain.connect(InetSocketAddress(host, port), PROBE_TIMEOUT_MS)
+            plain.soTimeout = PROBE_TIMEOUT_MS
+            val sslSocket = SSLContext.getDefault().socketFactory
+                .createSocket(plain, host, port, true) as SSLSocket
+            sslSocket.use {
+                val params = it.sslParameters
+                params.endpointIdentificationAlgorithm = "HTTPS"
+                it.sslParameters = params
+                it.startHandshake()
+            }
+        }
+        MailHostProbeResult.VERIFIED
+    } catch (ex: SSLPeerUnverifiedException) {
+        MailHostProbeResult.CERTIFICATE_MISMATCH
+    } catch (ex: SSLHandshakeException) {
+        if (isCertificateHostnameMismatch(ex)) MailHostProbeResult.CERTIFICATE_MISMATCH else MailHostProbeResult.UNREACHABLE
+    } catch (ex: Exception) {
+        MailHostProbeResult.UNREACHABLE
+    }
+
+    private fun isCertificateHostnameMismatch(ex: SSLHandshakeException): Boolean {
+        val message = (ex.message.orEmpty() + " " + ex.cause?.message.orEmpty())
+        return HOSTNAME_MISMATCH_MARKERS.any { message.contains(it, ignoreCase = true) }
+    }
+
+    /** Reverse DNS of a hostname's first A record — the name the box's own certificate covers. */
+    private fun reverseDnsHostname(host: String): String? {
+        val ip = dnsRecords(host, "A").firstOrNull()?.trim() ?: return null
+        val octets = ip.split('.')
+        if (octets.size != 4) return null
+        val ptrQuery = octets.asReversed().joinToString(".") + ".in-addr.arpa"
+        return dnsRecords(ptrQuery, "PTR").firstOrNull()?.trimEnd('.')?.lowercase()?.ifBlank { null }
+    }
+
     companion object {
         private const val IMAPS_PORT = 993
         private const val PROBE_TIMEOUT_MS = 1500
         private const val MAX_PROBED_CANDIDATES = 5
+        private val HOSTNAME_MISMATCH_MARKERS = listOf(
+            "No subject alternative", "No name matching", "doesn't match", "hostname"
+        )
 
         /** "10 mx.home.pl." → hosts sorted by priority. */
         internal fun parseMxRecords(records: List<String>): List<String> = records
