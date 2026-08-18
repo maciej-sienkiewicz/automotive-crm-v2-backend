@@ -62,7 +62,16 @@ class MailAutodiscoverService {
         if (mxHosts.isNotEmpty()) {
             log.debug("MX for {} -> {}", domain, mxHosts)
 
-            // Fast path for the biggest Polish/EU hosters — works even when the ISPDB is down.
+            // Providers like home.pl give every account its own mail host (pocztaNNNNNNN.home.pl)
+            // and the MX points straight at it — the MX host itself IS the IMAP/SMTP server.
+            // No static name can express that, so the MX host answering on IMAPS is the most
+            // specific result available and wins.
+            mxHosts.firstOrNull { tcpReachable(it, IMAPS_PORT) }?.let { mx ->
+                log.debug("MX host {} answers on {} — using it directly for {}", mx, IMAPS_PORT, domain)
+                return imapDetection(mx, IMAPS_PORT, mx, 465)
+            }
+
+            // Hosters whose MX is not the mail server (OVH relays) — works even when the ISPDB is down.
             for (mx in mxHosts) {
                 knownMxSuffixes.entries.firstOrNull { (suffix, _) ->
                     mx == suffix.removePrefix(".") || mx.endsWith(suffix)
@@ -293,7 +302,6 @@ class MailAutodiscoverService {
          * offline fast path in front of the MX→ISPDB lookup, not a replacement for it.
          */
         val knownMxSuffixes: Map<String, MailProviderDetection> = mapOf(
-            ".home.pl" to imapDetection("imap.home.pl", 993, "smtp.home.pl", 465),
             ".ovh.net" to imapDetection("ssl0.ovh.net", 993, "ssl0.ovh.net", 465)
         )
 

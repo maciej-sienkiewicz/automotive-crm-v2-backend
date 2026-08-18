@@ -345,17 +345,31 @@ private class FakeAutodiscover(
 class MailAutodiscoverCascadeTest {
 
     @Test
-    fun `custom domain hosted at home_pl resolves through its mx record`() {
+    fun `home_pl account uses its per-account mx host as the mail server`() {
+        // home.pl: MX = pocztaNNNNNNN.home.pl and that very host serves IMAP/SMTP.
         val service = FakeAutodiscover(
-            dns = mapOf(("sienkiewicz-maciej.pl" to "MX") to listOf("10 mx.home.pl."))
+            dns = mapOf(("sienkiewicz-maciej.pl" to "MX") to listOf("10 poczta2634742.home.pl.")),
+            reachableHosts = setOf("poczta2634742.home.pl")
         )
 
         val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
 
-        assertEquals("imap.home.pl", detection.imapHost)
+        assertEquals("poczta2634742.home.pl", detection.imapHost)
         assertEquals(993, detection.imapPort)
-        assertEquals("smtp.home.pl", detection.smtpHost)
+        assertEquals("poczta2634742.home.pl", detection.smtpHost)
         assertEquals(465, detection.smtpPort)
+    }
+
+    @Test
+    fun `ovh relay mx maps to ssl0 because the mx itself does not serve imap`() {
+        val service = FakeAutodiscover(
+            dns = mapOf(("firma.pl" to "MX") to listOf("1 mx1.mail.ovh.net."))
+            // MX nieosiągalny na 993 — przekaźnik OVH nie serwuje IMAP
+        )
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("ssl0.ovh.net", detection.imapHost)
     }
 
     @Test
@@ -395,15 +409,16 @@ class MailAutodiscoverCascadeTest {
         val service = FakeAutodiscover(
             dns = mapOf(
                 ("_imaps._tcp.sienkiewicz-maciej.pl" to "SRV") to listOf("0 1 993 sienkiewicz-maciej.pl."),
-                ("sienkiewicz-maciej.pl" to "MX") to listOf("10 mx.home.pl.")
-            )
-            // reachableHosts puste: cel SRV nie odpowiada na 993, jak w zgłoszeniu
+                ("sienkiewicz-maciej.pl" to "MX") to listOf("10 poczta2634742.home.pl.")
+            ),
+            // cel SRV (serwer WWW) nie odpowiada na 993; host MX — tak
+            reachableHosts = setOf("poczta2634742.home.pl")
         )
 
         val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
 
-        assertEquals("imap.home.pl", detection.imapHost)
-        assertEquals("smtp.home.pl", detection.smtpHost)
+        assertEquals("poczta2634742.home.pl", detection.imapHost)
+        assertEquals("poczta2634742.home.pl", detection.smtpHost)
     }
 
     @Test
