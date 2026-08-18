@@ -34,6 +34,7 @@ services:
       MAIL_PASSWORD: ${ENV_MAIL_PASSWORD}
       MAIL_HOST: ${ENV_MAIL_HOST}
       RAPIDAPI_KEY: ${ENV_RAPIDAPI_KEY}
+      MAILBOX_ENCRYPTION_KEY: ${ENV_MAILBOX_ENCRYPTION_KEY}
     depends_on:
       - redis
     networks:
