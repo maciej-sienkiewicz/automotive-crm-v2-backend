@@ -172,7 +172,16 @@ class MailAutodiscoverService {
     }
 
     private fun srvLookup(domain: String): MailProviderDetection? {
-        val imap = parseSrvRecords(dnsRecords("_imaps._tcp.$domain", "SRV")).firstOrNull() ?: return null
+        // Hosting panels often publish template SRV records pointing at the bare domain,
+        // whose A record is the client's WWW server, not a mail server. A record is only
+        // trusted when its target actually answers on the advertised port — otherwise the
+        // cascade must fall through to the MX lookup.
+        val imap = parseSrvRecords(dnsRecords("_imaps._tcp.$domain", "SRV"))
+            .firstOrNull { (host, port) ->
+                tcpReachable(host, port).also { reachable ->
+                    if (!reachable) log.debug("SRV target {}:{} for {} does not answer — ignoring record", host, port, domain)
+                }
+            } ?: return null
         val smtp = parseSrvRecords(dnsRecords("_submission._tcp.$domain", "SRV")).firstOrNull()
         log.debug("SRV hit for {}: imaps={}", domain, imap)
         return imapDetection(imap.first, imap.second, smtp?.first ?: imap.first, smtp?.second ?: 587)

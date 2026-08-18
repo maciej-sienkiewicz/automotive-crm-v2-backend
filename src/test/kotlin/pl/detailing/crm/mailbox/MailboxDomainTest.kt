@@ -375,18 +375,35 @@ class MailAutodiscoverCascadeTest {
     }
 
     @Test
-    fun `srv records win over mx heuristics`() {
+    fun `srv records win over mx heuristics when their target answers`() {
         val service = FakeAutodiscover(
             dns = mapOf(
                 ("_imaps._tcp.firma.pl" to "SRV") to listOf("0 1 993 imap.hosting.eu."),
                 ("firma.pl" to "MX") to listOf("10 mx.home.pl.")
-            )
+            ),
+            reachableHosts = setOf("imap.hosting.eu")
         )
 
         val detection = service.detect("biuro@firma.pl")
 
         assertEquals("imap.hosting.eu", detection.imapHost)
         assertEquals(993, detection.imapPort)
+    }
+
+    @Test
+    fun `template srv record pointing at the www server is ignored and mx wins`() {
+        val service = FakeAutodiscover(
+            dns = mapOf(
+                ("_imaps._tcp.sienkiewicz-maciej.pl" to "SRV") to listOf("0 1 993 sienkiewicz-maciej.pl."),
+                ("sienkiewicz-maciej.pl" to "MX") to listOf("10 mx.home.pl.")
+            )
+            // reachableHosts puste: cel SRV nie odpowiada na 993, jak w zgłoszeniu
+        )
+
+        val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
+
+        assertEquals("imap.home.pl", detection.imapHost)
+        assertEquals("smtp.home.pl", detection.smtpHost)
     }
 
     @Test
