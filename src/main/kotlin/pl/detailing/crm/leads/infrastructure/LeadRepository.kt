@@ -25,8 +25,8 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
            WHERE l.studioId = :studioId
              AND (:status IS NULL OR l.status = :status)
              AND (:query IS NULL
-                  OR LOWER(l.contactIdentifier) LIKE CONCAT('%', LOWER(:query), '%')
-                  OR LOWER(COALESCE(l.customerName, '')) LIKE CONCAT('%', LOWER(:query), '%'))
+                  OR LOWER(l.contactIdentifier) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
+                  OR LOWER(COALESCE(l.customerName, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%'))
            ORDER BY l.createdAt DESC"""
     )
     fun search(
