@@ -17,6 +17,9 @@ import java.util.Base64
  * - Generated per checkinId (appointmentId), valid for 3 hours
  * - Multi-use: the same token can be used for many photo uploads within TTL
  * - Single-purpose: bound exclusively to one checkinId + tenantId pair
+ * - Stable: re-requesting a token for the same checkin returns the SAME token with a
+ *   refreshed TTL, so a phone that already scanned the QR keeps uploading even when the
+ *   desktop wizard re-mounts the photo step. Rotation happens only on explicit request.
  *
  * Redis keys:
  * - checkin:upload-token:{token}              → JSON metadata (TTL = 3h)
@@ -40,15 +43,36 @@ class UploadContextTokenService(
     }
 
     /**
-     * Generate a new upload token for the given checkin.
-     * If a token already exists for this checkin it is revoked first so the old QR
-     * code stops working immediately instead of remaining valid for its original TTL.
+     * Return the upload token for the given checkin, creating one if needed.
+     *
+     * By default an already-active token is REUSED and its TTL extended: the desktop
+     * wizard asks for a token every time the photo step mounts, and issuing a fresh one
+     * would silently kill the session of a phone that scanned the previous QR code
+     * (uploads would start failing with 403 right after the operator left and re-entered
+     * the step).
+     *
+     * Pass [rotate] = true to deliberately invalidate the previous QR code — the old
+     * token is revoked and a brand-new one is issued.
      */
-    fun generateToken(tenantId: String, checkinId: String, userId: String): GeneratedUploadToken {
-        // Revoke previous token so the old QR is no longer usable
-        val oldToken = redisTemplate.opsForValue().get("$CONTEXT_KEY_PREFIX$tenantId:$checkinId")
-        if (oldToken != null) {
-            redisTemplate.delete(TOKEN_KEY_PREFIX + oldToken)
+    fun generateToken(
+        tenantId: String,
+        checkinId: String,
+        userId: String,
+        rotate: Boolean = false
+    ): GeneratedUploadToken {
+        val contextKey = "$CONTEXT_KEY_PREFIX$tenantId:$checkinId"
+        val existingToken = redisTemplate.opsForValue().get(contextKey)
+
+        if (existingToken != null) {
+            if (!rotate && redisTemplate.hasKey(TOKEN_KEY_PREFIX + existingToken) == true) {
+                val expiresAt = renewSession(contextKey, existingToken)
+                logger.info(
+                    "Reusing upload token for checkin=$checkinId tenant=$tenantId expires=$expiresAt"
+                )
+                return GeneratedUploadToken(token = existingToken, expiresAt = expiresAt)
+            }
+            // Rotating (or the previous token already died) — make sure the old QR stops working
+            redisTemplate.delete(TOKEN_KEY_PREFIX + existingToken)
         }
 
         val token = generateSecureToken()
@@ -76,6 +100,19 @@ class UploadContextTokenService(
 
         logger.info("Generated upload token for checkin=$checkinId tenant=$tenantId expires=$expiresAt")
         return GeneratedUploadToken(token = token, expiresAt = expiresAt)
+    }
+
+    /**
+     * Extend the TTL of an already-issued session (token, reverse lookup and the
+     * done / visit-created flags that belong to it) and return the new expiry.
+     */
+    private fun renewSession(contextKey: String, token: String): Instant {
+        val ttl = Duration.ofHours(ttlHours)
+        redisTemplate.expire(TOKEN_KEY_PREFIX + token, ttl)
+        redisTemplate.expire(contextKey, ttl)
+        redisTemplate.expire(DONE_KEY_PREFIX + token, ttl)
+        redisTemplate.expire(VISIT_CREATED_KEY_PREFIX + token, ttl)
+        return Instant.now().plusSeconds(ttlHours * 3600)
     }
 
     /**
