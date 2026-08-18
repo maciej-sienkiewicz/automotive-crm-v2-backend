@@ -351,18 +351,25 @@ class CheckinController(
      * The mobile device uses this token in the X-Upload-Token header
      * to upload photos to POST /api/mobile/checkin/photos without a session.
      *
-     * POST /api/checkin/{appointmentId}/upload-token
+     * Calling this repeatedly for the same checkin returns the SAME token with a
+     * refreshed TTL, so a phone that already scanned the QR code keeps working when the
+     * desktop wizard re-mounts the photo step. Pass `rotate=true` to deliberately
+     * invalidate the previous QR code and issue a new one.
+     *
+     * POST /api/checkin/{appointmentId}/upload-token[?rotate=true]
      */
     @PostMapping("/{appointmentId}/upload-token")
     fun generateUploadToken(
-        @PathVariable appointmentId: String
+        @PathVariable appointmentId: String,
+        @RequestParam(defaultValue = "false") rotate: Boolean
     ): ResponseEntity<UploadTokenResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val generated: GeneratedUploadToken = uploadContextTokenService.generateToken(
             tenantId = principal.studioId.value.toString(),
             checkinId = appointmentId,
-            userId = principal.userId.value.toString()
+            userId = principal.userId.value.toString(),
+            rotate = rotate
         )
 
         return ResponseEntity
