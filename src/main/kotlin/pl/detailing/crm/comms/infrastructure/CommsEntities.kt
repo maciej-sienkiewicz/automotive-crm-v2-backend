@@ -1,14 +1,11 @@
 package pl.detailing.crm.comms.infrastructure
 
-import jakarta.persistence.Basic
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
-import jakarta.persistence.Lob
 import jakarta.persistence.Table
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
@@ -238,9 +235,10 @@ class CommAttachmentEntity(
     @Column(name = "size_bytes", nullable = false)
     val sizeBytes: Long,
 
-    @Lob
-    @Basic(fetch = FetchType.LAZY)
-    @Column(name = "content", nullable = false)
+    // Celowo bez @Lob: Hibernate 6 mapowałby ByteArray na Postgresowe large objects
+    // (oid), a schemat deklaruje bytea. Bajty nie trafiają do widoków list dzięki
+    // projekcji CommAttachmentMeta, więc lazy-loading kolumny nie jest potrzebny.
+    @Column(name = "content", nullable = false, columnDefinition = "bytea")
     val content: ByteArray
 )
 
