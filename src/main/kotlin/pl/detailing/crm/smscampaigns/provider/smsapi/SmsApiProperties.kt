@@ -12,8 +12,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class SmsApiProperties(
     /** OAuth2 token issued in the SMSAPI panel. */
     val oauthToken: String = "",
-    /** Sender name / alphanumeric ID registered in the SMSAPI panel. Empty = default sender. */
-    val senderName: String = "",
     /**
      * SMSAPI gateway URL.
      * PL: https://api.smsapi.pl/

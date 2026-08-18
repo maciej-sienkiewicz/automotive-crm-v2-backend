@@ -13,7 +13,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.provider.SmsDeliveryResult
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
 import pl.detailing.crm.smscredits.SmsCreditService
-import pl.detailing.crm.studio.settings.StudioSettingsRepository
+import pl.detailing.crm.smscampaigns.sendername.SmsSenderNameResolver
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import java.util.UUID
 
@@ -46,16 +46,17 @@ class OutboundCommunicationGateway(
     private val emailProvider: EmailProvider,
     private val consentChecker: MarketingConsentChecker,
     private val smsCreditService: SmsCreditService,
-    private val studioSettingsRepository: StudioSettingsRepository,
+    private val senderNameResolver: SmsSenderNameResolver,
     private val capabilityService: CapabilityService,
     private val meterRegistry: MeterRegistry
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    private fun resolveSmsSenderName(studioId: UUID): String? {
-        val settings = studioSettingsRepository.findById(studioId).orElse(null) ?: return null
-        return if (settings.smsApiNameConfirmed && !settings.name.isNullOrBlank()) settings.name else null
-    }
+    /**
+     * Null means the studio has no SMSAPI-confirmed sender ID — the provider then sends
+     * the message as ECO (from an SMSAPI number), never under a placeholder header.
+     */
+    private fun resolveSmsSenderName(studioId: UUID): String? = senderNameResolver.resolve(studioId)
 
     /**
      * Returns a human-readable block reason when the studio lacks the module for

@@ -18,6 +18,7 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestEntity
 import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestRepository
 import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestStatus
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
+import pl.detailing.crm.smscampaigns.sendername.SmsSenderNameResolver
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -46,6 +47,7 @@ data class ServiceChangesSummary(
 @Service
 class SmsConsentService(
     private val smsProvider: SmsProvider,
+    private val senderNameResolver: SmsSenderNameResolver,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService,
@@ -88,7 +90,7 @@ class SmsConsentService(
 
         val message = buildConsentMessage(changes, proposedTotalGrossCents)
 
-        val result = smsProvider.send(normalizedPhone, message)
+        val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
         smsConsentRequestRepository.save(
             SmsConsentRequestEntity(
@@ -152,7 +154,7 @@ class SmsConsentService(
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
         val message = buildNotificationMessage(changes, totalGrossCents)
-        val result = smsProvider.send(normalizedPhone, message)
+        val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
         val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
         if (customerId != null) {

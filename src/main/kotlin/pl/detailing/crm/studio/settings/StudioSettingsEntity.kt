@@ -50,9 +50,6 @@ class StudioSettingsEntity(
     @Column(name = "lead_stagnant_client_threshold_hours", nullable = false)
     var leadStagnantClientThresholdHours: Int = 72,
 
-    @Column(name = "sms_api_name_confirmed", nullable = false)
-    var smsApiNameConfirmed: Boolean = false,
-
     /** Delivery channel for the customer Visit Card link: EMAIL, SMS, BOTH or NONE (no auto-send). */
     @Column(name = "visit_card_delivery_channel", nullable = false, length = 10)
     var visitCardDeliveryChannel: String = "EMAIL",
