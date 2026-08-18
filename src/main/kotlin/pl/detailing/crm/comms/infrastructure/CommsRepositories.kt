@@ -26,9 +26,9 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
              AND (:onlyUnread = FALSE OR t.unreadCount > 0)
              AND (:onlyLeads = FALSE OR t.leadId IS NOT NULL)
              AND (:query IS NULL
-                  OR LOWER(t.participantEmail) LIKE CONCAT('%', LOWER(:query), '%')
-                  OR LOWER(COALESCE(t.participantName, '')) LIKE CONCAT('%', LOWER(:query), '%')
-                  OR LOWER(COALESCE(t.subject, '')) LIKE CONCAT('%', LOWER(:query), '%'))
+                  OR LOWER(t.participantEmail) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
+                  OR LOWER(COALESCE(t.participantName, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
+                  OR LOWER(COALESCE(t.subject, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%'))
            ORDER BY t.lastMessageAt DESC"""
     )
     fun search(
