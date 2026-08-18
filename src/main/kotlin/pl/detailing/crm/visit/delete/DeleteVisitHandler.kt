@@ -12,7 +12,7 @@ import java.time.Instant
 /**
  * Soft-deletes a visit by setting deletedAt timestamp, regardless of its status.
  * The visit and all its associated data remain in the database and can be viewed
- * by passing includeDeleted=true to the list endpoin
+ * by passing includeDeleted=true to the list endpoint
  */
 @Service
 class DeleteVisitHandler(
