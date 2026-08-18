@@ -30,9 +30,9 @@ class MailboxEncryptionService(
     private val key: SecretKeySpec by lazy {
         if (secretKey.isBlank()) {
             throw IllegalStateException(
-                "Brak klucza szyfrowania skrzynek pocztowych. Ustaw property 'mailbox.encryption.secret-key' " +
-                    "(np. przez zmienną środowiskową MAILBOX_ENCRYPTION_SECRET_KEY) — bez niego nie można " +
-                    "zapisywać ani odczytywać haseł do skrzynek."
+                "Brak klucza szyfrowania skrzynek pocztowych. Ustaw zmienną środowiskową " +
+                    "MAILBOX_ENCRYPTION_KEY (property 'mailbox.encryption.secret-key') i zrestartuj " +
+                    "aplikację — bez niej nie można zapisywać ani odczytywać haseł do skrzynek."
             )
         }
         // SHA-256 of the property gives a valid 256-bit key regardless of the property length.

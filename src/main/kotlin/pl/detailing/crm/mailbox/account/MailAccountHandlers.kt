@@ -72,9 +72,17 @@ class MailAccountService(
 
         verifyCredentials(imapHost, imapPort, email, command.password)
 
+        // Encrypting is the first moment the key is needed; a missing key is an operator
+        // misconfiguration and must surface as a clear message, not a bare 500.
+        val encryptedPassword = try {
+            encryptionService.encrypt(command.password)
+        } catch (e: IllegalStateException) {
+            throw ValidationException(e.message ?: "Brak klucza szyfrowania skrzynek pocztowych")
+        }
+
         val existing = accountRepository.findByStudioIdAndEmailAddress(command.studioId.value, email)
         val account = existing?.apply {
-            encryptedPassword = encryptionService.encrypt(command.password)
+            this.encryptedPassword = encryptedPassword
             this.imapHost = imapHost
             this.imapPort = imapPort
             this.smtpHost = smtpHost
@@ -88,7 +96,7 @@ class MailAccountService(
             emailAddress = email,
             providerType = MailProviderType.IMAP_SMTP,
             authType = if (detection.requiresAppPassword) MailAuthType.APP_PASSWORD else MailAuthType.PASSWORD,
-            encryptedPassword = encryptionService.encrypt(command.password),
+            encryptedPassword = encryptedPassword,
             imapHost = imapHost,
             imapPort = imapPort,
             smtpHost = smtpHost,
