@@ -7,10 +7,10 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.context.ApplicationEventPublisher
 import pl.detailing.crm.mailbox.domain.MailAccountStatus
 import pl.detailing.crm.mailbox.domain.MailAuthType
 import pl.detailing.crm.mailbox.domain.MailProviderType
-import pl.detailing.crm.mailbox.infrastructure.ImapSyncService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.mailbox.infrastructure.MailAutodiscoverService
@@ -35,6 +35,9 @@ data class ConnectMailAccountCommand(
     val smtpPort: Int? = null
 )
 
+/** Published after a mailbox is (re)connected — the comms engine reacts with an initial sync. */
+data class MailAccountConnectedEvent(val accountId: java.util.UUID)
+
 /**
  * Mailbox onboarding. The owner types an address; everything else — provider, hosts, ports,
  * whether an app password is required — is resolved for them, because studio owners are not
@@ -45,7 +48,7 @@ class MailAccountService(
     private val accountRepository: MailAccountRepository,
     private val autodiscoverService: MailAutodiscoverService,
     private val encryptionService: MailboxEncryptionService,
-    private val imapSyncService: ImapSyncService
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -111,6 +114,7 @@ class MailAccountService(
         )
 
         val saved = accountRepository.save(account)
+        eventPublisher.publishEvent(MailAccountConnectedEvent(saved.id))
         log.info("[MAILBOX] Mailbox {} connected for studio {}", email, command.studioId)
         saved
     }
@@ -126,12 +130,6 @@ class MailAccountService(
         account.updatedAt = Instant.now()
         accountRepository.save(account)
         log.info("[MAILBOX] Mailbox {} disconnected for studio {}", account.emailAddress, studioId)
-    }
-
-    suspend fun syncNow(studioId: StudioId, accountId: UUID) = withContext(Dispatchers.IO) {
-        val account = accountRepository.findByIdAndStudioId(accountId, studioId.value)
-            ?: throw NotFoundException("Nie znaleziono skrzynki")
-        imapSyncService.syncAccount(account)
     }
 
     /**

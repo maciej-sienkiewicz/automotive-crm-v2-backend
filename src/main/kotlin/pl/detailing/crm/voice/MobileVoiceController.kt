@@ -1,9 +1,6 @@
 package pl.detailing.crm.voice
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -20,8 +17,6 @@ import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
-import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadCommand
-import pl.detailing.crm.leads.estimation.analyze.AnalyzeLeadHandler
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -45,8 +40,7 @@ class MobileVoiceController(
     private val customerRepository: CustomerRepository,
     private val createLeadHandler: CreateLeadHandler,
     private val createTaskHandler: CreateTaskHandler,
-    private val transcriptionService: OpenAiTranscriptionService,
-    private val analyzeLeadHandler: AnalyzeLeadHandler
+    private val transcriptionService: OpenAiTranscriptionService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(MobileVoiceController::class.java)
@@ -130,25 +124,7 @@ class MobileVoiceController(
                 .body(VoiceErrorResponse("Błąd zapisu leada: ${ex.message}"))
         }
 
-        log.info("[voice/lead] Lead utworzony — leadId: ${result.leadId.value}, uruchamiam analizę AI w tle")
-
-        val capturedLeadId = result.leadId
-        val capturedStudioId = StudioId(user.studioId)
-        val capturedTranscription = text
-
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try {
-                analyzeLeadHandler.handle(
-                    AnalyzeLeadCommand(
-                        leadId = capturedLeadId,
-                        studioId = capturedStudioId,
-                    )
-                )
-                log.info("[voice/lead] Analiza AI zakończona dla leadId: ${capturedLeadId.value}")
-            } catch (ex: Exception) {
-                log.error("[voice/lead] Analiza AI nie powiodła się dla leadId: ${capturedLeadId.value}", ex)
-            }
-        }
+        log.info("[voice/lead] Lead utworzony — leadId: ${result.leadId.value}")
 
         ResponseEntity.status(HttpStatus.CREATED).body(VoiceResultResponse(
             id = result.leadId.value.toString(),

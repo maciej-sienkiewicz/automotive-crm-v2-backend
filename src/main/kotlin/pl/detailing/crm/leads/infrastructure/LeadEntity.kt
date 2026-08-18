@@ -1,7 +1,15 @@
 package pl.detailing.crm.leads.infrastructure
 
-import jakarta.persistence.*
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
+import jakarta.persistence.Id
+import jakarta.persistence.Index
+import jakarta.persistence.Table
 import pl.detailing.crm.leads.domain.Lead
+import pl.detailing.crm.leads.domain.LeadCategory
+import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
@@ -11,7 +19,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
-import java.util.*
+import java.util.UUID
 
 @Entity
 @Table(
@@ -19,8 +27,9 @@ import java.util.*
     indexes = [
         Index(name = "idx_leads_studio_status", columnList = "studio_id, status"),
         Index(name = "idx_leads_studio_created", columnList = "studio_id, created_at"),
-        Index(name = "idx_leads_studio_verification", columnList = "studio_id, requires_verification"),
-        Index(name = "idx_leads_contact", columnList = "contact_identifier")
+        Index(name = "idx_leads_contact", columnList = "studio_id, contact_identifier"),
+        Index(name = "idx_leads_thread", columnList = "thread_id"),
+        Index(name = "idx_leads_appointment", columnList = "appointment_id")
     ]
 )
 class LeadEntity(
@@ -39,50 +48,70 @@ class LeadEntity(
     @Column(name = "status", nullable = false, length = 20)
     var status: LeadStatus,
 
+    /** E-mail address or phone number the inquiry came from. */
     @Column(name = "contact_identifier", nullable = false, columnDefinition = "text")
     val contactIdentifier: String,
 
-    @Column(name = "customer_name", nullable = true, columnDefinition = "text")
+    @Column(name = "customer_name", columnDefinition = "text")
     var customerName: String?,
 
-    @Column(name = "initial_message", nullable = true, columnDefinition = "text")
+    @Column(name = "initial_message", columnDefinition = "text")
     var initialMessage: String?,
 
+    /** Suma pozycji usługowych w groszach (denormalizowana z lead_service_items). */
     @Column(name = "estimated_value", nullable = false)
     var estimatedValue: Long,
 
     @Column(name = "requires_verification", nullable = false)
     var requiresVerification: Boolean,
 
-    @Column(name = "vehicle_brand", nullable = true, columnDefinition = "text")
+    @Column(name = "vehicle_brand", columnDefinition = "text")
     var vehicleBrand: String?,
 
-    @Column(name = "vehicle_model", nullable = true, columnDefinition = "text")
+    @Column(name = "vehicle_model", columnDefinition = "text")
     var vehicleModel: String?,
 
-    @Column(name = "customer_id", nullable = true, columnDefinition = "uuid")
+    @Column(name = "customer_id", columnDefinition = "uuid")
     var customerId: UUID?,
 
-    @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
+    @Column(name = "appointment_id", columnDefinition = "uuid")
     var appointmentId: UUID?,
 
-    @Column(name = "visit_id", nullable = true, columnDefinition = "uuid")
+    @Column(name = "visit_id", columnDefinition = "uuid")
     var visitId: UUID?,
 
-    @Column(name = "assigned_user_id", nullable = true, columnDefinition = "uuid")
+    @Column(name = "assigned_user_id", columnDefinition = "uuid")
     var assignedUserId: UUID?,
 
-    @Column(name = "assigned_user_name", nullable = true, columnDefinition = "text")
+    @Column(name = "assigned_user_name", columnDefinition = "text")
     var assignedUserName: String?,
 
-    @Column(name = "lost_reason", nullable = true, length = 500)
+    /** Free-text note attached to a lost lead; the aggregable reason lives in [lostReasonCode]. */
+    @Column(name = "lost_reason", length = 500)
     var lostReason: String?,
 
-    @Column(name = "stagnant_alert_sent_at", nullable = true, columnDefinition = "timestamp with time zone")
+    @Column(name = "stagnant_alert_sent_at", columnDefinition = "timestamp with time zone")
     var stagnantAlertSentAt: Instant?,
 
-    @Column(name = "new_activity_at", nullable = true, columnDefinition = "timestamp with time zone")
-    var newActivityAt: Instant?,
+    /** Conversation behind an e-mail lead (comm_threads.id); null for phone/manual leads. */
+    @Column(name = "thread_id", columnDefinition = "uuid")
+    var threadId: UUID? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", length = 30)
+    var category: LeadCategory? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lost_reason_code", length = 30)
+    var lostReasonCode: LeadLostReason? = null,
+
+    /** First OUTBOUND reply in the lead's thread — basis of the response-time analytics. */
+    @Column(name = "first_response_at", columnDefinition = "timestamp with time zone")
+    var firstResponseAt: Instant? = null,
+
+    /** Set when the lead reaches a terminal status (COMPLETED / LOST / NO_SHOW). */
+    @Column(name = "closed_at", columnDefinition = "timestamp with time zone")
+    var closedAt: Instant? = null,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
@@ -109,7 +138,11 @@ class LeadEntity(
         assignedUserName = assignedUserName,
         lostReason = lostReason,
         stagnantAlertSentAt = stagnantAlertSentAt,
-        newActivityAt = newActivityAt,
+        threadId = threadId,
+        category = category,
+        lostReasonCode = lostReasonCode,
+        firstResponseAt = firstResponseAt,
+        closedAt = closedAt,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -134,7 +167,11 @@ class LeadEntity(
             assignedUserName = lead.assignedUserName,
             lostReason = lead.lostReason,
             stagnantAlertSentAt = lead.stagnantAlertSentAt,
-            newActivityAt = lead.newActivityAt,
+            threadId = lead.threadId,
+            category = lead.category,
+            lostReasonCode = lead.lostReasonCode,
+            firstResponseAt = lead.firstResponseAt,
+            closedAt = lead.closedAt,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )
