@@ -23,7 +23,6 @@ class WebMvcConfig(
                 "/api/v1/auth/**",
                 "/api/health",
                 "/api/v1/vehicle-metadata/**",
-                "/api/v1/inbound/email",
                 "/api/mobile/**",
                 // Signing tablet uses X-Tablet-Token (Redis), not session auth
                 "/api/tablet/**",

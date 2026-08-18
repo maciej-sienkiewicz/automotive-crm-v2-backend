@@ -21,26 +21,3 @@ enum class MailAccountStatus {
     AUTH_FAILED,
     DISABLED
 }
-
-enum class MailDirection {
-    INBOUND,
-    OUTBOUND
-}
-
-enum class MailSendStatus {
-    RECEIVED,
-    OUTBOX_PENDING,
-    SENT,
-    FAILED
-}
-
-/**
- * Classification lives on the thread, not the message: once a conversation is
- * classified, every follow-up message inherits the verdict and costs no LLM call.
- */
-enum class MailThreadClassification {
-    PENDING,
-    INQUIRY,
-    OTHER,
-    UNSURE
-}

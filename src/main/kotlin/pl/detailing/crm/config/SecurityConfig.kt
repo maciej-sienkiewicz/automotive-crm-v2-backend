@@ -59,8 +59,6 @@ class SecurityConfig {
                 auth.requestMatchers("/api/v1/inbound/calls").permitAll()
                 // SMSAPI inbound-reply webhook — called server-to-server, no session
                 auth.requestMatchers("/api/sms/inbound").permitAll()
-                // CloudFlare email webhook — public, token-validated by CloudflareWebhookTokenFilter
-                auth.requestMatchers("/api/v1/inbound/email").permitAll()
                 // Przelewy24 payment status webhook — server-to-server, authenticated
                 // by SHA-384 CRC signature + verify call back to the P24 API
                 auth.requestMatchers("/api/v1/payments/p24/status").permitAll()

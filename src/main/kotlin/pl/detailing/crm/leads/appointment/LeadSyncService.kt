@@ -1,14 +1,16 @@
 package pl.detailing.crm.leads.appointment
 
 import org.slf4j.LoggerFactory
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.shared.LeadChangedEvent
-import pl.detailing.crm.shared.LeadId
+import pl.detailing.crm.leads.update.LeadStatusService
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -16,14 +18,16 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Handles all lead status transitions that are triggered by appointment or visit lifecycle events.
- * Called directly from appointment/visit handlers — no events, no indirection.
+ * Lead status transitions triggered by appointment/visit lifecycle events. This is
+ * the "bezobsługowe śledzenie statusu": booking a reservation confirms the lead,
+ * a finished visit completes it, a cancelled reservation marks a no-show — the user
+ * never touches the pipeline by hand for the happy path.
  */
 @Service
 class LeadSyncService(
     private val leadRepository: LeadRepository,
-    private val auditService: AuditService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val statusService: LeadStatusService,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(LeadSyncService::class.java)
 
@@ -37,18 +41,14 @@ class LeadSyncService(
         userDisplayName: String
     ) {
         leadEntity.appointmentId = appointmentId
-        leadEntity.status = LeadStatus.CONFIRMED
         leadEntity.requiresVerification = false
         leadEntity.updatedAt = Instant.now()
         leadRepository.save(leadEntity)
-
-        eventPublisher.publishEvent(
-            LeadChangedEvent(
-                source = this,
-                studioId = StudioId(studioId),
-                leadId = LeadId(leadEntity.id),
-                statusChanged = true
-            )
+        statusService.transition(
+            lead = leadEntity,
+            targetStatus = LeadStatus.CONFIRMED,
+            changedByUserId = userId,
+            changedByName = userDisplayName
         )
     }
 
@@ -83,10 +83,16 @@ class LeadSyncService(
         val oldStatus = lead.status
         if (oldStatus == targetStatus) return
 
-        lead.status = targetStatus
-        if (visitId != null) lead.visitId = visitId
-        lead.updatedAt = Instant.now()
-        leadRepository.save(lead)
+        if (visitId != null) {
+            lead.visitId = visitId
+            leadRepository.save(lead)
+        }
+        statusService.transition(
+            lead = lead,
+            targetStatus = targetStatus,
+            changedByUserId = userId,
+            changedByName = userDisplayName
+        )
 
         log.info(
             "[LEADS] Status synced: leadId={}, appointmentId={}, {} → {}",
@@ -94,10 +100,10 @@ class LeadSyncService(
         )
 
         val auditAction = when (targetStatus) {
-            LeadStatus.NO_SHOW   -> AuditAction.LEAD_NO_SHOW
+            LeadStatus.NO_SHOW -> AuditAction.LEAD_NO_SHOW
             LeadStatus.CONFIRMED -> AuditAction.LEAD_CONFIRMED
             LeadStatus.COMPLETED -> AuditAction.LEAD_COMPLETED
-            else                 -> AuditAction.STATUS_CHANGE
+            else -> AuditAction.STATUS_CHANGE
         }
 
         auditService.logSync(
@@ -114,15 +120,6 @@ class LeadSyncService(
                     put("appointmentId", appointmentId.toString())
                     if (visitId != null) put("visitId", visitId.toString())
                 }
-            )
-        )
-
-        eventPublisher.publishEvent(
-            LeadChangedEvent(
-                source = this,
-                studioId = StudioId(studioId),
-                leadId = LeadId(lead.id),
-                statusChanged = true
             )
         )
     }

@@ -948,7 +948,6 @@ class DemoDataInitializer(
                 assignedUserName = null,
                 lostReason = null,
                 stagnantAlertSentAt = null,
-                newActivityAt = null,
             )
         }
         leadRepository.saveAll(entities)

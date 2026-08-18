@@ -13,8 +13,27 @@ enum class DashboardEventType {
     NEW_LEAD,
     LEAD_UPDATED,
     LEAD_STATUS_CHANGED,
-    LEAD_CLIENT_REPLIED
+    LEAD_CLIENT_REPLIED,
+    COMM_THREAD_UPDATED,
+    COMM_MESSAGE_READ
 }
+
+/**
+ * Payload for COMM_THREAD_UPDATED — a conversation gained a message or changed state.
+ * Deliberately id-only: the frontend refetches the thread over REST, so personal data
+ * never rides on the studio-wide broadcast.
+ */
+data class CommThreadUpdatedPayload(
+    val threadId: String,
+    val newMessage: Boolean
+)
+
+/** Payload for COMM_MESSAGE_READ — a message was read (in the CRM or an external client). */
+data class CommMessageReadPayload(
+    val threadId: String,
+    val messageId: String,
+    val readSource: String
+)
 
 /**
  * WebSocket payload wrapper for dashboard events.
