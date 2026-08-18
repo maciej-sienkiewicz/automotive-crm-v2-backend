@@ -12,6 +12,10 @@ import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.permission.RequiresOwner
 import pl.detailing.crm.shared.ForbiddenException
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
+import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigEntity
+import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigJpaRepository
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.numbering.NumberingTemplate
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -32,6 +36,7 @@ import java.time.Instant
 class CompanyController(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val studioRepository: StudioRepository,
+    private val smsAutomationConfigRepository: SmsAutomationConfigJpaRepository,
     private val s3Client: S3Client,
     private val s3Presigner: S3Presigner,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String
@@ -58,6 +63,10 @@ class CompanyController(
 
         val logoUrl = settings?.logoS3Key?.let { generateLogoPresignedUrl(it) }
 
+        val senderNameConfirmed = withContext(Dispatchers.IO) {
+            smsAutomationConfigRepository.findByStudioId(studioId)?.smsApiNameConfirmed ?: false
+        }
+
         ResponseEntity.ok(
             CompanySettingsResponse(
                 id = studioId.toString(),
@@ -73,7 +82,7 @@ class CompanyController(
                 bankAccount = settings?.bankAccount,
                 logoUrl = logoUrl,
                 emailAlias = studioEntity?.emailAlias,
-                smsApiNameConfirmed = settings?.smsApiNameConfirmed ?: false,
+                smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = (settings?.updatedAt ?: Instant.now()).toString()
             )
         )
@@ -122,6 +131,10 @@ class CompanyController(
             studioRepository.findByStudioId(studioId)?.emailAlias
         }
 
+        val senderNameConfirmed = withContext(Dispatchers.IO) {
+            smsAutomationConfigRepository.findByStudioId(studioId)?.smsApiNameConfirmed ?: false
+        }
+
         ResponseEntity.ok(
             CompanySettingsResponse(
                 id = studioId.toString(),
@@ -137,7 +150,7 @@ class CompanyController(
                 bankAccount = saved.bankAccount,
                 logoUrl = logoUrl,
                 emailAlias = studioEmailAlias,
-                smsApiNameConfirmed = saved.smsApiNameConfirmed,
+                smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = saved.updatedAt.toString()
             )
         )
@@ -270,25 +283,29 @@ class CompanyController(
         val principal = SecurityContextHelper.getCurrentUser()
         val studioId = principal.studioId.value
 
-        val settings = withContext(Dispatchers.IO) {
-            studioSettingsRepository.findById(studioId).orElse(null)
-                ?: StudioSettingsEntity(studioId = studioId)
+        // The confirmation flag lives next to the sender name it confirms — in
+        // sms_automation_configs — because that pair is what every outbound SMS reads.
+        val config = withContext(Dispatchers.IO) {
+            smsAutomationConfigRepository.findByStudioId(studioId)
+                ?: SmsAutomationConfigEntity.fromDomain(SmsAutomationConfig.defaultFor(StudioId(studioId)))
         }
 
-        settings.smsApiNameConfirmed = request.smsApiNameConfirmed
-        settings.updatedAt = Instant.now()
+        config.smsApiNameConfirmed = request.smsApiNameConfirmed
+        config.updatedAt = Instant.now()
 
-        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+        val saved = withContext(Dispatchers.IO) { smsAutomationConfigRepository.save(config) }
+        val effectiveSenderName = saved.smsSenderName?.trim()
+            ?.takeIf { saved.smsApiNameConfirmed && it.isNotEmpty() }
 
         logger.info(
             "SMS sender name config updated for studio={} smsApiNameConfirmed={} senderName={}",
-            studioId, saved.smsApiNameConfirmed, saved.name
+            studioId, saved.smsApiNameConfirmed, effectiveSenderName ?: "(ECO)"
         )
 
         ResponseEntity.ok(
             SmsSenderConfigResponse(
                 smsApiNameConfirmed = saved.smsApiNameConfirmed,
-                effectiveSenderName = if (saved.smsApiNameConfirmed) saved.name else null
+                effectiveSenderName = effectiveSenderName
             )
         )
     }

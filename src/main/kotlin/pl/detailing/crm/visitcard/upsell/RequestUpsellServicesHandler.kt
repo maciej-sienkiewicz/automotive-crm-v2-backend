@@ -19,6 +19,7 @@ import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.smscampaigns.provider.SmsProvider
+import pl.detailing.crm.smscampaigns.sendername.SmsSenderNameResolver
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
@@ -79,6 +80,7 @@ class RequestUpsellServicesHandler(
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val reservationConsentRepository: UpsellReservationConsentRepository,
     private val smsProvider: SmsProvider,
+    private val senderNameResolver: SmsSenderNameResolver,
     private val communicationLogService: CommunicationLogService,
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
@@ -175,7 +177,7 @@ class RequestUpsellServicesHandler(
             customerId = visitEntity.customerId,
             services = selected.map { it.serviceName to it.finalPriceGross }
         )
-        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
+        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(studioId, normalizedPhone, message)
 
         if (smsSent) {
             val proposedTotalGross = updatedVisit.serviceItems
@@ -253,7 +255,7 @@ class RequestUpsellServicesHandler(
             customerId = appointment.customerId,
             services = selected.map { it.serviceName to it.finalPriceGross }
         )
-        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(normalizedPhone, message)
+        val (smsSent, externalMessageId, errorMessage) = sendConsentSms(studioId, normalizedPhone, message)
 
         if (smsSent) {
             reservationConsentRepository.supersedePendingByAppointmentId(appointmentId.value)
@@ -386,9 +388,9 @@ class RequestUpsellServicesHandler(
     }
 
     /** @return Triple(smsSent, externalMessageId, errorMessage) */
-    private fun sendConsentSms(phone: String, message: String): Triple<Boolean, String?, String?> =
+    private fun sendConsentSms(studioId: StudioId, phone: String, message: String): Triple<Boolean, String?, String?> =
         try {
-            val result = smsProvider.send(phone, message)
+            val result = smsProvider.send(phone, message, senderNameResolver.resolve(studioId))
             Triple(result.success, result.externalMessageId, result.errorMessage)
         } catch (e: InsufficientSmsCreditsException) {
             logger.warn("Upsell consent SMS blocked — no credits")

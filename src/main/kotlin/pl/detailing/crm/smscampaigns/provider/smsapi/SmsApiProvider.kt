@@ -18,12 +18,26 @@ import pl.detailing.crm.smscampaigns.provider.SmsProvider
  *
  * [SmsFactory] is created lazily so that a missing/empty [oauthToken]
  * in development (where [enabled] = false) does not cause a startup failure.
+ *
+ * SENDER RESOLUTION — there is no global sender name any more. A studio either has its
+ * own SMSAPI-confirmed sender ID (passed in as [send]'s `senderName`), or the message goes
+ * out as ECO: SMSAPI delivers it from one of its own numbers, so the recipient sees a phone
+ * number instead of an alphanumeric header. That is deliberate — a shared placeholder header
+ * such as "Test" must never reach a production customer.
  */
 class SmsApiProvider(
     private val properties: SmsApiProperties
 ) : SmsProvider {
 
     private val logger = LoggerFactory.getLogger(SmsApiProvider::class.java)
+
+    private companion object {
+        /**
+         * SMSAPI treats `from` as the message type as well as the header: this reserved value
+         * sends the message from one of SMSAPI's own numbers, with no sender name at all.
+         */
+        const val ECO_SENDER = "ECO"
+    }
 
     private val smsFactory: SmsFactory by lazy {
         SmsFactory(
@@ -33,8 +47,11 @@ class SmsApiProvider(
     }
 
     override fun send(phoneNumber: String, message: String, senderName: String?): SmsDeliveryResult {
+        val sender = senderName?.trim()?.takeIf { it.isNotEmpty() } ?: ECO_SENDER
+        val isEco = sender.equals(ECO_SENDER, ignoreCase = true)
+
         if (!properties.enabled) {
-            logger.info("[SMS DISABLED] To: {} | Sender: {} | Message: {}", phoneNumber, senderName ?: "(default)", message)
+            logger.info("[SMS DISABLED] To: {} | Sender: {} | Message: {}", phoneNumber, sender, message)
             return SmsDeliveryResult.success("mock-disabled")
         }
 
@@ -50,10 +67,10 @@ class SmsApiProvider(
         return try {
             val action = smsFactory.actionSend(normalizedNumber, message)
                 .apply {
-                    when {
-                        !senderName.isNullOrBlank() -> setSender(senderName)
-                        properties.senderName.isNotBlank() -> setSender(properties.senderName)
-                    }
+                    setSender(sender)
+                    // ECO does not carry Polish diacritics: without normalisation the message is
+                    // billed as UCS-2 (70 chars per part) or arrives mangled, so fold it to ASCII.
+                    if (isEco) setNormalize(true)
                 }
 
             val response = action.execute()
@@ -62,7 +79,7 @@ class SmsApiProvider(
             if (firstMessage != null) {
                 logger.info(
                     "SMS dispatched via SMSAPI | to={} sender={} shipmentId={} status={}",
-                    phoneNumber, senderName ?: properties.senderName.ifBlank { "(default)" }, firstMessage.id, firstMessage.status
+                    phoneNumber, sender, firstMessage.id, firstMessage.status
                 )
                 SmsDeliveryResult.success(firstMessage.id ?: "")
             } else {
