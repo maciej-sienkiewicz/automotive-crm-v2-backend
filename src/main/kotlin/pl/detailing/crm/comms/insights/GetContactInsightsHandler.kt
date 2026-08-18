@@ -11,6 +11,7 @@ import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.leads.query.LeadDto
 import pl.detailing.crm.leads.query.toDto
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 
 data class ContactInsightsDto(
@@ -30,7 +31,11 @@ data class ContactInsightsDto(
 data class InsightsCustomerDto(
     val id: String,
     val name: String?,
-    val phone: String?
+    val phone: String?,
+    /** Liczba ukończonych wizyt klienta — "ile razy u nas był". */
+    val completedVisitCount: Int,
+    /** Suma brutto ukończonych wizyt w groszach — "ile u nas zostawił". */
+    val totalSpentGross: Long
 )
 
 data class InsightsThreadDto(
@@ -60,7 +65,8 @@ class GetContactInsightsHandler(
     private val threadRepository: CommThreadRepository,
     private val leadRepository: LeadRepository,
     private val leadItemRepository: LeadServiceItemRepository,
-    private val appointmentRepository: AppointmentRepository
+    private val appointmentRepository: AppointmentRepository,
+    private val visitRepository: VisitRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -87,13 +93,28 @@ class GetContactInsightsHandler(
             .orEmpty()
         val (upcoming, past) = appointments.partition { it.endDateTime.isAfter(now) }
 
+        // Lifetime stats of the known client — the two numbers that change how you
+        // answer the mail: how many times they visited and how much they spent.
+        val completedVisits = customer?.let {
+            visitRepository.findCompletedByCustomerIdAndDateRange(
+                customerId = it.id,
+                studioId = studioId.value,
+                from = Instant.EPOCH,
+                to = now
+            )
+        }.orEmpty()
+
         return ContactInsightsDto(
             email = email,
             customer = customer?.let {
                 InsightsCustomerDto(
                     id = it.id.toString(),
                     name = listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null },
-                    phone = it.phone
+                    phone = it.phone,
+                    completedVisitCount = completedVisits.size,
+                    totalSpentGross = completedVisits.sumOf { visit ->
+                        visit.serviceItems.sumOf { item -> item.finalPriceGross }
+                    }
                 )
             },
             previousThreads = threads.map {
