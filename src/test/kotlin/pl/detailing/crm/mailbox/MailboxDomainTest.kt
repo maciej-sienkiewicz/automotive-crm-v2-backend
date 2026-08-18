@@ -16,6 +16,7 @@ import pl.detailing.crm.mailbox.domain.MailThreadClassification
 import pl.detailing.crm.mailbox.domain.SubjectNormalizer
 import pl.detailing.crm.mailbox.domain.ThreadingService
 import pl.detailing.crm.mailbox.infrastructure.MailAutodiscoverService
+import pl.detailing.crm.mailbox.infrastructure.MailProviderDetection
 import pl.detailing.crm.mailbox.infrastructure.MailMessageEntity
 import pl.detailing.crm.mailbox.infrastructure.MailMessageRepository
 import pl.detailing.crm.mailbox.infrastructure.MailThreadEntity
@@ -323,5 +324,133 @@ class MailboxEncryptionServiceTest {
 
         assertEquals(encrypted, service.encrypt(encrypted))
         assertEquals("jawny-tekst", service.decrypt("jawny-tekst"))
+    }
+}
+
+/**
+ * The bug this guards against: a custom domain hosted at a Polish provider fell straight
+ * through to the blind imap.{domain} guess, because the cascade never looked at the MX
+ * record. Thunderbird resolves such domains via MX → ISPDB(provider base domain).
+ */
+private class FakeAutodiscover(
+    private val ispdb: Map<String, MailProviderDetection> = emptyMap(),
+    private val dns: Map<Pair<String, String>, List<String>> = emptyMap(),
+    private val reachableHosts: Set<String> = emptySet()
+) : MailAutodiscoverService() {
+    override fun fetchFromIspdb(domain: String): MailProviderDetection? = ispdb[domain]
+    override fun dnsRecords(name: String, type: String): List<String> = dns[name to type] ?: emptyList()
+    override fun tcpReachable(host: String, port: Int): Boolean = host in reachableHosts
+}
+
+class MailAutodiscoverCascadeTest {
+
+    @Test
+    fun `custom domain hosted at home_pl resolves through its mx record`() {
+        val service = FakeAutodiscover(
+            dns = mapOf(("sienkiewicz-maciej.pl" to "MX") to listOf("10 mx.home.pl."))
+        )
+
+        val detection = service.detect("kontakt@sienkiewicz-maciej.pl")
+
+        assertEquals("imap.home.pl", detection.imapHost)
+        assertEquals(993, detection.imapPort)
+        assertEquals("smtp.home.pl", detection.smtpHost)
+        assertEquals(465, detection.smtpPort)
+    }
+
+    @Test
+    fun `mx base domain is looked up in the ispdb for providers outside the static map`() {
+        val service = FakeAutodiscover(
+            ispdb = mapOf(
+                "megiteam.pl" to MailAutodiscoverService.imapDetection(
+                    "imap.megiteam.pl", 993, "smtp.megiteam.pl", 465
+                )
+            ),
+            dns = mapOf(("firma.pl" to "MX") to listOf("5 serwer21.megiteam.pl."))
+        )
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("imap.megiteam.pl", detection.imapHost)
+    }
+
+    @Test
+    fun `srv records win over mx heuristics`() {
+        val service = FakeAutodiscover(
+            dns = mapOf(
+                ("_imaps._tcp.firma.pl" to "SRV") to listOf("0 1 993 imap.hosting.eu."),
+                ("firma.pl" to "MX") to listOf("10 mx.home.pl.")
+            )
+        )
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("imap.hosting.eu", detection.imapHost)
+        assertEquals(993, detection.imapPort)
+    }
+
+    @Test
+    fun `convention guess is returned only when the host actually answers`() {
+        val service = FakeAutodiscover(reachableHosts = setOf("mail.firma.pl"))
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("mail.firma.pl", detection.imapHost)
+    }
+
+    @Test
+    fun `with nothing to go on the blind guess remains as a manual-form seed`() {
+        val detection = FakeAutodiscover().detect("biuro@firma.pl")
+
+        assertEquals("imap.firma.pl", detection.imapHost)
+    }
+
+    @Test
+    fun `ispdb placeholders are substituted with the client domain`() {
+        val service = FakeAutodiscover(
+            ispdb = mapOf(
+                "firma.pl" to MailAutodiscoverService.imapDetection(
+                    "mail.%EMAILDOMAIN%", 993, "mail.%EMAILDOMAIN%", 465
+                )
+            )
+        )
+
+        val detection = service.detect("biuro@firma.pl")
+
+        assertEquals("mail.firma.pl", detection.imapHost)
+        assertEquals("mail.firma.pl", detection.smtpHost)
+    }
+}
+
+class MxSrvParsingTest {
+
+    @Test
+    fun `mx records are sorted by priority and stripped of trailing dots`() {
+        val hosts = MailAutodiscoverService.parseMxRecords(
+            listOf("20 backup.home.pl.", "10 MX.Home.PL.", "zepsuty rekord bez priorytetu x")
+        )
+        assertEquals(listOf("mx.home.pl", "backup.home.pl"), hosts)
+    }
+
+    @Test
+    fun `srv null target means service explicitly absent`() {
+        assertTrue(MailAutodiscoverService.parseSrvRecords(listOf("0 1 993 .")).isEmpty())
+        assertEquals(
+            listOf("imap.hosting.eu" to 993),
+            MailAutodiscoverService.parseSrvRecords(listOf("0 1 993 imap.hosting.eu."))
+        )
+    }
+
+    @Test
+    fun `base domain candidates prefer the two-label suffix and skip the own domain`() {
+        val candidates = MailAutodiscoverService.mxBaseDomainCandidates(
+            listOf("mx.home.pl"), ownDomain = "sienkiewicz-maciej.pl"
+        )
+        assertEquals(listOf("home.pl", "mx.home.pl"), candidates)
+
+        val selfHosted = MailAutodiscoverService.mxBaseDomainCandidates(
+            listOf("mail.firma.pl"), ownDomain = "firma.pl"
+        )
+        assertEquals(listOf("mail.firma.pl"), selfHosted)
     }
 }
