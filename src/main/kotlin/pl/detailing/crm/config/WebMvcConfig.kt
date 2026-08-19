@@ -37,7 +37,13 @@ class WebMvcConfig(
                 "/api/subscription/**",
                 "/api/v1/subscription/**",
                 // Przelewy24 server-to-server notifications (no session at all)
-                "/api/v1/payments/**"
+                "/api/v1/payments/**",
+                // Platform metrics console — cross-tenant, has no studio to bill-check
+                "/api/internal/**",
+                // Telemetry must keep working while a studio is locked out of the product.
+                // Blocking it would blind us precisely when a customer is hitting a paywall
+                // and most likely to be having the experience worth measuring.
+                "/api/v1/metrics/**"
             )
     }
 }
