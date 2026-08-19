@@ -681,6 +681,19 @@ value class BatchOrderEntryId(val value: UUID) : Serializable {
 }
 
 /**
+ * Type-safe ID wrapper for BatchOrderService (batch-orders service catalog) entities
+ */
+@JvmInline
+value class BatchOrderServiceId(val value: UUID) : Serializable {
+    companion object {
+        fun random() = BatchOrderServiceId(UUID.randomUUID())
+        fun fromString(value: String) = BatchOrderServiceId(UUID.fromString(value))
+    }
+
+    override fun toString(): String = value.toString()
+}
+
+/**
  * Type-safe ID wrapper for BatchOrderCloseHistory entities
  */
 @JvmInline

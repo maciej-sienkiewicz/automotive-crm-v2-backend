@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import org.slf4j.LoggerFactory
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
@@ -19,6 +20,13 @@ import pl.detailing.crm.batchorder.entry.ServiceItemInput
 import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
 import pl.detailing.crm.batchorder.photos.*
+import pl.detailing.crm.batchorder.service.BatchServiceItem
+import pl.detailing.crm.batchorder.service.CreateBatchServiceHandler
+import pl.detailing.crm.batchorder.service.DeleteBatchServiceHandler
+import pl.detailing.crm.batchorder.service.ListBatchServicesHandler
+import pl.detailing.crm.batchorder.service.RegisterBatchServicesHandler
+import pl.detailing.crm.batchorder.service.SaveBatchServiceCommand
+import pl.detailing.crm.batchorder.service.UpdateBatchServiceHandler
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.batchorder.report.CloseMode
 import pl.detailing.crm.batchorder.report.CloseMonthCommand
@@ -29,6 +37,8 @@ import pl.detailing.crm.batchorder.vin.VinExtractionService
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.BatchOrderEntryId
+import pl.detailing.crm.shared.BatchOrderServiceId
+import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.LocalDate
 
@@ -51,8 +61,42 @@ class BatchOrderController(
     private val listBatchOrderPhotosHandler: ListBatchOrderPhotosHandler,
     private val deleteBatchOrderPhotoHandler: DeleteBatchOrderPhotoHandler,
     private val entryRepository: BatchOrderEntryRepository,
-    private val vinExtractionService: VinExtractionService
+    private val vinExtractionService: VinExtractionService,
+    private val listBatchServicesHandler: ListBatchServicesHandler,
+    private val createBatchServiceHandler: CreateBatchServiceHandler,
+    private val updateBatchServiceHandler: UpdateBatchServiceHandler,
+    private val deleteBatchServiceHandler: DeleteBatchServiceHandler,
+    private val registerBatchServicesHandler: RegisterBatchServicesHandler
 ) {
+    private val log = LoggerFactory.getLogger(BatchOrderController::class.java)
+
+    /**
+     * Adds whatever the operator just typed to the module's service catalog, after the
+     * entry itself is safely committed.
+     *
+     * Deliberately outside the entry's transaction and deliberately swallowed: the
+     * catalog is a typing aid, and no failure to remember a name is worth losing the
+     * entry the failure would otherwise roll back.
+     */
+    private fun rememberServices(studioId: StudioId, services: List<ServiceItemRequest>) {
+        if (services.isEmpty()) return
+        try {
+            registerBatchServicesHandler.register(
+                studioId,
+                services.map {
+                    SaveBatchServiceCommand(
+                        studioId = studioId,
+                        name = it.name,
+                        netAmountCents = it.netAmountCents,
+                        grossAmountCents = it.grossAmountCents,
+                        vatRate = it.vatRate
+                    )
+                }
+            )
+        } catch (e: Exception) {
+            log.warn("Could not add batch-order services to the catalog for studio={}", studioId, e)
+        }
+    }
 
     @GetMapping("/contractors")
     fun listContractors(): ResponseEntity<ContractorsResponse> = runBlocking {
@@ -117,7 +161,8 @@ class BatchOrderController(
     fun getContractorEntries(
         @PathVariable contractorId: String,
         @RequestParam(required = false) from: String?,
-        @RequestParam(required = false) to: String?
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false, defaultValue = "false") includeSettled: Boolean
     ): ResponseEntity<ContractorEntriesResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getContractorEntriesHandler.handle(
@@ -125,13 +170,15 @@ class BatchOrderController(
                 studioId = principal.studioId,
                 contractorId = BatchContractorId.fromString(contractorId),
                 from = from?.let { LocalDate.parse(it) },
-                to = to?.let { LocalDate.parse(it) }
+                to = to?.let { LocalDate.parse(it) },
+                includeSettled = includeSettled
             )
         )
         ResponseEntity.ok(
             ContractorEntriesResponse(
                 contractor = result.contractor,
                 entries = result.entries,
+                settledCount = result.settledCount,
                 summary = result.summary
             )
         )
@@ -156,6 +203,7 @@ class BatchOrderController(
                 notes = request.notes
             )
         )
+        rememberServices(principal.studioId, request.services)
         ResponseEntity.status(HttpStatus.CREATED).body(EntryItemResponse(entry = item))
     }
 
@@ -178,6 +226,7 @@ class BatchOrderController(
                 notes = request.notes
             )
         )
+        rememberServices(principal.studioId, request.services)
         ResponseEntity.ok(EntryItemResponse(entry = item))
     }
 
@@ -190,6 +239,58 @@ class BatchOrderController(
                 entryId = BatchOrderEntryId.fromString(entryId)
             )
         )
+        ResponseEntity.noContent().build()
+    }
+
+    // ── Service catalog ──────────────────────────────────────────────────────
+    // Suggestions and their prices for the entry form. Editing a position here never
+    // reaches a recorded entry: entries keep their own snapshot of what was performed.
+
+    @GetMapping("/services")
+    fun listBatchServices(@RequestParam(required = false) q: String?): ResponseEntity<BatchServicesResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val services = listBatchServicesHandler.handle(principal.studioId, q)
+        ResponseEntity.ok(BatchServicesResponse(services = services))
+    }
+
+    @PostMapping("/services")
+    fun createBatchService(@RequestBody request: BatchServiceRequest): ResponseEntity<BatchServiceItemResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val item = createBatchServiceHandler.handle(
+            SaveBatchServiceCommand(
+                studioId = principal.studioId,
+                name = request.name,
+                netAmountCents = request.netAmountCents,
+                grossAmountCents = request.grossAmountCents,
+                vatRate = request.vatRate
+            )
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(BatchServiceItemResponse(service = item))
+    }
+
+    @PutMapping("/services/{serviceId}")
+    fun updateBatchService(
+        @PathVariable serviceId: String,
+        @RequestBody request: BatchServiceRequest
+    ): ResponseEntity<BatchServiceItemResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val item = updateBatchServiceHandler.handle(
+            BatchOrderServiceId.fromString(serviceId),
+            SaveBatchServiceCommand(
+                studioId = principal.studioId,
+                name = request.name,
+                netAmountCents = request.netAmountCents,
+                grossAmountCents = request.grossAmountCents,
+                vatRate = request.vatRate
+            )
+        )
+        ResponseEntity.ok(BatchServiceItemResponse(service = item))
+    }
+
+    @DeleteMapping("/services/{serviceId}")
+    fun deleteBatchService(@PathVariable serviceId: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        deleteBatchServiceHandler.handle(BatchOrderServiceId.fromString(serviceId), principal.studioId)
         ResponseEntity.noContent().build()
     }
 
@@ -438,9 +539,21 @@ data class ContractorItemResponse(val contractor: ContractorListItem)
 data class ContractorEntriesResponse(
     val contractor: ContractorListItem,
     val entries: List<EntryItem>,
+    /** Settled entries in the period, counted even when the list hides them. */
+    val settledCount: Int,
     val summary: EntrySummary
 )
 data class EntryItemResponse(val entry: EntryItem)
+
+data class BatchServiceRequest(
+    val name: String,
+    val netAmountCents: Long,
+    val grossAmountCents: Long,
+    val vatRate: Int
+)
+
+data class BatchServicesResponse(val services: List<BatchServiceItem>)
+data class BatchServiceItemResponse(val service: BatchServiceItem)
 
 data class CloseMonthRequest(
     val from: String,
