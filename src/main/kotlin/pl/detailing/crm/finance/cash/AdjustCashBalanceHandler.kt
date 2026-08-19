@@ -4,9 +4,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditAmount
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.AuditValueType
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
+import pl.detailing.crm.audit.domain.auditMoney
 import pl.detailing.crm.finance.domain.CashOperationType
 import pl.detailing.crm.finance.domain.CashRegister
 import pl.detailing.crm.finance.infrastructure.CashOperationEntity
@@ -18,6 +22,7 @@ import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * Command for a manual cash-register adjustment.
@@ -107,6 +112,11 @@ class AdjustCashBalanceHandler(
             command.studioId, balanceBefore, command.amount, balanceAfter, command.userId
         )
 
+        // A cash correction is the one event where "who and when" is not enough: the reader
+        // needs to see whether money went in or out, how much, and the reason the operator
+        // typed — otherwise the feed records that the balance was overridden without
+        // recording anything that would let anyone check it.
+        val isDeposit = command.amount > 0
         auditService.logSync(
             LogAuditCommand(
                 studioId          = command.studioId,
@@ -114,7 +124,24 @@ class AdjustCashBalanceHandler(
                 userDisplayName   = command.userDisplayName,
                 module            = AuditModule.CASH_REGISTER,
                 entityId          = cashRegister.id.toString(),
+                entityDisplayName = if (isDeposit) "Wpłata" else "Wypłata",
                 action            = AuditAction.CASH_ADJUSTED,
+                changes           = listOf(
+                    FieldChange(
+                        "cashAdjustmentType", null,
+                        if (isDeposit) "Wpłata do kasy" else "Wypłata z kasy"
+                    ),
+                    FieldChange(
+                        "cashAdjustmentAmount", null,
+                        auditMoney(abs(command.amount)), AuditValueType.MONEY
+                    ),
+                    FieldChange("balanceBefore", null, auditMoney(balanceBefore), AuditValueType.MONEY),
+                    FieldChange("balanceAfter", null, auditMoney(balanceAfter), AuditValueType.MONEY),
+                    FieldChange("comment", null, command.comment)
+                ),
+                // Signed on purpose: the amount badge on the row is what tells a withdrawal
+                // apart from a deposit at a glance.
+                amount            = AuditAmount.ofGrosz(command.amount),
                 metadata          = mapOf(
                     "amount"        to command.amount.toString(),
                     "balanceBefore" to balanceBefore.toString(),

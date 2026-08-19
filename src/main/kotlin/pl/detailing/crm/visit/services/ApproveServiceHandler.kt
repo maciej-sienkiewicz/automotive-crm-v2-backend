@@ -6,6 +6,8 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.VisitEntity
+import pl.detailing.crm.visit.domain.VisitAuditLabel
+import pl.detailing.crm.visit.infrastructure.auditDisplayName
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.MoneyAmountResponse
 import java.math.BigDecimal
@@ -59,12 +61,12 @@ class ApproveServiceHandler(
         serviceItem?.let { changes.add(FieldChange("status", "PENDING", "APPROVED")) }
 
         val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, studioId.value)
-        val vehicleName = listOfNotNull(
+        val vehicleName = VisitAuditLabel.vehicleLabel(
             visitEntity.brandSnapshot,
             visitEntity.modelSnapshot,
-            visitEntity.licensePlateSnapshot?.let { "($it)" }
-        ).joinToString(" ").takeIf { it.isNotBlank() }
-        val visitDisplayName = visitEntity.title?.takeIf { it.isNotBlank() } ?: vehicleName ?: "#${visitEntity.visitNumber}"
+            visitEntity.licensePlateSnapshot
+        )
+        val visitDisplayName = visitEntity.auditDisplayName
 
         auditService.log(LogAuditCommand(
             studioId = studioId,

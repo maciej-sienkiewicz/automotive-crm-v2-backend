@@ -130,6 +130,12 @@ class AuditFeedRenderer {
             }
         }
 
+        // A manual cash correction is only auditable if the reason travels with it, and a
+        // reason that needs a click to reach is a reason nobody reads.
+        if (log.action == AuditAction.CASH_ADJUSTED) {
+            log.metadata["comment"]?.takeIf { it.isNotBlank() }?.let { parts += "Opis: $it" }
+        }
+
         return parts.joinToString(" · ").takeIf { it.isNotEmpty() }
     }
 

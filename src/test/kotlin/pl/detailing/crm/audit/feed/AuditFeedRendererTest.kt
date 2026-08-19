@@ -15,6 +15,7 @@ import pl.detailing.crm.audit.domain.AuditLogId
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditResource
 import pl.detailing.crm.audit.domain.AuditSeverity
+import pl.detailing.crm.audit.domain.AuditValueType
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
@@ -44,7 +45,8 @@ class AuditFeedRendererTest {
         entityDisplayName: String? = "Wizyta 2026/02/17",
         changes: List<FieldChange> = emptyList(),
         context: AuditContext = AuditContext.EMPTY,
-        amount: AuditAmount? = null
+        amount: AuditAmount? = null,
+        metadata: Map<String, String> = emptyMap()
     ) = AuditLog(
         id = AuditLogId.random(),
         studioId = StudioId(UUID.randomUUID()),
@@ -54,7 +56,7 @@ class AuditFeedRendererTest {
         entityDisplayName = entityDisplayName,
         action = action,
         changes = changes,
-        metadata = emptyMap(),
+        metadata = metadata,
         context = context,
         amount = amount,
         severity = action.severity,
@@ -223,5 +225,56 @@ class AuditFeedRendererTest {
     @Test
     fun `no changes means no change summary`() {
         assertNull(renderer.render(log()).changeSummary)
+    }
+
+    @Test
+    fun `a cash correction says which way the money went and why`() {
+        val item = renderer.render(
+            log(
+                module = AuditModule.CASH_REGISTER,
+                action = AuditAction.CASH_ADJUSTED,
+                entityId = UUID.randomUUID().toString(),
+                entityDisplayName = "Wypłata",
+                changes = listOf(
+                    FieldChange("cashAdjustmentType", null, "Wypłata z kasy"),
+                    FieldChange("cashAdjustmentAmount", null, "250.00", AuditValueType.MONEY),
+                    FieldChange("comment", null, "Wpłata do banku")
+                ),
+                amount = AuditAmount(BigDecimal("-250.00")),
+                metadata = mapOf("comment" to "Wpłata do banku")
+            )
+        )
+
+        assertEquals("Skorygowano stan kasy - Wypłata", item.title)
+        assertTrue(item.description!!.contains("Opis: Wpłata do banku"), item.description!!)
+        assertEquals("-250,00${nbsp}zł", item.amount?.display)
+        assertEquals("Kwota korekty", item.changes.first { it.field == "cashAdjustmentAmount" }.label)
+        assertEquals("250,00${nbsp}zł", item.changes.first { it.field == "cashAdjustmentAmount" }.newValueDisplay)
+        assertEquals("Opis", item.changes.first { it.field == "comment" }.label)
+    }
+
+    @Test
+    fun `a cash correction with no reason recorded still renders`() {
+        val item = renderer.render(
+            log(module = AuditModule.CASH_REGISTER, action = AuditAction.CASH_ADJUSTED, entityDisplayName = null)
+        )
+
+        assertEquals("Skorygowano stan kasy", item.title)
+        assertNull(item.description)
+    }
+
+    @Test
+    fun `a service price is stated in zloty, not in grosz`() {
+        val item = renderer.render(
+            log(
+                module = AuditModule.SERVICE,
+                action = AuditAction.UPDATE,
+                entityDisplayName = "Korekta lakieru",
+                changes = listOf(FieldChange("basePriceNet", "100.00", "123.45"))
+            )
+        )
+
+        assertEquals("Zaktualizowano usługę - Korekta lakieru", item.title)
+        assertEquals("123,45${nbsp}zł", item.changes.single().newValueDisplay)
     }
 }

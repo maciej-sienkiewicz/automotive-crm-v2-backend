@@ -58,7 +58,7 @@ class CreateServiceHandler(
             action = AuditAction.CREATE,
             changes = listOf(
                 FieldChange("name", null, service.name),
-                FieldChange("basePriceNet", null, netAmount.amountInCents.toString()),
+                FieldChange("basePriceNet", null, auditMoney(netAmount.amountInCents)),
                 FieldChange("vatRate", null, command.vatRate.rate.toString()),
                 FieldChange("requireManualPrice", null, service.requireManualPrice.toString())
             )

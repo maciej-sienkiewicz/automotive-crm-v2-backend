@@ -26,11 +26,13 @@ import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.Money
-import java.math.BigDecimal
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.audit.domain.auditMoney
+import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.visit.infrastructure.auditDisplayName
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -81,6 +83,7 @@ class CreateFinancialDocumentHandler(
     private val documentRepository: FinancialDocumentRepository,
     private val cashRegisterRepository: CashRegisterRepository,
     private val cashOperationRepository: CashOperationRepository,
+    private val visitRepository: VisitRepository,
     private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(CreateFinancialDocumentHandler::class.java)
@@ -136,6 +139,15 @@ class CreateFinancialDocumentHandler(
             command.direction, command.totalGross, command.paymentMethod
         )
 
+        // "Wystawiono dokument - FV/2026/0042" says nothing to a reader scanning the feed:
+        // document numbers are for accounting, and matching one back to the work it paid
+        // for means opening it. The visit the document was issued against is the thing a
+        // person recognises, so it becomes the headline and the number moves into the
+        // details, where an accountant can still find it.
+        val visitName = command.visitId?.let { visitId ->
+            visitRepository.findByIdAndStudioId(visitId.value, command.studioId.value)?.auditDisplayName
+        }
+
         auditService.logSync(
             LogAuditCommand(
                 studioId          = command.studioId,
@@ -143,15 +155,15 @@ class CreateFinancialDocumentHandler(
                 userDisplayName   = command.userDisplayName,
                 module            = AuditModule.FINANCE,
                 entityId          = saved.id.toString(),
-                entityDisplayName = documentNumber,
+                entityDisplayName = visitName ?: documentNumber,
                 action            = AuditAction.DOCUMENT_ISSUED,
                 changes           = listOf(
+                    FieldChange("documentNumber", null, documentNumber),
                     FieldChange("documentType", null, command.documentType.displayName),
-                    FieldChange("totalGross", null, BigDecimal(command.totalGross).movePointLeft(2).toPlainString(),
-                        AuditValueType.MONEY)
+                    FieldChange("totalGross", null, auditMoney(command.totalGross), AuditValueType.MONEY)
                 ),
-                amount            = AuditAmount(BigDecimal(command.totalGross).movePointLeft(2)),
-                context           = AuditContext(visitId = command.visitId),
+                amount            = AuditAmount.ofGrosz(command.totalGross),
+                context           = AuditContext(visitId = command.visitId, visitName = visitName),
                 metadata          = mapOf(
                     "source"        to command.source.name,
                     "documentType"  to command.documentType.name,
