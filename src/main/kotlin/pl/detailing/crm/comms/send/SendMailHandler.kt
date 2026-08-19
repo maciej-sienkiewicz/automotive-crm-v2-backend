@@ -98,7 +98,9 @@ class SendMailHandler(
         // User-typed HTML goes through the same sanitiser as foreign mail — the composer
         // output is trusted-ish, but defence in depth costs one call. The signature is
         // appended before sanitising, so both halves get the identical treatment.
-        val composed = command.bodyHtml + signatureBlock(command)
+        // Trailing blank lines are trimmed off both halves first: a message that ends
+        // with three empty paragraphs looks unfinished in the recipient's client.
+        val composed = trimTrailingBlanks(command.bodyHtml) + signatureBlock(command)
         val safeHtml = sanitizer.sanitize(composed, UUID.randomUUID(), emptyMap())
 
         val messageIdHdr = sender.newMessageId(account)
@@ -171,11 +173,35 @@ class SendMailHandler(
     private fun signatureBlock(command: SendMailCommand): String {
         if (!command.appendSignature) return ""
         val signature = signatureService.get(command.studioId, command.userId).bodyHtml
+            ?.let(::trimTrailingBlanks)
         if (signature.isNullOrBlank()) return ""
         return """<div class="crm-signature" style="margin-top:16px"><div>--</div>$signature</div>"""
     }
 
+    /**
+     * Ucina puste ogony treści: końcowe <br>, puste akapity i białe znaki. Edytor łatwo
+     * zbiera je przy pisaniu (kilka Enterów przed wysłaniem), a w skrzynce odbiorcy
+     * zostawiają pustą przestrzeń, przez którą wiadomość wygląda na uciętą w pół słowa.
+     */
+    private fun trimTrailingBlanks(html: String): String {
+        var result = html.trim()
+        var previous: String
+        do {
+            previous = result
+            result = result
+                .replace(TRAILING_BLANK_TAIL, "")
+                .trim()
+        } while (result != previous)
+        return result
+    }
+
     companion object {
+        /** Końcowe <br>, &nbsp; i puste bloki — powtarzalnie, bo bywają zagnieżdżone. */
+        private val TRAILING_BLANK_TAIL = Regex(
+            """(?:\s|&nbsp;|<br\s*/?>|<p>(?:\s|&nbsp;|<br\s*/?>)*</p>|<div>(?:\s|&nbsp;|<br\s*/?>)*</div>)+${'$'}""",
+            RegexOption.IGNORE_CASE
+        )
+
         private const val MAX_REFERENCES = 20
 
         /** Grace period: lets a server-saved Sent copy arrive first, so we never create doubles. */
