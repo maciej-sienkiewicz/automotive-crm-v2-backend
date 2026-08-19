@@ -14,13 +14,16 @@
 -- signals, alerting, JVM/HTTP internals). This module owns the long-horizon,
 -- tenant-attributed product analytics that belong in a database.
 --
--- Note on this project's schema management: spring.flyway.enabled is currently false
--- and Hibernate runs with ddl-auto=update, so the entity definitions create these
--- tables on boot. This migration is the reviewable, environment-independent record of
--- the same schema, and it carries the parts Hibernate cannot express — partial
--- indexes, the CHECK-free enum columns and the composite indexes the roll-ups need.
--- Every statement is idempotent so it is safe to apply to a database Hibernate has
--- already touched.
+-- Note on this project's schema management: the two profiles behave differently, and
+-- production is the strict one.
+--   * local (application.properties): flyway.enabled=false, ddl-auto=update — Hibernate
+--     creates the tables from the entities and this file is never executed.
+--   * production (application-docker-props.properties, activated by deploy/Dockerfile):
+--     flyway.enabled=true, ddl-auto=VALIDATE — Flyway runs this file at application
+--     startup and Hibernate then verifies the result against the entities. Any column
+--     declared in an entity and missing here is a failed startup, not a warning.
+-- Every statement is idempotent, so applying it to a database Hibernate already touched
+-- locally is safe.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- ── 1. Business event stream ──────────────────────────────────────────────────
