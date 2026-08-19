@@ -145,7 +145,7 @@ class SignatureRequestController(
                 tabletId = it.tabletId,
                 deviceName = it.deviceName,
                 pairedAt = it.pairedAt,
-                tokenExpiresAt = it.tokenExpiresAt
+                lastSeenAt = it.lastSeenAt
             )
         })
     }
@@ -194,8 +194,13 @@ data class TabletDto(
     val tabletId: String,
     val deviceName: String,
     val pairedAt: Instant,
-    /** null when the TTL cannot be determined (e.g. key has no expiry set) */
-    val tokenExpiresAt: Instant?
+    /**
+     * Ostatnie żądanie z urządzenia; null, gdy nie odezwało się od sparowania.
+     * Zastąpiło pole tokenExpiresAt: parowanie nie wygasa samo, więc data ważności
+     * nie miała już czego opisywać, a „ostatnio widziany" mówi to, co naprawdę
+     * interesuje kogoś patrzącego na listę urządzeń.
+     */
+    val lastSeenAt: Instant?
 )
 
 data class SignatureRequestDto(
