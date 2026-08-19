@@ -1,6 +1,7 @@
 package pl.detailing.crm.metrics.apiaudit
 
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
@@ -32,6 +33,15 @@ import java.util.UUID
  */
 @Component
 class EndpointCatalogRegistrar(
+    /**
+     * Must be qualified by bean name. Actuator contributes a second
+     * [RequestMappingHandlerMapping] subclass — `controllerEndpointHandlerMapping`, which
+     * routes the `/actuator` tree — so an unqualified injection is ambiguous and fails the
+     * context at startup. Naming the bean explicitly also picks the right one: the catalog
+     * is an inventory of *our* API surface, and Actuator's own endpoints are infrastructure
+     * we neither own nor would ever consider deleting from a dead-endpoint report.
+     */
+    @Qualifier("requestMappingHandlerMapping")
     private val handlerMapping: RequestMappingHandlerMapping,
     private val repository: ApiEndpointRepository,
     private val properties: MetricsProperties
