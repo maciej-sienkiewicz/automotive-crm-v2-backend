@@ -10,7 +10,9 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
+import pl.detailing.crm.shared.DateRangeFilter
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 // ─── Request / Response DTOs ──────────────────────────────────────────────────
@@ -282,23 +284,25 @@ class CostCategoryController(
      */
     @GetMapping("/expense-items")
     fun listExpenseItems(
-        @RequestParam(required = false) dateFrom: String?,
-        @RequestParam(required = false) dateTo:   String?,
+        @RequestParam(required = false) dateFrom: LocalDate?,
+        @RequestParam(required = false) dateTo:   LocalDate?,
         @RequestParam(defaultValue = "2000") pageSize: Int
     ): ResponseEntity<CostExpenseItemsResponse> {
         val studioId = SecurityContextHelper.getCurrentUser().studioId.value
 
-        // Load invoices in range (paginated by pageSize to avoid memory blowouts)
-        val dateFromOdt = dateFrom?.let { java.time.OffsetDateTime.parse("${it}T00:00:00Z") }
-        val dateToOdt   = dateTo?.let   { java.time.OffsetDateTime.parse("${it}T23:59:59Z") }
+        // Load invoices in range (paginated by pageSize to avoid memory blowouts).
+        // Bounds come from DateRangeFilter rather than being parsed here: the previous
+        // hand-rolled "${it}T00:00:00Z" pinned the range to UTC, so a Polish studio
+        // filtering "od 21 maja" silently lost everything invoiced before 02:00 local
+        // that morning.
 
         val invoicesPage = invoiceRepository.findWithFilters(
             studioId        = studioId,
             source          = null,
             paymentStatus   = null,
             includeExcluded = false,
-            dateFrom        = dateFromOdt,
-            dateTo          = dateToOdt,
+            dateFrom        = DateRangeFilter.startOfDay(dateFrom),
+            dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
             pageable        = PageRequest.of(0, pageSize)
         )
 

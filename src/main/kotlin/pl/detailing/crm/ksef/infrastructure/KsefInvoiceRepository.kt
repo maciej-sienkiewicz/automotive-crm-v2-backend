@@ -48,7 +48,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
           AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
-          AND (CAST(:dateTo   AS timestamptz) IS NULL OR i.invoicing_date <= CAST(:dateTo   AS timestamptz))
+          AND (CAST(:dateToExclusive AS timestamptz) IS NULL OR i.invoicing_date < CAST(:dateToExclusive AS timestamptz))
         ORDER BY i.invoicing_date DESC NULLS LAST, i.fetched_at DESC
     """, countQuery = """
         SELECT COUNT(*) FROM ksef_invoices i
@@ -57,7 +57,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
           AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
-          AND (CAST(:dateTo   AS timestamptz) IS NULL OR i.invoicing_date <= CAST(:dateTo   AS timestamptz))
+          AND (CAST(:dateToExclusive AS timestamptz) IS NULL OR i.invoicing_date < CAST(:dateToExclusive AS timestamptz))
     """, nativeQuery = true)
     fun findWithFilters(
         @Param("studioId") studioId: UUID,
@@ -65,7 +65,14 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("paymentStatus") paymentStatus: String?,
         @Param("includeExcluded") includeExcluded: Boolean,
         @Param("dateFrom") dateFrom: OffsetDateTime?,
-        @Param("dateTo") dateTo: OffsetDateTime?,
+        /**
+         * Exclusive: the instant the range ends, i.e. local midnight *after* the last day
+         * the user asked for. `<`, not `<=`, because `invoicing_date` is a timestamptz —
+         * an inclusive bound at the start of the final day would hide that whole day, and
+         * one built as `23:59:59` would drop its last second. Build it with
+         * [pl.detailing.crm.shared.DateRangeFilter.startOfNextDay].
+         */
+        @Param("dateToExclusive") dateToExclusive: OffsetDateTime?,
         pageable: Pageable
     ): Page<KsefInvoiceEntity>
 

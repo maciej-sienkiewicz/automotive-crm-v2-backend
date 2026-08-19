@@ -128,24 +128,39 @@ interface CommAttachmentRepository : JpaRepository<CommAttachmentEntity, UUID> {
     fun findByMessageIdAndContentId(messageId: UUID, contentId: String): CommAttachmentEntity?
 
     @Query(
-        """SELECT a.id AS id, a.messageId AS messageId, a.fileName AS fileName,
-                  a.contentType AS contentType, a.contentId AS contentId,
-                  a.isInline AS isInline, a.sizeBytes AS sizeBytes
+        """SELECT new pl.detailing.crm.comms.infrastructure.CommAttachmentMeta(
+                  a.id, a.messageId, a.fileName, a.contentType,
+                  a.contentId, a.isInline, a.sizeBytes)
            FROM CommAttachmentEntity a WHERE a.messageId IN :messageIds"""
     )
     fun findMetaByMessageIdIn(@Param("messageIds") messageIds: Collection<UUID>): List<CommAttachmentMeta>
 }
 
-/** Metadata projection — keeps attachment bytes out of message queries. */
-interface CommAttachmentMeta {
-    val id: UUID
-    val messageId: UUID
-    val fileName: String
-    val contentType: String
-    val contentId: String?
-    val isInline: Boolean
+/**
+ * Metadata projection — keeps attachment bytes out of message queries.
+ *
+ * A constructor expression (`SELECT new …`) rather than a Spring Data interface
+ * projection, and deliberately so. An interface projection binds each accessor to a
+ * select alias through the JavaBean naming convention, and Kotlin's `is`-prefixed
+ * properties break that convention: `val isInline: Boolean` compiles to the accessor
+ * `isInline()`, from which Spring derives the property name **`inline`** — so the alias
+ * `isInline` never matched, the value resolved to null, and a null returned for a
+ * primitive `boolean` blew up as an AopInvocationException at render time rather than
+ * at query time.
+ *
+ * Constructor expressions bind positionally, so no naming convention sits between the
+ * query and the result and the whole class of bug disappears. Any future field is a
+ * compile error if the select list does not match, instead of a null at runtime.
+ */
+data class CommAttachmentMeta(
+    val id: UUID,
+    val messageId: UUID,
+    val fileName: String,
+    val contentType: String,
+    val contentId: String?,
+    val isInline: Boolean,
     val sizeBytes: Long
-}
+)
 
 @Repository
 interface CommLabelRepository : JpaRepository<CommLabelEntity, UUID> {
