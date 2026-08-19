@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.analytics
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import java.time.Duration
@@ -51,7 +52,8 @@ data class LostReasonStatDto(
  */
 @Service
 class GetLeadAnalyticsHandler(
-    private val leadRepository: LeadRepository
+    private val leadRepository: LeadRepository,
+    private val tagService: LeadTagService
 ) {
 
     @Transactional(readOnly = true)
@@ -62,16 +64,25 @@ class GetLeadAnalyticsHandler(
         val completed = byStatus[LeadStatus.COMPLETED] ?: 0
         val closed = completed + (byStatus[LeadStatus.LOST] ?: 0) + (byStatus[LeadStatus.NO_SHOW] ?: 0)
 
+        // Oś „o co pytają" liczy się po tagach, a lead może mieć ich kilka — więc
+        // ten sam lead liczy się do każdego tematu, którego dotyczyło zapytanie.
+        // Suma po tematach jest wtedy większa niż liczba leadów i tak ma być:
+        // pytanie brzmi „ile razy pytano o ceramikę", a nie „ile leadów istnieje".
+        val tagsByLead = tagService.tagsOf(leads.map { it.id })
         val categories = leads
-            .groupBy { it.category }
-            .map { (category, group) ->
+            .flatMap { lead ->
+                val tags = tagsByLead[lead.id].orEmpty()
+                if (tags.isEmpty()) listOf(null to lead) else tags.map { it to lead }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (tag, group) ->
                 val groupCompleted = group.count { it.status == LeadStatus.COMPLETED }
                 val groupClosed = group.count {
                     it.status in setOf(LeadStatus.COMPLETED, LeadStatus.LOST, LeadStatus.NO_SHOW)
                 }
                 CategoryStatDto(
-                    code = category?.name,
-                    label = category?.label ?: "Bez kategorii",
+                    code = tag?.name,
+                    label = tag?.label ?: "Bez tagu",
                     count = group.size,
                     completed = groupCompleted,
                     conversionRate = ratio(groupCompleted, groupClosed)

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.leads.analytics.GetLeadAnalyticsHandler
 import pl.detailing.crm.leads.analytics.LeadAnalyticsDto
+import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
@@ -52,7 +53,8 @@ data class LeadServiceItemRequest(
 )
 
 data class MarkThreadAsLeadRequest(
-    val category: String?,
+    /** Kody z LeadTag — wiele na leada, bo jedno zapytanie potrafi dotyczyć kilku usług. */
+    val tags: List<String> = emptyList(),
     val services: List<LeadServiceItemRequest> = emptyList()
 )
 
@@ -164,7 +166,7 @@ class LeadsController(
                 threadId = UUID.fromString(threadId),
                 userId = principal.userId.value,
                 userName = principal.fullName,
-                category = request.category?.let(::parseCategory),
+                tags = request.tags.map(::parseTag),
                 services = request.services.map { it.toInput() }
             )
         )
@@ -246,6 +248,9 @@ class LeadsController(
         runCatching { LeadCategory.valueOf(value) }.getOrElse {
             throw ValidationException("Nieznana kategoria zapytania: $value")
         }
+
+    private fun parseTag(value: String): LeadTag =
+        LeadTag.fromCode(value) ?: throw ValidationException("Nieznany tag zapytania: $value")
 
     private fun parseLostReason(value: String): LeadLostReason =
         runCatching { LeadLostReason.valueOf(value) }.getOrElse {

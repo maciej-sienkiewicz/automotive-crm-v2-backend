@@ -10,7 +10,9 @@ import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.update.LeadStatusService
+import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
@@ -47,6 +49,7 @@ class CreateLeadHandler(
     private val leadRepository: LeadRepository,
     private val statusService: LeadStatusService,
     private val soleUserResolver: SoleUserResolver,
+    private val tagService: LeadTagService,
     private val eventPublisher: ApplicationEventPublisher,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -79,6 +82,12 @@ class CreateLeadHandler(
         val entity = transactionTemplate.execute {
             val saved = leadRepository.save(LeadEntity.fromDomain(lead))
             statusService.recordCreation(saved, command.userId.value, command.userName)
+            // Analityka „o co pytają" liczy po tagach, a ta ścieżka (telefon, formularz,
+            // notatka głosowa) przyjmuje kategorię. Kody są wspólne, więc zapisujemy ją
+            // także jako tag — inaczej lead spoza poczty wypadałby ze statystyk.
+            command.category?.let { category ->
+                LeadTag.fromCode(category.name)?.let { tagService.replaceTags(saved.id, listOf(it)) }
+            }
             saved
         }!!
 

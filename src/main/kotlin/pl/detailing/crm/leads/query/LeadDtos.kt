@@ -1,7 +1,7 @@
 package pl.detailing.crm.leads.query
 
-import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.domain.LeadLostReason
+import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryEntity
@@ -23,8 +23,12 @@ data class LeadDto(
     val assignedUserId: String?,
     val assignedUserName: String?,
     val threadId: String?,
-    val category: String?,
-    val categoryLabel: String?,
+    /** Kody tagów — oś „o co pytają" w analityce. */
+    val tags: List<String>,
+    val tagLabels: List<String>,
+    /** Rozpoznane z korespondencji przez LLM; null, gdy klient nie podał auta. */
+    val vehicleBrand: String?,
+    val vehicleModel: String?,
     val lostReasonCode: String?,
     val lostReasonLabel: String?,
     val lostReason: String?,
@@ -61,13 +65,16 @@ data class LeadPageDto(
 
 /** Dictionaries the frontend renders as pickers — one source of truth, the backend. */
 data class LeadDictionariesDto(
-    val categories: List<DictionaryEntryDto>,
+    val tags: List<DictionaryEntryDto>,
     val lostReasons: List<DictionaryEntryDto>
 )
 
 data class DictionaryEntryDto(val code: String, val label: String)
 
-fun LeadEntity.toDto(services: List<LeadServiceItemEntity>): LeadDto = LeadDto(
+fun LeadEntity.toDto(
+    services: List<LeadServiceItemEntity>,
+    tags: List<LeadTag> = emptyList()
+): LeadDto = LeadDto(
     id = id.toString(),
     source = source.name,
     status = status.name,
@@ -82,8 +89,10 @@ fun LeadEntity.toDto(services: List<LeadServiceItemEntity>): LeadDto = LeadDto(
     assignedUserId = assignedUserId?.toString(),
     assignedUserName = assignedUserName,
     threadId = threadId?.toString(),
-    category = category?.name,
-    categoryLabel = category?.label,
+    tags = tags.map { it.name },
+    tagLabels = tags.map { it.label },
+    vehicleBrand = vehicleBrand,
+    vehicleModel = vehicleModel,
     lostReasonCode = lostReasonCode?.name,
     lostReasonLabel = lostReasonCode?.label,
     lostReason = lostReason,
@@ -112,6 +121,6 @@ fun LeadStatusHistoryEntity.toDto(): LeadStatusHistoryDto = LeadStatusHistoryDto
 )
 
 fun leadDictionaries(): LeadDictionariesDto = LeadDictionariesDto(
-    categories = LeadCategory.entries.map { DictionaryEntryDto(it.name, it.label) },
+    tags = LeadTag.entries.map { DictionaryEntryDto(it.name, it.label) },
     lostReasons = LeadLostReason.entries.map { DictionaryEntryDto(it.name, it.label) }
 )
