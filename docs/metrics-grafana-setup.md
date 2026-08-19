@@ -163,7 +163,7 @@ docker run --rm --network "$NET" -e PGPASSWORD="$DB_PASSWORD" postgres:16 \
 echo "ENV_GRAFANA_DB_PASSWORD=$NEW_PASS"    # → do .env, krok 2
 ```
 
-**2. Zmienne środowiskowe** w `.env` deploymentu
+**2. Zmienne środowiskowe — w Jenkinsie, nie na serwerze**
 
 ```bash
 ENV_GRAFANA_DB_PASSWORD=<hasło z kroku 1>     # bez wartości domyślnej — puste = brak połączenia
@@ -172,6 +172,25 @@ ENV_GRAFANA_DB_PASSWORD=<hasło z kroku 1>     # bez wartości domyślnej — pu
 # ENV_GRAFANA_DB_SSLMODE (domyślnie disable; ustaw require, jeśli baza jest poza hostem)
 PLATFORM_METRICS_KEY=<klucz do /api/internal/metrics>   # puste = konsola API zwraca 503
 ```
+
+**Nie edytuj `/opt/apps/prod/.env` na hoście — zostanie nadpisany.** Pipeline Deployment ma
+etap „Inject env file", który przy każdym uruchomieniu robi `scp` pliku zarządzanego przez
+Jenkinsa („Prod enviroment file") pod tę ścieżkę. Ręczna zmiana przeżyje dokładnie do
+następnego deployu, a potem zniknie bez śladu w logu.
+
+Miejsce docelowe: **Manage Jenkins → Managed files → „Prod enviroment file"**. Po dopisaniu
+wystarczy uruchomić **Deployment** — Build nie jest potrzebny, bo to wyłącznie zmienna
+środowiskowa, nie kod.
+
+Do tego czasu przy każdym deployu leci ostrzeżenie:
+
+```
+level=warning msg="The \"ENV_GRAFANA_DB_PASSWORD\" variable is not set. Defaulting to a blank string."
+```
+
+Jest nieszkodliwe: aplikacja tej zmiennej nie używa, Grafana wstaje normalnie, dashboard
+subskrypcji (Prometheus) działa. Nie połączy się jedynie datasource Postgres, więc trzy
+dashboardy biznesowe pokażą błąd zamiast danych.
 
 **3. Usunięcie starego dashboardu**
 
