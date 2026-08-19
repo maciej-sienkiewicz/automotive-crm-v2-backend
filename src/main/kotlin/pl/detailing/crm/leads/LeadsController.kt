@@ -74,6 +74,9 @@ data class UpdateLeadRequest(
 
 data class AssignLeadCustomerRequest(val customerId: String)
 
+/** Ręczna korekta pojazdu; puste pola czyszczą rozpoznanie. */
+data class UpdateLeadVehicleRequest(val vehicleBrand: String?, val vehicleModel: String?)
+
 data class MarkThreadAsLeadResponse(val leadId: String, val estimatedValue: Long)
 
 /**
@@ -172,6 +175,18 @@ class LeadsController(
         )
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(MarkThreadAsLeadResponse(result.leadId.toString(), result.estimatedValue))
+    }
+
+    /** Poprawienie lub uzupełnienie pojazdu — ostatnie słowo ma człowiek, nie model. */
+    @PutMapping("/{id}/vehicle")
+    fun updateVehicle(
+        @PathVariable id: String,
+        @RequestBody request: UpdateLeadVehicleRequest
+    ): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val leadId = UUID.fromString(id)
+        updateHandlers.updateVehicle(principal.studioId, leadId, request.vehicleBrand, request.vehicleModel)
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
     }
 
     @PutMapping("/{id}/status")

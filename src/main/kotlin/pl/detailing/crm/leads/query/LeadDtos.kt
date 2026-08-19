@@ -26,9 +26,11 @@ data class LeadDto(
     /** Kody tagów — oś „o co pytają" w analityce. */
     val tags: List<String>,
     val tagLabels: List<String>,
-    /** Rozpoznane z korespondencji przez LLM; null, gdy klient nie podał auta. */
+    /** Wartości z katalogu pojazdów; null, gdy nie rozpoznano. */
     val vehicleBrand: String?,
     val vehicleModel: String?,
+    /** PENDING = rozpoznanie w toku (tabela pokazuje spinner), DONE = zakończone. */
+    val vehicleDetectionStatus: String,
     val lostReasonCode: String?,
     val lostReasonLabel: String?,
     val lostReason: String?,
@@ -93,6 +95,7 @@ fun LeadEntity.toDto(
     tagLabels = tags.map { it.label },
     vehicleBrand = vehicleBrand,
     vehicleModel = vehicleModel,
+    vehicleDetectionStatus = vehicleDetectionStatus.name,
     lostReasonCode = lostReasonCode?.name,
     lostReasonLabel = lostReasonCode?.label,
     lostReason = lostReason,

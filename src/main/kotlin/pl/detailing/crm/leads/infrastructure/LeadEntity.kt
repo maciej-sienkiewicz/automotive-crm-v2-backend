@@ -9,6 +9,7 @@ import jakarta.persistence.Index
 import jakarta.persistence.Table
 import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.domain.LeadCategory
+import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CustomerId
@@ -71,6 +72,10 @@ class LeadEntity(
     @Column(name = "vehicle_model", columnDefinition = "text")
     var vehicleModel: String?,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "vehicle_detection_status", nullable = false, length = 20)
+    var vehicleDetectionStatus: LeadVehicleDetectionStatus = LeadVehicleDetectionStatus.DONE,
+
     @Column(name = "customer_id", columnDefinition = "uuid")
     var customerId: UUID?,
 
@@ -131,6 +136,7 @@ class LeadEntity(
         requiresVerification = requiresVerification,
         vehicleBrand = vehicleBrand,
         vehicleModel = vehicleModel,
+        vehicleDetectionStatus = vehicleDetectionStatus,
         customerId = customerId?.let { CustomerId(it) },
         appointmentId = appointmentId?.let { AppointmentId(it) },
         visitId = visitId?.let { VisitId(it) },
@@ -160,6 +166,7 @@ class LeadEntity(
             requiresVerification = lead.requiresVerification,
             vehicleBrand = lead.vehicleBrand,
             vehicleModel = lead.vehicleModel,
+            vehicleDetectionStatus = lead.vehicleDetectionStatus,
             customerId = lead.customerId?.value,
             appointmentId = lead.appointmentId?.value,
             visitId = lead.visitId?.value,
