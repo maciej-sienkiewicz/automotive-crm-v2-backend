@@ -55,11 +55,6 @@ przy starcie aplikacji, a Hibernate potem weryfikuje schemat względem encji.
 
 **1. Rola bazodanowa dla Grafany** (wymaga uprawnień administratora bazy)
 
-```bash
-psql "$DB_URL_ADMIN" -f deploy/sql/grafana-readonly-role.sql
-psql "$DB_URL_ADMIN" -c "ALTER ROLE grafana_ro WITH PASSWORD '$(openssl rand -base64 32)';"
-```
-
 Świadomie **nie** jest to migracja Flyway. `CREATE ROLE` wymaga uprawnienia `CREATEROLE`,
 którego użytkownik aplikacji nie ma — sprawdzone, kończy się `permission denied to create
 role`. A ponieważ w produkcji Flyway startuje razem z aplikacją, taka migracja
@@ -67,6 +62,55 @@ zatrzymałaby start **całego CRM-a**, nie tylko dashboardów.
 
 Kolejność ma znaczenie: **najpierw deploy aplikacji** (Flyway tworzy tabele i widoki),
 **potem** ten skrypt. Odwrotnie GRANT-y padną na nieistniejących relacjach.
+
+*Na hoście produkcyjnym nie ma `psql`, a baza jest zewnętrzna (`ENV_DB_ADDR`), nie
+kontenerem w compose.* Dwie drogi — obie z katalogu, w którym leży `.env` deploymentu:
+
+```bash
+set -a && . ./.env && set +a          # wczytanie ENV_DB_*
+```
+
+*Wariant A — bez instalowania czegokolwiek (klient z obrazu dockerowego):*
+
+```bash
+docker run --rm -i --network "$ENV_NETWORK" \
+  -e PGPASSWORD="$ENV_DB_PASSWORD" postgres:16 \
+  psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" -U "$ENV_DB_USER" -d "$ENV_DB_NAME" \
+  -v ON_ERROR_STOP=1 -f - < deploy/sql/grafana-readonly-role.sql
+```
+
+*Wariant B — instalacja klienta na stałe:*
+
+```bash
+sudo apt install -y postgresql-client
+PGPASSWORD="$ENV_DB_PASSWORD" psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" \
+  -U "$ENV_DB_USER" -d "$ENV_DB_NAME" -v ON_ERROR_STOP=1 \
+  -f deploy/sql/grafana-readonly-role.sql
+```
+
+**Zanim to uruchomisz, sprawdź, czy `$ENV_DB_USER` w ogóle może zakładać role** — to jest
+dokładnie to uprawnienie, którego brak wyrzucił rolę z migracji:
+
+```sql
+SELECT rolname, rolsuper, rolcreaterole FROM pg_roles WHERE rolcanlogin;
+```
+
+Jeśli `rolcreaterole` i `rolsuper` są `f`, użyj konta administracyjnego bazy zamiast
+`ENV_DB_USER` (u dostawcy zarządzanego zwykle konto założone przy tworzeniu instancji).
+
+Następnie hasło — rola powstaje bez niego i do tego momentu nie da się nią połączyć:
+
+```bash
+NEW_PASS=$(openssl rand -base64 32)
+docker run --rm -e PGPASSWORD="$ENV_DB_PASSWORD" --network "$ENV_NETWORK" postgres:16 \
+  psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" -U "$ENV_DB_USER" -d "$ENV_DB_NAME" \
+  -c "ALTER ROLE grafana_ro WITH PASSWORD '$NEW_PASS';"
+echo "ENV_GRAFANA_DB_PASSWORD=$NEW_PASS"    # → do .env, krok 2
+```
+
+Jeśli na hoście nie ma checkoutu repo, plik `deploy/sql/grafana-readonly-role.sql` trzeba
+tam najpierw dostarczyć (`git pull` w katalogu deploymentu albo `scp`) — `psql -f` czyta go
+z dysku hosta, nie z obrazu.
 
 **2. Zmienne środowiskowe** w `.env` deploymentu
 
