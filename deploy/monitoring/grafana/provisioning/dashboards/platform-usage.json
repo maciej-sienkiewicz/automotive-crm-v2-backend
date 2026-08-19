@@ -309,7 +309,7 @@
       "id": 6,
       "type": "table",
       "title": "Studia wg czasu pracy",
-      "description": "Konta aktywne vs ogółem to wykorzystanie stanowisk — płacenie za sześć kont przy dwóch używanych poprzedza downgrade i jest dobrym pretekstem do rozmowy.",
+      "description": "Konta aktywne vs ogółem to wykorzystanie stanowisk — płacenie za sześć kont przy dwóch używanych poprzedza downgrade i jest dobrym pretekstem do rozmowy. Studia bez zmierzonego czasu pracy, ale z aktywnością biznesową, też są pokazane — inaczej tabela byłaby pusta do czasu wdrożenia heartbeatu we froncie.",
       "datasource": {
         "type": "postgres",
         "uid": "postgres-metrics"
@@ -330,7 +330,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT dir.name                                              AS \"Studio\",\n       ROUND(SUM(s.active_minutes_total)    / 60.0, 1)       AS \"Godziny łącznie\",\n       ROUND(SUM(s.active_minutes_owner)    / 60.0, 1)       AS \"Właściciel\",\n       ROUND(SUM(s.active_minutes_employee) / 60.0, 1)       AS \"Pracownicy\",\n       SUM(s.sessions_count)                                 AS \"Sesje\",\n       MAX(s.users_active)                                   AS \"Aktywne konta\",\n       MAX(s.users_total)                                    AS \"Konta ogółem\",\n       SUM(s.reservations_created)                           AS \"Rezerwacje\"\nFROM metric_daily_studio_snapshots s\nJOIN metric_studio_directory dir ON dir.id = s.studio_id\nWHERE s.snapshot_date >= $__timeFrom()::date AND s.snapshot_date <= $__timeTo()::date\nGROUP BY dir.name\nHAVING SUM(s.active_minutes_total) > 0\nORDER BY 2 DESC\nLIMIT 100"
+          "rawSql": "SELECT dir.name                                              AS \"Studio\",\n       ROUND(SUM(s.active_minutes_total)    / 60.0, 1)       AS \"Godziny łącznie\",\n       ROUND(SUM(s.active_minutes_owner)    / 60.0, 1)       AS \"Właściciel\",\n       ROUND(SUM(s.active_minutes_employee) / 60.0, 1)       AS \"Pracownicy\",\n       SUM(s.sessions_count)                                 AS \"Sesje\",\n       MAX(s.users_active)                                   AS \"Aktywne konta\",\n       MAX(s.users_total)                                    AS \"Konta ogółem\",\n       SUM(s.reservations_created)                           AS \"Rezerwacje\"\nFROM metric_daily_studio_snapshots s\nJOIN metric_studio_directory dir ON dir.id = s.studio_id\nWHERE s.snapshot_date >= $__timeFrom()::date AND s.snapshot_date <= $__timeTo()::date\nGROUP BY dir.name\n-- Studio bez zmierzonego czasu, ale z rezerwacjami, MUSI się tu pojawić:\n-- czas sesji jest mierzony dopiero od wdrożenia modułu, a rezerwacje mają\n-- pełną historię z tabeli appointments. Warunek tylko na minutach wygaszał\n-- całą tabelę, dopóki heartbeat we froncie nie ruszy.\nHAVING SUM(s.active_minutes_total) > 0\n    OR SUM(s.reservations_created) > 0\n    OR SUM(s.visits_created) > 0\nORDER BY 2 DESC\nLIMIT 100"
         }
       ],
       "fieldConfig": {
@@ -772,6 +772,167 @@
           ],
           "countRows": false,
           "fields": ""
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Aktywność biznesowa — która firma ile robi",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Rezerwacje i wizyty wg firmy",
+      "description": "Odpowiada wprost na pytanie „która firma ile stworzyła rezerwacji”. Liczone z tabel appointments i visits, nie ze strumienia zdarzeń — dlatego działa wstecz, także dla okresu sprzed wdrożenia modułu metryk. Kolumna „Śr. na dzień” dzieli przez liczbę dni z danymi w wybranym zakresie, więc porównanie studiów o różnym stażu ma sens.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT dir.name                                    AS \"Studio\",\n       SUM(s.reservations_created)                 AS \"Rezerwacje\",\n       SUM(s.visits_created)                       AS \"Wizyty rozpoczęte\",\n       SUM(s.visits_completed)                     AS \"Wizyty zakończone\",\n       SUM(s.sms_sent)                             AS \"SMS\",\n       ROUND(SUM(s.reservations_created)::numeric\n             / NULLIF(COUNT(*), 0), 2)             AS \"Śr. rezerwacji/dzień\",\n       MAX(s.plan_key)                             AS \"Pakiet\"\nFROM metric_daily_studio_snapshots s\nJOIN metric_studio_directory dir ON dir.id = s.studio_id\nWHERE s.snapshot_date >= $__timeFrom()::date AND s.snapshot_date <= $__timeTo()::date\nGROUP BY dir.name\nHAVING SUM(s.reservations_created) > 0 OR SUM(s.visits_created) > 0\nORDER BY 2 DESC\nLIMIT 200"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rezerwacje"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": [
+            "Rezerwacje",
+            "Wizyty rozpoczęte",
+            "Wizyty zakończone",
+            "SMS"
+          ]
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Rezerwacje dziennie — seria na firmę",
+      "description": "Każda firma jako osobna seria. Pokazane tylko dni z rezerwacjami, żeby legenda nie puchła o studia, które w tym okresie nic nie zrobiły.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT s.snapshot_date::timestamptz AS time,\n       dir.name                     AS metric,\n       s.reservations_created       AS value\nFROM metric_daily_studio_snapshots s\nJOIN metric_studio_directory dir ON dir.id = s.studio_id\nWHERE s.snapshot_date >= $__timeFrom()::date AND s.snapshot_date <= $__timeTo()::date\n  AND s.reservations_created > 0\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 70,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     }
