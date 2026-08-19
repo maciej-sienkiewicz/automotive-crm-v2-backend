@@ -233,19 +233,32 @@ Migration checksum mismatch for migration version 65
 Either revert the changes to the migration, or run repair to update the schema history.
 ```
 
-Sposób udokumentowany przez Flywaya to `repair` (wymaga CLI z wypakowanymi migracjami).
-Sposób prostszy, oparty na tym, że V65 jest w pełni idempotentna (`CREATE TABLE IF NOT
-EXISTS`, `CREATE INDEX IF NOT EXISTS`, `INSERT ... ON CONFLICT DO NOTHING`) — skasować wpis
-z historii i pozwolić Flywayowi wykonać ją ponownie przy najbliższym starcie:
+Komunikat podaje obie sumy, a to wystarczy do naprawy. `flyway repair` robi dokładnie
+jedną rzecz — przepisuje sumę zapisaną w historii na tę wyliczoną z pliku:
 
 ```sql
-DELETE FROM flyway_schema_history WHERE version = '65';
+UPDATE flyway_schema_history SET checksum = <resolved locally> WHERE version = '65';
 ```
 
-Sprawdzone wykonaniem na bazie z danymi: ponowne wykonanie V65 nie usuwa ani nie duplikuje
-sesji, snapshotów, endpointów ani danych biznesowych. Działa tylko dlatego, że ta konkretna
-migracja jest idempotentna — dla migracji zmieniającej dane byłoby to niebezpieczne i wtedy
-jedyną drogą jest `repair`.
+Migracja **nie** jest wykonywana ponownie, więc nie trzeba polegać na jej idempotentności.
+To najbezpieczniejsza droga i nie wymaga CLI Flywaya.
+
+Skąd wiadomo, że liczba jest właściwa i która wersja pliku siedzi w bazie —
+`deploy/sql/flyway_checksum.py` liczy sumę tym samym algorytmem:
+
+```bash
+for r in <rewizja-1> <rewizja-2> HEAD; do
+    git show $r:src/main/resources/db/migration/V65__metrics_module.sql \
+      | python3 deploy/sql/flyway_checksum.py - | sed "s|<stdin>|$r|"
+done
+```
+
+Rewizja, której wynik równa się „Applied to database", to ta zapisana w bazie; ta równa
+„Resolved locally" siedzi w zbudowanym jarze. Sprawdzone na tej właśnie awarii — skrypt
+odtworzył obie liczby z logu produkcyjnego co do bitu.
+
+Uwaga na najczęstsze zaskoczenie: suma liczona jest z **całego pliku**, więc zmiana samego
+komentarza wystarczy, żeby wywalić start aplikacji.
 
 ## Jak czytać te dashboardy
 
