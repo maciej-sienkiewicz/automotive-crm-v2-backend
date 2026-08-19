@@ -38,4 +38,12 @@ interface ProtocolTemplateRepository : JpaRepository<ProtocolTemplateEntity, UUI
 
     @Query("SELECT pt FROM ProtocolTemplateEntity pt WHERE pt.studioId = :studioId AND pt.isDefault = true")
     fun findDefaultByStudioId(@Param("studioId") studioId: UUID): ProtocolTemplateEntity?
+
+    /**
+     * Every studio's system-provisioned template. Deliberately NOT filtered by
+     * studioId — the only caller is the startup refresh of the bundled default
+     * file, which is a cross-tenant maintenance sweep, not a request-scoped read.
+     */
+    @Query("SELECT pt FROM ProtocolTemplateEntity pt WHERE pt.isDefault = true")
+    fun findAllDefaults(): List<ProtocolTemplateEntity>
 }

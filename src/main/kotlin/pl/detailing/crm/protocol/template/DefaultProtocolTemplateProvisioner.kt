@@ -10,6 +10,8 @@ import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolFieldMappingRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolRuleEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolRuleRepository
+import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateDefaultRevisionEntity
+import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateDefaultRevisionRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateEntity
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -22,9 +24,10 @@ import java.util.UUID
  * check-in-assigned vehicle acceptance protocol template.**
  *
  * The default template is the bundled AcroForm PDF
- * (resources/templates/protokol_przyjecia_pojazdu_default.pdf) — the CARSLAB
+ * (resources/templates/protokol_przyjecia_pojazdu_default.pdf) — an unbranded
  * acceptance protocol with all standard field names, seeded with the default
- * field mappings and a GLOBAL_ALWAYS CHECK_IN rule.
+ * field mappings and a GLOBAL_ALWAYS CHECK_IN rule. It carries no logo by design:
+ * it is served to every studio, so it must never show one studio's branding.
  *
  * [ensureDefaultCheckInTemplate] is invoked:
  * - after a studio is created (signup, trial, demo accounts),
@@ -41,7 +44,8 @@ class DefaultProtocolTemplateProvisioner(
     private val protocolTemplateRepository: ProtocolTemplateRepository,
     private val protocolRuleRepository: ProtocolRuleRepository,
     private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
-    private val s3StorageService: S3ProtocolStorageService
+    private val s3StorageService: S3ProtocolStorageService,
+    private val defaultRevisionRepository: ProtocolTemplateDefaultRevisionRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -51,6 +55,22 @@ class DefaultProtocolTemplateProvisioner(
             "Systemowy szablon protokołu przyjęcia pojazdu. Przywracany automatycznie, " +
                 "gdy studio nie ma żadnego aktywnego szablonu przyjęcia."
         const val DEFAULT_TEMPLATE_RESOURCE = "/templates/protokol_przyjecia_pojazdu_default.pdf"
+
+        /**
+         * Content revision of [DEFAULT_TEMPLATE_RESOURCE].
+         *
+         * **Bump this whenever the bundled file changes.** Each studio holds its own
+         * copy of the file in S3, seeded once; without a bump those copies keep the
+         * old content forever, because [ensureDefaultCheckInTemplate] returns early
+         * for a studio that already has a working check-in template.
+         * DefaultProtocolTemplateRefreshRunner re-uploads every default template
+         * recorded below this number on the next application start.
+         *
+         * 1 — logo removed from the header. The bundled file was exported from a
+         *     single customer's branded design and carried that customer's logo,
+         *     which then appeared on every other studio's acceptance protocol.
+         */
+        const val DEFAULT_TEMPLATE_REVISION = 1
 
         /** Synthetic author for system-provisioned rows. */
         val SYSTEM_USER_ID: UUID = UUID(0L, 0L)
@@ -104,6 +124,7 @@ class DefaultProtocolTemplateProvisioner(
             }
             // Heal the S3 object too — it may have been removed together with the template.
             uploadDefaultTemplateFile(existing.s3Key)
+            recordBundledRevision(existing.id)
             ensureDefaultFieldMappings(studioId, existing.id)
             return existing
         }
@@ -130,17 +151,36 @@ class DefaultProtocolTemplateProvisioner(
             updatedAt = now
         )
         protocolTemplateRepository.save(entity)
+        recordBundledRevision(templateId)
         ensureDefaultFieldMappings(studioId, templateId)
         return entity
     }
 
-    private fun uploadDefaultTemplateFile(s3Key: String) {
+    /**
+     * Reads the bundled default template from the classpath. Shared with the startup
+     * refresh so both paths upload byte-identical content.
+     */
+    fun loadBundledTemplateBytes(): ByteArray {
         val resource = javaClass.getResourceAsStream(DEFAULT_TEMPLATE_RESOURCE)
             ?: throw IllegalStateException(
                 "Bundled default protocol template missing from classpath: $DEFAULT_TEMPLATE_RESOURCE"
             )
-        val bytes = resource.use { it.readBytes() }
-        s3StorageService.uploadBytes(s3Key, bytes, ProtocolTemplateFormat.PDF.contentType)
+        return resource.use { it.readBytes() }
+    }
+
+    private fun uploadDefaultTemplateFile(s3Key: String) {
+        s3StorageService.uploadBytes(s3Key, loadBundledTemplateBytes(), ProtocolTemplateFormat.PDF.contentType)
+    }
+
+    /** Marks the template's S3 object as holding [DEFAULT_TEMPLATE_REVISION] of the bundled file. */
+    private fun recordBundledRevision(templateId: UUID) {
+        defaultRevisionRepository.save(
+            ProtocolTemplateDefaultRevisionEntity(
+                templateId = templateId,
+                revision = DEFAULT_TEMPLATE_REVISION,
+                appliedAt = Instant.now()
+            )
+        )
     }
 
     private fun ensureDefaultFieldMappings(studioId: StudioId, templateId: UUID) {
