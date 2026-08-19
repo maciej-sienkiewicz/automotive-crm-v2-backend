@@ -20,7 +20,7 @@ class GetContractorEntriesHandler(
         val contractor = contractorRepository.findByIdAndStudioId(command.contractorId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Contractor not found")
 
-        val entries = if (command.from != null && command.to != null) {
+        val periodEntries = if (command.from != null && command.to != null) {
             entryRepository.findByContractorIdAndStudioIdAndDateRange(
                 contractorId = command.contractorId.value,
                 studioId = command.studioId.value,
@@ -34,7 +34,16 @@ class GetContractorEntriesHandler(
             )
         }
 
+        // A settled entry is done with: it has been reported, invoiced and paid for, and
+        // leaving it on the list buries the handful of entries that still need attention
+        // under months of finished work. It is hidden by default and one checkbox away.
+        val settledCount = periodEntries.count { it.isClosed }
+        val entries = if (command.includeSettled) periodEntries else periodEntries.filter { !it.isClosed }
+
         val entryItems = entries.map { it.toEntryItem() }
+        // Totals describe the list on screen, not the period: with settled entries hidden
+        // the summary answers "what is left to settle", which is the question the screen
+        // is being used to ask.
         val totalNetCents = entries.sumOf { it.netAmountCents }
         val totalGrossCents = entries.sumOf { it.grossAmountCents }
 
@@ -49,11 +58,12 @@ class GetContractorEntriesHandler(
                 phone = contractor.phone,
                 notes = contractor.notes,
                 isActive = contractor.isActive,
-                entryCount = entries.size.toLong(),
+                entryCount = periodEntries.size.toLong(),
                 createdAt = contractor.createdAt.toString(),
                 updatedAt = contractor.updatedAt.toString()
             ),
             entries = entryItems,
+            settledCount = settledCount,
             summary = EntrySummary(
                 totalNetCents = totalNetCents,
                 totalGrossCents = totalGrossCents,
@@ -67,12 +77,15 @@ data class GetContractorEntriesCommand(
     val studioId: StudioId,
     val contractorId: BatchContractorId,
     val from: LocalDate?,
-    val to: LocalDate?
+    val to: LocalDate?,
+    val includeSettled: Boolean = false
 )
 
 data class GetContractorEntriesResult(
     val contractor: ContractorListItem,
     val entries: List<EntryItem>,
+    /** Settled entries in the period, counted whether or not they are in [entries]. */
+    val settledCount: Int,
     val summary: EntrySummary
 )
 
