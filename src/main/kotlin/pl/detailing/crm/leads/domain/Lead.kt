@@ -37,6 +37,19 @@ enum class LeadCategory(val label: String) {
 }
 
 /**
+ * Stan rozpoznawania pojazdu z korespondencji.
+ *
+ * Trzeci stan — „sprawdziliśmy i nie znaleźliśmy" — wynika z danych: DONE bez marki.
+ * Osobna wartość dla niego niczego by nie wniosła, a dokładałaby stan do pilnowania.
+ */
+enum class LeadVehicleDetectionStatus {
+    /** Rozpoznanie w toku; interfejs pokazuje spinner. */
+    PENDING,
+    /** Rozpoznanie zakończone — z marką albo bez niej. */
+    DONE
+}
+
+/**
  * Domain model for a sales lead. E-mail leads point at their conversation
  * ([threadId]); the message history is simply the thread — no copying, no syncing.
  */
@@ -51,8 +64,10 @@ data class Lead(
     /** Suma pozycji usługowych w groszach; 0, gdy nic jeszcze nie wyceniono. */
     val estimatedValue: Long,
     val requiresVerification: Boolean,
+    /** Zawsze wartość z katalogu pojazdów albo null — nigdy surowy tekst klienta. */
     val vehicleBrand: String? = null,
     val vehicleModel: String? = null,
+    val vehicleDetectionStatus: LeadVehicleDetectionStatus = LeadVehicleDetectionStatus.DONE,
     val customerId: CustomerId? = null,
     val appointmentId: AppointmentId? = null,
     val visitId: VisitId? = null,

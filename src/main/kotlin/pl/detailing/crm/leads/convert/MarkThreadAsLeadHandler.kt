@@ -9,6 +9,7 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.leads.domain.LeadTag
+import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadTagService
@@ -92,6 +93,9 @@ class MarkThreadAsLeadHandler(
             requiresVerification = false,
             vehicleBrand = null,
             vehicleModel = null,
+            // Rozpoznanie auta rusza po zatwierdzeniu transakcji; do tego czasu tabela
+            // ma pokazywać, że pracuje, a nie pustą komórkę nie do odróżnienia od braku.
+            vehicleDetectionStatus = LeadVehicleDetectionStatus.PENDING,
             customerId = customer?.id,
             appointmentId = null,
             visitId = null,
