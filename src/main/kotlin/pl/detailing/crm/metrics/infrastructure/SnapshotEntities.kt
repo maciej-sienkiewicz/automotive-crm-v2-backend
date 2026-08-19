@@ -117,8 +117,9 @@ class StudioDailySnapshotEntity(
     @Column(name = "health_score", nullable = false)
     var healthScore: Int = 0,
 
+    /** Starts as UNKNOWN; TenantHealthCalculator's second pass replaces it. */
     @Column(name = "churn_risk", nullable = false, length = 20)
-    var churnRisk: String = "HEALTHY",
+    var churnRisk: String = "UNKNOWN",
 
     @Column(name = "last_activity_at", columnDefinition = "timestamp with time zone")
     var lastActivityAt: Instant? = null,

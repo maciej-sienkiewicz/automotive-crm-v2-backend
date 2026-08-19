@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS metric_daily_studio_snapshots (
     errors_critical         bigint      NOT NULL DEFAULT 0,
     avg_latency_ms          bigint      NOT NULL DEFAULT 0,
     health_score            int         NOT NULL DEFAULT 0,
-    churn_risk              varchar(20) NOT NULL DEFAULT 'HEALTHY',
+    churn_risk              varchar(20) NOT NULL DEFAULT 'UNKNOWN',
     last_activity_at        timestamptz,
     computed_at             timestamptz NOT NULL DEFAULT now()
 );

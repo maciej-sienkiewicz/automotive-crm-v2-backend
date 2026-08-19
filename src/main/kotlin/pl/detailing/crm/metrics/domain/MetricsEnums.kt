@@ -73,7 +73,22 @@ enum class ChurnRisk(val label: String) {
     HEALTHY("Zdrowy"),
     WATCH("Do obserwacji"),
     AT_RISK("Zagrożony"),
-    CRITICAL("Krytyczny");
+    CRITICAL("Krytyczny"),
+
+    /**
+     * Score not computed yet for this day — the roll-up has written the row but
+     * [pl.detailing.crm.metrics.rollup.TenantHealthCalculator] has not run its second pass.
+     *
+     * Exists because the alternative is worse. The snapshot used to be inserted with
+     * `health_score = 0, churn_risk = HEALTHY`, which is an incoherent pair: a zero score
+     * means the worst possible state and the label claims the best. If the health pass ever
+     * failed — and it catches its own exceptions and merely logs — every tenant on the
+     * retention board would read as healthy. A metrics module has exactly one unforgivable
+     * failure mode, and it is being confidently wrong in the flattering direction.
+     *
+     * [fromScore] never returns this: it is a state of the *row*, not of the customer.
+     */
+    UNKNOWN("Nieprzeliczony");
 
     companion object {
         fun fromScore(score: Int): ChurnRisk = when {

@@ -203,8 +203,13 @@ class DailyStudioRollupJob(
 
                 -- Health is a second pass: it needs a trend across days, which a
                 -- single-day statement cannot see. See TenantHealthCalculator.
+                --
+                -- UNKNOWN, not HEALTHY: score 0 paired with "healthy" is an incoherent row,
+                -- and if the second pass ever fails it would paint the whole retention board
+                -- green. Neither column appears in the DO UPDATE list below, so a re-run
+                -- keeps the last computed score rather than resetting it.
                 0,
-                'HEALTHY',
+                'UNKNOWN',
 
                 (SELECT MAX(ms.last_activity_at) FROM metric_user_sessions ms
                  WHERE ms.studio_id = s.id),

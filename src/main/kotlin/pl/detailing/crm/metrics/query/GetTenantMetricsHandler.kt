@@ -82,7 +82,7 @@ class GetTenantMetricsHandler(
                 WHERE studio_id = :studioId ORDER BY snapshot_date DESC LIMIT 1
                 """.trimIndent(),
                 params
-            ) { rs, _ -> rs.getString("churn_risk") }.firstOrNull() ?: "HEALTHY",
+            ) { rs, _ -> rs.getString("churn_risk") }.firstOrNull() ?: "UNKNOWN",
             lastActivityAt = jdbcTemplate.query(
                 """
                 SELECT MAX(last_activity_at) AS last_seen FROM metric_user_sessions

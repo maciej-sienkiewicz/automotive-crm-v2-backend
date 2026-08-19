@@ -1,0 +1,32 @@
+apiVersion: 1
+
+# Product analytics live in Postgres, not Prometheus — tenant identity as a Prometheus
+# label would explode cardinality, and these questions need years of history rather than
+# days. This datasource is how Grafana reaches them.
+#
+# The account is grafana_ro (see V66__metrics_grafana_readonly.sql): SELECT on the
+# metric_* tables and a two-column studio directory, nothing else. It cannot read a
+# customer, a visit or an invoice even if a dashboard query asks for one.
+
+datasources:
+  - name: Postgres (metryki)
+    type: postgres
+    uid: postgres-metrics
+    url: ${GRAFANA_DB_HOST}:${GRAFANA_DB_PORT}
+    database: ${GRAFANA_DB_NAME}
+    user: ${GRAFANA_DB_USER}
+    access: proxy
+    isDefault: false
+    editable: false
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}
+    jsonData:
+      sslmode: ${GRAFANA_DB_SSLMODE}
+      postgresVersion: 1500
+      timescaledb: false
+      # Dashboards read pre-aggregated daily snapshots, so a query that runs long is a
+      # bug rather than a big result set. Failing fast keeps a broken panel from holding
+      # a connection against the production database.
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
