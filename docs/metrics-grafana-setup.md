@@ -63,19 +63,35 @@ zatrzymałaby start **całego CRM-a**, nie tylko dashboardów.
 Kolejność ma znaczenie: **najpierw deploy aplikacji** (Flyway tworzy tabele i widoki),
 **potem** ten skrypt. Odwrotnie GRANT-y padną na nieistniejących relacjach.
 
-*Na hoście produkcyjnym nie ma `psql`, a baza jest zewnętrzna (`ENV_DB_ADDR`), nie
-kontenerem w compose.* Dwie drogi — obie z katalogu, w którym leży `.env` deploymentu:
+*Na hoście produkcyjnym nie ma `psql`, baza jest zewnętrzna (`ENV_DB_ADDR`) i nie stoi
+jako kontener w compose, a katalog deploymentu nie musi leżeć w `~`.* Parametry połączenia
+najpewniej wyciągnąć **wprost z działającego kontenera backendu** — to źródło aktualne
+z definicji, w przeciwieństwie do pliku `.env`, którego trzeba szukać i który mógł zostać
+podmieniony po ostatnim wdrożeniu:
 
 ```bash
-set -a && . ./.env && set +a          # wczytanie ENV_DB_*
+BE=$(docker ps --filter "ancestor=127.0.0.1:5000/detailing-crm-backend" --format '{{.Names}}' | head -1)
+[ -z "$BE" ] && BE=$(docker ps --format '{{.Names}}' | grep -i detailing-crm-backend | head -1)
+
+eval "$(docker inspect "$BE" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | grep -E '^DB_(ADDR|PORT|NAME|USER|PASSWORD)=' | sed 's/^/export /')"
+NET=$(docker inspect "$BE" --format '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' | head -1)
+
+echo "baza: $DB_USER@$DB_ADDR:$DB_PORT/$DB_NAME   sieć: $NET"
+```
+
+Gdyby jednak przydał się sam katalog deploymentu (np. do kroku 3 i 4), Compose zapisuje go
+w etykiecie kontenera:
+
+```bash
+docker inspect "$BE" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
 ```
 
 *Wariant A — bez instalowania czegokolwiek (klient z obrazu dockerowego):*
 
 ```bash
-docker run --rm -i --network "$ENV_NETWORK" \
-  -e PGPASSWORD="$ENV_DB_PASSWORD" postgres:16 \
-  psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" -U "$ENV_DB_USER" -d "$ENV_DB_NAME" \
+docker run --rm -i --network "$NET" -e PGPASSWORD="$DB_PASSWORD" postgres:16 \
+  psql -h "$DB_ADDR" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   -v ON_ERROR_STOP=1 -f - < deploy/sql/grafana-readonly-role.sql
 ```
 
@@ -83,12 +99,51 @@ docker run --rm -i --network "$ENV_NETWORK" \
 
 ```bash
 sudo apt install -y postgresql-client
-PGPASSWORD="$ENV_DB_PASSWORD" psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" \
-  -U "$ENV_DB_USER" -d "$ENV_DB_NAME" -v ON_ERROR_STOP=1 \
-  -f deploy/sql/grafana-readonly-role.sql
+PGPASSWORD="$DB_PASSWORD" psql -h "$DB_ADDR" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  -v ON_ERROR_STOP=1 -f deploy/sql/grafana-readonly-role.sql
 ```
 
-**Zanim to uruchomisz, sprawdź, czy `$ENV_DB_USER` w ogóle może zakładać role** — to jest
+*Wariant C — gdy na hoście w ogóle nie ma checkoutu repo:* wklej ten sam SQL przez stdin.
+Ogranicznik `<<'SQL'` jest w apostrofach, więc bash nie rusza `$$` ani apostrofów w środku:
+
+```bash
+docker run --rm -i --network "$NET" -e PGPASSWORD="$DB_PASSWORD" postgres:16 \
+  psql -h "$DB_ADDR" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f - <<'SQL'
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'grafana_ro') THEN
+        CREATE ROLE grafana_ro WITH LOGIN;
+    END IF;
+END
+$$;
+DO $$
+BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO grafana_ro', current_database());
+END
+$$;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+REVOKE CREATE ON SCHEMA public FROM grafana_ro;
+GRANT SELECT ON metric_studio_directory         TO grafana_ro;
+GRANT SELECT ON metric_endpoint_usage           TO grafana_ro;
+GRANT SELECT ON metric_daily_studio_snapshots   TO grafana_ro;
+GRANT SELECT ON metric_daily_platform_snapshots TO grafana_ro;
+GRANT SELECT ON metric_user_sessions            TO grafana_ro;
+GRANT SELECT ON metric_events                   TO grafana_ro;
+GRANT SELECT ON metric_api_endpoints            TO grafana_ro;
+GRANT SELECT ON metric_api_endpoint_daily       TO grafana_ro;
+GRANT SELECT ON metric_studio_api_daily         TO grafana_ro;
+GRANT SELECT ON metric_error_groups             TO grafana_ro;
+GRANT SELECT ON metric_error_group_impacts      TO grafana_ro;
+SELECT table_name, privilege_type FROM information_schema.table_privileges
+WHERE grantee = 'grafana_ro' ORDER BY table_name;
+SQL
+```
+
+Poprawny wynik to **11 wierszy**, same relacje `metric_*`. Jeśli poleci
+`relation "metric_..." does not exist`, aplikacja z nową wersją jeszcze nie wystartowała
+i Flyway nie założył tabel — wdróż ją najpierw.
+
+**Zanim to uruchomisz, sprawdź, czy `$DB_USER` w ogóle może zakładać role** — to jest
 dokładnie to uprawnienie, którego brak wyrzucił rolę z migracji:
 
 ```sql
@@ -96,21 +151,17 @@ SELECT rolname, rolsuper, rolcreaterole FROM pg_roles WHERE rolcanlogin;
 ```
 
 Jeśli `rolcreaterole` i `rolsuper` są `f`, użyj konta administracyjnego bazy zamiast
-`ENV_DB_USER` (u dostawcy zarządzanego zwykle konto założone przy tworzeniu instancji).
+`DB_USER` (u dostawcy zarządzanego zwykle konto założone przy tworzeniu instancji).
 
 Następnie hasło — rola powstaje bez niego i do tego momentu nie da się nią połączyć:
 
 ```bash
 NEW_PASS=$(openssl rand -base64 32)
-docker run --rm -e PGPASSWORD="$ENV_DB_PASSWORD" --network "$ENV_NETWORK" postgres:16 \
-  psql -h "$ENV_DB_ADDR" -p "$ENV_DB_PORT" -U "$ENV_DB_USER" -d "$ENV_DB_NAME" \
+docker run --rm --network "$NET" -e PGPASSWORD="$DB_PASSWORD" postgres:16 \
+  psql -h "$DB_ADDR" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   -c "ALTER ROLE grafana_ro WITH PASSWORD '$NEW_PASS';"
 echo "ENV_GRAFANA_DB_PASSWORD=$NEW_PASS"    # → do .env, krok 2
 ```
-
-Jeśli na hoście nie ma checkoutu repo, plik `deploy/sql/grafana-readonly-role.sql` trzeba
-tam najpierw dostarczyć (`git pull` w katalogu deploymentu albo `scp`) — `psql -f` czyta go
-z dysku hosta, nie z obrazu.
 
 **2. Zmienne środowiskowe** w `.env` deploymentu
 
