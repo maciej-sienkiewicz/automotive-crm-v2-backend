@@ -56,7 +56,7 @@ class GetTenantHealthHandler(
                 planKey = rs.getString("plan_key") ?: "NONE",
                 subscriptionStatus = rs.getString("subscription_status") ?: "UNKNOWN",
                 healthScore = rs.getInt("health_score"),
-                churnRisk = rs.getString("churn_risk") ?: "HEALTHY",
+                churnRisk = rs.getString("churn_risk") ?: "UNKNOWN",
                 daysSinceLastActivity = daysSince,
                 activeMinutes14d = recent,
                 activeMinutesPrior14d = prior,
@@ -120,7 +120,7 @@ class GetTenantHealthHandler(
                 today.plan_key,
                 today.subscription_status,
                 COALESCE(today.health_score, 0) AS health_score,
-                COALESCE(today.churn_risk, 'HEALTHY') AS churn_risk,
+                COALESCE(today.churn_risk, 'UNKNOWN') AS churn_risk,
                 COALESCE(today.mrr_gross_cents, 0) AS mrr_gross_cents,
                 COALESCE(today.users_total, 0) AS seats_total,
                 (SELECT COUNT(DISTINCT ms.user_id) FROM metric_user_sessions ms
@@ -144,13 +144,15 @@ class GetTenantHealthHandler(
             FROM studios s
             LEFT JOIN metric_daily_studio_snapshots today
                    ON today.studio_id = s.id AND today.snapshot_date = :day
-            WHERE (:risk IS NULL OR COALESCE(today.churn_risk, 'HEALTHY') = :risk)
+            WHERE (:risk IS NULL OR COALESCE(today.churn_risk, 'UNKNOWN') = :risk)
             -- Risk first, then money at stake: the board allocates account-management time,
             -- and a 39 zł trial above a 400 zł studio in decline gets that backwards.
             ORDER BY
-                CASE COALESCE(today.churn_risk, 'HEALTHY')
+                CASE COALESCE(today.churn_risk, 'UNKNOWN')
                     WHEN 'CRITICAL' THEN 0 WHEN 'AT_RISK' THEN 1
-                    WHEN 'WATCH' THEN 2 ELSE 3 END,
+                    -- UNKNOWN above WATCH on purpose: a row the calculator never scored is
+                    -- a gap in the board, and burying it at the bottom is how it stays a gap.
+                    WHEN 'UNKNOWN' THEN 2 WHEN 'WATCH' THEN 3 ELSE 4 END,
                 COALESCE(today.mrr_gross_cents, 0) DESC,
                 COALESCE(today.health_score, 0)
         """.trimIndent()

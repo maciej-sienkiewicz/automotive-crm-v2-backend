@@ -1,0 +1,1108 @@
+{
+  "uid": "crm-platform-api-audit",
+  "title": "Platforma — audyt API i defekty",
+  "description": "Martwe endpointy, defekty pogrupowane wg zasięgu i klienci, których dotknęły.",
+  "tags": [
+    "detailboost",
+    "platforma",
+    "techniczne"
+  ],
+  "timezone": "Europe/Warsaw",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "5m",
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Audyt endpointów",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Endpointy w kodzie",
+      "description": "Odczytane ze Spring RequestMappingHandlerMapping przy każdym starcie aplikacji.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_endpoint_usage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Nigdy nie wywołane",
+      "description": "Najsilniejsi kandydaci do usunięcia. Widoczni WYŁĄCZNIE dlatego, że katalog endpointów jest zasilany z routingu Springa — raport zbudowany z samego ruchu strukturalnie nie potrafiłby ich nazwać.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_endpoint_usage WHERE last_called_at IS NULL AND is_retention_exempt = false"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cisza > 90 dni",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_endpoint_usage WHERE days_silent >= 90 AND is_retention_exempt = false"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Cisza 30–90 dni",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_endpoint_usage WHERE days_silent >= 30 AND days_silent < 90 AND is_retention_exempt = false"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Dni obserwacji",
+      "description": "Jak długo audyt naprawdę zbiera dane. PONIŻEJ 30 DNI ŻADNEJ Z POWYŻSZYCH LICZB NIE WOLNO TRAKTOWAĆ JAKO PODSTAWY DO USUNIĘCIA — endpoint raportu kwartalnego wygląda identycznie jak martwy po trzech dniach danych.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(EXTRACT(DAY FROM (now() - MIN(first_seen_at)))::int, 0) AS v FROM metric_endpoint_usage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Wyłączone z czyszczenia",
+      "description": "Oznaczone ręcznie jako świadomie niskoruchowe. Bez tego te same fałszywe alarmy wracają w każdym raporcie, aż ludzie przestaną go czytać.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_endpoint_usage WHERE is_retention_exempt = true"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Endpointy wg czasu ciszy",
+      "description": "Nigdy nie wywołane na górze, potem najdłużej milczące. Kolumna „Studia 30d” oddziela skrypt integracyjny jednego studia od funkcji, na której opiera się cała baza klientów — w surowej liczbie wywołań wyglądają identycznie. Klasyfikacja DEAD / DORMANT wraz z zabezpieczeniem okna obserwacji jest w GET /api/internal/metrics/api-audit i to ona jest wiążąca; tu są same fakty, żeby ta reguła nie żyła w dwóch miejscach naraz.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT e.http_method                                  AS \"Metoda\",\n       e.path_template                                AS \"Ścieżka\",\n       e.module                                       AS \"Moduł\",\n       e.controller                                   AS \"Kontroler\",\n       COALESCE(e.days_silent::text, 'nigdy')         AS \"Dni ciszy\",\n       e.calls_30d                                    AS \"Wywołania 30d\",\n       e.studios_30d                                  AS \"Studia 30d\",\n       e.total_calls                                  AS \"Wywołania łącznie\",\n       e.requires_auth                                AS \"Wymaga sesji\"\nFROM metric_endpoint_usage e\nWHERE e.is_retention_exempt = false\nORDER BY (e.last_called_at IS NOT NULL), e.days_silent DESC NULLS FIRST, e.calls_30d\nLIMIT 300"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Defekty i dotknięci klienci",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Otwarte defekty",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_error_groups WHERE status IN ('NEW','ACKNOWLEDGED')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Nowe (nietknięte)",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_error_groups WHERE status = 'NEW'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Dotknięte studia",
+      "description": "Ilu klientów ma teraz otwarty, niezaadresowany defekt — liczba, którą naprawdę warto znać przed rozmową o SLA.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(DISTINCT i.studio_id) AS v FROM metric_error_group_impacts i JOIN metric_error_groups g ON g.fingerprint = i.fingerprint WHERE g.status IN ('NEW','ACKNOWLEDGED')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Krytyczne",
+      "description": "Zawiera awarie zadań cyklicznych — ślepą plamkę każdego setupu opartego o HTTP: nikt nie patrzy, nic nie wraca, a Spring domyślnie tylko loguje i idzie dalej.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_error_groups WHERE severity = 'CRITICAL' AND status IN ('NEW','ACKNOWLEDGED')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Rozwiązane (30 dni)",
+      "description": "",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_error_groups WHERE status = 'RESOLVED' AND resolved_at >= now() - INTERVAL '30 days'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Regresje",
+      "description": "Defekty oznaczone kiedyś jako naprawione, które wróciły. Otwierają się ponownie automatycznie, zamiast siedzieć pod zieloną flagą.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS v FROM metric_error_groups WHERE resolved_in_version IS NOT NULL AND status = 'NEW'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Otwarte defekty wg zasięgu",
+      "description": "Zasięg przed wolumenem: defekt trafiający dwanaście studiów po razie jest większym problemem niż jeden trafiający jedno studio czterysta razy. Stack trace pod GET /api/internal/metrics/errors/{fingerprint} — rola grafana_ro celowo nie ma dostępu do pojedynczych wystąpień, bo komunikat wyjątku potrafi zacytować dane klienta, a ta Grafana ma anonimowy podgląd.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT g.title                AS \"Defekt\",\n       g.origin               AS \"Źródło\",\n       g.severity             AS \"Waga\",\n       g.status               AS \"Status\",\n       g.affected_studios     AS \"Studia\",\n       g.occurrence_count     AS \"Wystąpienia\",\n       g.first_seen_at        AS \"Pierwszy raz\",\n       g.last_seen_at         AS \"Ostatnio\",\n       g.fingerprint          AS \"Fingerprint\"\nFROM metric_error_groups g\nWHERE g.status IN ('NEW', 'ACKNOWLEDGED')\nORDER BY g.affected_studios DESC, g.last_seen_at DESC\nLIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Waga"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICAL": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "ERROR": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "WARNING": {
+                        "color": "yellow",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Studia"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Najbardziej poszkodowani klienci",
+      "description": "Odpowiedź na pierwsze pytanie każdej rozmowy ze wsparciem: „kogo to dotknęło”. Rekonstruowanie tego z grepa po logach to stracone popołudnie.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT dir.name                       AS \"Studio\",\n       COUNT(DISTINCT i.fingerprint)  AS \"Różne defekty\",\n       SUM(i.occurrences)             AS \"Wystąpienia\",\n       MAX(i.last_seen_at)            AS \"Ostatnio\"\nFROM metric_error_group_impacts i\nJOIN metric_error_groups g   ON g.fingerprint = i.fingerprint\nJOIN metric_studio_directory dir ON dir.id = i.studio_id\nWHERE g.status IN ('NEW', 'ACKNOWLEDGED')\nGROUP BY dir.name\nORDER BY 2 DESC, 3 DESC\nLIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Ruch API wg modułu (30 dni)",
+      "description": "Które piony są naprawdę używane i przez ilu klientów. Moduł z dużym ruchem i jednym studiem to funkcja zbudowana pod jedno wdrożenie.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-metrics"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-metrics"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT sad.module                          AS \"Moduł\",\n       SUM(sad.call_count)                 AS \"Wywołania\",\n       COUNT(DISTINCT sad.studio_id)       AS \"Studia\",\n       ROUND(SUM(sad.total_duration_ms)::numeric\n             / NULLIF(SUM(sad.call_count), 0), 1) AS \"Śr. czas (ms)\",\n       MAX(sad.max_duration_ms)            AS \"Maks. czas (ms)\"\nFROM metric_studio_api_daily sad\nWHERE sad.usage_date >= CURRENT_DATE - 30\nGROUP BY sad.module\nORDER BY 2 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    }
+  ]
+}
