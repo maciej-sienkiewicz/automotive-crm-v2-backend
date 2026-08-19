@@ -156,8 +156,12 @@ class KsefController(
         @RequestParam(defaultValue = "20")   size: Int,
         @RequestParam(required = false)      source: String?,
         @RequestParam(required = false)      paymentStatus: String?,
-        @RequestParam(required = false)      dateFrom: OffsetDateTime?,
-        @RequestParam(required = false)      dateTo: OffsetDateTime?,
+        // LocalDate, not OffsetDateTime: the UI sends `2026-05-21`, which no
+        // OffsetDateTime parser accepts — the filter answered 500 for every request that
+        // used it. Matches the sibling endpoint /ksef/revenue/invoices, which already
+        // took LocalDate and set the convention for this API.
+        @RequestParam(required = false)      dateFrom: LocalDate?,
+        @RequestParam(required = false)      dateTo: LocalDate?,
         @RequestParam(defaultValue = "false") includeExcluded: Boolean
     ): ResponseEntity<ExpenseListResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -168,8 +172,10 @@ class KsefController(
             source          = source?.uppercase(),
             paymentStatus   = paymentStatus?.uppercase(),
             includeExcluded = includeExcluded,
-            dateFrom        = dateFrom,
-            dateTo          = dateTo,
+            dateFrom        = DateRangeFilter.startOfDay(dateFrom),
+            // dateTo names a day the user expects to see in full, so the bound is the
+            // start of the next one; the query compares with `<`.
+            dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
             pageable        = pageable
         )
 
