@@ -211,6 +211,42 @@ Heartbeat sesji i reporter błędów — bez nich czas pracy opiera się wyłąc
 zapasowym (uwierzytelnione żądania API), a błędy frontowe nie są zbierane w ogóle.
 Kontrakt w `docs/metrics-module-architecture.md`, sekcje 4 i 6.
 
+## Reguła, którą złamałem — nie edytuj zaaplikowanej migracji
+
+V65 wykonała się na produkcji, po czym została zmieniona w dwóch kolejnych commitach
+(najpierw `DEFAULT 'HEALTHY'` → `'UNKNOWN'`, potem przepisany komentarz nagłówkowy).
+Flyway liczy sumę kontrolną **z całego pliku**, komentarze wliczając, i porównuje ją przy
+każdym starcie z zapisaną w `flyway_schema_history`. Rozjazd = `FlywayValidateException`.
+
+W profilu produkcyjnym Flyway startuje razem z aplikacją, więc skutkiem nie jest ostrzeżenie
+w logu, tylko **pętla restartów całego CRM-a**. Dokładnie to się stało.
+
+Zasada bez wyjątków: **migracja wykonana na jakimkolwiek środowisku jest niezmienna.**
+Poprawka idzie do nowego pliku — jak V67. Dotyczy również samych komentarzy.
+
+### Odblokowanie, gdy to się już stało
+
+Objaw w logu backendu:
+
+```
+Migration checksum mismatch for migration version 65
+Either revert the changes to the migration, or run repair to update the schema history.
+```
+
+Sposób udokumentowany przez Flywaya to `repair` (wymaga CLI z wypakowanymi migracjami).
+Sposób prostszy, oparty na tym, że V65 jest w pełni idempotentna (`CREATE TABLE IF NOT
+EXISTS`, `CREATE INDEX IF NOT EXISTS`, `INSERT ... ON CONFLICT DO NOTHING`) — skasować wpis
+z historii i pozwolić Flywayowi wykonać ją ponownie przy najbliższym starcie:
+
+```sql
+DELETE FROM flyway_schema_history WHERE version = '65';
+```
+
+Sprawdzone wykonaniem na bazie z danymi: ponowne wykonanie V65 nie usuwa ani nie duplikuje
+sesji, snapshotów, endpointów ani danych biznesowych. Działa tylko dlatego, że ta konkretna
+migracja jest idempotentna — dla migracji zmieniającej dane byłoby to niebezpieczne i wtedy
+jedyną drogą jest `repair`.
+
 ## Jak czytać te dashboardy
 
 **Dzisiejszy słupek jest niepełny.** Wszystko poza sekcją subskrypcji to dzienny snapshot
