@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
@@ -45,9 +47,13 @@ class LeadVehicleExtractionListener(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    // REQUIRES_NEW, bo listener startuje PO zatwierdzeniu transakcji, która go
+    // wywołała — nie ma już do czego dołączyć, a zapis marki potrzebuje własnej.
+    // Spring odmawia startu przy domyślnej propagacji w tym miejscu i słusznie:
+    // cicho pominięty zapis byłby gorszy niż błąd przy uruchomieniu.
     @Async
-    @TransactionalEventListener
-    @Transactional
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onLeadThreadAttached(event: LeadThreadAttachedEvent) {
         val lead = leadRepository.findById(event.leadId).orElse(null) ?: return
         // Ręcznie wpisanej marki nie nadpisujemy — człowiek wie lepiej niż model.
