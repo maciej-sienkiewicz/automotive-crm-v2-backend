@@ -133,6 +133,11 @@ object AuditFieldCatalog {
 
         // Finance
         "documentType" to FieldDefinition("Typ dokumentu", AuditValueType.TEXT),
+        "cashAdjustmentType" to FieldDefinition("Rodzaj korekty", AuditValueType.TEXT),
+        "cashAdjustmentAmount" to FieldDefinition("Kwota korekty", AuditValueType.MONEY),
+        "balanceBefore" to FieldDefinition("Stan kasy przed", AuditValueType.MONEY),
+        "balanceAfter" to FieldDefinition("Stan kasy po", AuditValueType.MONEY),
+        "comment" to FieldDefinition("Opis", AuditValueType.TEXT),
 
         // Appointments
         "scheduledDate" to FieldDefinition("Data rezerwacji", AuditValueType.DATE_TIME),

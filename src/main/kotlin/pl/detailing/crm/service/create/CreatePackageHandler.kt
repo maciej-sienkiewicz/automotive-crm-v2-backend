@@ -97,7 +97,7 @@ class CreatePackageHandler(
             action = AuditAction.CREATE,
             changes = listOf(
                 FieldChange("name", null, packageService.name),
-                FieldChange("basePriceNet", null, netAmount.amountInCents.toString()),
+                FieldChange("basePriceNet", null, auditMoney(netAmount.amountInCents)),
                 FieldChange("vatRate", null, command.vatRate.rate.toString()),
                 FieldChange("requireManualPrice", null, packageService.requireManualPrice.toString()),
                 FieldChange("isPackage", null, "true"),

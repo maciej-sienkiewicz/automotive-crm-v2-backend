@@ -94,13 +94,13 @@ class UpdatePackageHandler(
 
         val oldValues = mapOf(
             "name" to oldPackageEntity.name,
-            "basePriceNet" to oldPackageEntity.basePriceNet.toString(),
+            "basePriceNet" to auditMoney(oldPackageEntity.basePriceNet),
             "vatRate" to oldPackageEntity.vatRate.toString(),
             "requireManualPrice" to oldPackageEntity.requireManualPrice.toString()
         )
         val newValues = mapOf(
             "name" to newPackage.name,
-            "basePriceNet" to netAmount.amountInCents.toString(),
+            "basePriceNet" to auditMoney(netAmount.amountInCents),
             "vatRate" to command.vatRate.rate.toString(),
             "requireManualPrice" to newPackage.requireManualPrice.toString()
         )

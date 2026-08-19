@@ -448,8 +448,24 @@ data class AuditAmount(
 ) {
     companion object {
         const val DEFAULT_CURRENCY = "PLN"
+
+        /** See [auditMoney]: the log stores decimal amounts, handlers hold grosz. */
+        fun ofGrosz(grosz: Long, currency: String = DEFAULT_CURRENCY): AuditAmount =
+            AuditAmount(auditMoneyDecimal(grosz), currency)
     }
 }
+
+/**
+ * Converts an internal grosz amount to the decimal the audit log expects.
+ *
+ * Every monetary value in the domain is a `Long` of grosz, while [AuditValueType.MONEY]
+ * formats exactly what it is handed. Passing grosz through unconverted is therefore not a
+ * rounding nuisance but a factor-of-100 lie: a 123,45 zl service renders as "12 345,00 zl".
+ */
+fun auditMoneyDecimal(grosz: Long): BigDecimal = BigDecimal(grosz).movePointLeft(2)
+
+/** [auditMoneyDecimal] as the plain string a [FieldChange] carries. */
+fun auditMoney(grosz: Long): String = auditMoneyDecimal(grosz).toPlainString()
 
 /**
  * Domain model for an audit log entry.

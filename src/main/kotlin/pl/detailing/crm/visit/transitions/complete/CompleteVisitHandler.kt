@@ -19,6 +19,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.visit.domain.Visit
+import pl.detailing.crm.visit.domain.auditDisplayName
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.LocalDate
@@ -60,7 +61,7 @@ class CompleteVisitHandler(
             userDisplayName   = command.userName ?: "",
             module            = AuditModule.VISIT,
             entityId          = command.visitId.value.toString(),
-            entityDisplayName = "Wizyta #${visit.visitNumber}",
+            entityDisplayName = visit.auditDisplayName,
             action            = AuditAction.VISIT_COMPLETED,
             changes           = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
         ))

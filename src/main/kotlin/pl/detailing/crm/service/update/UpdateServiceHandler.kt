@@ -63,13 +63,13 @@ class UpdateServiceHandler(
 
         val oldValues = mapOf(
             "name" to oldServiceEntity.name,
-            "basePriceNet" to oldServiceEntity.basePriceNet.toString(),
+            "basePriceNet" to auditMoney(oldServiceEntity.basePriceNet),
             "vatRate" to oldServiceEntity.vatRate.toString(),
             "requireManualPrice" to oldServiceEntity.requireManualPrice.toString()
         )
         val newValues = mapOf(
             "name" to newService.name,
-            "basePriceNet" to netAmount.amountInCents.toString(),
+            "basePriceNet" to auditMoney(netAmount.amountInCents),
             "vatRate" to command.vatRate.rate.toString(),
             "requireManualPrice" to newService.requireManualPrice.toString()
         )
