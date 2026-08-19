@@ -21,6 +21,7 @@ import pl.detailing.crm.comms.insights.ContactInsightsDto
 import pl.detailing.crm.comms.insights.GetContactInsightsHandler
 import pl.detailing.crm.comms.send.SendMailCommand
 import pl.detailing.crm.comms.send.SendMailHandler
+import pl.detailing.crm.comms.signature.UserMailSignatureService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
@@ -33,8 +34,14 @@ data class SendMailRequest(
     val to: List<String>,
     val cc: List<String> = emptyList(),
     val subject: String?,
-    val bodyHtml: String
+    val bodyHtml: String,
+    /** Append the sender's saved signature — composed server-side, see SendMailHandler. */
+    val appendSignature: Boolean = false
 )
+
+data class MailSignatureResponse(val bodyHtml: String?, val enabledByDefault: Boolean)
+
+data class SaveMailSignatureRequest(val bodyHtml: String, val enabledByDefault: Boolean = true)
 
 data class SendMailResponse(val messageId: String, val threadId: String)
 
@@ -57,6 +64,7 @@ class CommsController(
     private val readService: CommsReadService,
     private val sendMailHandler: SendMailHandler,
     private val insightsHandler: GetContactInsightsHandler,
+    private val signatureService: UserMailSignatureService,
     private val attachmentRepository: CommAttachmentRepository,
     private val accountRepository: MailAccountRepository,
     private val syncEngine: ImapSyncEngine
@@ -136,16 +144,50 @@ class CommsController(
         val result = sendMailHandler.handle(
             SendMailCommand(
                 studioId = principal.studioId,
+                userId = principal.userId,
                 accountId = request.accountId?.let(UUID::fromString),
                 threadId = request.threadId?.let(UUID::fromString),
                 to = request.to,
                 cc = request.cc,
                 subject = request.subject,
-                bodyHtml = request.bodyHtml
+                bodyHtml = request.bodyHtml,
+                appendSignature = request.appendSignature
             )
         )
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(SendMailResponse(result.messageId.toString(), result.threadId.toString()))
+    }
+
+    // ── Stopka nadawcy ───────────────────────────────────────────────────────
+    // Należy do zalogowanego użytkownika, nie do studia: dwie osoby odpisujące z tej
+    // samej skrzynki podpisują się własnym nazwiskiem i telefonem.
+
+    @GetMapping("/signature")
+    fun getSignature(): ResponseEntity<MailSignatureResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val signature = signatureService.get(principal.studioId, principal.userId)
+        return ResponseEntity.ok(
+            MailSignatureResponse(signature.bodyHtml, signature.enabledByDefault)
+        )
+    }
+
+    @PutMapping("/signature")
+    fun saveSignature(@RequestBody request: SaveMailSignatureRequest): ResponseEntity<MailSignatureResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val signature = signatureService.save(
+            principal.studioId,
+            principal.userId,
+            request.bodyHtml,
+            request.enabledByDefault
+        )
+        return ResponseEntity.ok(MailSignatureResponse(signature.bodyHtml, signature.enabledByDefault))
+    }
+
+    @DeleteMapping("/signature")
+    fun deleteSignature(): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        signatureService.delete(principal.studioId, principal.userId)
+        return ResponseEntity.noContent().build()
     }
 
     @GetMapping("/attachments/{id}")
