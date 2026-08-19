@@ -6,9 +6,13 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
-import pl.detailing.crm.leads.domain.LeadCategory
+import pl.detailing.crm.comms.domain.CommDirection
+import pl.detailing.crm.comms.infrastructure.CommMessageRepository
+import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.update.LeadTagService
+import pl.detailing.crm.leads.vehicle.LeadThreadAttachedEvent
 import pl.detailing.crm.leads.update.LeadServiceItemsService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
 import pl.detailing.crm.leads.update.LeadStatusService
@@ -27,7 +31,7 @@ data class MarkThreadAsLeadCommand(
     val threadId: UUID,
     val userId: UUID,
     val userName: String,
-    val category: LeadCategory?,
+    val tags: List<LeadTag>,
     val services: List<LeadServiceItemInput>
 )
 
@@ -47,7 +51,9 @@ class MarkThreadAsLeadHandler(
     private val threadRepository: CommThreadRepository,
     private val leadRepository: LeadRepository,
     private val customerRepository: CustomerRepository,
+    private val messageRepository: CommMessageRepository,
     private val serviceItems: LeadServiceItemsService,
+    private val tagService: LeadTagService,
     private val statusService: LeadStatusService,
     private val eventPublisher: ApplicationEventPublisher
 ) {
@@ -66,11 +72,18 @@ class MarkThreadAsLeadHandler(
             command.studioId.value, thread.participantEmail
         )
 
+        // Kolejność zdarzeń bywa odwrotna: najpierw odpisujemy, potem orientujemy się,
+        // że to lead. Status ma opisywać stan rozmowy, a nie moment kliknięcia, więc
+        // odpowiedź, która już poszła, od razu ustawia „W kontakcie".
+        val ourReply = messageRepository.findByThreadIdOrderBySentAtAsc(thread.id)
+            .lastOrNull { it.direction == CommDirection.OUTBOUND }
+        val initialStatus = if (ourReply != null) LeadStatus.IN_PROGRESS else LeadStatus.NEW
+
         val lead = LeadEntity(
             id = UUID.randomUUID(),
             studioId = command.studioId.value,
             source = LeadSource.EMAIL,
-            status = LeadStatus.NEW,
+            status = initialStatus,
             contactIdentifier = thread.participantEmail,
             customerName = thread.participantName
                 ?: customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null } },
@@ -87,10 +100,13 @@ class MarkThreadAsLeadHandler(
             lostReason = null,
             stagnantAlertSentAt = null,
             threadId = thread.id,
-            category = command.category
+            category = null,
+            firstResponseAt = ourReply?.sentAt
         )
         leadRepository.save(lead)
         statusService.recordCreation(lead, command.userId, command.userName)
+
+        tagService.replaceTags(lead.id, command.tags)
 
         val total = if (command.services.isNotEmpty()) {
             serviceItems.replaceItems(lead, command.services)
@@ -111,7 +127,14 @@ class MarkThreadAsLeadHandler(
                 createdAt = Instant.now()
             )
         )
-        log.info("[LEADS] Thread {} marked as lead {} (value={} gr)", thread.id, lead.id, total)
+        // Marka i model auta doczytają się z korespondencji po zatwierdzeniu
+        // transakcji — rozpoznanie idzie do LLM-a i nie ma prawa opóźniać kliknięcia.
+        eventPublisher.publishEvent(LeadThreadAttachedEvent(leadId = lead.id, threadId = thread.id))
+
+        log.info(
+            "[LEADS] Thread {} marked as lead {} (status={}, value={} gr, tags={})",
+            thread.id, lead.id, initialStatus, total, command.tags.size
+        )
         return MarkThreadAsLeadResult(leadId = lead.id, estimatedValue = total)
     }
 }
