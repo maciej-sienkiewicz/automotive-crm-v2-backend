@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
@@ -12,36 +14,50 @@ import java.util.Base64
 import java.util.UUID
 
 /**
- * Manages tablet pairing and device tokens in Redis (same pattern as the mobile
- * QR upload tokens — see UploadContextTokenService).
+ * Parowanie tabletów do podpisu.
  *
- * Pairing flow:
- * 1. Employee (authenticated CRM session) generates a short-lived 6-digit pairing code.
- * 2. The tablet app exchanges the code for a long-lived device token.
- * 3. All tablet endpoints authenticate exclusively via the X-Tablet-Token header;
- *    tenant isolation is enforced by reading tenantId ONLY from Redis metadata.
+ * Sparowane urządzenie mieszka w bazie, nie w cache'u. Wcześniej token żył wyłącznie
+ * w Redisie, który jest tu uruchomiony bez trwałego magazynu — każdy restart cache'a,
+ * czyli każde wdrożenie, po cichu rozparowywał wszystkie tablety we wszystkich
+ * studiach i ktoś musiał podejść do urządzenia i wpisać nowy kod. Sparowane
+ * urządzenie to nie wpis w cache'u, tylko fakt o sprzęcie studia: ma przeżyć restart
+ * infrastruktury, a kończyć się wyłącznie wtedy, gdy ktoś je odłączy.
  *
- * Redis keys:
- * - signing:pairing-code:{code}                → JSON {tenantId, createdBy}   (TTL = 5 min)
- * - signing:tablet-token:{token}               → JSON TabletSession           (TTL = 30 days, refreshed on use)
- * - signing:tablet-device:{tenantId}:{tabletId}→ token                        (reverse lookup / listing)
+ * W Redisie zostaje KOD PAROWANIA i tylko on: żyje pięć minut, a jego utrata kosztuje
+ * tyle, co wygenerowanie następnego.
+ *
+ * Przepływ:
+ * 1. Pracownik (zalogowany w CRM) generuje sześciocyfrowy kod.
+ * 2. Aplikacja na tablecie wymienia kod na token urządzenia — bezterminowy.
+ * 3. Endpointy tabletowe uwierzytelnia wyłącznie nagłówek X-Tablet-Token; przypisanie
+ *    do studia czytamy z rekordu urządzenia, nigdy z danych przysłanych przez klienta.
+ *
+ * Token trzymamy jako skrót SHA-256. To poświadczenie na okaziciela — kto je odczyta,
+ * ten podpisuje dokumenty jako tablet tego studia — więc wyciek zrzutu bazy nie może
+ * oddawać działających urządzeń. Sól jest tu zbędna: token to 32 bajty z CSPRNG,
+ * nie ma czego zgadywać ani przewidywać.
  */
 @Service
 class TabletSessionService(
+    private val tabletRepository: SigningTabletRepository,
     private val redisTemplate: StringRedisTemplate,
     private val objectMapper: ObjectMapper,
-    @Value("\${signing.tablet.pairing-code-ttl-minutes:5}") private val pairingCodeTtlMinutes: Long,
-    @Value("\${signing.tablet.token-ttl-days:30}") private val tokenTtlDays: Long
+    @Value("\${signing.tablet.pairing-code-ttl-minutes:5}") private val pairingCodeTtlMinutes: Long
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(TabletSessionService::class.java)
         private val SECURE_RANDOM = SecureRandom()
         private const val PAIRING_KEY_PREFIX = "signing:pairing-code:"
-        private const val TOKEN_KEY_PREFIX = "signing:tablet-token:"
-        private const val DEVICE_KEY_PREFIX = "signing:tablet-device:"
+
+        /** Klucze sprzed przeniesienia parowania do bazy — czytane tylko przy migracji. */
+        private const val LEGACY_TOKEN_KEY_PREFIX = "signing:tablet-token:"
+        private const val LEGACY_DEVICE_KEY_PREFIX = "signing:tablet-device:"
+
+        /** Jak często odnotowujemy kontakt z urządzeniem. Rzadziej niż co żądanie. */
+        private val LAST_SEEN_RESOLUTION = Duration.ofHours(1)
     }
 
-    /** Generate a one-time pairing code shown to the employee in the CRM. */
+    /** Jednorazowy kod parowania pokazywany pracownikowi w CRM. */
     fun generatePairingCode(tenantId: String, userId: String): GeneratedPairingCode {
         val code = "%06d".format(SECURE_RANDOM.nextInt(1_000_000))
         val ttl = Duration.ofMinutes(pairingCodeTtlMinutes)
@@ -53,9 +69,10 @@ class TabletSessionService(
     }
 
     /**
-     * Exchange a pairing code for a device token. The code is single-use:
-     * it is deleted atomically so a captured code cannot be reused.
+     * Wymiana kodu parowania na token urządzenia. Kod jest jednorazowy: kasujemy go
+     * atomowo, żeby podejrzany kod nie dał się użyć drugi raz.
      */
+    @Transactional
     fun pairTablet(pairingCode: String, deviceName: String): PairedTablet? {
         val json = redisTemplate.opsForValue().getAndDelete(PAIRING_KEY_PREFIX + pairingCode)
             ?: return null
@@ -64,81 +81,111 @@ class TabletSessionService(
         val data = objectMapper.readValue(json, Map::class.java) as Map<String, String>
         val tenantId = data["tenantId"] ?: return null
 
-        val tabletId = UUID.randomUUID().toString()
+        val tabletId = UUID.randomUUID()
         val token = generateSecureToken()
-        val session = TabletSession(
-            tenantId = tenantId,
-            tabletId = tabletId,
-            deviceName = deviceName.take(200),
-            pairedAt = Instant.now()
+        tabletRepository.save(
+            SigningTabletEntity(
+                id = tabletId,
+                studioId = UUID.fromString(tenantId),
+                deviceName = deviceName.take(200),
+                tokenHash = hashToken(token)
+            )
         )
 
-        val ttl = Duration.ofDays(tokenTtlDays)
-        redisTemplate.opsForValue().set(TOKEN_KEY_PREFIX + token, objectMapper.writeValueAsString(session), ttl)
-        redisTemplate.opsForValue().set("$DEVICE_KEY_PREFIX$tenantId:$tabletId", token, ttl)
-
-        logger.info("Paired tablet '{}' (id={}) for tenant={}", session.deviceName, tabletId, tenantId)
-        return PairedTablet(tabletId = tabletId, token = token, tenantId = tenantId)
-    }
-
-    /** Validate a tablet token; refreshes the TTL on every successful use. */
-    fun validateToken(token: String): TabletSession? {
-        val key = TOKEN_KEY_PREFIX + token
-        val json = redisTemplate.opsForValue().get(key) ?: return null
-        return try {
-            val session = objectMapper.readValue(json, TabletSession::class.java)
-            val ttl = Duration.ofDays(tokenTtlDays)
-            redisTemplate.expire(key, ttl)
-            redisTemplate.expire("$DEVICE_KEY_PREFIX${session.tenantId}:${session.tabletId}", ttl)
-            session
-        } catch (e: Exception) {
-            logger.warn("Failed to deserialize tablet session: ${e.message}")
-            null
-        }
+        logger.info("Sparowano tablet '{}' (id={}) ze studiem {}", deviceName.take(200), tabletId, tenantId)
+        return PairedTablet(tabletId = tabletId.toString(), token = token, tenantId = tenantId)
     }
 
     /**
-     * List all paired tablets for a tenant. Scans the device reverse-lookup keys
-     * (signing:tablet-device:{tenantId}:*) and joins with session data from token keys.
-     * Tablets whose token has already expired are excluded automatically.
+     * Sprawdzenie tokenu urządzenia. Bezterminowo — dopóki nikt go nie odłączył.
+     * Tokeny wydane przed przeniesieniem parowania do bazy przenosimy tu w locie,
+     * więc urządzenia sparowane wcześniej działają dalej bez ponownego parowania
+     * (o ile ich wpis jeszcze jest w cache'u).
      */
-    fun listTablets(tenantId: String): List<TabletInfo> {
-        val pattern = "$DEVICE_KEY_PREFIX$tenantId:*"
-        val deviceKeys = redisTemplate.keys(pattern) ?: return emptyList()
+    @Transactional
+    fun validateToken(token: String): TabletSession? {
+        val tablet = tabletRepository.findByTokenHash(hashToken(token))
+            ?: return migrateLegacyToken(token)
 
-        return deviceKeys.mapNotNull { deviceKey ->
-            try {
-                val token = redisTemplate.opsForValue().get(deviceKey) ?: return@mapNotNull null
-                val sessionJson = redisTemplate.opsForValue().get(TOKEN_KEY_PREFIX + token) ?: return@mapNotNull null
-                val session = objectMapper.readValue(sessionJson, TabletSession::class.java)
-                val ttlSeconds = redisTemplate.getExpire(TOKEN_KEY_PREFIX + token)
-                val tokenExpiresAt = if (ttlSeconds != null && ttlSeconds > 0)
-                    java.time.Instant.now().plusSeconds(ttlSeconds)
-                else
-                    null
-                TabletInfo(
-                    tabletId = session.tabletId,
-                    deviceName = session.deviceName,
-                    pairedAt = session.pairedAt,
-                    tokenExpiresAt = tokenExpiresAt
-                )
-            } catch (e: Exception) {
-                logger.warn("Skipping malformed tablet entry for key {}: {}", deviceKey, e.message)
-                null
-            }
-        }.sortedBy { it.pairedAt }
-    }
+        if (tablet.revokedAt != null) return null
 
-    /** Revoke a paired tablet (e.g. lost device). */
-    fun revokeTablet(tenantId: String, tabletId: String) {
-        val deviceKey = "$DEVICE_KEY_PREFIX$tenantId:$tabletId"
-        val token = redisTemplate.opsForValue().get(deviceKey)
-        if (token != null) {
-            redisTemplate.delete(TOKEN_KEY_PREFIX + token)
+        val lastSeen = tablet.lastSeenAt
+        val now = Instant.now()
+        if (lastSeen == null || Duration.between(lastSeen, now) > LAST_SEEN_RESOLUTION) {
+            tabletRepository.touchLastSeen(tablet.id, now)
         }
-        redisTemplate.delete(deviceKey)
-        logger.info("Revoked tablet {} for tenant {}", tabletId, tenantId)
+
+        return TabletSession(
+            tenantId = tablet.studioId.toString(),
+            tabletId = tablet.id.toString(),
+            deviceName = tablet.deviceName,
+            pairedAt = tablet.pairedAt
+        )
     }
+
+    /** Wszystkie urządzenia sparowane z tym studiem. */
+    fun listTablets(tenantId: String): List<TabletInfo> =
+        tabletRepository.findByStudioIdAndRevokedAtIsNullOrderByPairedAtAsc(UUID.fromString(tenantId))
+            .map {
+                TabletInfo(
+                    tabletId = it.id.toString(),
+                    deviceName = it.deviceName,
+                    pairedAt = it.pairedAt,
+                    lastSeenAt = it.lastSeenAt
+                )
+            }
+
+    /** Odłączenie urządzenia (zgubione, wymienione). Jedyny sposób, w jaki kończy się parowanie. */
+    @Transactional
+    fun revokeTablet(tenantId: String, tabletId: String) {
+        val studioId = UUID.fromString(tenantId)
+        val id = runCatching { UUID.fromString(tabletId) }.getOrNull() ?: return
+        val tablet = tabletRepository.findByIdAndStudioId(id, studioId) ?: return
+        tablet.revokedAt = Instant.now()
+        tabletRepository.save(tablet)
+
+        // Sprzątamy też ewentualny wpis sprzed przeniesienia, żeby stary token
+        // nie ożył przez ścieżkę migracyjną.
+        redisTemplate.delete("$LEGACY_DEVICE_KEY_PREFIX$tenantId:$tabletId")
+        logger.info("Odłączono tablet {} od studia {}", tabletId, tenantId)
+    }
+
+    /**
+     * Przeniesienie tokenu wydanego przed zmianą magazynu. Wykonuje się najwyżej raz
+     * na urządzenie — przy pierwszym żądaniu po wdrożeniu — i po nim tablet jest już
+     * zapisany trwale.
+     */
+    private fun migrateLegacyToken(token: String): TabletSession? {
+        val json = redisTemplate.opsForValue().get(LEGACY_TOKEN_KEY_PREFIX + token) ?: return null
+        val session = try {
+            objectMapper.readValue(json, TabletSession::class.java)
+        } catch (e: Exception) {
+            logger.warn("Pominięto niepoprawny wpis tabletu z cache'u: {}", e.message)
+            return null
+        }
+
+        val tabletId = runCatching { UUID.fromString(session.tabletId) }.getOrNull() ?: UUID.randomUUID()
+        tabletRepository.save(
+            SigningTabletEntity(
+                id = tabletId,
+                studioId = UUID.fromString(session.tenantId),
+                deviceName = session.deviceName,
+                tokenHash = hashToken(token),
+                pairedAt = session.pairedAt,
+                lastSeenAt = Instant.now()
+            )
+        )
+        redisTemplate.delete(LEGACY_TOKEN_KEY_PREFIX + token)
+        redisTemplate.delete("$LEGACY_DEVICE_KEY_PREFIX${session.tenantId}:${session.tabletId}")
+
+        logger.info("Przeniesiono parowanie tabletu {} do bazy — działa dalej bez ponownego parowania", tabletId)
+        return session.copy(tabletId = tabletId.toString())
+    }
+
+    private fun hashToken(token: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray())
+            .joinToString("") { "%02x".format(it) }
 
     private fun generateSecureToken(): String {
         val bytes = ByteArray(32)
@@ -173,7 +220,8 @@ data class TabletInfo(
     val tabletId: String,
     val deviceName: String,
     val pairedAt: Instant,
-    val tokenExpiresAt: Instant?
+    /** Ostatnie żądanie z urządzenia; null, gdy nie odezwało się od sparowania. */
+    val lastSeenAt: Instant?
 )
 
 data class GeneratedPairingCode(
