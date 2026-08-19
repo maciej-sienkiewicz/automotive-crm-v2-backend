@@ -85,6 +85,11 @@ class SecurityConfig {
                 // Personal signature drawing from the user's own phone — authenticated by
                 // the unguessable, TTL-bound link token sent to the user's own number
                 auth.requestMatchers("/api/public/user-signature/**").permitAll()
+                // Platform metrics console — cross-tenant by design, so it deliberately does
+                // NOT use the studio session identity. Authenticated by the X-Platform-Key
+                // shared secret in PlatformAccessInterceptor, which fails closed when no key
+                // is configured. Expected to sit behind a VPN / IP allow-list as well.
+                auth.requestMatchers("/api/internal/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->
