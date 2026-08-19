@@ -46,7 +46,7 @@ class DefaultProtocolTemplateProvisioner(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        const val DEFAULT_TEMPLATE_NAME = "Protokół przyjęcia pojazdu (domyślny)"
+        const val DEFAULT_TEMPLATE_NAME = "Protokół przyjęcia pojazdu"
         const val DEFAULT_TEMPLATE_DESCRIPTION =
             "Systemowy szablon protokołu przyjęcia pojazdu. Przywracany automatycznie, " +
                 "gdy studio nie ma żadnego aktywnego szablonu przyjęcia."
