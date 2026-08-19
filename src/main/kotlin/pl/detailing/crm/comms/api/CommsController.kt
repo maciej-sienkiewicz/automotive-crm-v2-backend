@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.api
 
+import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -21,6 +22,7 @@ import pl.detailing.crm.comms.insights.ContactInsightsDto
 import pl.detailing.crm.comms.insights.GetContactInsightsHandler
 import pl.detailing.crm.comms.send.SendMailCommand
 import pl.detailing.crm.comms.send.SendMailHandler
+import pl.detailing.crm.comms.proofread.MailProofreadService
 import pl.detailing.crm.comms.signature.UserMailSignatureService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.role.domain.Permission
@@ -42,6 +44,10 @@ data class SendMailRequest(
 data class MailSignatureResponse(val bodyHtml: String?, val enabledByDefault: Boolean)
 
 data class SaveMailSignatureRequest(val bodyHtml: String, val enabledByDefault: Boolean = true)
+
+data class ProofreadRequest(val text: String)
+
+data class ProofreadResponse(val text: String)
 
 data class SendMailResponse(val messageId: String, val threadId: String)
 
@@ -65,6 +71,7 @@ class CommsController(
     private val sendMailHandler: SendMailHandler,
     private val insightsHandler: GetContactInsightsHandler,
     private val signatureService: UserMailSignatureService,
+    private val proofreadService: MailProofreadService,
     private val attachmentRepository: CommAttachmentRepository,
     private val accountRepository: MailAccountRepository,
     private val syncEngine: ImapSyncEngine
@@ -156,6 +163,16 @@ class CommsController(
         )
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(SendMailResponse(result.messageId.toString(), result.threadId.toString()))
+    }
+
+    /**
+     * Korekta językowa treści przed wysyłką. Osobny krok, wywoływany świadomie przez
+     * użytkownika — nie chcemy dotykać jego słów w tle, przy okazji wysyłania.
+     */
+    @PostMapping("/proofread")
+    fun proofread(@RequestBody request: ProofreadRequest): ResponseEntity<ProofreadResponse> = runBlocking {
+        SecurityContextHelper.getCurrentUser()
+        ResponseEntity.ok(ProofreadResponse(proofreadService.proofread(request.text)))
     }
 
     // ── Stopka nadawcy ───────────────────────────────────────────────────────
