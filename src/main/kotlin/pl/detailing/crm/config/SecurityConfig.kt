@@ -1,5 +1,6 @@
 package pl.detailing.crm.config
 
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -14,14 +15,54 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.firewall.StrictHttpFirewall
 import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession
+import org.springframework.session.web.http.CookieSerializer
+import org.springframework.session.web.http.DefaultCookieSerializer
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
+/**
+ * Session lifetime, in one place because two things must agree on it: the server-side
+ * record in Redis and the cookie the browser holds. If the cookie outlives the session,
+ * the user comes back holding a key to a room that no longer exists.
+ */
+private const val SESSION_TTL_SECONDS = 604800 // 7 dni
+
 @Configuration
 @EnableWebSecurity
-@EnableRedisHttpSession(maxInactiveIntervalInSeconds = 604800)
-class SecurityConfig {
+@EnableRedisHttpSession(maxInactiveIntervalInSeconds = SESSION_TTL_SECONDS)
+class SecurityConfig(
+    /** Ustawiane w docker-compose; lokalnie nieustawione, stąd domyślne „local". */
+    @Value("\${APP_ENV:local}") private val appEnv: String
+) {
+
+    /**
+     * Trwałe cookie sesji.
+     *
+     * Domyślnie Spring Session wystawia cookie BEZ „Max-Age", czyli cookie sesyjne
+     * przeglądarki: znikało przy zamknięciu okna i użytkownik logował się od nowa,
+     * mimo że jego sesja po stronie serwera żyła jeszcze przez tydzień. Zamknięcie
+     * przeglądarki nie jest wylogowaniem — wylogowaniem jest kliknięcie „Wyloguj".
+     *
+     * Max-Age równy TTL sesji: cookie ginie dokładnie wtedy, gdy przestaje mieć do
+     * czego prowadzić. Dłuższe zostawiałoby w przeglądarce martwy klucz, krótsze
+     * wylogowywałoby mimo żywej sesji.
+     *
+     * Flaga Secure poza środowiskiem lokalnym — na produkcji (HTTPS) cookie nie ma
+     * prawa wyjechać po HTTP, a na localhoście (HTTP) taka flaga uniemożliwiłaby
+     * zalogowanie się w ogóle.
+     *
+     * Nazwy cookie ani sposobu kodowania NIE zmieniamy: to unieważniłoby wszystkie
+     * wydane cookies, czyli wylogowało wszystkich naraz — dokładnie to, co naprawiamy.
+     */
+    @Bean
+    fun cookieSerializer(): CookieSerializer = DefaultCookieSerializer().apply {
+        setCookieName("SESSION")
+        setCookieMaxAge(SESSION_TTL_SECONDS)
+        setUseHttpOnlyCookie(true)
+        setSameSite("Lax")
+        setUseSecureCookie(!appEnv.equals("local", ignoreCase = true))
+    }
 
     // StrictHttpFirewall only allows standard HTTP methods by default (GET, POST, PUT, DELETE,
     // PATCH, HEAD, OPTIONS, TRACE). WebDAV methods PROPFIND and REPORT must be explicitly
