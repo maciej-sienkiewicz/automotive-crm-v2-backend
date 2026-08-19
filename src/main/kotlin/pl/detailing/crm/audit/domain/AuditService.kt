@@ -105,6 +105,7 @@ data class LogAuditCommand(
 class AuditService(
     private val auditLogWriter: AuditLogWriter,
     private val auditLogRepository: pl.detailing.crm.audit.infrastructure.AuditLogRepository,
+    private val auditMetadataEnricher: AuditMetadataEnricher,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(AuditService::class.java)
@@ -152,8 +153,17 @@ class AuditService(
      *
      * Like [record], never throws. @return true when an entry was found and enriched;
      * false lets the caller fall back to logging its own entry.
+     *
+     * Deliberately NOT @Transactional, and the write goes through [AuditMetadataEnricher]
+     * (REQUIRES_NEW). Enrichment is a cosmetic touch-up of the activity feed and must
+     * never be able to fail the business operation that triggered it. When this method
+     * shared the caller's transaction, a failing UPDATE marked that transaction
+     * rollback-only; the catch below swallowed the exception, but the commit then threw
+     * UnexpectedRollbackException from the proxy — OUTSIDE this try — and a fully
+     * completed signature flow (PDF composed, sealed and uploaded to S3) still returned
+     * HTTP 500 to the tablet. Catching outside the transaction boundary is what makes
+     * the "never throws" contract above actually hold.
      */
-    @org.springframework.transaction.annotation.Transactional
     fun enrichLatestEntry(
         studioId: StudioId,
         action: AuditAction,
@@ -163,7 +173,7 @@ class AuditService(
         val id = auditLogRepository.findLatestIdByStudioIdAndActionAndVisitId(
             studioId.value, action.name, visitId
         )
-        id != null && auditLogRepository.mergeMetadata(id, objectMapper.writeValueAsString(patch)) > 0
+        id != null && auditMetadataEnricher.merge(id, objectMapper.writeValueAsString(patch))
     } catch (e: Exception) {
         logger.error(
             "Failed to enrich audit entry: studioId={}, action={}, visitId={}, patch={}",
