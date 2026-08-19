@@ -126,15 +126,12 @@
     line-height: 1.2832;
   }
 
-  /* ============ Nagłówek: logo + USŁUGODAWCA ============ */
+  /* ============ Nagłówek: USŁUGODAWCA ============ */
+  /* Lewa strona nagłówka jest celowo pusta. Docelowo trafi tu logo studia
+     (188.16 x 16.38pt, x=29.30pt od lewej krawędzi strony, top 24.23pt) —
+     tak samo jak w bundlowanym PDF-ie. Do czasu wdrożenia loga per studio
+     żaden szablon systemowy nie może nieść cudzej marki. */
   .header { position: relative; height: 68.65pt; }
-  .header .logo {
-    position: absolute;
-    left: -0.94pt;           /* logo: x=29.30pt od lewej krawędzi strony */
-    top: 24.23pt;
-    width: 188.16pt;
-    height: 16.38pt;
-  }
   .header .provider {
     position: absolute;
     right: 0;                /* x=439.20..565.68pt */
