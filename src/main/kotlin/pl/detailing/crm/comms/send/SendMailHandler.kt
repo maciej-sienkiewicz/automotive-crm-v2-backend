@@ -14,23 +14,30 @@ import pl.detailing.crm.comms.infrastructure.CommOutboxEntity
 import pl.detailing.crm.comms.infrastructure.CommOutboxRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.comms.infrastructure.EmailHtmlSanitizer
+import pl.detailing.crm.comms.signature.UserMailSignatureService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.mailbox.domain.MailAccountStatus
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
 
 data class SendMailCommand(
     val studioId: StudioId,
+    /** Author of the message — decides whose signature gets appended. */
+    val userId: UserId,
     val accountId: UUID?,
     /** Reply into an existing conversation; null starts a new one. */
     val threadId: UUID?,
     val to: List<String>,
     val cc: List<String> = emptyList(),
     val subject: String?,
-    val bodyHtml: String
+    val bodyHtml: String,
+    /** Append the author's saved signature. Composed here, not in the browser, so the
+     *  stored signature stays the single source of truth for every client of this API. */
+    val appendSignature: Boolean = false
 )
 
 data class SendMailResult(
@@ -53,6 +60,7 @@ class SendMailHandler(
     private val sender: AccountMailSender,
     private val sanitizer: EmailHtmlSanitizer,
     private val ingestService: CommsIngestService,
+    private val signatureService: UserMailSignatureService,
     private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -88,8 +96,10 @@ class SendMailHandler(
         }
 
         // User-typed HTML goes through the same sanitiser as foreign mail — the composer
-        // output is trusted-ish, but defence in depth costs one call.
-        val safeHtml = sanitizer.sanitize(command.bodyHtml, UUID.randomUUID(), emptyMap())
+        // output is trusted-ish, but defence in depth costs one call. The signature is
+        // appended before sanitising, so both halves get the identical treatment.
+        val composed = command.bodyHtml + signatureBlock(command)
+        val safeHtml = sanitizer.sanitize(composed, UUID.randomUUID(), emptyMap())
 
         val messageIdHdr = sender.newMessageId(account)
         val mail = OutgoingMail(
@@ -151,6 +161,18 @@ class SendMailHandler(
 
         log.info("[COMMS] Wiadomość wysłana i zapisana | thread={} message={}", saved.threadId, saved.id)
         return SendMailResult(messageId = saved.id, threadId = saved.threadId)
+    }
+
+    /**
+     * Signature markup appended to the body. The `--` separator is the long-standing
+     * convention every mail client understands as "signature starts here", which also
+     * lets our own quote-stripping recognise it later.
+     */
+    private fun signatureBlock(command: SendMailCommand): String {
+        if (!command.appendSignature) return ""
+        val signature = signatureService.get(command.studioId, command.userId).bodyHtml
+        if (signature.isNullOrBlank()) return ""
+        return """<div class="crm-signature" style="margin-top:16px"><div>--</div>$signature</div>"""
     }
 
     companion object {
