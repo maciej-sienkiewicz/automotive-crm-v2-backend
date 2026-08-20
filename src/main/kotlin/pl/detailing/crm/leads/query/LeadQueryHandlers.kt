@@ -3,6 +3,8 @@ package pl.detailing.crm.leads.query
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.conversation.LeadConversationState
+import pl.detailing.crm.leads.conversation.LeadConversationStateService
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
@@ -19,7 +21,8 @@ class LeadQueryHandlers(
     private val itemRepository: LeadServiceItemRepository,
     private val historyRepository: LeadStatusHistoryRepository,
     private val tagService: LeadTagService,
-    private val tagCatalog: LeadTagCatalogService
+    private val tagCatalog: LeadTagCatalogService,
+    private val conversationStates: LeadConversationStateService
 ) {
 
     @Transactional(readOnly = true)
@@ -27,6 +30,7 @@ class LeadQueryHandlers(
         studioId: StudioId,
         status: LeadStatus?,
         query: String?,
+        awaitingReply: Boolean,
         page: Int,
         pageSize: Int
     ): LeadPageDto {
@@ -34,6 +38,7 @@ class LeadQueryHandlers(
             studioId.value,
             status,
             query?.trim()?.takeIf { it.isNotBlank() },
+            awaitingReply,
             PageRequest.of(page.coerceAtLeast(0), pageSize.coerceIn(1, 100))
         )
         val leadIds = result.content.map { it.id }
@@ -41,9 +46,15 @@ class LeadQueryHandlers(
         // Tagi całej strony jednym zapytaniem — inaczej lista na 50 leadów robi 50 dodatkowych.
         val tagsByLead = tagService.tagsOf(leadIds)
         val tagLabels = tagCatalog.labelsByCode(studioId)
+        val states = conversationStates.statesOf(studioId.value, result.content)
         return LeadPageDto(
             items = result.content.map {
-                it.toDto(itemsByLead[it.id].orEmpty(), tagsByLead[it.id].orEmpty(), tagLabels)
+                it.toDto(
+                    itemsByLead[it.id].orEmpty(),
+                    tagsByLead[it.id].orEmpty(),
+                    tagLabels,
+                    states[it.id] ?: LeadConversationState.NONE
+                )
             },
             total = result.totalElements,
             page = result.number,
@@ -58,7 +69,8 @@ class LeadQueryHandlers(
         return lead.toDto(
             itemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id),
             tagService.tagsOf(lead.id),
-            tagCatalog.labelsByCode(studioId)
+            tagCatalog.labelsByCode(studioId),
+            conversationStates.stateOf(studioId.value, lead)
         )
     }
 

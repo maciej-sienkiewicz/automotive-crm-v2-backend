@@ -20,6 +20,17 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
 
     fun findByThreadId(threadId: UUID): LeadEntity?
 
+    /**
+     * [awaitingReply] zawęża listę do leadów, w których ostatnie słowo należy do klienta
+     * — czyli do tych, gdzie zalegamy z odpowiedzią. Warunek liczy się z wiadomości,
+     * a nie z pola na leadzie: pole trzeba by utrzymywać przy każdym mailu w obie strony,
+     * a przeoczony haczyk zostawiłby lead z informacją wyglądającą na aktualną.
+     *
+     * Warunek brzmi „jest wiadomość od klienta i nie ma po niej naszej" — a nie
+     * „ostatnia przychodząca jest nowsza od wychodzącej". Obie wersje znaczą to samo,
+     * ale ta nie potrzebuje sztucznej daty granicznej dla wątku, w którym jeszcze nic
+     * nie odpisaliśmy, a takich jest najwięcej wśród tych naprawdę zaległych.
+     */
     @Query(
         """SELECT l FROM LeadEntity l
            WHERE l.studioId = :studioId
@@ -27,12 +38,24 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
              AND (:query IS NULL
                   OR LOWER(l.contactIdentifier) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
                   OR LOWER(COALESCE(l.customerName, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%'))
+             AND (:awaitingReply = FALSE
+                  OR (l.threadId IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM CommMessageEntity mi
+                                  WHERE mi.threadId = l.threadId
+                                    AND mi.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND)
+                      AND NOT EXISTS (SELECT 1 FROM CommMessageEntity mo
+                                      WHERE mo.threadId = l.threadId
+                                        AND mo.direction = pl.detailing.crm.comms.domain.CommDirection.OUTBOUND
+                                        AND mo.sentAt > (SELECT MAX(mi2.sentAt) FROM CommMessageEntity mi2
+                                                         WHERE mi2.threadId = l.threadId
+                                                           AND mi2.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND))))
            ORDER BY l.createdAt DESC"""
     )
     fun search(
         @Param("studioId") studioId: UUID,
         @Param("status") status: LeadStatus?,
         @Param("query") query: String?,
+        @Param("awaitingReply") awaitingReply: Boolean,
         pageable: Pageable
     ): Page<LeadEntity>
 

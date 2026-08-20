@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.query
 
+import pl.detailing.crm.leads.conversation.LeadConversationState
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
@@ -34,6 +35,15 @@ data class LeadDto(
     val lostReasonLabel: String?,
     val lostReason: String?,
     val services: List<LeadServiceItemDto>,
+    /**
+     * Czyj ruch w rozmowie: AWAITING_OUR_REPLY | AWAITING_CLIENT_REPLY | NO_CONVERSATION.
+     * Wyliczane z korespondencji, nie ustawiane ręcznie — to fakt, nie decyzja.
+     */
+    val replyState: String,
+    /** Od kiedy trwa bieżące oczekiwanie; null, gdy nie ma na co czekać. */
+    val waitingSince: Instant?,
+    val lastInboundAt: Instant?,
+    val lastOutboundAt: Instant?,
     val firstResponseAt: Instant?,
     val closedAt: Instant?,
     val createdAt: Instant,
@@ -80,7 +90,8 @@ fun LeadEntity.toDto(
     services: List<LeadServiceItemEntity>,
     tagCodes: List<String> = emptyList(),
     /** Etykiety ze słownika studia; kod bez definicji wyświetla się sam jako ostatnia deska ratunku. */
-    tagLabels: Map<String, String> = emptyMap()
+    tagLabels: Map<String, String> = emptyMap(),
+    conversation: LeadConversationState = LeadConversationState.NONE
 ): LeadDto = LeadDto(
     id = id.toString(),
     source = source.name,
@@ -105,6 +116,10 @@ fun LeadEntity.toDto(
     lostReasonLabel = lostReasonCode?.label,
     lostReason = lostReason,
     services = services.map { it.toDto() },
+    replyState = conversation.replyState.name,
+    waitingSince = conversation.waitingSince,
+    lastInboundAt = conversation.lastInboundAt,
+    lastOutboundAt = conversation.lastOutboundAt,
     firstResponseAt = firstResponseAt,
     closedAt = closedAt,
     createdAt = createdAt,

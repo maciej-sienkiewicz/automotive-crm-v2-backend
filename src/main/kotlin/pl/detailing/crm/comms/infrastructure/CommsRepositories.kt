@@ -82,6 +82,30 @@ interface CommMessageRepository : JpaRepository<CommMessageEntity, UUID> {
 
     fun findFirstByThreadIdOrderBySentAtDesc(threadId: UUID): CommMessageEntity?
 
+    /**
+     * Ostatnia wiadomość przychodząca i wychodząca dla każdego z wątków — jednym
+     * zapytaniem dla całej strony listy, zamiast odpytywania wątek po wątku.
+     *
+     * Kolumny: thread_id, last_inbound_at, last_outbound_at (obie mogą być null).
+     * Z tej pary wynika, czyj jest ruch w rozmowie i jak długo już trwa.
+     */
+    @Query(
+        """
+        SELECT m.threadId,
+               MAX(CASE WHEN m.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND
+                        THEN m.sentAt END),
+               MAX(CASE WHEN m.direction = pl.detailing.crm.comms.domain.CommDirection.OUTBOUND
+                        THEN m.sentAt END)
+        FROM CommMessageEntity m
+        WHERE m.studioId = :studioId AND m.threadId IN :threadIds
+        GROUP BY m.threadId
+        """
+    )
+    fun findLastDirectionTimestamps(
+        @Param("studioId") studioId: UUID,
+        @Param("threadIds") threadIds: Collection<UUID>
+    ): List<Array<Any?>>
+
     /** Thread resolution by RFC 5322 ancestry: any known message with one of these ids. */
     @Query(
         """SELECT m FROM CommMessageEntity m
