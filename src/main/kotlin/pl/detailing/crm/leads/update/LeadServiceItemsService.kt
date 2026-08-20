@@ -18,12 +18,19 @@ import java.util.UUID
 /**
  * @param serviceId Pozycja z katalogu; null oznacza pozycję wpisaną ręcznie.
  * @param priceGross Nadpisanie ceny w groszach; null bierze cenę z katalogu.
+ * @param priceNet Netto w groszach — zapamiętywane tylko po to, żeby edytor wyceny
+ *   wrócił do tej samej liczby, którą wpisał człowiek. Suma leada liczy się z brutto.
+ * @param vatRate Stawka VAT w procentach; -1 to „zwolniony".
+ * @param note Uwaga do pozycji.
  */
 data class LeadServiceItemInput(
     val serviceId: UUID?,
     val name: String?,
     val priceGross: Long?,
-    val quantity: Int = 1
+    val quantity: Int = 1,
+    val priceNet: Long? = null,
+    val vatRate: Int? = null,
+    val note: String? = null
 )
 
 /**
@@ -68,6 +75,9 @@ class LeadServiceItemsService(
                     serviceId = catalogEntry?.id,
                     name = name.take(200),
                     priceGross = price,
+                    priceNet = input.priceNet?.takeIf { it >= 0 },
+                    vatRate = input.vatRate,
+                    note = input.note?.trim()?.takeIf { it.isNotBlank() }?.take(500),
                     quantity = input.quantity
                 )
             )
