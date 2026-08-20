@@ -1,7 +1,12 @@
 package pl.detailing.crm.leads.domain
 
 /**
- * Słownik tagów leada — oś „o co pytają" w analityce.
+ * Zestaw startowy tagów leada — oś „o co pytają" w analityce.
+ *
+ * UWAGA: to nie jest już zamknięta lista. Od V74 tagi żyją w `lead_tag_definitions`
+ * per studio i użytkownik dodaje oraz usuwa je sam; ten enum jest wyłącznie zasiewem
+ * dla nowego studia i punktem odniesienia dla migracji historii. Nic w kodzie nie
+ * powinno zakładać, że tag leada da się sprowadzić do jednej z tych stałych.
  *
  * Zamknięta lista jest ceną tego, że analityka w ogóle działa: swobodnego tekstu nie
  * da się zsumować w odpowiedź na pytanie „o co klienci pytają najczęściej". Tag na

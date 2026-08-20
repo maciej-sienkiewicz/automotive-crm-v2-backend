@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.analytics
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
@@ -53,7 +54,8 @@ data class LostReasonStatDto(
 @Service
 class GetLeadAnalyticsHandler(
     private val leadRepository: LeadRepository,
-    private val tagService: LeadTagService
+    private val tagService: LeadTagService,
+    private val tagCatalog: LeadTagCatalogService
 ) {
 
     @Transactional(readOnly = true)
@@ -69,6 +71,7 @@ class GetLeadAnalyticsHandler(
         // Suma po tematach jest wtedy większa niż liczba leadów i tak ma być:
         // pytanie brzmi „ile razy pytano o ceramikę", a nie „ile leadów istnieje".
         val tagsByLead = tagService.tagsOf(leads.map { it.id })
+        val tagLabels = tagCatalog.labelsByCode(studioId)
         val categories = leads
             .flatMap { lead ->
                 val tags = tagsByLead[lead.id].orEmpty()
@@ -81,8 +84,8 @@ class GetLeadAnalyticsHandler(
                     it.status in setOf(LeadStatus.COMPLETED, LeadStatus.LOST, LeadStatus.NO_SHOW)
                 }
                 CategoryStatDto(
-                    code = tag?.name,
-                    label = tag?.label ?: "Bez tagu",
+                    code = tag,
+                    label = tag?.let { tagLabels[it] ?: it } ?: "Bez tagu",
                     count = group.size,
                     completed = groupCompleted,
                     conversionRate = ratio(groupCompleted, groupClosed)

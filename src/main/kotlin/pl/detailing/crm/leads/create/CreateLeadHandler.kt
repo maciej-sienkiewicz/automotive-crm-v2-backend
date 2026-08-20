@@ -10,7 +10,6 @@ import pl.detailing.crm.leads.domain.Lead
 import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.update.LeadStatusService
 import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.CustomerId
@@ -86,7 +85,7 @@ class CreateLeadHandler(
             // notatka głosowa) przyjmuje kategorię. Kody są wspólne, więc zapisujemy ją
             // także jako tag — inaczej lead spoza poczty wypadałby ze statystyk.
             command.category?.let { category ->
-                LeadTag.fromCode(category.name)?.let { tagService.replaceTags(saved.id, listOf(it)) }
+                tagService.replaceTags(saved.id, listOf(category.name))
             }
             saved
         }!!

@@ -3,6 +3,7 @@ package pl.detailing.crm.leads
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -14,19 +15,21 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.leads.analytics.GetLeadAnalyticsHandler
 import pl.detailing.crm.leads.analytics.LeadAnalyticsDto
-import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.delete.DeleteLeadHandler
 import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.domain.LeadLostReason
+import pl.detailing.crm.leads.query.DictionaryEntryDto
 import pl.detailing.crm.leads.query.LeadDictionariesDto
 import pl.detailing.crm.leads.query.LeadDto
 import pl.detailing.crm.leads.query.LeadPageDto
 import pl.detailing.crm.leads.query.LeadQueryHandlers
 import pl.detailing.crm.leads.query.LeadStatusHistoryDto
 import pl.detailing.crm.leads.query.leadDictionaries
+import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
 import pl.detailing.crm.leads.update.UpdateLeadHandlers
 import pl.detailing.crm.role.domain.Permission
@@ -53,7 +56,7 @@ data class LeadServiceItemRequest(
 )
 
 data class MarkThreadAsLeadRequest(
-    /** Kody z LeadTag — wiele na leada, bo jedno zapytanie potrafi dotyczyć kilku usług. */
+    /** Kody ze słownika tagów studia — wiele na leada, bo jedno zapytanie potrafi dotyczyć kilku usług. */
     val tags: List<String> = emptyList(),
     val services: List<LeadServiceItemRequest> = emptyList()
 )
@@ -74,6 +77,9 @@ data class UpdateLeadRequest(
 
 data class AssignLeadCustomerRequest(val customerId: String)
 
+/** Nowy tag w słowniku studia; kod nadaje backend, użytkownik podaje samą nazwę. */
+data class CreateLeadTagRequest(val label: String)
+
 /** Ręczna korekta pojazdu; puste pola czyszczą rozpoznanie. */
 data class UpdateLeadVehicleRequest(val vehicleBrand: String?, val vehicleModel: String?)
 
@@ -91,6 +97,8 @@ class LeadsController(
     private val createLeadHandler: CreateLeadHandler,
     private val markThreadAsLeadHandler: MarkThreadAsLeadHandler,
     private val updateHandlers: UpdateLeadHandlers,
+    private val deleteLeadHandler: DeleteLeadHandler,
+    private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler
 ) {
 
@@ -108,7 +116,34 @@ class LeadsController(
     }
 
     @GetMapping("/dictionaries")
-    fun dictionaries(): ResponseEntity<LeadDictionariesDto> = ResponseEntity.ok(leadDictionaries())
+    fun dictionaries(): ResponseEntity<LeadDictionariesDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            leadDictionaries(
+                tagCatalog.listActive(principal.studioId).map { DictionaryEntryDto(it.code, it.label) }
+            )
+        )
+    }
+
+    /** Nowy tag w słowniku — od razu widoczny w oknie „Oznacz jako lead". */
+    @PostMapping("/tags")
+    fun createTag(@RequestBody request: CreateLeadTagRequest): ResponseEntity<DictionaryEntryDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val created = tagCatalog.create(principal.studioId, request.label)
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(DictionaryEntryDto(created.code, created.label))
+    }
+
+    /**
+     * Usunięcie tagu ze słownika. Leady, które go mają, zachowują go w historii —
+     * znika tylko z listy wyboru, żeby statystyki sprzed usunięcia dały się czytać.
+     */
+    @DeleteMapping("/tags/{code}")
+    fun deleteTag(@PathVariable code: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        tagCatalog.archive(principal.studioId, code)
+        return ResponseEntity.noContent().build()
+    }
 
     @GetMapping("/analytics")
     fun analytics(
@@ -169,7 +204,7 @@ class LeadsController(
                 threadId = UUID.fromString(threadId),
                 userId = principal.userId.value,
                 userName = principal.fullName,
-                tags = request.tags.map(::parseTag),
+                tags = tagCatalog.validate(principal.studioId, request.tags),
                 services = request.services.map { it.toInput() }
             )
         )
@@ -235,6 +270,14 @@ class LeadsController(
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
     }
 
+    /** Usunięcie leada — pomyłka, duplikat, test. Korespondencja zostaje w skrzynce. */
+    @DeleteMapping("/{id}")
+    fun delete(@PathVariable id: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        deleteLeadHandler.handle(principal.studioId, UUID.fromString(id))
+        return ResponseEntity.noContent().build()
+    }
+
     @PutMapping("/{id}/customer")
     fun assignCustomer(
         @PathVariable id: String,
@@ -263,9 +306,6 @@ class LeadsController(
         runCatching { LeadCategory.valueOf(value) }.getOrElse {
             throw ValidationException("Nieznana kategoria zapytania: $value")
         }
-
-    private fun parseTag(value: String): LeadTag =
-        LeadTag.fromCode(value) ?: throw ValidationException("Nieznany tag zapytania: $value")
 
     private fun parseLostReason(value: String): LeadLostReason =
         runCatching { LeadLostReason.valueOf(value) }.getOrElse {

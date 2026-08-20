@@ -6,6 +6,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.leads.query.LeadDto
 import pl.detailing.crm.leads.query.toDto
+import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
@@ -18,7 +19,8 @@ import pl.detailing.crm.shared.StudioId
 class LeadSnapshotService(
     private val leadRepository: LeadRepository,
     private val itemRepository: LeadServiceItemRepository,
-    private val tagService: LeadTagService
+    private val tagService: LeadTagService,
+    private val tagCatalog: LeadTagCatalogService
 ) {
 
     @Transactional(readOnly = true)
@@ -28,7 +30,8 @@ class LeadSnapshotService(
         // jeden do jednego, więc brak tagów kasowałby je na ekranie po każdej zmianie.
         return lead.toDto(
             itemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id),
-            tagService.tagsOf(lead.id)
+            tagService.tagsOf(lead.id),
+            tagCatalog.labelsByCode(studioId)
         )
     }
 }

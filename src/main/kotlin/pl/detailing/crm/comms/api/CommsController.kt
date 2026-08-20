@@ -18,8 +18,13 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.comms.engine.CommsReadService
 import pl.detailing.crm.comms.engine.ImapSyncEngine
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
+import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.comms.insights.ContactInsightsDto
 import pl.detailing.crm.comms.insights.GetContactInsightsHandler
+import pl.detailing.crm.comms.notes.ContactNoteDto
+import pl.detailing.crm.comms.notes.ContactNoteEventDto
+import pl.detailing.crm.comms.notes.ContactNoteService
+import pl.detailing.crm.comms.notes.ContactNotesDto
 import pl.detailing.crm.comms.send.SendMailCommand
 import pl.detailing.crm.comms.send.SendMailHandler
 import pl.detailing.crm.comms.proofread.MailProofreadService
@@ -57,6 +62,19 @@ data class SetThreadLabelRequest(val labelId: String?)
 
 data class SetThreadArchivedRequest(val archived: Boolean)
 
+data class ContactNoteRequest(val body: String)
+
+/**
+ * Dwie liczby do plakietek w nagłówku rozmowy: ile jeszcze wątków mamy z tym adresem
+ * i ile jest o nim notatek. Osobno od /insights, bo nagłówek rysuje się przy każdej
+ * zmianie wątku, a insights ciągnie wizyty, rezerwacje i leady.
+ */
+data class ThreadContactBadgesDto(
+    val email: String,
+    val otherThreadCount: Long,
+    val noteCount: Long
+)
+
 /**
  * Webmail API: threads, messages, sending, attachments, local folders, insights.
  * Mailbox onboarding (detect/connect/disconnect) stays in MailboxController — that
@@ -70,6 +88,8 @@ class CommsController(
     private val readService: CommsReadService,
     private val sendMailHandler: SendMailHandler,
     private val insightsHandler: GetContactInsightsHandler,
+    private val noteService: ContactNoteService,
+    private val threadRepository: CommThreadRepository,
     private val signatureService: UserMailSignatureService,
     private val proofreadService: MailProofreadService,
     private val attachmentRepository: CommAttachmentRepository,
@@ -287,5 +307,79 @@ class CommsController(
     ): ResponseEntity<ContactInsightsDto> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(insightsHandler.handle(principal.studioId, email, threadId))
+    }
+
+    @GetMapping("/threads/{id}/contact-badges")
+    fun threadContactBadges(@PathVariable id: String): ResponseEntity<ThreadContactBadgesDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val thread = threadRepository.findByIdAndStudioId(UUID.fromString(id), principal.studioId.value)
+            ?: throw NotFoundException("Nie znaleziono wątku")
+        val email = thread.participantEmail
+        val total = threadRepository.countByStudioIdAndParticipantEmail(principal.studioId.value, email)
+        return ResponseEntity.ok(
+            ThreadContactBadgesDto(
+                email = email,
+                // „Inne" znaczy inne niż otwarty — bieżący wątek zawsze siedzi w tej sumie.
+                otherThreadCount = (total - 1).coerceAtLeast(0),
+                noteCount = noteService.count(principal.studioId, email)
+            )
+        )
+    }
+
+    @GetMapping("/notes")
+    fun notes(@RequestParam email: String): ResponseEntity<ContactNotesDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(noteService.list(principal.studioId, email))
+    }
+
+    @GetMapping("/notes/history")
+    fun noteHistory(@RequestParam email: String): ResponseEntity<List<ContactNoteEventDto>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(noteService.history(principal.studioId, email))
+    }
+
+    @PostMapping("/notes")
+    fun createNote(
+        @RequestParam email: String,
+        @RequestBody request: ContactNoteRequest
+    ): ResponseEntity<ContactNoteDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val note = noteService.create(
+            studioId = principal.studioId,
+            rawEmail = email,
+            rawBody = request.body,
+            actorId = principal.userId.value,
+            actorName = principal.fullName
+        )
+        return ResponseEntity.status(HttpStatus.CREATED).body(note)
+    }
+
+    @PutMapping("/notes/{noteId}")
+    fun updateNote(
+        @PathVariable noteId: String,
+        @RequestBody request: ContactNoteRequest
+    ): ResponseEntity<ContactNoteDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            noteService.update(
+                studioId = principal.studioId,
+                noteId = UUID.fromString(noteId),
+                rawBody = request.body,
+                actorId = principal.userId.value,
+                actorName = principal.fullName
+            )
+        )
+    }
+
+    @DeleteMapping("/notes/{noteId}")
+    fun deleteNote(@PathVariable noteId: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        noteService.delete(
+            studioId = principal.studioId,
+            noteId = UUID.fromString(noteId),
+            actorId = principal.userId.value,
+            actorName = principal.fullName
+        )
+        return ResponseEntity.noContent().build()
     }
 }
