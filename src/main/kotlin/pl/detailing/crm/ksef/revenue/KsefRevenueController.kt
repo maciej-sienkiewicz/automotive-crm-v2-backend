@@ -425,6 +425,7 @@ class KsefRevenueController(
             note               = note,
             excluded           = isExcluded,
             excludedAt         = excludedAt,
+            detailsSynced      = hasCompleteDetails,
             ksefVerificationUrl = qrCodeUrlBuilder.buildInvoiceVerificationUrl(
                 sellerNip   = sellerNip,
                 issueDate   = issueDate,
@@ -560,6 +561,12 @@ data class RevenueInvoiceResponse(
     /** Ukryta ręcznie ze statystyk i z domyślnej listy dokumentów. */
     val excluded: Boolean,
     val excludedAt: Instant?,
+    /**
+     * Czy faktura ma już pobrane szczegóły z XML (pozycje, adresy, płatność).
+     * false tylko dla faktur pobranych z KSeF, którym XML dołoży synchronizacja
+     * wsteczna — UI mówi wtedy „uzupełnimy", zamiast udawać, że pozycji nie ma.
+     */
+    val detailsSynced: Boolean,
     /**
      * Adres weryfikacyjny KSeF („KOD I") do wystawienia jako kod QR na wizualizacji
      * faktury. null, gdy faktura nie ma jeszcze skrótu dokumentu (np. przed wysyłką).

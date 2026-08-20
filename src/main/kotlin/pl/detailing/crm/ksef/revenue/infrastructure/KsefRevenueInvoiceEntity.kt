@@ -73,7 +73,7 @@ class KsefRevenueInvoiceEntity(
     val issueDate: LocalDate,
 
     @Column(name = "sale_date")
-    val saleDate: LocalDate? = null,
+    var saleDate: LocalDate? = null,
 
     // ── Sprzedawca: snapshot danych studia z chwili wystawienia ────────────────
 
@@ -84,16 +84,16 @@ class KsefRevenueInvoiceEntity(
     val sellerName: String? = null,
 
     @Column(name = "seller_address_line1", length = 500)
-    val sellerAddressLine1: String? = null,
+    var sellerAddressLine1: String? = null,
 
     @Column(name = "seller_address_line2", length = 500)
-    val sellerAddressLine2: String? = null,
+    var sellerAddressLine2: String? = null,
 
     @Column(name = "seller_country_code", length = 2, columnDefinition = "VARCHAR(2) DEFAULT 'PL'")
     val sellerCountryCode: String = "PL",
 
     @Column(name = "seller_bank_account", length = 40)
-    val sellerBankAccount: String? = null,
+    var sellerBankAccount: String? = null,
 
     // ── Nabywca: B2B (NIP) lub B2C (buyerNip == null → BrakID=1 w FA(3)) ──────
 
@@ -104,10 +104,10 @@ class KsefRevenueInvoiceEntity(
     val buyerName: String? = null,
 
     @Column(name = "buyer_address_line1", length = 500)
-    val buyerAddressLine1: String? = null,
+    var buyerAddressLine1: String? = null,
 
     @Column(name = "buyer_address_line2", length = 500)
-    val buyerAddressLine2: String? = null,
+    var buyerAddressLine2: String? = null,
 
     @Column(name = "buyer_country_code", length = 2, columnDefinition = "VARCHAR(2) DEFAULT 'PL'")
     val buyerCountryCode: String = "PL",
@@ -133,13 +133,13 @@ class KsefRevenueInvoiceEntity(
 
     /** PaymentForm.name (GOTOWKA / KARTA / PRZELEW / …). */
     @Column(name = "payment_form", length = 20)
-    val paymentForm: String? = null,
+    var paymentForm: String? = null,
 
     @Column(name = "payment_status", nullable = false, length = 10, columnDefinition = "VARCHAR(10) DEFAULT 'PENDING'")
     var paymentStatus: String = "PENDING",
 
     @Column(name = "payment_due_date")
-    val paymentDueDate: LocalDate? = null,
+    var paymentDueDate: LocalDate? = null,
 
     @Column(name = "paid_at")
     var paidAt: Instant? = null,
@@ -166,6 +166,18 @@ class KsefRevenueInvoiceEntity(
     /** SHA-256 (Base64) wysłanego XML — do linku weryfikacyjnego / kodu QR. */
     @Column(name = "invoice_hash", length = 100)
     var invoiceHash: String? = null,
+
+    /**
+     * Czy dokument ma komplet danych z XML (pozycje, adresy stron, płatność).
+     *
+     * Faktura wystawiona w CRM ma je od razu — XML budujemy sami. Faktura pobrana
+     * z KSeF przychodzi najpierw jako metadane (kwoty zbiorcze i strony); XML
+     * pobieramy osobnym żądaniem, objętym ostrym limitem, więc gdy limit się
+     * wyczerpie, rekord zostaje z details_synced = FALSE i szczegóły uzupełnia
+     * synchronizacja wsteczna w kolejnym cyklu.
+     */
+    @Column(name = "details_synced", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    var detailsSynced: Boolean = true,
 
     // ── Diagnostyka wysyłki ────────────────────────────────────────────────────
 
@@ -221,6 +233,13 @@ class KsefRevenueInvoiceEntity(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
 ) {
+    /**
+     * Czy dokument da się pokazać w całości. Faktura wystawiona w CRM ma komplet
+     * z definicji — XML i pozycje powstają razem z nią — niezależnie od tego, co
+     * mówi flaga sterująca pobieraniem XML z KSeF.
+     */
+    val hasCompleteDetails: Boolean get() = detailsSynced || source == RevenueSource.CRM
+
     /** Ukryta ręcznie przez użytkownika — poza statystykami i domyślną listą. */
     val isExcluded: Boolean get() = excludedAt != null
 
@@ -230,6 +249,35 @@ class KsefRevenueInvoiceEntity(
      */
     fun countsTowardsStatistics(): Boolean =
         duplicateStatus != DuplicateStatus.CONFIRMED_DUPLICATE && !isExcluded
+
+    /**
+     * Uzupełnia fakturę EXTERNAL danymi z XML pobranego z KSeF. Nadpisujemy wyłącznie
+     * puste pola: metadane bywają dokładniejsze dla stron (znormalizowany NIP), a pola
+     * sterowane przez użytkownika — status płatności, notatka, ukrycie — nie są
+     * przedmiotem synchronizacji i muszą przetrwać każdy backfill.
+     */
+    fun applyXmlDetails(
+        saleDate: LocalDate?,
+        sellerAddressLine1: String?,
+        sellerAddressLine2: String?,
+        buyerAddressLine1: String?,
+        buyerAddressLine2: String?,
+        bankAccount: String?,
+        paymentForm: String?,
+        paymentDueDate: LocalDate?,
+        now: Instant = Instant.now()
+    ) {
+        this.saleDate           = this.saleDate ?: saleDate
+        this.sellerAddressLine1 = this.sellerAddressLine1 ?: sellerAddressLine1
+        this.sellerAddressLine2 = this.sellerAddressLine2 ?: sellerAddressLine2
+        this.buyerAddressLine1  = this.buyerAddressLine1 ?: buyerAddressLine1
+        this.buyerAddressLine2  = this.buyerAddressLine2 ?: buyerAddressLine2
+        this.sellerBankAccount  = this.sellerBankAccount ?: bankAccount
+        this.paymentForm        = this.paymentForm ?: paymentForm
+        this.paymentDueDate     = this.paymentDueDate ?: paymentDueDate
+        this.detailsSynced      = true
+        this.updatedAt          = now
+    }
 
     fun markExcluded(userId: UUID?, now: Instant = Instant.now()) {
         excludedAt = now
