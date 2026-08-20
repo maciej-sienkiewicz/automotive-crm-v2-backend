@@ -62,9 +62,11 @@ class GetCustomerDetailHandler(
                 currency = "PLN"
             )
 
-            // Step 4: Calculate vehicle count
-            val vehicleOwners = vehicleOwnerRepository.findByCustomerId(command.customerId.value)
-            val vehicleCount = vehicleOwners.size
+            // Step 4: Calculate vehicle count (bez pojazdów usuniętych)
+            val vehicleCount = vehicleOwnerRepository.countActiveVehiclesByCustomerId(
+                customerId = command.customerId.value,
+                studioId = command.studioId.value
+            ).toInt()
 
             // Step 5: Get marketing consents
             val activeDefinitions = consentDefinitionRepository.findActiveByStudioId(

@@ -53,9 +53,11 @@ class GetCustomerByIdHandler(
                 currency = "PLN"
             )
 
-            // Calculate vehicle count
-            val vehicleOwners = vehicleOwnerRepository.findByCustomerId(command.customerId.value)
-            val vehicleCount = vehicleOwners.size
+            // Calculate vehicle count (bez pojazdów usuniętych)
+            val vehicleCount = vehicleOwnerRepository.countActiveVehiclesByCustomerId(
+                customerId = command.customerId.value,
+                studioId = command.studioId.value
+            ).toInt()
 
             // Load notes
             val notes = customerNoteRepository
