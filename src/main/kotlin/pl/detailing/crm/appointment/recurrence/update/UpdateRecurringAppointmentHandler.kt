@@ -9,6 +9,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentLineItemEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.appointment.recurrence.infrastructure.RecurrenceSeriesRepository
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadQuoteSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -42,7 +43,8 @@ data class UpdateRecurringAppointmentResult(
 class UpdateRecurringAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val leadQuoteSync: LeadQuoteSyncService
 ) {
 
     @Transactional
@@ -123,6 +125,10 @@ class UpdateRecurringAppointmentHandler(
 
             val updatedCount = toSave.size
             appointmentRepository.saveAll(toSave)
+
+            // Lead wskazuje jedną rezerwację z serii; przelot po całej liście trafia
+            // w tę właściwą, a dla pozostałych jest niczym.
+            toSave.forEach { leadQuoteSync.pullFromAppointment(it) }
 
             auditService.log(LogAuditCommand(
                 studioId = command.studioId,

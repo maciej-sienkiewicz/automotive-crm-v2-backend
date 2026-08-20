@@ -13,6 +13,7 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.appointment.LeadQuoteSyncService
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.Vehicle
@@ -32,7 +33,8 @@ class UpdateAppointmentHandler(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val serviceRepository: ServiceRepository,
     private val auditService: AuditService,
-    private val vehicleResolver: AppointmentVehicleResolver
+    private val vehicleResolver: AppointmentVehicleResolver,
+    private val leadQuoteSync: LeadQuoteSyncService
 ) {
 
     @Transactional
@@ -161,6 +163,12 @@ class UpdateAppointmentHandler(
 
         // Step 7: Persist Appointment
         appointmentRepository.save(existingEntity)
+
+        // Rezerwacja założona z leada niesie tę samą wycenę — usługa dopisana tutaj
+        // należy do tej samej rozmowy co reszta, a lead pokazywałby bez tego kwotę
+        // sprzed niej i zaniżał wartość zamkniętego zapytania. No-op, gdy rezerwacja
+        // nie pochodzi z leada.
+        leadQuoteSync.pullFromAppointment(existingEntity)
 
         val updatedDomain = existingEntity.toDomain()
 
