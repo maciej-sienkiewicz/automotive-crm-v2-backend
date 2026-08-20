@@ -126,6 +126,11 @@ class SecurityConfig(
                 // Personal signature drawing from the user's own phone — authenticated by
                 // the unguessable, TTL-bound link token sent to the user's own number
                 auth.requestMatchers("/api/public/user-signature/**").permitAll()
+                // Formularze leadów ze stron studiów — wywoływane przez wtyczkę formularza
+                // (WordPress, Tally, Make), która nie ma i nie będzie mieć sesji.
+                // Uwierzytelnia nieodgadywalny token w adresie; każde zgłoszenie trafia
+                // do dziennika doręczeń razem z surowym ładunkiem.
+                auth.requestMatchers("/api/public/lead-forms/**").permitAll()
                 // Platform metrics console — cross-tenant by design, so it deliberately does
                 // NOT use the studio session identity. Authenticated by the X-Platform-Key
                 // shared secret in PlatformAccessInterceptor, which fails closed when no key
