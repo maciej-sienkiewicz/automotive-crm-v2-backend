@@ -107,6 +107,9 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     /**
      * Lista z opcjonalnymi filtrami. Native query z jawnymi CAST-ami — jak w
      * KsefInvoiceRepository — żeby nullowalne parametry nie wysypywały PostgreSQL.
+     *
+     * Faktury ukryte ręcznie (excluded_at) są domyślnie niewidoczne — pokazuje je
+     * dopiero includeExcluded = true, tak samo jak po stronie dokumentów kosztowych.
      */
     @Query(
         value = """
@@ -117,6 +120,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
           AND (CAST(:duplicateStatus AS text) IS NULL OR i.duplicate_status = CAST(:duplicateStatus AS text))
           AND (CAST(:dateFrom AS date)   IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date)   IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
+          AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)
         ORDER BY i.issue_date DESC, i.created_at DESC
     """, countQuery = """
         SELECT COUNT(*) FROM ksef_revenue_invoices i
@@ -126,6 +130,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
           AND (CAST(:duplicateStatus AS text) IS NULL OR i.duplicate_status = CAST(:duplicateStatus AS text))
           AND (CAST(:dateFrom AS date)   IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date)   IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
+          AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)
     """, nativeQuery = true
     )
     fun findWithFilters(
@@ -135,6 +140,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         @Param("duplicateStatus") duplicateStatus: String?,
         @Param("dateFrom") dateFrom: LocalDate?,
         @Param("dateTo") dateTo: LocalDate?,
+        @Param("includeExcluded") includeExcluded: Boolean,
         pageable: Pageable
     ): Page<KsefRevenueInvoiceEntity>
 
@@ -144,7 +150,8 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
      * Miesięczny rozkład przychodów. Liczą się faktury istniejące w KSeF
      * (ACCEPTED — dla CRM i EXTERNAL) oraz będące w drodze (SUBMITTED/QUEUED_RETRY,
      * wystawione w trybie offline24 — prawnie wystawione). Wyklucza REJECTED
-     * i potwierdzone duplikaty. Korekty (KOR) liczone osobno — kwoty korekt niosą znak.
+     * i potwierdzone duplikaty oraz faktury ukryte ręcznie ze statystyk.
+     * Korekty (KOR) liczone osobno — kwoty korekt niosą znak.
      *
      * Kolumny: month_label, gross, net, vat, invoice_count, correction_count, external_count
      */
@@ -162,6 +169,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         WHERE i.studio_id = :studioId
           AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
+          AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
           AND i.issue_date <  CAST(:dateTo   AS date)
         GROUP BY DATE_TRUNC('month', i.issue_date)
@@ -188,6 +196,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         WHERE i.studio_id = :studioId
           AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
+          AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
           AND i.issue_date <  CAST(:dateTo   AS date)
     """, nativeQuery = true
@@ -205,7 +214,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
      * Korekty (KOR) niosą kwoty ze znakiem, więc korekta do zera realnie zeruje
      * przychód z faktury pierwotnej. Filtry statusów są te same co w statystykach:
      * liczy się dokument istniejący w KSeF lub będący w drodze (offline24),
-     * z pominięciem odrzuconych i potwierdzonych duplikatów.
+     * z pominięciem odrzuconych, potwierdzonych duplikatów i faktur ukrytych ręcznie.
      *
      * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumGross],
      * żeby obie strony sumy mówiły o tym samym okresie.
@@ -218,6 +227,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
           AND i.payment_status = CAST(:paymentStatus AS text)
           AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
+          AND i.excluded_at IS NULL
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
     """, nativeQuery = true

@@ -199,6 +199,19 @@ class KsefRevenueInvoiceEntity(
     @Column(name = "note", columnDefinition = "TEXT")
     var note: String? = null,
 
+    // ── Ukrycie ze statystyk ───────────────────────────────────────────────────
+
+    /**
+     * Znacznik ukrycia dokumentu przez użytkownika (odpowiednik statusu EXCLUDED
+     * po stronie dokumentów kosztowych). Rekord zostaje w bazie — ledger KSeF musi
+     * pozostać kompletny — ale wypada ze statystyk i z domyślnej listy.
+     */
+    @Column(name = "excluded_at")
+    var excludedAt: Instant? = null,
+
+    @Column(name = "excluded_by")
+    var excludedBy: UUID? = null,
+
     @Column(name = "created_by")
     val createdBy: UUID? = null,
 
@@ -208,8 +221,27 @@ class KsefRevenueInvoiceEntity(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
 ) {
-    /** Faktura liczy się do statystyk, o ile nie została potwierdzona jako duplikat. */
-    fun countsTowardsStatistics(): Boolean = duplicateStatus != DuplicateStatus.CONFIRMED_DUPLICATE
+    /** Ukryta ręcznie przez użytkownika — poza statystykami i domyślną listą. */
+    val isExcluded: Boolean get() = excludedAt != null
+
+    /**
+     * Faktura liczy się do statystyk, o ile nie została potwierdzona jako duplikat
+     * ani ręcznie ukryta.
+     */
+    fun countsTowardsStatistics(): Boolean =
+        duplicateStatus != DuplicateStatus.CONFIRMED_DUPLICATE && !isExcluded
+
+    fun markExcluded(userId: UUID?, now: Instant = Instant.now()) {
+        excludedAt = now
+        excludedBy = userId
+        updatedAt = now
+    }
+
+    fun markRestored(now: Instant = Instant.now()) {
+        excludedAt = null
+        excludedBy = null
+        updatedAt = now
+    }
 
     fun markSending(now: Instant = Instant.now()) {
         ksefStatus = KsefRevenueStatus.SENDING

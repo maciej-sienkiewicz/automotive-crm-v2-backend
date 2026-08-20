@@ -68,6 +68,9 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
      * faktury, a to on niesie korekty. Liczenie obu stron dawałoby podwójny
      * przychód i ignorowałoby korekty. Kolumna dotyczy wyłącznie kierunku INCOME,
      * więc dla EXPENSE warunek jest bezskutkowy.
+     *
+     * Dokumenty ukryte ręcznie (excludedAt) nie wchodzą do sum — o to chodzi
+     * w ukrywaniu: pozycja znika ze statystyk, zostając w bazie.
      */
     @Query("""
         SELECT COALESCE(SUM(d.totalGross), 0) FROM FinancialDocumentEntity d
@@ -75,6 +78,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.direction = :direction
           AND d.status    = :status
           AND d.deletedAt IS NULL
+          AND d.excludedAt IS NULL
           AND d.ksefRevenueInvoiceId IS NULL
           AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
           AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
@@ -92,6 +96,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
         WHERE d.studioId  = :studioId
           AND d.status    = 'OVERDUE'
           AND d.deletedAt IS NULL
+          AND d.excludedAt IS NULL
           AND (:direction IS NULL OR d.direction = :direction)
     """)
     fun countOverdue(studioId: UUID, direction: DocumentDirection?): Long
@@ -122,6 +127,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.direction  = 'INCOME'
           AND d.status     = 'PAID'
           AND d.deleted_at IS NULL
+          AND d.excluded_at IS NULL
           AND (CAST(:documentType AS text) IS NULL OR d.document_type = CAST(:documentType AS text))
           AND (CAST(:dateFrom AS text) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS text) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
