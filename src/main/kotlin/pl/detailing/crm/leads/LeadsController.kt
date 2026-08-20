@@ -112,12 +112,21 @@ class LeadsController(
     fun list(
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) query: String?,
+        /** true = tylko leady, w których ostatnie słowo należy do klienta. */
+        @RequestParam(defaultValue = "false") awaitingReply: Boolean,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "25") pageSize: Int
     ): ResponseEntity<LeadPageDto> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(
-            queryHandlers.list(principal.studioId, status?.let(::parseStatus), query, page, pageSize)
+            queryHandlers.list(
+                principal.studioId,
+                status?.let(::parseStatus),
+                query,
+                awaitingReply,
+                page,
+                pageSize
+            )
         )
     }
 
