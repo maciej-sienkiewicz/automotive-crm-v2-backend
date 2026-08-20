@@ -80,6 +80,21 @@ class LeadFormMappingTest {
     }
 
     @Test
+    fun `nazwa formularza nie moze podszyc sie pod imie klienta`() {
+        // Regresja z prawdziwego przebiegu: `formName` po normalizacji zawiera „name”,
+        // więc słownik brał nazwę formularza za imię — a że w ładunku Tally stoi PRZED
+        // właściwym polem, prawdziwe nazwisko przepadało pod putIfAbsent.
+        val form = map(
+            """{"formName":"Wycena detailingu","data":{"fields":[
+                 {"label":"Imię i nazwisko","value":"Tomasz Rak"},
+                 {"label":"E-mail","value":"tomek@example.com"}]}}""",
+            contentType = "application/json"
+        )
+
+        assertEquals("Tomasz Rak", form[LeadFormField.NAME])
+    }
+
+    @Test
     fun `pola nierozpoznane zostaja, zeby trafic do tresci zapytania`() {
         val form = map(
             """{"email":"jan@example.com","Skąd o nas wiesz":"Instagram",
