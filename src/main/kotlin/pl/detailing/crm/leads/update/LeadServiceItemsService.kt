@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.update
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.appointment.LeadQuoteSyncService
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
@@ -43,6 +44,7 @@ class LeadServiceItemsService(
     private val itemRepository: LeadServiceItemRepository,
     private val leadRepository: LeadRepository,
     private val serviceRepository: ServiceRepository,
+    private val quoteSync: LeadQuoteSyncService,
     private val eventPublisher: ApplicationEventPublisher
 ) {
 
@@ -87,6 +89,11 @@ class LeadServiceItemsService(
         lead.estimatedValue = total
         lead.updatedAt = Instant.now()
         leadRepository.save(lead)
+
+        // Lead z terminem ma tę samą listę usług w kalendarzu — poprawka wyceny,
+        // która tam nie dojdzie, to kwota uzgodniona z klientem i niewidoczna dla
+        // tego, kto będzie auto przyjmował.
+        quoteSync.pushToAppointment(lead)
 
         eventPublisher.publishEvent(
             LeadChangedEvent(
