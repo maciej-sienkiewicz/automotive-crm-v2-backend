@@ -85,8 +85,11 @@ class GetVisitDetailHandler(
             .filter { it.status == VisitStatus.COMPLETED }
             .fold(Money.ZERO) { acc, v -> acc.plus(v.calculateTotalNet()) }
 
-        // Count unique vehicles for this customer
-        val vehiclesCount = vehicleOwnerRepository.findByCustomerId(customer.id.value).size
+        // Count unique vehicles for this customer (bez pojazdów usuniętych)
+        val vehiclesCount = vehicleOwnerRepository.countActiveVehiclesByCustomerId(
+            customerId = customer.id.value,
+            studioId = command.studioId.value
+        ).toInt()
 
         val customerStats = CustomerStats(
             totalVisits = totalVisits,

@@ -29,6 +29,15 @@ class ListCustomersHandler(
         withContext(Dispatchers.IO) {
             val customerEntities = resolveCustomerEntities(studioId, query)
 
+            // Liczniki pojazdów jednym zapytaniem: per klient byłoby N+1,
+            // a licznik ma pomijać pojazdy usunięte (soft-delete).
+            val vehicleCounts: Map<UUID, Int> = if (customerEntities.isEmpty()) emptyMap() else {
+                vehicleOwnerRepository.countActiveVehiclesByCustomerIds(
+                    customerIds = customerEntities.map { it.id },
+                    studioId = studioId.value
+                ).associate { it.customerId to it.vehicleCount.toInt() }
+            }
+
             customerEntities.map { entity ->
                 val visits = visitRepository.findByCustomerIdAndStudioId(entity.id, studioId.value)
                 val completedVisits = visits.filter { it.status == VisitStatus.COMPLETED }
@@ -46,8 +55,7 @@ class ListCustomersHandler(
                     }
                 }
 
-                val vehicleOwners = vehicleOwnerRepository.findByCustomerId(entity.id)
-                val vehicleCount = vehicleOwners.size
+                val vehicleCount = vehicleCounts[entity.id] ?: 0
 
                 CustomerListItem(
                     id = entity.id.toString(),
