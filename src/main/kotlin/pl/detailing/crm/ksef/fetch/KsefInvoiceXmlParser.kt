@@ -61,7 +61,9 @@ data class KsefXmlData(
     val seller: KsefXmlParty = KsefXmlParty(),
     val buyer: KsefXmlParty = KsefXmlParty(),
     val payment: KsefXmlPayment = KsefXmlPayment(),
-    val lines: List<KsefXmlLine> = emptyList()
+    val lines: List<KsefXmlLine> = emptyList(),
+    /** Data dokonania dostawy / wykonania usługi (P_6) — nie ma jej w metadanych KSeF. */
+    val saleDate: LocalDate? = null
 ) {
     val paymentForm: PaymentForm? get() = payment.paymentForm
     val sellerName: String? get() = seller.name
@@ -84,6 +86,7 @@ data class KsefXmlData(
  *  - Płatność:        //Platnosc/{FormaPlatnosci,Zaplacono}, //Platnosc/TerminPlatnosci/Termin,
  *                     //Platnosc/RachunekBankowy/NrRB
  *  - Pozycje:         //Fa/FaWiersz (pola P_7, P_8A, P_8B, P_9A, P_11, P_11A, P_12)
+ *  - Data sprzedaży:  //Fa/P_6
  *
  * Parser jest odporny na:
  *  - przestrzenie nazw (wyrażenia local-name() ignorują namespace)
@@ -109,10 +112,12 @@ class KsefInvoiceXmlParser {
             val xpath = XPathFactory.newInstance().newXPath()
 
             KsefXmlData(
-                seller  = parseParty(xpath, doc, "Podmiot1"),
-                buyer   = parseParty(xpath, doc, "Podmiot2"),
-                payment = parsePayment(xpath, doc),
-                lines   = parseLines(xpath, doc)
+                seller   = parseParty(xpath, doc, "Podmiot1"),
+                buyer    = parseParty(xpath, doc, "Podmiot2"),
+                payment  = parsePayment(xpath, doc),
+                lines    = parseLines(xpath, doc),
+                saleDate = extractText(xpath, doc, localNamePath("Fa", "P_6"))
+                    ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             )
         } catch (e: Exception) {
             log.warn("Nie udało się sparsować XML faktury KSeF: {}", e.message)

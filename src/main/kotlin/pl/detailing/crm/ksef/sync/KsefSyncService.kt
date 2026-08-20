@@ -18,9 +18,10 @@ import java.time.ZoneOffset
  * First sync: starts from credentials.createdAt to avoid pulling pre-integration history.
  * Subsequent syncs: starts from (lastExpenseSync - 1h) for reliability against KSeF delays.
  *
- * Each run also performs a backward sync (backfill): invoices fetched before line items
- * and detail data were introduced (details_synced = FALSE) get their missing data pulled
- * from the invoice XML, regardless of the delta window.
+ * Each run also performs a backward sync (backfill), on both sides of the ledger:
+ * invoices stored without their XML details (details_synced = FALSE) get line items,
+ * party addresses and payment data pulled from the invoice XML, regardless of the
+ * delta window. Both sides draw on one shared KSeF request budget.
  */
 @Service
 class KsefSyncService(
@@ -92,12 +93,18 @@ class KsefSyncService(
                 FetchRevenueCommand(studioId = studioId, dateFrom = revenueFrom, dateTo = now, pageSize = PAGE_SIZE)
             )
 
+            // Ta sama synchronizacja wsteczna po stronie przychodów: faktury zewnętrzne
+            // zapisane bez XML (wyczerpany budżet żądań albo pobranie sprzed wdrożenia
+            // tej ścieżki) dostają pozycje i szczegóły płatności
+            val revenueBackfilled = revenueFetchHandler.backfillMissingDetails(studioId)
+
             cursorRepository.save(cursor.toSuccess(now))
             log.info(
                 "KSeF sync done studio={} expenses: fetched={} skipped={} backfilled={} | " +
-                    "revenue: external={} matched={} duplicatesSuspected={}",
+                    "revenue: external={} matched={} duplicatesSuspected={} backfilled={}",
                 studioId, result.fetched, result.skipped, backfilled,
-                revenueResult.fetched, revenueResult.matched, revenueResult.duplicatesSuspected
+                revenueResult.fetched, revenueResult.matched, revenueResult.duplicatesSuspected,
+                revenueBackfilled
             )
         } catch (e: Exception) {
             log.error("KSeF sync FAILED studio={}: {}", studioId, e.message, e)

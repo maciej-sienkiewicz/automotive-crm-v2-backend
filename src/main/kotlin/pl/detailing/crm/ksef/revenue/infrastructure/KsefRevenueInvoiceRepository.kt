@@ -49,6 +49,28 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     fun findByKsefStatusIn(statuses: List<KsefRevenueStatus>): List<KsefRevenueInvoiceEntity>
 
     /**
+     * Faktury pobrane z KSeF, którym brakuje szczegółów z XML (pozycji, adresów,
+     * płatności) — kandydaci synchronizacji wstecznej. Tylko EXTERNAL: faktury
+     * wystawione w CRM mają własny XML i pozycje od chwili wystawienia, więc
+     * pobieranie ich z KSeF byłoby wydawaniem limitu żądań na dane, które już mamy.
+     *
+     * Najnowsze najpierw: świeża faktura jest tą, którą użytkownik zaraz otworzy.
+     */
+    @Query(
+        """
+        SELECT i FROM KsefRevenueInvoiceEntity i
+        WHERE i.studioId = :studioId
+          AND i.source = pl.detailing.crm.ksef.revenue.domain.RevenueSource.EXTERNAL
+          AND i.detailsSynced = false
+        ORDER BY i.issueDate DESC, i.createdAt DESC
+        """
+    )
+    fun findExternalMissingDetails(
+        @Param("studioId") studioId: UUID,
+        pageable: Pageable
+    ): List<KsefRevenueInvoiceEntity>
+
+    /**
      * Najwyższy numer kolejny w serii {PREFIX}/{rok}/{seq} dla danego NIP-u sprzedawcy —
      * podstawa numeracji FV/{rok}/{seq} i FK/{rok}/{seq}.
      *
