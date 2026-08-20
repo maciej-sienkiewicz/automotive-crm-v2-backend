@@ -15,6 +15,8 @@ import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.get.GetAppointmentHandler
 import pl.detailing.crm.appointment.list.AppointmentListItem
 import pl.detailing.crm.appointment.list.ListAppointmentsCommand
+import pl.detailing.crm.appointment.lead.CreateLeadAppointmentCommand
+import pl.detailing.crm.appointment.lead.CreateLeadAppointmentHandler
 import pl.detailing.crm.appointment.list.ListAppointmentsHandler
 import pl.detailing.crm.appointment.recurrence.*
 import pl.detailing.crm.appointment.recurrence.create.*
@@ -54,6 +56,7 @@ class AppointmentController(
     private val sendAppointmentRescheduleConfirmationSmsHandler: SendAppointmentRescheduleConfirmationSmsHandler,
     private val updateAppointmentSmsPreferencesHandler: UpdateAppointmentSmsPreferencesHandler,
     private val createRecurringAppointmentHandler: CreateRecurringAppointmentHandler,
+    private val createLeadAppointmentHandler: CreateLeadAppointmentHandler,
     private val updateRecurringAppointmentHandler: UpdateRecurringAppointmentHandler,
     private val deleteRecurringAppointmentHandler: DeleteRecurringAppointmentHandler,
     private val getRecurrenceSeriesHandler: GetRecurrenceSeriesHandler,
@@ -258,6 +261,58 @@ class AppointmentController(
         )
 
         val result = createAppointmentHandler.handle(command)
+
+        if (request.sendConfirmationSms) {
+            sendBookingConfirmationSmsHandler.handle(
+                SendBookingConfirmationSmsCommand(
+                    appointmentId = result.appointmentId,
+                    studioId = principal.studioId,
+                    force = true
+                )
+            )
+        }
+
+        if (request.sendVisitCard) {
+            sendVisitCardAfterBooking(result.appointmentId, principal.studioId)
+        }
+
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(AppointmentCreateResponse(
+                id = result.appointmentId.toString(),
+                customerId = result.customerId.toString(),
+                vehicleId = result.vehicleId?.toString(),
+                totalNet = result.totalNet.amountInCents,
+                totalGross = result.totalGross.amountInCents,
+                totalVat = result.totalVat.amountInCents
+            ))
+    }
+
+    /**
+     * Rezerwacja zakładana z leada — ten sam kształt żądania co [createAppointment],
+     * różnica jest po zapisie: rezerwacja zostaje powiązana z leadem, a lead przechodzi
+     * w „Rezerwacja". Osobny endpoint, a nie pole w zwykłym tworzeniu, bo powiązanie
+     * musi być atomowe z zapisem: rezerwacja założona, ale nieprzypięta do leada,
+     * zostawiałaby pipeline z zapytaniem, na które ktoś już odpowiedział terminem.
+     */
+    @PostMapping("/from-lead/{leadId}")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun createAppointmentFromLead(
+        @PathVariable leadId: UUID,
+        @RequestBody request: CreateAppointmentRequest
+    ): ResponseEntity<AppointmentCreateResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        requireCommunicationModuleForRequestedNotifications(
+            principal.studioId, request.sendConfirmationSms, request.sendVisitCard, request.sendReminderSms
+        )
+
+        val result = createLeadAppointmentHandler.handle(
+            CreateLeadAppointmentCommand(
+                leadId = LeadId(leadId),
+                base = buildCreateCommand(request, principal)
+            )
+        )
 
         if (request.sendConfirmationSms) {
             sendBookingConfirmationSmsHandler.handle(

@@ -5,7 +5,6 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.appointment.create.CreateAppointmentCommand
 import pl.detailing.crm.appointment.create.CreateAppointmentHandler
 import pl.detailing.crm.appointment.create.CreateAppointmentResult
 import pl.detailing.crm.audit.domain.*
@@ -26,10 +25,11 @@ class CreateLeadAppointmentHandler(
     @Transactional
     suspend fun handle(command: CreateLeadAppointmentCommand): CreateAppointmentResult =
         withContext(Dispatchers.IO) {
+            val base = command.base
             val entity = leadRepository.findById(command.leadId.value)
                 .orElseThrow { EntityNotFoundException("Lead nie został znaleziony: ${command.leadId}") }
 
-            if (entity.studioId != command.studioId.value) {
+            if (entity.studioId != base.studioId.value) {
                 throw ForbiddenException("Lead nie należy do tego studia")
             }
 
@@ -37,28 +37,14 @@ class CreateLeadAppointmentHandler(
                 throw ValidationException("Lead ma już powiązaną rezerwację (appointmentId=${entity.appointmentId})")
             }
 
-            val result = createAppointmentHandler.handle(
-                CreateAppointmentCommand(
-                    studioId = command.studioId,
-                    userId = command.userId,
-                    userName = command.userName,
-                    customer = command.customer,
-                    vehicle = command.vehicle,
-                    services = command.services,
-                    schedule = command.schedule,
-                    appointmentTitle = command.appointmentTitle,
-                    appointmentColorId = command.appointmentColorId,
-                    note = command.note,
-                    sendReminderSms = command.sendReminderSms
-                )
-            )
+            val result = createAppointmentHandler.handle(base)
 
             leadSyncService.linkAppointment(
                 leadEntity = entity,
                 appointmentId = result.appointmentId.value,
-                studioId = command.studioId.value,
-                userId = command.userId.value,
-                userDisplayName = command.userName ?: ""
+                studioId = base.studioId.value,
+                userId = base.userId.value,
+                userDisplayName = base.userName ?: ""
             )
 
             log.info(
@@ -68,16 +54,16 @@ class CreateLeadAppointmentHandler(
 
             auditService.log(
                 LogAuditCommand(
-                    studioId = command.studioId,
-                    userId = command.userId,
-                    userDisplayName = command.userName ?: "",
+                    studioId = base.studioId,
+                    userId = base.userId,
+                    userDisplayName = base.userName ?: "",
                     module = AuditModule.LEAD,
                     entityId = command.leadId.value.toString(),
                     entityDisplayName = entity.customerName,
                     action = AuditAction.LEAD_APPOINTMENT_CREATED,
                     metadata = mapOf(
                         "appointmentId" to result.appointmentId.value.toString(),
-                        "startDateTime" to command.schedule.startDateTime.toString()
+                        "startDateTime" to base.schedule.startDateTime.toString()
                     )
                 )
             )

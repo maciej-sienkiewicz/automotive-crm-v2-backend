@@ -31,7 +31,7 @@ class LeadSyncService(
 ) {
     private val log = LoggerFactory.getLogger(LeadSyncService::class.java)
 
-    /** Called when an appointment is created from a lead (POST /leads/{id}/appointment). */
+    /** Called when an appointment is created from a lead (POST /appointments/from-lead/{leadId}). */
     @Transactional
     fun linkAppointment(
         leadEntity: LeadEntity,

@@ -1,25 +1,18 @@
 package pl.detailing.crm.appointment.lead
 
-import pl.detailing.crm.appointment.create.CustomerIdentity
-import pl.detailing.crm.appointment.create.ScheduleCommand
-import pl.detailing.crm.appointment.create.ServiceLineItemCommand
-import pl.detailing.crm.appointment.create.VehicleIdentity
-import pl.detailing.crm.shared.AppointmentColorId
+import pl.detailing.crm.appointment.create.CreateAppointmentCommand
 import pl.detailing.crm.shared.LeadId
-import pl.detailing.crm.shared.StudioId
-import pl.detailing.crm.shared.UserId
 
+/**
+ * Rezerwacja zakładana z leada.
+ *
+ * Nie powtarzamy tu pól rezerwacji, tylko nosimy gotową [base]: rezerwacja z leada
+ * to ta sama rezerwacja co każda inna — z klientem, pojazdem, wyceną, dojazdem
+ * i notatkami — a jedyne, co ją wyróżnia, to lead, z którym ma zostać powiązana.
+ * Kopia pól rozjeżdżała się z bazową komendą przy każdym nowym polu rezerwacji
+ * i po cichu gubiła to, czego nie przepisano (jak dane door-to-door).
+ */
 data class CreateLeadAppointmentCommand(
     val leadId: LeadId,
-    val studioId: StudioId,
-    val userId: UserId,
-    val userName: String?,
-    val customer: CustomerIdentity,
-    val vehicle: VehicleIdentity,
-    val services: List<ServiceLineItemCommand>,
-    val schedule: ScheduleCommand,
-    val appointmentTitle: String?,
-    val appointmentColorId: AppointmentColorId,
-    val note: String?,
-    val sendReminderSms: Boolean = false
+    val base: CreateAppointmentCommand
 )

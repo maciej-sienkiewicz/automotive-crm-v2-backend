@@ -60,6 +60,15 @@ class MarkThreadAsLeadHandler(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /**
+         * Sufit długości „pierwszej wiadomości". Kolumna jest typu TEXT, ale ta treść
+         * jedzie w każdej odpowiedzi listy leadów — mail z wklejoną ofertą na trzy strony
+         * obciążałby każde otwarcie widoku, a panel i tak pokazuje wycinek.
+         */
+        private const val MAX_INITIAL_MESSAGE_CHARS = 2_000
+    }
+
     @Transactional
     fun handle(command: MarkThreadAsLeadCommand): MarkThreadAsLeadResult {
         val thread = threadRepository.findByIdAndStudioId(command.threadId, command.studioId.value)
@@ -73,12 +82,26 @@ class MarkThreadAsLeadHandler(
             command.studioId.value, thread.participantEmail
         )
 
+        val messages = messageRepository.findByThreadIdOrderBySentAtAsc(thread.id)
+
         // Kolejność zdarzeń bywa odwrotna: najpierw odpisujemy, potem orientujemy się,
         // że to lead. Status ma opisywać stan rozmowy, a nie moment kliknięcia, więc
         // odpowiedź, która już poszła, od razu ustawia „W kontakcie".
-        val ourReply = messageRepository.findByThreadIdOrderBySentAtAsc(thread.id)
-            .lastOrNull { it.direction == CommDirection.OUTBOUND }
+        val ourReply = messages.lastOrNull { it.direction == CommDirection.OUTBOUND }
         val initialStatus = if (ourReply != null) LeadStatus.IN_PROGRESS else LeadStatus.NEW
+
+        // Pierwsza wiadomość klienta, a nie ostatnia w wątku. thread.lastSnippet, którym
+        // pole było wypełniane wcześniej, opisuje najnowszą wiadomość — więc lead oznaczony
+        // po wymianie kilku maili dostawał w „pierwszej wiadomości" naszą własną odpowiedź
+        // („czy odpowiada Panu 2.09?") zamiast pytania, od którego wszystko się zaczęło.
+        val firstInbound = messages.firstOrNull { it.direction == CommDirection.INBOUND }
+        val initialMessage = (
+            firstInbound?.bodyTextClean?.takeIf { it.isNotBlank() }
+                ?: firstInbound?.bodyText?.takeIf { it.isNotBlank() }
+                // Wątek bez wiadomości przychodzącej (rozmowa zaczęta przez nas) nie ma
+                // „pytania klienta" — wtedy snippet wątku to najlepsze, co mamy.
+                ?: thread.lastSnippet
+            )?.trim()?.take(MAX_INITIAL_MESSAGE_CHARS)
 
         val lead = LeadEntity(
             id = UUID.randomUUID(),
@@ -88,7 +111,7 @@ class MarkThreadAsLeadHandler(
             contactIdentifier = thread.participantEmail,
             customerName = thread.participantName
                 ?: customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null } },
-            initialMessage = thread.lastSnippet,
+            initialMessage = initialMessage,
             estimatedValue = 0,
             requiresVerification = false,
             vehicleBrand = null,
