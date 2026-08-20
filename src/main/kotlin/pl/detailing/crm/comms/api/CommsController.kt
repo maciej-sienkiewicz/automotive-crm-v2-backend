@@ -20,6 +20,8 @@ import pl.detailing.crm.comms.engine.CommsReadService
 import pl.detailing.crm.comms.engine.ImapSyncEngine
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
+import pl.detailing.crm.comms.contact.ContactCardDto
+import pl.detailing.crm.comms.contact.GetContactCardHandler
 import pl.detailing.crm.comms.insights.ContactInsightsDto
 import pl.detailing.crm.comms.insights.GetContactInsightsHandler
 import pl.detailing.crm.comms.notes.ContactNoteDto
@@ -90,6 +92,7 @@ class CommsController(
     private val sendMailHandler: SendMailHandler,
     private val insightsHandler: GetContactInsightsHandler,
     private val noteService: ContactNoteService,
+    private val contactCardHandler: GetContactCardHandler,
     private val threadRepository: CommThreadRepository,
     private val signatureService: UserMailSignatureService,
     private val proofreadService: MailProofreadService,
@@ -347,6 +350,16 @@ class CommsController(
             .take(MAX_RELATED_THREADS)
             .map { it.toDto() }
         return ResponseEntity.ok(related)
+    }
+
+    /**
+     * Wizytówka kontaktu spod avatara: kto to jest, kiedy był, czym jeździ.
+     * Osobno od /insights, bo tamto ciągnie także wątki i leady, a chmurka ich nie pokazuje.
+     */
+    @GetMapping("/contact-card")
+    fun contactCard(@RequestParam email: String): ResponseEntity<ContactCardDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(contactCardHandler.handle(principal.studioId, email))
     }
 
     @GetMapping("/notes")
