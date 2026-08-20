@@ -46,12 +46,21 @@ class LeadFieldMapper(private val objectMapper: ObjectMapper) {
             val normalized = normalizeFieldName(field.label)
             // Nazwa z prefiksem („dane.telefon") — próbujemy też samego ogona.
             val tail = normalizeFieldName(field.label.substringAfterLast('.'))
+            // Kolejność jest istotna i kosztowała jednego realnego buga: pole techniczne
+            // odsiewamy PRZED słownikiem. Tally wysyła `formName` (nazwa formularza),
+            // co po normalizacji zawiera „name" — słownik brał to za imię klienta,
+            // a że w ładunku stoi przed właściwym polem, prawdziwe nazwisko przepadało.
+            // Nadpisania użytkownika są wyżej niż odsiew: skoro ktoś wprost wskazał pole,
+            // to wie lepiej niż nasza lista śmieci.
             val target = matchOverride(overrides, normalized, tail)
-                ?: matchDictionary(normalized)
-                ?: matchDictionary(tail)
+                ?: if (isNoise(normalized) || isNoise(tail)) {
+                    return@forEach
+                } else {
+                    matchDictionary(normalized) ?: matchDictionary(tail)
+                }
 
             if (target == null) {
-                if (!isNoise(normalized)) leftovers += field
+                leftovers += field
                 return@forEach
             }
             // Pierwsza wartość wygrywa: formularze potrafią powtórzyć to samo pole
