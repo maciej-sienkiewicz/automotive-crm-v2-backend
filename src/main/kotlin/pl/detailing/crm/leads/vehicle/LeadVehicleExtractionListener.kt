@@ -25,6 +25,15 @@ import java.util.UUID
  * Osobny typ zamiast doklejania pola do NewLeadCreatedEvent — ten drugi jeździ po
  * całej aplikacji (powiadomienia, WebSocket) i nie ma powodu wiedzieć o LLM-ie.
  */
+/**
+ * Lead powstał z gołego tekstu (formularz na stronie), bez wątku w skrzynce.
+ * Rozpoznanie auta jest identyczne — różni się tylko tym, skąd bierzemy tekst.
+ */
+data class LeadTextAttachedEvent(
+    val leadId: UUID,
+    val text: String
+)
+
 data class LeadThreadAttachedEvent(
     val leadId: UUID,
     val threadId: UUID
@@ -77,6 +86,27 @@ class LeadVehicleExtractionListener(
 
         if (vehicle?.brand == null) {
             log.debug("[LEAD_VEHICLE] W wątku {} nie rozpoznano auta", event.threadId)
+            finish(lead, brand = null, model = null)
+            return
+        }
+
+        log.info("[LEAD_VEHICLE] Lead {} — rozpoznano {} {}", lead.id, vehicle.brand, vehicle.model ?: "")
+        finish(lead, brand = vehicle.brand, model = vehicle.model)
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun onLeadTextAttached(event: LeadTextAttachedEvent) {
+        val lead = leadRepository.findById(event.leadId).orElse(null) ?: return
+        if (!lead.vehicleBrand.isNullOrBlank()) {
+            finish(lead, brand = lead.vehicleBrand, model = lead.vehicleModel)
+            return
+        }
+
+        val vehicle = if (event.text.isBlank()) null else runBlocking { extractionService.extract(event.text) }
+        if (vehicle?.brand == null) {
+            log.debug("[LEAD_VEHICLE] W treści leada {} nie rozpoznano auta", event.leadId)
             finish(lead, brand = null, model = null)
             return
         }

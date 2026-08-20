@@ -248,6 +248,7 @@ value class LeadEstimationItemId(val value: UUID) : Serializable {
 enum class LeadSource {
     PHONE,      // Lead from phone call
     EMAIL,      // Lead from email
+    FORM,       // Lead from the studio's website form (lead intake webhook)
     MANUAL      // Manually created lead
 }
 
