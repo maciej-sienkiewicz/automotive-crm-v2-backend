@@ -1,7 +1,6 @@
 package pl.detailing.crm.leads.query
 
 import pl.detailing.crm.leads.domain.LeadLostReason
-import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryEntity
@@ -75,7 +74,9 @@ data class DictionaryEntryDto(val code: String, val label: String)
 
 fun LeadEntity.toDto(
     services: List<LeadServiceItemEntity>,
-    tags: List<LeadTag> = emptyList()
+    tagCodes: List<String> = emptyList(),
+    /** Etykiety ze słownika studia; kod bez definicji wyświetla się sam jako ostatnia deska ratunku. */
+    tagLabels: Map<String, String> = emptyMap()
 ): LeadDto = LeadDto(
     id = id.toString(),
     source = source.name,
@@ -91,8 +92,8 @@ fun LeadEntity.toDto(
     assignedUserId = assignedUserId?.toString(),
     assignedUserName = assignedUserName,
     threadId = threadId?.toString(),
-    tags = tags.map { it.name },
-    tagLabels = tags.map { it.label },
+    tags = tagCodes,
+    tagLabels = tagCodes.map { tagLabels[it] ?: it },
     vehicleBrand = vehicleBrand,
     vehicleModel = vehicleModel,
     vehicleDetectionStatus = vehicleDetectionStatus.name,
@@ -123,7 +124,11 @@ fun LeadStatusHistoryEntity.toDto(): LeadStatusHistoryDto = LeadStatusHistoryDto
     createdAt = createdAt
 )
 
-fun leadDictionaries(): LeadDictionariesDto = LeadDictionariesDto(
-    tags = LeadTag.entries.map { DictionaryEntryDto(it.name, it.label) },
+/**
+ * Tagi przychodzą ze słownika studia (jest edytowalny), powody przegranej wciąż z enuma
+ * — te ostatnie są osią raportu, a nie polem do wpisywania czegokolwiek.
+ */
+fun leadDictionaries(tags: List<DictionaryEntryDto>): LeadDictionariesDto = LeadDictionariesDto(
+    tags = tags,
     lostReasons = LeadLostReason.entries.map { DictionaryEntryDto(it.name, it.label) }
 )

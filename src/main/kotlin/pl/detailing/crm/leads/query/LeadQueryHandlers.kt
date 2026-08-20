@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
+import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.NotFoundException
@@ -17,7 +18,8 @@ class LeadQueryHandlers(
     private val leadRepository: LeadRepository,
     private val itemRepository: LeadServiceItemRepository,
     private val historyRepository: LeadStatusHistoryRepository,
-    private val tagService: LeadTagService
+    private val tagService: LeadTagService,
+    private val tagCatalog: LeadTagCatalogService
 ) {
 
     @Transactional(readOnly = true)
@@ -38,9 +40,10 @@ class LeadQueryHandlers(
         val itemsByLead = itemRepository.findByLeadIdIn(leadIds).groupBy { it.leadId }
         // Tagi całej strony jednym zapytaniem — inaczej lista na 50 leadów robi 50 dodatkowych.
         val tagsByLead = tagService.tagsOf(leadIds)
+        val tagLabels = tagCatalog.labelsByCode(studioId)
         return LeadPageDto(
             items = result.content.map {
-                it.toDto(itemsByLead[it.id].orEmpty(), tagsByLead[it.id].orEmpty())
+                it.toDto(itemsByLead[it.id].orEmpty(), tagsByLead[it.id].orEmpty(), tagLabels)
             },
             total = result.totalElements,
             page = result.number,
@@ -54,7 +57,8 @@ class LeadQueryHandlers(
             ?: throw NotFoundException("Nie znaleziono leada")
         return lead.toDto(
             itemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id),
-            tagService.tagsOf(lead.id)
+            tagService.tagsOf(lead.id),
+            tagCatalog.labelsByCode(studioId)
         )
     }
 

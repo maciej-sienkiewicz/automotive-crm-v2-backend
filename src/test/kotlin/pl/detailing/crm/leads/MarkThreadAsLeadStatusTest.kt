@@ -16,7 +16,6 @@ import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
-import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadServiceItemsService
@@ -76,7 +75,7 @@ class MarkThreadAsLeadStatusTest {
         threadId = threadId,
         userId = UUID.randomUUID(),
         userName = "Jakub",
-        tags = listOf(LeadTag.PPF_WRAP),
+        tags = listOf("PPF_WRAP"),
         services = emptyList()
     )
 
@@ -124,6 +123,6 @@ class MarkThreadAsLeadStatusTest {
 
         val lead = savedLead()
 
-        verify { tagService.replaceTags(lead.id, listOf(LeadTag.PPF_WRAP)) }
+        verify { tagService.replaceTags(lead.id, listOf("PPF_WRAP")) }
     }
 }

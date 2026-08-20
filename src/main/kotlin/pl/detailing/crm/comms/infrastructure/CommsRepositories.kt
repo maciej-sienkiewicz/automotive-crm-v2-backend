@@ -64,6 +64,9 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
         pageable: Pageable
     ): List<CommThreadEntity>
 
+    /** Ile rozmów prowadziliśmy z tym adresem — badge w nagłówku podaje liczbę, nie listę. */
+    fun countByStudioIdAndParticipantEmail(studioId: UUID, participantEmail: String): Long
+
     @Query("SELECT COALESCE(SUM(t.unreadCount), 0) FROM CommThreadEntity t WHERE t.studioId = :studioId AND t.archived = FALSE")
     fun countUnread(@Param("studioId") studioId: UUID): Long
 }

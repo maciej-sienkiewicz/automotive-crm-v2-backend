@@ -8,7 +8,6 @@ import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
-import pl.detailing.crm.leads.domain.LeadTag
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
@@ -32,7 +31,8 @@ data class MarkThreadAsLeadCommand(
     val threadId: UUID,
     val userId: UUID,
     val userName: String,
-    val tags: List<LeadTag>,
+    /** Kody tagów ze słownika studia, zwalidowane przez katalog przed wejściem tutaj. */
+    val tags: List<String>,
     val services: List<LeadServiceItemInput>
 )
 
