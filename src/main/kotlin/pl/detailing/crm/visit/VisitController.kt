@@ -32,6 +32,8 @@ import pl.detailing.crm.visit.photos.AddVisitPhotoHandler
 import pl.detailing.crm.visit.photos.AddVisitPhotoCommand
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
+import pl.detailing.crm.visit.customeremail.UpdateVisitCustomerEmailCommand
+import pl.detailing.crm.visit.customeremail.UpdateVisitCustomerEmailHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
@@ -70,6 +72,7 @@ class VisitController(
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
+    private val updateVisitCustomerEmailHandler: UpdateVisitCustomerEmailHandler,
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
     private val updateTechnicalNoteHandler: UpdateTechnicalNoteHandler,
     private val getTechnicalNoteHistoryHandler: GetTechnicalNoteHistoryHandler,
@@ -405,6 +408,38 @@ class VisitController(
         updateVisitTitleHandler.handle(command)
 
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Fill in the e-mail address of the visit's customer
+     * PATCH /api/visits/{visitId}/customer-email
+     *
+     * Punktowa poprawka jednego pola — reszta profilu klienta zostaje nietknięta.
+     * Pozwala uzupełnić brakujący adres z modala "Dokumentacja i Podpisy",
+     * bez cofania się do formularza przyjęcia.
+     */
+    @PatchMapping("/{visitId}/customer-email")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun updateVisitCustomerEmail(
+        @PathVariable visitId: String,
+        @RequestBody request: UpdateVisitCustomerEmailRequest
+    ): ResponseEntity<UpdateVisitCustomerEmailResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = updateVisitCustomerEmailHandler.handle(
+            UpdateVisitCustomerEmailCommand(
+                visitId = VisitId.fromString(visitId),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                email = request.email
+            )
+        )
+
+        ResponseEntity.ok(UpdateVisitCustomerEmailResponse(
+            customerId = result.customerId,
+            email = result.email
+        ))
     }
 
     /**
@@ -903,6 +938,15 @@ data class VisitPhotoResponse(
 
 data class UpdateVisitTitleRequest(
     val title: String?
+)
+
+data class UpdateVisitCustomerEmailRequest(
+    val email: String
+)
+
+data class UpdateVisitCustomerEmailResponse(
+    val customerId: String,
+    val email: String
 )
 
 data class UpdateEstimatedCompletionDateRequest(
