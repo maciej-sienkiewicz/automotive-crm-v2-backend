@@ -3,6 +3,8 @@ package pl.detailing.crm.ksef.fetch
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import pl.akmf.ksef.sdk.client.interfaces.KSeFClient
+import pl.detailing.crm.ksef.metrics.KsefApiMetrics
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.StudioId
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +34,8 @@ class KsefRateLimitException(message: String) : RuntimeException(message)
 @Component
 class KsefInvoiceXmlFetcher(
     private val ksefClient: KSeFClient,
-    private val xmlParser: KsefInvoiceXmlParser
+    private val xmlParser: KsefInvoiceXmlParser,
+    private val apiMetrics: KsefApiMetrics
 ) {
     private val log = LoggerFactory.getLogger(KsefInvoiceXmlFetcher::class.java)
 
@@ -71,12 +74,26 @@ class KsefInvoiceXmlFetcher(
      * @throws KsefRateLimitException gdy budżet żądań jest wyczerpany — sygnał
      *         do przerwania całego przebiegu, nie do pominięcia jednego dokumentu
      */
-    fun fetch(studioId: StudioId, ksefNumber: String, accessToken: String): KsefXmlData? {
+    fun fetch(studioId: StudioId, ksefNumber: String, accessToken: String): KsefXmlData? =
+        KsefTenantContext.withStudio(studioId) { doFetch(studioId, ksefNumber, accessToken) }
+
+    private fun doFetch(studioId: StudioId, ksefNumber: String, accessToken: String): KsefXmlData? {
         val budget = budgets.computeIfAbsent(studioId.value) { StudioBudget() }
         var attempt = 0
 
         while (true) {
-            budget.awaitSlot(ksefNumber)
+            try {
+                budget.awaitSlot(ksefNumber)
+            } catch (e: KsefRateLimitException) {
+                // Odróżniamy „my przestaliśmy pytać" od „KSeF odmówił" — pierwsze
+                // znaczy, że studio ma więcej dokumentów, niż mieści się w limicie,
+                // i że synchronizacja nie domknie się w tym przebiegu
+                apiMetrics.recordDeferred(
+                    studioId.value.toString(),
+                    KsefApiMetrics.DEFERRED_XML_BUDGET
+                )
+                throw e
+            }
             try {
                 val xml: ByteArray = ksefClient.getInvoice(ksefNumber, accessToken)
                 return xmlParser.parseInvoiceData(xml)

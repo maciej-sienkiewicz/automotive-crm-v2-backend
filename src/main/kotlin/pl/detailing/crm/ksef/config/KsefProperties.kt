@@ -12,7 +12,18 @@ data class KsefProperties(
      * rodzina środowisk — puste pole wyprowadza ją z [baseUrl], żeby zmiana
      * środowiska na test/demo nie wymagała pamiętania o drugiej właściwości.
      */
-    val qrBaseUrl: String? = null
+    val qrBaseUrl: String? = null,
+
+    /**
+     * Najostrzejszy udokumentowany limit KSeF w oknie minutowym (dotyczy pobrania
+     * faktury po numerze KSeF). Służy wyłącznie metrykom: do niego odnosimy ruch
+     * studia, żeby wiedzieć, kto zbliża się do odmowy. Zmiana progu nie zmienia
+     * tempa żądań — tym steruje KsefInvoiceXmlFetcher.
+     */
+    val requestsPerMinuteLimit: Int = 16,
+
+    /** Jak wyżej, w oknie godzinowym. */
+    val requestsPerHourLimit: Int = 64
 ) {
     /** api.ksef → qr.ksef, api-test.ksef → qr-test.ksef, api-demo.ksef → qr-demo.ksef. */
     fun resolvedQrBaseUrl(): String =

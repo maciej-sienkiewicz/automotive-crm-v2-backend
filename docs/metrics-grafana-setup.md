@@ -8,6 +8,7 @@ provisionowane z repo — Grafana jest tu tylko przeglądarką, źródłem prawd
 | Platforma — przegląd | `crm-platform-overview` | Prometheus + Postgres | Ile mamy kont, ile płacą, czy rosną, co się psuje |
 | Platforma — tenanci i czas pracy | `crm-platform-usage` | Postgres | Ile godzin i kto (właściciel vs pracownik), kogo tracimy, kto płaci za nieużywany moduł |
 | Platforma — audyt API i defekty | `crm-platform-api-audit` | Postgres | Co można usunąć z kodu, jakie defekty są otwarte i kogo dotknęły |
+| Platforma — limity KSeF wg najemcy | `crm-platform-ksef` | Prometheus (+ Postgres na nazwy) | Ile żądań do KSeF wykonujemy dla każdego najemcy i kto zbliża się do limitu |
 
 ---
 
@@ -17,6 +18,12 @@ Nie z przypadku — z ograniczeń narzędzi.
 
 **Prometheus** dostał subskrypcje, bo wymóg brzmiał „czas rzeczywisty" i bo to jedyne
 serie, na których da się oprzeć regułę alertu. Siedem serii, stała kardynalność.
+
+**Prometheus dostał też limity KSeF** — i tu, wyjątkowo, z etykietą `studio_id`. To nie
+jest odwrócenie zasady poniżej, tylko jej zastosowanie: zakazana była kombinacja
+`studio_id` × *setki endpointów CRM*. Tu drugim wymiarem jest kilkanaście operacji
+klienta KSeF, a pytanie „kto zaraz zobaczy 429" jest z definicji pytaniem o teraz
+i musi dać się oprzeć na nim alert. Postgres nie odpowiedziałby na nie na czas.
 
 **Postgres** dostał całą resztę, bo Prometheus jej nie uniesie:
 
@@ -49,6 +56,7 @@ przy starcie aplikacji, a Hibernate potem weryfikuje schemat względem encji.
 | Katalog endpointów (zasilany ze Springa) | `EndpointCatalogRegistrar` przy `ApplicationReadyEvent` |
 | Harmonogram roll-upów (03:10 / 03:25), retencja (03:40) | `@Scheduled` w aplikacji |
 | Serie subskrypcji w Prometheusie | `SubscriptionMetricsGauges`, odświeżane co 60 s |
+| Serie limitów KSeF w Prometheusie | `KsefApiMetrics`, okna odświeżane co 30 s |
 | Dashboardy i datasource w Grafanie | provisioning z repo, po restarcie kontenera |
 
 ### Ręcznie — pięć kroków, każdy raz
@@ -278,6 +286,47 @@ odtworzył obie liczby z logu produkcyjnego co do bitu.
 
 Uwaga na najczęstsze zaskoczenie: suma liczona jest z **całego pliku**, więc zmiana samego
 komentarza wystarczy, żeby wywalić start aplikacji.
+
+## Metryki limitów KSeF
+
+KSeF nalicza limity **per kontekst NIP**: 8 żądań na sekundę, 16 na minutę, 64 na godzinę
+dla pobrania faktury po numerze. Suma po platformie nie mówi więc nic użytecznego — jeden
+najemca może wyczerpać swój budżet, gdy reszta nie wysłała ani jednego żądania. Stąd
+wszystkie serie są rozbite po `studio_id`.
+
+Punktem pomiaru jest **dekorator klienta KSeF** (`MeteredKsefClient`), a nie poszczególne
+wywołania: przez ten jeden interfejs przechodzi każde żądanie — uwierzytelnienie, polling
+sesji, wysyłka faktury, UPO, pull metadanych, pobranie XML — więc nowa operacja pojawia się
+w metrykach od pierwszego użycia, bez dopisywania czegokolwiek. Studio, w którego imieniu
+lecimy, niesie wątkowy `KsefTenantContext`, bo metody SDK przyjmują token dostępu, nie
+identyfikator najemcy.
+
+| Seria (Prometheus) | Typ | Etykiety | Odpowiada na |
+|---|---|---|---|
+| `crm_ksef_api_requests_total` | licznik | `studio_id`, `ksef_operation`, `result` | Ile i jakich żądań wykonaliśmy dla najemcy; ile skończyło się odmową (`result="rate_limited"`) |
+| `crm_ksef_api_window_requests` | gauge | `studio_id`, `ksef_window` | Ile żądań poszło w ostatniej minucie / godzinie (okno przesuwane) |
+| `crm_ksef_api_window_utilization` | gauge | `studio_id`, `ksef_window` | Jaka część limitu jest zużyta, 0–1 — na tym stoją alerty |
+| `crm_ksef_api_deferred_total` | licznik | `studio_id`, `reason` | Ile razy **my** wstrzymaliśmy przebieg, zanim KSeF odmówił |
+
+Dwa ostatnie wiersze mierzą różne rzeczy i mylenie ich prowadzi do złej diagnozy:
+`result="rate_limited"` to **odmowa KSeF** (nasze wyhamowanie zadziałało za późno),
+a `crm_ksef_api_deferred_total` to **nasza własna decyzja o wstrzymaniu** (limit
+działa, ale najemca ma więcej dokumentów, niż da się pobrać w budżecie — synchronizacja
+nie domyka się w jednym cyklu i podgląd faktur zostaje bez pozycji).
+
+Progi wykorzystania biorą się z `ksef.requests-per-minute-limit` (16) i
+`ksef.requests-per-hour-limit` (64). Odnosimy do nich **cały** ruch najemcy, choć limit
+64/h dotyczy formalnie pobrania faktury — świadomie ostrożnie: wskaźnik zapala się
+wcześniej, niż KSeF faktycznie odmówi. Zmiana progu zmienia tylko metrykę; tempem żądań
+steruje `KsefInvoiceXmlFetcher`, który ma własny sufit z zapasem.
+
+Dashboard pokazuje UUID-y, bo nazwa studia jako etykieta serii zmieniałaby się przy każdej
+zmianie nazwy i zostawiała martwe serie. Tłumaczenie `studio_id` → nazwa jest na dole
+dashboardu, z datasource'u Postgres (`metric_studio_directory`).
+
+Alerty: grupa `crm_ksef_limits` w `deploy/monitoring/prometheus/alerts.yml`.
+
+---
 
 ## Jak czytać te dashboardy
 

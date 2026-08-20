@@ -104,6 +104,40 @@ object MetricsTags {
     /** Counter: cross-tenant access attempts (authenticated user accessing another tenant's entity). */
     const val SECURITY_CROSS_TENANT_ATTEMPT = "crm.security.cross_tenant.attempt"
 
+    // ── KSeF API metrics ──────────────────────────────────────────────────────
+    /**
+     * Counter: żądania do API KSeF. Tagi: studio_id, ksef_operation, result.
+     * Prometheus: crm_ksef_api_requests_total
+     */
+    const val KSEF_API_REQUESTS = "crm.ksef.api.requests"
+
+    /**
+     * Gauge: liczba żądań do KSeF w oknie przesuwanym. Tagi: studio_id, ksef_window.
+     * Prometheus: crm_ksef_api_window_requests
+     */
+    const val KSEF_API_WINDOW_REQUESTS = "crm.ksef.api.window.requests"
+
+    /**
+     * Gauge: wykorzystanie limitu żądań KSeF w oknie (0–1). Tagi: studio_id, ksef_window.
+     * Prometheus: crm_ksef_api_window_utilization
+     */
+    const val KSEF_API_WINDOW_UTILIZATION = "crm.ksef.api.window.utilization"
+
+    /**
+     * Counter: przebiegi synchronizacji wstrzymane przez nas, zanim KSeF odmówił.
+     * Tagi: studio_id, reason. Prometheus: crm_ksef_api_deferred_total
+     */
+    const val KSEF_API_DEFERRED = "crm.ksef.api.deferred"
+
+    /** Operacja klienta KSeF w snake_case, np. get_invoice, open_online_session. */
+    const val TAG_KSEF_OPERATION = "ksef_operation"
+
+    /** Okno pomiaru wykorzystania limitu: minute | hour. */
+    const val TAG_KSEF_WINDOW = "ksef_window"
+
+    /** Powód zdarzenia, np. przyczyna wstrzymania przebiegu. */
+    const val TAG_REASON = "reason"
+
     // ── HttpServletRequest attribute keys shared between aspect and filter ───
     /** Set by ApiMetricsAspect; read by HttpMetricsFilter for response-size tagging. */
     const val ATTR_CONTROLLER = "crm.obs.controller"

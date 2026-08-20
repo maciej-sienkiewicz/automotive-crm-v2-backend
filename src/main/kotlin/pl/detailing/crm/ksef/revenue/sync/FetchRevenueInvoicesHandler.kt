@@ -17,6 +17,7 @@ import pl.detailing.crm.ksef.fetch.KsefInvoiceXmlFetcher
 import pl.detailing.crm.ksef.fetch.KsefRateLimitException
 import pl.detailing.crm.ksef.fetch.KsefXmlData
 import pl.detailing.crm.ksef.fetch.KsefXmlLine
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
 import pl.detailing.crm.ksef.revenue.domain.PriceMode
 import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
@@ -79,7 +80,10 @@ class FetchRevenueInvoicesHandler(
     }
 
     @Transactional
-    fun handle(command: FetchRevenueCommand): FetchRevenueResult {
+    fun handle(command: FetchRevenueCommand): FetchRevenueResult =
+        KsefTenantContext.withStudio(command.studioId) { doHandle(command) }
+
+    private fun doHandle(command: FetchRevenueCommand): FetchRevenueResult {
         val pageSize = command.pageSize.coerceIn(10, 250)
         log.info(
             "Fetching KSeF revenue studio={} from={} to={}",
@@ -155,7 +159,10 @@ class FetchRevenueInvoicesHandler(
      * wprowadzenia pobierania XML — to one mają dziś pustą listę pozycji.
      */
     @Transactional
-    fun backfillMissingDetails(studioId: StudioId, batchSize: Int = BACKFILL_BATCH_SIZE): Int {
+    fun backfillMissingDetails(studioId: StudioId, batchSize: Int = BACKFILL_BATCH_SIZE): Int =
+        KsefTenantContext.withStudio(studioId) { doBackfill(studioId, batchSize) }
+
+    private fun doBackfill(studioId: StudioId, batchSize: Int): Int {
         val candidates = repository.findExternalMissingDetails(studioId.value, PageRequest.of(0, batchSize))
         if (candidates.isEmpty()) return 0
 

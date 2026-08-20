@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.akmf.ksef.sdk.client.interfaces.KSeFClient
 import pl.akmf.ksef.sdk.client.model.auth.AuthenticationTokenStatus
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.StudioId
 
 /**
@@ -60,7 +61,11 @@ class KsefTokenVerifier(
      * Throws [pl.detailing.crm.shared.EntityNotFoundException] when no
      * credentials are configured (propagated from [KsefAuthService]).
      */
-    fun verify(studioId: StudioId): VerificationResult {
+    fun verify(studioId: StudioId): VerificationResult = KsefTenantContext.withStudio(studioId) {
+        doVerify(studioId)
+    }
+
+    private fun doVerify(studioId: StudioId): VerificationResult {
         sessionCache.invalidate(studioId)
 
         val session = try {

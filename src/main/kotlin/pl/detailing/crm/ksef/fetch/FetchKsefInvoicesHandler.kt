@@ -16,6 +16,7 @@ import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.StudioId
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -53,7 +54,10 @@ class FetchKsefInvoicesHandler(
      * Deduplicates by ksefNumber. Marks corrected invoices as CORRECTED when FA_KOR is detected.
      */
     @Transactional
-    fun handle(command: FetchExpensesCommand): FetchExpensesResult {
+    fun handle(command: FetchExpensesCommand): FetchExpensesResult =
+        KsefTenantContext.withStudio(command.studioId) { doHandle(command) }
+
+    private fun doHandle(command: FetchExpensesCommand): FetchExpensesResult {
         val pageSize = command.pageSize.coerceIn(10, 250)
         log.info("Fetching KSeF expenses studio={} from={} to={}", command.studioId, command.dateFrom, command.dateTo)
 
@@ -143,7 +147,10 @@ class FetchKsefInvoicesHandler(
      * po numerze KSeF; nieudane pobrania są ponawiane w kolejnych przebiegach.
      */
     @Transactional
-    fun backfillMissingDetails(studioId: StudioId, batchSize: Int = BACKFILL_BATCH_SIZE): Int {
+    fun backfillMissingDetails(studioId: StudioId, batchSize: Int = BACKFILL_BATCH_SIZE): Int =
+        KsefTenantContext.withStudio(studioId) { doBackfill(studioId, batchSize) }
+
+    private fun doBackfill(studioId: StudioId, batchSize: Int): Int {
         val candidates = invoiceRepository.findByStudioIdAndSourceAndDetailsSyncedFalseOrderByFetchedAtDesc(
             studioId.value, "KSEF", PageRequest.of(0, batchSize)
         )
