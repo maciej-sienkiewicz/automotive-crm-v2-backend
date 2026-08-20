@@ -34,7 +34,7 @@ class IncomeDocumentsRepositorySqlTest {
         branches.forEach { branch ->
             val select = branch.substringAfter("SELECT").substringBefore("FROM")
             val columns = splitTopLevel(select).size
-            assertEquals(19, columns, "Gałąź UNION musi mieć 19 kolumn zgodnych z IncomeDocumentRow")
+            assertEquals(20, columns, "Gałąź UNION musi mieć 20 kolumn zgodnych z IncomeDocumentRow")
         }
     }
 

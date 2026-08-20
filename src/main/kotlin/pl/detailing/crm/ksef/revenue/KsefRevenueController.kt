@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.ksef.domain.PaymentForm
+import pl.detailing.crm.ksef.qr.KsefQrCodeUrlBuilder
 import pl.detailing.crm.ksef.revenue.domain.DuplicateStatus
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
 import pl.detailing.crm.ksef.revenue.domain.RevenueSource
@@ -54,7 +55,8 @@ class KsefRevenueController(
     private val issueHandler: IssueRevenueInvoiceHandler,
     private val correctionHandler: IssueCorrectionHandler,
     private val dispatchService: KsefRevenueDispatchService,
-    private val statisticsHandler: RevenueStatisticsHandler
+    private val statisticsHandler: RevenueStatisticsHandler,
+    private val qrCodeUrlBuilder: KsefQrCodeUrlBuilder
 ) {
 
     // ── Wystawianie ────────────────────────────────────────────────────────────
@@ -192,7 +194,8 @@ class KsefRevenueController(
         @RequestParam(required = false) ksefStatus: String?,
         @RequestParam(required = false) duplicateStatus: String?,
         @RequestParam(required = false) dateFrom: LocalDate?,
-        @RequestParam(required = false) dateTo: LocalDate?
+        @RequestParam(required = false) dateTo: LocalDate?,
+        @RequestParam(defaultValue = "false") includeExcluded: Boolean
     ): ResponseEntity<RevenueInvoiceListResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         val pageable = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 100))
@@ -204,6 +207,7 @@ class KsefRevenueController(
             duplicateStatus = duplicateStatus?.uppercase(),
             dateFrom        = dateFrom,
             dateTo          = dateTo,
+            includeExcluded = includeExcluded,
             pageable        = pageable
         )
 
@@ -392,7 +396,7 @@ class KsefRevenueController(
             seller = RevenuePartyResponse(
                 nip = sellerNip, name = sellerName,
                 addressLine1 = sellerAddressLine1, addressLine2 = sellerAddressLine2,
-                countryCode = sellerCountryCode
+                countryCode = sellerCountryCode, bankAccount = sellerBankAccount
             ),
             buyer = RevenuePartyResponse(
                 nip = buyerNip, name = buyerName,
@@ -419,6 +423,13 @@ class KsefRevenueController(
             customerId         = customerId?.toString(),
             description        = description,
             note               = note,
+            excluded           = isExcluded,
+            excludedAt         = excludedAt,
+            ksefVerificationUrl = qrCodeUrlBuilder.buildInvoiceVerificationUrl(
+                sellerNip   = sellerNip,
+                issueDate   = issueDate,
+                invoiceHash = invoiceHash ?: invoiceXml?.let { qrCodeUrlBuilder.hashInvoiceXml(it) }
+            ),
             createdAt          = createdAt,
             items = items?.map {
                 RevenueItemResponse(
@@ -495,7 +506,9 @@ data class RevenuePartyResponse(
     val name: String?,
     val addressLine1: String?,
     val addressLine2: String?,
-    val countryCode: String?
+    val countryCode: String?,
+    /** Rachunek do przelewu — wypełniany tylko po stronie sprzedawcy. */
+    val bankAccount: String? = null
 )
 
 data class RevenueItemResponse(
@@ -544,6 +557,14 @@ data class RevenueInvoiceResponse(
     val customerId: String?,
     val description: String?,
     val note: String?,
+    /** Ukryta ręcznie ze statystyk i z domyślnej listy dokumentów. */
+    val excluded: Boolean,
+    val excludedAt: Instant?,
+    /**
+     * Adres weryfikacyjny KSeF („KOD I") do wystawienia jako kod QR na wizualizacji
+     * faktury. null, gdy faktura nie ma jeszcze skrótu dokumentu (np. przed wysyłką).
+     */
+    val ksefVerificationUrl: String?,
     val createdAt: Instant,
     val items: List<RevenueItemResponse>?
 )

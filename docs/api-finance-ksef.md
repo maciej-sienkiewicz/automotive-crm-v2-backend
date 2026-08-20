@@ -21,6 +21,10 @@
    - [PATCH /finance/documents/{id}/status](#patch-financedocumentsidstatus)
    - [DELETE /finance/documents/{id}](#delete-financedocumentsid)
    - [POST /finance/documents/{id}/restore](#post-financedocumentsidrestore)
+4a. [Zunifikowana lista dokumentów przychodowych](#4a-zunifikowana-lista-dokumentów-przychodowych)
+   - [GET /finance/income-documents](#get-financeincome-documents)
+   - [PATCH /finance/income-documents/{sourceKind}/{id}/exclude](#patch-financeincome-documentssourcekindidexclude)
+   - [PATCH /finance/income-documents/{sourceKind}/{id}/restore](#patch-financeincome-documentssourcekindidrestore)
 5. [Moduł Finance — Kasa](#5-moduł-finance--kasa)
    - [GET /finance/cash](#get-financecash)
    - [GET /finance/cash/history](#get-financecashhistory)
@@ -305,6 +309,45 @@ Wszystkie błędy zwracają JSON:
 **Uprawnienia:** Tylko OWNER
 
 **Response `200 OK`:** przywrócony `FinancialDocumentResponse`
+
+---
+
+## 4a. Zunifikowana lista dokumentów przychodowych
+
+Widok „Dokumenty przychodowe" pokazuje **jedną listę z dwóch źródeł**: faktur i korekt
+z ledgera KSeF (`ksef_revenue_invoices` — wystawionych w CRM oraz pobranych z KSeF)
+razem z paragonami i dokumentami „inne" z modułu finansowego (`financial_documents`).
+Dokument finansowy powiązany z fakturą KSeF jest pomijany — reprezentuje go już rekord
+faktury, więc nic nie liczy się dwa razy.
+
+### GET /finance/income-documents
+
+**Query params:** `page`, `size`, `documentType`, `paymentStatus`, `dateFrom`, `dateTo`,
+`onlyKsef`, `includeExcluded`.
+
+`includeExcluded=true` dokłada dokumenty ukryte ze statystyk; domyślnie ich nie ma.
+
+Każdy wiersz niesie `sourceKind` (`KSEF` | `FINANCE`) — rozstrzyga, który widok
+szczegółów otworzyć i do której tabeli trafia ukrycie — oraz `excluded`.
+
+### PATCH /finance/income-documents/{sourceKind}/{id}/exclude
+
+**Kiedy używać:** Dokument nie ma zasilać statystyk (np. pozycja rozliczana poza
+działalnością). Odpowiednik `PATCH /ksef/expenses/{id}/exclude` po stronie kosztów.
+
+Dokument zostaje w bazie — ledger KSeF musi pozostać kompletny — ale wypada z kafli
+podsumowania, raportów i domyślnej listy. To operacja prezentacyjna, nie księgowa:
+faktura przyjęta w KSeF pozostaje prawnie wiążąca i koryguje się ją fakturą korygującą.
+
+`sourceKind`: `KSEF` (faktura z ledgera) albo `FINANCE` (paragon / dokument „inny").
+
+**Response `204 No Content`** — idempotentne, ponowne ukrycie nie zmienia nic.
+
+### PATCH /finance/income-documents/{sourceKind}/{id}/restore
+
+Przywraca ukryty dokument do statystyk i domyślnej listy.
+
+**Response `204 No Content`**
 
 ---
 

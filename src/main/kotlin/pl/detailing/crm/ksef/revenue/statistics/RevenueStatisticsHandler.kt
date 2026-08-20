@@ -36,8 +36,8 @@ data class RevenueStatisticsResult(
 /**
  * Statystyki przychodowe z jednego ledgera (CRM + EXTERNAL) — kompletne niezależnie
  * od tego, gdzie klient wystawił fakturę. Kwoty w groszach. Wyklucza faktury
- * odrzucone przez KSeF i potwierdzone duplikaty; korekty niosą znak, więc sumy
- * odzwierciedlają rzeczywisty przychód po korektach.
+ * odrzucone przez KSeF, potwierdzone duplikaty i faktury ukryte ręcznie ze statystyk;
+ * korekty niosą znak, więc sumy odzwierciedlają rzeczywisty przychód po korektach.
  */
 @Service
 class RevenueStatisticsHandler(

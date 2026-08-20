@@ -138,9 +138,37 @@ class FinancialDocumentEntity(
      * przychodowych pomija powiązane rekordy, żeby faktura nie pojawiła się dwukrotnie.
      */
     @Column(name = "ksef_revenue_invoice_id")
-    var ksefRevenueInvoiceId: UUID? = null
+    var ksefRevenueInvoiceId: UUID? = null,
+
+    /**
+     * Ukrycie dokumentu ze statystyk i z domyślnej listy dokumentów przychodowych —
+     * odpowiednik statusu EXCLUDED po stronie faktur kosztowych KSeF. To nie jest
+     * usunięcie: dokument zostaje w bazie i wraca po przywróceniu.
+     */
+    @Column(name = "excluded_at")
+    var excludedAt: Instant? = null,
+
+    @Column(name = "excluded_by", columnDefinition = "uuid")
+    var excludedBy: UUID? = null
 
 ) {
+    /** Ukryty ręcznie — poza statystykami i domyślną listą. */
+    val isExcluded: Boolean get() = excludedAt != null
+
+    fun markExcluded(userId: UUID, now: Instant = Instant.now()) {
+        excludedAt = now
+        excludedBy = userId
+        updatedBy = userId
+        updatedAt = now
+    }
+
+    fun markRestored(userId: UUID, now: Instant = Instant.now()) {
+        excludedAt = null
+        excludedBy = null
+        updatedBy = userId
+        updatedAt = now
+    }
+
     fun toDomain() = FinancialDocument(
         id                = FinancialDocumentId(id),
         studioId          = StudioId(studioId),

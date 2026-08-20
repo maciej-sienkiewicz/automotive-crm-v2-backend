@@ -29,7 +29,7 @@ class IncomeDocumentsRepository(
      * 0 id, 1 sourceKind, 2 documentType, 3 documentNumber, 4 issueDate,
      * 5 counterpartyName, 6 counterpartyNip, 7 totalNet, 8 totalVat, 9 totalGross,
      * 10 currency, 11 paymentStatus, 12 paymentLabel, 13 ksefStatus, 14 ksefNumber,
-     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt
+     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt, 19 excluded
      */
     /**
      * UWAGA: w natywnych zapytaniach nie wolno używać postgresowej składni rzutowania `::`,
@@ -57,7 +57,8 @@ class IncomeDocumentsRepository(
             i.source                                AS origin,
             i.duplicate_status                      AS duplicate_status,
             CAST(i.visit_id AS text)                AS visit_id,
-            i.created_at                            AS created_at
+            i.created_at                            AS created_at,
+            (i.excluded_at IS NOT NULL)             AS is_excluded
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = CAST(:studioId AS uuid)
           AND (CAST(:documentType AS text) IS NULL
@@ -66,6 +67,7 @@ class IncomeDocumentsRepository(
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
+          AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)
 
         UNION ALL
 
@@ -88,7 +90,8 @@ class IncomeDocumentsRepository(
             d.source,
             'NONE',
             CAST(d.visit_id AS text),
-            d.created_at
+            d.created_at,
+            (d.excluded_at IS NOT NULL)
         FROM financial_documents d
         WHERE d.studio_id = CAST(:studioId AS uuid)
           AND d.direction = 'INCOME'
@@ -98,6 +101,7 @@ class IncomeDocumentsRepository(
           AND (CAST(:paymentStatus AS text) IS NULL OR d.status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
+          AND (CAST(:includeExcluded AS boolean) = TRUE OR d.excluded_at IS NULL)
           AND CAST(:onlyKsef AS boolean) = FALSE
     """
 
@@ -127,6 +131,7 @@ class IncomeDocumentsRepository(
         query.setParameter("dateFrom", filters.dateFrom)
         query.setParameter("dateTo", filters.dateTo)
         query.setParameter("onlyKsef", filters.onlyKsef)
+        query.setParameter("includeExcluded", filters.includeExcluded)
     }
 }
 
@@ -139,5 +144,10 @@ data class IncomeDocumentFilters(
     val dateFrom: LocalDate? = null,
     val dateTo: LocalDate? = null,
     /** true = tylko dokumenty z ledgera KSeF (faktury i korekty). */
-    val onlyKsef: Boolean = false
+    val onlyKsef: Boolean = false,
+    /**
+     * true = pokaż także dokumenty ukryte ręcznie ze statystyk. Domyślnie ukryte
+     * pozycje nie pojawiają się na liście, tak jak po stronie dokumentów kosztowych.
+     */
+    val includeExcluded: Boolean = false
 )
