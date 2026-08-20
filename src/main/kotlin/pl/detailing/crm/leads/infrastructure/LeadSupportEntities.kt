@@ -41,9 +41,25 @@ class LeadServiceItemEntity(
     @Column(name = "name", nullable = false, length = 200)
     val name: String,
 
-    /** Cena brutto w groszach, zamrożona w momencie przypisania. */
+    /** Cena brutto w groszach, zamrożona w momencie przypisania. Wartość wiodąca. */
     @Column(name = "price_gross", nullable = false)
     val priceGross: Long,
+
+    /**
+     * Netto w groszach i stawka VAT — null dla pozycji sprzed V75, które znały
+     * wyłącznie brutto. Służą wyłącznie temu, by edytor wyceny wrócił do tego samego
+     * stanu; sumuje się nadal brutto.
+     */
+    @Column(name = "price_net")
+    val priceNet: Long? = null,
+
+    /** Stawka VAT w procentach; -1 oznacza „zwolniony" (spójnie z resztą aplikacji). */
+    @Column(name = "vat_rate")
+    val vatRate: Int? = null,
+
+    /** Uwaga do pozycji — „bez zderzaka", „auto po lakierowaniu". */
+    @Column(name = "note", length = 500)
+    val note: String? = null,
 
     @Column(name = "quantity", nullable = false)
     val quantity: Int,

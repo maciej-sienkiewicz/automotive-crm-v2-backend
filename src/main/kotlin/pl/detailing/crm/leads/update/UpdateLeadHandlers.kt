@@ -8,6 +8,7 @@ import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadStatus
@@ -30,6 +31,8 @@ class UpdateLeadHandlers(
     private val serviceItems: LeadServiceItemsService,
     private val customerRepository: CustomerRepository,
     private val vehicleMetadataService: VehicleMetadataService,
+    private val tagService: LeadTagService,
+    private val tagCatalog: LeadTagCatalogService,
     private val userRepository: UserRepository,
     private val eventPublisher: ApplicationEventPublisher
 ) {
@@ -53,6 +56,23 @@ class UpdateLeadHandlers(
             lostNote = lostNote,
             changedByUserId = userId,
             changedByName = userName
+        )
+    }
+
+    /**
+     * Podmiana tagów istniejącego leada — zestaw w całości, tak jak przy tworzeniu.
+     * Kody sprawdza katalog studia, więc do bazy nie wejdzie tag, którego nie ma
+     * w słowniku i którego analityka nie umiałaby nazwać.
+     */
+    @Transactional
+    fun updateTags(studioId: StudioId, leadId: UUID, tagCodes: List<String>) {
+        val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
+            ?: throw NotFoundException("Nie znaleziono leada")
+        tagService.replaceTags(lead.id, tagCatalog.validate(studioId, tagCodes))
+        lead.updatedAt = Instant.now()
+        leadRepository.save(lead)
+        eventPublisher.publishEvent(
+            LeadChangedEvent(source = this, studioId = studioId, leadId = LeadId(lead.id))
         )
     }
 

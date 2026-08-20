@@ -52,7 +52,10 @@ data class LeadServiceItemRequest(
     val serviceId: String?,
     val name: String?,
     val priceGross: Long?,
-    val quantity: Int = 1
+    val quantity: Int = 1,
+    val priceNet: Long? = null,
+    val vatRate: Int? = null,
+    val note: String? = null
 )
 
 data class MarkThreadAsLeadRequest(
@@ -76,6 +79,9 @@ data class UpdateLeadRequest(
 )
 
 data class AssignLeadCustomerRequest(val customerId: String)
+
+/** Podmiana tagów istniejącego leada — cały zestaw, nie różnica. */
+data class UpdateLeadTagsRequest(val tags: List<String> = emptyList())
 
 /** Nowy tag w słowniku studia; kod nadaje backend, użytkownik podaje samą nazwę. */
 data class CreateLeadTagRequest(val label: String)
@@ -224,6 +230,17 @@ class LeadsController(
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
     }
 
+    @PutMapping("/{id}/tags")
+    fun updateTags(
+        @PathVariable id: String,
+        @RequestBody request: UpdateLeadTagsRequest
+    ): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val leadId = UUID.fromString(id)
+        updateHandlers.updateTags(principal.studioId, leadId, request.tags)
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
+    }
+
     @PutMapping("/{id}/status")
     fun changeStatus(
         @PathVariable id: String,
@@ -294,7 +311,10 @@ class LeadsController(
         serviceId = serviceId?.let(UUID::fromString),
         name = name,
         priceGross = priceGross,
-        quantity = quantity
+        quantity = quantity,
+        priceNet = priceNet,
+        vatRate = vatRate,
+        note = note
     )
 
     private fun parseStatus(value: String): LeadStatus =

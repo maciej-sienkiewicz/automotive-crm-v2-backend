@@ -45,6 +45,10 @@ data class LeadServiceItemDto(
     val serviceId: String?,
     val name: String,
     val priceGross: Long,
+    /** Netto i stawka VAT — null dla pozycji wycenionych przed wprowadzeniem tych pól. */
+    val priceNet: Long?,
+    val vatRate: Int?,
+    val note: String?,
     val quantity: Int,
     val totalGross: Long
 )
@@ -112,6 +116,9 @@ fun LeadServiceItemEntity.toDto(): LeadServiceItemDto = LeadServiceItemDto(
     serviceId = serviceId?.toString(),
     name = name,
     priceGross = priceGross,
+    priceNet = priceNet,
+    vatRate = vatRate,
+    note = note,
     quantity = quantity,
     totalGross = priceGross * quantity
 )
