@@ -1,6 +1,7 @@
 package pl.detailing.crm.comms.api
 
 import kotlinx.coroutines.runBlocking
+import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -326,6 +327,28 @@ class CommsController(
         )
     }
 
+    /**
+     * Pozostałe rozmowy z tym samym adresem — panel „historia korespondencji".
+     * Bez bieżącego wątku i bez treści wiadomości: panel pokazuje listę, a nie archiwum.
+     */
+    @GetMapping("/threads/{id}/related")
+    fun relatedThreads(@PathVariable id: String): ResponseEntity<List<CommThreadDto>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val threadId = UUID.fromString(id)
+        val thread = threadRepository.findByIdAndStudioId(threadId, principal.studioId.value)
+            ?: throw NotFoundException("Nie znaleziono wątku")
+        val related = threadRepository
+            .findByStudioIdAndParticipantEmailOrderByLastMessageAtDesc(
+                principal.studioId.value,
+                thread.participantEmail,
+                PageRequest.of(0, MAX_RELATED_THREADS + 1)
+            )
+            .filter { it.id != threadId }
+            .take(MAX_RELATED_THREADS)
+            .map { it.toDto() }
+        return ResponseEntity.ok(related)
+    }
+
     @GetMapping("/notes")
     fun notes(@RequestParam email: String): ResponseEntity<ContactNotesDto> {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -381,5 +404,10 @@ class CommsController(
             actorName = principal.fullName
         )
         return ResponseEntity.noContent().build()
+    }
+
+    private companion object {
+        /** Panel to lista do przejrzenia, nie archiwum — pięćdziesiąt rozmów starczy. */
+        const val MAX_RELATED_THREADS = 50
     }
 }
