@@ -2,79 +2,104 @@ package pl.detailing.crm.vehicle.photos
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
-import java.util.UUID
 
 /**
- * Handler for deleting a photo from a vehicle.
+ * Usunięcie zdjęcia pojazdu: z kolekcji i z S3.
  *
- * This removes the photo from the vehicle and deletes the file from S3.
+ * Dwie rzeczy, które trzeba tu zrobić inaczej niż „normalnie", i obie z tego samego
+ * powodu — `@Transactional` na funkcji `suspend` NIE DZIAŁA (Spring prowadzi
+ * zawieszalne metody transakcyjnie tylko przez ReactiveTransactionManager, którego
+ * aplikacja na JPA nie ma; ten sam wywód stoi w AuditLogWriter):
+ *
+ *  1. Zdjęcia czytamy zapytaniem z JOIN FETCH, a nie leniwie. Wcześniej handler brał
+ *     pojazd bez zdjęć i dotykał `photos.size`, licząc na sesję z open-in-view — ale
+ *     ta jest przypięta do wątku ŻĄDANIA, a `withContext(Dispatchers.IO)` z niego
+ *     wyskakuje. Stąd LazyInitializationException przy każdym usunięciu; dodawanie
+ *     zdjęcia działało tylko dlatego, że zostaje na wątku żądania.
+ *  2. Samą zmianę opakowujemy w TransactionTemplate, żeby odczyt–modyfikacja–zapis
+ *     kolekcji poszły jedną transakcją, a nie trzema niezależnymi.
+ *
+ * S3 sprzątamy PO zatwierdzeniu: nieudane kasowanie pliku nie może cofnąć usunięcia
+ * z bazy — plik-sierota jest tańszy niż zdjęcie, którego nie da się usunąć.
  */
 @Service
 class DeleteVehiclePhotoHandler(
     private val vehicleRepository: VehicleRepository,
     private val s3Client: S3Client,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val transactionTemplate: TransactionTemplate
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
-    @Transactional
-    suspend fun handle(command: DeleteVehiclePhotoCommand): Unit = withContext(Dispatchers.IO) {
-        // 1. Find vehicle with studio isolation
-        val vehicleEntity = vehicleRepository.findByIdAndStudioId(
-            id = command.vehicleId.value,
-            studioId = command.studioId.value
-        ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
+    /** To, co po usunięciu jest jeszcze potrzebne — poza transakcją encja już nie żyje. */
+    private data class RemovedPhoto(
+        val fileName: String,
+        val fileId: String,
+        val vehicleLabel: String
+    )
 
-        // 2. Force load photos
-        vehicleEntity.photos.size
+    suspend fun handle(command: DeleteVehiclePhotoCommand) {
+        val removed = withContext(Dispatchers.IO) {
+            transactionTemplate.execute {
+                val vehicleEntity = vehicleRepository.findByIdAndStudioIdWithPhotos(
+                    id = command.vehicleId.value,
+                    studioId = command.studioId.value
+                ) ?: throw EntityNotFoundException("Pojazd nie został znaleziony: ${command.vehicleId}")
 
-        // 3. Find the photo to delete
-        val photoToDelete = vehicleEntity.photos.find { it.id == command.photoId.value }
-            ?: throw EntityNotFoundException("Zdjęcie nie zostało znalezione: ${command.photoId}")
+                val photoToDelete = vehicleEntity.photos.find { it.id == command.photoId.value }
+                    ?: throw EntityNotFoundException("Zdjęcie nie zostało znalezione: ${command.photoId}")
 
-        val deletedFileName = photoToDelete.fileName
+                vehicleEntity.photos.remove(photoToDelete)
+                vehicleRepository.save(vehicleEntity)
 
-        // 4. Remove photo from list
-        vehicleEntity.photos.remove(photoToDelete)
-
-        vehicleRepository.save(vehicleEntity)
-
-        val displayName = listOfNotNull(vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate).joinToString(" ")
-
-        if (command.userId != null) {
-            auditService.log(LogAuditCommand(
-                studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userName ?: "",
-                module = AuditModule.VEHICLE,
-                entityId = command.vehicleId.value.toString(),
-                entityDisplayName = displayName,
-                action = AuditAction.PHOTO_DELETED,
-                changes = listOf(FieldChange("fileName", deletedFileName, null)),
-                metadata = mapOf("photoId" to command.photoId.value.toString())
-            ))
+                RemovedPhoto(
+                    fileName = photoToDelete.fileName,
+                    fileId = photoToDelete.fileId,
+                    vehicleLabel = listOfNotNull(
+                        vehicleEntity.brand, vehicleEntity.model, vehicleEntity.licensePlate
+                    ).joinToString(" ")
+                )
+            }!!
         }
 
-        // 5. Delete file from S3
-        try {
-            val deleteObjectRequest = DeleteObjectRequest.builder()
-                .bucket(bucketName)
-                .key(photoToDelete.fileId)
-                .build()
+        if (command.userId != null) {
+            auditService.log(
+                LogAuditCommand(
+                    studioId = command.studioId,
+                    userId = command.userId,
+                    userDisplayName = command.userName ?: "",
+                    module = AuditModule.VEHICLE,
+                    entityId = command.vehicleId.value.toString(),
+                    entityDisplayName = removed.vehicleLabel,
+                    action = AuditAction.PHOTO_DELETED,
+                    changes = listOf(FieldChange("fileName", removed.fileName, null)),
+                    metadata = mapOf("photoId" to command.photoId.value.toString())
+                )
+            )
+        }
 
-            s3Client.deleteObject(deleteObjectRequest)
+        try {
+            s3Client.deleteObject(
+                DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(removed.fileId)
+                    .build()
+            )
         } catch (e: Exception) {
-            // Log but don't fail the operation - photo already removed from DB
-            // S3 cleanup can happen later if needed
-            println("Warning: Could not delete photo from S3: ${photoToDelete.fileId}")
+            // Zdjęcia już nie ma w bazie — osierocony plik w S3 posprząta późniejsze
+            // czyszczenie. Zgłoszenie błędu użytkownikowi sugerowałoby, że usunięcie
+            // się nie udało, a udało się w tej części, która jest widoczna.
+            log.warn("[VEHICLE_PHOTO] Nie udało się usunąć pliku {} z S3", removed.fileId, e)
         }
     }
 }
