@@ -8,6 +8,7 @@ import pl.akmf.ksef.sdk.client.model.auth.AuthKsefTokenRequest
 import pl.akmf.ksef.sdk.client.model.auth.ContextIdentifier
 import pl.akmf.ksef.sdk.system.KsefIntegrationMode
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -41,7 +42,17 @@ class KsefAuthService(
     fun getValidAccessToken(studioId: StudioId): String =
         sessionCache.get(studioId)?.accessToken ?: authenticate(studioId).accessToken
 
-    fun authenticate(studioId: StudioId): KsefSession {
+    /**
+     * Uwierzytelnienie to pięć żądań do KSeF plus polling — najdroższa pojedyncza
+     * operacja w limicie. Kontekst najemcy ustawiamy tutaj, żeby ten ruch nie
+     * ginął w metrykach, gdy uwierzytelnienie startuje spoza synchronizacji
+     * (np. z weryfikacji tokenu w ustawieniach).
+     */
+    fun authenticate(studioId: StudioId): KsefSession = KsefTenantContext.withStudio(studioId) {
+        doAuthenticate(studioId)
+    }
+
+    private fun doAuthenticate(studioId: StudioId): KsefSession {
         val credentials = credentialsRepository.findByStudioId(studioId.value)
             ?: throw EntityNotFoundException(
                 "No KSeF credentials configured for this studio. " +

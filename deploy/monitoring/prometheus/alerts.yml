@@ -118,3 +118,81 @@ groups:
           summary: "Wysokie opóźnienie API (p95 > 2s)"
           description: >
             95-ty percentyl czasu odpowiedzi przekroczył 2 sekundy przez 5 minut.
+
+  - name: crm_ksef_limits
+    interval: 60s
+    rules:
+
+      # ── Zbliżanie się do limitu KSeF ────────────────────────────────────────
+      # Limity KSeF są naliczane per kontekst NIP, więc alert ma sens wyłącznie
+      # per najemca — suma platformy nie powie, kto za chwilę zobaczy 429.
+      - alert: KsefTenantNearHourlyLimit
+        expr: |
+          crm_ksef_api_window_utilization{ksef_window="hour"} >= 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Studio {{ $labels.studio_id }} blisko godzinowego limitu KSeF"
+          description: >
+            Studio zużyło co najmniej 80% godzinowego budżetu żądań do KSeF.
+            Kolejne pobrania faktur zaczną być wstrzymywane, a synchronizacja
+            przestanie domykać się w jednym cyklu.
+
+      - alert: KsefTenantHourlyLimitExhausted
+        expr: |
+          crm_ksef_api_window_utilization{ksef_window="hour"} >= 1
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Studio {{ $labels.studio_id }} wyczerpało godzinowy limit KSeF"
+          description: >
+            Budżet żądań na godzinę jest wyczerpany. Sprawdź, czy studio nie ma
+            zaległości w synchronizacji większej, niż limit pozwala nadrobić.
+
+      # ── Odmowy po stronie KSeF ──────────────────────────────────────────────
+      # To inny sygnał niż powyższe: znaczy, że nasze wyhamowanie zadziałało
+      # za późno albo za słabo i KSeF odrzucił żądanie.
+      - alert: KsefRateLimitRejections
+        expr: |
+          increase(crm_ksef_api_requests_total{result="rate_limited"}[15m]) > 0
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "KSeF odrzuca żądania studia {{ $labels.studio_id }} (429)"
+          description: >
+            Operacja {{ $labels.ksef_operation }} dostała odmowę z powodu limitu.
+            Sprawdź tempo żądań w KsefInvoiceXmlFetcher i budżet godzinowy.
+
+      # ── Synchronizacja, która się nie domyka ────────────────────────────────
+      - alert: KsefSyncPersistentlyDeferred
+        expr: |
+          increase(crm_ksef_api_deferred_total[6h]) > 12
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Synchronizacja KSeF studia {{ $labels.studio_id }} nie nadąża"
+          description: >
+            Przebiegi synchronizacji były wstrzymywane ponad 12 razy w ciągu 6 godzin
+            z powodu {{ $labels.reason }}. Zaległość dokumentów rośnie szybciej,
+            niż limit KSeF pozwala ją nadrobić — podgląd faktur zostaje bez pozycji.
+
+      # ── Błędy komunikacji z KSeF ────────────────────────────────────────────
+      - alert: KsefApiErrorRate
+        expr: |
+          sum by (studio_id) (rate(crm_ksef_api_requests_total{result="error"}[15m]))
+            /
+          sum by (studio_id) (rate(crm_ksef_api_requests_total[15m])) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Ponad 25% żądań do KSeF studia {{ $labels.studio_id }} kończy się błędem"
+          description: >
+            Sprawdź ważność tokenu KSeF studia i dostępność API Ministerstwa Finansów.

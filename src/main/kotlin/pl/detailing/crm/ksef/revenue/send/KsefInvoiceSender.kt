@@ -13,6 +13,7 @@ import pl.akmf.ksef.sdk.client.model.session.SchemaVersion
 import pl.akmf.ksef.sdk.client.model.session.SessionValue
 import pl.akmf.ksef.sdk.client.model.session.SystemCode
 import pl.detailing.crm.ksef.auth.KsefAuthService
+import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.StudioId
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -92,7 +93,10 @@ class KsefInvoiceSender(
      * Wysyła XML faktury do KSeF. Nie modyfikuje encji — decyzję o przejściu stanów
      * podejmuje wołający na podstawie zwróconego [KsefSendOutcome].
      */
-    fun send(studioId: StudioId, invoiceXml: String): KsefSendOutcome {
+    fun send(studioId: StudioId, invoiceXml: String): KsefSendOutcome =
+        KsefTenantContext.withStudio(studioId) { doSend(studioId, invoiceXml) }
+
+    private fun doSend(studioId: StudioId, invoiceXml: String): KsefSendOutcome {
         val accessToken = try {
             authService.getValidAccessToken(studioId)
         } catch (e: Exception) {
@@ -165,7 +169,19 @@ class KsefInvoiceSender(
      * Odpytuje status faktury przyjętej wcześniej do sesji (statusy SUBMITTED) —
      * używane bezpośrednio po wysyłce oraz przez scheduler po restarcie aplikacji.
      */
-    fun checkStatus(studioId: StudioId, sessionReference: String, invoiceReference: String): KsefStatusOutcome {
+    fun checkStatus(
+        studioId: StudioId,
+        sessionReference: String,
+        invoiceReference: String
+    ): KsefStatusOutcome = KsefTenantContext.withStudio(studioId) {
+        doCheckStatus(studioId, sessionReference, invoiceReference)
+    }
+
+    private fun doCheckStatus(
+        studioId: StudioId,
+        sessionReference: String,
+        invoiceReference: String
+    ): KsefStatusOutcome {
         val accessToken = try {
             authService.getValidAccessToken(studioId)
         } catch (e: Exception) {
@@ -175,7 +191,10 @@ class KsefInvoiceSender(
     }
 
     /** Pobiera UPO (XML) faktury po numerze KSeF. Null gdy UPO nie jest jeszcze dostępne. */
-    fun fetchUpo(studioId: StudioId, sessionReference: String, ksefNumber: String): String? = try {
+    fun fetchUpo(studioId: StudioId, sessionReference: String, ksefNumber: String): String? =
+        KsefTenantContext.withStudio(studioId) { doFetchUpo(studioId, sessionReference, ksefNumber) }
+
+    private fun doFetchUpo(studioId: StudioId, sessionReference: String, ksefNumber: String): String? = try {
         val accessToken = authService.getValidAccessToken(studioId)
         val upo = ksefClient.getSessionInvoiceUpoByKsefNumber(sessionReference, ksefNumber, accessToken)
         String(upo, StandardCharsets.UTF_8)

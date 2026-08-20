@@ -496,6 +496,32 @@ serii przy odświeżeniu, co poprawnie **usuwa** serię pakietu, na którym nikt
 siedzi — osobno rejestrowane gauge'e raportowałyby w nieskończoność ostatnią wartość,
 a nieaktualny niezerowy gauge jest gorszy niż jego brak.
 
+### Prometheus — limity KSeF per najemca
+
+```
+crm_ksef_api_requests_total{studio_id="…",ksef_operation="get_invoice",result="success"}
+crm_ksef_api_window_requests{studio_id="…",ksef_window="hour"}
+crm_ksef_api_window_utilization{studio_id="…",ksef_window="hour"}
+crm_ksef_api_deferred_total{studio_id="…",reason="xml_budget"}
+```
+
+Jedyne serie w tym module z etykietą `studio_id` — i to nie jest wyłom w zasadzie
+z rozdziału 1, tylko jej zastosowanie. Zakazana była kombinacja `studio_id` × *setki
+endpointów CRM*; tu drugim wymiarem jest kilkanaście metod klienta KSeF, a pytanie
+„kto za chwilę zobaczy 429" jest z definicji pytaniem o **teraz** i musi dać się oprzeć
+na nim regułę alertu. Postgres, który dostał resztę modułu, odpowiedziałby na nie
+z opóźnieniem doby.
+
+Punkt pomiaru to dekorator klienta KSeF (`MeteredKsefClient`), a nie poszczególne
+wywołania: przez ten interfejs przechodzi każde żądanie do KSeF, więc operacja dodana
+w przyszłości jest mierzona od pierwszego użycia. Najemcę niesie wątkowy
+`KsefTenantContext` — metody SDK przyjmują token dostępu, nie identyfikator studia.
+
+Okna są przesuwane (kolejka znaczników czasu na studio), bo limity KSeF też takie są:
+„ile w ostatniej godzinie" musi dać się policzyć w dowolnej chwili, a nie tylko na
+granicy pełnej godziny. Studio, które przez godzinę nic nie wysłało, wypada z map
+i z serii — wskaźnik zatrzymany na ostatniej wartości kłamałby o obciążeniu.
+
 ---
 
 ## 12. Konfiguracja
