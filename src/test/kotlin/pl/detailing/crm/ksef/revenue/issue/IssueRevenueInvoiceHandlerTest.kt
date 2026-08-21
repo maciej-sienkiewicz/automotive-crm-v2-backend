@@ -3,6 +3,7 @@ package pl.detailing.crm.ksef.revenue.issue
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.springframework.dao.DataIntegrityViolationException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -185,6 +186,23 @@ class IssueRevenueInvoiceHandlerTest {
 
         assertEquals(2, attempts)
         assertEquals("FV/2026/0005", invoice.invoiceNumber)
+    }
+
+    @Test
+    fun `sendToKsef=false wystawia fakture bez wysylki i zostawia ja w NOT_SENT`() {
+        stubHappyPath()
+        // dispatchService celowo bez stubu — próba wysyłki wysadziłaby test
+        every { invoiceRepository.save(any()) } answers { firstArg() }
+
+        val invoice = handler.handle(command().copy(sendToKsef = false))
+
+        assertEquals(KsefRevenueStatus.NOT_SENT, invoice.ksefStatus)
+        // Dokument jest kompletny — brak wysyłki nie może oznaczać braku faktury
+        assertEquals("FV/2026/0001", invoice.invoiceNumber)
+        assertNotNull(invoice.invoiceXml)
+        // Nic nie zawiodło, więc nie zostawiamy po sobie komunikatu błędu
+        assertNull(invoice.lastSendError)
+        verify(exactly = 0) { dispatchService.dispatch(any()) }
     }
 
     @Test

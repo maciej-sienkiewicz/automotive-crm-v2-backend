@@ -25,6 +25,8 @@ import pl.detailing.crm.ksef.statistics.KsefStatisticsQuery
 import pl.detailing.crm.ksef.sync.KsefSyncCursorRepository
 import pl.detailing.crm.ksef.sync.KsefSyncService
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.studio.settings.StudioSettingsEntity
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -46,7 +48,8 @@ class KsefController(
     private val invoiceItemRepository: KsefInvoiceItemRepository,
     private val syncService: KsefSyncService,
     private val syncCursorRepository: KsefSyncCursorRepository,
-    private val statisticsHandler: KsefStatisticsHandler
+    private val statisticsHandler: KsefStatisticsHandler,
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
 
     // ── Credentials ────────────────────────────────────────────────────────────
@@ -108,6 +111,61 @@ class KsefController(
         credentialsRepository.save(credentials)
 
         return ResponseEntity.ok(credentials.toVerificationResponse(result.errorMessage))
+    }
+
+    // ── Gotowość do fakturowania (odczyt dla ekranu wydania pojazdu) ───────────
+
+    /**
+     * Czy studio może dziś wystawić fakturę i wysłać ją do KSeF — jeden odczyt dla
+     * ekranu wydania pojazdu.
+     *
+     * Osobno od `GET /credentials`, bo tamten endpoint jest właścicielski i zwraca
+     * dane poświadczeń (NIP, maska tokenu). Wydania pojazdu dokonuje zwykły
+     * pracownik, a on ma wiedzieć tylko tyle: czy faktura pojedzie sama, czy token
+     * ma uprawnienie do wystawiania i jaka jest domyślna odpowiedź na pytanie
+     * o wysyłkę. Żadna z tych wartości nie jest sekretem.
+     */
+    @GetMapping("/invoicing-status")
+    @RequiresPermission(Permission.FINANCE_INVOICES, Permission.VISITS_VIEW)
+    fun getInvoicingStatus(): ResponseEntity<KsefInvoicingStatusResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val credentials = credentialsRepository.findByStudioId(principal.studioId.value)
+        val settings = studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+
+        val permissions = credentials?.verifiedPermissions?.split(",")?.filter { it.isNotBlank() }
+        return ResponseEntity.ok(
+            KsefInvoicingStatusResponse(
+                configured       = credentials != null,
+                tokenChecked     = credentials?.lastVerifiedAt != null,
+                tokenValid       = credentials?.verifiedTokenValid == true,
+                permissionsKnown = permissions != null,
+                canIssueInvoices = permissions?.contains("InvoiceWrite") == true,
+                checkedAt        = credentials?.lastVerifiedAt,
+                autoSendDefault  = settings?.ksefAutoSendDefault ?: true
+            )
+        )
+    }
+
+    /**
+     * Domyślna pozycja przełącznika „Wyślij fakturę do KSeF" przy wydaniu pojazdu.
+     * Ustawienie studia, więc zmienia je właściciel; sama decyzja o konkretnej
+     * fakturze pozostaje przy osobie wydającej pojazd.
+     */
+    @PatchMapping("/invoicing-settings")
+    @Transactional
+    fun updateInvoicingSettings(
+        @RequestBody req: UpdateKsefInvoicingSettingsRequest
+    ): ResponseEntity<KsefInvoicingSettingsResponse> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        val settings = studioSettingsRepository.findById(studioId).orElse(null)
+            ?: StudioSettingsEntity(studioId = studioId)
+
+        settings.ksefAutoSendDefault = req.autoSendDefault
+        settings.updatedAt = Instant.now()
+        val saved = studioSettingsRepository.save(settings)
+
+        return ResponseEntity.ok(KsefInvoicingSettingsResponse(autoSendDefault = saved.ksefAutoSendDefault))
     }
 
     // ── Sync ───────────────────────────────────────────────────────────────────
@@ -568,6 +626,25 @@ data class KsefTokenVerificationResponse(
     val checkedAt: Instant?,
     val errorMessage: String?
 )
+
+/**
+ * Gotowość studia do wystawiania faktur w KSeF, w formie potrzebnej ekranowi
+ * wydania pojazdu. [tokenChecked] = false oznacza „nie wiemy" (token nigdy nie był
+ * weryfikowany) i nie wolno go czytać jako braku uprawnień.
+ */
+data class KsefInvoicingStatusResponse(
+    val configured: Boolean,
+    val tokenChecked: Boolean,
+    val tokenValid: Boolean,
+    val permissionsKnown: Boolean,
+    val canIssueInvoices: Boolean,
+    val checkedAt: Instant?,
+    val autoSendDefault: Boolean
+)
+
+data class UpdateKsefInvoicingSettingsRequest(val autoSendDefault: Boolean)
+
+data class KsefInvoicingSettingsResponse(val autoSendDefault: Boolean)
 
 data class KsefSyncStatusResponse(
     val syncStatus: String,

@@ -62,6 +62,14 @@ class StudioSettingsEntity(
     @Column(name = "visit_card_send_by_default", nullable = false, columnDefinition = "boolean not null default false")
     var visitCardSendByDefault: Boolean = false,
 
+    /**
+     * Domyślna pozycja przełącznika „Wyślij fakturę do KSeF" przy wydaniu pojazdu.
+     * Ustawienie steruje wyłącznie wartością początkową — decyzję o każdej fakturze
+     * podejmuje użytkownik w modalu wydania.
+     */
+    @Column(name = "ksef_auto_send_default", nullable = false, columnDefinition = "boolean not null default true")
+    var ksefAutoSendDefault: Boolean = true,
+
     /** 0 = disabled; positive value = lock screen after N seconds of inactivity (client-side enforcement). */
     @Column(name = "idle_timeout_seconds", nullable = false)
     var idleTimeoutSeconds: Int = 0,

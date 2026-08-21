@@ -321,6 +321,17 @@ class KsefRevenueInvoiceEntity(
         updatedAt = now
     }
 
+    /**
+     * Faktura wystawiona bez wysyłki do KSeF (świadoma decyzja użytkownika).
+     * Nie zapisujemy tu błędu: nic się nie zepsuło, więc [lastSendError] zostaje puste,
+     * a lista dokumentów nie pokazuje ostrzeżenia obok dokumentu, który jest w porządku.
+     */
+    fun markNotSent(now: Instant = Instant.now()) {
+        ksefStatus = KsefRevenueStatus.NOT_SENT
+        lastSendError = null
+        updatedAt = now
+    }
+
     fun markQueuedForRetry(error: String, now: Instant = Instant.now()) {
         ksefStatus = KsefRevenueStatus.QUEUED_RETRY
         lastSendError = error.take(2000)

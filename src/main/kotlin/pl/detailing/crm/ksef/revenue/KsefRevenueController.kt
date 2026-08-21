@@ -149,6 +149,9 @@ class KsefRevenueController(
             throw ValidationException("Ponawiać można tylko faktury wystawione w CRM")
         }
         val updated = when (invoice.ksefStatus) {
+            // NOT_SENT — faktura wystawiona świadomie bez wysyłki; ten endpoint jest
+            // dla niej normalną drogą „wyślij teraz", nie ponowieniem po błędzie.
+            KsefRevenueStatus.NOT_SENT,
             KsefRevenueStatus.PENDING,
             KsefRevenueStatus.QUEUED_RETRY -> dispatchService.dispatch(invoice)
 
