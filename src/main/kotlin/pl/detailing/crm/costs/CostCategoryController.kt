@@ -66,8 +66,15 @@ data class CostExpenseItemDto(
     val unit: String?,
     val quantity: Double?,
     val unitPriceNet: Double?,
+    /** Wartość netto — z faktury, a gdy sprzedawca jej nie podał, wyliczona z brutto i stawki VAT. */
     val netValue: Double?,
+    /** Wartość brutto — z faktury, a gdy jej brak, doliczona do netto wg stawki VAT. */
     val grossValue: Double?,
+    /**
+     * true, gdy netto albo brutto nie było na fakturze i zostało wyliczone z drugiej
+     * kwoty — pozwala UI oznaczyć taką pozycję zamiast udawać, że kwota pochodzi z KSeF.
+     */
+    val amountsDerived: Boolean,
     val vatRate: String?,
     val costCategoryId: String?,
     val costCategoryName: String?
@@ -321,6 +328,11 @@ class CostCategoryController(
             val invoice    = invoiceMap[item.invoiceId]
             val assignment = assignments[item.id]
             val category   = assignment?.let { categoryMap[it.categoryId] }
+            // Faktury kosztowe z KSeF bywają wypełnione tylko po jednej stronie
+            // (samo brutto albo samo netto). Domykamy kwotę tutaj, żeby podsumowania
+            // nie sumowały brutto z pozycji, których netto nie liczą.
+            val netValue   = CostItemAmounts.netValueOf(item.netValue, item.grossValue, item.vatRate)
+            val grossValue = CostItemAmounts.grossValueOf(item.netValue, item.grossValue, item.vatRate)
             CostExpenseItemDto(
                 id                = item.id.toString(),
                 invoiceId         = item.invoiceId.toString(),
@@ -333,8 +345,9 @@ class CostCategoryController(
                 unit              = item.unit,
                 quantity          = item.quantity,
                 unitPriceNet      = item.unitPriceNet,
-                netValue          = item.netValue,
-                grossValue        = item.grossValue,
+                netValue          = netValue,
+                grossValue        = grossValue,
+                amountsDerived    = netValue != item.netValue || grossValue != item.grossValue,
                 vatRate           = item.vatRate,
                 costCategoryId    = assignment?.categoryId?.toString(),
                 costCategoryName  = category?.name
