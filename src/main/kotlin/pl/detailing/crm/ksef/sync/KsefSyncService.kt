@@ -2,6 +2,7 @@ package pl.detailing.crm.ksef.sync
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.finance.duplicates.DocumentDuplicateDetector
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
 import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
 import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
@@ -28,7 +29,8 @@ class KsefSyncService(
     private val fetchHandler: FetchKsefInvoicesHandler,
     private val revenueFetchHandler: FetchRevenueInvoicesHandler,
     private val cursorRepository: KsefSyncCursorRepository,
-    private val credentialsRepository: KsefCredentialsRepository
+    private val credentialsRepository: KsefCredentialsRepository,
+    private val duplicateDetector: DocumentDuplicateDetector
 ) {
     private val log = LoggerFactory.getLogger(KsefSyncService::class.java)
 
@@ -98,13 +100,21 @@ class KsefSyncService(
             // tej ścieżki) dostają pozycje i szczegóły płatności
             val revenueBackfilled = revenueFetchHandler.backfillMissingDetails(studioId)
 
+            // Obie strony ewentualnej pary są już w bazie, więc dopiero teraz ma sens
+            // szukanie dokumentów opisujących tę samą sprzedaż albo zakup dwa razy.
+            // Detekcja nie może wywrócić synchronizacji: pull się udał, kursor ma
+            // ruszyć do przodu niezależnie od tego, czy dopasowanie się powiodło.
+            val duplicates = runCatching { duplicateDetector.scanRecent(studioId) }
+                .onFailure { log.error("Detekcja duplikatów nie powiodła się studio={}: {}", studioId, it.message, it) }
+                .getOrDefault(0)
+
             cursorRepository.save(cursor.toSuccess(now))
             log.info(
                 "KSeF sync done studio={} expenses: fetched={} skipped={} backfilled={} | " +
-                    "revenue: external={} matched={} duplicatesSuspected={} backfilled={}",
+                    "revenue: external={} matched={} duplicatesSuspected={} backfilled={} | zdublowane wyciszone={}",
                 studioId, result.fetched, result.skipped, backfilled,
                 revenueResult.fetched, revenueResult.matched, revenueResult.duplicatesSuspected,
-                revenueBackfilled
+                revenueBackfilled, duplicates
             )
         } catch (e: Exception) {
             log.error("KSeF sync FAILED studio={}: {}", studioId, e.message, e)
