@@ -5,6 +5,9 @@ import kotlinx.coroutines.withContext
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.appointment.create.AppointmentVehicleResolver
+import pl.detailing.crm.appointment.create.VehicleIdentity
+import pl.detailing.crm.appointment.create.VehicleOwnershipAction
 import pl.detailing.crm.appointment.domain.Appointment
 import pl.detailing.crm.appointment.domain.AppointmentLineItem
 import pl.detailing.crm.appointment.domain.AppointmentSchedule
@@ -73,7 +76,8 @@ class CreateVisitFromReservationHandler(
     private val uploadContextTokenService: UploadContextTokenService,
     private val auditService: AuditService,
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
-    private val doorToDoorRepository: DoorToDoorRepository
+    private val doorToDoorRepository: DoorToDoorRepository,
+    private val appointmentVehicleResolver: AppointmentVehicleResolver
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -120,7 +124,7 @@ class CreateVisitFromReservationHandler(
                     createVehicle(vehicleData, customerId, command.studioId, command.userId)
                 }
                 is VehicleData.Existing -> {
-                    vehicleData.id
+                    resolveOwnership(vehicleData.id, vehicleData.ownership, customerId, command.studioId, command.userId, command.userName)
                 }
                 is VehicleData.Update -> {
                     updateVehicleIfNeeded(
@@ -129,7 +133,7 @@ class CreateVisitFromReservationHandler(
                         command.studioId,
                         command.userId
                     )
-                    vehicleData.id
+                    resolveOwnership(vehicleData.id, vehicleData.ownership, customerId, command.studioId, command.userId, command.userName)
                 }
             }
 
@@ -403,10 +407,11 @@ class CreateVisitFromReservationHandler(
             // Step 2: Handle vehicle
             val vehicleId = when (val vehicleData = command.vehicle) {
                 is VehicleData.New -> createVehicle(vehicleData, customerId, command.studioId, command.userId)
-                is VehicleData.Existing -> vehicleData.id
+                is VehicleData.Existing ->
+                    resolveOwnership(vehicleData.id, vehicleData.ownership, customerId, command.studioId, command.userId, command.userName)
                 is VehicleData.Update -> {
                     updateVehicleIfNeeded(vehicleData.id, vehicleData, command.studioId, command.userId)
-                    vehicleData.id
+                    resolveOwnership(vehicleData.id, vehicleData.ownership, customerId, command.studioId, command.userId, command.userName)
                 }
             }
 
@@ -980,6 +985,32 @@ class CreateVisitFromReservationHandler(
         customerRepository.save(entity)
 
         return customer.id
+    }
+
+    /**
+     * Applies the ownership decision the operator made when they swapped the visit's customer
+     * but kept the car ("dopisz nowego klienta jako właściciela" / "przepisz pojazd na klienta").
+     *
+     * `null` — no decision was sent (older client, or the customer did not change) — leaves the
+     * vehicle's owner rows exactly as they are. Delegates to the same resolver the appointment
+     * create/update path uses, so the ownership rules cannot drift between the two entry points.
+     */
+    private fun resolveOwnership(
+        vehicleId: VehicleId,
+        ownership: VehicleOwnershipAction?,
+        customerId: CustomerId,
+        studioId: StudioId,
+        userId: UserId,
+        userName: String?
+    ): VehicleId {
+        if (ownership == null) return vehicleId
+        return appointmentVehicleResolver.linkExisting(
+            identity = VehicleIdentity.LinkExisting(vehicleId = vehicleId, ownership = ownership),
+            customerId = customerId,
+            studioId = studioId,
+            userId = userId,
+            userName = userName
+        )
     }
 
     private fun createVehicle(
