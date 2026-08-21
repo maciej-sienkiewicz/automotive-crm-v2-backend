@@ -11,6 +11,11 @@ import java.math.RoundingMode
  *         ↘ QUEUED_RETRY (błąd łączności / niedostępność KSeF — tryb offline24,
  *                         dosyłka schedulerem najpóźniej następnego dnia roboczego)
  *
+ * NOT_SENT stoi obok tego cyklu: faktura istnieje i jest kompletna (ma numer i XML),
+ * ale użytkownik świadomie nie wysłał jej do KSeF. Scheduler nigdy jej nie dotknie —
+ * „nie wysłano" to decyzja, nie awaria. Wysyłkę można uruchomić ręcznie, wtedy
+ * dokument wchodzi w normalny cykl od SENDING.
+ *
  * Faktury source=EXTERNAL (pobrane pullem, wystawione poza CRM) są zawsze ACCEPTED —
  * istnieją w KSeF z definicji.
  */
@@ -20,10 +25,12 @@ enum class KsefRevenueStatus {
     SUBMITTED,
     ACCEPTED,
     REJECTED,
-    QUEUED_RETRY;
+    QUEUED_RETRY,
+    NOT_SENT;
 
     /** Statusy, z których wolno ponowić wysyłkę (idempotencja — ACCEPTED/SENDING nigdy). */
-    fun isRetryable(): Boolean = this == PENDING || this == QUEUED_RETRY || this == REJECTED
+    fun isRetryable(): Boolean =
+        this == PENDING || this == QUEUED_RETRY || this == REJECTED || this == NOT_SENT
 }
 
 /**

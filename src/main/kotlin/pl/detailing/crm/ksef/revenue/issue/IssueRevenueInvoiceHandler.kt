@@ -71,7 +71,13 @@ data class IssueRevenueInvoiceCommand(
     val exemptionLegalBasis: String? = null,
     val visitId: UUID? = null,
     val customerId: UUID? = null,
-    val description: String? = null
+    val description: String? = null,
+    /**
+     * false → faktura zostaje wystawiona i zapisana (z numerem i XML), ale nie jest
+     * wysyłana do KSeF; ląduje w stanie NOT_SENT, skąd użytkownik może ją wysłać
+     * ręcznie. Wystawienie i wysyłka to dwie różne decyzje.
+     */
+    val sendToKsef: Boolean = true
 )
 
 /** Pozycja faktury z policzonymi kwotami (grosze). */
@@ -113,6 +119,13 @@ class IssueRevenueInvoiceHandler(
 
     fun handle(command: IssueRevenueInvoiceCommand): KsefRevenueInvoiceEntity {
         val invoice = persistWithNumberRetry(command)
+        if (!command.sendToKsef) {
+            // Bez wysyłki nie wchodzimy w cykl PENDING → SENDING: PENDING oznaczałoby
+            // „czeka na wysyłkę", a ta faktura na nic nie czeka.
+            invoice.markNotSent()
+            log.info("Faktura {} wystawiona bez wysyłki do KSeF (decyzja użytkownika)", invoice.invoiceNumber)
+            return invoiceRepository.save(invoice)
+        }
         // Wysyłka poza transakcją zapisu — długotrwała operacja sieciowa nie może
         // trzymać transakcji DB, a faktura ma przetrwać niezależnie od wyniku wysyłki
         return dispatchService.dispatch(invoice)
