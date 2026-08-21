@@ -18,6 +18,8 @@ import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.ksef.metrics.KsefTenantContext
 import pl.detailing.crm.shared.StudioId
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -50,8 +52,13 @@ class FetchKsefInvoicesHandler(
     }
 
     /**
-     * Fetches EXPENSE (SUBJECT2) invoices from KSeF for the given date range.
-     * Deduplicates by ksefNumber. Marks corrected invoices as CORRECTED when FA_KOR is detected.
+     * Pobiera faktury kosztowe (SUBJECT2) z KSeF dla zadanego zakresu dat.
+     * Deduplikuje po numerze KSeF, oznacza faktury skorygowane jako CORRECTED przy FA_KOR.
+     *
+     * Zakres dat ustala wyłącznie [pl.detailing.crm.ksef.sync.KsefSyncService], który
+     * nigdy nie schodzi poniżej momentu podania tokenu. Nie ma i nie może być ścieżki
+     * z dowolnym zakresem: pobranie historii sprzed integracji dublowałoby koszty już
+     * wprowadzone ręcznie i cicho psuło statystyki.
      */
     @Transactional
     fun handle(command: FetchExpensesCommand): FetchExpensesResult =
@@ -111,9 +118,9 @@ class FetchKsefInvoicesHandler(
                     buyerAddressLine1  = xmlData.buyer.addressLine1,
                     buyerAddressLine2  = xmlData.buyer.addressLine2,
                     buyerCountryCode   = xmlData.buyer.countryCode,
-                    netAmount      = metadata.netAmount,
-                    grossAmount    = metadata.grossAmount,
-                    vatAmount      = metadata.vatAmount,
+                    netAmount      = toGrosz(metadata.netAmount),
+                    grossAmount    = toGrosz(metadata.grossAmount),
+                    vatAmount      = toGrosz(metadata.vatAmount),
                     currency       = metadata.currency,
                     invoiceType    = metadata.invoiceType?.value,
                     direction      = "EXPENSE",
@@ -211,14 +218,23 @@ class FetchKsefInvoicesHandler(
                 lineNumber   = line.lineNumber,
                 name         = line.name,
                 unit         = line.unit,
-                quantity     = line.quantity,
-                unitPriceNet = line.unitPriceNet,
-                netValue     = line.netValue,
-                grossValue   = line.grossValue,
+                quantity     = line.quantity?.let { BigDecimal.valueOf(it).setScale(3, RoundingMode.HALF_UP) },
+                unitPriceNet = toGrosz(line.unitPriceNet),
+                netValue     = toGrosz(line.netValue),
+                grossValue   = toGrosz(line.grossValue),
                 vatRate      = line.vatRate
             )
         })
     }
+
+    /**
+     * Złote z KSeF (i z XML) na grosze. Przez BigDecimal, nigdy przez arytmetykę
+     * na Double: 45.45 * 100 na double daje 4544.999999999999.
+     *
+     * null zostaje nullem — brak kwoty w dokumencie to co innego niż kwota zero.
+     */
+    private fun toGrosz(amount: Double?): Long? =
+        amount?.let { BigDecimal.valueOf(it).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }
 
     private fun fetchAllPages(filters: InvoiceQueryFilters, accessToken: String, pageSize: Int) = buildList {
         var offset = 0

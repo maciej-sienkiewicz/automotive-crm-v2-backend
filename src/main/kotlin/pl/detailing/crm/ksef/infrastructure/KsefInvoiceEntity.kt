@@ -95,14 +95,15 @@ class KsefInvoiceEntity(
     @Column(name = "buyer_country_code", length = 2)
     val buyerCountryCode: String? = null,
 
+    /** Kwoty w GROSZACH, jak po stronie przychodowej. Patrz V80. */
     @Column(name = "net_amount")
-    val netAmount: Double?,
+    val netAmount: Long?,
 
     @Column(name = "gross_amount")
-    val grossAmount: Double?,
+    val grossAmount: Long?,
 
     @Column(name = "vat_amount")
-    val vatAmount: Double?,
+    val vatAmount: Long?,
 
     @Column(name = "currency", length = 3)
     val currency: String?,
@@ -224,9 +225,9 @@ class KsefInvoiceEntity(
         sellerName: String? = this.sellerName,
         buyerNip: String? = this.buyerNip,
         buyerName: String? = this.buyerName,
-        netAmount: Double? = this.netAmount,
-        grossAmount: Double? = this.grossAmount,
-        vatAmount: Double? = this.vatAmount,
+        netAmount: Long? = this.netAmount,
+        grossAmount: Long? = this.grossAmount,
+        vatAmount: Long? = this.vatAmount,
         currency: String? = this.currency,
         invoiceType: String? = this.invoiceType,
         fetchedAt: Instant = this.fetchedAt,

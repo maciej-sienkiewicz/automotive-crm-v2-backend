@@ -53,24 +53,27 @@ object CostItemAmounts {
             ?.movePointLeft(2)
     }
 
-    /** Netto pozycji — z bazy, a gdy go brak, wyliczone „w stu" z brutto i stawki. */
-    fun netValueOf(netValue: Double?, grossValue: Double?, vatRate: String?): Double? {
+    /**
+     * Netto pozycji w groszach — z bazy, a gdy go brak, wyliczone „w stu"
+     * z brutto i stawki.
+     */
+    fun netValueOf(netValue: Long?, grossValue: Long?, vatRate: String?): Long? {
         if (netValue != null) return netValue
         val gross = grossValue ?: return null
         val rate  = rateOf(vatRate) ?: return null
         return BigDecimal.valueOf(gross)
-            .divide(BigDecimal.ONE.add(rate), 2, RoundingMode.HALF_UP)
-            .toDouble()
+            .divide(BigDecimal.ONE.add(rate), 0, RoundingMode.HALF_UP)
+            .toLong()
     }
 
-    /** Brutto pozycji — z bazy, a gdy go brak, doliczone do netto wg stawki. */
-    fun grossValueOf(netValue: Double?, grossValue: Double?, vatRate: String?): Double? {
+    /** Brutto pozycji w groszach — z bazy, a gdy go brak, doliczone do netto wg stawki. */
+    fun grossValueOf(netValue: Long?, grossValue: Long?, vatRate: String?): Long? {
         if (grossValue != null) return grossValue
         val net  = netValue ?: return null
         val rate = rateOf(vatRate) ?: return null
         return BigDecimal.valueOf(net)
             .multiply(BigDecimal.ONE.add(rate))
-            .setScale(2, RoundingMode.HALF_UP)
-            .toDouble()
+            .setScale(0, RoundingMode.HALF_UP)
+            .toLong()
     }
 }

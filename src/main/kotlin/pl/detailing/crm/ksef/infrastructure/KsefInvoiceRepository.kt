@@ -103,9 +103,8 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     // ── Finance summary aggregates ────────────────────────────────────────────
 
     /**
-     * Sum of gross_amount (in PLN) for invoices matching the given paymentStatus,
-     * excluding CANCELLED and EXCLUDED. Multiply result by 100 to get grosz.
-     * dateFrom/dateTo filter on issue_date (LocalDate); pass null to ignore.
+     * Suma brutto (w GROSZACH) faktur o danym statusie płatności, z pominięciem
+     * CANCELLED i EXCLUDED. Zakres dat po issue_date; null = bez ograniczenia.
      */
     @Query(value = """
         SELECT COALESCE(SUM(gross_amount), 0)
@@ -121,7 +120,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("paymentStatus") paymentStatus: String,
         @Param("dateFrom") dateFrom: java.time.LocalDate?,
         @Param("dateTo") dateTo: java.time.LocalDate?
-    ): Double
+    ): Long
 
     // ── Statistics (native SQL for performance) ───────────────────────────────
 

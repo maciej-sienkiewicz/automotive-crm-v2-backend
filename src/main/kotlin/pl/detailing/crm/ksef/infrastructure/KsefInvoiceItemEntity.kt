@@ -1,5 +1,6 @@
 package pl.detailing.crm.ksef.infrastructure
 
+import java.math.BigDecimal
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
@@ -46,20 +47,20 @@ class KsefInvoiceItemEntity(
     val unit: String?,
 
     /** Ilość (P_8B). */
-    @Column(name = "quantity")
-    val quantity: Double?,
+    @Column(name = "quantity", precision = 14, scale = 3)
+    val quantity: BigDecimal?,
 
-    /** Cena jednostkowa netto (P_9A). */
+    /** Cena jednostkowa netto (P_9A), w groszach. */
     @Column(name = "unit_price_net")
-    val unitPriceNet: Double?,
+    val unitPriceNet: Long?,
 
-    /** Wartość netto pozycji (P_11). */
+    /** Wartość netto pozycji (P_11), w groszach. */
     @Column(name = "net_value")
-    val netValue: Double?,
+    val netValue: Long?,
 
-    /** Wartość brutto pozycji (P_11A) — wypełniona tylko dla faktur liczonych od brutto. */
+    /** Wartość brutto pozycji (P_11A), w groszach — tylko dla faktur liczonych od brutto. */
     @Column(name = "gross_value")
-    val grossValue: Double?,
+    val grossValue: Long?,
 
     /** Stawka VAT (P_12) — wartość ze schematu FA(2), np. "23", "8", "0", "zw", "np", "oo". */
     @Column(name = "vat_rate", length = 10)
