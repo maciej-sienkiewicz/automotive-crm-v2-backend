@@ -140,7 +140,8 @@ class VisitTransitionController(
                     ),
                     remainderPaymentMethod = invoiceDetails.remainderPaymentMethod
                         ?.let { parsePaymentMethod(it) },
-                    exemptionLegalBasis = invoiceDetails.exemptionLegalBasis
+                    exemptionLegalBasis = invoiceDetails.exemptionLegalBasis,
+                    sendToKsef          = invoiceDetails.sendToKsef
                 )
             )
             return@runBlocking ResponseEntity.ok(
@@ -327,7 +328,12 @@ data class CompleteInvoiceRequestDto(
     val buyerEmail: String? = null,
     /** Metoda płatności dokumentu reszty (CASH | CARD | ...) — wymagana gdy faktura < kwota wizyty. */
     val remainderPaymentMethod: String? = null,
-    val exemptionLegalBasis: String? = null
+    val exemptionLegalBasis: String? = null,
+    /**
+     * Czy wysłać fakturę do KSeF od razu po wystawieniu. Pominięcie pola oznacza
+     * „użyj domyślnej odpowiedzi studia" (Ustawienia → Faktury), nie „wyślij".
+     */
+    val sendToKsef: Boolean? = null
 )
 
 data class PaymentRequest(

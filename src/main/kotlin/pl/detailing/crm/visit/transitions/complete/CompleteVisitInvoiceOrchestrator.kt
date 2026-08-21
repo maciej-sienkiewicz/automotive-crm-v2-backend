@@ -64,7 +64,13 @@ data class CompleteInvoiceDetails(
      * Wymagana, gdy suma pozycji faktury jest mniejsza niż kwota wizyty.
      */
     val remainderPaymentMethod: PaymentMethod? = null,
-    val exemptionLegalBasis: String? = null
+    val exemptionLegalBasis: String? = null,
+    /**
+     * Czy fakturę od razu wysłać do KSeF. null = użyj domyślnej odpowiedzi studia
+     * (StudioSettings.ksefAutoSendDefault) — klient, który nie zna przełącznika,
+     * dostaje zachowanie ustawione w ustawieniach, a nie zaszyte w kodzie.
+     */
+    val sendToKsef: Boolean? = null
 )
 
 data class CompleteVisitWithInvoiceResult(
@@ -251,7 +257,8 @@ class CompleteVisitInvoiceOrchestrator(
                 exemptionLegalBasis = invoice.exemptionLegalBasis,
                 visitId             = visit.id.value,
                 customerId          = visit.customerId.value,
-                description         = "Wizyta #${visit.visitNumber}"
+                description         = "Wizyta #${visit.visitNumber}",
+                sendToKsef          = invoice.sendToKsef ?: (settings?.ksefAutoSendDefault ?: true)
             )
         )
 
