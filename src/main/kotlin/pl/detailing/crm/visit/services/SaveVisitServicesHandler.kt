@@ -109,9 +109,15 @@ class SaveVisitServicesHandler(
         if (payload.notifyCustomer) {
             val changesSummary = buildChangesSummary(payload, visit)
             if (payload.requireConfirmation) {
-                sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary, payload.smsMessage)
+                sendConsentSms(
+                    visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary,
+                    payload.smsMessage, payload.smsUsePolishCharacters
+                )
             } else {
-                sendNotificationSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary, payload.smsMessage)
+                sendNotificationSms(
+                    visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary,
+                    payload.smsMessage, payload.smsUsePolishCharacters
+                )
             }
         }
 
@@ -149,7 +155,8 @@ class SaveVisitServicesHandler(
         visitId: VisitId,
         updatedVisit: pl.detailing.crm.visit.domain.Visit,
         changesSummary: ServiceChangesSummary,
-        customMessage: String?
+        customMessage: String?,
+        usePolishCharacters: Boolean
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
 
@@ -169,7 +176,8 @@ class SaveVisitServicesHandler(
             customerPhone = phone,
             totalGrossCents = totalGross,
             changes = changesSummary,
-            customMessage = customMessage
+            customMessage = customMessage,
+            usePolishCharacters = usePolishCharacters
         )
     }
 
@@ -185,7 +193,8 @@ class SaveVisitServicesHandler(
         visitId: VisitId,
         updatedVisit: pl.detailing.crm.visit.domain.Visit,
         changesSummary: ServiceChangesSummary,
-        customMessage: String?
+        customMessage: String?,
+        usePolishCharacters: Boolean
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
 
@@ -205,7 +214,8 @@ class SaveVisitServicesHandler(
             customerPhone = phone,
             proposedTotalGrossCents = proposedTotalGross,
             changes = changesSummary,
-            customMessage = customMessage
+            customMessage = customMessage,
+            usePolishCharacters = usePolishCharacters
         )
     }
 }

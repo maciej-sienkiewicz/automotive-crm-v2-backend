@@ -9,11 +9,16 @@ data class ServicesChangesPayload(
     val updated: List<UpdatedService>,
     val deleted: List<DeletedService>,
     /**
-     * Treść SMS-a zatwierdzona przez użytkownika CRM-a (propozycja z LLM, po ewentualnej edycji).
+     * Treść SMS-a zatwierdzona przez użytkownika CRM-a (propozycja z CRM-a, po ewentualnej edycji).
      * Puste = wysyłamy treść z szablonu. Wezwanie do odpowiedzi "TAK" jest doklejane
      * przy wysyłce i nie pochodzi z tego pola.
      */
-    val smsMessage: String? = null
+    val smsMessage: String? = null,
+    /**
+     * true = wysyłamy SMS z polskimi znakami (UCS-2, drożej).
+     * Domyślnie false — treść jest transliterowana na ASCII tuż przed wysyłką.
+     */
+    val smsUsePolishCharacters: Boolean = false
 )
 
 data class AddedService(
