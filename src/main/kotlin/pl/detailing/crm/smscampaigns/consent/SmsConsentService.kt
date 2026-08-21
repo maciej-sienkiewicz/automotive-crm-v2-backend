@@ -108,20 +108,24 @@ class SmsConsentService(
         }
 
         /**
-         * Skleja treść wiadomości: własna treść z CRM-a (jeśli jest) lub szablon awaryjny,
-         * zawsze zakończone [CONSENT_CALL_TO_ACTION]. Powtórzone wezwanie jest ucinane,
-         * żeby nie wysłać go dwa razy, gdy użytkownik przepisze je do swojej treści.
+         * Skleja treść wiadomości: własna treść z CRM-a (jeśli jest) lub szablon awaryjny.
+         *
+         * [appendCta] doklejamy tylko wtedy, gdy klient ma odpowiedzieć "TAK" — czyli
+         * przy `requireConfirmation = true`. Przy samej notyfikacji (bez potwierdzenia)
+         * nie ma na co odpisywać, więc frazy tam nie ma. Ewentualna fraza wpisana ręcznie
+         * przez użytkownika (z ogonkami albo bez) jest zawsze ucinana, żeby nie wysłać jej
+         * dwa razy ani nie zostawić martwego wezwania w wiadomości informacyjnej.
          */
         internal fun composeMessage(
             customMessage: String?,
             changes: ServiceChangesSummary,
             totalGrossCents: Long,
-            usePolishCharacters: Boolean = false
+            usePolishCharacters: Boolean = false,
+            appendCta: Boolean = true
         ): String {
             val body = customMessage?.trim()?.takeIf { it.isNotBlank() }
                 ?: buildFallbackBody(changes, totalGrossCents)
 
-            // Fraza może przyjść z CRM-a już doklejona (z ogonkami albo bez) — ucinamy każdy wariant.
             val withoutCta = listOf(
                 CONSENT_CALL_TO_ACTION,
                 CONSENT_CALL_TO_ACTION.removeSuffix("."),
@@ -129,8 +133,11 @@ class SmsConsentService(
                 toAscii(CONSENT_CALL_TO_ACTION).removeSuffix(".")
             ).fold(body.trim()) { acc, cta -> acc.removeSuffix(cta).trim() }
 
-            val full = if (withoutCta.isEmpty()) CONSENT_CALL_TO_ACTION
-            else "$withoutCta $CONSENT_CALL_TO_ACTION"
+            val full = when {
+                !appendCta -> withoutCta
+                withoutCta.isEmpty() -> CONSENT_CALL_TO_ACTION
+                else -> "$withoutCta $CONSENT_CALL_TO_ACTION"
+            }
 
             return if (usePolishCharacters) full else toAscii(full)
         }
@@ -173,7 +180,7 @@ class SmsConsentService(
 
         smsConsentRequestRepository.supersedePendingByVisitId(visitId.value)
 
-        val message = composeMessage(customMessage, changes, proposedTotalGrossCents, usePolishCharacters)
+        val message = composeMessage(customMessage, changes, proposedTotalGrossCents, usePolishCharacters, appendCta = true)
 
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
@@ -240,7 +247,7 @@ class SmsConsentService(
         usePolishCharacters: Boolean = false
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
-        val message = composeMessage(customMessage, changes, totalGrossCents, usePolishCharacters)
+        val message = composeMessage(customMessage, changes, totalGrossCents, usePolishCharacters, appendCta = false)
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
         val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
@@ -377,10 +384,10 @@ class SmsConsentService(
      * additional items are summarised as "i inne".
      */
     internal fun buildConsentMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String =
-        composeMessage(null, changes, totalGrossCents)
+        composeMessage(null, changes, totalGrossCents, appendCta = true)
 
     internal fun buildNotificationMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String =
-        composeMessage(null, changes, totalGrossCents)
+        composeMessage(null, changes, totalGrossCents, appendCta = false)
 
     // -------------------------------------------------------------------------
     // Helpers
