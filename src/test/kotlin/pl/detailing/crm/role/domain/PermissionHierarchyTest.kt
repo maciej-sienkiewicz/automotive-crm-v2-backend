@@ -142,6 +142,32 @@ class PermissionHierarchyTest {
     }
 
     @Test
+    fun `bulk contractor orders stand alone`() {
+        // Obsługa kontrahenta B2B to osobne stanowisko: własny korzeń w module wizyt,
+        // bez rodzica i bez implikacji. Nadanie samego BATCH_ORDERS ma dać dokładnie
+        // to jedno uprawnienie — ani kalendarza, ani kartoteki klientów.
+        assertTrue(Permission.BATCH_ORDERS in PermissionHierarchy.rootsOf(PermissionModule.VISITS)) {
+            "BATCH_ORDERS must be a root of the VISITS module"
+        }
+        assertEquals(
+            setOf(Permission.BATCH_ORDERS),
+            PermissionHierarchy.close(setOf(Permission.BATCH_ORDERS))
+        )
+    }
+
+    @Test
+    fun `the booking desk-flow does not carry bulk contractor orders`() {
+        // I odwrotnie: recepcja umawiająca wizyty nie dostaje wglądu w stawki
+        // kontrahentów tylko dlatego, że oba obszary siedzą w tym samym module.
+        listOf(Permission.VISITS_VIEW, Permission.VISITS_CREATE, Permission.VISITS_DELETE)
+            .forEach { permission ->
+                assertTrue(Permission.BATCH_ORDERS !in PermissionHierarchy.close(setOf(permission))) {
+                    "${permission.name} must not grant BATCH_ORDERS"
+                }
+            }
+    }
+
+    @Test
     fun `legacy stored codes map onto the consolidated tree`() {
         mapOf(
             // flat-list era

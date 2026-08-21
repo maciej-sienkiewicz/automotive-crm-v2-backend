@@ -6,6 +6,7 @@ import pl.detailing.crm.subscription.entitlement.FeatureKey
 private const val SECTION_SERVICES = "Usługi"
 private const val SECTION_MEDIA = "Multimedia / Zdjęcia"
 private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
+private const val SECTION_BATCH_ORDERS = "Zlecenia zbiorcze"
 
 /**
  * Hardcoded permission catalog organized as a **tree** (hierarchy). Administrators cannot
@@ -57,6 +58,9 @@ private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
  *   booking (viewing = [VISITS_VIEW], booking = [VISITS_CREATE]).
  * - **Vehicles are not a standalone permission area** — reading rides on visit and customer
  *   views, writing on [VISITS_CREATE], deleting on [CUSTOMERS_DELETE].
+ * - **Bulk contractor orders are an independent root** — [BATCH_ORDERS] has no parent and
+ *   implies nothing. It is the B2B desk (contractors, monthly settlement, reports), a job
+ *   that neither needs nor should get the studio calendar and the retail customer database.
  * - **Create and edit are one capability** — [VISITS_CREATE] implies
  *   Work documentation (comments, notes, photo view/upload) is part of [VISITS_VIEW].
  * - Deliberately separate: statuses (detailer policies differ per studio), payroll, cash
@@ -138,13 +142,27 @@ enum class Permission(
         featureKeyOverride = FeatureKey.CUSTOMERS
     ),
 
-    // Bulk contractor orders (B2B desk-flow): a child of VISITS_CREATE because closing
-    // a contractor month books/settles visits en masse — you cannot run batch orders
-    // without the booking capability.
+    // Sekcja: Zlecenia zbiorcze — DRUGI KORZEŃ modułu, celowo bez rodzica.
+    //
+    // Obsługa kontrahenta B2B to osobne stanowisko: ktoś wpisuje zlecenia z floty,
+    // rozlicza miesiąc i drukuje raport, i nie ma żadnego powodu, żeby przy okazji
+    // widzieć kalendarz studia ani kartotekę klientów detalicznych. Odwrotnie też:
+    // recepcja umawiająca wizyty nie musi mieć wglądu w stawki kontrahentów.
+    //
+    // Dlatego to nie jest dziecko VISITS_CREATE. Cały obszar stoi na własnym
+    // kontrolerze z jednym @RequiresPermission(BATCH_ORDERS) i nie potrzebuje ani
+    // jednego uprawnienia z gałęzi wizyt — nadanie samego tego uprawnienia daje
+    // działający, kompletny widok, a nie widok, który wywala się na 403.
+    //
+    // Role zapisane wcześniej nic nie tracą: BATCH_ORDERS trzymały razem z całym
+    // łańcuchem wizyt (domknięcie tamtej wersji katalogu), a zmiana rodzica żadnego
+    // wiersza nie usuwa — te role po prostu mają teraz jedno uprawnienie więcej,
+    // niż wynikałoby z minimum.
     BATCH_ORDERS(
         PermissionModule.VISITS, "Zlecenia zbiorcze",
-        parent = VISITS_CREATE,
-        description = "Kontrahenci, wpisy zleceń zbiorczych, raporty i zamykanie miesiąca."
+        section = SECTION_BATCH_ORDERS,
+        description = "Kontrahenci, wpisy zleceń zbiorczych, raporty i zamykanie miesiąca. " +
+            "Uprawnienie niezależne od podglądu wizyt i kalendarza — można je nadać samo."
     ),
 
     // ── Finanse ──────────────────────────────────────────────────────────────
