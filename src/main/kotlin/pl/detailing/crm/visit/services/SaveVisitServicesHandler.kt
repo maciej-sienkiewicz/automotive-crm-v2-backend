@@ -13,7 +13,6 @@ import pl.detailing.crm.visit.domain.VisitAuditLabel
 import pl.detailing.crm.visit.infrastructure.auditDisplayName
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.shared.*
-import pl.detailing.crm.visit.domain.VisitServiceItem
 import pl.detailing.crm.visit.get.MoneyAmountResponse
 import java.util.UUID
 
@@ -23,7 +22,7 @@ class SaveVisitServicesHandler(
     private val auditService: AuditService,
     private val customerRepository: CustomerRepository,
     private val smsConsentService: SmsConsentService,
-    private val serviceRepository: pl.detailing.crm.service.infrastructure.ServiceRepository
+    private val servicesChangePlanner: ServicesChangePlanner
 ) {
 
     companion object {
@@ -40,80 +39,9 @@ class SaveVisitServicesHandler(
 
         val visit = visitEntity.toDomain()
 
-        val serviceIds = payload.added.mapNotNull { it.serviceId?.let { id -> ServiceId.fromString(id) } }
-        val servicesFromDb = if (serviceIds.isNotEmpty()) {
-            serviceRepository.findAllById(serviceIds.map { it.value })
-                .associateBy { it.id }
-        } else emptyMap()
+        val plan = servicesChangePlanner.plan(visit, payload)
 
-        val addedItems = payload.added.map { added ->
-            val adjustmentType = added.adjustment?.type ?: pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT
-            val adjustmentValue = added.adjustment?.value ?: 0.0
-
-            val adjustmentValueLong = when (adjustmentType) {
-                pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT ->
-                    pl.detailing.crm.appointment.domain.AdjustmentType.convertPercentValueToBasisPoints(adjustmentValue)
-                else -> adjustmentValue.toLong()
-            }
-
-            val serviceId = added.serviceId?.let { ServiceId.fromString(it) }
-            val vatRate = if (serviceId != null) {
-                val dbService = servicesFromDb[serviceId.value]
-                    ?: throw EntityNotFoundException("Usługa o ID '${serviceId.value}' nie została znaleziona")
-                VatRate.fromInt(dbService.vatRate)
-            } else {
-                VatRate.fromInt(added.vatRate)
-            }
-
-            // Catalog's stored gross applies only when the item is added at the catalog net
-            // price — otherwise (custom/edited base) gross is derived from net as before.
-            val basePriceGross = serviceId
-                ?.let { servicesFromDb[it.value] }
-                ?.takeIf { it.basePriceNet == added.basePriceNet }
-                ?.let { Money(it.basePriceGross) }
-
-            VisitServiceItem.createPending(
-                serviceId = serviceId,
-                serviceName = added.serviceName,
-                basePriceNet = Money(added.basePriceNet),
-                vatRate = vatRate,
-                adjustmentType = adjustmentType,
-                adjustmentValue = adjustmentValueLong,
-                customNote = added.note,
-                basePriceGross = basePriceGross
-            )
-        }
-
-        val updatedItems = payload.updated.map { updated ->
-            val existingItem = visit.serviceItems.find { it.id.value.toString() == updated.serviceLineItemId }
-                ?: throw EntityNotFoundException("Service item ${updated.serviceLineItemId} not found in visit $visitId")
-
-            val newAdjustmentType = updated.adjustment?.type
-            val newAdjustmentValue = updated.adjustment?.let { adj ->
-                when (adj.type) {
-                    pl.detailing.crm.appointment.domain.AdjustmentType.PERCENT ->
-                        pl.detailing.crm.appointment.domain.AdjustmentType.convertPercentValueToBasisPoints(adj.value)
-                    else -> adj.value.toLong()
-                }
-            }
-
-            val newVatRate = updated.vatRate?.let { VatRate.fromInt(it) }
-            existingItem.toPending(Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue, newVatRate)
-        }
-
-        val deletedItems = payload.deleted.map { deleted ->
-            val existingItem = visit.serviceItems.find { it.id.value.toString() == deleted.serviceLineItemId }
-                ?: throw EntityNotFoundException("Service item ${deleted.serviceLineItemId} not found in visit $visitId")
-            
-            existingItem.markForDeletion()
-        }
-
-        val visitWithPendingChanges = visit.saveServicesChanges(
-            added = addedItems,
-            updated = updatedItems + deletedItems,  // Deleted items are now updated items with DELETE operation
-            deletedIds = emptyList(),  // No physical deletion
-            updatedBy = userId
-        )
+        val visitWithPendingChanges = servicesChangePlanner.project(visit, plan, userId)
 
         val updatedVisit = if (!payload.requireConfirmation) {
             var autoApproved = visitWithPendingChanges
@@ -181,9 +109,9 @@ class SaveVisitServicesHandler(
         if (payload.notifyCustomer) {
             val changesSummary = buildChangesSummary(payload, visit)
             if (payload.requireConfirmation) {
-                sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
+                sendConsentSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary, payload.smsMessage)
             } else {
-                sendNotificationSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary)
+                sendNotificationSms(visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary, payload.smsMessage)
             }
         }
 
@@ -220,7 +148,8 @@ class SaveVisitServicesHandler(
         studioId: StudioId,
         visitId: VisitId,
         updatedVisit: pl.detailing.crm.visit.domain.Visit,
-        changesSummary: ServiceChangesSummary
+        changesSummary: ServiceChangesSummary,
+        customMessage: String?
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
 
@@ -239,7 +168,8 @@ class SaveVisitServicesHandler(
             studioId = studioId,
             customerPhone = phone,
             totalGrossCents = totalGross,
-            changes = changesSummary
+            changes = changesSummary,
+            customMessage = customMessage
         )
     }
 
@@ -254,7 +184,8 @@ class SaveVisitServicesHandler(
         studioId: StudioId,
         visitId: VisitId,
         updatedVisit: pl.detailing.crm.visit.domain.Visit,
-        changesSummary: ServiceChangesSummary
+        changesSummary: ServiceChangesSummary,
+        customMessage: String?
     ) {
         val customer = customerRepository.findByIdAndStudioId(customerId, studioId.value)
 
@@ -273,7 +204,8 @@ class SaveVisitServicesHandler(
             studioId = studioId,
             customerPhone = phone,
             proposedTotalGrossCents = proposedTotalGross,
-            changes = changesSummary
+            changes = changesSummary,
+            customMessage = customMessage
         )
     }
 }

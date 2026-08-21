@@ -8,6 +8,8 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.get.MoneyAmountResponse
+import pl.detailing.crm.visit.services.sms.ServiceChangeSmsDraftHandler
+import pl.detailing.crm.visit.services.sms.ServiceChangeSmsDraftResponse
 
 /**
  * Controller for visit service operations (approve/reject changes)
@@ -17,8 +19,32 @@ import pl.detailing.crm.visit.get.MoneyAmountResponse
 @RequiresPermission(Permission.VISITS_CREATE)
 class VisitServiceOperationsController(
     private val approveServiceHandler: ApproveServiceHandler,
-    private val rejectServiceHandler: RejectServiceHandler
+    private val rejectServiceHandler: RejectServiceHandler,
+    private val serviceChangeSmsDraftHandler: ServiceChangeSmsDraftHandler
 ) {
+
+    /**
+     * Propozycja treści SMS-a podsumowującego planowane zmiany w usługach.
+     * POST /api/visits/{visitId}/services/sms-draft
+     *
+     * Nic nie zapisuje — liczy skutki [payload] i zwraca treść do edycji w CRM-ie.
+     */
+    @PostMapping("/{visitId}/services/sms-draft")
+    fun draftServiceChangeSms(
+        @PathVariable visitId: String,
+        @RequestBody payload: ServicesChangesPayload
+    ): ResponseEntity<ServiceChangeSmsDraftResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        ResponseEntity.ok(
+            serviceChangeSmsDraftHandler.handle(
+                visitId = VisitId.fromString(visitId),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                payload = payload
+            )
+        )
+    }
 
     /**
      * Approve a pending service change

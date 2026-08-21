@@ -7,7 +7,13 @@ data class ServicesChangesPayload(
     val requireConfirmation: Boolean = true,
     val added: List<AddedService>,
     val updated: List<UpdatedService>,
-    val deleted: List<DeletedService>
+    val deleted: List<DeletedService>,
+    /**
+     * Treść SMS-a zatwierdzona przez użytkownika CRM-a (propozycja z LLM, po ewentualnej edycji).
+     * Puste = wysyłamy treść z szablonu. Wezwanie do odpowiedzi "TAK" jest doklejane
+     * przy wysyłce i nie pochodzi z tego pola.
+     */
+    val smsMessage: String? = null
 )
 
 data class AddedService(
