@@ -62,6 +62,68 @@ class SmsConsentService(
          * by a customer SMS reply (no authenticated system user is present).
          */
         val CUSTOMER_SMS_USER_ID: UserId = UserId(UUID(0L, 0L))
+
+        /**
+         * Wezwanie do odpowiedzi doklejane na końcu KAŻDEGO SMS-a o zmianie zakresu usług.
+         *
+         * Doklejamy je tutaj, przy wysyłce, a nie w treści proponowanej użytkownikowi CRM-a —
+         * dzięki temu nie da się go usunąć ani edytować z poziomu interfejsu.
+         */
+        const val CONSENT_CALL_TO_ACTION = "Odpisz TAK aby zaakceptować."
+
+        /**
+         * Deterministyczna treść zmian, używana gdy użytkownik nie podał własnej
+         * (albo gdy nie udało się wygenerować propozycji przez LLM). Bez wezwania do odpowiedzi.
+         */
+        fun buildFallbackBody(changes: ServiceChangesSummary, totalGrossCents: Long): String {
+            val parts = mutableListOf<String>()
+
+            if (changes.addedNames.isNotEmpty()) {
+                parts.add("Dodano: ${changes.addedNames.toShortenedList()}.")
+            }
+            if (changes.removedNames.isNotEmpty()) {
+                parts.add("Usunieto: ${changes.removedNames.toShortenedList()}.")
+            }
+            if (changes.priceChangedNames.isNotEmpty()) {
+                parts.add("Zmiana ceny: ${changes.priceChangedNames.toShortenedList()}.")
+            }
+
+            parts.add("Lacznie: ${formatGrossPrice(totalGrossCents)} PLN brutto.")
+
+            return parts.joinToString(" ")
+        }
+
+        /**
+         * Skleja treść wiadomości: własna treść z CRM-a (jeśli jest) lub szablon awaryjny,
+         * zawsze zakończone [CONSENT_CALL_TO_ACTION]. Powtórzone wezwanie jest ucinane,
+         * żeby nie wysłać go dwa razy, gdy użytkownik przepisze je do swojej treści.
+         */
+        internal fun composeMessage(
+            customMessage: String?,
+            changes: ServiceChangesSummary,
+            totalGrossCents: Long
+        ): String {
+            val body = customMessage?.trim()?.takeIf { it.isNotBlank() }
+                ?: buildFallbackBody(changes, totalGrossCents)
+
+            val withoutCta = body
+                .removeSuffix(CONSENT_CALL_TO_ACTION)
+                .removeSuffix(CONSENT_CALL_TO_ACTION.removeSuffix("."))
+                .trim()
+
+            return if (withoutCta.isEmpty()) CONSENT_CALL_TO_ACTION else "$withoutCta $CONSENT_CALL_TO_ACTION"
+        }
+
+        /** Skleja do [maxItems] nazw, dopisując "i inne" gdy lista jest dłuższa. */
+        private fun List<String>.toShortenedList(maxItems: Int = 3): String =
+            if (size <= maxItems) joinToString(", ")
+            else take(maxItems).joinToString(", ") + " i inne"
+
+        internal fun formatGrossPrice(cents: Long): String {
+            val whole = cents / 100
+            val fraction = cents % 100
+            return "%d.%02d".format(whole, fraction)
+        }
     }
 
     /**
@@ -82,13 +144,14 @@ class SmsConsentService(
         studioId: StudioId,
         customerPhone: String,
         proposedTotalGrossCents: Long,
-        changes: ServiceChangesSummary
+        changes: ServiceChangesSummary,
+        customMessage: String? = null
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
 
         smsConsentRequestRepository.supersedePendingByVisitId(visitId.value)
 
-        val message = buildConsentMessage(changes, proposedTotalGrossCents)
+        val message = composeMessage(customMessage, changes, proposedTotalGrossCents)
 
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
@@ -150,10 +213,11 @@ class SmsConsentService(
         studioId: StudioId,
         customerPhone: String,
         totalGrossCents: Long,
-        changes: ServiceChangesSummary
+        changes: ServiceChangesSummary,
+        customMessage: String? = null
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
-        val message = buildNotificationMessage(changes, totalGrossCents)
+        val message = composeMessage(customMessage, changes, totalGrossCents)
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
         val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
@@ -289,63 +353,15 @@ class SmsConsentService(
      * Service name lists are capped at 3 items per section to keep the SMS concise;
      * additional items are summarised as "i inne".
      */
-    internal fun buildConsentMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String {
-        val parts = mutableListOf<String>()
+    internal fun buildConsentMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String =
+        composeMessage(null, changes, totalGrossCents)
 
-        if (changes.addedNames.isNotEmpty()) {
-            parts.add("Dodano: ${changes.addedNames.toShortenedList()}.")
-        }
-        if (changes.removedNames.isNotEmpty()) {
-            parts.add("Usunieto: ${changes.removedNames.toShortenedList()}.")
-        }
-        if (changes.priceChangedNames.isNotEmpty()) {
-            parts.add("Zmiana ceny: ${changes.priceChangedNames.toShortenedList()}.")
-        }
-
-        parts.add("Lacznie: ${formatGrossPrice(totalGrossCents)} PLN brutto.")
-        parts.add("Odpisz TAK aby zatwierdzic.")
-
-        return parts.joinToString(" ")
-    }
-
-    /**
-     * Builds the one-way notification SMS body — same change details as the consent
-     * message but without the "Odpisz TAK" call-to-action.
-     *
-     * Example: "Dodano: Polerowanie. Lacznie: 450.00 PLN brutto."
-     */
-    internal fun buildNotificationMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String {
-        val parts = mutableListOf<String>()
-
-        if (changes.addedNames.isNotEmpty()) {
-            parts.add("Dodano: ${changes.addedNames.toShortenedList()}.")
-        }
-        if (changes.removedNames.isNotEmpty()) {
-            parts.add("Usunieto: ${changes.removedNames.toShortenedList()}.")
-        }
-        if (changes.priceChangedNames.isNotEmpty()) {
-            parts.add("Zmiana ceny: ${changes.priceChangedNames.toShortenedList()}.")
-        }
-
-        parts.add("Lacznie: ${formatGrossPrice(totalGrossCents)} PLN brutto.")
-
-        return parts.joinToString(" ")
-    }
-
-    /** Joins up to [maxItems] names, appending "i inne" when the list is longer. */
-    private fun List<String>.toShortenedList(maxItems: Int = 3): String =
-        if (size <= maxItems) joinToString(", ")
-        else take(maxItems).joinToString(", ") + " i inne"
+    internal fun buildNotificationMessage(changes: ServiceChangesSummary, totalGrossCents: Long): String =
+        composeMessage(null, changes, totalGrossCents)
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-
-    private fun formatGrossPrice(cents: Long): String {
-        val whole = cents / 100
-        val fraction = cents % 100
-        return "%d.%02d".format(whole, fraction)
-    }
 
     private fun normalizeInboundPhone(phone: String): String {
         val cleaned = phone.replace(Regex("[^0-9+]"), "")
