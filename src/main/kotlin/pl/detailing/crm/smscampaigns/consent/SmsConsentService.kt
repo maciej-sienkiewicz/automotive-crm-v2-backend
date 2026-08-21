@@ -71,6 +71,20 @@ class SmsConsentService(
          */
         const val CONSENT_CALL_TO_ACTION = "Odpisz TAK aby zaakceptować."
 
+        private val POLISH_TO_ASCII = mapOf(
+            'ą' to "a", 'ć' to "c", 'ę' to "e", 'ł' to "l", 'ń' to "n",
+            'ó' to "o", 'ś' to "s", 'ź' to "z", 'ż' to "z",
+            'Ą' to "A", 'Ć' to "C", 'Ę' to "E", 'Ł' to "L", 'Ń' to "N",
+            'Ó' to "O", 'Ś' to "S", 'Ź' to "Z", 'Ż' to "Z"
+        )
+
+        /**
+         * Zamienia polskie znaki na ASCII. Bez tego każdy SMS idzie w UCS-2
+         * (70 znaków na segment zamiast 160), co realnie podnosi koszt wysyłki.
+         */
+        fun toAscii(text: String): String =
+            text.map { POLISH_TO_ASCII[it] ?: it.toString() }.joinToString("")
+
         /**
          * Deterministyczna treść zmian, używana gdy użytkownik nie podał własnej
          * (albo gdy nie udało się wygenerować propozycji przez LLM). Bez wezwania do odpowiedzi.
@@ -101,17 +115,24 @@ class SmsConsentService(
         internal fun composeMessage(
             customMessage: String?,
             changes: ServiceChangesSummary,
-            totalGrossCents: Long
+            totalGrossCents: Long,
+            usePolishCharacters: Boolean = false
         ): String {
             val body = customMessage?.trim()?.takeIf { it.isNotBlank() }
                 ?: buildFallbackBody(changes, totalGrossCents)
 
-            val withoutCta = body
-                .removeSuffix(CONSENT_CALL_TO_ACTION)
-                .removeSuffix(CONSENT_CALL_TO_ACTION.removeSuffix("."))
-                .trim()
+            // Fraza może przyjść z CRM-a już doklejona (z ogonkami albo bez) — ucinamy każdy wariant.
+            val withoutCta = listOf(
+                CONSENT_CALL_TO_ACTION,
+                CONSENT_CALL_TO_ACTION.removeSuffix("."),
+                toAscii(CONSENT_CALL_TO_ACTION),
+                toAscii(CONSENT_CALL_TO_ACTION).removeSuffix(".")
+            ).fold(body.trim()) { acc, cta -> acc.removeSuffix(cta).trim() }
 
-            return if (withoutCta.isEmpty()) CONSENT_CALL_TO_ACTION else "$withoutCta $CONSENT_CALL_TO_ACTION"
+            val full = if (withoutCta.isEmpty()) CONSENT_CALL_TO_ACTION
+            else "$withoutCta $CONSENT_CALL_TO_ACTION"
+
+            return if (usePolishCharacters) full else toAscii(full)
         }
 
         /** Skleja do [maxItems] nazw, dopisując "i inne" gdy lista jest dłuższa. */
@@ -145,13 +166,14 @@ class SmsConsentService(
         customerPhone: String,
         proposedTotalGrossCents: Long,
         changes: ServiceChangesSummary,
-        customMessage: String? = null
+        customMessage: String? = null,
+        usePolishCharacters: Boolean = false
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
 
         smsConsentRequestRepository.supersedePendingByVisitId(visitId.value)
 
-        val message = composeMessage(customMessage, changes, proposedTotalGrossCents)
+        val message = composeMessage(customMessage, changes, proposedTotalGrossCents, usePolishCharacters)
 
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
@@ -214,10 +236,11 @@ class SmsConsentService(
         customerPhone: String,
         totalGrossCents: Long,
         changes: ServiceChangesSummary,
-        customMessage: String? = null
+        customMessage: String? = null,
+        usePolishCharacters: Boolean = false
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
-        val message = composeMessage(customMessage, changes, totalGrossCents)
+        val message = composeMessage(customMessage, changes, totalGrossCents, usePolishCharacters)
         val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
 
         val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
