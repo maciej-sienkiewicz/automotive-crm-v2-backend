@@ -343,10 +343,10 @@ class CostCategoryController(
                 lineNumber        = item.lineNumber,
                 name              = item.name,
                 unit              = item.unit,
-                quantity          = item.quantity,
-                unitPriceNet      = item.unitPriceNet,
-                netValue          = netValue,
-                grossValue        = grossValue,
+                quantity          = item.quantity?.toDouble(),
+                unitPriceNet      = groszToZloty(item.unitPriceNet),
+                netValue          = groszToZloty(netValue),
+                grossValue        = groszToZloty(grossValue),
                 amountsDerived    = netValue != item.netValue || grossValue != item.grossValue,
                 vatRate           = item.vatRate,
                 costCategoryId    = assignment?.categoryId?.toString(),
@@ -377,7 +377,7 @@ class CostCategoryController(
         ).map { row ->
             CostDataPoint(
                 period        = row[0]?.toString() ?: "",
-                totalCostGross = toDouble(row[1]),
+                totalCostGross = groszToZloty(row[1]),
                 itemCount     = toLong(row[2])
             )
         }
@@ -400,7 +400,7 @@ class CostCategoryController(
                 categoryId     = catId.toString(),
                 categoryName   = cat.name,
                 color          = cat.color,
-                totalCostGross = toDouble(row[1]),
+                totalCostGross = groszToZloty(row[1]),
                 itemCount      = toLong(row[3])
             )
         }.sortedByDescending { it.totalCostGross }
@@ -568,12 +568,13 @@ class CostCategoryController(
         else        -> "YYYY-MM" // MONTHLY (default)
     }
 
-    private fun toDouble(v: Any?): Double = when (v) {
-        null      -> 0.0
-        is Double -> v
-        is Number -> v.toDouble()
-        else      -> v.toString().toDoubleOrNull() ?: 0.0
-    }
+    /**
+     * Pozycje kosztowe są w bazie w groszach (V80); DTO tego kontrolera mówią
+     * w złotych, więc dzielimy raz, tutaj — nie w arytmetyce sum.
+     */
+    private fun groszToZloty(v: Any?): Double = toLong(v) / 100.0
+
+    private fun groszToZloty(grosz: Long?): Double? = grosz?.let { it / 100.0 }
 
     private fun toLong(v: Any?): Long = when (v) {
         null     -> 0L

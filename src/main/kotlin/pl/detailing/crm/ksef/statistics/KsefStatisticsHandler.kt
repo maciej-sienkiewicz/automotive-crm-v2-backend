@@ -8,6 +8,7 @@ import java.time.ZoneOffset
 
 data class KsefStatisticsQuery(val studioId: StudioId, val year: Int)
 
+/** Kwoty w ZŁOTYCH — baza trzyma grosze, kontrakt HTTP pozostaje w złotych. */
 data class KsefMonthlyExpense(
     val month: String,
     val costsGross: Double,
@@ -51,28 +52,27 @@ class KsefStatisticsHandler(private val invoiceRepository: KsefInvoiceRepository
     // month_label, costs_gross, costs_net, costs_vat, expense_count, correction_count
     private fun mapMonthly(row: Array<Any?>) = KsefMonthlyExpense(
         month           = row[0]?.toString() ?: "?",
-        costsGross      = toDouble(row[1]),
-        costsNet        = toDouble(row[2]),
-        costsVat        = toDouble(row[3]),
+        costsGross      = groszToZloty(row[1]),
+        costsNet        = groszToZloty(row[2]),
+        costsVat        = groszToZloty(row[3]),
         expenseCount    = toLong(row[4]),
         correctionCount = toLong(row[5])
     )
 
     // costs_gross, costs_net, costs_vat, expense_count, correction_count
     private fun mapTotals(row: Array<Any?>) = KsefExpenseTotals(
-        costsGross      = toDouble(row[0]),
-        costsNet        = toDouble(row[1]),
-        costsVat        = toDouble(row[2]),
+        costsGross      = groszToZloty(row[0]),
+        costsNet        = groszToZloty(row[1]),
+        costsVat        = groszToZloty(row[2]),
         expenseCount    = toLong(row[3]),
         correctionCount = toLong(row[4])
     )
 
-    private fun toDouble(v: Any?): Double = when (v) {
-        null     -> 0.0
-        is Double -> v
-        is Number -> v.toDouble()
-        else     -> v.toString().toDoubleOrNull() ?: 0.0
-    }
+    /**
+     * Sumy z bazy przychodzą w groszach; kontrakt tego endpointu jest w złotych,
+     * więc dzielimy dokładnie tutaj — na granicy HTTP, a nie w arytmetyce.
+     */
+    private fun groszToZloty(v: Any?): Double = toLong(v) / 100.0
 
     private fun toLong(v: Any?): Long = when (v) {
         null     -> 0L

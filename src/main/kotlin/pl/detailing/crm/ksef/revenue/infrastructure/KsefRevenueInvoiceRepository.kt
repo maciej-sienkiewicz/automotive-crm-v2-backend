@@ -169,10 +169,16 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     // ── Statystyki ─────────────────────────────────────────────────────────────
 
     /**
-     * Miesięczny rozkład przychodów. Liczą się faktury istniejące w KSeF
-     * (ACCEPTED — dla CRM i EXTERNAL) oraz będące w drodze (SUBMITTED/QUEUED_RETRY,
-     * wystawione w trybie offline24 — prawnie wystawione). Wyklucza REJECTED
-     * i potwierdzone duplikaty oraz faktury ukryte ręcznie ze statystyk.
+     * Miesięczny rozkład wystawionej sprzedaży.
+     *
+     * O tym, czy faktura się liczy, decyduje jej istnienie, a NIE etap wysyłki do
+     * KSeF. Odrzucona przez KSeF (REJECTED) nie została skutecznie wystawiona i
+     * odpada; cała reszta — łącznie z NOT_SENT, czyli fakturą świadomie niewysłaną
+     * — to dokument, który klient dostał, więc liczy się normalnie. Filtr jest
+     * czarną listą właśnie po to, żeby kolejny status cyklu wysyłki nie wypadał
+     * z sum przez przeoczenie.
+     *
+     * Poza tym odpadają potwierdzone duplikaty i faktury ukryte ręcznie.
      * Korekty (KOR) liczone osobno — kwoty korekt niosą znak.
      *
      * Kolumny: month_label, gross, net, vat, invoice_count, correction_count, external_count
@@ -189,7 +195,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
             COUNT(CASE WHEN i.source = 'EXTERNAL' THEN 1 END)           AS external_count
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
-          AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
+          AND i.ksef_status <> 'REJECTED'
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
@@ -204,7 +210,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         @Param("dateTo") dateTo: LocalDate
     ): List<Array<Any?>>
 
-    /** Suma roczna — te same filtry co [findMonthlyStatistics]. */
+    /** Suma roczna wystawionej sprzedaży — te same filtry co [findMonthlyStatistics]. */
     @Query(
         value = """
         SELECT
@@ -216,7 +222,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
             COUNT(CASE WHEN i.source = 'EXTERNAL' THEN 1 END)           AS external_count
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
-          AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
+          AND i.ksef_status <> 'REJECTED'
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
@@ -234,9 +240,10 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
      * „Przychody" i „Należności" w module finansów.
      *
      * Korekty (KOR) niosą kwoty ze znakiem, więc korekta do zera realnie zeruje
-     * przychód z faktury pierwotnej. Filtry statusów są te same co w statystykach:
-     * liczy się dokument istniejący w KSeF lub będący w drodze (offline24),
-     * z pominięciem odrzuconych, potwierdzonych duplikatów i faktur ukrytych ręcznie.
+     * przychód z faktury pierwotnej. Filtry są te same co w statystykach: odpada
+     * tylko faktura odrzucona przez KSeF, potwierdzony duplikat i pozycja ukryta
+     * ręcznie. To wywołanie zawęża dodatkowo po [paymentStatus], bo przychodem są
+     * pieniądze, które wpłynęły — nie sam fakt wystawienia dokumentu.
      *
      * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumGross],
      * żeby obie strony sumy mówiły o tym samym okresie.
@@ -247,7 +254,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
           AND i.payment_status = CAST(:paymentStatus AS text)
-          AND i.ksef_status IN ('ACCEPTED', 'SUBMITTED', 'QUEUED_RETRY', 'SENDING', 'PENDING')
+          AND i.ksef_status <> 'REJECTED'
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))

@@ -14,8 +14,6 @@ import pl.detailing.crm.ksef.auth.KsefTokenVerifier
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
-import pl.detailing.crm.ksef.fetch.FetchExpensesCommand
-import pl.detailing.crm.ksef.fetch.FetchKsefInvoicesHandler
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
@@ -29,6 +27,8 @@ import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.Instant
 import java.time.LocalDate
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.OffsetDateTime
 import java.util.UUID
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
@@ -43,7 +43,6 @@ class KsefController(
     private val sessionCache: KsefSessionCache,
     private val ksefAuthService: KsefAuthService,
     private val tokenVerifier: KsefTokenVerifier,
-    private val fetchHandler: FetchKsefInvoicesHandler,
     private val invoiceRepository: KsefInvoiceRepository,
     private val invoiceItemRepository: KsefInvoiceItemRepository,
     private val syncService: KsefSyncService,
@@ -287,9 +286,11 @@ class KsefController(
             sellerName    = req.sellerName,
             buyerNip      = null,
             buyerName     = null,
-            netAmount     = req.netAmount,
-            grossAmount   = req.grossAmount,
-            vatAmount     = if (req.grossAmount != null && req.netAmount != null) req.grossAmount - req.netAmount else null,
+            netAmount     = zlotyToGrosz(req.netAmount),
+            grossAmount   = zlotyToGrosz(req.grossAmount),
+            vatAmount     = if (req.grossAmount != null && req.netAmount != null) {
+                zlotyToGrosz(req.grossAmount)!! - zlotyToGrosz(req.netAmount)!!
+            } else null,
             currency      = "PLN",
             invoiceType   = null,
             direction     = "EXPENSE",
@@ -299,22 +300,6 @@ class KsefController(
         )
 
         return ResponseEntity.status(HttpStatus.CREATED).body(invoiceRepository.save(entity).toResponse())
-    }
-
-    /** Fetch (pull) expense invoices from KSeF for a given date range. */
-    @PostMapping("/expenses/sync")
-    fun fetchFromKsef(@RequestBody req: FetchExpensesRequest): ResponseEntity<FetchExpensesResponse> {
-        requireManagerOrOwner()
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val result = fetchHandler.handle(
-            FetchExpensesCommand(
-                studioId = principal.studioId,
-                dateFrom = req.dateFrom,
-                dateTo   = req.dateTo
-            )
-        )
-        return ResponseEntity.ok(FetchExpensesResponse(fetched = result.fetched, skipped = result.skipped))
     }
 
     /** Mark KSeF invoice as EXCLUDED (hidden from statistics and listings). */
@@ -461,6 +446,16 @@ class KsefController(
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
+    /**
+     * Baza trzyma kwoty kosztowe w groszach (V80), a kontrakt tego API jest
+     * w złotych — konwersja siedzi wyłącznie tutaj, na granicy HTTP.
+     * null zostaje nullem: brak kwoty to nie to samo co zero.
+     */
+    private fun groszToZloty(grosz: Long?): Double? = grosz?.let { it / 100.0 }
+
+    private fun zlotyToGrosz(zloty: Double?): Long? =
+        zloty?.let { BigDecimal.valueOf(it).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong() }
+
     private fun requireOwner() {
         if (!SecurityContextHelper.getCurrentUser().isOwner) {
             throw ForbiddenException("Tylko właściciel może wykonać tę operację")
@@ -514,9 +509,9 @@ class KsefController(
         saleDate       = invoicingDate,
         sellerName     = sellerName,
         sellerNip      = sellerNip,
-        netAmount      = netAmount,
-        grossAmount    = grossAmount,
-        vatAmount      = vatAmount,
+        netAmount      = groszToZloty(netAmount),
+        grossAmount    = groszToZloty(grossAmount),
+        vatAmount      = groszToZloty(vatAmount),
         currency       = currency ?: "PLN",
         paymentMethod  = paymentForm,
         paymentMethodLabel = paymentForm?.let { runCatching { PaymentForm.valueOf(it).displayName }.getOrNull() },
@@ -549,9 +544,9 @@ class KsefController(
             addressLine2 = buyerAddressLine2,
             countryCode  = buyerCountryCode
         ),
-        netAmount      = netAmount,
-        grossAmount    = grossAmount,
-        vatAmount      = vatAmount,
+        netAmount      = groszToZloty(netAmount),
+        grossAmount    = groszToZloty(grossAmount),
+        vatAmount      = groszToZloty(vatAmount),
         currency       = currency ?: "PLN",
         payment        = ExpensePaymentResponse(
             method      = paymentForm,
@@ -565,10 +560,10 @@ class KsefController(
                 lineNumber   = item.lineNumber,
                 name         = item.name,
                 unit         = item.unit,
-                quantity     = item.quantity,
-                unitPriceNet = item.unitPriceNet,
-                netValue     = item.netValue,
-                grossValue   = item.grossValue,
+                quantity     = item.quantity?.toDouble(),
+                unitPriceNet = groszToZloty(item.unitPriceNet),
+                netValue     = groszToZloty(item.netValue),
+                grossValue   = groszToZloty(item.grossValue),
                 vatRate      = item.vatRate
             )
         },
@@ -583,8 +578,6 @@ class KsefController(
 // ── Request DTOs ───────────────────────────────────────────────────────────────
 
 data class SaveKsefCredentialsRequest(val nip: String, val ksefToken: String)
-
-data class FetchExpensesRequest(val dateFrom: OffsetDateTime, val dateTo: OffsetDateTime)
 
 data class CreateManualExpenseRequest(
     val saleDate: OffsetDateTime?,
@@ -653,7 +646,6 @@ data class KsefSyncStatusResponse(
     val updatedAt: OffsetDateTime?
 )
 
-data class FetchExpensesResponse(val fetched: Int, val skipped: Int)
 
 data class ExpenseResponse(
     val id: String,

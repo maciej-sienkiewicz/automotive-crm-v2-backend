@@ -71,12 +71,17 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
      *
      * Dokumenty ukryte ręcznie (excludedAt) nie wchodzą do sum — o to chodzi
      * w ukrywaniu: pozycja znika ze statystyk, zostając w bazie.
+     *
+     * [statuses] jest zbiorem, a nie pojedynczą wartością, bo należność
+     * przeterminowana to wciąż należność: OVERDUE musi sumować się razem
+     * z PENDING. Wcześniejsza wersja przyjmowała jeden status i dokument
+     * przeterminowany był wart zero złotych po obu stronach raportu.
      */
     @Query("""
         SELECT COALESCE(SUM(d.totalGross), 0) FROM FinancialDocumentEntity d
         WHERE d.studioId  = :studioId
           AND d.direction = :direction
-          AND d.status    = :status
+          AND d.status    IN :statuses
           AND d.deletedAt IS NULL
           AND d.excludedAt IS NULL
           AND d.ksefRevenueInvoiceId IS NULL
@@ -86,7 +91,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     fun sumGross(
         studioId: UUID,
         direction: DocumentDirection,
-        status: DocumentStatus,
+        statuses: Collection<DocumentStatus>,
         dateFrom: LocalDate?,
         dateTo: LocalDate?
     ): Long

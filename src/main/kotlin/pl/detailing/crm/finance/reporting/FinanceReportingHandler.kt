@@ -74,6 +74,17 @@ class FinanceReportingHandler(
     private val ksefInvoiceRepository: KsefInvoiceRepository,
     private val revenueInvoiceRepository: KsefRevenueInvoiceRepository
 ) {
+    companion object {
+        /** Rozliczone: pieniądze faktycznie przeszły. */
+        private val SETTLED = listOf(DocumentStatus.PAID)
+
+        /**
+         * Nierozliczone: pieniądze wciąż są do odebrania albo do zapłacenia.
+         * OVERDUE to nadal należność — termin minął, ale dług nie zniknął.
+         */
+        private val OUTSTANDING = listOf(DocumentStatus.PENDING, DocumentStatus.OVERDUE)
+    }
+
     fun getSummary(query: FinanceReportQuery): FinanceSummaryResult {
         val sid  = query.studioId.value
         val from = query.dateFrom
@@ -83,20 +94,20 @@ class FinanceReportingHandler(
         // paragony i dokumenty „inne" z modułu finansowego oraz faktury (i korekty)
         // z ledgera KSeF. Dokumenty finansowe powiązane z fakturą KSeF są po stronie
         // sumGross pomijane, więc nic nie liczy się dwa razy.
-        val financialDocRevenueCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, DocumentStatus.PAID, from, to)
+        val financialDocRevenueCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, SETTLED, from, to)
         val ksefRevenueCents = revenueInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to)
         val totalRevenueCents = financialDocRevenueCents + ksefRevenueCents
 
-        val financialDocCostsCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PAID, from, to)
-        val ksefCostsCents = (ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to) * 100).toLong()
+        val financialDocCostsCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, SETTLED, from, to)
+        val ksefCostsCents = ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to)
         val totalCostsCents = financialDocCostsCents + ksefCostsCents
 
-        val financialDocReceivablesCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, DocumentStatus.PENDING, from, to)
+        val financialDocReceivablesCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, OUTSTANDING, from, to)
         val ksefReceivablesCents = revenueInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
         val pendingReceivablesCents = financialDocReceivablesCents + ksefReceivablesCents
 
-        val financialDocPendingPayablesCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, DocumentStatus.PENDING, from, to)
-        val ksefPendingPayablesCents = (ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to) * 100).toLong()
+        val financialDocPendingPayablesCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, OUTSTANDING, from, to)
+        val ksefPendingPayablesCents = ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
         val pendingPayablesCents = financialDocPendingPayablesCents + ksefPendingPayablesCents
 
         val overdueReceivables = documentRepository.countOverdue(sid, DocumentDirection.INCOME)
