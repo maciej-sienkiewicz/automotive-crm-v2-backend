@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import pl.detailing.crm.appointment.create.VehicleOwnershipAction
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
@@ -112,7 +113,8 @@ class CheckinController(
             customerAlias = request.customerAlias,
             vehicle = when (request.vehicle.mode) {
                 IdentityMode.EXISTING -> VehicleData.Existing(
-                    id = VehicleId.fromString(request.vehicle.id!!)
+                    id = VehicleId.fromString(request.vehicle.id!!),
+                    ownership = request.vehicle.ownership
                 )
                 IdentityMode.NEW -> {
                     val newData = request.vehicle.newData!!
@@ -134,7 +136,8 @@ class CheckinController(
                         yearOfProduction = updateData.yearOfProduction,
                         licensePlate = updateData.licensePlate,
                         color = updateData.color,
-                        paintType = updateData.paintType
+                        paintType = updateData.paintType,
+                        ownership = request.vehicle.ownership
                     )
                 }
             },
@@ -265,7 +268,8 @@ class CheckinController(
             customerAlias = request.customerAlias,
             vehicle = when (request.vehicle.mode) {
                 IdentityMode.EXISTING -> VehicleData.Existing(
-                    id = VehicleId.fromString(request.vehicle.id!!)
+                    id = VehicleId.fromString(request.vehicle.id!!),
+                    ownership = request.vehicle.ownership
                 )
                 IdentityMode.NEW -> {
                     val newData = request.vehicle.newData!!
@@ -287,7 +291,8 @@ class CheckinController(
                         yearOfProduction = updateData.yearOfProduction,
                         licensePlate = updateData.licensePlate,
                         color = updateData.color,
-                        paintType = updateData.paintType
+                        paintType = updateData.paintType,
+                        ownership = request.vehicle.ownership
                     )
                 }
             },
@@ -516,7 +521,14 @@ data class VehicleRequest(
     val mode: IdentityMode,
     val id: String?,
     val newData: VehicleDataRequest?,
-    val updateData: VehicleDataRequest?
+    val updateData: VehicleDataRequest?,
+    /**
+     * Only for EXISTING/UPDATE: what to do with the vehicle's ownership when the visit's
+     * customer is not (yet) one of its owners — the "changed the customer, kept the car"
+     * case in the check-in wizard. `null` leaves the ownership rows untouched, which is
+     * the behaviour every older client gets.
+     */
+    val ownership: VehicleOwnershipAction? = null
 )
 
 data class VehicleDataRequest(
@@ -669,7 +681,10 @@ sealed class CustomerData {
 }
 
 sealed class VehicleData {
-    data class Existing(val id: VehicleId) : VehicleData()
+    data class Existing(
+        val id: VehicleId,
+        val ownership: VehicleOwnershipAction? = null
+    ) : VehicleData()
     data class New(
         val brand: String,
         val model: String,
@@ -685,7 +700,8 @@ sealed class VehicleData {
         val yearOfProduction: Int?,
         val licensePlate: String?,
         val color: String?,
-        val paintType: String?
+        val paintType: String?,
+        val ownership: VehicleOwnershipAction? = null
     ) : VehicleData()
 }
 
