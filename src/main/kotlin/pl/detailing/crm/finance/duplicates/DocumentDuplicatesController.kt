@@ -11,6 +11,7 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import java.time.Instant
 import java.time.LocalDate
+import java.util.UUID
 
 /**
  * Wgląd w automatycznie wyciszone duplikaty i jedyna ręczna furtka:
@@ -41,7 +42,7 @@ class DocumentDuplicatesController(
      * na czarną listę i nie zostanie zaproponowana ponownie.
      */
     @PatchMapping("/{id}/dismiss")
-    fun dismiss(@PathVariable id: java.util.UUID): ResponseEntity<Void> {
+    fun dismiss(@PathVariable id: UUID): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
         val found = detector.dismiss(principal.studioId, id, principal.userId.value)
         return if (found) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
