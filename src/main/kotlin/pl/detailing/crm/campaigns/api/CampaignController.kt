@@ -36,6 +36,8 @@ data class AudienceCriteriaDto(
     val vehicleYearMax: Int? = null,
     val customerType: CustomerTypeFilter = CustomerTypeFilter.ALL,
     val customerCreatedAfter: Instant? = null,
+    /** Patrz [AudienceCriteria.includeUnnamedCustomers] — `true` dla zgodności wstecznej. */
+    val includeUnnamedCustomers: Boolean = true,
     val includeCustomerIds: List<UUID> = emptyList(),
     val excludeCustomerIds: List<UUID> = emptyList()
 ) {
@@ -54,6 +56,7 @@ data class AudienceCriteriaDto(
         vehicleYearMax = vehicleYearMax,
         customerType = customerType,
         customerCreatedAfter = customerCreatedAfter,
+        includeUnnamedCustomers = includeUnnamedCustomers,
         includeCustomerIds = includeCustomerIds,
         excludeCustomerIds = excludeCustomerIds
     )
@@ -74,6 +77,7 @@ data class AudienceCriteriaDto(
             vehicleYearMax = a.vehicleYearMax,
             customerType = a.customerType,
             customerCreatedAfter = a.customerCreatedAfter,
+            includeUnnamedCustomers = a.includeUnnamedCustomers,
             includeCustomerIds = a.includeCustomerIds,
             excludeCustomerIds = a.excludeCustomerIds
         )
