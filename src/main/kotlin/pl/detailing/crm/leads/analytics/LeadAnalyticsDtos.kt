@@ -28,8 +28,16 @@ data class LeadAnalyticsDto(
     val wonValue: Long,
     /** Wartość przegranych leadów (grosze) — pieniądze, które przeszły obok. */
     val lostValue: Long,
-    /** Wartość leadów wciąż otwartych (grosze). */
+    /** Wartość rozmów wciąż żywych: otwartych i młodszych niż okno decyzji (grosze). */
     val pipelineValue: Long,
+    /**
+     * Wartość rozmów formalnie otwartych, ale starszych niż okno decyzji.
+     *
+     * Nikt ich nie zamknął, więc w bazie wyglądają na żywe. W rachunku stoją osobno,
+     * bo doliczone do „wciąż w grze" zawyżałyby pipeline dokładnie o pieniądze,
+     * których nie będzie.
+     */
+    val silentValue: Long,
     /** O co pytają: rozkład kategorii z podziałem wygrane/przegrane. */
     val categories: List<CategoryStatDto>,
     /** Dlaczego przegrywamy: rozkład powodów w leadach LOST. */
@@ -52,6 +60,9 @@ data class LeadAnalyticsDto(
     val timeline: List<TimelinePointDto>,
     /** Macierz „która usługa, w który dzień tygodnia" — wiersze od najdroższej. */
     val weekdayMatrix: List<WeekdayMatrixRowDto>,
+    /** W jakich autach wygrywamy: podział po wielkości i po klasie rynkowej marki. */
+    val bySizeSegment: List<SegmentStatDto>,
+    val byMarketTier: List<SegmentStatDto>,
     /** Kanał, którym przyszło zapytanie, i jego skuteczność. */
     val bySource: List<SourceStatDto>,
 
@@ -217,4 +228,23 @@ data class LeakDto(
     val label: String,
     val value: Long,
     val count: Int
+)
+
+/**
+ * Wygrane i przegrane w jednym segmencie aut.
+ *
+ * Dwie osie, bo odpowiadają na dwa różne pytania. Wielkość mówi o pracy: ile
+ * lakieru, ile wykrojów folii, czy auto zmieści się na stanowisku. Klasa rynkowa
+ * mówi o rozmowie o cenie: właściciel Dacii i właściciel Porsche mogą przyjechać
+ * tym samym kompaktem i zupełnie inaczej zareagować na wycenę.
+ */
+data class SegmentStatDto(
+    val code: String,
+    val label: String,
+    val count: Int,
+    val won: Int,
+    val lost: Int,
+    val winRate: Double?,
+    /** Średnia wycena wycenionych zapytań tego segmentu; null, gdy żadne nie ma wyceny. */
+    val averageValue: Long?
 )

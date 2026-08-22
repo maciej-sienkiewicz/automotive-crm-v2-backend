@@ -12,6 +12,9 @@ import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.DateRangeFilter
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.vehicle.segment.VehicleMarketTier
+import pl.detailing.crm.vehicle.segment.VehicleSegmentRepository
+import pl.detailing.crm.vehicle.segment.VehicleSizeSegment
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -35,7 +38,8 @@ class GetLeadAnalyticsHandler(
     private val historyRepository: LeadStatusHistoryRepository,
     private val tagService: LeadTagService,
     private val tagCatalog: LeadTagCatalogService,
-    private val conversationStates: LeadConversationStateService
+    private val conversationStates: LeadConversationStateService,
+    private val vehicleSegments: VehicleSegmentRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -63,6 +67,10 @@ class GetLeadAnalyticsHandler(
                 .toMap()
 
         val windowLength = Duration.between(from, to)
+        val now = Instant.now()
+        // Klasyfikacja aut pobrana raz i podana obu osiom — dwa identyczne zapytania
+        // po tę samą tabelę byłyby czystą stratą.
+        val vehicleSegmentsOf = segmentsOf(leads)
         val byStatus = leads.groupingBy { it.status }.eachCount()
         val completed = byStatus[LeadStatus.COMPLETED] ?: 0
         val closed = completed + (byStatus[LeadStatus.LOST] ?: 0) + (byStatus[LeadStatus.NO_SHOW] ?: 0)
@@ -74,8 +82,11 @@ class GetLeadAnalyticsHandler(
             byStatus = byStatus.mapKeys { it.key.name },
             conversionRate = ratio(completed, closed),
             wonValue = leads.filter { it.status == LeadStatus.COMPLETED }.sumOf { it.estimatedValue },
-            lostValue = leads.filter { it.status in LOST_STATUSES }.sumOf { it.estimatedValue },
-            pipelineValue = leads.filter { it.status in OPEN_STATUSES }.sumOf { it.estimatedValue },
+            // Świadomie bez leadów odrzuconych z naszej woli i bez spamu: to nigdy
+            // nie były nasze pieniądze, patrz LeadLostReason.countsAsLoss.
+            lostValue = leads.filter { it.isRealLoss() }.sumOf { it.estimatedValue },
+            pipelineValue = leads.filter { it.isLive(now) }.sumOf { it.estimatedValue },
+            silentValue = leads.filter { it.isSilent(now) }.sumOf { it.estimatedValue },
             categories = categories(studioId, leads),
             lostReasons = lostReasons(leads),
             medianFirstResponseMinutes = medianFirstResponseMinutes(leads),
@@ -85,11 +96,13 @@ class GetLeadAnalyticsHandler(
             inquiriesByMonthDay = inquiriesByMonthDay(leads),
             responseImpact = responseImpact(leads),
             vehicleOutliers = vehicleOutliers(leads, ratio(completed, closed)),
-            timeline = timeline(leads, from, to),
+            timeline = timeline(leads, from, to, now),
             weekdayMatrix = weekdayMatrix(studioId, leads),
+            bySizeSegment = bySizeSegment(leads, vehicleSegmentsOf),
+            byMarketTier = byMarketTier(leads, vehicleSegmentsOf),
             bySource = bySource(leads),
             awaiting = awaiting(studioId),
-            leaks = leaks(leads),
+            leaks = leaks(leads, now),
             // Poprzednie okno tej samej długości — jedyny punkt odniesienia, jaki
             // właściciel ma bez wychodzenia z ekranu. Bez niego kwota wygranych jest
             // liczbą bez skali: nie wiadomo, czy to dobrze, czy źle.
@@ -135,7 +148,13 @@ class GetLeadAnalyticsHandler(
                     conversionRate = ratio(groupCompleted, groupCompleted + groupLost)
                 )
             }
-            .sortedByDescending { it.count }
+            // Od tych, w których wygrywamy najczęściej. Sortowanie po liczbie
+            // odpowiadało na inne pytanie („o co pytają najczęściej"), a to jest
+            // karta „w czym wygrywamy": pierwszy wiersz ma być odpowiedzią.
+            .sortedWith(
+                compareByDescending<CategoryStatDto> { it.conversionRate ?: -1.0 }
+                    .thenByDescending { it.count }
+            )
     }
 
     private fun lostReasons(leads: List<LeadEntity>): List<LostReasonStatDto> {
@@ -258,6 +277,75 @@ class GetLeadAnalyticsHandler(
         }
     }
 
+    // ── W jakich autach wygrywamy ──────────────────────────────────────────
+
+    /**
+     * Klasyfikacja aut z leadów okna — jednym zapytaniem, nie po jednym na lead.
+     *
+     * Marka jest kluczem grubym: zaciągamy wszystkie wiersze dla marek, które
+     * wystąpiły, i dopiero w pamięci dobieramy model. Modeli tej samej marki jest
+     * kilkanaście, więc to wciąż jedno małe zapytanie, a nie N zapytań po parze.
+     */
+    private fun segmentsOf(leads: List<LeadEntity>): Map<UUID, SegmentPair> {
+        val branded = leads.filter { !it.vehicleBrand.isNullOrBlank() }
+        if (branded.isEmpty()) return emptyMap()
+
+        val rows = vehicleSegments
+            .findByBrandKeyIn(branded.mapNotNull { it.vehicleBrand?.trim()?.lowercase() }.distinct())
+            .associateBy { it.brandKey to it.modelKey }
+
+        return branded.mapNotNull { lead ->
+            val brandKey = lead.vehicleBrand?.trim()?.lowercase() ?: return@mapNotNull null
+            val modelKey = lead.vehicleModel?.trim()?.lowercase().orEmpty()
+            // Model bez własnego wiersza spada na klasyfikację samej marki: klasa
+            // rynkowa i tak jest jej cechą, a wielkość bywa wtedy UNKNOWN — i dobrze.
+            val row = rows[brandKey to modelKey] ?: rows[brandKey to ""] ?: return@mapNotNull null
+            lead.id to SegmentPair(row.sizeSegment, row.marketTier)
+        }.toMap()
+    }
+
+    private fun bySizeSegment(
+        leads: List<LeadEntity>,
+        segments: Map<UUID, SegmentPair>
+    ): List<SegmentStatDto> {
+        return leads
+            .mapNotNull { lead -> segments[lead.id]?.size?.let { it to lead } }
+            .groupBy({ it.first }, { it.second })
+            .filterKeys { it != VehicleSizeSegment.UNKNOWN }
+            .map { (segment, group) -> segmentStat(segment.name, segment.label, group) }
+            .sortedWith(BY_WIN_RATE_DESC)
+    }
+
+    private fun byMarketTier(
+        leads: List<LeadEntity>,
+        segments: Map<UUID, SegmentPair>
+    ): List<SegmentStatDto> {
+        return leads
+            .mapNotNull { lead -> segments[lead.id]?.tier?.let { it to lead } }
+            .groupBy({ it.first }, { it.second })
+            .filterKeys { it != VehicleMarketTier.UNKNOWN }
+            .map { (tier, group) -> segmentStat(tier.name, tier.label, group) }
+            .sortedWith(BY_WIN_RATE_DESC)
+    }
+
+    private fun segmentStat(code: String, label: String, group: List<LeadEntity>): SegmentStatDto {
+        val won = group.count { it.status == LeadStatus.COMPLETED }
+        val lost = group.count { it.status in LOST_STATUSES }
+        val priced = group.filter { it.estimatedValue > 0 }
+        return SegmentStatDto(
+            code = code,
+            label = label,
+            count = group.size,
+            won = won,
+            lost = lost,
+            winRate = ratio(won, won + lost),
+            averageValue = priced.takeIf { it.isNotEmpty() }
+                ?.let { rows -> rows.sumOf { it.estimatedValue } / rows.size }
+        )
+    }
+
+    private data class SegmentPair(val size: VehicleSizeSegment, val tier: VehicleMarketTier)
+
     // ── Odstępstwa ─────────────────────────────────────────────────────────
 
     /**
@@ -304,7 +392,12 @@ class GetLeadAnalyticsHandler(
      * 52 słupki po dwa piksele — kształt niknie w szumie, a właśnie kształt jest tu
      * jedyną treścią.
      */
-    private fun timeline(leads: List<LeadEntity>, from: Instant, to: Instant): List<TimelinePointDto> {
+    private fun timeline(
+        leads: List<LeadEntity>,
+        from: Instant,
+        to: Instant,
+        now: Instant
+    ): List<TimelinePointDto> {
         val start = from.localDate()
         val end = to.localDate()
         val monthly = ChronoUnit.DAYS.between(start, end) > MONTHLY_THRESHOLD_DAYS
@@ -322,8 +415,9 @@ class GetLeadAnalyticsHandler(
 
         return buckets.map { (periodStart, group) ->
             val won = group.filter { it.status == LeadStatus.COMPLETED }
-            val lost = group.filter { it.status in LOST_STATUSES }
-            val open = group.filter { it.status in OPEN_STATUSES }
+            val lost = group.filter { it.isRealLoss() }
+            val live = group.filter { it.isLive(now) }
+            val silent = group.filter { it.isSilent(now) }
             TimelinePointDto(
                 periodStart = periodStart,
                 created = group.size,
@@ -332,7 +426,8 @@ class GetLeadAnalyticsHandler(
                 winRate = ratio(won.size, won.size + lost.size),
                 wonValue = won.sumOf { it.estimatedValue },
                 lostValue = lost.sumOf { it.estimatedValue },
-                openValue = open.sumOf { it.estimatedValue }
+                openValue = live.sumOf { it.estimatedValue },
+                silentValue = silent.sumOf { it.estimatedValue }
             )
         }
     }
@@ -455,11 +550,17 @@ class GetLeadAnalyticsHandler(
      * jedyna pozycja tej listy, którą da się naprawić w tym tygodniu i za darmo,
      * więc ma być widoczna jako osobna, a nie rozpuszczona w „inne".
      */
-    private fun leaks(leads: List<LeadEntity>): List<LeakDto> {
-        val lost = leads.filter { it.status in LOST_STATUSES }
-        if (lost.isEmpty()) return emptyList()
+    private fun leaks(leads: List<LeadEntity>, now: Instant): List<LeakDto> {
+        val lost = leads.filter { it.isRealLoss() }
+        val silentOpen = leads.filter { it.isSilent(now) }
+        if (lost.isEmpty() && silentOpen.isEmpty()) return emptyList()
 
-        val (silent, answered) = lost.partition { it.firstResponseAt == null }
+        // Zapytanie, na które nigdy nie poszła odpowiedź, ma tylko jeden prawdziwy
+        // powód porażki — bez względu na to, co ktoś zaznaczył tydzień później
+        // zamykając lead. To jedyna pozycja tej listy, którą da się naprawić w tym
+        // tygodniu i za darmo, więc musi być widoczna osobno.
+        val (neverAnswered, answered) = lost.partition { it.firstResponseAt == null }
+
         val fromReasons = answered
             .groupBy { it.lostReasonCode }
             .map { (reason, group) ->
@@ -471,11 +572,18 @@ class GetLeadAnalyticsHandler(
                 )
             }
 
-        val fromSilence = silent.takeIf { it.isNotEmpty() }?.let {
-            LeakDto("NO_REPLY", "Nikt nie odpisał", it.sumOf { lead -> lead.estimatedValue }, it.size)
-        }
+        val extras = listOfNotNull(
+            neverAnswered.takeIf { it.isNotEmpty() }?.let {
+                LeakDto("NO_REPLY", "Nikt nie odpisał", it.sumOf { lead -> lead.estimatedValue }, it.size)
+            },
+            // Rozmowy formalnie otwarte, ale starsze niż okno decyzji. Nikt ich nie
+            // zamknął, więc w bazie wyglądają na żywe — w rzeczywistości ucichły.
+            silentOpen.takeIf { it.isNotEmpty() }?.let {
+                LeakDto("SILENT", "Rozmowa ucichła", it.sumOf { lead -> lead.estimatedValue }, it.size)
+            }
+        )
 
-        return (fromReasons + listOfNotNull(fromSilence))
+        return (fromReasons + extras)
             .filter { it.value > 0 || it.count > 0 }
             .sortedByDescending { it.value }
     }
@@ -518,6 +626,18 @@ class GetLeadAnalyticsHandler(
     private fun ratio(numerator: Int, denominator: Int): Double? =
         if (denominator == 0) null else numerator.toDouble() / denominator
 
+    /** Przegrana, która realnie kosztowała pieniądze — patrz LeadLostReason.countsAsLoss. */
+    private fun LeadEntity.isRealLoss(): Boolean =
+        status in LOST_STATUSES && (lostReasonCode?.countsAsLoss ?: true)
+
+    /** Rozmowa wciąż żywa: otwarta i młodsza niż okno decyzji. */
+    private fun LeadEntity.isLive(now: Instant): Boolean =
+        status in OPEN_STATUSES && ChronoUnit.DAYS.between(createdAt, now) <= DECISION_WINDOW_DAYS
+
+    /** Otwarta, ale starsza niż okno decyzji — formalnie żywa, w praktyce ucichła. */
+    private fun LeadEntity.isSilent(now: Instant): Boolean =
+        status in OPEN_STATUSES && ChronoUnit.DAYS.between(createdAt, now) > DECISION_WINDOW_DAYS
+
     private fun Instant.localDate(): LocalDate = atZone(DateRangeFilter.ZONE).toLocalDate()
 
     private fun List<Long>.median(): Long? =
@@ -542,11 +662,28 @@ class GetLeadAnalyticsHandler(
         const val OUTLIER_THRESHOLD = 0.20
         const val MAX_OUTLIERS = 4
 
+        /**
+         * Ile dni klient realnie potrzebuje na decyzję o detailingu.
+         *
+         * Dwa tygodnie: kto pyta o mycie, decyduje w dzień, kto o powłokę — po
+         * obejrzeniu auta i jednej rozmowie o cenie. Rozmowa otwarta miesiąc po
+         * zapytaniu nie jest pipeline'em, tylko czymś, czego nikt nie zamknął, i
+         * pokazywanie jej jako „wciąż w grze" zawyża wartość otwartych zapytań
+         * dokładnie o pieniądze, których nie będzie. Dłuższe przypadki się zdarzają
+         * — flota, auto w budowie — ale są wyjątkiem, nie regułą, i mają wracać
+         * przez pozycję „Rozmowa ucichła", a nie zawyżać sumę.
+         */
+        const val DECISION_WINDOW_DAYS = 14L
+
         /** Ponad kwartał liczymy miesiącami, żeby na wykresie było widać kształt. */
         const val MONTHLY_THRESHOLD_DAYS = 120L
 
         /** Tyle wierszy macierzy da się jeszcze ogarnąć wzrokiem; reszta idzie w „Pozostałe". */
         const val MAX_MATRIX_ROWS = 6
+
+        /** Od segmentów, w których wygrywamy najczęściej; bez rozstrzygnięć na dół. */
+        val BY_WIN_RATE_DESC = compareByDescending<SegmentStatDto> { it.winRate ?: -1.0 }
+            .thenByDescending { it.count }
 
         /** Najdroższe na górze; usługi bez ani jednej wyceny na sam dół. */
         val BY_VALUE_DESC = compareByDescending<WeekdayMatrixRowDto> { it.averageValue ?: -1L }
