@@ -28,6 +28,28 @@ interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
     @Query("SELECT a FROM AppointmentEntity a WHERE a.studioId = :studioId AND a.deletedAt IS NULL")
     fun findByStudioId(@Param("studioId") studioId: UUID): List<AppointmentEntity>
 
+    /**
+     * Ile razy rezerwacja tego klienta nie doszła do skutku.
+     *
+     * ABANDONED i CANCELLED, bo z punktu widzenia wolnego terminu w kalendarzu to
+     * jest ta sama strata. CONVERTED (rezerwacja stała się wizytą) i CREATED
+     * (jeszcze przed terminem) nie są niczyją winą i nie mają prawa tu wpadać.
+     */
+    @Query(
+        """
+        SELECT COUNT(a) FROM AppointmentEntity a
+        WHERE a.studioId = :studioId
+          AND a.customerId = :customerId
+          AND a.deletedAt IS NULL
+          AND a.status IN (pl.detailing.crm.appointment.domain.AppointmentStatus.ABANDONED,
+                           pl.detailing.crm.appointment.domain.AppointmentStatus.CANCELLED)
+    """
+    )
+    fun countAbandonedByCustomer(
+        @Param("studioId") studioId: UUID,
+        @Param("customerId") customerId: UUID
+    ): Long
+
     @Query("""
         SELECT a FROM AppointmentEntity a
         WHERE a.studioId = :studioId
