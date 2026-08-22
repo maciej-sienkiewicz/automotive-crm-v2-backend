@@ -3,7 +3,6 @@ package pl.detailing.crm.audit
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -12,21 +11,15 @@ import pl.detailing.crm.audit.domain.AuditActorType
 import pl.detailing.crm.audit.domain.AuditChannel
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditSeverity
-import pl.detailing.crm.audit.entity.GetEntityAuditLogsCommand
-import pl.detailing.crm.audit.entity.GetEntityAuditLogsHandler
 import pl.detailing.crm.audit.feed.AuditActionFilterOption
 import pl.detailing.crm.audit.feed.AuditFeedResponse
 import pl.detailing.crm.audit.feed.AuditFilterOption
 import pl.detailing.crm.audit.feed.AuditFilterOptionsResponse
 import pl.detailing.crm.audit.feed.GetAuditFeedCommand
 import pl.detailing.crm.audit.feed.GetAuditFeedHandler
-import pl.detailing.crm.audit.list.AuditLogListResult
-import pl.detailing.crm.audit.list.ListAuditLogsCommand
-import pl.detailing.crm.audit.list.ListAuditLogsHandler
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
-import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
@@ -43,9 +36,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/audit")
 @RequiresPermission(Permission.AUDIT_VIEW)
 class AuditController(
-    private val getAuditFeedHandler: GetAuditFeedHandler,
-    private val listAuditLogsHandler: ListAuditLogsHandler,
-    private val getEntityAuditLogsHandler: GetEntityAuditLogsHandler
+    private val getAuditFeedHandler: GetAuditFeedHandler
 ) {
 
     /**
@@ -138,94 +129,6 @@ class AuditController(
         )
     )
 
-    /**
-     * Page-numbered history, raw field changes, no rendering.
-     *
-     * Superseded by [getFeed] — kept so existing clients keep working. Unlike the feed it
-     * pays for a `count(*)` on every request and cannot express the actor, severity or
-     * business-context filters.
-     */
-    @Deprecated("Use GET /api/v1/audit/feed")
-    @GetMapping("/activity")
-    fun getActivityHistory(
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "20") size: Int,
-        @RequestParam(required = false) modules: String?,
-        @RequestParam(required = false) actions: String?,
-        @RequestParam(required = false) userId: String?,
-        @RequestParam(required = false) from: String?,
-        @RequestParam(required = false) to: String?
-    ): ResponseEntity<AuditActivityResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = ListAuditLogsCommand(
-            studioId = principal.studioId,
-            page = maxOf(1, page),
-            pageSize = size.coerceIn(1, 100),
-            modules = parseEnumList(modules, "modules") { AuditModule.valueOf(it) },
-            actions = parseEnumList(actions, "actions") { AuditAction.valueOf(it) },
-            userId = parseUuid(userId, "userId")?.let { UserId(it) },
-            from = parseInstant(from, "from"),
-            to = parseInstant(to, "to")
-        )
-
-        ResponseEntity.ok(mapToResponse(listAuditLogsHandler.handle(command)))
-    }
-
-    /**
-     * History of a single entity — the activity tab on a customer, vehicle or visit card.
-     *
-     * GET /api/v1/audit/VEHICLE/550e8400-e29b-41d4-a716-446655440000
-     *
-     * Superseded by `GET /api/v1/audit/feed?module=…&entityId=…`, which returns the same
-     * rows already rendered.
-     */
-    @Deprecated("Use GET /api/v1/audit/feed with module and entityId")
-    @GetMapping("/{module}/{entityId}")
-    fun getEntityAuditLogs(
-        @PathVariable module: String,
-        @PathVariable entityId: String,
-        @RequestParam(defaultValue = "1") page: Int,
-        @RequestParam(defaultValue = "50") size: Int
-    ): ResponseEntity<AuditActivityResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-
-        val command = GetEntityAuditLogsCommand(
-            studioId = principal.studioId,
-            module = parseEnum(module, "module") { AuditModule.valueOf(it) },
-            entityId = entityId,
-            page = maxOf(1, page),
-            pageSize = size.coerceIn(1, 100)
-        )
-
-        ResponseEntity.ok(mapToResponse(getEntityAuditLogsHandler.handle(command)))
-    }
-
-    private fun mapToResponse(result: AuditLogListResult): AuditActivityResponse = AuditActivityResponse(
-        items = result.items.map { item ->
-            AuditActivityItem(
-                id = item.id,
-                userId = item.userId,
-                userDisplayName = item.userDisplayName,
-                module = item.module,
-                entityId = item.entityId,
-                entityDisplayName = item.entityDisplayName,
-                action = item.action,
-                changes = item.changes.map { change ->
-                    AuditFieldChangeResponse(change.field, change.oldValue, change.newValue)
-                },
-                metadata = item.metadata,
-                createdAt = item.createdAt
-            )
-        },
-        pagination = AuditPaginationResponse(
-            total = result.total,
-            page = result.page,
-            pageSize = result.pageSize,
-            totalPages = result.totalPages
-        )
-    )
-
     // ── Parameter parsing ───────────────────────────────────────────────────
     // Unparseable values are rejected rather than dropped. Silently ignoring an unknown
     // filter value returns *more* rows than asked for, which reads as "the filter does not
@@ -262,38 +165,3 @@ class AuditController(
         }
     }
 }
-
-// ── Legacy response DTOs ────────────────────────────────────────────────────
-// Used only by the deprecated endpoints above. The feed has its own, richer shape in
-// pl.detailing.crm.audit.feed.
-
-data class AuditActivityResponse(
-    val items: List<AuditActivityItem>,
-    val pagination: AuditPaginationResponse
-)
-
-data class AuditActivityItem(
-    val id: String,
-    val userId: String,
-    val userDisplayName: String,
-    val module: String,
-    val entityId: String,
-    val entityDisplayName: String?,
-    val action: String,
-    val changes: List<AuditFieldChangeResponse>,
-    val metadata: Map<String, String>,
-    val createdAt: Instant
-)
-
-data class AuditFieldChangeResponse(
-    val field: String,
-    val oldValue: String?,
-    val newValue: String?
-)
-
-data class AuditPaginationResponse(
-    val total: Int,
-    val page: Int,
-    val pageSize: Int,
-    val totalPages: Int
-)
