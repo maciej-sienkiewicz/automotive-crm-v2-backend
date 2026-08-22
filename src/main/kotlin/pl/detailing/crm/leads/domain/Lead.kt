@@ -15,14 +15,35 @@ import java.util.UUID
  * Closed dictionary of loss reasons. A closed list is the price of the loss analytics
  * working at all — a free-text field cannot be aggregated into "why do we lose".
  */
-enum class LeadLostReason(val label: String) {
+/**
+ * Dlaczego zapytanie nie zamieniło się w zlecenie.
+ *
+ * [countsAsLoss] rozdziela dwie rzeczy, które wyglądają tak samo w bazie i zupełnie
+ * inaczej w rachunku. Zapytanie, którego SAMI nie chcieliśmy, oraz zapytanie, które
+ * nigdy nie było zapytaniem, nie są utraconymi pieniędzmi — nigdy nie były nasze.
+ * Wrzucone do sumy strat kazałyby właścicielowi ścigać przychód, którego świadomie
+ * nie chciał, i psuły statystykę tym mocniej, im lepiej kwalifikuje leady.
+ *
+ * „Odłożył decyzję" też nie jest stratą, tylko innym powodem: ten klient wciąż może
+ * wrócić i pokazanie go w kolumnie strat zamyka sprawę, która jest otwarta.
+ */
+enum class LeadLostReason(val label: String, val countsAsLoss: Boolean = true) {
+    // ── Straty: pieniądze, które mogliśmy mieć ──────────────────────────────
     TOO_EXPENSIVE("Za drogo"),
     NO_AVAILABILITY("Brak wolnego terminu"),
     NO_RESPONSE("Klient przestał odpowiadać"),
     CHOSE_COMPETITOR("Wybrał konkurencję"),
-    OUT_OF_SCOPE("Poza zakresem usług"),
-    SPAM("Spam / nie było zapytaniem"),
-    OTHER("Inny powód")
+    TOO_FAR("Za daleko od studia"),
+    PRICE_CHECK_ONLY("Tylko sprawdzał cenę"),
+    VEHICLE_CONDITION("Stan auta wyklucza usługę"),
+    SOLD_VEHICLE("Sprzedał albo zmienił auto"),
+    OTHER("Inny powód"),
+
+    // ── Nie-straty: nigdy nie były naszymi pieniędzmi ───────────────────────
+    DECLINED_BY_US("Sami odmówiliśmy", countsAsLoss = false),
+    OUT_OF_SCOPE("Poza zakresem usług", countsAsLoss = false),
+    POSTPONED("Odłożył decyzję na później", countsAsLoss = false),
+    SPAM("Spam / nie było zapytaniem", countsAsLoss = false)
 }
 
 /** What the client is asking about — the "o co pytają" axis of the analytics. */

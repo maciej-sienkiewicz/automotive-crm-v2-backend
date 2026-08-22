@@ -17,6 +17,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import java.time.Instant
 import java.util.UUID
 
@@ -52,6 +53,7 @@ class LeadVehicleExtractionListener(
     private val leadRepository: LeadRepository,
     private val messageRepository: CommMessageRepository,
     private val extractionService: LeadVehicleExtractionService,
+    private val segmentService: VehicleSegmentService,
     private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -125,6 +127,21 @@ class LeadVehicleExtractionListener(
         lead.vehicleDetectionStatus = LeadVehicleDetectionStatus.DONE
         lead.updatedAt = Instant.now()
         leadRepository.save(lead)
+
+        /*
+         * Segment wielkości i klasa rynkowa auta — raz na model, potem z bazy.
+         * Wynik nie jest przypinany do leada, tylko do pary marka/model: pytanie
+         * „czym jest Skoda Superb" ma jedną odpowiedź dla całego świata i nie ma
+         * powodu zadawać go drugi raz ani trzymać kopii przy każdym zapytaniu.
+         *
+         * Cicho, w runCatching: klasyfikacja jest osią analityczną, a nie warunkiem
+         * istnienia leada. Awaria modelu nie może cofnąć rozpoznania auta, które
+         * właśnie się udało.
+         */
+        if (!brand.isNullOrBlank()) {
+            runCatching { segmentService.classify(brand, model) }
+                .onFailure { log.warn("[LEAD_VEHICLE] Klasyfikacja segmentu nie powiodła się: {}", it.message) }
+        }
 
         eventPublisher.publishEvent(
             LeadChangedEvent(source = this, studioId = StudioId(lead.studioId), leadId = LeadId(lead.id))
