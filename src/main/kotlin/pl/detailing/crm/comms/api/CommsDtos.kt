@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.api
 
+import pl.detailing.crm.comms.engine.SyncProgressSnapshot
 import pl.detailing.crm.comms.infrastructure.CommAttachmentMeta
 import pl.detailing.crm.comms.infrastructure.CommLabelEntity
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
@@ -12,7 +13,16 @@ data class MailAccountStateDto(
     val emailAddress: String,
     val status: String,
     val lastError: String?,
-    val lastSyncAt: Instant?
+    val lastSyncAt: Instant?,
+    /**
+     * Skrzynka nigdy nie domknęła pełnego przebiegu synchronizacji — pierwszy import
+     * trwa albo zaraz wystartuje. Interfejs pokazuje wtedy stan „trwa synchronizacja"
+     * zamiast list, które i tak rosną z sekundy na sekundę.
+     */
+    val initialSyncInProgress: Boolean = false,
+    /** Postęp bieżącego importu; null, gdy przebieg akurat nie trwa. */
+    val syncTotal: Int? = null,
+    val syncProcessed: Int? = null
 )
 
 data class CommThreadDto(
@@ -78,12 +88,21 @@ data class CommLabelDto(
     val position: Int
 )
 
-fun MailAccountEntity.toStateDto() = MailAccountStateDto(
+fun MailAccountEntity.toStateDto(
+    progress: SyncProgressSnapshot? = null
+) = MailAccountStateDto(
     id = id.toString(),
     emailAddress = emailAddress,
     status = status.name,
     lastError = lastError,
-    lastSyncAt = lastSyncAt
+    lastSyncAt = lastSyncAt,
+    // lastSyncAt zapisuje się dopiero po DOMKNIĘCIU pełnego przebiegu — dopóki go
+    // nie ma, pierwszy import trwa (albo zaraz ruszy po podłączeniu konta).
+    // Tylko ACTIVE: konto z odrzuconym hasłem nigdy się nie zsynchronizuje i ma
+    // pokazywać swój błąd, a nie wieczny ekran „trwa synchronizacja".
+    initialSyncInProgress = lastSyncAt == null && status.name == "ACTIVE",
+    syncTotal = progress?.total,
+    syncProcessed = progress?.processed
 )
 
 fun CommThreadEntity.toDto() = CommThreadDto(

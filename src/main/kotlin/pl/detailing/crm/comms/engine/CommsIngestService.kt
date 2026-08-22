@@ -46,13 +46,18 @@ class CommsIngestService(
      * @return true when a new message was stored, false on dedupe.
      * REQUIRES_NEW: each message commits on its own, so one poison message
      * cannot roll back a whole sync batch.
+     *
+     * [backfill] = pierwszy import skrzynki. Wiadomości sprzed lat nie są „nowe" —
+     * zdarzenie zmiany wątku idzie bez flagi newMessage, żeby interfejs odświeżał
+     * listę, ale nie strzelał powiadomieniem przy każdej z setek historycznych.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun ingest(
         account: MailAccountEntity,
         folderKind: CommFolderKind,
         parsed: ParsedEmail,
-        uidValidity: Long?
+        uidValidity: Long?,
+        backfill: Boolean = false
     ): Boolean {
         val messageIdHdr = parsed.messageId
             ?: syntheticMessageId(account.id, parsed)
@@ -141,7 +146,7 @@ class CommsIngestService(
         refreshThreadAggregates(thread, message, participantName)
 
         eventPublisher.publishEvent(
-            CommThreadChangedEvent(studioId = account.studioId, threadId = thread.id, newMessage = true)
+            CommThreadChangedEvent(studioId = account.studioId, threadId = thread.id, newMessage = !backfill)
         )
         // Po zatwierdzeniu tej transakcji automat formularzy sprawdzi nadawcę —
         // stąd osobne zdarzenie z adresem w środku, żeby nieistotne wiadomości
