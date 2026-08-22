@@ -27,6 +27,8 @@ import pl.detailing.crm.leads.query.LeadDictionariesDto
 import pl.detailing.crm.leads.query.LeadDto
 import pl.detailing.crm.leads.query.LeadPageDto
 import pl.detailing.crm.leads.query.LeadQueryHandlers
+import pl.detailing.crm.leads.notes.LeadNoteItem
+import pl.detailing.crm.leads.notes.LeadNoteService
 import pl.detailing.crm.leads.query.LeadStatusHistoryDto
 import pl.detailing.crm.leads.query.leadDictionaries
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
@@ -91,6 +93,10 @@ data class UpdateLeadVehicleRequest(val vehicleBrand: String?, val vehicleModel:
 
 data class MarkThreadAsLeadResponse(val leadId: String, val estimatedValue: Long)
 
+data class AddLeadNoteRequest(val content: String)
+
+data class LeadAttentionCountResponse(val count: Long)
+
 /**
  * Lead pipeline API. Every id from the path is re-checked against the caller's studio
  * inside the handlers.
@@ -105,7 +111,8 @@ class LeadsController(
     private val updateHandlers: UpdateLeadHandlers,
     private val deleteLeadHandler: DeleteLeadHandler,
     private val tagCatalog: LeadTagCatalogService,
-    private val analyticsHandler: GetLeadAnalyticsHandler
+    private val analyticsHandler: GetLeadAnalyticsHandler,
+    private val noteService: LeadNoteService
 ) {
 
     @GetMapping
@@ -181,6 +188,56 @@ class LeadsController(
     fun history(@PathVariable id: String): ResponseEntity<List<LeadStatusHistoryDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(queryHandlers.statusHistory(principal.studioId, UUID.fromString(id)))
+    }
+
+    // ── Notatki ────────────────────────────────────────────────────────────
+
+    @GetMapping("/{id}/notes")
+    fun notes(@PathVariable id: String): ResponseEntity<List<LeadNoteItem>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(noteService.listNotes(UUID.fromString(id), principal.studioId))
+    }
+
+    @PostMapping("/{id}/notes")
+    fun addNote(
+        @PathVariable id: String,
+        @RequestBody request: AddLeadNoteRequest
+    ): ResponseEntity<LeadNoteItem> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val note = noteService.addNote(
+            leadId = UUID.fromString(id),
+            studioId = principal.studioId,
+            content = request.content,
+            createdBy = principal.userId,
+            createdByName = principal.fullName
+        )
+        return ResponseEntity.status(HttpStatus.CREATED).body(note)
+    }
+
+    @DeleteMapping("/{id}/notes/{noteId}")
+    fun deleteNote(
+        @PathVariable id: String,
+        @PathVariable noteId: String
+    ): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        noteService.deleteNote(
+            noteId = UUID.fromString(noteId),
+            studioId = principal.studioId,
+            deletedBy = principal.userId,
+            deletedByName = principal.fullName
+        )
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Ile leadów wymaga teraz ruchu: nowe plus otwarte, w których ostatnie słowo
+     * należy do klienta. Plakietka przy „Leady" w menu bocznym.
+     */
+    @GetMapping("/attention-count")
+    fun attentionCount(): ResponseEntity<LeadAttentionCountResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val count = queryHandlers.attentionCount(principal.studioId)
+        return ResponseEntity.ok(LeadAttentionCountResponse(count))
     }
 
     @PostMapping

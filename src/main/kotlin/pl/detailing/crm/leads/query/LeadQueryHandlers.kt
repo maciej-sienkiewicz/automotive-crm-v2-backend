@@ -25,6 +25,17 @@ class LeadQueryHandlers(
     private val conversationStates: LeadConversationStateService
 ) {
 
+    /**
+     * Liczba na plakietce przy „Leady": nowe plus otwarte z zaległą odpowiedzią.
+     * Jedno zapytanie COUNT — patrz [LeadRepository.countNeedingAttention].
+     */
+    @Transactional(readOnly = true)
+    fun attentionCount(studioId: StudioId): Long =
+        leadRepository.countNeedingAttention(
+            studioId.value,
+            listOf(LeadStatus.IN_PROGRESS, LeadStatus.CONFIRMED)
+        )
+
     @Transactional(readOnly = true)
     fun list(
         studioId: StudioId,
