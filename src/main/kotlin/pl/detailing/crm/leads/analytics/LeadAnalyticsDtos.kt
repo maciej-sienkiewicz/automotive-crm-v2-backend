@@ -51,7 +51,18 @@ data class LeadAnalyticsDto(
     /** Trend: zapytania i skuteczność w kolejnych tygodniach albo miesiącach. */
     val timeline: List<TimelinePointDto>,
     /** Kanał, którym przyszło zapytanie, i jego skuteczność. */
-    val bySource: List<SourceStatDto>
+    val bySource: List<SourceStatDto>,
+
+    // ── Rachunek pieniędzy: to, na czym stoi cały widok ────────────────────
+
+    /** Pieniądze czekające na odpowiedź studia — stan bieżący, poza oknem raportu. */
+    val awaiting: AwaitingWorkDto,
+    /** Gdzie wyciekły pieniądze: powody straty w złotówkach, z „nikt nie odpisał" włącznie. */
+    val leaks: List<LeakDto>,
+    /** Wartość wygranych w poprzednim okresie tej samej długości — jedyny punkt odniesienia. */
+    val wonValuePrevious: Long,
+    /** Ile pieniędzy zamieniło się w rezerwacje od poniedziałku — domknięcie pętli. */
+    val confirmedValueThisWeek: Long
 )
 
 data class CategoryStatDto(
@@ -134,4 +145,41 @@ data class TimelinePointDto(
     val won: Int,
     val lost: Int,
     val winRate: Double?
+)
+
+/**
+ * Pieniądze, które czekają na odpowiedź studia — stan BIEŻĄCY, nie okno raportu.
+ *
+ * Świadomie poza zakresem dat: zaległa odpowiedź nie przestaje być zaległa dlatego,
+ * że ktoś przełączył widok na „ostatnie 30 dni". Rozmowa sprzed czterdziestu dni,
+ * w której klient wciąż czeka, jest tą najpilniejszą; ukrycie jej za filtrem okna
+ * byłoby ukryciem największego długu.
+ */
+data class AwaitingWorkDto(
+    val value: Long,
+    val count: Int,
+    /** Najdłużej czekający — z nazwiskiem i autem, żeby to był konkretny człowiek. */
+    val oldest: AwaitingLeadDto?
+)
+
+data class AwaitingLeadDto(
+    val leadId: String,
+    val name: String,
+    val vehicle: String?,
+    val value: Long,
+    val waitingDays: Int
+)
+
+/**
+ * Wyciek: ile pieniędzy uciekło z danego powodu. W złotówkach, nie w sztukach —
+ * sześć przegranych praniach tapicerki i sześć przegranych powłok ceramicznych to
+ * ta sama liczba i zupełnie inna strata.
+ *
+ * [code] to kod powodu albo NO_REPLY dla zapytań, na które nikt nigdy nie odpisał.
+ */
+data class LeakDto(
+    val code: String,
+    val label: String,
+    val value: Long,
+    val count: Int
 )

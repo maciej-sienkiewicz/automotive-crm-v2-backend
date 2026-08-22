@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.conversation.LeadConversationStateService
+import pl.detailing.crm.leads.conversation.LeadReplyState
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadTagService
@@ -32,7 +34,8 @@ class GetLeadAnalyticsHandler(
     private val leadRepository: LeadRepository,
     private val historyRepository: LeadStatusHistoryRepository,
     private val tagService: LeadTagService,
-    private val tagCatalog: LeadTagCatalogService
+    private val tagCatalog: LeadTagCatalogService,
+    private val conversationStates: LeadConversationStateService
 ) {
 
     @Transactional(readOnly = true)
@@ -59,6 +62,7 @@ class GetLeadAnalyticsHandler(
                 }
                 .toMap()
 
+        val windowLength = Duration.between(from, to)
         val byStatus = leads.groupingBy { it.status }.eachCount()
         val completed = byStatus[LeadStatus.COMPLETED] ?: 0
         val closed = completed + (byStatus[LeadStatus.LOST] ?: 0) + (byStatus[LeadStatus.NO_SHOW] ?: 0)
@@ -82,7 +86,17 @@ class GetLeadAnalyticsHandler(
             responseImpact = responseImpact(leads),
             vehicleOutliers = vehicleOutliers(leads, ratio(completed, closed)),
             timeline = timeline(leads, from, to),
-            bySource = bySource(leads)
+            bySource = bySource(leads),
+            awaiting = awaiting(studioId),
+            leaks = leaks(leads),
+            // Poprzednie okno tej samej długości — jedyny punkt odniesienia, jaki
+            // właściciel ma bez wychodzenia z ekranu. Bez niego kwota wygranych jest
+            // liczbą bez skali: nie wiadomo, czy to dobrze, czy źle.
+            wonValuePrevious = leadRepository
+                .findByStudioIdAndCreatedAtBetween(studioId.value, from.minus(windowLength), from)
+                .filter { it.status == LeadStatus.COMPLETED }
+                .sumOf { it.estimatedValue },
+            confirmedValueThisWeek = confirmedValueThisWeek(leads, firstDecisionAt)
         )
     }
 
@@ -315,6 +329,105 @@ class GetLeadAnalyticsHandler(
     private fun periodStart(date: LocalDate, monthly: Boolean): LocalDate =
         if (monthly) date.withDayOfMonth(1)
         else date.minusDays((date.dayOfWeek.value - 1).toLong())
+
+    // ── Pieniądze czekające na odpowiedź ───────────────────────────────────
+
+    /**
+     * Stan bieżący całego studia, nie okno raportu — patrz [AwaitingWorkDto].
+     *
+     * Liczy się tylko to, w czym ostatnie słowo należy do klienta. Lead, w którym
+     * to my napisaliśmy ostatni, nie jest zaległością, tylko czekaniem na decyzję —
+     * mieszanie tych dwóch rzeczy zamieniłoby listę zadań w listę wszystkiego.
+     */
+    private fun awaiting(studioId: StudioId): AwaitingWorkDto {
+        val open = leadRepository.findByStudioIdAndStatusIn(studioId.value, OPEN_STATUSES)
+        if (open.isEmpty()) return AwaitingWorkDto(0, 0, null)
+
+        val states = conversationStates.statesOf(studioId.value, open)
+        val waiting = open.mapNotNull { lead ->
+            val state = states[lead.id] ?: return@mapNotNull null
+            if (state.replyState != LeadReplyState.AWAITING_OUR_REPLY) return@mapNotNull null
+            val since = state.waitingSince ?: return@mapNotNull null
+            lead to since
+        }
+        if (waiting.isEmpty()) return AwaitingWorkDto(0, 0, null)
+
+        val now = Instant.now()
+        val oldest = waiting.minByOrNull { it.second }
+        return AwaitingWorkDto(
+            value = waiting.sumOf { it.first.estimatedValue },
+            count = waiting.size,
+            oldest = oldest?.let { (lead, since) ->
+                AwaitingLeadDto(
+                    leadId = lead.id.toString(),
+                    // Nazwisko, jeśli je znamy; adres albo numer, jeśli nie. Byle nie „Lead #4".
+                    name = lead.customerName?.takeIf { it.isNotBlank() } ?: lead.contactIdentifier,
+                    vehicle = listOfNotNull(lead.vehicleBrand, lead.vehicleModel)
+                        .joinToString(" ")
+                        .takeIf { it.isNotBlank() },
+                    value = lead.estimatedValue,
+                    waitingDays = ChronoUnit.DAYS.between(since, now).coerceAtLeast(0).toInt()
+                )
+            }
+        )
+    }
+
+    // ── Wyciek pieniędzy ───────────────────────────────────────────────────
+
+    /**
+     * Powody straty przeliczone na złotówki.
+     *
+     * „Nikt nie odpisał" ma pierwszeństwo przed powodem wpisanym ręcznie. Jeżeli na
+     * zapytanie nigdy nie poszła odpowiedź, to jest prawdziwy powód porażki — bez
+     * względu na to, co ktoś zaznaczył tydzień później zamykając lead. To jest
+     * jedyna pozycja tej listy, którą da się naprawić w tym tygodniu i za darmo,
+     * więc ma być widoczna jako osobna, a nie rozpuszczona w „inne".
+     */
+    private fun leaks(leads: List<LeadEntity>): List<LeakDto> {
+        val lost = leads.filter { it.status in LOST_STATUSES }
+        if (lost.isEmpty()) return emptyList()
+
+        val (silent, answered) = lost.partition { it.firstResponseAt == null }
+        val fromReasons = answered
+            .groupBy { it.lostReasonCode }
+            .map { (reason, group) ->
+                LeakDto(
+                    code = reason?.name ?: "UNKNOWN",
+                    label = reason?.label ?: "Bez podanego powodu",
+                    value = group.sumOf { it.estimatedValue },
+                    count = group.size
+                )
+            }
+
+        val fromSilence = silent.takeIf { it.isNotEmpty() }?.let {
+            LeakDto("NO_REPLY", "Nikt nie odpisał", it.sumOf { lead -> lead.estimatedValue }, it.size)
+        }
+
+        return (fromReasons + listOfNotNull(fromSilence))
+            .filter { it.value > 0 || it.count > 0 }
+            .sortedByDescending { it.value }
+    }
+
+    /**
+     * Ile pieniędzy zamieniło się w rezerwacje od poniedziałku.
+     *
+     * Domknięcie pętli: nagroda za to, co użytkownik zrobił po ostatniej wizycie na
+     * tym ekranie. Bez tego zdania widok tylko wymaga i nigdy nie kwituje.
+     */
+    private fun confirmedValueThisWeek(
+        leads: List<LeadEntity>,
+        firstDecisionAt: Map<UUID, Instant>
+    ): Long {
+        val mondayStart = LocalDate.now(DateRangeFilter.ZONE)
+            .minusDays((LocalDate.now(DateRangeFilter.ZONE).dayOfWeek.value - 1).toLong())
+            .atStartOfDay(DateRangeFilter.ZONE)
+            .toInstant()
+        val valueByLead = leads.associate { it.id to it.estimatedValue }
+        return firstDecisionAt
+            .filter { (_, decided) -> !decided.isBefore(mondayStart) }
+            .mapNotNull { (leadId, _) -> valueByLead[leadId] }
+            .sum()
+    }
 
     // ── Kanały ─────────────────────────────────────────────────────────────
 
