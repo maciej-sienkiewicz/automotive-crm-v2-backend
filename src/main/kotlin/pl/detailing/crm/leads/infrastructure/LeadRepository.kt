@@ -64,6 +64,16 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         contactIdentifier: String
     ): List<LeadEntity>
 
+    /**
+     * Wszystkie otwarte leady studia, bez względu na to, kiedy wpłynęły.
+     *
+     * Zaległa odpowiedź nie przestaje być zaległa dlatego, że użytkownik przełączył
+     * widok na „ostatnie 30 dni". Rozmowa sprzed czterdziestu dni, w której klient
+     * wciąż czeka, jest dokładnie tą, na którą trzeba odpisać najpilniej — filtrowanie
+     * jej po oknie raportu ukryłoby największy dług.
+     */
+    fun findByStudioIdAndStatusIn(studioId: UUID, statuses: Collection<LeadStatus>): List<LeadEntity>
+
     fun findByStudioIdAndCreatedAtBetween(
         studioId: UUID,
         from: Instant,
