@@ -63,6 +63,8 @@ data class LeadAnalyticsDto(
     /** W jakich autach wygrywamy: podział po wielkości i po klasie rynkowej marki. */
     val bySizeSegment: List<SegmentStatDto>,
     val byMarketTier: List<SegmentStatDto>,
+    /** Surowe fakty do przekrojowego filtrowania „usługa × segment auta" w interfejsie. */
+    val leadFacts: List<LeadFactDto>,
     /** Kanał, którym przyszło zapytanie, i jego skuteczność. */
     val bySource: List<SourceStatDto>,
 
@@ -249,4 +251,26 @@ data class SegmentStatDto(
     val winRate: Double?,
     /** Średnia wycena wycenionych zapytań tego segmentu; null, gdy żadne nie ma wyceny. */
     val averageValue: Long?
+)
+
+/**
+ * Jeden lead jako fakt do przekrojowego filtrowania po stronie interfejsu.
+ *
+ * Karta „Usługi" pyta nie tylko „w czym wygrywamy", ale i „w czym wygrywamy
+ * w segmencie premium" — a to jest przecięcie dwóch osi, których backend
+ * nie przewidzi z góry (usługa × wielkość, usługa × klasa rynkowa, albo obie
+ * naraz). Zamiast mnożyć wyliczone przekroje, oddajemy surowe fakty w ilości
+ * rzędu setek wierszy na okno, a przecięcie liczy interfejs w locie.
+ */
+data class LeadFactDto(
+    /** Kody tagów usług tego leada; puste, gdy lead nie ma żadnego (liczy się jako „Bez tagu"). */
+    val categories: List<String>,
+    /** Kod [pl.detailing.crm.vehicle.segment.VehicleSizeSegment]; null, gdy nieznany albo brak auta. */
+    val sizeSegment: String?,
+    /** Kod [pl.detailing.crm.vehicle.segment.VehicleMarketTier]; null, gdy nieznana albo brak auta. */
+    val marketTier: String?,
+    val won: Boolean,
+    val lost: Boolean,
+    /** Wycena leada (grosze) — żeby przefiltrowany przekrój dało się też podpisać średnią ceną. */
+    val value: Long
 )
