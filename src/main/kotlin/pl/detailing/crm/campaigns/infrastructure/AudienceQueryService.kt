@@ -29,7 +29,13 @@ data class AudienceRow(
     /** Classification against system filters; ELIGIBLE rows may be dispatched. */
     val eligibility: Eligibility
 ) {
-    enum class Eligibility { ELIGIBLE, OPTED_OUT, NO_CONSENT, NO_ADDRESS, FREQUENCY_CAP }
+    /**
+     * [EXCLUDED_MANUALLY] występuje wyłącznie w wyniku [AudienceQueryService.estimate]:
+     * kreator musi widzieć klienta, którego użytkownik odznaczył, bo inaczej odznaczenie
+     * byłoby ruchem nieodwracalnym — wiersz znikałby z tabeli i nie dałoby się go
+     * zaznaczyć z powrotem. Wysyłka ([materialize]) takich wierszy nie dostaje w ogóle.
+     */
+    enum class Eligibility { ELIGIBLE, OPTED_OUT, NO_CONSENT, NO_ADDRESS, FREQUENCY_CAP, EXCLUDED_MANUALLY }
 }
 
 data class AudienceEstimate(
@@ -39,8 +45,16 @@ data class AudienceEstimate(
     val noAddress: Int,
     val frequencyCapped: Int,
     val eligible: Int,
+    /** Odznaczeni ręcznie w kreatorze — wliczeni do [matched], ale nie do [eligible]. */
+    val excludedManually: Int,
+    /** Strona listy odbiorców — wycinek [matched] wyznaczony przez offset i limit. */
     val sample: List<AudienceRow>
-)
+) {
+    companion object {
+        /** Nikt nie pasuje — używane, gdy warunek kampanii nie wskazuje żadnej wizyty. */
+        val EMPTY = AudienceEstimate(0, 0, 0, 0, 0, 0, 0, emptyList())
+    }
+}
 
 /**
  * Builds and executes the audience query for campaigns.
@@ -59,14 +73,32 @@ class AudienceQueryService(
     private val jdbc: NamedParameterJdbcTemplate
 ) {
 
+    /**
+     * Podsumowanie grupy odbiorców plus jedna strona listy.
+     *
+     * Kreator kampanii pokazuje tę listę jako tabelę z polami wyboru, więc potrzebuje
+     * nie próbki, tylko wycinka wskazanego przez [sampleOffset] i [sampleLimit].
+     * Liczniki dotyczą zawsze całości — stronicowanie nie ma prawa zmieniać odpowiedzi
+     * na pytanie „ilu ludzi to dostanie".
+     *
+     * [candidateCustomerIds] zawęża pytanie do konkretnych klientów: tak liczy się
+     * prognoza dla kampanii automatycznej, gdzie punktem wyjścia jest warunek
+     * (usługa + liczba dni), a kryteria odbiorców są dopiero drugim sitem.
+     */
     fun estimate(
         studioId: StudioId,
         criteria: AudienceCriteria,
         channel: RecipientChannel,
         frequencyCapDays: Int,
-        sampleLimit: Int = 50
+        sampleLimit: Int = 50,
+        sampleOffset: Int = 0,
+        candidateCustomerIds: Collection<UUID>? = null
     ): AudienceEstimate {
-        val (sql, params) = buildQuery(studioId, criteria, channel, frequencyCapDays, candidateCustomerIds = null)
+        if (candidateCustomerIds != null && candidateCustomerIds.isEmpty()) return AudienceEstimate.EMPTY
+        val (sql, params) = buildQuery(
+            studioId, criteria, channel, frequencyCapDays, candidateCustomerIds,
+            keepExcludedVisible = true
+        )
         val rows = jdbc.query(sql, params) { rs, _ -> mapRow(rs) }
 
         val byEligibility = rows.groupingBy { it.eligibility }.eachCount()
@@ -77,7 +109,8 @@ class AudienceQueryService(
             noAddress = byEligibility[AudienceRow.Eligibility.NO_ADDRESS] ?: 0,
             frequencyCapped = byEligibility[AudienceRow.Eligibility.FREQUENCY_CAP] ?: 0,
             eligible = byEligibility[AudienceRow.Eligibility.ELIGIBLE] ?: 0,
-            sample = rows.take(sampleLimit)
+            excludedManually = byEligibility[AudienceRow.Eligibility.EXCLUDED_MANUALLY] ?: 0,
+            sample = rows.drop(sampleOffset.coerceAtLeast(0)).take(sampleLimit)
         )
     }
 
@@ -89,6 +122,7 @@ class AudienceQueryService(
         frequencyCapDays: Int,
         candidateCustomerIds: Collection<UUID>? = null
     ): List<AudienceRow> {
+        if (candidateCustomerIds != null && candidateCustomerIds.isEmpty()) return emptyList()
         val (sql, params) = buildQuery(studioId, criteria, channel, frequencyCapDays, candidateCustomerIds)
         return jdbc.query(sql, params) { rs, _ -> mapRow(rs) }
     }
@@ -153,7 +187,12 @@ class AudienceQueryService(
         criteria: AudienceCriteria,
         channel: RecipientChannel,
         frequencyCapDays: Int,
-        candidateCustomerIds: Collection<UUID>?
+        candidateCustomerIds: Collection<UUID>?,
+        /**
+         * Kreator (`true`) chce widzieć odznaczonych klientów jako wiersze o statusie
+         * EXCLUDED_MANUALLY; wysyłka (`false`) ma ich nie dostać w ogóle.
+         */
+        keepExcludedVisible: Boolean = false
     ): Pair<String, MapSqlParameterSource> {
         val params = MapSqlParameterSource()
             .addValue("studioId", studioId.value)
@@ -254,13 +293,14 @@ class AudienceQueryService(
             "AND (true $filters)"
         }
 
-        val excludeBlock = if (criteria.excludeCustomerIds.isNotEmpty()) {
-            params.addValue("excludeIds", criteria.excludeCustomerIds)
-            "AND c.id NOT IN (:excludeIds)"
+        val hasExclusions = criteria.excludeCustomerIds.isNotEmpty()
+        if (hasExclusions) params.addValue("excludeIds", criteria.excludeCustomerIds)
+        val excludeBlock = if (hasExclusions && !keepExcludedVisible) "AND c.id NOT IN (:excludeIds)" else ""
+        val excludedCase = if (hasExclusions && keepExcludedVisible) {
+            "WHEN c.id IN (:excludeIds) THEN 'EXCLUDED_MANUALLY'"
         } else ""
 
-        val candidateBlock = if (candidateCustomerIds != null) {
-            if (candidateCustomerIds.isEmpty()) return "SELECT 1 WHERE false" to params
+        val candidateBlock = if (!candidateCustomerIds.isNullOrEmpty()) {
             params.addValue("candidateIds", candidateCustomerIds)
             "AND c.id IN (:candidateIds)"
         } else ""
@@ -273,6 +313,7 @@ class AudienceQueryService(
                 lastv.brand_snapshot AS vehicle_brand, lastv.model_snapshot AS vehicle_model,
                 vs.last_visit AS last_visit_date, lastsvc.service_name AS last_service_name,
                 CASE
+                    $excludedCase
                     WHEN EXISTS (SELECT 1 FROM campaign_opt_outs oo
                                  WHERE oo.studio_id = :studioId AND oo.customer_id = c.id)
                         THEN 'OPTED_OUT'

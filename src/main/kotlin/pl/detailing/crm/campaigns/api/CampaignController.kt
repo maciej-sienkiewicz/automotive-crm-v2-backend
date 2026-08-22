@@ -176,10 +176,28 @@ data class CampaignStatsDto(
     val smsCreditsAvailable: Int
 )
 
+/**
+ * Warunek kampanii automatycznej w wersji „na próbę" — patrz [TriggerProjection].
+ * Osobny od [TriggerConfigDto], bo kreator pyta o prognozę także wtedy, gdy usługa
+ * nie jest jeszcze wybrana, a [TriggerConfig] takiego warunku nie przyjmuje.
+ */
+data class AudienceTriggerDto(
+    val serviceIds: List<UUID> = emptyList(),
+    val afterDays: Int = 180,
+    val onlyIfNoVisitSince: Boolean = true,
+    /** Ile dni w przód obejmuje prognoza. */
+    val horizonDays: Int = 30
+)
+
 data class AudienceEstimateRequest(
     val audience: AudienceCriteriaDto,
     val channel: RecipientChannel = RecipientChannel.SMS,
-    val smsTemplate: String? = null
+    val smsTemplate: String? = null,
+    /** Ustawiany tylko dla kampanii automatycznej — wtedy warunek jest pierwszym sitem. */
+    val trigger: AudienceTriggerDto? = null,
+    /** Strona listy odbiorców pokazywanej w kreatorze jako tabela z polami wyboru. */
+    val sampleLimit: Int? = null,
+    val sampleOffset: Int? = null
 )
 
 data class AudienceCustomerDto(
@@ -217,12 +235,23 @@ data class AudienceEstimateDto(
     val noAddress: Int,
     val frequencyCapped: Int,
     val eligible: Int,
+    /** Odznaczeni ręcznie w kreatorze — widoczni na liście, ale poza wysyłką. */
+    val excludedManually: Int,
     val estimatedSmsSegments: Int?,
     val estimatedCredits: Int?,
-    val sample: List<AudienceCustomerDto>
+    /** Strona listy odbiorców; całość liczy [matched]. */
+    val sample: List<AudienceCustomerDto>,
+    val sampleOffset: Int,
+    /** Okno prognozy dla kampanii automatycznej; null dla jednorazowej. */
+    val projectionHorizonDays: Int?
 ) {
     companion object {
-        fun from(e: AudienceEstimate, smsTemplate: String?): AudienceEstimateDto {
+        fun from(
+            e: AudienceEstimate,
+            smsTemplate: String?,
+            sampleOffset: Int = 0,
+            projectionHorizonDays: Int? = null
+        ): AudienceEstimateDto {
             val segments = smsTemplate?.takeIf { it.isNotBlank() }?.let { SmsSegmentCalculator.segments(it) }
             return AudienceEstimateDto(
                 matched = e.matched,
@@ -231,9 +260,12 @@ data class AudienceEstimateDto(
                 noAddress = e.noAddress,
                 frequencyCapped = e.frequencyCapped,
                 eligible = e.eligible,
+                excludedManually = e.excludedManually,
                 estimatedSmsSegments = segments,
                 estimatedCredits = segments?.let { it * e.eligible },
-                sample = e.sample.map { AudienceCustomerDto.fromRow(it) }
+                sample = e.sample.map { AudienceCustomerDto.fromRow(it) },
+                sampleOffset = sampleOffset,
+                projectionHorizonDays = projectionHorizonDays
             )
         }
     }
@@ -433,8 +465,27 @@ class CampaignController(
     @PostMapping("/audience/estimate")
     fun estimateAudience(@RequestBody request: AudienceEstimateRequest): ResponseEntity<AudienceEstimateDto> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val estimate = service.estimateAudience(principal.studioId, request.audience.toDomain(), request.channel)
-        return ResponseEntity.ok(AudienceEstimateDto.from(estimate, request.smsTemplate))
+        val projection = request.trigger?.let {
+            TriggerProjection(
+                serviceIds = it.serviceIds,
+                afterDays = it.afterDays.coerceAtLeast(1),
+                onlyIfNoVisitSince = it.onlyIfNoVisitSince,
+                horizonDays = it.horizonDays.coerceIn(1, 365)
+            )
+        }
+        val offset = (request.sampleOffset ?: 0).coerceAtLeast(0)
+        val estimate = service.estimateAudience(
+            principal.studioId,
+            request.audience.toDomain(),
+            request.channel,
+            trigger = projection,
+            // Górna granica chroni przeglądarkę: tabela w kreatorze i tak stronicuje.
+            sampleLimit = (request.sampleLimit ?: 50).coerceIn(1, 500),
+            sampleOffset = offset
+        )
+        return ResponseEntity.ok(
+            AudienceEstimateDto.from(estimate, request.smsTemplate, offset, projection?.horizonDays)
+        )
     }
 
     @PostMapping("/test-send")
