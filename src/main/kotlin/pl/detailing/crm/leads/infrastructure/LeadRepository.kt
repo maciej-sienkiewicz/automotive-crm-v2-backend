@@ -88,6 +88,9 @@ interface LeadServiceItemRepository : JpaRepository<LeadServiceItemEntity, UUID>
 @Repository
 interface LeadStatusHistoryRepository : JpaRepository<LeadStatusHistoryEntity, UUID> {
 
+    /** Historia całej paczki leadów jednym zapytaniem — analityka liczy ją dla setek naraz. */
+    fun findByLeadIdIn(leadIds: Collection<UUID>): List<LeadStatusHistoryEntity>
+
     fun findByLeadIdOrderByCreatedAtAsc(leadId: UUID): List<LeadStatusHistoryEntity>
 
     fun findByStudioIdAndCreatedAtBetween(
