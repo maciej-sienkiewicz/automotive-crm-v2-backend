@@ -296,11 +296,24 @@ class LeadsController(
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
     }
 
-    /** Usunięcie leada — pomyłka, duplikat, test. Korespondencja zostaje w skrzynce. */
+    /**
+     * Usunięcie leada — pomyłka, duplikat, test. Korespondencja zostaje w skrzynce.
+     * [deleteAppointment] = true kasuje razem z leadem jego rezerwację (decyzja pada
+     * w oknie potwierdzenia); false zostawia ją w kalendarzu jako samodzielny termin.
+     */
     @DeleteMapping("/{id}")
-    fun delete(@PathVariable id: String): ResponseEntity<Void> {
+    fun delete(
+        @PathVariable id: String,
+        @RequestParam(defaultValue = "false") deleteAppointment: Boolean
+    ): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
-        deleteLeadHandler.handle(principal.studioId, UUID.fromString(id))
+        deleteLeadHandler.handle(
+            studioId = principal.studioId,
+            leadId = UUID.fromString(id),
+            userId = principal.userId.value,
+            userName = principal.fullName,
+            deleteAppointment = deleteAppointment
+        )
         return ResponseEntity.noContent().build()
     }
 
