@@ -102,3 +102,16 @@ data class CommOutboundSentEvent(
     val threadId: UUID,
     val sentAt: Instant
 )
+
+/**
+ * Published after a brand-new INBOUND message is committed. Carries the sender so
+ * listeners (form-mail auto-leads) can decide relevance without loading the row.
+ */
+data class CommInboundMessageStoredEvent(
+    val studioId: UUID,
+    val accountId: UUID,
+    val threadId: UUID,
+    val messageId: UUID,
+    val fromEmail: String,
+    val sentAt: Instant
+)

@@ -9,6 +9,7 @@ import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommReadSource
 import pl.detailing.crm.comms.domain.CommSendStatus
+import pl.detailing.crm.comms.domain.CommInboundMessageStoredEvent
 import pl.detailing.crm.comms.domain.CommThreadChangedEvent
 import pl.detailing.crm.comms.domain.EmailTextCleaner
 import pl.detailing.crm.comms.domain.ParsedEmail
@@ -142,6 +143,21 @@ class CommsIngestService(
         eventPublisher.publishEvent(
             CommThreadChangedEvent(studioId = account.studioId, threadId = thread.id, newMessage = true)
         )
+        // Po zatwierdzeniu tej transakcji automat formularzy sprawdzi nadawcę —
+        // stąd osobne zdarzenie z adresem w środku, żeby nieistotne wiadomości
+        // odpadały bez ponownego czytania wiersza.
+        if (direction == CommDirection.INBOUND) {
+            eventPublisher.publishEvent(
+                CommInboundMessageStoredEvent(
+                    studioId = account.studioId,
+                    accountId = account.id,
+                    threadId = thread.id,
+                    messageId = message.id,
+                    fromEmail = parsed.fromEmail,
+                    sentAt = parsed.sentAt
+                )
+            )
+        }
         log.debug(
             "[COMMS] Ingested {} message {} into thread {} (account {})",
             direction, messageIdHdr, thread.id, account.emailAddress
