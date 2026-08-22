@@ -44,6 +44,16 @@ data class AudienceCriteria(
     // Klient
     val customerType: CustomerTypeFilter = CustomerTypeFilter.ALL,
     val customerCreatedAfter: Instant? = null,
+    /**
+     * Czy obejmować klientów bez imienia i nazwiska (przyjęcia „na numer telefonu").
+     *
+     * Domyślne `true` jest wyłącznie zgodnością wsteczną: kampanie zapisane przed
+     * wprowadzeniem tego pola nie miały takiego filtra i ich grupa odbiorców nie ma
+     * prawa zmienić się sama, w locie. Kreator ustawia `false` dla nowych kampanii —
+     * wiadomość z „Cześć !" zamiast imienia szkodzi bardziej, niż pomaga, a i tak
+     * nie da się takiego klienta rozpoznać na liście.
+     */
+    val includeUnnamedCustomers: Boolean = true,
     // Ręczna korekta
     val includeCustomerIds: List<UUID> = emptyList(),
     val excludeCustomerIds: List<UUID> = emptyList()

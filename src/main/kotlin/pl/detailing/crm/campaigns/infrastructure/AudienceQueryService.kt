@@ -74,6 +74,10 @@ data class AudienceEstimate(
  * if the studio has no active consent definition for the channel, everyone passes;
  * otherwise a non-revoked consent for an active template of such a definition is required.
  */
+/** „Ten klient ma jak się nazywać" — jedna definicja dla filtra i dla sortowania. */
+private const val HAS_NAME =
+    "(coalesce(btrim(c.first_name), '') <> '' OR coalesce(btrim(c.last_name), '') <> '')"
+
 @Service
 class AudienceQueryService(
     private val jdbc: NamedParameterJdbcTemplate
@@ -310,6 +314,12 @@ class AudienceQueryService(
             filters.append(" AND c.created_at >= :createdAfter")
             params.addValue("createdAfter", java.sql.Timestamp.from(it))
         }
+        // Klient bez imienia i nazwiska: kartoteka założona „na numer telefonu".
+        // Puste napisy liczą się tak samo jak NULL — z punktu widzenia wiadomości
+        // to ten sam brak, a w bazie bywają obie formy.
+        if (!criteria.includeUnnamedCustomers) {
+            filters.append(" AND $HAS_NAME")
+        }
 
         // Ręczne dopisania omijają filtry biznesowe (ale nie systemowe).
         val businessBlock = if (criteria.includeCustomerIds.isNotEmpty()) {
@@ -399,7 +409,13 @@ class AudienceQueryService(
               $businessBlock
               $excludeBlock
               $candidateBlock
-            ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST
+            /*
+             * Najpierw klienci z nazwiskiem. Samo NULLS LAST nie wystarczało: kartoteki
+             * założone na numer telefonu mają w tych kolumnach pusty napis, nie NULL,
+             * więc lądowały na samej górze listy jako ściana napisów „Klient".
+             */
+            ORDER BY (CASE WHEN $HAS_NAME THEN 0 ELSE 1 END),
+                     c.last_name NULLS LAST, c.first_name NULLS LAST
         """.trimIndent()
 
         return sql to params
