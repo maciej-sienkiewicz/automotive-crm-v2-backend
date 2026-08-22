@@ -197,7 +197,9 @@ data class AudienceEstimateRequest(
     val trigger: AudienceTriggerDto? = null,
     /** Strona listy odbiorców pokazywanej w kreatorze jako tabela z polami wyboru. */
     val sampleLimit: Int? = null,
-    val sampleOffset: Int? = null
+    val sampleOffset: Int? = null,
+    /** Fraza z wyszukiwarki nad tabelą — zawęża listę, nie liczniki. */
+    val sampleSearch: String? = null
 )
 
 data class AudienceCustomerDto(
@@ -239,9 +241,10 @@ data class AudienceEstimateDto(
     val excludedManually: Int,
     val estimatedSmsSegments: Int?,
     val estimatedCredits: Int?,
-    /** Strona listy odbiorców; całość liczy [matched]. */
+    /** Strona listy odbiorców; całość listy liczy [sampleTotal]. */
     val sample: List<AudienceCustomerDto>,
     val sampleOffset: Int,
+    val sampleTotal: Int,
     /** Okno prognozy dla kampanii automatycznej; null dla jednorazowej. */
     val projectionHorizonDays: Int?
 ) {
@@ -265,6 +268,7 @@ data class AudienceEstimateDto(
                 estimatedCredits = segments?.let { it * e.eligible },
                 sample = e.sample.map { AudienceCustomerDto.fromRow(it) },
                 sampleOffset = sampleOffset,
+                sampleTotal = e.sampleTotal,
                 projectionHorizonDays = projectionHorizonDays
             )
         }
@@ -481,7 +485,8 @@ class CampaignController(
             trigger = projection,
             // Górna granica chroni przeglądarkę: tabela w kreatorze i tak stronicuje.
             sampleLimit = (request.sampleLimit ?: 50).coerceIn(1, 500),
-            sampleOffset = offset
+            sampleOffset = offset,
+            sampleSearch = request.sampleSearch
         )
         return ResponseEntity.ok(
             AudienceEstimateDto.from(estimate, request.smsTemplate, offset, projection?.horizonDays)

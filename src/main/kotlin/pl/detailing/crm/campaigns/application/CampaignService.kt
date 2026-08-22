@@ -124,7 +124,8 @@ class CampaignService(
         channel: RecipientChannel,
         trigger: TriggerProjection? = null,
         sampleLimit: Int = 50,
-        sampleOffset: Int = 0
+        sampleOffset: Int = 0,
+        sampleSearch: String? = null
     ): AudienceEstimate {
         val settings = getSettings(studioId)
         val candidates = trigger?.let { triggerCandidates(studioId, it) }
@@ -135,7 +136,8 @@ class CampaignService(
             studioId, criteria, channel, settings.frequencyCapDays,
             sampleLimit = sampleLimit,
             sampleOffset = sampleOffset,
-            candidateCustomerIds = candidates
+            candidateCustomerIds = candidates,
+            sampleSearch = sampleSearch
         )
     }
 
