@@ -29,6 +29,7 @@ services:
       MAIL_HOST: ${ENV_MAIL_HOST}
       RAPIDAPI_KEY: ${ENV_RAPIDAPI_KEY}
       MAILBOX_ENCRYPTION_KEY: ${ENV_MAILBOX_ENCRYPTION_KEY}
+      REPORT_PROBLEM_EMAIL: ${ENV_REPORT_PROBLEM_EMAIL}
     depends_on:
       - redis
     networks:
