@@ -18,6 +18,27 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
 
     fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 
+    /**
+     * Anonimizacja leadów usuwanego klienta (RODO). Zapytaniem, nie iteracją po
+     * encjach: [LeadEntity.contactIdentifier] jest celowo niemutowalne (val) w
+     * zwykłym cyklu życia leada, a wymazanie danych osobowych to jedyny wyjątek.
+     * Wiersze zostają — statystyki (skuteczność, wartości, trendy) liczą się z
+     * kwot i statusów, nie z nazwisk.
+     */
+    @Modifying
+    @Query(
+        """
+        UPDATE LeadEntity l
+        SET l.contactIdentifier = :marker, l.customerName = null, l.initialMessage = null
+        WHERE l.studioId = :studioId AND l.customerId = :customerId
+        """
+    )
+    fun anonymizeByCustomer(
+        @Param("studioId") studioId: UUID,
+        @Param("customerId") customerId: UUID,
+        @Param("marker") marker: String
+    ): Int
+
     fun findByThreadId(threadId: UUID): LeadEntity?
 
     /**

@@ -48,6 +48,7 @@ class CustomerController(
     private val updateCustomerHandler: pl.detailing.crm.customer.update.UpdateCustomerHandler,
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
+    private val deleteCustomerHandler: pl.detailing.crm.customer.delete.DeleteCustomerHandler,
     private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler
 ) {
     @GetMapping
@@ -589,6 +590,23 @@ class CustomerController(
         deleteCompanyHandler.handle(command)
 
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Usunięcie klienta = anonimizacja RODO: dane osobowe znikają, historia wizyt,
+     * statystyki i podpisane dokumenty zostają — patrz [DeleteCustomerHandler].
+     */
+    @DeleteMapping("/{customerId}")
+    @RequiresPermission(Permission.CUSTOMERS_DELETE)
+    fun deleteCustomer(@PathVariable customerId: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        deleteCustomerHandler.handle(
+            studioId = principal.studioId,
+            customerId = UUID.fromString(customerId),
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+        return ResponseEntity.noContent().build()
     }
 }
 

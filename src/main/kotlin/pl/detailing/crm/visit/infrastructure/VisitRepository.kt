@@ -56,6 +56,28 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): List<VisitEntity>
 
     /**
+     * Wymazanie danych osoby wydającej/odbierającej auto z wizyt usuwanego klienta
+     * (RODO). Wizyty ZOSTAJĄ — historia i statystyki liczą się z kwot, usług i dat;
+     * znika tylko to, co wskazuje człowieka. Wszystkich wizyt klienta, także
+     * soft-usuniętych: wymazanie nie może omijać kosza.
+     */
+    @Modifying
+    @Query(
+        """
+        UPDATE VisitEntity v
+        SET v.contactPersonFirstName = null,
+            v.contactPersonLastName = null,
+            v.contactPersonPhone = null,
+            v.contactPersonEmail = null
+        WHERE v.customerId = :customerId AND v.studioId = :studioId
+        """
+    )
+    fun scrubContactPersonByCustomer(
+        @Param("customerId") customerId: UUID,
+        @Param("studioId") studioId: UUID
+    ): Int
+
+    /**
      * Find visits by customer with studio isolation (excludes soft-deleted)
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")
