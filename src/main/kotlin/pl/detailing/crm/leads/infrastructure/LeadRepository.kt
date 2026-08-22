@@ -102,6 +102,38 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
     ): List<LeadEntity>
 
     fun countByStudioIdAndStatus(studioId: UUID, status: LeadStatus): Long
+
+    /**
+     * Ile leadów wymaga teraz ruchu: NOWE plus otwarte, w których ostatnie słowo
+     * należy do klienta. Zasila plakietkę przy „Leady" w menu — sama liczba nowych
+     * kłamała, bo lead „w kontakcie", w którym klient odpisał wczoraj, jest
+     * pilniejszy niż świeży, a plakietka milczała.
+     *
+     * Warunek zaległości to ta sama logika co w [search] (awaitingReply) — jest
+     * wiadomość od klienta i nie ma po niej naszej. Zawężony do statusów otwartych:
+     * „dziękuję" od klienta w leadzie zrealizowanym zostawiałoby na plakietce
+     * jedynkę, której niczym nie da się zgasić.
+     */
+    @Query(
+        """SELECT COUNT(l) FROM LeadEntity l
+           WHERE l.studioId = :studioId
+             AND (l.status = pl.detailing.crm.shared.LeadStatus.NEW
+                  OR (l.status IN :openStatuses
+                      AND l.threadId IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM CommMessageEntity mi
+                                  WHERE mi.threadId = l.threadId
+                                    AND mi.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND)
+                      AND NOT EXISTS (SELECT 1 FROM CommMessageEntity mo
+                                      WHERE mo.threadId = l.threadId
+                                        AND mo.direction = pl.detailing.crm.comms.domain.CommDirection.OUTBOUND
+                                        AND mo.sentAt > (SELECT MAX(mi2.sentAt) FROM CommMessageEntity mi2
+                                                         WHERE mi2.threadId = l.threadId
+                                                           AND mi2.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND))))"""
+    )
+    fun countNeedingAttention(
+        @Param("studioId") studioId: UUID,
+        @Param("openStatuses") openStatuses: Collection<LeadStatus>
+    ): Long
 }
 
 @Repository
