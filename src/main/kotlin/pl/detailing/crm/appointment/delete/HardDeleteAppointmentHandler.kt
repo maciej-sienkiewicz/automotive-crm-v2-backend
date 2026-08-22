@@ -8,6 +8,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.smscampaigns.infrastructure.SmsLogJpaRepository
 import pl.detailing.crm.smscampaigns.reminder.infrastructure.ScheduledSmsReminderJpaRepository
@@ -28,6 +29,7 @@ class HardDeleteAppointmentHandler(
     private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository,
     private val scheduledSmsReminderJpaRepository: ScheduledSmsReminderJpaRepository,
     private val smsLogJpaRepository: SmsLogJpaRepository,
+    private val leadSyncService: LeadSyncService,
     private val auditService: AuditService,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -78,6 +80,17 @@ class HardDeleteAppointmentHandler(
 
             // 3. Usuń rezerwację (kaskadowo usuwa line items)
             appointmentRepository.delete(appointmentEntity)
+
+            // 4. Odepnij leada — wskaźnik na usunięty wiersz robił z podglądu leada
+            // kłamstwo („rezerwacja istnieje") i 404 przy pobraniu terminu.
+            // Wewnątrz tej samej transakcji: leadSyncService jest @Transactional
+            // REQUIRED, więc dołącza, a nie otwiera własnej.
+            leadSyncService.unlinkDeletedAppointment(
+                appointmentId = command.appointmentId.value,
+                studioId = command.studioId.value,
+                userId = command.userId.value,
+                userDisplayName = command.userName ?: ""
+            )
         }
 
         auditService.log(LogAuditCommand(

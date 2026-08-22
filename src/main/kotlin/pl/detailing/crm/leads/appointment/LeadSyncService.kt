@@ -52,6 +52,39 @@ class LeadSyncService(
         )
     }
 
+    /**
+     * Called when an appointment is DELETED (soft or hard) — mistake, test, duplicate.
+     *
+     * Deletion is not cancellation: a cancelled booking means the client backed out
+     * (lead → NO_SHOW via [markNoShow]), a deleted one means the booking should never
+     * have existed. The lead goes back to IN_PROGRESS and loses the link — leaving
+     * `appointmentId` pointing at a deleted row made the lead view claim a booking
+     * exists and 404 the moment anyone asked for its date.
+     */
+    @Transactional
+    fun unlinkDeletedAppointment(appointmentId: UUID, studioId: UUID, userId: UUID, userDisplayName: String) {
+        val lead = leadRepository.findByAppointmentId(appointmentId) ?: return
+
+        lead.appointmentId = null
+        lead.updatedAt = Instant.now()
+        if (lead.status == LeadStatus.CONFIRMED) {
+            // transition() saves the lead, records history and clears closedAt.
+            statusService.transition(
+                lead = lead,
+                targetStatus = LeadStatus.IN_PROGRESS,
+                changedByUserId = userId,
+                changedByName = userDisplayName
+            )
+        } else {
+            leadRepository.save(lead)
+        }
+
+        log.info(
+            "[LEADS] Appointment {} deleted — lead {} unlinked (status {})",
+            appointmentId, lead.id, lead.status
+        )
+    }
+
     /** Called when an appointment is cancelled or abandoned — the client didn't show up. */
     @Transactional
     fun markNoShow(appointmentId: UUID, studioId: UUID, userId: UUID, userDisplayName: String) {

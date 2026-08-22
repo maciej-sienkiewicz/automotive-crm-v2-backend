@@ -9,6 +9,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.appointment.recurrence.infrastructure.RecurrenceSeriesRepository
 import pl.detailing.crm.appointment.recurrence.update.RecurrenceEditScope
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -29,6 +30,7 @@ data class DeleteRecurringAppointmentResult(
 class DeleteRecurringAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
+    private val leadSyncService: LeadSyncService,
     private val auditService: AuditService
 ) {
 
@@ -71,6 +73,19 @@ class DeleteRecurringAppointmentHandler(
             }
 
             appointmentRepository.saveAll(targets)
+
+            // Leady wskazujące na usunięte wystąpienia tracą powiązanie — wskaźnik na
+            // usunięty wiersz robił z podglądu leada kłamstwo i 404 przy pobraniu terminu.
+            targets
+                .filter { it.deletedAt == now }
+                .forEach { entity ->
+                    leadSyncService.unlinkDeletedAppointment(
+                        appointmentId = entity.id,
+                        studioId = command.studioId.value,
+                        userId = command.userId.value,
+                        userDisplayName = command.userName ?: ""
+                    )
+                }
 
             auditService.log(LogAuditCommand(
                 studioId = command.studioId,

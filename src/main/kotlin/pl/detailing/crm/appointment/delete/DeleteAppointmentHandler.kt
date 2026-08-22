@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.leads.appointment.LeadSyncService
 import pl.detailing.crm.shared.*
 import java.time.Instant
 
@@ -14,6 +15,7 @@ import java.time.Instant
 @Service
 class DeleteAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
+    private val leadSyncService: LeadSyncService,
     private val auditService: AuditService
 ) {
 
@@ -32,6 +34,17 @@ class DeleteAppointmentHandler(
 
         // 3. Save
         appointmentRepository.save(appointmentEntity)
+
+        // 3b. Odepnij leada. Bez tego jego podgląd dalej twierdził, że rezerwacja
+        // istnieje, a pobranie jej terminu kończyło się „Rezerwacja nie została
+        // znaleziona". Usunięcie to nie odwołanie: lead wraca do IN_PROGRESS,
+        // a nie do NO_SHOW.
+        leadSyncService.unlinkDeletedAppointment(
+            appointmentId = command.appointmentId.value,
+            studioId = command.studioId.value,
+            userId = command.userId.value,
+            userDisplayName = command.userName ?: ""
+        )
 
         // 4. Audit log
         auditService.log(LogAuditCommand(
