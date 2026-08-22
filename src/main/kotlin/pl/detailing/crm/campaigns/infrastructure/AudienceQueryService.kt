@@ -47,12 +47,18 @@ data class AudienceEstimate(
     val eligible: Int,
     /** Odznaczeni ręcznie w kreatorze — wliczeni do [matched], ale nie do [eligible]. */
     val excludedManually: Int,
-    /** Strona listy odbiorców — wycinek [matched] wyznaczony przez offset i limit. */
-    val sample: List<AudienceRow>
+    /** Strona listy odbiorców — wycinek wyznaczony przez offset i limit. */
+    val sample: List<AudienceRow>,
+    /**
+     * Ile wierszy ma lista, po której stronicujemy. Bez wyszukiwania równe [matched];
+     * przy wpisanej frazie mniejsze — a liczniki powyżej i tak dotyczą całości, bo
+     * „ilu ludzi to dostanie" nie zależy od tego, kogo ktoś właśnie szuka.
+     */
+    val sampleTotal: Int
 ) {
     companion object {
         /** Nikt nie pasuje — używane, gdy warunek kampanii nie wskazuje żadnej wizyty. */
-        val EMPTY = AudienceEstimate(0, 0, 0, 0, 0, 0, 0, emptyList())
+        val EMPTY = AudienceEstimate(0, 0, 0, 0, 0, 0, 0, emptyList(), 0)
     }
 }
 
@@ -92,7 +98,9 @@ class AudienceQueryService(
         frequencyCapDays: Int,
         sampleLimit: Int = 50,
         sampleOffset: Int = 0,
-        candidateCustomerIds: Collection<UUID>? = null
+        candidateCustomerIds: Collection<UUID>? = null,
+        /** Fraza z wyszukiwarki nad tabelą: imię, nazwisko, telefon albo adres. */
+        sampleSearch: String? = null
     ): AudienceEstimate {
         if (candidateCustomerIds != null && candidateCustomerIds.isEmpty()) return AudienceEstimate.EMPTY
         val (sql, params) = buildQuery(
@@ -100,6 +108,9 @@ class AudienceQueryService(
             keepExcludedVisible = true
         )
         val rows = jdbc.query(sql, params) { rs, _ -> mapRow(rs) }
+
+        val needle = sampleSearch?.trim()?.takeIf { it.isNotEmpty() }
+        val listed = if (needle == null) rows else rows.filter { matchesSearch(it, needle) }
 
         val byEligibility = rows.groupingBy { it.eligibility }.eachCount()
         return AudienceEstimate(
@@ -110,8 +121,23 @@ class AudienceQueryService(
             frequencyCapped = byEligibility[AudienceRow.Eligibility.FREQUENCY_CAP] ?: 0,
             eligible = byEligibility[AudienceRow.Eligibility.ELIGIBLE] ?: 0,
             excludedManually = byEligibility[AudienceRow.Eligibility.EXCLUDED_MANUALLY] ?: 0,
-            sample = rows.drop(sampleOffset.coerceAtLeast(0)).take(sampleLimit)
+            sample = listed.drop(sampleOffset.coerceAtLeast(0)).take(sampleLimit),
+            sampleTotal = listed.size
         )
+    }
+
+    /**
+     * Filtrowanie strony listy odbywa się w pamięci, a nie w SQL-u, bo zapytanie
+     * o grupę i tak materializuje wszystkie wiersze — potrzebuje ich do liczników.
+     * Drugi przejazd po bazie dla samej wyszukiwarki nic by nie dał poza opóźnieniem.
+     */
+    private fun matchesSearch(row: AudienceRow, needle: String): Boolean {
+        val fullName = listOfNotNull(row.firstName, row.lastName).joinToString(" ")
+        val fields = listOfNotNull(row.firstName, row.lastName, row.email, row.phone) + fullName
+        if (fields.any { it.contains(needle, ignoreCase = true) }) return true
+        // Numer wpisany ciągiem ma znaleźć numer zapisany ze spacjami i odwrotnie.
+        val digits = needle.filter(Char::isDigit)
+        return digits.length >= 3 && row.phone?.filter(Char::isDigit)?.contains(digits) == true
     }
 
     /** Full materialization — every matched row with its eligibility classification. */
