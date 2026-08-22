@@ -71,6 +71,9 @@ class GetLeadAnalyticsHandler(
         // Klasyfikacja aut pobrana raz i podana obu osiom — dwa identyczne zapytania
         // po tę samą tabelę byłyby czystą stratą.
         val vehicleSegmentsOf = segmentsOf(leads)
+        // Tagi tak samo: karta „Usługi", macierz tygodniowa i surowe fakty do
+        // filtrowania w interfejsie liczą się z tego samego rozkładu.
+        val tagsByLead = tagService.tagsOf(leadIds)
         val byStatus = leads.groupingBy { it.status }.eachCount()
         val completed = byStatus[LeadStatus.COMPLETED] ?: 0
         val closed = completed + (byStatus[LeadStatus.LOST] ?: 0) + (byStatus[LeadStatus.NO_SHOW] ?: 0)
@@ -87,7 +90,7 @@ class GetLeadAnalyticsHandler(
             lostValue = leads.filter { it.isRealLoss() }.sumOf { it.estimatedValue },
             pipelineValue = leads.filter { it.isLive(now) }.sumOf { it.estimatedValue },
             silentValue = leads.filter { it.isSilent(now) }.sumOf { it.estimatedValue },
-            categories = categories(studioId, leads),
+            categories = categories(studioId, leads, tagsByLead),
             lostReasons = lostReasons(leads),
             medianFirstResponseMinutes = medianFirstResponseMinutes(leads),
             medianDaysToDecision = medianDaysToDecision(leads, firstDecisionAt),
@@ -97,9 +100,10 @@ class GetLeadAnalyticsHandler(
             responseImpact = responseImpact(leads),
             vehicleOutliers = vehicleOutliers(leads, ratio(completed, closed)),
             timeline = timeline(leads, from, to, now),
-            weekdayMatrix = weekdayMatrix(studioId, leads),
+            weekdayMatrix = weekdayMatrix(studioId, leads, tagsByLead),
             bySizeSegment = bySizeSegment(leads, vehicleSegmentsOf),
             byMarketTier = byMarketTier(leads, vehicleSegmentsOf),
+            leadFacts = leadFacts(leads, tagsByLead, vehicleSegmentsOf),
             bySource = bySource(leads),
             awaiting = awaiting(studioId),
             leaks = leaks(leads, now),
@@ -127,8 +131,11 @@ class GetLeadAnalyticsHandler(
      * wcale — a to jest dokładnie ten lead, o którym pytamy „dlaczego przegraliśmy".
      * Liczenie po wycenach mierzyłoby własną pracę, nie zainteresowanie klientów.
      */
-    private fun categories(studioId: StudioId, leads: List<LeadEntity>): List<CategoryStatDto> {
-        val tagsByLead = tagService.tagsOf(leads.map { it.id })
+    private fun categories(
+        studioId: StudioId,
+        leads: List<LeadEntity>,
+        tagsByLead: Map<UUID, List<String>>
+    ): List<CategoryStatDto> {
         val tagLabels = tagCatalog.labelsByCode(studioId)
         return leads
             .flatMap { lead ->
@@ -346,6 +353,31 @@ class GetLeadAnalyticsHandler(
 
     private data class SegmentPair(val size: VehicleSizeSegment, val tier: VehicleMarketTier)
 
+    /**
+     * Surowe fakty do przecięcia „usługa × segment auta" w interfejsie.
+     *
+     * Backend nie zgadnie z góry, którego przekroju właściciel zapyta — czy
+     * wygrywamy w premium, ale tylko w SUV-ach, czy też w sportowych. Zamiast
+     * mnożyć wyliczone kombinacje, oddaje się surowe wiersze: kilkaset sztuk na
+     * okno, więc filtrowanie w przeglądarce jest tańsze niż kolejne zapytanie.
+     */
+    private fun leadFacts(
+        leads: List<LeadEntity>,
+        tagsByLead: Map<UUID, List<String>>,
+        segments: Map<UUID, SegmentPair>
+    ): List<LeadFactDto> =
+        leads.map { lead ->
+            val pair = segments[lead.id]
+            LeadFactDto(
+                categories = tagsByLead[lead.id].orEmpty(),
+                sizeSegment = pair?.size?.takeIf { it != VehicleSizeSegment.UNKNOWN }?.name,
+                marketTier = pair?.tier?.takeIf { it != VehicleMarketTier.UNKNOWN }?.name,
+                won = lead.status == LeadStatus.COMPLETED,
+                lost = lead.isRealLoss(),
+                value = lead.estimatedValue
+            )
+        }
+
     // ── Odstępstwa ─────────────────────────────────────────────────────────
 
     /**
@@ -448,9 +480,12 @@ class GetLeadAnalyticsHandler(
      * dziesięciu wierszach po siedem komórek zostaje jedno zapytanie na kratkę
      * i widać już tylko przypadek.
      */
-    private fun weekdayMatrix(studioId: StudioId, leads: List<LeadEntity>): List<WeekdayMatrixRowDto> {
+    private fun weekdayMatrix(
+        studioId: StudioId,
+        leads: List<LeadEntity>,
+        tagsByLead: Map<UUID, List<String>>
+    ): List<WeekdayMatrixRowDto> {
         if (leads.isEmpty()) return emptyList()
-        val tagsByLead = tagService.tagsOf(leads.map { it.id })
         val tagLabels = tagCatalog.labelsByCode(studioId)
 
         // Ten sam rozkład co w „o co pytają": lead z dwoma tagami liczy się do obu.
