@@ -162,6 +162,10 @@ object CampaignRecipientFactory {
             AudienceRow.Eligibility.NO_CONSENT -> RecipientStatus.SKIPPED_NO_CONSENT
             AudienceRow.Eligibility.NO_ADDRESS -> RecipientStatus.SKIPPED_NO_ADDRESS
             AudienceRow.Eligibility.FREQUENCY_CAP -> RecipientStatus.SKIPPED_FREQUENCY_CAP
+            // Materializacja do wysyłki takich wierszy nie zwraca (odznaczeni odpadają
+            // już w zapytaniu) — gałąź jest tu po to, żeby przy ewentualnej zmianie
+            // tamtej reguły odznaczony klient nie stał się nagle odbiorcą.
+            AudienceRow.Eligibility.EXCLUDED_MANUALLY -> RecipientStatus.EXCLUDED_MANUALLY
         }
         val body = when (channel) {
             RecipientChannel.SMS -> {
