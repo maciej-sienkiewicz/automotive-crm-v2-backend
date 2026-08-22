@@ -157,9 +157,43 @@ class AuditFeedQueryRepository(
         }
 
         filters.actorId?.let { predicates += builder.equal(root.get<UUID>("userId"), it) }
-        filters.customerId?.let { predicates += builder.equal(root.get<UUID>("customerId"), it) }
-        filters.vehicleId?.let { predicates += builder.equal(root.get<UUID>("vehicleId"), it) }
-        filters.visitId?.let { predicates += builder.equal(root.get<UUID>("visitId"), it) }
+
+        /*
+         * Zawężenie „wszystko wokół jednego obiektu" ma DWA źródła prawdy i musi
+         * czytać oba. Kolumna kontekstu (customer_id itd.) jest wypełniana tylko
+         * tam, gdzie piszący zdarzenie podał AuditContext — a wpisy o samym
+         * obiekcie (moduł CUSTOMER, edycja danych klienta) niosą jego id w
+         * entity_id, nie w kolumnie kontekstu. Sam warunek po kolumnie zwracał
+         * więc historię BEZ zdarzeń własnych obiektu, a karta klienta świeciła
+         * pustką mimo pełnego dziennika.
+         */
+        filters.customerId?.let {
+            predicates += builder.or(
+                builder.equal(root.get<UUID>("customerId"), it),
+                builder.and(
+                    builder.equal(root.get<AuditModule>("module"), AuditModule.CUSTOMER),
+                    builder.equal(root.get<String>("entityId"), it.toString())
+                )
+            )
+        }
+        filters.vehicleId?.let {
+            predicates += builder.or(
+                builder.equal(root.get<UUID>("vehicleId"), it),
+                builder.and(
+                    builder.equal(root.get<AuditModule>("module"), AuditModule.VEHICLE),
+                    builder.equal(root.get<String>("entityId"), it.toString())
+                )
+            )
+        }
+        filters.visitId?.let {
+            predicates += builder.or(
+                builder.equal(root.get<UUID>("visitId"), it),
+                builder.and(
+                    builder.equal(root.get<AuditModule>("module"), AuditModule.VISIT),
+                    builder.equal(root.get<String>("entityId"), it.toString())
+                )
+            )
+        }
         filters.correlationId?.let { predicates += builder.equal(root.get<UUID>("correlationId"), it) }
         filters.module?.let { predicates += builder.equal(root.get<AuditModule>("module"), it) }
         filters.entityId?.let { predicates += builder.equal(root.get<String>("entityId"), it) }

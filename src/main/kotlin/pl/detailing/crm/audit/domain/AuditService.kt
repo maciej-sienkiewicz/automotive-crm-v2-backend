@@ -106,7 +106,9 @@ class AuditService(
     private val auditLogWriter: AuditLogWriter,
     private val auditLogRepository: pl.detailing.crm.audit.infrastructure.AuditLogRepository,
     private val auditMetadataEnricher: AuditMetadataEnricher,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    /** Moduły właścicielskie dokładają swoje — pusta lista jest poprawną konfiguracją. */
+    private val contextResolvers: List<AuditContextResolver> = emptyList()
 ) {
     private val logger = LoggerFactory.getLogger(AuditService::class.java)
 
@@ -182,6 +184,25 @@ class AuditService(
         false
     }
 
+    /**
+     * Kontekst z pierwszej ręki wygrywa; brakujący dokleja resolver modułu.
+     * W runCatching — dopisanie kontekstu jest kosmetyką feedu i nie ma prawa
+     * wywrócić zapisu zdarzenia ani operacji biznesowej nad nim.
+     */
+    private fun resolveContext(event: AuditEvent): AuditContext {
+        if (!event.context.isEmpty) return event.context
+        return contextResolvers.firstNotNullOfOrNull { resolver ->
+            runCatching { resolver.resolve(event.studioId, event.module, event.entityId) }
+                .onFailure {
+                    logger.warn(
+                        "Audit context resolution failed: module={}, entityId={}: {}",
+                        event.module, event.entityId, it.message
+                    )
+                }
+                .getOrNull()
+        } ?: AuditContext.EMPTY
+    }
+
     private fun toEntity(event: AuditEvent): AuditLogEntity {
         val request = AuditRequestContext.capture()
 
@@ -195,7 +216,7 @@ class AuditService(
             action = event.action,
             changes = event.changes,
             metadata = event.metadata,
-            context = event.context,
+            context = resolveContext(event),
             amount = event.amount,
             severity = event.severity ?: event.action.severity,
             channel = event.channel ?: request?.channel ?: defaultChannelFor(event.actor.type),
