@@ -183,31 +183,35 @@ class DemoCleanupJob(
         ).setParameter("studioId", studioId).executeUpdate()
         entityManager.flush()
 
-        // 16. Delete lead estimation items (cascade doesn't fire on JPQL DELETE)
+        // 16. Delete lead tags (no studio_id column — scoped through the lead's own)
         entityManager.createQuery(
-            """DELETE FROM LeadEstimationItemEntity i
-               WHERE i.estimation.id IN (
-                   SELECT e.id FROM LeadEstimationEntity e WHERE e.studioId = :studioId
-               )"""
+            """DELETE FROM LeadTagEntity t
+               WHERE t.leadId IN (SELECT l.id FROM LeadEntity l WHERE l.studioId = :studioId)"""
         ).setParameter("studioId", studioId).executeUpdate()
 
-        // 17. Delete lead estimations
+        // 17. Delete lead service items (frozen price snapshots, no cascade from LeadEntity)
         entityManager.createQuery(
-            "DELETE FROM LeadEstimationEntity e WHERE e.studioId = :studioId"
+            "DELETE FROM LeadServiceItemEntity i WHERE i.studioId = :studioId"
         ).setParameter("studioId", studioId).executeUpdate()
 
-        // 18. Delete lead user quote items
+        // 18. Delete lead status history
         entityManager.createQuery(
-            """DELETE FROM LeadUserQuoteItemEntity i
-               WHERE i.quote.id IN (
-                   SELECT q.id FROM LeadUserQuoteEntity q WHERE q.studioId = :studioId
-               )"""
+            "DELETE FROM LeadStatusHistoryEntity h WHERE h.studioId = :studioId"
         ).setParameter("studioId", studioId).executeUpdate()
 
-        // 19. Delete lead user quotes
+        // 19. Delete lead notes
         entityManager.createQuery(
-            "DELETE FROM LeadUserQuoteEntity q WHERE q.studioId = :studioId"
+            "DELETE FROM LeadNoteEntity n WHERE n.studioId = :studioId"
         ).setParameter("studioId", studioId).executeUpdate()
+
+        // 19a. Delete form-mail extraction log and registered form senders
+        entityManager.createQuery(
+            "DELETE FROM FormMailExtractionEntity e WHERE e.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.createQuery(
+            "DELETE FROM FormMailSourceEntity s WHERE s.studioId = :studioId"
+        ).setParameter("studioId", studioId).executeUpdate()
+        entityManager.flush()
 
         // 20. Delete leads
         entityManager.createQuery(
