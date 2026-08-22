@@ -38,7 +38,8 @@ class ImapSyncEngine(
     private val imapSessions: ImapSessions,
     private val parser: MimeEmailParser,
     private val ingestService: CommsIngestService,
-    private val readService: CommsReadService
+    private val readService: CommsReadService,
+    private val progressRegistry: SyncProgressRegistry
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -117,6 +118,9 @@ class ImapSyncEngine(
             account.updatedAt = Instant.now()
             accountRepository.save(account)
             runCatching { store?.close() }
+            // Pasek postępu znika niezależnie od wyniku — wiszący pasek po błędzie
+            // wyglądałby jak wieczna synchronizacja.
+            progressRegistry.finish(account.id)
         }
     }
 
@@ -148,7 +152,12 @@ class ImapSyncEngine(
             var maxUid = savedLastUid?.takeIf { !fullResync } ?: 0L
             var ingested = 0
 
+            // Pierwszy import zgłasza pasek postępu: interfejs pokazuje wtedy stan
+            // „trwa synchronizacja" zamiast lawiny powiadomień o nowej poczcie.
+            if (isBackfill) progressRegistry.addPlanned(account.id, messages.size)
+
             for (message in messages) {
+                if (isBackfill) progressRegistry.tick(account.id)
                 val uid = runCatching { uidFolder.getUID(message) }.getOrDefault(-1L)
                 if (uid <= 0) continue
                 // getMessagesByUID(start, LASTUID) always returns the last message, even below start.
@@ -162,7 +171,7 @@ class ImapSyncEngine(
                         continue
                     }
                     val parsed = parser.parse(mime, uid)
-                    if (ingestService.ingest(account, folderKind, parsed, uidValidity)) ingested++
+                    if (ingestService.ingest(account, folderKind, parsed, uidValidity, backfill = isBackfill)) ingested++
                 } catch (ex: Exception) {
                     // A single unparseable message must not block the rest of the folder.
                     log.warn(

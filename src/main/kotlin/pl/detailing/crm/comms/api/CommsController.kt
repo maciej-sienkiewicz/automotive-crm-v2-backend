@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.comms.engine.CommsReadService
 import pl.detailing.crm.comms.engine.ImapSyncEngine
+import pl.detailing.crm.comms.engine.SyncProgressRegistry
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.comms.contact.ContactCardDto
@@ -98,14 +99,16 @@ class CommsController(
     private val proofreadService: MailProofreadService,
     private val attachmentRepository: CommAttachmentRepository,
     private val accountRepository: MailAccountRepository,
-    private val syncEngine: ImapSyncEngine
+    private val syncEngine: ImapSyncEngine,
+    private val syncProgressRegistry: SyncProgressRegistry
 ) {
 
     @GetMapping("/accounts")
     fun accounts(): ResponseEntity<List<MailAccountStateDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(
-            accountRepository.findByStudioId(principal.studioId.value).map { it.toStateDto() }
+            accountRepository.findByStudioId(principal.studioId.value)
+                .map { it.toStateDto(progress = syncProgressRegistry.snapshot(it.id)) }
         )
     }
 
