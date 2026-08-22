@@ -167,7 +167,9 @@ data class TimelinePointDto(
     /** Wartość zapytań okresu w rozbiciu na wynik — grosze. */
     val wonValue: Long,
     val lostValue: Long,
-    val openValue: Long
+    val openValue: Long,
+    /** Wartość rozmów formalnie otwartych w tym okresie, ale starszych niż okno decyzji. */
+    val silentValue: Long
 )
 
 /**
