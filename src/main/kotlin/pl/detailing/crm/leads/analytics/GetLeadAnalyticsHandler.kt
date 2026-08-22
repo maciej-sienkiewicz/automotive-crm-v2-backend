@@ -86,6 +86,7 @@ class GetLeadAnalyticsHandler(
             responseImpact = responseImpact(leads),
             vehicleOutliers = vehicleOutliers(leads, ratio(completed, closed)),
             timeline = timeline(leads, from, to),
+            weekdayMatrix = weekdayMatrix(studioId, leads),
             bySource = bySource(leads),
             awaiting = awaiting(studioId),
             leaks = leaks(leads),
@@ -320,10 +321,81 @@ class GetLeadAnalyticsHandler(
         }
 
         return buckets.map { (periodStart, group) ->
-            val won = group.count { it.status == LeadStatus.COMPLETED }
-            val lost = group.count { it.status in LOST_STATUSES }
-            TimelinePointDto(periodStart, group.size, won, lost, ratio(won, won + lost))
+            val won = group.filter { it.status == LeadStatus.COMPLETED }
+            val lost = group.filter { it.status in LOST_STATUSES }
+            val open = group.filter { it.status in OPEN_STATUSES }
+            TimelinePointDto(
+                periodStart = periodStart,
+                created = group.size,
+                won = won.size,
+                lost = lost.size,
+                winRate = ratio(won.size, won.size + lost.size),
+                wonValue = won.sumOf { it.estimatedValue },
+                lostValue = lost.sumOf { it.estimatedValue },
+                openValue = open.sumOf { it.estimatedValue }
+            )
         }
+    }
+
+    // ── Która usługa, w który dzień ─────────────────────────────────────────
+
+    /**
+     * Macierz usługa × dzień tygodnia, wiersze od najdroższej usługi.
+     *
+     * Zwykły słupek „ile zapytań w poniedziałek" mówi tylko, kiedy jest ruch —
+     * a ruch sam w sobie nie jest ani przychodem, ani problemem. Dopiero rozbicie
+     * na usługi i ustawienie wierszy według średniej wyceny odpowiada na pytanie,
+     * które ma konsekwencje w grafiku: czy drogie zapytania przychodzą w innych
+     * dniach niż tanie, i czy w tych dniach jest przy skrzynce ktoś, kto potrafi
+     * je obsłużyć.
+     *
+     * Ogon zwinięty do „Pozostałe": macierz ma się dać ogarnąć wzrokiem, a przy
+     * dziesięciu wierszach po siedem komórek zostaje jedno zapytanie na kratkę
+     * i widać już tylko przypadek.
+     */
+    private fun weekdayMatrix(studioId: StudioId, leads: List<LeadEntity>): List<WeekdayMatrixRowDto> {
+        if (leads.isEmpty()) return emptyList()
+        val tagsByLead = tagService.tagsOf(leads.map { it.id })
+        val tagLabels = tagCatalog.labelsByCode(studioId)
+
+        // Ten sam rozkład co w „o co pytają": lead z dwoma tagami liczy się do obu.
+        val rows = leads
+            .flatMap { lead ->
+                val tags = tagsByLead[lead.id].orEmpty()
+                if (tags.isEmpty()) listOf(null to lead) else tags.map { it to lead }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (tag, group) -> buildRow(tag, tag?.let { tagLabels[it] ?: it } ?: "Bez tagu", group) }
+
+        if (rows.size <= MAX_MATRIX_ROWS) return rows.sortedWith(BY_VALUE_DESC)
+
+        // Do zwinięcia idą wiersze najrzadsze, nie najtańsze: usługa droga i rzadka
+        // jest właśnie tą, o której warto wiedzieć, że wpada w soboty.
+        val keep = rows.sortedByDescending { it.total }.take(MAX_MATRIX_ROWS - 1)
+        val rest = rows - keep.toSet()
+        val restRow = WeekdayMatrixRowDto(
+            code = null,
+            label = "Pozostałe",
+            averageValue = null,
+            counts = (0 until 7).map { day -> rest.sumOf { it.counts[day] } },
+            total = rest.sumOf { it.total }
+        )
+        return keep.sortedWith(BY_VALUE_DESC) + restRow
+    }
+
+    private fun buildRow(code: String?, label: String, group: List<LeadEntity>): WeekdayMatrixRowDto {
+        val counts = IntArray(7)
+        group.forEach { counts[it.createdAt.localDate().dayOfWeek.value - 1]++ }
+        // Średnia tylko po wycenionych: zapytanie bez wyceny nie znaczy „za zero zł",
+        // znaczy „jeszcze nikt nie policzył".
+        val priced = group.filter { it.estimatedValue > 0 }
+        return WeekdayMatrixRowDto(
+            code = code,
+            label = label,
+            averageValue = priced.takeIf { it.isNotEmpty() }?.let { it.sumOf { lead -> lead.estimatedValue } / it.size },
+            counts = counts.toList(),
+            total = group.size
+        )
     }
 
     private fun periodStart(date: LocalDate, monthly: Boolean): LocalDate =
@@ -472,5 +544,12 @@ class GetLeadAnalyticsHandler(
 
         /** Ponad kwartał liczymy miesiącami, żeby na wykresie było widać kształt. */
         const val MONTHLY_THRESHOLD_DAYS = 120L
+
+        /** Tyle wierszy macierzy da się jeszcze ogarnąć wzrokiem; reszta idzie w „Pozostałe". */
+        const val MAX_MATRIX_ROWS = 6
+
+        /** Najdroższe na górze; usługi bez ani jednej wyceny na sam dół. */
+        val BY_VALUE_DESC = compareByDescending<WeekdayMatrixRowDto> { it.averageValue ?: -1L }
+            .thenByDescending { it.total }
     }
 }

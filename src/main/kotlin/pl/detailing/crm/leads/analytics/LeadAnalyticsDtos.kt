@@ -48,8 +48,10 @@ data class LeadAnalyticsDto(
     val responseImpact: ResponseImpactDto,
     /** Marki i modele, które wyraźnie odstają od średniej skuteczności. */
     val vehicleOutliers: List<VehicleOutlierDto>,
-    /** Trend: zapytania i skuteczność w kolejnych tygodniach albo miesiącach. */
+    /** Trend: pieniądze i skuteczność w kolejnych tygodniach albo miesiącach. */
     val timeline: List<TimelinePointDto>,
+    /** Macierz „która usługa, w który dzień tygodnia" — wiersze od najdroższej. */
+    val weekdayMatrix: List<WeekdayMatrixRowDto>,
     /** Kanał, którym przyszło zapytanie, i jego skuteczność. */
     val bySource: List<SourceStatDto>,
 
@@ -138,13 +140,46 @@ data class VehicleOutlierDto(
     val direction: String
 )
 
-/** [periodStart] to poniedziałek tygodnia albo pierwszy dzień miesiąca. */
+/**
+ * [periodStart] to poniedziałek tygodnia albo pierwszy dzień miesiąca.
+ *
+ * Liczby sztuk zostają, ale trendu nie rysuje się już na nich: czternaście zapytań
+ * o mycie i trzy o folię to ta sama liczba i zupełnie inny miesiąc. Kształt niesie
+ * pieniądze, sztuki są dopiskiem.
+ */
 data class TimelinePointDto(
     val periodStart: LocalDate,
     val created: Int,
     val won: Int,
     val lost: Int,
-    val winRate: Double?
+    val winRate: Double?,
+    /** Wartość zapytań okresu w rozbiciu na wynik — grosze. */
+    val wonValue: Long,
+    val lostValue: Long,
+    val openValue: Long
+)
+
+/**
+ * Wiersz macierzy „usługa × dzień tygodnia".
+ *
+ * Wiersze idą od najdroższej usługi do najtańszej, a nie od najczęstszej. Dopiero
+ * w tej kolejności macierz odpowiada na pytanie, które właściciel faktycznie
+ * zadaje: czy drogie zapytania przychodzą w innych dniach niż tanie. Posortowane
+ * po liczbie zapytań pokazywałyby to samo, co zwykły słupek, tylko w kratkę.
+ *
+ * Usługa, nie widełki cenowe: wycena powstaje dopiero, gdy ktoś ją zrobi, więc
+ * zapytanie przegrane na starcie ma zero złotych i wpadłoby do najtańszego
+ * przedziału — czyli akurat te zapytania, które przegrywamy, zaniżałyby obraz.
+ * Tag przypisuje się z treści wiadomości od pierwszej minuty, dla każdego leada.
+ */
+data class WeekdayMatrixRowDto(
+    val code: String?,
+    val label: String,
+    /** Średnia wycena leadów tej usługi, które w ogóle zostały wycenione; null gdy żaden. */
+    val averageValue: Long?,
+    /** Siedem liczb: poniedziałek → niedziela. */
+    val counts: List<Int>,
+    val total: Int
 )
 
 /**
