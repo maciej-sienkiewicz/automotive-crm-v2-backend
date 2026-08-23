@@ -21,6 +21,8 @@ import pl.detailing.crm.instagram.remove.RemoveInstagramProfileCommand
 import pl.detailing.crm.instagram.remove.RemoveInstagramProfileHandler
 import pl.detailing.crm.instagram.self.MarkSelfProfileCommand
 import pl.detailing.crm.instagram.self.MarkSelfProfileHandler
+import pl.detailing.crm.instagram.sync.InstagramResyncService
+import pl.detailing.crm.instagram.sync.ResyncCooldownException
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
@@ -39,8 +41,34 @@ class InstagramController(
     private val removeHandler: RemoveInstagramProfileHandler,
     private val listHandler: ListInstagramProfilesHandler,
     private val postsHandler: GetInstagramPostsHandler,
-    private val markSelfHandler: MarkSelfProfileHandler
+    private val markSelfHandler: MarkSelfProfileHandler,
+    private val resyncService: InstagramResyncService
 ) {
+
+    /**
+     * Ręczne ponowienie pobrania danych dla profili z etykietą "problem z pobraniem".
+     *
+     * Dotyka wyłącznie profili z ustawioną flagą błędu, więc kliknięcie przy zdrowych
+     * danych nie kosztuje ani jednego wywołania API. Cooldown per studio chroni dzienny
+     * budżet RapidAPI przed wielokrotnym klikaniem.
+     */
+    @PostMapping("/resync-failed")
+    fun resyncFailed(): ResponseEntity<Any> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        try {
+            ResponseEntity.ok(resyncService.resyncFailed(principal.studioId))
+        } catch (e: ResyncCooldownException) {
+            val minutes = (e.retryAfterSeconds + 59) / 60
+            ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", e.retryAfterSeconds.toString())
+                .body(
+                    mapOf(
+                        "message" to "Ponowienie było już uruchamiane przed chwilą. Spróbuj ponownie za ok. $minutes min.",
+                        "retryAfterSeconds" to e.retryAfterSeconds
+                    )
+                )
+        }
+    }
 
     @PostMapping
     fun addProfile(

@@ -109,6 +109,31 @@ class InstagramSyncOrchestrator(
         log.info("Instagram weekly sync: zakończono ({} błędów)", errors)
     }
 
+    /**
+     * Ręczne ponowienie dla jednego profilu oznaczonego jako niedostępny.
+     * Zakres jak przy syncu dziennym (szczegóły + jedna strona postów), żeby koszt
+     * jednego kliknięcia użytkownika był taki sam jak koszt zwykłego cyklu.
+     *
+     * @return true, gdy profil wrócił do normy (flaga błędu zdjęta).
+     */
+    fun resyncProfile(profile: InstagramProfileEntity): Boolean {
+        val detailsOk = detailsSyncService.syncProfile(profile)
+
+        // Konto prywatne nie udostępnia postów, więc o powodzeniu decyduje sam odczyt
+        // profilu — inaczej raz ustawiona flaga zostałaby na nim na zawsze.
+        if (profile.isPrivate) {
+            if (detailsOk && profile.apiError) {
+                profile.apiError = false
+                profileRepository.save(profile)
+            }
+            return detailsOk
+        }
+
+        postsSyncService.syncProfilePosts(profile, InstagramSyncService.SyncDepth.LIGHT)
+        postProcess(profile)
+        return !profile.apiError
+    }
+
     private fun postProcess(profile: InstagramProfileEntity) {
         topicService.classifyNewPosts(profile.id)
         aggregationService.recomputeProfile(profile.id)
