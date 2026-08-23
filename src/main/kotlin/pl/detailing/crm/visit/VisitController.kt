@@ -585,7 +585,7 @@ class VisitController(
      */
     private fun mapToVisitDetailResponse(result: GetVisitDetailResult, showPrices: Boolean, doorToDoor: DoorToDoor? = null): VisitDetailResponse {
         return VisitDetailResponse(
-            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices, doorToDoor, result.acceptedByName),
+            visit = mapToVisitResponse(result.visit, result.vehicle, result.customer, result.customerStats, result.appointmentColor, showPrices, doorToDoor, result.acceptedByName, result.settlement),
             journalEntries = result.journalEntries.map { mapToJournalEntryResponse(it) },
             documents = result.documents.map { mapToDocumentResponse(it) }
         )
@@ -602,7 +602,8 @@ class VisitController(
         appointmentColor: pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity.AppointmentColorDomain?,
         showPrices: Boolean,
         doorToDoor: DoorToDoor? = null,
-        acceptedByName: String? = null
+        acceptedByName: String? = null,
+        settlement: VisitSettlementInfo? = null
     ): VisitResponse {
         return VisitResponse(
             id = visit.id.value.toString(),
@@ -656,6 +657,12 @@ class VisitController(
                 )
             },
             acceptedByName = acceptedByName,
+            settlement = settlement?.let {
+                VisitSettlementResponse(
+                    documentType = it.documentType,
+                    revenueInvoiceId = it.revenueInvoiceId
+                )
+            },
             createdAt = visit.createdAt,
             updatedAt = visit.updatedAt
         )

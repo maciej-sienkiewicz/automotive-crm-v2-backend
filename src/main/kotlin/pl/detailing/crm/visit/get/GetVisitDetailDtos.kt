@@ -44,8 +44,28 @@ data class VisitResponse(
     val smsReminderSuppressed: Boolean,
     val doorToDoor: DoorToDoorInfoResponse?,
     val acceptedByName: String?,
+    /**
+     * Czym wizyta została rozliczona przy wydaniu pojazdu. null dla wizyt jeszcze
+     * nierozliczonych. Bez tego widok wizyty nie wie, czy zaproponować wystawienie
+     * faktury, czy podgląd tej już wystawionej.
+     */
+    val settlement: VisitSettlementResponse?,
     val createdAt: Instant,
     val updatedAt: Instant
+)
+
+/**
+ * Rozliczenie wizyty widziane od strony dokumentów.
+ *
+ * [documentType] pochodzi z dokumentu finansowego wizyty (INVOICE | RECEIPT | OTHER);
+ * [revenueInvoiceId] jest wypełnione tylko wtedy, gdy istnieje faktura przychodowa
+ * KSeF wystawiona do tej wizyty — i tylko wtedy da się otworzyć jej podgląd.
+ * Dokument finansowy typu INVOICE bez rekordu KSeF jest możliwy (adnotacja bez
+ * wysyłki), więc te dwa pola są niezależne i front musi sprawdzać oba.
+ */
+data class VisitSettlementResponse(
+    val documentType: String?,
+    val revenueInvoiceId: String?
 )
 
 data class DoorToDoorInfoResponse(
@@ -207,7 +227,14 @@ data class GetVisitDetailResult(
     val documents: List<VisitDocument>,
     val customerStats: CustomerStats,
     val doorToDoor: DoorToDoor? = null,
-    val acceptedByName: String? = null
+    val acceptedByName: String? = null,
+    val settlement: VisitSettlementInfo? = null
+)
+
+/** Dane rozliczenia zebrane z modułu finansów i z ledgera faktur KSeF. */
+data class VisitSettlementInfo(
+    val documentType: String?,
+    val revenueInvoiceId: String?
 )
 
 /**
