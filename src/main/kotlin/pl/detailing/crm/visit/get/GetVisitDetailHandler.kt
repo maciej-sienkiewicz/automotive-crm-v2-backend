@@ -10,6 +10,9 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 import pl.detailing.crm.doortodoor.infrastructure.DoorToDoorRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.finance.domain.DocumentType
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 
 @Service
 class GetVisitDetailHandler(
@@ -21,7 +24,9 @@ class GetVisitDetailHandler(
     private val documentRepository: VisitDocumentRepository,
     private val appointmentColorRepository: AppointmentColorRepository,
     private val doorToDoorRepository: DoorToDoorRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val financialDocumentRepository: FinancialDocumentRepository,
+    private val revenueInvoiceRepository: KsefRevenueInvoiceRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -104,6 +109,31 @@ class GetVisitDetailHandler(
         val acceptedByName = userRepository.findByIdAndStudioId(visit.createdBy.value, command.studioId.value)
             ?.let { "${it.firstName} ${it.lastName}".trim().ifBlank { null } }
 
+        // 9. Rozliczenie wizyty: typ dokumentu z modułu finansów + ewentualna
+        // faktura KSeF. Czytane osobno, bo dokument finansowy typu INVOICE może
+        // istnieć bez rekordu KSeF (adnotacja bez wysyłki) i odwrotnie.
+        val settlementDocuments = financialDocumentRepository
+            .findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, command.studioId.value)
+
+        // Faktura ma pierwszeństwo nad pozostałymi dokumentami: gdy wizytę
+        // rozliczono dwoma dokumentami (część na fakturę, reszta na paragon),
+        // to faktura decyduje o tym, co widzi użytkownik. Priorytet jest wybrany
+        // jawnie, bo kolejność stałych w DocumentType stawia RECEIPT przed INVOICE.
+        val settlementDocumentType = (
+            settlementDocuments.firstOrNull { it.documentType == DocumentType.INVOICE }
+                ?: settlementDocuments.firstOrNull()
+            )?.documentType?.name
+
+        val revenueInvoiceId = revenueInvoiceRepository
+            .findFirstByVisitIdAndStudioIdOrderByCreatedAtAsc(visit.id.value, command.studioId.value)
+            ?.id?.toString()
+
+        val settlement = if (settlementDocumentType == null && revenueInvoiceId == null) null
+            else VisitSettlementInfo(
+                documentType = settlementDocumentType,
+                revenueInvoiceId = revenueInvoiceId
+            )
+
         return GetVisitDetailResult(
             visit = visit,
             vehicle = vehicle,
@@ -113,7 +143,8 @@ class GetVisitDetailHandler(
             documents = documents,
             customerStats = customerStats,
             doorToDoor = doorToDoor,
-            acceptedByName = acceptedByName
+            acceptedByName = acceptedByName,
+            settlement = settlement
         )
     }
 }

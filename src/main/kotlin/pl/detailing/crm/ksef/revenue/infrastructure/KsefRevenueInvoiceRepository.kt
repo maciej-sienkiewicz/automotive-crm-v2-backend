@@ -20,6 +20,19 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefRevenueInvoiceEntity?
 
     /**
+     * Faktura wystawiona do wizyty — kolumna `visit_id` była dotąd tylko zapisywana,
+     * nigdy odpytywana. Widok wizyty musi wiedzieć, czy jest do czego otworzyć
+     * podgląd faktury, a bez tego przeglądałby całą listę faktur studia.
+     *
+     * Korekta dostaje własny rekord wskazujący na tę samą wizytę, więc bierzemy
+     * najstarszy wpis — fakturę pierwotną, do której korekty się odnoszą.
+     */
+    fun findFirstByVisitIdAndStudioIdOrderByCreatedAtAsc(
+        visitId: UUID,
+        studioId: UUID
+    ): KsefRevenueInvoiceEntity?
+
+    /**
      * Nasze faktury czekające na potwierdzenie z KSeF (brak numeru KSeF) o danym
      * numerze własnym. Pull po SUBJECT1 dopasowuje po numerze KSeF; gdy wyprzedzi
      * polling sesji, numeru KSeF jeszcze nie znamy i trzeba dopasować po numerze
