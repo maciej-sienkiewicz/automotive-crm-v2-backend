@@ -1,14 +1,19 @@
 package pl.detailing.crm.task
 
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.TaskId
+import pl.detailing.crm.shared.UnprocessableEntityException
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.task.archive.ListArchivedTasksHandler
 import pl.detailing.crm.task.archive.ListArchivedTasksQuery
 import pl.detailing.crm.task.create.CreateTaskCommand
@@ -21,7 +26,14 @@ import pl.detailing.crm.task.list.ListTasksQuery
 import pl.detailing.crm.task.update.UpdateTaskCommand
 import pl.detailing.crm.task.update.UpdateTaskHandler
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.voice.OpenAiTranscriptionService
 import java.util.UUID
+
+/** Tytuł zadania jest kolumną VARCHAR(255) — dłuższa transkrypcja idzie do `meta`. */
+private const val MAX_TASK_TITLE_LENGTH = 255
+
+/** Ten sam limit co w dyktowaniu z telefonu (`/api/mobile/voice`). */
+private const val MAX_VOICE_AUDIO_BYTES = 5 * 1024 * 1024L
 
 // TASKS_VIEW covers viewing and completing tasks; creating/assigning and deleting
 // require TASKS_MANAGE (method-level overrides below).
@@ -35,8 +47,11 @@ class TasksController(
     private val deleteTaskHandler: DeleteTaskHandler,
     private val listArchivedTasksHandler: ListArchivedTasksHandler,
     private val userRepository: UserRepository,
-    private val roleRepository: RoleRepository
+    private val roleRepository: RoleRepository,
+    private val transcriptionService: OpenAiTranscriptionService
 ) {
+
+    private val log = LoggerFactory.getLogger(TasksController::class.java)
 
     /**
      * GET /api/v1/tasks
@@ -124,6 +139,63 @@ class TasksController(
             )
         )
 
+        ResponseEntity.status(HttpStatus.CREATED).body(task.toDto(createdByUserName = principal.fullName))
+    }
+
+    /**
+     * POST /api/v1/tasks/voice
+     *
+     * Dyktowanie zadania: nagranie → Whisper → gotowe zadanie. Klient dostaje
+     * z powrotem pełny [TaskDto], a nie samo id, żeby lista mogła się odświeżyć
+     * bez dodatkowego GET-a.
+     *
+     * Odpowiednik `/api/mobile/voice/note`, ale dla zalogowanej sesji zamiast
+     * tokenu mobilnego — i z tym samym uprawnieniem co ręczne dodanie zadania.
+     *
+     * Transkrypcja bywa dłuższa niż kolumna tytułu, więc gdy przekroczy limit,
+     * tytuł jest przycięty, a `meta` niesie całą treść — nic z podyktowanego
+     * tekstu nie ginie.
+     */
+    @PostMapping("/voice", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @RequiresPermission(Permission.TASKS_MANAGE)
+    fun createTaskFromVoice(@RequestPart("audio") audio: MultipartFile): ResponseEntity<TaskDto> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        if (audio.isEmpty) throw ValidationException("Plik audio jest pusty")
+        if (audio.size > MAX_VOICE_AUDIO_BYTES) {
+            throw ValidationException("Plik audio przekracza dozwolony rozmiar (max 5 MB)")
+        }
+
+        log.info(
+            "[tasks/voice] Nagranie: '{}', {} B, {} — wysyłam do transkrypcji",
+            audio.originalFilename, audio.size, audio.contentType
+        )
+
+        // Awaria Whispera nie jest błędem danych użytkownika, więc nie udajemy
+        // walidacji — wyjątek leci do globalnego handlera i kończy się 500.
+        val transcript = transcriptionService
+            .transcribe(audio.bytes, audio.originalFilename ?: "task-note.webm")
+            .trim()
+
+        // Nagranie dotarło i zostało przetworzone, tylko nie było w nim mowy:
+        // żądanie jest poprawne, a mimo to nie da się go wykonać — stąd 422,
+        // nie 400. Front rozróżnia te przypadki w komunikacie dla użytkownika.
+        if (transcript.isBlank()) {
+            log.warn("[tasks/voice] Transkrypcja pusta — nie tworzę zadania")
+            throw UnprocessableEntityException("Nie udało się rozpoznać mowy w nagraniu")
+        }
+
+        val task = createTaskHandler.handle(
+            CreateTaskCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                title = transcript.take(MAX_TASK_TITLE_LENGTH),
+                meta = transcript.takeIf { it.length > MAX_TASK_TITLE_LENGTH }
+            )
+        )
+
+        log.info("[tasks/voice] Zadanie utworzone — id: {}", task.id.value)
         ResponseEntity.status(HttpStatus.CREATED).body(task.toDto(createdByUserName = principal.fullName))
     }
 
