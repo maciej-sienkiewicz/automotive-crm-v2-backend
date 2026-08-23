@@ -8,6 +8,7 @@ import pl.detailing.crm.comms.infrastructure.CommLabelEntity
 import pl.detailing.crm.comms.infrastructure.CommLabelRepository
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
+import pl.detailing.crm.leads.formmail.FormMailExtractionRepository
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -30,7 +31,8 @@ class CommsQueryHandlers(
     private val threadRepository: CommThreadRepository,
     private val messageRepository: CommMessageRepository,
     private val attachmentRepository: CommAttachmentRepository,
-    private val labelRepository: CommLabelRepository
+    private val labelRepository: CommLabelRepository,
+    private val formMailExtractionRepository: FormMailExtractionRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -62,9 +64,17 @@ class CommsQueryHandlers(
         val attachmentsByMessage = attachmentRepository
             .findMetaByMessageIdIn(messages.map { it.id })
             .groupBy { it.messageId }
+        // Leady z formularza pobieramy jednym zapytaniem na cały wątek — inaczej
+        // podgląd rozmowy robiłby N zapytań, po jednym na wiadomość.
+        val formLeadByMessage = formMailExtractionRepository
+            .findByMessageIdIn(messages.map { it.id })
+            .filter { it.leadId != null }
+            .associate { it.messageId to it.leadId!! }
         return CommThreadDetailDto(
             thread = thread.toDto(),
-            messages = messages.map { it.toDto(attachmentsByMessage[it.id].orEmpty()) }
+            messages = messages.map {
+                it.toDto(attachmentsByMessage[it.id].orEmpty(), formLeadByMessage[it.id])
+            }
         )
     }
 
