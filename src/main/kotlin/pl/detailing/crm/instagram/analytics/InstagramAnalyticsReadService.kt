@@ -312,6 +312,7 @@ class InstagramAnalyticsReadService(
                 profileId = link.profileId.toString(),
                 username = profile.username,
                 isSelf = link.isSelf,
+                observedSince = link.createdAt.atZone(ZoneOffset.UTC).toLocalDate().toString(),
                 points = (followerHistory[link.profileId] ?: emptyList()).map {
                     FollowerPointDto(it.snapshotDate.toString(), it.followerCount)
                 }

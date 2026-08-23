@@ -111,6 +111,12 @@ data class FollowerSeriesDto(
     val profileId: String,
     val username: String,
     val isSelf: Boolean,
+    /**
+     * Dzień, od którego studio obserwuje ten profil (data dodania). Wcześniejszej historii
+     * obserwujących nie da się odtworzyć — Instagram nie udostępnia archiwalnych stanów licznika.
+     * Wykres używa tego do wyznaczenia wspólnego, uczciwego okna porównania.
+     */
+    val observedSince: String,
     val points: List<FollowerPointDto>
 )
 

@@ -22,7 +22,7 @@ class InstagramAnalyticsController(
     private val readService: InstagramAnalyticsReadService,
     private val suggestionService: SuggestionService,
     private val reportService: ReportService,
-    private val growthSummaryService: GrowthSummaryService
+    private val contentEffectivenessService: ContentEffectivenessService
 ) {
 
     @GetMapping("/overview")
@@ -42,23 +42,23 @@ class InstagramAnalyticsController(
     }
 
     /**
-     * Podsumowanie AI przyrostów obserwujących za cały wybrany okres.
-     * Odpowiedź jest cache'owana; nowe wygenerowanie: 1 zakończony request / 15 min na studio.
+     * "Co działa u konkurencji" — skuteczność tematów w obserwowanej grupie.
+     * Odpowiedź jest cache'owana; nowa analiza: 1 zakończony request / 15 min na studio.
      */
-    @GetMapping("/benchmark/growth-summary")
-    fun growthSummary(
+    @GetMapping("/content-effectiveness")
+    fun contentEffectiveness(
         @RequestParam(defaultValue = "12") weeks: Int
     ): ResponseEntity<Any> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         try {
-            ResponseEntity.ok(growthSummaryService.summarize(principal.studioId, weeks.coerceIn(4, 52)))
-        } catch (e: GrowthSummaryRateLimitException) {
+            ResponseEntity.ok(contentEffectivenessService.analyze(principal.studioId, weeks.coerceIn(4, 52)))
+        } catch (e: ContentEffectivenessRateLimitException) {
             val minutes = (e.retryAfterSeconds + 59) / 60
             ResponseEntity.status(429)
                 .header("Retry-After", e.retryAfterSeconds.toString())
                 .body(
                     mapOf(
-                        "message" to "Podsumowanie AI można generować raz na 15 minut. Spróbuj ponownie za ok. $minutes min.",
+                        "message" to "Analizę można generować raz na 15 minut. Spróbuj ponownie za ok. $minutes min.",
                         "retryAfterSeconds" to e.retryAfterSeconds
                     )
                 )
