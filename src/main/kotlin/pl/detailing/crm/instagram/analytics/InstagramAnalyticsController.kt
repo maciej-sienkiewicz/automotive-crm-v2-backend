@@ -22,7 +22,7 @@ class InstagramAnalyticsController(
     private val readService: InstagramAnalyticsReadService,
     private val suggestionService: SuggestionService,
     private val reportService: ReportService,
-    private val contentEffectivenessService: ContentEffectivenessService
+    private val competitorPulseService: CompetitorPulseService
 ) {
 
     @GetMapping("/overview")
@@ -42,27 +42,18 @@ class InstagramAnalyticsController(
     }
 
     /**
-     * "Co działa u konkurencji" — skuteczność tematów w obserwowanej grupie.
-     * Odpowiedź jest cache'owana; nowa analiza: 1 zakończony request / 15 min na studio.
+     * "Puls" — co wydarzyło się u obserwowanych profili w ostatnich dniach.
+     *
+     * Same fakty zestawione z normą profilu z pół roku; bez wniosków o wzorcach, bo przy
+     * ~1,5 posta tygodniowo na profil krótkie okno nie ma na nie pokrycia. Liczone
+     * wyłącznie w kodzie, więc bez limitów i bez cache — zapytanie jest tanie.
      */
-    @GetMapping("/content-effectiveness")
-    fun contentEffectiveness(
-        @RequestParam(defaultValue = "12") weeks: Int
-    ): ResponseEntity<Any> = runBlocking {
+    @GetMapping("/pulse")
+    fun pulse(
+        @RequestParam(defaultValue = "1") weeks: Int
+    ): ResponseEntity<CompetitorPulseDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        try {
-            ResponseEntity.ok(contentEffectivenessService.analyze(principal.studioId, weeks.coerceIn(4, 52)))
-        } catch (e: ContentEffectivenessRateLimitException) {
-            val minutes = (e.retryAfterSeconds + 59) / 60
-            ResponseEntity.status(429)
-                .header("Retry-After", e.retryAfterSeconds.toString())
-                .body(
-                    mapOf(
-                        "message" to "Analizę można generować raz na 15 minut. Spróbuj ponownie za ok. $minutes min.",
-                        "retryAfterSeconds" to e.retryAfterSeconds
-                    )
-                )
-        }
+        ResponseEntity.ok(competitorPulseService.pulse(principal.studioId, weeks.coerceIn(1, 4)))
     }
 
     /** Wyjaśnienie tygodnia dla kliknięcia w słupek przyrostu obserwujących. */
