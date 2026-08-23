@@ -90,4 +90,7 @@ class FormMailExtractionEntity(
 
 interface FormMailExtractionRepository : JpaRepository<FormMailExtractionEntity, UUID> {
     fun findByMessageId(messageId: UUID): FormMailExtractionEntity?
+
+    /** Cała rozmowa naraz — podgląd wątku pyta o lead przy każdej wiadomości. */
+    fun findByMessageIdIn(messageIds: Collection<UUID>): List<FormMailExtractionEntity>
 }

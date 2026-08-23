@@ -65,7 +65,13 @@ data class CommMessageDto(
     val readSource: String?,
     val readAt: Instant?,
     val sendStatus: String,
-    val attachments: List<CommAttachmentDto>
+    val attachments: List<CommAttachmentDto>,
+    /**
+     * Lead założony z TEJ wiadomości przez automat formularzowy. Wątek formularza
+     * zbiera zgłoszenia wielu klientów pod wspólnym tematem, więc lead wisi przy
+     * konkretnej wiadomości, a nie przy wątku.
+     */
+    val formLeadId: String? = null
 )
 
 data class CommAttachmentDto(
@@ -122,7 +128,10 @@ fun CommThreadEntity.toDto() = CommThreadDto(
     archived = archived
 )
 
-fun CommMessageEntity.toDto(attachments: List<CommAttachmentMeta>) = CommMessageDto(
+fun CommMessageEntity.toDto(
+    attachments: List<CommAttachmentMeta>,
+    formLeadId: UUID? = null
+) = CommMessageDto(
     id = id.toString(),
     threadId = threadId.toString(),
     direction = direction.name,
@@ -146,7 +155,8 @@ fun CommMessageEntity.toDto(attachments: List<CommAttachmentMeta>) = CommMessage
             sizeBytes = it.sizeBytes,
             isInline = it.isInline
         )
-    }
+    },
+    formLeadId = formLeadId?.toString()
 )
 
 fun CommLabelEntity.toDto() = CommLabelDto(
