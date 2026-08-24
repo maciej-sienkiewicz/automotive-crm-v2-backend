@@ -229,7 +229,8 @@ class SubmitSignatureHandler(
                 }
 
                 val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
-                    request.studioId.value, request.visitId.value, visitEntity.visitNumber, protocol.version
+                    request.studioId.value, request.visitId.value, visitEntity.visitNumber,
+                    protocol.version, protocol.id.value
                 )
                 logger.info(
                     "Uploading signed PDF to S3: requestId={} key={} size={}B",
@@ -238,8 +239,14 @@ class SubmitSignatureHandler(
                 s3StorageService.uploadBytes(signedPdfS3Key, sealResult.pdfBytes)
                 logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
 
-                // Update the document record so the /documents endpoint serves the signed PDF
-                documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
+                // Update the document record so the /documents endpoint serves the signed PDF.
+                // Tylko dla dokumentów wizyty: zgoda wskazuje na WSPÓLNY plik szablonu
+                // (ten sam klucz dla całego studia), więc przepięcie po tym kluczu
+                // dotknęłoby czegokolwiek, co się na niego powołuje — a sam podpisany
+                // plik zgody i tak wisi na wierszu protokołu oraz na zgodzie klienta.
+                if (protocol.consentDefinitionId == null) {
+                    documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
+                }
 
                 val signedProtocol = protocol.sign(
                     signedPdfS3Key = signedPdfS3Key,

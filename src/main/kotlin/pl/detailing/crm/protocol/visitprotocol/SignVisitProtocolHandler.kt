@@ -58,7 +58,8 @@ class SignVisitProtocolHandler(
             val visitNumber = visitEntity.visitNumber
 
             val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
-                command.studioId.value, command.visitId.value, visitNumber, protocol.version
+                command.studioId.value, command.visitId.value, visitNumber,
+                protocol.version, command.protocolId.value
             )
             val signatureImageS3Key = s3StorageService.buildSignatureImageS3Key(
                 command.studioId.value, command.visitId.value, command.protocolId.value
