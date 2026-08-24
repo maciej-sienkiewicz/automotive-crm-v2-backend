@@ -7,6 +7,7 @@ import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadEntity
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
 import java.time.Instant
+import java.util.UUID
 
 data class MailAccountStateDto(
     val id: String,
