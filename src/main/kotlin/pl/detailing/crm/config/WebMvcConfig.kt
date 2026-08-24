@@ -23,6 +23,10 @@ class WebMvcConfig(
                 "/api/v1/auth/**",
                 "/api/health",
                 "/api/v1/vehicle-metadata/**",
+                // Manifest PWA nie jest funkcją produktu, tylko metadanymi instalacji —
+                // studio z wygasłą subskrypcją i tak musi móc otworzyć aplikację,
+                // choćby po to, żeby zapłacić.
+                "/api/v1/pwa/manifest",
                 "/api/mobile/**",
                 // Signing tablet uses X-Tablet-Token (Redis), not session auth
                 "/api/tablet/**",

@@ -104,6 +104,12 @@ class SecurityConfig(
                 // by SHA-384 CRC signature + verify call back to the P24 API
                 auth.requestMatchers("/api/v1/payments/p24/status").permitAll()
 
+                // Manifest PWA — czytany przez przeglądarkę także na ekranie logowania
+                // i przy zimnym starcie. Odpowiedź 401 zamiast manifestu czyni
+                // aplikację niemożliwą do zainstalowania, a na iOS bez instalacji
+                // nie ma Web Pusha w ogóle. Bez sesji zwraca nazwę produktu.
+                auth.requestMatchers("/api/v1/pwa/manifest").permitAll()
+
                 auth.requestMatchers(
                     "/api/auth/**",
                     "/api/v1/auth/**",
