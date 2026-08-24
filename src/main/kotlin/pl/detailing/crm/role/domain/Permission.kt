@@ -7,6 +7,7 @@ private const val SECTION_SERVICES = "Usługi"
 private const val SECTION_MEDIA = "Multimedia / Zdjęcia"
 private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
 private const val SECTION_BATCH_ORDERS = "Zlecenia zbiorcze"
+private const val SECTION_NOTIFICATIONS = "Powiadomienia"
 
 /**
  * Hardcoded permission catalog organized as a **tree** (hierarchy). Administrators cannot
@@ -175,6 +176,21 @@ enum class Permission(
         parent = FINANCE_INVOICES
     ),
     FINANCE_VIEW_REPORTS(PermissionModule.FINANCE, "Podgląd raportów finansowych"),
+
+    // Sekcja: Powiadomienia — osobny korzeń, celowo NIE dziecko raportów.
+    //
+    // Push o zarobku po zamkniętej wizycie ujawnia kwotę, więc jest uprawnieniem
+    // finansowym. Ale to jedna liczba w telefonie, a nie wgląd w rozliczenia firmy:
+    // właściciel chce dostawać ping bez oddawania komukolwiek raportów, i odwrotnie —
+    // księgowa może mieć raporty i nie chcieć budzika przy każdym odbiorze auta.
+    // Jako dziecko FINANCE_VIEW_REPORTS żadnego z tych dwóch układów nie dałoby się
+    // ustawić.
+    FINANCE_EARNINGS_NOTIFICATIONS(
+        PermissionModule.FINANCE, "Powiadomienia o zarobku po wizycie",
+        section = SECTION_NOTIFICATIONS,
+        description = "Push na telefon z kwotą brutto po każdej zamkniętej wizycie. " +
+            "Trafia wyłącznie na urządzenia sparowane przez tę osobę."
+    ),
 
     // ── Pracownicy ───────────────────────────────────────────────────────────
     EMPLOYEES_MANAGE(

@@ -35,6 +35,7 @@ object PermissionHierarchy {
         // ── Non-VISITS roots → VISITS_CREATE ────────────────────────────────────────
         Permission.FINANCE_INVOICES to setOf(Permission.VISITS_CREATE),
         Permission.FINANCE_VIEW_REPORTS to setOf(Permission.VISITS_CREATE),
+        Permission.FINANCE_EARNINGS_NOTIFICATIONS to setOf(Permission.VISITS_CREATE),
         Permission.EMPLOYEES_MANAGE to setOf(Permission.VISITS_CREATE),
         Permission.EMPLOYEES_PAYROLL to setOf(Permission.VISITS_CREATE),
         Permission.COMMUNICATION_SEND to setOf(Permission.VISITS_CREATE),
