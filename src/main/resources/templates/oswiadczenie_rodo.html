@@ -159,10 +159,23 @@
   .prose { font-size: 9pt; line-height: 12.5pt; }
   .prose p + p { margin-top: 8pt; }
 
-  /* Miejsca wypełniane danymi administratora — zostają widoczne jako
-     nawiasy kwadratowe dopóki backend ich nie podmieni, więc nikt nie
-     podpisze dokumentu z niedokończoną treścią. */
-  .ph { font-weight: 500; white-space: nowrap; }
+  /* Miejsca wypełniane danymi administratora. Puste, szare pole w linii tekstu —
+     ten sam język wizualny co pola formularza w protokołach. Nad każdym z nich
+     stoi pole AcroForm o tej samej nazwie (data-field), które backend wypełnia
+     danymi firmy przy generowaniu dokumentu do podpisu. */
+  .ph {
+    display: inline-block;
+    vertical-align: baseline;
+    height: 9.50pt;
+    margin-bottom: -1.50pt;
+    background: var(--gray);
+    border-radius: 1pt;
+  }
+  .ph.w-name    { width: 150pt; }
+  .ph.w-city    { width:  80pt; }
+  .ph.w-address { width: 170pt; }
+  .ph.w-nip     { width:  75pt; }
+  .ph.w-regon   { width:  75pt; }
 
   /* Odsyłacz do przypisu — górny indeks przy słowie „Administratora". */
   .fn-ref {
@@ -193,13 +206,6 @@
   .signature { margin-top: 26.00pt; width: 261.94pt; }
   .signature .tab { width: 123.84pt; }
   .signature .box { margin-top: 2.30pt; height: 39.25pt; }
-  .signature .caption {
-    margin-top: 3.20pt;
-    width: 123.84pt;
-    text-align: center;
-    font-size: 8pt;
-    line-height: 1.21;
-  }
 </style>
 </head>
 <body>
@@ -227,20 +233,16 @@
   <div class="signature">
     <div class="tab">PODPIS KLIENTA</div>
     <div class="box" data-field="signature"></div>
-    <div class="caption">Klient</div>
   </div>
 
   <!-- Przypis definiujący Administratora -->
   <div class="footnote">
-    <span class="num">1</span>Administrator — spółka pod firmą:
-    <span class="ph" data-field="companyname">[FIRMA SPÓŁKI]</span> z siedzibą w
-    <span class="ph" data-field="companycity">[MIEJSCOWOŚĆ]</span> (adres:
-    <span class="ph" data-field="companyaddress">[ADRES SIEDZIBY]</span>), wpisana do rejestru
-    przedsiębiorców Krajowego Rejestru Sądowego pod numerem KRS:
-    <span class="ph" data-field="companykrs">[NUMER KRS]</span> (sąd rejestrowy:
-    <span class="ph" data-field="companycourt">[SĄD REJESTROWY]</span>); NIP:
-    <span class="ph" data-field="companynip">[NUMER NIP]</span>; REGON:
-    <span class="ph" data-field="companyregon">[NUMER REGON]</span>.
+    <span class="num">1</span>Administrator —
+    <span class="ph w-name" data-field="companyname"></span> z siedzibą w
+    <span class="ph w-city" data-field="companycity"></span> (adres:
+    <span class="ph w-address" data-field="companyaddress"></span>); NIP:
+    <span class="ph w-nip" data-field="companynip"></span>; REGON:
+    <span class="ph w-regon" data-field="companyregon"></span>.
   </div>
 
 </div>

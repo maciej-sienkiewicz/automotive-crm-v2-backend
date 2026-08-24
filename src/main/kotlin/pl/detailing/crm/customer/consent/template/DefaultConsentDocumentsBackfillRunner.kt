@@ -10,9 +10,9 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 
 /**
- * Startup backfill for the marketing-consent document.
+ * Startup backfill for the bundled consent documents (RODO + marketing).
  *
- * Studia założone zanim systemowa zgoda istniała dostają ją przy starcie aplikacji.
+ * Studia założone zanim systemowe dokumenty istniały dostają je przy starcie aplikacji.
  * Przebieg jest odporny na pojedynczy błąd (np. chwilowy błąd S3): jedno studio nie
  * blokuje pozostałych, a nieudane próby powtórzą się przy następnym starcie.
  *
@@ -20,9 +20,9 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
  */
 @Component
 @Order(101)
-class DefaultMarketingConsentBackfillRunner(
+class DefaultConsentDocumentsBackfillRunner(
     private val studioRepository: StudioRepository,
-    private val provisioner: DefaultMarketingConsentProvisioner,
+    private val provisioner: DefaultConsentDocumentsProvisioner,
     @Value("\${consent.default-document.backfill-on-startup:true}") private val enabled: Boolean
 ) : ApplicationRunner {
 
@@ -30,7 +30,7 @@ class DefaultMarketingConsentBackfillRunner(
 
     override fun run(args: ApplicationArguments?) {
         if (!enabled) {
-            logger.info("Default marketing consent backfill disabled by configuration — skipping")
+            logger.info("Default consent documents backfill disabled by configuration — skipping")
             return
         }
 
@@ -40,22 +40,21 @@ class DefaultMarketingConsentBackfillRunner(
         var failed = 0
         for (studio in studios) {
             try {
-                if (provisioner.ensureDefaultMarketingConsent(StudioId(studio.id))) {
-                    seeded++
-                } else if (provisioner.refreshBundledConsentDocument(StudioId(studio.id))) {
-                    // Studio ma już systemowy dokument — dostaje jego aktualną treść.
-                    refreshed++
-                }
+                val studioIdValue = StudioId(studio.id)
+                if (provisioner.ensureDefaultRodoConsent(studioIdValue)) seeded++
+                if (provisioner.ensureDefaultMarketingConsent(studioIdValue)) seeded++
+                // Dokumenty, które studio już ma, dostają aktualną treść.
+                refreshed += provisioner.refreshBundledDocuments(studioIdValue)
             } catch (e: Exception) {
                 failed++
                 logger.error(
-                    "Default marketing consent backfill failed for studio {}: {}",
+                    "Default consent documents backfill failed for studio {}: {}",
                     studio.id, e.message, e
                 )
             }
         }
         logger.info(
-            "Default marketing consent backfill complete: {} studio(s) checked, {} seeded, {} refreshed, {} failed",
+            "Default consent documents backfill complete: {} studio(s) checked, {} seeded, {} refreshed, {} failed",
             studios.size, seeded, refreshed, failed
         )
     }

@@ -5,7 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
+import pl.detailing.crm.customer.consent.template.DefaultConsentDocumentsProvisioner
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
@@ -28,7 +28,7 @@ class SubscriptionService(
     private val entitlementService: EntitlementService,
     private val studioProvisioningService: StudioProvisioningService,
     private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
-    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
+    private val defaultConsentDocumentsProvisioner: DefaultConsentDocumentsProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -50,15 +50,17 @@ class SubscriptionService(
     }
 
     /**
-     * Seed the bundled marketing-consent document. Osobny try/catch od protokołu:
-     * brak zgody to brak wysyłek marketingowych, ale nie powód, żeby rejestracja
-     * albo systemowy protokół przyjęcia miały się nie udać.
+     * Seed the bundled consent documents (RODO + marketing). Osobny try/catch od
+     * protokołu: brak zgód to brak podstawy do wysyłek i brak oświadczenia RODO,
+     * ale nie powód, żeby rejestracja albo systemowy protokół przyjęcia miały się
+     * nie udać — backfill przy starcie i tak je uzupełni.
      */
-    private fun seedDefaultMarketingConsent(studioId: StudioId) {
+    private fun seedDefaultConsentDocuments(studioId: StudioId) {
         try {
-            defaultMarketingConsentProvisioner.ensureDefaultMarketingConsent(studioId)
+            defaultConsentDocumentsProvisioner.ensureDefaultRodoConsent(studioId)
+            defaultConsentDocumentsProvisioner.ensureDefaultMarketingConsent(studioId)
         } catch (e: Exception) {
-            logger.error("Failed to seed default marketing consent for studio {}: {}", studioId, e.message, e)
+            logger.error("Failed to seed default consent documents for studio {}: {}", studioId, e.message, e)
         }
     }
 
@@ -84,7 +86,7 @@ class SubscriptionService(
     fun createStudio(name: String): Studio {
         val studio = studioProvisioningService.provisionStudio(name)
         seedDefaultProtocolTemplate(studio.id)
-        seedDefaultMarketingConsent(studio.id)
+        seedDefaultConsentDocuments(studio.id)
         return studio
     }
 

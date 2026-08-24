@@ -78,7 +78,8 @@ class ConsentController(
                 marketingChannels = request.marketingChannels
                     .mapNotNull { runCatching { MarketingChannel.valueOf(it) }.getOrNull() }
                     .toSet(),
-                displayOrder = request.displayOrder ?: 0
+                displayOrder = request.displayOrder ?: 0,
+                isMandatory = request.isMandatory ?: false
             )
         )
 
@@ -108,7 +109,8 @@ class ConsentController(
                 marketingChannels = request.marketingChannels?.mapNotNull {
                     runCatching { MarketingChannel.valueOf(it) }.getOrNull()
                 }?.toSet(),
-                displayOrder = request.displayOrder
+                displayOrder = request.displayOrder,
+                isMandatory = request.isMandatory
             )
         )
 
@@ -189,6 +191,7 @@ class ConsentController(
             stage = result.stage,
             marketingChannels = result.marketingChannels.map { it.name }.toSet(),
             displayOrder = result.displayOrder,
+            isMandatory = result.isMandatory,
             isActive = true,
             currentVersion = ConsentVersionResponse(
                 versionId = result.currentVersion.versionId.value,
@@ -220,7 +223,8 @@ data class CreateConsentRequest(
     val description: String? = null,
     val stage: ProtocolStage,
     val marketingChannels: List<String> = emptyList(),  // "EMAIL", "SMS"
-    val displayOrder: Int? = 0
+    val displayOrder: Int? = 0,
+    val isMandatory: Boolean? = false
 )
 
 data class UpdateConsentRequest(
@@ -228,7 +232,8 @@ data class UpdateConsentRequest(
     val description: String? = null,
     val stage: ProtocolStage? = null,
     val marketingChannels: List<String>? = null,
-    val displayOrder: Int? = null
+    val displayOrder: Int? = null,
+    val isMandatory: Boolean? = null
 )
 
 data class AddVersionRequest(

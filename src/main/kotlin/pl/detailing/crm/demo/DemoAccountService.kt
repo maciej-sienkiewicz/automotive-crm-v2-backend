@@ -9,7 +9,7 @@ import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.auth.UserPrincipal
-import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
+import pl.detailing.crm.customer.consent.template.DefaultConsentDocumentsProvisioner
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.infrastructure.StudioEntity
@@ -31,7 +31,7 @@ class DemoAccountService(
     private val mobileTokenService: MobileTokenService,
     private val securityContextRepository: SecurityContextRepository,
     private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
-    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
+    private val defaultConsentDocumentsProvisioner: DefaultConsentDocumentsProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -101,9 +101,10 @@ class DemoAccountService(
         }
 
         try {
-            defaultMarketingConsentProvisioner.ensureDefaultMarketingConsent(studioId)
+            defaultConsentDocumentsProvisioner.ensureDefaultRodoConsent(studioId)
+            defaultConsentDocumentsProvisioner.ensureDefaultMarketingConsent(studioId)
         } catch (e: Exception) {
-            logger.error("Failed to seed default marketing consent for demo studio {}: {}", studioId, e.message, e)
+            logger.error("Failed to seed default consent documents for demo studio {}: {}", studioId, e.message, e)
         }
 
         val userPrincipal = UserPrincipal(

@@ -24,6 +24,8 @@ data class ConsentDefinition(
     val stage: ProtocolStage,
     val marketingChannels: Set<MarketingChannel> = emptySet(),
     val displayOrder: Int,
+    /** Bez tej zgody studio nie wykona usługi (RODO); marketing zawsze dobrowolny. */
+    val isMandatory: Boolean = false,
     val isActive: Boolean,
     val createdBy: UserId,
     val updatedBy: UserId,

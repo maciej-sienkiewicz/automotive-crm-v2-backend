@@ -19,6 +19,7 @@ data class ConsentStatusItem(
     val stage: ProtocolStage?,
     val marketingChannels: Set<MarketingChannel>,
     val displayOrder: Int,
+    val isMandatory: Boolean,
     val status: ConsentStatus,
     val currentTemplateId: ConsentTemplateId?,
     val currentVersion: Int?,

@@ -48,6 +48,14 @@ class ConsentDefinitionEntity(
     @Column(name = "display_order", nullable = false)
     var displayOrder: Int = 0,
 
+    /**
+     * Zgoda obowiązkowa — klient nie ma jej po co odmawiać, bo bez niej studio nie
+     * może wykonać usługi (np. oświadczenie RODO). Zgoda marketingowa jest z
+     * definicji dobrowolna, więc domyślną wartością jest false.
+     */
+    @Column(name = "is_mandatory", nullable = false)
+    var isMandatory: Boolean = false,
+
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
 
@@ -71,6 +79,7 @@ class ConsentDefinitionEntity(
         stage = stage,
         marketingChannels = marketingChannels.toSet(),
         displayOrder = displayOrder,
+        isMandatory = isMandatory,
         isActive = isActive,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
@@ -87,6 +96,7 @@ class ConsentDefinitionEntity(
                 description = definition.description,
                 stage = definition.stage,
                 displayOrder = definition.displayOrder,
+                isMandatory = definition.isMandatory,
                 isActive = definition.isActive,
                 createdBy = definition.createdBy.value,
                 updatedBy = definition.updatedBy.value,

@@ -33,6 +33,7 @@ class UpdateConsentHandler(
             command.description?.let { entity.description = it.trim() }
             command.stage?.let { entity.stage = it }
             command.displayOrder?.let { entity.displayOrder = it }
+            command.isMandatory?.let { entity.isMandatory = it }
             entity.updatedBy = command.updatedBy.value
             entity.updatedAt = Instant.now()
 
@@ -48,5 +49,6 @@ data class UpdateConsentCommand(
     val description: String?,
     val stage: ProtocolStage?,
     val marketingChannels: Set<MarketingChannel>?,
-    val displayOrder: Int?
+    val displayOrder: Int?,
+    val isMandatory: Boolean? = null
 )

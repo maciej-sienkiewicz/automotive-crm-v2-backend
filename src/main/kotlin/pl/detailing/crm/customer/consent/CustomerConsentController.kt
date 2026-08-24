@@ -127,6 +127,7 @@ data class ConsentStatusResponse(
                         stage = item.stage,
                         marketingChannels = item.marketingChannels.map { it.name }.toSet(),
                         displayOrder = item.displayOrder,
+                        isMandatory = item.isMandatory,
                         status = item.status.name,
                         currentTemplateId = item.currentTemplateId?.value,
                         currentVersion = item.currentVersion,
@@ -149,6 +150,7 @@ data class ConsentStatusItemResponse(
     val stage: ProtocolStage?,
     val marketingChannels: Set<String>,  // "EMAIL", "SMS"
     val displayOrder: Int,
+    val isMandatory: Boolean,
     val status: String,                  // VALID | OUTDATED | REQUIRED
     val currentTemplateId: UUID?,
     val currentVersion: Int?,

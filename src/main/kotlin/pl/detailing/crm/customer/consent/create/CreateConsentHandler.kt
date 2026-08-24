@@ -42,6 +42,7 @@ class CreateConsentHandler(
                 stage = command.stage,
                 marketingChannels = command.marketingChannels,
                 displayOrder = command.displayOrder,
+                isMandatory = command.isMandatory,
                 isActive = true,
                 createdBy = command.createdBy,
                 updatedBy = command.createdBy,
@@ -80,6 +81,7 @@ class CreateConsentHandler(
                 stage = definition.stage,
                 marketingChannels = definition.marketingChannels,
                 displayOrder = definition.displayOrder,
+                isMandatory = definition.isMandatory,
                 currentVersion = TemplateVersionInfo(
                     versionId = template.id,
                     version = template.version,
@@ -120,7 +122,8 @@ data class CreateConsentCommand(
     val description: String?,
     val stage: ProtocolStage,
     val marketingChannels: Set<MarketingChannel> = emptySet(),
-    val displayOrder: Int
+    val displayOrder: Int,
+    val isMandatory: Boolean = false
 )
 
 data class CreateConsentResult(
@@ -130,6 +133,7 @@ data class CreateConsentResult(
     val stage: ProtocolStage,
     val marketingChannels: Set<MarketingChannel>,
     val displayOrder: Int,
+    val isMandatory: Boolean,
     val currentVersion: TemplateVersionInfo
 )
 

@@ -49,6 +49,7 @@ class GetConsentsHandler(
             stage = def.stage,
             marketingChannels = def.marketingChannels.map { it.name }.toSet(),
             displayOrder = def.displayOrder,
+            isMandatory = def.isMandatory,
             isActive = def.isActive,
             currentVersion = activeTemplate?.let { t ->
                 ConsentVersionResponse(
@@ -83,6 +84,7 @@ data class ConsentResponse(
     val stage: ProtocolStage,
     val marketingChannels: Set<String>,  // "EMAIL", "SMS"
     val displayOrder: Int,
+    val isMandatory: Boolean,
     val isActive: Boolean,
     val currentVersion: ConsentVersionResponse?,
     val versions: List<ConsentVersionResponse>,
