@@ -63,6 +63,8 @@ class GetConsentStatusHandler(
                     signedVersion = signedTemplate?.version,
                     signedAt = latestConsent?.signedAt,
                     downloadUrl = s3StorageService.generateDownloadUrl(activeTemplate.s3Key),
+                    attachmentUrl = latestConsent?.attachmentS3Key
+                        ?.let { s3StorageService.generateDownloadUrl(it) },
                     consentId = latestConsent?.id
                 )
             }
@@ -85,6 +87,8 @@ class GetConsentStatusHandler(
                     signedVersion = signedTemplate?.version,
                     signedAt = latestConsent.signedAt,
                     downloadUrl = null,
+                    attachmentUrl = latestConsent.attachmentS3Key
+                        ?.let { s3StorageService.generateDownloadUrl(it) },
                     consentId = latestConsent.id
                 )
             }

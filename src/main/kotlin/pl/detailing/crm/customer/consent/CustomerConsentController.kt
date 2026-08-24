@@ -134,6 +134,7 @@ data class ConsentStatusResponse(
                         signedVersion = item.signedVersion,
                         signedAt = item.signedAt,
                         downloadUrl = item.downloadUrl,
+                        attachmentUrl = item.attachmentUrl,
                         consentId = item.consentId?.value
                     )
                 }
@@ -155,6 +156,7 @@ data class ConsentStatusItemResponse(
     val signedVersion: Int?,
     val signedAt: Instant?,
     val downloadUrl: String?,
+    val attachmentUrl: String?,
     val consentId: UUID?
 )
 
