@@ -111,6 +111,22 @@ class NewLeadCreatedEvent(
 ) : ApplicationEvent(source)
 
 /**
+ * Internal Spring ApplicationEvent published when a visit is closed and handed back to
+ * the customer. Carries the gross total already computed from the visit's service items,
+ * so listeners never have to reload the visit — and never risk reporting an amount that
+ * changed after the transaction they are reacting to.
+ */
+class VisitCompletedEvent(
+    source: Any,
+    val studioId: StudioId,
+    val visitId: VisitId,
+    val totalGrossInCents: Long,
+    val customerName: String?,
+    val completedByUserId: UserId,
+    val completedAt: Instant
+) : ApplicationEvent(source)
+
+/**
  * Internal Spring ApplicationEvent published whenever an existing lead is mutated
  * (status, assignment, customer, links, estimation results, …). The WebSocket bridge
  * loads the full lead DTO after commit and broadcasts LEAD_UPDATED or

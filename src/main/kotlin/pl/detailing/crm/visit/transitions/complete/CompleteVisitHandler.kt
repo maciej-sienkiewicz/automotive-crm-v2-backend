@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.transitions.complete
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
@@ -30,7 +31,8 @@ class CompleteVisitHandler(
     private val customerRepository: CustomerRepository,
     private val auditService: AuditService,
     private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
-    private val capabilityService: CapabilityService
+    private val capabilityService: CapabilityService,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -67,6 +69,23 @@ class CompleteVisitHandler(
         ))
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
+
+        // Gross total is computed HERE, from the visit as it stands in this transaction,
+        // and carried inside the event. A listener reloading the visit later could read a
+        // different number — and a notification announcing money must state the amount
+        // that was actually settled, not whatever the row says by the time it fires.
+        // Listeners run AFTER_COMMIT, so nothing is announced for a visit that rolls back.
+        eventPublisher.publishEvent(
+            VisitCompletedEvent(
+                source            = this,
+                studioId          = command.studioId,
+                visitId           = updatedVisit.id,
+                totalGrossInCents = updatedVisit.calculateTotalGross().amountInCents,
+                customerName      = customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null } },
+                completedByUserId = command.userId,
+                completedAt       = updatedVisit.pickupDate!!
+            )
+        )
 
         when (command.documentType) {
             DocumentType.INVOICE -> handleInvoiceCompletion(command, updatedVisit, customer)

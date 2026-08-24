@@ -14,4 +14,7 @@ interface PushDeviceRepository : JpaRepository<PushDeviceEntity, UUID> {
     fun findByStudioIdAndUserIdAndRevokedAtIsNull(studioId: UUID, userId: UUID): List<PushDeviceEntity>
 
     fun findByIdAndStudioIdAndUserId(id: UUID, studioId: UUID, userId: UUID): PushDeviceEntity?
+
+    /** Every live subscription in a studio — the candidate set for broadcast notifications. */
+    fun findByStudioIdAndRevokedAtIsNull(studioId: UUID): List<PushDeviceEntity>
 }
