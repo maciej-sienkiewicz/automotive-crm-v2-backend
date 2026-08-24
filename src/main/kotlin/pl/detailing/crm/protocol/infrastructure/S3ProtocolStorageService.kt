@@ -29,7 +29,7 @@ import java.util.*
  * Storage Path Patterns:
  * - Templates: {studioId}/protocols/templates/{templateId}.pdf
  * - Filled PDFs: {studioId}/protocols/visits/{visitId}/filled/PPP_{visitNumber}_{version}.pdf
- * - Signed PDFs: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}.pdf
+ * - Signed PDFs: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}_{protocolId}.pdf
  * - Signatures: {studioId}/protocols/visits/{visitId}/signatures/{protocolId}.png
  */
 @Service
@@ -69,8 +69,14 @@ class S3ProtocolStorageService(
     /**
      * Generate a presigned URL for uploading a signed protocol PDF.
      */
-    fun generateSignedPdfUploadUrl(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
-        val s3Key = buildSignedPdfS3Key(studioId, visitId, visitNumber, version)
+    fun generateSignedPdfUploadUrl(
+        studioId: UUID,
+        visitId: UUID,
+        visitNumber: String,
+        version: Int,
+        protocolId: UUID
+    ): String {
+        val s3Key = buildSignedPdfS3Key(studioId, visitId, visitNumber, version, protocolId)
         return generateUploadUrl(s3Key, "application/pdf")
     }
 
@@ -133,8 +139,18 @@ class S3ProtocolStorageService(
      * Format: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}.pdf
      * Example: studio123/protocols/visits/visit456/signed/PPP_VIS-2026-00005_1.pdf
      */
-    fun buildSignedPdfS3Key(studioId: UUID, visitId: UUID, visitNumber: String, version: Int): String {
-        return "$studioId/protocols/visits/$visitId/signed/PPP_${visitNumber}_$version.pdf"
+    fun buildSignedPdfS3Key(
+        studioId: UUID,
+        visitId: UUID,
+        visitNumber: String,
+        version: Int,
+        protocolId: UUID
+    ): String {
+        // protocolId w nazwie, bo jedna wizyta ma dziś kilka dokumentów do podpisu
+        // (protokół przyjęcia + zgody marketingowe + dokumenty usługowe), a każdy
+        // z nich jest wersją 1. Bez tego drugi podpis nadpisywałby w S3 plik
+        // pierwszego i oba wiersze wskazywałyby ten sam dokument.
+        return "$studioId/protocols/visits/$visitId/signed/PPP_${visitNumber}_${version}_$protocolId.pdf"
     }
 
     /**
