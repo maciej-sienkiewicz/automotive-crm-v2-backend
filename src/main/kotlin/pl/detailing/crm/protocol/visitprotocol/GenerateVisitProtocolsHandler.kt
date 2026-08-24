@@ -16,6 +16,8 @@ import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Service
 class GenerateVisitProtocolsHandler(
@@ -34,6 +36,11 @@ class GenerateVisitProtocolsHandler(
     private val documentService: DocumentService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    private companion object {
+        /** Dzień-miesiąc-rok: tak nazywa dokumenty człowiek szukający ich w folderze. */
+        val DOCUMENT_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
+    }
 
     @Transactional
     suspend fun handle(command: GenerateVisitProtocolsCommand): GenerateVisitProtocolsResult =
@@ -153,7 +160,7 @@ class GenerateVisitProtocolsHandler(
         // Rejestrujemy tylko własny plik wizyty. Surowy szablon jest wspólny dla
         // całego studia — w dokumentach wizyty nie ma czego szukać.
         if (filledS3Key != templateEntity.s3Key) {
-            registerConsentDocument(visitProtocol, studioId, visitNumber, filledS3Key)
+            registerConsentDocument(visitProtocol, studioId, filledS3Key)
         }
         return updated
     }
@@ -185,7 +192,6 @@ class GenerateVisitProtocolsHandler(
     private suspend fun registerConsentDocument(
         visitProtocol: VisitProtocol,
         studioId: StudioId,
-        visitNumber: String,
         s3Key: String
     ) {
         try {
@@ -194,13 +200,22 @@ class GenerateVisitProtocolsHandler(
                 consentDefinitionRepository.findByIdAndStudioId(defId.value, studioId.value)?.name
             } ?: "Zgoda"
 
+            // Ta sama konwencja co przy protokołach — z nazwą zgody zamiast etapu,
+            // żeby RODO i zgody marketingowe nie stały w liście jako dwa takie same wiersze.
+            val documentName = listOf(
+                DOCUMENT_DATE_FORMAT.format(LocalDate.now()),
+                visitEntity.brandSnapshot,
+                visitEntity.modelSnapshot,
+                definitionName
+            ).map { slug(it) }.filter { it.isNotBlank() }.joinToString("_")
+
             documentService.registerDocument(
                 visitId = visitProtocol.visitId.value,
                 customerId = visitEntity.customerId,
                 documentType = DocumentType.PROTOCOL,
-                name = "$definitionName — $visitNumber",
+                name = documentName,
                 s3Key = s3Key,
-                fileName = "ZGD_${visitNumber}.pdf",
+                fileName = "$documentName.pdf",
                 createdBy = visitEntity.createdBy,
                 createdByName = "System",
                 category = "consent"
@@ -231,19 +246,12 @@ class GenerateVisitProtocolsHandler(
             visitProtocol.visitId.value, visitProtocol.id.value, studioId.value
         )
 
-        // Protokół przyjęcia tej samej wizyty nosi nazwę PPP_{numer}_{wersja} —
-        // to jej szuka się w dokumentach wizyty, więc ją wpisujemy.
-        val checkInName = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
-            visitProtocol.visitId.value, studioId.value, ProtocolStage.CHECK_IN
-        ).filter { it.templateId != null }
-            .minByOrNull { it.version }
-            ?.let { "PPP_${visitNumber}_${it.version}" }
-            ?: visitNumber
-
+        // Protokół przyjęcia tej wizyty rozpoznaje się po numerze wizyty — nazwy
+        // plików niosą datę i pojazd, więc nie nadają się na odwołanie w dokumencie.
         val match = entity?.conditionMatch
 
         return buildMap {
-            put("receptionprotocolnumber", checkInName)
+            put("receptionprotocolnumber", visitNumber)
             put("releasedby", releasedByName ?: "")
             put("conditionmatch", if (match == true) "X" else "")
             put("conditionmismatch", if (match == false) "X" else "")
@@ -287,6 +295,52 @@ class GenerateVisitProtocolsHandler(
             )
         }
 
+    /**
+     * Nazwa dokumentu widoczna w wizycie i na pobranym pliku.
+     *
+     * Wcześniej oba protokoły nazywały się `PPP_{numer}_{wersja}` — a że wersje
+     * liczą się osobno dla każdego szablonu, przyjęcie i wydanie tej samej wizyty
+     * dostawały ten sam napis i w liście dokumentów nie dało się ich rozróżnić.
+     *
+     * Teraz nazwa mówi wszystko, czego szuka się wzrokiem: kiedy, jaki samochód,
+     * czyj i który to etap — `24-08-2026_Porsche_911_Wojcik_przyjecie`. Bez
+     * polskich znaków i spacji, bo ta sama nazwa trafia do nazwy pliku.
+     */
+    private fun protocolDocumentName(
+        visitProtocol: VisitProtocol,
+        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
+        crmData: Map<CrmDataKey, String>,
+        visitNumber: String
+    ): String {
+        val stageLabel = when (visitProtocol.stage) {
+            ProtocolStage.CHECK_IN -> "przyjecie"
+            ProtocolStage.CHECK_OUT -> "wydanie"
+        }
+        val surname = crmData[CrmDataKey.CUSTOMER_FULL_NAME]
+            ?.trim()?.split(" ")?.lastOrNull().orEmpty()
+
+        val parts = listOf(
+            DOCUMENT_DATE_FORMAT.format(LocalDate.now()),
+            visitEntity.brandSnapshot,
+            visitEntity.modelSnapshot,
+            surname,
+            stageLabel
+        ).map { slug(it) }.filter { it.isNotBlank() }
+
+        // Kolejne wersje tego samego protokołu muszą się różnić, inaczej w liście
+        // dokumentów stoją dwa identyczne wiersze.
+        val suffix = if (visitProtocol.version > 1) "_v${visitProtocol.version}" else ""
+        return parts.joinToString("_").ifBlank { "protokol_${slug(visitNumber)}_$stageLabel" } + suffix
+    }
+
+    /** ASCII bez spacji: nazwa dokumentu jest zarazem nazwą pliku do pobrania. */
+    private fun slug(value: String): String =
+        java.text.Normalizer.normalize(value.trim(), java.text.Normalizer.Form.NFD)
+            .replace("\\p{M}".toRegex(), "")
+            .replace("ł", "l").replace("Ł", "L")
+            .replace("[^A-Za-z0-9-]+".toRegex(), "-")
+            .trim('-')
+
     private suspend fun fillProtocolPdf(
         visitProtocol: VisitProtocol,
         studioId: StudioId,
@@ -312,14 +366,16 @@ class GenerateVisitProtocolsHandler(
             val filledS3Key = when (template.fileFormat) {
                 ProtocolTemplateFormat.PDF -> {
                     val filledPdfS3Key = s3StorageService.buildFilledPdfS3Key(
-                        studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.version
+                        studioId.value, visitProtocol.visitId.value, visitNumber,
+                        visitProtocol.version, visitProtocol.id.value
                     )
                     pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key)
                     filledPdfS3Key
                 }
                 ProtocolTemplateFormat.HTML -> {
                     val filledHtmlS3Key = s3StorageService.buildFilledHtmlS3Key(
-                        studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.version
+                        studioId.value, visitProtocol.visitId.value, visitNumber,
+                        visitProtocol.version, visitProtocol.id.value
                     )
                     val templateHtml = String(s3StorageService.downloadBytes(template.s3Key), Charsets.UTF_8)
                     val checkboxFields = fieldMappings
@@ -354,13 +410,14 @@ class GenerateVisitProtocolsHandler(
             if (isFirstFill) try {
                 val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
                 if (visitEntity != null) {
+                    val documentName = protocolDocumentName(visitProtocol, visitEntity, crmData, visitNumber)
                     documentService.registerDocument(
                         visitId = visitProtocol.visitId.value,
                         customerId = visitEntity.customerId,
                         documentType = DocumentType.PROTOCOL,
-                        name = "PPP_${visitNumber}_${visitProtocol.version}",
+                        name = documentName,
                         s3Key = filledS3Key,
-                        fileName = "PPP_${visitNumber}_${visitProtocol.version}.$fileExtension",
+                        fileName = "$documentName.$fileExtension",
                         createdBy = visitEntity.createdBy,
                         createdByName = "System",
                         category = "protocol"
