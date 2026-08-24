@@ -53,7 +53,8 @@ class SmsSenderNameController(
     private val jpaRepository: SmsAutomationConfigJpaRepository,
     private val documentStorageService: DocumentStorageService,
     private val studioSettingsRepository: StudioSettingsRepository,
-    private val authorizationDocumentService: SmsAuthorizationDocumentService
+    private val authorizationDocumentService: SmsAuthorizationDocumentService,
+    private val authorizationNotifier: SmsAuthorizationNotifier
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -82,7 +83,8 @@ class SmsSenderNameController(
 
     @PostMapping("/document", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun uploadDocument(@RequestParam("file") file: MultipartFile): ResponseEntity<SmsSenderNameDto> = runBlocking {
-        val studioId = SecurityContextHelper.getCurrentStudioId().value
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
         val entity = jpaRepository.findByStudioId(studioId) ?: createDefaultEntity(studioId)
 
         val originalName = file.originalFilename ?: "upoważnienie.docx"
@@ -101,6 +103,16 @@ class SmsSenderNameController(
         jpaRepository.save(entity)
 
         logger.info("SMS auth document uploaded [studioId={}, key={}]", studioId, uploadedKey)
+
+        authorizationNotifier.notifyAuthorizationSubmitted(
+            principal = principal,
+            senderName = entity.smsSenderName,
+            source = SmsAuthorizationNotifier.Source.UPLOADED,
+            fileName = originalName,
+            fileBytes = file.bytes,
+            contentType = file.contentType ?: "application/octet-stream"
+        )
+
         ResponseEntity.ok(entity.toDto())
     }
 
@@ -113,7 +125,8 @@ class SmsSenderNameController(
      */
     @PostMapping("/document/sign")
     fun signDocument(@RequestBody request: SignAuthorizationRequest): ResponseEntity<SmsSenderNameDto> = runBlocking {
-        val studioId = SecurityContextHelper.getCurrentStudioId().value
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
         val entity = jpaRepository.findByStudioId(studioId) ?: createDefaultEntity(studioId)
 
         // Bez nazwy nadawcy nie ma czego upoważniać — dokument byłby zgodą na puste pole.
@@ -141,6 +154,18 @@ class SmsSenderNameController(
         jpaRepository.save(entity)
 
         logger.info("SMS auth document signed in app [studioId={}, key={}]", studioId, uploadedKey)
+
+        // Nazwa nadawcy czeka teraz na ręczne zatwierdzenie po naszej stronie —
+        // powiadomienie z dokumentem idzie tam, gdzie zgłoszenia problemów.
+        authorizationNotifier.notifyAuthorizationSubmitted(
+            principal = principal,
+            senderName = senderName,
+            source = SmsAuthorizationNotifier.Source.SIGNED_IN_APP,
+            fileName = entity.smsAuthDocumentName ?: "upowaznienie-nadawcy-sms-podpisane.pdf",
+            fileBytes = pdfBytes,
+            contentType = "application/pdf"
+        )
+
         ResponseEntity.ok(entity.toDto())
     }
 
