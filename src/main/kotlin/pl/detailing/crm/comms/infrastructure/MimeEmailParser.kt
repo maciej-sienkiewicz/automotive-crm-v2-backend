@@ -158,6 +158,11 @@ class MimeEmailParser {
         const val MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
         private val REFERENCE_REGEX = Regex("<([^<>]+)>")
-        private val FILTER_HEADERS = listOf("List-Unsubscribe", "List-Id", "Auto-Submitted", "Precedence")
+        private val FILTER_HEADERS = listOf(
+            "List-Unsubscribe", "List-Id", "Auto-Submitted", "Precedence",
+            // Nagłówki autoodpowiedzi: bez nich „urlop do 15.09" z folderu Wysłane
+            // liczyłby się jako reakcja na leada.
+            "X-Autoreply", "X-Auto-Response-Suppress"
+        )
     }
 }

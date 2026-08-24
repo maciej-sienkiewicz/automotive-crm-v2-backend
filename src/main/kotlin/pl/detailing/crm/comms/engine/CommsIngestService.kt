@@ -5,7 +5,9 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.comms.domain.AutomatedMailDetector
 import pl.detailing.crm.comms.domain.CommDirection
+import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommReadSource
 import pl.detailing.crm.comms.domain.CommSendStatus
@@ -151,6 +153,35 @@ class CommsIngestService(
         // Po zatwierdzeniu tej transakcji automat formularzy sprawdzi nadawcę —
         // stąd osobne zdarzenie z adresem w środku, żeby nieistotne wiadomości
         // odpadały bez ponownego czytania wiersza.
+        // Odpowiedź wysłana poza CRM-em (Outlook, telefon, webmail) wraca do nas
+        // z folderu Wysłane. Bez tego zdarzenia lead zostawał „Nowy" i bez czasu
+        // pierwszej reakcji, mimo że rozmowa dawno ruszyła — a na tym stoją
+        // statystyki leadów. Kopia naszej własnej wysyłki z CRM-a tu nie dociera:
+        // odpada wyżej na dedupie po Message-ID.
+        //
+        // Automaty (autorespondery, newslettery) nie są reakcją człowieka i nie
+        // mogą stemplować czasu odpowiedzi.
+        if (direction == CommDirection.OUTBOUND && !AutomatedMailDetector.isAutomated(parsed.headers)) {
+            // Nasłuch (status leada) biegnie w tej samej transakcji co zapis wiadomości,
+            // a wiadomość jest ważniejsza: jej import nie może paść przez potknięcie
+            // w księgowaniu leada, bo w kolejnym przebiegu i tak zostałaby pominięta
+            // po UID-zie i zniknęła ze skrzynki w CRM-ie.
+            runCatching {
+                eventPublisher.publishEvent(
+                    CommOutboundSentEvent(
+                        studioId = account.studioId,
+                        threadId = thread.id,
+                        sentAt = message.sentAt
+                    )
+                )
+            }.onFailure {
+                log.error(
+                    "Nie udało się odnotować odpowiedzi spoza CRM-a | thread={} message={}: {}",
+                    thread.id, message.id, it.message, it
+                )
+            }
+        }
+
         if (direction == CommDirection.INBOUND) {
             eventPublisher.publishEvent(
                 CommInboundMessageStoredEvent(
