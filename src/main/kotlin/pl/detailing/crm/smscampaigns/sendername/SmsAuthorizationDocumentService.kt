@@ -25,9 +25,11 @@ import java.time.format.DateTimeFormatter
  * było pobrać wzór w Wordzie, wydrukować, podpisać, zeskanować i wgrać — cztery kroki
  * poza systemem przy dokumencie, którego całą treść system i tak zna.
  *
- * Dokument powstaje z wbudowanego szablonu AcroForm: dane właściciela nazwy wchodzą
- * z ustawień firmy studia, pole nadawcy z konfiguracji SMS, data jest bieżąca, a dane
- * odbiorcy upoważnienia są stałe (to zawsze ten sam podmiot wysyłający).
+ * Dokument powstaje z wbudowanego szablonu AcroForm odwzorowującego wzór operatora
+ * (ten sam banner, stopka, układ i kropkowane linie — to operator go czyta, więc ma
+ * wyglądać jak jego własny druk). Dane właściciela nazwy wchodzą z ustawień firmy
+ * studia, pole nadawcy z konfiguracji SMS, data jest bieżąca, a dane firmy
+ * korzystającej z nazwy są stałe: to zawsze ten sam podmiot wysyłający.
  *
  * Podpis jest stemplowany w miejsce pola „signature", całość spłaszczona i — jeśli
  * pieczęć jest skonfigurowana w środowisku — opieczętowana tak samo jak dokumenty wizyt.
@@ -51,6 +53,12 @@ class SmsAuthorizationDocumentService(
         private const val SIGNATURE_BOX_PADDING = 3f
 
         private val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+        /**
+         * Firma korzystająca z pola nadawcy — klient operatora SMS, w którego imieniu
+         * wychodzą wiadomości wszystkich studiów.
+         */
+        private const val GRANTEE = "Maciej Sienkiewicz, NIP: 7632151116, REGON: 527057153"
     }
 
     /**
@@ -120,7 +128,8 @@ class SmsAuthorizationDocumentService(
             "ownernip" to settings?.taxId.orEmpty().trim(),
             // Ta sama nazwa firmy pada drugi raz w zdaniu oświadczenia.
             "ownernameinline" to companyName,
-            "sendername" to senderName
+            "sendername" to senderName,
+            "granteename" to GRANTEE
         )
     }
 
