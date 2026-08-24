@@ -41,4 +41,18 @@ object DefaultProtocolFieldMappings {
         "receivedby" to CrmDataKey.RECEIVED_BY_NAME,
         "provider" to CrmDataKey.PROVIDER_NAME
     )
+
+    /**
+     * Mapowania systemowego protokołu WYDANIA. Krótsza lista, bo ten dokument nie
+     * powtarza danych pojazdu ani zakresu usług — te klient podpisał przy przyjęciu.
+     *
+     * Pozostałe pola (osoba wydająca, powiązany protokół przyjęcia, zgodność stanu
+     * wizualnego) nie pochodzą z danych wizyty: powstają dopiero przy wydaniu i
+     * wchodzą na dokument w GenerateVisitProtocolsHandler.
+     */
+    fun getCheckOutMappings(): Map<String, CrmDataKey> = linkedMapOf(
+        "provider" to CrmDataKey.PROVIDER_NAME,
+        "protocolnumber" to CrmDataKey.VISIT_NUMBER,
+        "date" to CrmDataKey.CURRENT_DATETIME
+    )
 }

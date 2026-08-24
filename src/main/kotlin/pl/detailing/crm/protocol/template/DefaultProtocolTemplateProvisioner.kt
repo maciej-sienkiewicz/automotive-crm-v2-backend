@@ -72,6 +72,12 @@ class DefaultProtocolTemplateProvisioner(
          */
         const val DEFAULT_TEMPLATE_REVISION = 1
 
+        const val CHECK_OUT_TEMPLATE_NAME = "Protokół wydania pojazdu"
+        const val CHECK_OUT_TEMPLATE_DESCRIPTION =
+            "Systemowy szablon protokołu wydania pojazdu — z sekcją zgodności stanu " +
+                "wizualnego i oświadczeniami klienta."
+        const val CHECK_OUT_TEMPLATE_RESOURCE = "/templates/protokol_wydania_pojazdu_default.pdf"
+
         /** Synthetic author for system-provisioned rows. */
         val SYSTEM_USER_ID: UUID = UUID(0L, 0L)
     }
@@ -101,6 +107,69 @@ class DefaultProtocolTemplateProvisioner(
         )
         return true
     }
+
+    /**
+     * Ensure the studio has an active template assigned to the CHECK_OUT stage.
+     *
+     * Wydanie pojazdu bez dokumentu do podpisu było ślepym zaułkiem: ekran wydania
+     * pokazywał „brak dokumentu", a studio nie miało czego dać klientowi do podpisu.
+     * Dlatego każde studio dostaje systemowy protokół wydania.
+     *
+     * W odróżnieniu od protokołu przyjęcia nie jest oznaczany jako `isDefault` —
+     * ta flaga trzyma niepowtarzalny szablon przyjęcia, który system przywraca po
+     * usunięciu. Szablon wydania rozpoznajemy po nazwie i traktujemy tak samo jak
+     * dokumenty zgód: raz zasiany, dalej należy do studia.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun ensureDefaultCheckOutTemplate(studioId: StudioId): Boolean {
+        if (hasActiveTemplateForStage(studioId, ProtocolStage.CHECK_OUT)) return false
+
+        // Studio kiedyś dostało szablon wydania i go usunęło albo wyłączyło — to jego decyzja.
+        val alreadySeeded = protocolTemplateRepository.findAllByStudioId(studioId.value)
+            .any { it.name == CHECK_OUT_TEMPLATE_NAME }
+        if (alreadySeeded) return false
+
+        logger.info("Default template provisioning: studio={} has no active CHECK_OUT template — seeding", studioId)
+
+        val templateId = ProtocolTemplateId.random().value
+        val s3Key = s3StorageService.buildTemplateS3Key(studioId.value, templateId, ProtocolTemplateFormat.PDF)
+        s3StorageService.uploadBytes(
+            s3Key, loadBundledResource(CHECK_OUT_TEMPLATE_RESOURCE), ProtocolTemplateFormat.PDF.contentType
+        )
+
+        val now = Instant.now()
+        protocolTemplateRepository.save(
+            ProtocolTemplateEntity(
+                id = templateId,
+                studioId = studioId.value,
+                name = CHECK_OUT_TEMPLATE_NAME,
+                description = CHECK_OUT_TEMPLATE_DESCRIPTION,
+                s3Key = s3Key,
+                fileFormat = ProtocolTemplateFormat.PDF,
+                isDefault = false,
+                verificationStatus = ProtocolTemplateVerificationStatus.VERIFIED,
+                isActive = true,
+                createdBy = SYSTEM_USER_ID,
+                updatedBy = SYSTEM_USER_ID,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+
+        ensureFieldMappings(studioId, templateId, DefaultProtocolFieldMappings.getCheckOutMappings())
+        ensureRule(studioId, templateId, ProtocolStage.CHECK_OUT, displayOrder = 0)
+
+        logger.info(
+            "Default template provisioning: studio={} — check-out template ready (templateId={})",
+            studioId, templateId
+        )
+        return true
+    }
+
+    private fun hasActiveTemplateForStage(studioId: StudioId, stage: ProtocolStage): Boolean =
+        protocolRuleRepository.findAllByStudioIdAndStage(studioId.value, stage).any { rule ->
+            protocolTemplateRepository.findByIdAndStudioId(rule.templateId, studioId.value)?.isActive == true
+        }
 
     private fun hasActiveCheckInTemplate(studioId: StudioId): Boolean {
         val checkInRules = protocolRuleRepository.findAllByStudioIdAndStage(
@@ -160,13 +229,11 @@ class DefaultProtocolTemplateProvisioner(
      * Reads the bundled default template from the classpath. Shared with the startup
      * refresh so both paths upload byte-identical content.
      */
-    fun loadBundledTemplateBytes(): ByteArray {
-        val resource = javaClass.getResourceAsStream(DEFAULT_TEMPLATE_RESOURCE)
-            ?: throw IllegalStateException(
-                "Bundled default protocol template missing from classpath: $DEFAULT_TEMPLATE_RESOURCE"
-            )
-        return resource.use { it.readBytes() }
-    }
+    fun loadBundledTemplateBytes(): ByteArray = loadBundledResource(DEFAULT_TEMPLATE_RESOURCE)
+
+    private fun loadBundledResource(resource: String): ByteArray =
+        javaClass.getResourceAsStream(resource)?.use { it.readBytes() }
+            ?: throw IllegalStateException("Bundled protocol template missing from classpath: $resource")
 
     private fun uploadDefaultTemplateFile(s3Key: String) {
         s3StorageService.uploadBytes(s3Key, loadBundledTemplateBytes(), ProtocolTemplateFormat.PDF.contentType)
@@ -183,12 +250,19 @@ class DefaultProtocolTemplateProvisioner(
         )
     }
 
-    private fun ensureDefaultFieldMappings(studioId: StudioId, templateId: UUID) {
+    private fun ensureDefaultFieldMappings(studioId: StudioId, templateId: UUID) =
+        ensureFieldMappings(studioId, templateId, DefaultProtocolFieldMappings.getDefaultMappings())
+
+    private fun ensureFieldMappings(
+        studioId: StudioId,
+        templateId: UUID,
+        mappingSpec: Map<String, pl.detailing.crm.shared.CrmDataKey>
+    ) {
         val existing = protocolFieldMappingRepository.findAllByTemplateIdAndStudioId(templateId, studioId.value)
         if (existing.isNotEmpty()) return
 
         val now = Instant.now()
-        val mappings = DefaultProtocolFieldMappings.getDefaultMappings().map { (pdfFieldName, crmDataKey) ->
+        val mappings = mappingSpec.map { (pdfFieldName, crmDataKey) ->
             ProtocolFieldMappingEntity.fromDomain(
                 pl.detailing.crm.protocol.domain.ProtocolFieldMapping(
                     id = ProtocolFieldMappingId.random(),
@@ -203,8 +277,11 @@ class DefaultProtocolTemplateProvisioner(
         protocolFieldMappingRepository.saveAll(mappings)
     }
 
-    private fun ensureCheckInRule(studioId: StudioId, templateId: UUID) {
-        val hasRule = protocolRuleRepository.findAllByStudioIdAndStage(studioId.value, ProtocolStage.CHECK_IN)
+    private fun ensureCheckInRule(studioId: StudioId, templateId: UUID) =
+        ensureRule(studioId, templateId, ProtocolStage.CHECK_IN, displayOrder = 0)
+
+    private fun ensureRule(studioId: StudioId, templateId: UUID, stage: ProtocolStage, displayOrder: Int) {
+        val hasRule = protocolRuleRepository.findAllByStudioIdAndStage(studioId.value, stage)
             .any { it.templateId == templateId }
         if (hasRule) return
 
@@ -215,9 +292,9 @@ class DefaultProtocolTemplateProvisioner(
                 studioId = studioId.value,
                 templateId = templateId,
                 triggerType = ProtocolTriggerType.GLOBAL_ALWAYS,
-                stage = ProtocolStage.CHECK_IN,
+                stage = stage,
                 serviceIds = mutableSetOf(),
-                displayOrder = 0,
+                displayOrder = displayOrder,
                 createdBy = SYSTEM_USER_ID,
                 updatedBy = SYSTEM_USER_ID,
                 createdAt = now,

@@ -44,6 +44,7 @@ class SubscriptionService(
     private fun seedDefaultProtocolTemplate(studioId: StudioId) {
         try {
             defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
+            defaultProtocolTemplateProvisioner.ensureDefaultCheckOutTemplate(studioId)
         } catch (e: Exception) {
             logger.error("Failed to seed default protocol template for studio {}: {}", studioId, e.message, e)
         }

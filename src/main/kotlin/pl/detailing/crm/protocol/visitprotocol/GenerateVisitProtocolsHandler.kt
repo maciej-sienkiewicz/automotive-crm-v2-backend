@@ -96,7 +96,7 @@ class GenerateVisitProtocolsHandler(
                 val updatedProtocol = if (resolved.isConsentProtocol) {
                     serveConsentPdf(visitProtocol, command.studioId, visitNumber)
                 } else {
-                    fillProtocolPdf(visitProtocol, command.studioId, visitNumber)
+                    fillProtocolPdf(visitProtocol, command.studioId, visitNumber, command.releasedByName)
                 }
 
                 logger.info("[PERF] Single protocol: ${System.currentTimeMillis() - createStart}ms")
@@ -210,10 +210,88 @@ class GenerateVisitProtocolsHandler(
         }
     }
 
+    /**
+     * Wartości, których nie da się wziąć z mapowań CRM, bo powstają dopiero przy
+     * wydaniu: kto wydaje pojazd, numer protokołu przyjęcia tej samej wizyty oraz
+     * odpowiedź o zgodności stanu wizualnego (wpisywana przez pracownika tuż przed
+     * wysłaniem dokumentu do podpisu).
+     *
+     * Dla etapu przyjęcia mapa jest pusta — nie dokładamy pól, których tamten
+     * szablon nie ma.
+     */
+    private fun checkOutValues(
+        visitProtocol: VisitProtocol,
+        studioId: StudioId,
+        visitNumber: String,
+        releasedByName: String?
+    ): Map<String, String> {
+        if (visitProtocol.stage != ProtocolStage.CHECK_OUT) return emptyMap()
+
+        val entity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
+            visitProtocol.visitId.value, visitProtocol.id.value, studioId.value
+        )
+
+        // Protokół przyjęcia tej samej wizyty nosi nazwę PPP_{numer}_{wersja} —
+        // to jej szuka się w dokumentach wizyty, więc ją wpisujemy.
+        val checkInName = visitProtocolRepository.findAllByVisitIdAndStudioIdAndStage(
+            visitProtocol.visitId.value, studioId.value, ProtocolStage.CHECK_IN
+        ).filter { it.templateId != null }
+            .minByOrNull { it.version }
+            ?.let { "PPP_${visitNumber}_${it.version}" }
+            ?: visitNumber
+
+        val match = entity?.conditionMatch
+
+        return buildMap {
+            put("receptionprotocolnumber", checkInName)
+            put("releasedby", releasedByName ?: "")
+            put("conditionmatch", if (match == true) "X" else "")
+            put("conditionmismatch", if (match == false) "X" else "")
+            put("conditionremarks", entity?.conditionRemarks.orEmpty())
+        }
+    }
+
+    /**
+     * Zapisuje odpowiedź o zgodności stanu wizualnego i przerysowuje protokół wydania.
+     *
+     * Wywoływane tuż przed wysłaniem dokumentu do podpisu: klient ma zobaczyć na
+     * ekranie tablet/telefon dokładnie to, co pracownik zaznaczył. Plik nadpisuje
+     * ten sam klucz w S3 — żądanie podpisu przypina skrót dokumentu dopiero przy
+     * tworzeniu, więc podmiana przed nim jest bezpieczna, a po nim i tak zostałaby
+     * odrzucona przez kontrolę integralności.
+     */
+    @Transactional
+    suspend fun applyVisualCondition(command: ApplyVisualConditionCommand): VisitProtocol =
+        withContext(Dispatchers.IO) {
+            val entity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
+                command.visitId.value, command.protocolId.value, command.studioId.value
+            ) ?: throw EntityNotFoundException("Protokół nie został znaleziony")
+
+            require(entity.stage == ProtocolStage.CHECK_OUT) {
+                "Zgodność stanu wizualnego dotyczy wyłącznie protokołu wydania"
+            }
+            if (entity.status == VisitProtocolStatus.SIGNED) {
+                throw ValidationException("Protokół jest już podpisany i nie może być zmieniony")
+            }
+
+            entity.conditionMatch = command.conditionMatch
+            entity.conditionRemarks = command.remarks?.trim()?.takeIf { it.isNotBlank() }
+            entity.updatedAt = Instant.now()
+            visitProtocolRepository.save(entity)
+
+            val visitEntity = visitRepository.findById(command.visitId.value).orElse(null)
+                ?: throw EntityNotFoundException("Wizyta nie została znaleziona: ${command.visitId}")
+
+            fillProtocolPdf(
+                entity.toDomain(), command.studioId, visitEntity.visitNumber, command.releasedByName
+            )
+        }
+
     private suspend fun fillProtocolPdf(
         visitProtocol: VisitProtocol,
         studioId: StudioId,
-        visitNumber: String
+        visitNumber: String,
+        releasedByName: String? = null
     ): VisitProtocol {
         val templateId = visitProtocol.templateId ?: return visitProtocol
 
@@ -225,7 +303,7 @@ class GenerateVisitProtocolsHandler(
             )
             val fieldValues = fieldMappings.associate { mapping ->
                 mapping.pdfFieldName to (crmData[mapping.crmDataKey] ?: "")
-            }
+            } + checkOutValues(visitProtocol, studioId, visitNumber, releasedByName)
 
             val template = protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)
                 ?.toDomain()
@@ -259,11 +337,21 @@ class GenerateVisitProtocolsHandler(
                 }
             }
 
-            val updated = visitProtocol.markAsReadyForSignature(filledS3Key)
-            visitProtocolRepository.save(VisitProtocolEntity.fromDomain(updated))
+            // Pierwsze wypełnienie przestawia protokół w stan „gotowy do podpisu".
+            // Ponowne (po odpowiedzi o zgodności stanu wizualnego przy wydaniu)
+            // podmienia tylko zawartość pliku pod tym samym kluczem — status,
+            // klucz i wiersz dokumentu wizyty zostają, jakie były.
+            val isFirstFill = visitProtocol.status == VisitProtocolStatus.PENDING
+            val updated = if (isFirstFill) {
+                visitProtocol.markAsReadyForSignature(filledS3Key).also {
+                    visitProtocolRepository.save(VisitProtocolEntity.fromDomain(it))
+                }
+            } else {
+                visitProtocol
+            }
 
             val fileExtension = template.fileFormat.fileExtension
-            try {
+            if (isFirstFill) try {
                 val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
                 if (visitEntity != null) {
                     documentService.registerDocument(
@@ -295,7 +383,18 @@ class GenerateVisitProtocolsHandler(
 data class GenerateVisitProtocolsCommand(
     val visitId: VisitId,
     val studioId: StudioId,
-    val stage: ProtocolStage
+    val stage: ProtocolStage,
+    /** Pracownik wydający pojazd — trafia na protokół wydania. */
+    val releasedByName: String? = null
+)
+
+data class ApplyVisualConditionCommand(
+    val visitId: VisitId,
+    val protocolId: VisitProtocolId,
+    val studioId: StudioId,
+    val conditionMatch: Boolean,
+    val remarks: String?,
+    val releasedByName: String?
 )
 
 data class GenerateVisitProtocolsResult(

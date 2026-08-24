@@ -30,6 +30,12 @@ data class SignProtocolRequest(
     val notes: String?
 )
 
+/** Odpowiedź pracownika o zgodności stanu wizualnego przy wydaniu pojazdu. */
+data class VisualConditionRequest(
+    val conditionMatch: Boolean,
+    val remarks: String? = null
+)
+
 data class CreateProtocolFieldMappingRequest(
     val pdfFieldName: String,
     val crmDataKey: CrmDataKey

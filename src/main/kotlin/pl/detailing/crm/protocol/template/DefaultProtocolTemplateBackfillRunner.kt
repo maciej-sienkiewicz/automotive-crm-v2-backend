@@ -13,8 +13,8 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
  * Startup backfill for the check-in template invariant.
  *
  * Studios created before default-template provisioning existed (or healed after a
- * failed seed at signup time) receive the bundled default acceptance protocol on
- * application start. The sweep is per-studio fault-isolated: one failing studio
+ * failed seed at signup time) receive the bundled default acceptance and handover
+ * protocols on application start. The sweep is per-studio fault-isolated: one failing studio
  * (e.g. transient S3 error) never blocks the rest, and any failure is retried on
  * the next application start.
  *
@@ -42,9 +42,9 @@ class DefaultProtocolTemplateBackfillRunner(
         var failed = 0
         for (studio in studios) {
             try {
-                if (provisioner.ensureDefaultCheckInTemplate(StudioId(studio.id))) {
-                    seeded++
-                }
+                val studioId = StudioId(studio.id)
+                if (provisioner.ensureDefaultCheckInTemplate(studioId)) seeded++
+                if (provisioner.ensureDefaultCheckOutTemplate(studioId)) seeded++
             } catch (e: Exception) {
                 failed++
                 logger.error(
