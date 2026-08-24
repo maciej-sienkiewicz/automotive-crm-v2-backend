@@ -145,6 +145,15 @@ class PdfProcessingService(
      * Fill PDF form fields with provided data.
      * Makes all fields read-only (flattened) EXCEPT the signature field.
      */
+    /**
+     * Wypełnia formularz w pamięci — bez pobierania szablonu z S3 i bez odkładania
+     * wyniku z powrotem. Używane tam, gdzie szablon jest wbudowany w aplikację
+     * (upoważnienie dla operatora SMS), a gotowy plik trafia w inne miejsce niż
+     * dokumenty wizyty. Pole podpisu zostaje interaktywne, tak jak w [fillPdfForm].
+     */
+    fun fillFormInMemory(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray =
+        fillForm(pdfBytes, fieldMappings)
+
     private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
