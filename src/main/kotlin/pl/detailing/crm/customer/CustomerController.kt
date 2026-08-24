@@ -19,6 +19,10 @@ import pl.detailing.crm.customer.list.ListCustomersHandler
 import pl.detailing.crm.customer.notes.CustomerNoteItem
 import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryCommand
 import pl.detailing.crm.customer.revenuesummary.GetCustomerRevenueSummaryHandler
+import pl.detailing.crm.customer.sms.SendCustomerSmsCommand
+import pl.detailing.crm.customer.sms.SendCustomerSmsHandler
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 import pl.detailing.crm.customer.vehicles.GetCustomerVehiclesHandler
 import pl.detailing.crm.customer.vehicles.VehicleResponse
 
@@ -49,7 +53,8 @@ class CustomerController(
     private val updateCompanyHandler: pl.detailing.crm.customer.update.UpdateCompanyHandler,
     private val deleteCompanyHandler: pl.detailing.crm.customer.update.DeleteCompanyHandler,
     private val deleteCustomerHandler: pl.detailing.crm.customer.delete.DeleteCustomerHandler,
-    private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler
+    private val getCustomerRevenueSummaryHandler: GetCustomerRevenueSummaryHandler,
+    private val sendCustomerSmsHandler: SendCustomerSmsHandler
 ) {
     @GetMapping
     fun getCustomers(
@@ -593,6 +598,36 @@ class CustomerController(
     }
 
     /**
+     * SMS napisany ręcznie z karty klienta. Treść przychodzi wprost od użytkownika,
+     * więc jedyne, co robimy tutaj, to przekazanie jej do handlera — kontrole modułu,
+     * zgody i kredytów siedzą w bramce wysyłkowej.
+     */
+    @PostMapping("/{customerId}/sms")
+    @RequiresPermission(Permission.COMMUNICATION_SEND)
+    @RequiresCapability(CapabilityKey.COMM_SEND_TRANSACTIONAL)
+    fun sendSms(
+        @PathVariable customerId: String,
+        @RequestBody request: SendCustomerSmsRequest
+    ): ResponseEntity<SendCustomerSmsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = sendCustomerSmsHandler.handle(
+            SendCustomerSmsCommand(
+                studioId = principal.studioId,
+                customerId = CustomerId(UUID.fromString(customerId)),
+                message = request.message
+            )
+        )
+
+        if (result.success) {
+            ResponseEntity.ok(SendCustomerSmsResponse(success = true, errorMessage = null))
+        } else {
+            ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(SendCustomerSmsResponse(success = false, errorMessage = result.errorMessage))
+        }
+    }
+
+    /**
      * Usunięcie klienta = anonimizacja RODO: dane osobowe znikają, historia wizyt,
      * statystyki i podpisane dokumenty zostają — patrz [DeleteCustomerHandler].
      */
@@ -617,6 +652,15 @@ private fun CustomerNoteItem.toResponse() = NoteItemResponse(
     createdByName = createdByName,
     createdAt = createdAt,
     updatedAt = updatedAt
+)
+
+data class SendCustomerSmsRequest(
+    val message: String
+)
+
+data class SendCustomerSmsResponse(
+    val success: Boolean,
+    val errorMessage: String?
 )
 
 data class NoteItemResponse(
