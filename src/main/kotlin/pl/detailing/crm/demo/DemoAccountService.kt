@@ -9,6 +9,7 @@ import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.infrastructure.StudioEntity
@@ -29,7 +30,8 @@ class DemoAccountService(
     private val passwordEncoder: PasswordEncoder,
     private val mobileTokenService: MobileTokenService,
     private val securityContextRepository: SecurityContextRepository,
-    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner
+    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
+    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -96,6 +98,12 @@ class DemoAccountService(
             defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
         } catch (e: Exception) {
             logger.error("Failed to seed default protocol template for demo studio {}: {}", studioId, e.message, e)
+        }
+
+        try {
+            defaultMarketingConsentProvisioner.ensureDefaultMarketingConsent(studioId)
+        } catch (e: Exception) {
+            logger.error("Failed to seed default marketing consent for demo studio {}: {}", studioId, e.message, e)
         }
 
         val userPrincipal = UserPrincipal(

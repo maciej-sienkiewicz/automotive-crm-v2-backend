@@ -202,9 +202,10 @@
   }
 
   /* ============ Zgody ============ */
-  /* Każda zgoda jest odrębna i dobrowolna, więc każda ma własne pole wyboru —
-     jedno wspólne „zgadzam się" nie pozwoliłoby udowodnić, na co konkretnie
-     klient wyraził zgodę. */
+  /* Znacznik przy każdej zgodzie jest wypunktowaniem, nie polem wyboru: klient
+     podpisuje dokument na tablecie i nie ma jak zaznaczyć kratki, więc puste
+     kratki znaczyłyby tylko tyle, że nikt ich nie zaznaczył. Zakres zgody niesie
+     treść dokumentu, a podpis pod nią obejmuje wszystkie wymienione punkty. */
   .consent {
     display: flex;
     align-items: flex-start;
@@ -212,14 +213,14 @@
     font-size: 9pt;
     line-height: 12.5pt;
   }
-  .consent .checkbox {
-    width: 14.00pt;
-    height: 14.00pt;
-    margin-top: 0.60pt;
-    background: var(--gray);
+  .consent .marker {
+    width: 5.00pt;
+    height: 5.00pt;
+    margin-top: 4.20pt;
+    background: var(--navy);
     flex-shrink: 0;
   }
-  .consent .text { margin-left: 8.00pt; }
+  .consent .text { margin-left: 9.00pt; }
 
   .withdrawal { margin-top: 14.00pt; }
   ol.ways {
@@ -257,7 +258,7 @@
 
   <!-- Trzy odrębne zgody -->
   <div class="consent">
-    <div class="checkbox" data-field="smsconsent"></div>
+    <div class="marker"></div>
     <div class="text">
       Wyrażam zgodę na przesyłanie przez Administratora<span class="fn-ref">1</span> informacji
       handlowych i marketingowych (w tym przypomnień o przeglądach/serwisie powłok oraz ofertach
@@ -266,7 +267,7 @@
   </div>
 
   <div class="consent">
-    <div class="checkbox" data-field="emailconsent"></div>
+    <div class="marker"></div>
     <div class="text">
       Wyrażam zgodę na przesyłanie przez Administratora informacji handlowych i marketingowych
       (w tym ofert specjalnych oraz wiadomości e-mail) w postaci wiadomości e-mail na podany
@@ -275,7 +276,7 @@
   </div>
 
   <div class="consent">
-    <div class="checkbox" data-field="phoneconsent"></div>
+    <div class="marker"></div>
     <div class="text">
       Wyrażam zgodę na kontakt telefoniczny ze strony Administratora na podany numer telefonu
       w celu przedstawiania ofert marketingowych i dopasowanych usług.

@@ -2,6 +2,8 @@ package pl.detailing.crm.customer.consent.infrastructure
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
@@ -18,6 +20,7 @@ import java.util.*
 @Service
 class S3ConsentStorageService(
     private val s3Presigner: S3Presigner,
+    private val s3Client: S3Client,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String
 ) {
 
@@ -71,4 +74,17 @@ class S3ConsentStorageService(
 
     fun buildAttachmentS3Key(studioId: UUID, consentId: UUID): String =
         "$studioId/consents/attachments/$consentId.pdf"
+
+    /**
+     * Direct upload — used when the server itself owns the bytes (system-provisioned
+     * consent documents). The presigned-URL path stays for documents the browser sends.
+     */
+    fun uploadBytes(s3Key: String, data: ByteArray, contentType: String = "application/pdf") {
+        val putObjectRequest = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(s3Key)
+            .contentType(contentType)
+            .build()
+        s3Client.putObject(putObjectRequest, RequestBody.fromBytes(data))
+    }
 }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
@@ -26,7 +27,8 @@ class SubscriptionService(
     private val studioRepository: StudioRepository,
     private val entitlementService: EntitlementService,
     private val studioProvisioningService: StudioProvisioningService,
-    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner
+    private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
+    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -44,6 +46,19 @@ class SubscriptionService(
             defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
         } catch (e: Exception) {
             logger.error("Failed to seed default protocol template for studio {}: {}", studioId, e.message, e)
+        }
+    }
+
+    /**
+     * Seed the bundled marketing-consent document. Osobny try/catch od protokołu:
+     * brak zgody to brak wysyłek marketingowych, ale nie powód, żeby rejestracja
+     * albo systemowy protokół przyjęcia miały się nie udać.
+     */
+    private fun seedDefaultMarketingConsent(studioId: StudioId) {
+        try {
+            defaultMarketingConsentProvisioner.ensureDefaultMarketingConsent(studioId)
+        } catch (e: Exception) {
+            logger.error("Failed to seed default marketing consent for studio {}: {}", studioId, e.message, e)
         }
     }
 
@@ -69,6 +84,7 @@ class SubscriptionService(
     fun createStudio(name: String): Studio {
         val studio = studioProvisioningService.provisionStudio(name)
         seedDefaultProtocolTemplate(studio.id)
+        seedDefaultMarketingConsent(studio.id)
         return studio
     }
 
