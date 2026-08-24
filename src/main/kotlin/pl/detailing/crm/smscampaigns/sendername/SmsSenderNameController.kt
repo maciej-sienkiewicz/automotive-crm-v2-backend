@@ -12,12 +12,15 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigEntity
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigJpaRepository
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
@@ -35,6 +38,11 @@ data class UpdateSenderNameRequest(
     val senderName: String
 )
 
+/** Podpis narysowany na ekranie: PNG w base64, bez prefiksu `data:`. */
+data class SignAuthorizationRequest(
+    val signatureImageBase64: String
+)
+
 // ── Controller ────────────────────────────────────────────────────────────────
 
 @RequiresPermission(Permission.COMMUNICATION_SEND)
@@ -43,7 +51,9 @@ data class UpdateSenderNameRequest(
 @RequestMapping("/api/v1/sms-campaigns/sender-name")
 class SmsSenderNameController(
     private val jpaRepository: SmsAutomationConfigJpaRepository,
-    private val documentStorageService: DocumentStorageService
+    private val documentStorageService: DocumentStorageService,
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val authorizationDocumentService: SmsAuthorizationDocumentService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -91,6 +101,46 @@ class SmsSenderNameController(
         jpaRepository.save(entity)
 
         logger.info("SMS auth document uploaded [studioId={}, key={}]", studioId, uploadedKey)
+        ResponseEntity.ok(entity.toDto())
+    }
+
+    /**
+     * Podpisanie upoważnienia na ekranie — zamiast drukowania wzoru, podpisywania
+     * ręcznie i wgrywania skanu. Dokument powstaje z danych, które system już ma:
+     * dane właściciela nazwy z ustawień firmy, pole nadawcy z konfiguracji SMS,
+     * data bieżąca. Gotowy plik ląduje w tym samym miejscu co wgrany ręcznie, więc
+     * dalsza część procesu (weryfikacja u operatora) nie zmienia się ani trochę.
+     */
+    @PostMapping("/document/sign")
+    fun signDocument(@RequestBody request: SignAuthorizationRequest): ResponseEntity<SmsSenderNameDto> = runBlocking {
+        val studioId = SecurityContextHelper.getCurrentStudioId().value
+        val entity = jpaRepository.findByStudioId(studioId) ?: createDefaultEntity(studioId)
+
+        // Bez nazwy nadawcy nie ma czego upoważniać — dokument byłby zgodą na puste pole.
+        val senderName = entity.smsSenderName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw ValidationException("Najpierw zapisz nazwę nadawcy, potem podpisz upoważnienie")
+
+        val settings = studioSettingsRepository.findById(studioId).orElse(null)
+        val pdfBytes = authorizationDocumentService.buildSignedAuthorization(
+            settings = settings,
+            senderName = senderName,
+            signaturePngBase64 = request.signatureImageBase64,
+            today = LocalDate.now()
+        )
+
+        val s3Key = "$studioId/sms-auth-docs/${Instant.now().toEpochMilli()}.pdf"
+        val uploadedKey = documentStorageService.uploadDocument(
+            s3Key = s3Key,
+            fileBytes = pdfBytes,
+            contentType = "application/pdf"
+        )
+
+        entity.smsAuthDocumentS3Key = uploadedKey
+        entity.smsAuthDocumentName = "upowaznienie-nadawcy-sms-podpisane.pdf"
+        entity.updatedAt = Instant.now()
+        jpaRepository.save(entity)
+
+        logger.info("SMS auth document signed in app [studioId={}, key={}]", studioId, uploadedKey)
         ResponseEntity.ok(entity.toDto())
     }
 
