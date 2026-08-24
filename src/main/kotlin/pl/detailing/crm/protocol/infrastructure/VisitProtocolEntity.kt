@@ -65,6 +65,17 @@ class VisitProtocolEntity(
     @Column(name = "signature_image_s3_key", length = 500)
     var signatureImageS3Key: String? = null,
 
+    /**
+     * Zgodność stanu wizualnego z protokołem przyjęcia — tylko etap wydania.
+     * null = pracownik jeszcze nie odpowiedział.
+     */
+    @Column(name = "condition_match")
+    var conditionMatch: Boolean? = null,
+
+    /** Uwagi do stanu wizualnego, wpisywane przy wydaniu. */
+    @Column(name = "condition_remarks", columnDefinition = "TEXT")
+    var conditionRemarks: String? = null,
+
     @Column(name = "notes", columnDefinition = "TEXT")
     var notes: String? = null,
 
@@ -89,6 +100,8 @@ class VisitProtocolEntity(
         signedAt = signedAt,
         signedBy = signedBy,
         signatureImageS3Key = signatureImageS3Key,
+        conditionMatch = conditionMatch,
+        conditionRemarks = conditionRemarks,
         notes = notes,
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -111,6 +124,8 @@ class VisitProtocolEntity(
                 signedAt = p.signedAt,
                 signedBy = p.signedBy,
                 signatureImageS3Key = p.signatureImageS3Key,
+                conditionMatch = p.conditionMatch,
+                conditionRemarks = p.conditionRemarks,
                 notes = p.notes,
                 createdAt = p.createdAt,
                 updatedAt = p.updatedAt

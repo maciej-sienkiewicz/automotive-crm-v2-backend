@@ -96,6 +96,7 @@ class DemoAccountService(
         // protocol template is always present. Failure must not break demo setup.
         try {
             defaultProtocolTemplateProvisioner.ensureDefaultCheckInTemplate(studioId)
+            defaultProtocolTemplateProvisioner.ensureDefaultCheckOutTemplate(studioId)
         } catch (e: Exception) {
             logger.error("Failed to seed default protocol template for demo studio {}: {}", studioId, e.message, e)
         }

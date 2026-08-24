@@ -28,6 +28,13 @@ data class VisitProtocol(
     val signedAt: Instant?,
     val signedBy: String?,
     val signatureImageS3Key: String?,
+    /**
+     * Zgodność stanu wizualnego z protokołem przyjęcia — wypełniane przy wydaniu,
+     * null dopóki pracownik nie odpowie. Część protokołu, nie wizyty: to
+     * oświadczenie idzie na dokument, który klient podpisuje.
+     */
+    val conditionMatch: Boolean? = null,
+    val conditionRemarks: String? = null,
     val notes: String?,
     val createdAt: Instant,
     val updatedAt: Instant

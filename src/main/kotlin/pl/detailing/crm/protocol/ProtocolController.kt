@@ -24,6 +24,7 @@ import pl.detailing.crm.protocol.template.GetProtocolTemplatesHandler
 import pl.detailing.crm.protocol.template.VerifyProtocolTemplateCommand
 import pl.detailing.crm.protocol.template.VerifyProtocolTemplateHandler
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsCommand
+import pl.detailing.crm.protocol.visitprotocol.ApplyVisualConditionCommand
 import pl.detailing.crm.protocol.visitprotocol.GenerateVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.GetVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolCommand
@@ -253,11 +254,38 @@ class ProtocolController(
             GenerateVisitProtocolsCommand(
                 visitId = VisitId.fromString(visitId),
                 studioId = principal.studioId,
-                stage = ProtocolStage.valueOf(stage)
+                stage = ProtocolStage.valueOf(stage),
+                releasedByName = principal.fullName
             )
         )
         ResponseEntity.status(HttpStatus.CREATED)
             .body(result.protocols.map { toVisitProtocolResponse(it, principal.studioId) })
+    }
+
+    /**
+     * Zgodność stanu wizualnego przy wydaniu: odpowiedź pracownika trafia na protokół
+     * ZANIM dokument pojedzie do podpisu, bo klient ma zobaczyć na ekranie dokładnie to,
+     * co zostało zaznaczone.
+     */
+    @PostMapping("/visits/{visitId}/protocols/{protocolId}/visual-condition")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun setVisualCondition(
+        @PathVariable visitId: String,
+        @PathVariable protocolId: String,
+        @RequestBody request: VisualConditionRequest
+    ): ResponseEntity<VisitProtocolResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val protocol = generateVisitProtocolsHandler.applyVisualCondition(
+            ApplyVisualConditionCommand(
+                visitId = VisitId.fromString(visitId),
+                protocolId = VisitProtocolId.fromString(protocolId),
+                studioId = principal.studioId,
+                conditionMatch = request.conditionMatch,
+                remarks = request.remarks,
+                releasedByName = principal.fullName
+            )
+        )
+        ResponseEntity.ok(toVisitProtocolResponse(protocol, principal.studioId))
     }
 
     @PostMapping("/visits/{visitId}/protocols/{protocolId}/sign")
