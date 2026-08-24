@@ -121,6 +121,35 @@ class DefaultMarketingConsentProvisioner(
         return true
     }
 
+    /**
+     * Wgrywa aktualną treść systemowego dokumentu do studia, które dostało go
+     * wcześniej — plik studia leży w S3 i sam się nie zmieni, więc bez tego
+     * poprawki w dokumencie (dane administratora, układ) nigdy by nie dotarły.
+     *
+     * Rusza wyłącznie dla nietkniętej wersji systemowej: aktywny szablon musi być
+     * wersją 1 założoną przez konto systemowe. Studio, które opublikowało własną
+     * wersję dokumentu, zostaje przy swojej.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun refreshBundledConsentDocument(studioId: StudioId): Boolean {
+        val definition = consentDefinitionRepository.findAllByStudioId(studioId.value)
+            .firstOrNull { it.name == DEFAULT_CONSENT_NAME && it.createdBy == SYSTEM_USER_ID }
+            ?: return false
+
+        val activeTemplate = consentTemplateRepository
+            .findActiveByDefinitionIdAndStudioId(definition.id, studioId.value)
+            ?: return false
+
+        if (activeTemplate.version != 1 || activeTemplate.createdBy != SYSTEM_USER_ID) return false
+
+        s3ConsentStorageService.uploadBytes(activeTemplate.s3Key, loadBundledConsentBytes())
+        logger.info(
+            "Default marketing consent refresh: studio={} — bundled document re-uploaded (key={})",
+            studioId, activeTemplate.s3Key
+        )
+        return true
+    }
+
     /** Reads the bundled consent document from the classpath. */
     fun loadBundledConsentBytes(): ByteArray {
         val resource = javaClass.getResourceAsStream(DEFAULT_CONSENT_RESOURCE)

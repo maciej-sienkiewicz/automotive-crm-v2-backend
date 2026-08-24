@@ -36,11 +36,15 @@ class DefaultMarketingConsentBackfillRunner(
 
         val studios = studioRepository.findAll()
         var seeded = 0
+        var refreshed = 0
         var failed = 0
         for (studio in studios) {
             try {
                 if (provisioner.ensureDefaultMarketingConsent(StudioId(studio.id))) {
                     seeded++
+                } else if (provisioner.refreshBundledConsentDocument(StudioId(studio.id))) {
+                    // Studio ma już systemowy dokument — dostaje jego aktualną treść.
+                    refreshed++
                 }
             } catch (e: Exception) {
                 failed++
@@ -51,8 +55,8 @@ class DefaultMarketingConsentBackfillRunner(
             }
         }
         logger.info(
-            "Default marketing consent backfill complete: {} studio(s) checked, {} seeded, {} failed",
-            studios.size, seeded, failed
+            "Default marketing consent backfill complete: {} studio(s) checked, {} seeded, {} refreshed, {} failed",
+            studios.size, seeded, refreshed, failed
         )
     }
 }
