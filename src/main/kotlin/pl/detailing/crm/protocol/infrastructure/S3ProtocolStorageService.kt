@@ -139,6 +139,22 @@ class S3ProtocolStorageService(
      * Format: {studioId}/protocols/visits/{visitId}/signed/PPP_{visitNumber}_{version}.pdf
      * Example: studio123/protocols/visits/visit456/signed/PPP_VIS-2026-00005_1.pdf
      */
+    /**
+     * Klucz wypełnionej zgody marketingowej dla konkretnej wizyty.
+     *
+     * Zgoda ma własną nazwę i własny protocolId w kluczu, bo w jednej wizycie stoi
+     * obok protokołu przyjęcia — a ten liczy wersje niezależnie, więc oba dokumenty
+     * są „wersją 1" i po samym numerze wizyty wpadłyby na siebie.
+     */
+    fun buildFilledConsentPdfS3Key(
+        studioId: UUID,
+        visitId: UUID,
+        visitNumber: String,
+        protocolId: UUID
+    ): String {
+        return "$studioId/protocols/visits/$visitId/filled/ZGD_${visitNumber}_$protocolId.pdf"
+    }
+
     fun buildSignedPdfS3Key(
         studioId: UUID,
         visitId: UUID,

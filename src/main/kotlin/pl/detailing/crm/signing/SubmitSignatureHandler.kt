@@ -240,13 +240,9 @@ class SubmitSignatureHandler(
                 logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
 
                 // Update the document record so the /documents endpoint serves the signed PDF.
-                // Tylko dla dokumentów wizyty: zgoda wskazuje na WSPÓLNY plik szablonu
-                // (ten sam klucz dla całego studia), więc przepięcie po tym kluczu
-                // dotknęłoby czegokolwiek, co się na niego powołuje — a sam podpisany
-                // plik zgody i tak wisi na wierszu protokołu oraz na zgodzie klienta.
-                if (protocol.consentDefinitionId == null) {
-                    documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
-                }
+                // Dotyczy też zgód: każda ma własny, wypełniony plik wizyty, więc w
+                // dokumentach wizyty podmienia się on na wersję podpisaną.
+                documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
 
                 val signedProtocol = protocol.sign(
                     signedPdfS3Key = signedPdfS3Key,
@@ -260,7 +256,8 @@ class SubmitSignatureHandler(
                 protocol.consentDefinitionId?.let { definitionId ->
                     recordCustomerConsent(
                         definitionId, request.studioId,
-                        CustomerId(visitEntity.customerId), request.requestedBy
+                        CustomerId(visitEntity.customerId), request.requestedBy,
+                        signedPdfS3Key
                     )
                 }
 
@@ -395,7 +392,8 @@ class SubmitSignatureHandler(
         consentDefinitionId: ConsentDefinitionId,
         studioId: StudioId,
         customerId: CustomerId,
-        witnessedBy: UserId
+        witnessedBy: UserId,
+        signedPdfS3Key: String
     ) {
         val activeTemplate = consentTemplateRepository.findActiveByDefinitionIdAndStudioId(
             consentDefinitionId.value, studioId.value
@@ -414,7 +412,9 @@ class SubmitSignatureHandler(
             templateId = ConsentTemplateId(activeTemplate.id),
             signedAt = Instant.now(),
             witnessedBy = witnessedBy,
-            attachmentS3Key = null
+            // Podpis złożony elektronicznie JEST dokumentem zgody — karta klienta
+            // ma go czym pokazać, zamiast prosić o doniesienie skanu.
+            attachmentS3Key = signedPdfS3Key
         )
         customerConsentRepository.save(CustomerConsentEntity.fromDomain(consent))
     }

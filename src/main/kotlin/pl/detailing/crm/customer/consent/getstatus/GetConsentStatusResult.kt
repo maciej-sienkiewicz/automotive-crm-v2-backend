@@ -26,5 +26,10 @@ data class ConsentStatusItem(
     val signedVersion: Int?,
     val signedAt: Instant?,
     val downloadUrl: String?,
+    /**
+     * Podpisany dokument zgody tego klienta: plik z podpisem elektronicznym albo
+     * skan dołączony ręcznie. Null tylko wtedy, gdy zgody nie ma czym udokumentować.
+     */
+    val attachmentUrl: String?,
     val consentId: CustomerConsentId?
 )

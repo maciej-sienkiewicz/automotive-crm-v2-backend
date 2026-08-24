@@ -5,11 +5,14 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.studio.settings.StudioSettingsEntity
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -25,6 +28,8 @@ class GenerateVisitProtocolsHandler(
     private val protocolFieldMappingRepository: ProtocolFieldMappingRepository,
     private val protocolTemplateRepository: ProtocolTemplateRepository,
     private val consentTemplateRepository: ConsentTemplateRepository,
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
+    private val studioSettingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
     private val documentService: DocumentService
 ) {
@@ -89,7 +94,7 @@ class GenerateVisitProtocolsHandler(
                 visitProtocolRepository.save(VisitProtocolEntity.fromDomain(visitProtocol))
 
                 val updatedProtocol = if (resolved.isConsentProtocol) {
-                    serveConsentPdf(visitProtocol, command.studioId)
+                    serveConsentPdf(visitProtocol, command.studioId, visitNumber)
                 } else {
                     fillProtocolPdf(visitProtocol, command.studioId, visitNumber)
                 }
@@ -103,10 +108,21 @@ class GenerateVisitProtocolsHandler(
         }
 
     /**
-     * Consent protocols don't need PDF auto-fill — the consent template PDF is served directly.
-     * Status jumps straight to READY_FOR_SIGNATURE.
+     * Zgoda nie niesie danych wizyty, ale niesie dane administratora — nazwę firmy,
+     * adres, NIP, REGON, mail i stronę. Bez nich klient podpisywałby dokument z
+     * pustymi miejscami, więc szablon jest wypełniany danymi studia i zapisywany
+     * jako osobny plik wizyty. Pole podpisu zostaje interaktywne (fillPdfForm
+     * spłaszcza wszystko poza nim), a gotowy plik trafia do dokumentów wizyty —
+     * tak samo jak protokół przyjęcia.
+     *
+     * Gdy wypełnienie się nie uda, klient dostaje do podpisu sam szablon: lepszy
+     * dokument bez danych administratora niż wizyta bez zgody do podpisania.
      */
-    private fun serveConsentPdf(visitProtocol: VisitProtocol, studioId: StudioId): VisitProtocol {
+    private suspend fun serveConsentPdf(
+        visitProtocol: VisitProtocol,
+        studioId: StudioId,
+        visitNumber: String
+    ): VisitProtocol {
         val consentTemplateId = visitProtocol.consentTemplateId ?: return visitProtocol
 
         val templateEntity = consentTemplateRepository.findByIdAndStudioId(
@@ -116,9 +132,82 @@ class GenerateVisitProtocolsHandler(
             return visitProtocol
         }
 
-        val updated = visitProtocol.markAsReadyForSignature(templateEntity.s3Key)
+        val filledS3Key = try {
+            val settings = studioSettingsRepository.findById(studioId.value).orElse(null)
+            val target = s3StorageService.buildFilledConsentPdfS3Key(
+                studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.id.value
+            )
+            pdfProcessingService.fillPdfForm(templateEntity.s3Key, companyFieldValues(settings), target)
+            target
+        } catch (e: Exception) {
+            logger.error(
+                "Failed to fill consent PDF for protocol ${visitProtocol.id}: ${e.message} — serving raw template",
+                e
+            )
+            templateEntity.s3Key
+        }
+
+        val updated = visitProtocol.markAsReadyForSignature(filledS3Key)
         visitProtocolRepository.save(VisitProtocolEntity.fromDomain(updated))
+
+        // Rejestrujemy tylko własny plik wizyty. Surowy szablon jest wspólny dla
+        // całego studia — w dokumentach wizyty nie ma czego szukać.
+        if (filledS3Key != templateEntity.s3Key) {
+            registerConsentDocument(visitProtocol, studioId, visitNumber, filledS3Key)
+        }
         return updated
+    }
+
+    /** Dane administratora wstawiane w miejsca oznaczone w szablonie zgody. */
+    private fun companyFieldValues(settings: StudioSettingsEntity?): Map<String, String> {
+        val streetLine = settings?.street.orEmpty().trim()
+        val cityLine = listOfNotNull(
+            settings?.postalCode?.trim()?.takeIf { it.isNotBlank() },
+            settings?.city?.trim()?.takeIf { it.isNotBlank() }
+        ).joinToString(" ")
+        val fullAddress = listOf(streetLine, cityLine).filter { it.isNotBlank() }.joinToString(", ")
+        val name = settings?.name.orEmpty().trim()
+
+        return mapOf(
+            "companyname" to name,
+            "companycity" to settings?.city.orEmpty().trim(),
+            "companyaddress" to fullAddress,
+            "companynip" to settings?.taxId.orEmpty().trim(),
+            "companyregon" to settings?.regon.orEmpty().trim(),
+            "companyemail" to settings?.email.orEmpty().trim(),
+            "companywebsite" to settings?.website.orEmpty().trim(),
+            "companymailingaddress" to listOf(name, fullAddress)
+                .filter { it.isNotBlank() }
+                .joinToString(", ")
+        )
+    }
+
+    private suspend fun registerConsentDocument(
+        visitProtocol: VisitProtocol,
+        studioId: StudioId,
+        visitNumber: String,
+        s3Key: String
+    ) {
+        try {
+            val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null) ?: return
+            val definitionName = visitProtocol.consentDefinitionId?.let { defId ->
+                consentDefinitionRepository.findByIdAndStudioId(defId.value, studioId.value)?.name
+            } ?: "Zgoda"
+
+            documentService.registerDocument(
+                visitId = visitProtocol.visitId.value,
+                customerId = visitEntity.customerId,
+                documentType = DocumentType.PROTOCOL,
+                name = "$definitionName — $visitNumber",
+                s3Key = s3Key,
+                fileName = "ZGD_${visitNumber}.pdf",
+                createdBy = visitEntity.createdBy,
+                createdByName = "System",
+                category = "consent"
+            )
+        } catch (e: Exception) {
+            logger.error("Failed to register consent as document: ${e.message}", e)
+        }
     }
 
     private suspend fun fillProtocolPdf(
