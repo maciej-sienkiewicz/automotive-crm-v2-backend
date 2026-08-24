@@ -913,6 +913,7 @@ enum class CommunicationMessageType(val label: String) {
     // SMS manual types
     VISIT_CONFIRMED_SMS("SMS potwierdzenia rozpoczęcia wizyty"),
     VISIT_READY_FOR_PICKUP_SMS("SMS gotowości do odbioru"),
+    MANUAL_SMS("SMS napisany ręcznie"),
 
     // SMS automation types
     SMS_AUTOMATION_PRE_VISIT("SMS przypomnienie przed wizytą"),
