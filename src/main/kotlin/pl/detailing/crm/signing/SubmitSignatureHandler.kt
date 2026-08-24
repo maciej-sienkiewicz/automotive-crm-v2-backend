@@ -10,10 +10,12 @@ import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.customer.consent.domain.CustomerConsent
+import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentEntity
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
+import pl.detailing.crm.protocol.visitprotocol.ProtocolDocumentNaming
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolEntity
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
@@ -24,6 +26,7 @@ import pl.detailing.crm.user.signature.UserSignatureService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
+import java.time.LocalDate
 import java.util.Base64
 
 /**
@@ -54,6 +57,7 @@ class SubmitSignatureHandler(
     private val auditTrailService: SignatureAuditTrailService,
     private val eventPublisher: SignatureEventPublisher,
     private val consentTemplateRepository: ConsentTemplateRepository,
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val customerConsentRepository: CustomerConsentRepository,
     private val auditService: AuditService,
     private val userSignatureService: UserSignatureService
@@ -239,10 +243,16 @@ class SubmitSignatureHandler(
                 s3StorageService.uploadBytes(signedPdfS3Key, sealResult.pdfBytes)
                 logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
 
-                // Update the document record so the /documents endpoint serves the signed PDF.
-                // Dotyczy też zgód: każda ma własny, wypełniony plik wizyty, więc w
-                // dokumentach wizyty podmienia się on na wersję podpisaną.
-                documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
+                // Dokument wizyty: podmieniamy plik na wersję podpisaną.
+                //
+                // Zgoda idzie inaczej — jej wiersz w dokumentach wizyty powstaje DOPIERO
+                // TERAZ. Klient, który zgody nie podpisał, nie zostawia po sobie pustego
+                // formularza udającego dokument sprawy.
+                if (protocol.consentDefinitionId == null) {
+                    documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
+                } else {
+                    registerSignedConsentDocument(protocol, visitEntity, signedPdfS3Key)
+                }
 
                 val signedProtocol = protocol.sign(
                     signedPdfS3Key = signedPdfS3Key,
@@ -386,6 +396,48 @@ class SubmitSignatureHandler(
 
     private fun persist(request: pl.detailing.crm.signing.domain.SignatureRequest) {
         signatureRequestRepository.save(SignatureRequestEntity.fromDomain(request))
+    }
+
+    /**
+     * Podpisana zgoda trafia do dokumentów wizyty pod tą samą konwencją nazw co
+     * protokoły — z nazwą zgody zamiast etapu, żeby RODO i marketing dały się
+     * rozróżnić w liście.
+     *
+     * Błąd zapisu dokumentu nie może przewrócić podpisu: plik jest już w S3,
+     * a sama zgoda zapisana przy kliencie.
+     */
+    private suspend fun registerSignedConsentDocument(
+        protocol: pl.detailing.crm.protocol.domain.VisitProtocol,
+        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
+        signedPdfS3Key: String
+    ) {
+        try {
+            val definitionName = protocol.consentDefinitionId?.let { definitionId ->
+                consentDefinitionRepository
+                    .findByIdAndStudioId(definitionId.value, protocol.studioId.value)?.name
+            } ?: "Zgoda"
+
+            val documentName = ProtocolDocumentNaming.build(
+                LocalDate.now(),
+                visitEntity.brandSnapshot,
+                visitEntity.modelSnapshot,
+                definitionName
+            )
+
+            documentService.registerDocument(
+                visitId = protocol.visitId.value,
+                customerId = visitEntity.customerId,
+                documentType = DocumentType.PROTOCOL,
+                name = documentName,
+                s3Key = signedPdfS3Key,
+                fileName = "$documentName.pdf",
+                createdBy = visitEntity.createdBy,
+                createdByName = "System",
+                category = "consent"
+            )
+        } catch (e: Exception) {
+            logger.error("Failed to register signed consent as document: ${e.message}", e)
+        }
     }
 
     private fun recordCustomerConsent(
