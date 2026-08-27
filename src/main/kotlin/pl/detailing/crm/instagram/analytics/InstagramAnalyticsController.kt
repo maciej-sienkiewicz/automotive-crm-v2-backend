@@ -21,7 +21,7 @@ import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 class InstagramAnalyticsController(
     private val readService: InstagramAnalyticsReadService,
     private val suggestionService: SuggestionService,
-    private val reportService: ReportService,
+    private val weeklyDigestService: WeeklyDigestService,
     private val competitorPulseService: CompetitorPulseService
 ) {
 
@@ -109,15 +109,6 @@ class InstagramAnalyticsController(
         ResponseEntity.ok(readService.hashtags(principal.studioId, weeks.coerceIn(4, 52)))
     }
 
-    @GetMapping("/insights")
-    fun insights(
-        @RequestParam(required = false) status: String?,
-        @RequestParam(defaultValue = "20") limit: Int
-    ): ResponseEntity<InsightsListResponse> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        ResponseEntity.ok(readService.listInsights(principal.studioId, status?.takeIf { it.isNotBlank() }, limit))
-    }
-
     /** Sugestie "Zaobserwuj podobne profile" z cache related-profiles. */
     @GetMapping("/suggestions")
     fun suggestions(): ResponseEntity<Map<String, List<ProfileSuggestionDto>>> = runBlocking {
@@ -125,31 +116,18 @@ class InstagramAnalyticsController(
         ResponseEntity.ok(mapOf("suggestions" to suggestionService.suggestionsForStudio(principal.studioId)))
     }
 
-    /** Raport za ostatni zamknięty tydzień (generowany leniwie przy pierwszym odczycie). */
-    @GetMapping("/reports/latest")
-    fun latestReport(): ResponseEntity<Map<String, ReportDto?>> = runBlocking {
+    /**
+     * Tydzień na Instagramie: jeden wiersz na obserwowany profil — co zrobił,
+     * co z tego wyszło i co on sam faktycznie zrealizował (z opisów postów).
+     *
+     * Zastąpił parę „przegląd + raport tygodnia", które pokazywały te same
+     * insighty, te same metryki i tę samą pozycję w dwóch układach graficznych.
+     * Generowany raz na tydzień i odświeżany po synchronizacji, więc odczyt jest
+     * tani mimo jednego wywołania modelu w środku.
+     */
+    @GetMapping("/digest")
+    fun digest(): ResponseEntity<Map<String, WeeklyDigestDto?>> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        ResponseEntity.ok(mapOf("report" to reportService.latest(principal.studioId)))
-    }
-
-    @GetMapping("/reports")
-    fun listReports(
-        @RequestParam(defaultValue = "12") limit: Int
-    ): ResponseEntity<Map<String, List<ReportBriefDto>>> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        ResponseEntity.ok(mapOf("reports" to reportService.list(principal.studioId, limit)))
-    }
-
-    @GetMapping("/reports/{id}")
-    fun reportById(@PathVariable id: String): ResponseEntity<Map<String, ReportDto?>> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        ResponseEntity.ok(mapOf("report" to reportService.byId(principal.studioId, UUID.fromString(id))))
-    }
-
-    @PostMapping("/insights/{id}/dismiss")
-    fun dismissInsight(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
-        val principal = SecurityContextHelper.getCurrentUser()
-        readService.dismissInsight(principal.studioId, UUID.fromString(id))
-        ResponseEntity.noContent().build()
+        ResponseEntity.ok(mapOf("digest" to weeklyDigestService.digest(principal.studioId)))
     }
 }

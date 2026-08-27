@@ -16,19 +16,6 @@ data class MetricTriple(
     val benchmark: Double?
 )
 
-data class InsightDto(
-    val id: String,
-    val type: String,
-    val severity: String,
-    val title: String,
-    val body: String,
-    val actionText: String,
-    val probableCause: String?,
-    val username: String?,
-    val permalink: String?,
-    val status: String,
-    val createdAt: Instant
-)
 
 data class StorefrontDto(
     val score: Int,
@@ -70,7 +57,6 @@ data class OverviewResponse(
     val postsPerWeek: MetricTriple,
     val activityIndex: MetricTriple,
     val storefront: StorefrontDto?,
-    val insights: List<InsightDto>,
     val miniRanking: List<MiniRankRowDto>
 )
 
@@ -227,4 +213,3 @@ data class HashtagStatDto(
 
 data class HashtagsResponse(val hashtags: List<HashtagStatDto>)
 
-data class InsightsListResponse(val insights: List<InsightDto>)
