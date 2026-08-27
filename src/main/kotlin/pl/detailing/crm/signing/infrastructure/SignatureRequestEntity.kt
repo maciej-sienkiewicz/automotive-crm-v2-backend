@@ -204,8 +204,13 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
     fun lockForAuditAppend(@Param("id") id: UUID): SignatureRequestEntity?
 
     /**
-     * Newest active (not yet signed/cancelled) request routed to the given tablet
+     * Active (not yet signed/cancelled) requests routed to the given tablet
      * or to any tablet in the studio (tabletId IS NULL).
+     *
+     * FIFO: najstarsze żądanie pierwsze. Pracownik wysyła komplet dokumentów
+     * jednym kliknięciem i klient ma je podpisywać w tej samej kolejności,
+     * w jakiej stoją na liście w CRM — DESC serwowałoby ostatni wysłany
+     * dokument jako pierwszy.
      */
     @Query(
         """
@@ -215,7 +220,7 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
           AND r.expiresAt > :now
           AND (r.tabletId IS NULL OR r.tabletId = :tabletId)
           AND (r.channel IS NULL OR r.channel = pl.detailing.crm.signing.domain.SignatureChannel.TABLET)
-        ORDER BY r.createdAt DESC
+        ORDER BY r.createdAt ASC
         """
     )
     fun findActiveForTablet(

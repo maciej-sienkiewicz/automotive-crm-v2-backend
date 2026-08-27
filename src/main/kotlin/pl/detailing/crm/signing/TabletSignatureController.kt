@@ -94,38 +94,63 @@ class TabletSignatureController(
     }
 
     /**
-     * The active signing session routed to this tablet (or any tablet in the studio).
-     * Returns 204 when nothing is waiting. The response includes the single-use
-     * challenge that MUST be echoed on submit.
+     * The OLDEST active signing session routed to this tablet (or any tablet in the
+     * studio). Returns 204 when nothing is waiting. The response includes the
+     * single-use challenge that MUST be echoed on submit.
+     *
+     * Kontrakt starej powłoki tabletu — nowa czyta całą kolejkę z [getQueue],
+     * ale powłoka aktualizuje się sama dopiero w STANDBY, więc ten endpoint
+     * musi działać bez zmian.
      */
     @GetMapping("/signature-requests/pending")
     fun getPendingRequest(
         @RequestHeader("X-Tablet-Token") token: String
     ): ResponseEntity<TabletSignatureRequestDto> {
         val session = authenticate(token)
+        return activeQueueFor(session).firstOrNull()
+            ?.let { ResponseEntity.ok(it) }
+            ?: ResponseEntity.noContent().build()
+    }
 
+    /**
+     * The full FIFO queue of active signing sessions for this tablet, oldest first.
+     *
+     * Jedno kliknięcie pracownika wysyła komplet dokumentów wizyty; tablet
+     * z pierwszej pozycji robi bieżący dokument, a bajty kolejnych pobiera
+     * w tle (patrz tryb prefetch w [getDocument]), gdy klient czyta pierwszy —
+     * po podpisie następny dokument wyświetla się bez czekania na sieć.
+     */
+    @GetMapping("/signature-requests/queue")
+    fun getQueue(
+        @RequestHeader("X-Tablet-Token") token: String
+    ): ResponseEntity<TabletSignatureQueueResponse> {
+        val session = authenticate(token)
+        return ResponseEntity.ok(TabletSignatureQueueResponse(requests = activeQueueFor(session)))
+    }
+
+    /**
+     * Aktywne żądania tego tabletu jako DTO, najstarsze pierwsze. Wpis bez żywego
+     * challenge (wygasł w Redis) jest bezużyteczny dla podpisu i zostaje pominięty.
+     */
+    private fun activeQueueFor(session: TabletSession): List<TabletSignatureRequestDto> {
         val now = Instant.now()
-        val pending = signatureRequestRepository
+        return signatureRequestRepository
             .findActiveForTablet(java.util.UUID.fromString(session.tenantId), session.tabletId, now)
-            .firstOrNull()
-            ?: return ResponseEntity.noContent().build()
-
-        val request = pending.toDomain()
-        val challenge = documentIntegrityService.peekChallenge(request.id.value)
-            ?: return ResponseEntity.noContent().build() // challenge expired → session unusable
-
-        return ResponseEntity.ok(
-            TabletSignatureRequestDto(
-                requestId = request.id.toString(),
-                documentName = request.documentName,
-                signerName = request.signerName,
-                declarationText = request.declarationText,
-                documentSha256 = request.documentSha256,
-                challenge = challenge,
-                expiresAt = request.expiresAt,
-                documentUrl = "/api/tablet/signature-requests/${request.id}/document"
-            )
-        )
+            .mapNotNull { entity ->
+                val request = entity.toDomain()
+                val challenge = documentIntegrityService.peekChallenge(request.id.value)
+                    ?: return@mapNotNull null
+                TabletSignatureRequestDto(
+                    requestId = request.id.toString(),
+                    documentName = request.documentName,
+                    signerName = request.signerName,
+                    declarationText = request.declarationText,
+                    documentSha256 = request.documentSha256,
+                    challenge = challenge,
+                    expiresAt = request.expiresAt,
+                    documentUrl = "/api/tablet/signature-requests/${request.id}/document"
+                )
+            }
     }
 
     /**
@@ -137,11 +162,20 @@ class TabletSignatureController(
      * The digest is exposed in the X-Document-Sha256 header so the tablet can verify
      * what it received and later echo the hash on submit.
      */
+    /**
+     * @param prefetch Pobranie do pamięci podręcznej tabletu, PRZED wyświetleniem:
+     *   bajty i hash schodzą identycznie, ale żądanie nie przechodzi w DISPLAYED
+     *   i zdarzenie SIGNATURE_DISPLAYED nie jest publikowane — w CRM „klient widzi
+     *   dokument" ma znaczyć dokładnie to. Faktyczne wyświetlenie prefetchowanego
+     *   dokumentu tablet zgłasza przez [markDisplayed]. Dostarczenie jest audytowane
+     *   w obu trybach.
+     */
     @GetMapping("/signature-requests/{requestId}/document")
     @Transactional
     fun getDocument(
         @RequestHeader("X-Tablet-Token") token: String,
         @PathVariable requestId: String,
+        @RequestParam(required = false, defaultValue = "false") prefetch: Boolean,
         httpRequest: HttpServletRequest
     ): ResponseEntity<ByteArray> {
         val session = authenticate(token)
@@ -165,9 +199,6 @@ class TabletSignatureController(
             throw ConflictException("Integralność dokumentu została naruszona — dokument nie zostanie wyświetlony")
         }
 
-        val displayed = request.markDisplayed()
-        signatureRequestRepository.save(SignatureRequestEntity.fromDomain(displayed))
-
         auditTrailService.append(
             requestId = request.id.value,
             studioId = request.studioId.value,
@@ -175,8 +206,58 @@ class TabletSignatureController(
             actor = "TABLET ${session.tabletId} (${session.deviceName})",
             ipAddress = clientIp(httpRequest),
             userAgent = httpRequest.getHeader(HttpHeaders.USER_AGENT),
-            details = "sha256=$actualSha256 — zgodność z żądaniem potwierdzona przy dostarczeniu"
+            details = "sha256=$actualSha256 — zgodność z żądaniem potwierdzona przy dostarczeniu" +
+                if (prefetch) " (prefetch — dokument oczekuje w kolejce, jeszcze nie wyświetlony)" else ""
         )
+
+        if (!prefetch) {
+            recordDisplayed(request, session)
+        }
+
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header("X-Document-Sha256", actualSha256)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"document.pdf\"")
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .body(pdfBytes)
+    }
+
+    /**
+     * Tablet zgłasza, że prefetchowany dokument właśnie POJAWIŁ SIĘ na ekranie.
+     *
+     * Dla dokumentu pobieranego bez prefetchu robi to [getDocument]; ten endpoint
+     * domyka drugą połowę trybu prefetch, żeby status DISPLAYED i zdarzenie
+     * SIGNATURE_DISPLAYED w CRM nadal znaczyły „klient patrzy na dokument",
+     * a nie „bajty dotarły do urządzenia". Idempotentny — markDisplayed
+     * zachowuje pierwszy displayedAt.
+     */
+    @PostMapping("/signature-requests/{requestId}/displayed")
+    @Transactional
+    fun markDisplayed(
+        @RequestHeader("X-Tablet-Token") token: String,
+        @PathVariable requestId: String
+    ): ResponseEntity<Void> {
+        val session = authenticate(token)
+        val request = loadRequestForTablet(session, requestId)
+
+        if (request.isExpired()) {
+            lifecycleService.markExpired(request)
+            throw ValidationException("Żądanie podpisu wygasło")
+        }
+        if (request.isTerminal()) {
+            throw ConflictException("Żądanie podpisu zostało już zakończone")
+        }
+
+        recordDisplayed(request, session)
+        return ResponseEntity.noContent().build()
+    }
+
+    private fun recordDisplayed(
+        request: pl.detailing.crm.signing.domain.SignatureRequest,
+        session: TabletSession
+    ) {
+        val displayed = request.markDisplayed()
+        signatureRequestRepository.save(SignatureRequestEntity.fromDomain(displayed))
         eventPublisher.publish(
             tenantId = request.studioId.value.toString(),
             requestId = request.id.toString(),
@@ -186,13 +267,6 @@ class TabletSignatureController(
             signerName = request.signerName,
             status = displayed.status.name
         )
-
-        return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_PDF)
-            .header("X-Document-Sha256", actualSha256)
-            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"document.pdf\"")
-            .header(HttpHeaders.CACHE_CONTROL, "no-store")
-            .body(pdfBytes)
     }
 
     /**
@@ -310,6 +384,11 @@ data class TabletContextResponse(
     val tabletId: String,
     val studioId: String,
     val deviceName: String
+)
+
+/** Kolejka FIFO aktywnych żądań tego tabletu — pozycja 0 to bieżący dokument. */
+data class TabletSignatureQueueResponse(
+    val requests: List<TabletSignatureRequestDto>
 )
 
 data class TabletSignatureRequestDto(

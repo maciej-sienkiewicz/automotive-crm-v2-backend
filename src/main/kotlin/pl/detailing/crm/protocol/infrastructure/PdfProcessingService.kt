@@ -245,7 +245,13 @@ class PdfProcessingService(
             logger.info("PDF font setup: classpath '$classpathFont' — found=${stream != null}")
             stream?.use {
                 try {
-                    val font = PDType0Font.load(document, it, false)
+                    // embedSubset=true: do PDF trafiają tylko użyte glify, nie cały plik
+                    // fontu. Z false każdy wygenerowany protokół nosił kompletny font
+                    // (~330 KB Liberation / ~750 KB DejaVu) — to była większość bajtów
+                    // lecących na tablet przy każdej prośbie o podpis. Appearance'y pól
+                    // generuje PDFBox przy setValue(), więc subset zawiera wszystko,
+                    // co faktycznie narysowano.
+                    val font = PDType0Font.load(document, it, true)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont'")
                     return true
@@ -273,7 +279,8 @@ class PdfProcessingService(
             val file = java.io.File(path)
             if (file.exists()) {
                 try {
-                    val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
+                    // embedSubset=true — jak wyżej dla fontów z classpath.
+                    val font = PDType0Font.load(document, java.io.FileInputStream(file), true)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
                     return true
