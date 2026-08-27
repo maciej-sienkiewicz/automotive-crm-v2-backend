@@ -4,7 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.analytics.InsightEngine
 import pl.detailing.crm.instagram.analytics.InstagramAggregationService
-import pl.detailing.crm.instagram.analytics.ReportService
+import pl.detailing.crm.instagram.analytics.WeeklyDigestService
 import pl.detailing.crm.instagram.analytics.SuggestionService
 import pl.detailing.crm.instagram.analytics.TopicClassificationService
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileEntity
@@ -29,7 +29,7 @@ class InstagramSyncOrchestrator(
     private val aggregationService: InstagramAggregationService,
     private val insightEngine: InsightEngine,
     private val suggestionService: SuggestionService,
-    private val reportService: ReportService
+    private val weeklyDigestService: WeeklyDigestService
 ) {
     private val log = LoggerFactory.getLogger(InstagramSyncOrchestrator::class.java)
 
@@ -104,8 +104,8 @@ class InstagramSyncOrchestrator(
         }
 
         insightEngine.runWeeklyForAllStudios()
-        runCatching { reportService.generateForAllStudios() }
-            .onFailure { log.error("Instagram weekly sync: błąd generowania raportów: {}", it.message, it) }
+        runCatching { weeklyDigestService.refreshForAllStudios() }
+            .onFailure { log.error("Instagram weekly sync: błąd odświeżania digestów: {}", it.message, it) }
         log.info("Instagram weekly sync: zakończono ({} błędów)", errors)
     }
 

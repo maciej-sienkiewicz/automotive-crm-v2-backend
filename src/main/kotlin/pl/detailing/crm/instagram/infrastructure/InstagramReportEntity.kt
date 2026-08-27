@@ -6,10 +6,15 @@ import java.time.LocalDate
 import java.util.*
 
 /**
- * Wygenerowany raport tygodnia dla studia. Generowany raz (po niedzielnym syncu
- * lub leniwie przy pierwszym odczycie), potem tylko odczytywany.
- * payload = strukturalne dane sekcji (JSON) renderowane przez frontend;
- * lead = 2–3 zdania narracji (LLM albo szablon deterministyczny).
+ * Cache digestu tygodnia dla studia (WeeklyDigestService).
+ *
+ * Wiersz powstaje przy pierwszym wejściu na zakładkę albo po tygodniowym syncu
+ * i jest przeliczany, gdy synchronizacja przyniesie dane nowsze niż [createdAt] —
+ * inaczej digest zamarzłby na poniedziałkowym stanie do końca tygodnia.
+ *
+ * payload = cały [pl.detailing.crm.instagram.analytics.WeeklyDigestDto] (JSON).
+ * lead został po raporcie tygodnia i jest pusty: narracja przeniosła się do zdań
+ * per profil w payloadzie.
  */
 @Entity
 @Table(
@@ -27,7 +32,7 @@ class InstagramReportEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    /** Poniedziałek raportowanego (zamkniętego) tygodnia. */
+    /** Poniedziałek BIEŻĄCEGO tygodnia — digest opisuje tydzień w toku, nie zamknięty. */
     @Column(name = "period_start", nullable = false)
     val periodStart: LocalDate,
 

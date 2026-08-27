@@ -1,6 +1,5 @@
 package pl.detailing.crm.instagram.analytics
 
-import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.instagram.infrastructure.*
@@ -208,10 +207,6 @@ class InstagramAnalyticsReadService(
             StorefrontDto(score.score, score.gaps.map { g -> g.label })
         }
 
-        val insights = insightRepository
-            .findByStudioIdAndStatusOrderByCreatedAtDesc(studioId.value, "NEW", PageRequest.of(0, 5))
-            .map { it.toDto(basket) }
-
         return OverviewResponse(
             weeks = weeks,
             comparisonGroupSize = metrics.size,
@@ -226,7 +221,6 @@ class InstagramAnalyticsReadService(
             postsPerWeek = ppwTriple,
             activityIndex = aiTriple,
             storefront = storefront,
-            insights = insights,
             miniRanking = ranked.take(6).map {
                 MiniRankRowDto(
                     studioProfileId = it.link.id.toString(),
@@ -485,50 +479,16 @@ class InstagramAnalyticsReadService(
         return HashtagsResponse(top)
     }
 
-    // ── Insighty ──────────────────────────────────────────────────────────────
-
-    @Transactional(readOnly = true)
-    fun listInsights(studioId: StudioId, status: String?, limit: Int): InsightsListResponse {
-        val basket = loadBasket(studioId)
-        val page = PageRequest.of(0, limit.coerceIn(1, 100))
-        val insights = if (status != null) {
-            insightRepository.findByStudioIdAndStatusOrderByCreatedAtDesc(studioId.value, status, page)
-        } else {
-            insightRepository.findByStudioIdOrderByCreatedAtDesc(studioId.value, page)
-        }
-        return InsightsListResponse(insights.map { it.toDto(basket) })
-    }
-
-    @Transactional
-    fun dismissInsight(studioId: StudioId, insightId: UUID) {
-        val insight = insightRepository.findByStudioIdAndId(studioId.value, insightId)
-            ?: throw EntityNotFoundException("Insight o id=$insightId nie istnieje w tym studio.")
-        insight.status = "DISMISSED"
-        insight.updatedAt = Instant.now()
-        insightRepository.save(insight)
-    }
+    /*
+     * Insighty nie mają już własnego ekranu — „Co wymaga Twojej uwagi" powtarzało
+     * to samo, co digest tygodnia, tylko innymi progami. InsightEngine zostaje
+     * WYŁĄCZNIE jako źródło znaczników na wykresach w „Porównaniu" (adnotacje przy
+     * słupkach i panel wyjaśnienia tygodnia) — tam niesie coś, czego digest nie ma:
+     * pozycję zdarzenia na osi czasu.
+     */
 
     // ── pomocnicze ────────────────────────────────────────────────────────────
 
-    private fun InstagramInsightEntity.toDto(basket: Basket): InsightDto {
-        val username = profileId?.let { basket.profiles[it]?.username }
-        val permalink = postId?.let { pid ->
-            postRepository.findById(pid).orElse(null)?.let { "https://www.instagram.com/p/${it.postCode}/" }
-        }
-        return InsightDto(
-            id = id.toString(),
-            type = type,
-            severity = severity,
-            title = title,
-            body = body,
-            actionText = actionText,
-            probableCause = probableCause,
-            username = username,
-            permalink = permalink,
-            status = status,
-            createdAt = createdAt
-        )
-    }
 
     // ── Wyjaśnienie tygodnia (klik w słupek "Przyrost obserwujących") ─────────
 
