@@ -91,9 +91,6 @@ class SignatureRequestEntity(
     @Column(name = "signed_at")
     var signedAt: Instant? = null,
 
-    @Column(name = "sealed_at")
-    var sealedAt: Instant? = null,
-
     @Column(name = "completed_at")
     var completedAt: Instant? = null,
 
@@ -105,12 +102,6 @@ class SignatureRequestEntity(
 
     @Column(name = "signed_pdf_s3_key", length = 500)
     var signedPdfS3Key: String? = null,
-
-    @Column(name = "seal_applied", nullable = false)
-    var sealApplied: Boolean = false,
-
-    @Column(name = "timestamp_applied", nullable = false)
-    var timestampApplied: Boolean = false,
 
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     var failureReason: String? = null,
@@ -140,13 +131,10 @@ class SignatureRequestEntity(
         displayedAt = displayedAt,
         declarationAcceptedAt = declarationAcceptedAt,
         signedAt = signedAt,
-        sealedAt = sealedAt,
         completedAt = completedAt,
         signerIpAddress = signerIpAddress,
         signerDevice = signerDevice,
         signedPdfS3Key = signedPdfS3Key,
-        sealApplied = sealApplied,
-        timestampApplied = timestampApplied,
         failureReason = failureReason,
         updatedAt = updatedAt
     )
@@ -174,13 +162,10 @@ class SignatureRequestEntity(
             displayedAt = r.displayedAt,
             declarationAcceptedAt = r.declarationAcceptedAt,
             signedAt = r.signedAt,
-            sealedAt = r.sealedAt,
             completedAt = r.completedAt,
             signerIpAddress = r.signerIpAddress,
             signerDevice = r.signerDevice,
             signedPdfS3Key = r.signedPdfS3Key,
-            sealApplied = r.sealApplied,
-            timestampApplied = r.timestampApplied,
             failureReason = r.failureReason,
             updatedAt = r.updatedAt
         )

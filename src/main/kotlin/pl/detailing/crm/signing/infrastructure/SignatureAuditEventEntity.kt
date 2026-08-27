@@ -79,9 +79,8 @@ interface SignatureAuditEventRepository : JpaRepository<SignatureAuditEventEntit
 /**
  * Appends hash-chained audit events for signature requests.
  *
- * The chain (together with the audit page embedded in the sealed PDF and the qualified
- * timestamp) forms the evidentiary record required to shift the burden of proof under
- * art. 253 KPC when a signer disputes the document.
+ * The chain (together with the audit page embedded in the signed PDF) forms the
+ * evidentiary record supporting the document when a signer disputes it (art. 253 KPC).
  */
 @Service
 class SignatureAuditTrailService(

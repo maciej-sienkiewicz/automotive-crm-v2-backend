@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.shared.ValidationException
-import pl.detailing.crm.signing.infrastructure.QualifiedSealService
 import pl.detailing.crm.signing.infrastructure.SignatureImageProcessor
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import java.io.ByteArrayOutputStream
@@ -40,8 +39,7 @@ import java.time.format.DateTimeFormatter
 @Service
 class SmsAuthorizationDocumentService(
     private val pdfProcessingService: PdfProcessingService,
-    private val signatureImageProcessor: SignatureImageProcessor,
-    private val qualifiedSealService: QualifiedSealService
+    private val signatureImageProcessor: SignatureImageProcessor
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -83,15 +81,8 @@ class SmsAuthorizationDocumentService(
         )
 
         val signed = stampSignature(filled, signaturePng)
-
-        // Brak skonfigurowanej pieczęci nie może blokować konfiguracji nadawcy —
-        // serwis zwraca wtedy dokument bez pieczęci i sam to loguje.
-        val sealResult = qualifiedSealService.seal(signed)
-        logger.info(
-            "SMS authorization document built: {}B, sealApplied={}",
-            sealResult.pdfBytes.size, sealResult.sealApplied
-        )
-        return sealResult.pdfBytes
+        logger.info("SMS authorization document built: {}B", signed.size)
+        return signed
     }
 
     private fun decodeSignature(base64: String): ByteArray {

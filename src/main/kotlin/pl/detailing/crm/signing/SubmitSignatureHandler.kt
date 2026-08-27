@@ -39,9 +39,8 @@ import java.util.Base64
  *     re-hashed to prove nothing changed in between. Mismatch → session FAILED.
  *  3. RAM-only signature processing: the bitmap is normalized (transparent strokes
  *     only), merged into the PDF and wiped. It is never persisted anywhere.
- *  4. The audit page (Karta Podpisu) is appended, then the qualified seal +
- *     timestamp are applied over the WHOLE document.
- *  5. Only the sealed PDF is uploaded; the protocol becomes SIGNED (immutable).
+ *  4. The audit page (Karta Podpisu) is appended to the composed document.
+ *  5. Only the composed PDF is uploaded; the protocol becomes SIGNED (immutable).
  */
 @Service
 class SubmitSignatureHandler(
@@ -53,7 +52,6 @@ class SubmitSignatureHandler(
     private val documentIntegrityService: DocumentIntegrityService,
     private val signatureImageProcessor: SignatureImageProcessor,
     private val signedDocumentComposer: SignedDocumentComposer,
-    private val qualifiedSealService: QualifiedSealService,
     private val auditTrailService: SignatureAuditTrailService,
     private val eventPublisher: SignatureEventPublisher,
     private val consentTemplateRepository: ConsentTemplateRepository,
@@ -165,7 +163,7 @@ class SubmitSignatureHandler(
                 val visitEntity = visitRepository.findById(request.visitId.value).orElse(null)
                     ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
 
-                // ── 4. Compose: PDF + signature strokes + audit page, then seal ─────
+                // ── 4. Compose: PDF + signature strokes + audit page ────────────────
                 val companySignatureBytes = userSignatureService.downloadBytes(
                     request.studioId, request.requestedBy
                 )
@@ -198,32 +196,14 @@ class SubmitSignatureHandler(
                         signedAt = signedAt
                     ),
                     auditEvents = auditEvents,
-                    visitNumber = visitEntity.visitNumber,
-                    sealInfo = qualifiedSealService.describe()
+                    visitNumber = visitEntity.visitNumber
                 )
                 logger.info(
-                    "Composed PDF ready: requestId={} composedBytes={}B — applying qualified seal",
+                    "Composed PDF ready: requestId={} composedBytes={}B",
                     request.id, composedPdf.size
                 )
 
-                val sealResult = qualifiedSealService.seal(composedPdf)
-                logger.info(
-                    "Seal result: requestId={} sealedBytes={}B sealApplied={} timestampApplied={}",
-                    request.id, sealResult.pdfBytes.size, sealResult.sealApplied, sealResult.timestampApplied
-                )
-                val sealedAt = if (sealResult.sealApplied) Instant.now() else null
-                if (sealResult.sealApplied) {
-                    auditTrailService.append(
-                        requestId = request.id.value,
-                        studioId = request.studioId.value,
-                        eventType = SignatureAuditEventType.DOCUMENT_SEALED,
-                        actor = "SYSTEM",
-                        details = qualifiedSealService.describe() +
-                            (if (sealResult.timestampApplied) " Znacznik czasu: nałożony." else "")
-                    )
-                }
-
-                // ── 5. Persist ONLY the sealed PDF; mark the protocol SIGNED ────────
+                // ── 5. Persist ONLY the composed PDF; mark the protocol SIGNED ──────
                 val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
                     request.visitId.value, request.protocolId.value, request.studioId.value
                 ) ?: throw NotFoundException("Protokół nie został znaleziony")
@@ -238,9 +218,9 @@ class SubmitSignatureHandler(
                 )
                 logger.info(
                     "Uploading signed PDF to S3: requestId={} key={} size={}B",
-                    request.id, signedPdfS3Key, sealResult.pdfBytes.size
+                    request.id, signedPdfS3Key, composedPdf.size
                 )
-                s3StorageService.uploadBytes(signedPdfS3Key, sealResult.pdfBytes)
+                s3StorageService.uploadBytes(signedPdfS3Key, composedPdf)
                 logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
 
                 // Dokument wizyty: podmieniamy plik na wersję podpisaną.
@@ -275,11 +255,8 @@ class SubmitSignatureHandler(
                     signedPdfS3Key = signedPdfS3Key,
                     declarationAcceptedAt = command.declarationAcceptedAt ?: signedAt,
                     signedAt = signedAt,
-                    sealedAt = sealedAt,
                     signerIpAddress = command.ipAddress,
-                    signerDevice = command.deviceName,
-                    sealApplied = sealResult.sealApplied,
-                    timestampApplied = sealResult.timestampApplied
+                    signerDevice = command.deviceName
                 )
                 persist(request)
                 // Terminal state reached — the session-pinned document copy is no longer needed
@@ -290,7 +267,7 @@ class SubmitSignatureHandler(
                     studioId = request.studioId.value,
                     eventType = SignatureAuditEventType.REQUEST_COMPLETED,
                     actor = "SYSTEM",
-                    details = "signedPdfS3Key=$signedPdfS3Key, pieczęć=${sealResult.sealApplied}, znacznikCzasu=${sealResult.timestampApplied}"
+                    details = "signedPdfS3Key=$signedPdfS3Key"
                 )
 
                 // A signature captured while the visit is still DRAFT is part of the
@@ -325,9 +302,7 @@ class SubmitSignatureHandler(
                             "signatureRequestId" to request.id.toString(),
                             "documentSha256" to request.documentSha256,
                             "signerName" to request.signerName,
-                            "signerIp" to (command.ipAddress ?: ""),
-                            "sealApplied" to sealResult.sealApplied.toString(),
-                            "timestampApplied" to sealResult.timestampApplied.toString()
+                            "signerIp" to (command.ipAddress ?: "")
                         )
                     ))
                 }
@@ -343,15 +318,13 @@ class SubmitSignatureHandler(
                 )
 
                 logger.info(
-                    "Signature request {} completed (protocol={}, seal={}, tsa={})",
-                    request.id, request.protocolId, sealResult.sealApplied, sealResult.timestampApplied
+                    "Signature request {} completed (protocol={})",
+                    request.id, request.protocolId
                 )
 
                 SubmitSignatureResult(
                     requestId = request.id,
-                    status = request.status,
-                    sealApplied = sealResult.sealApplied,
-                    timestampApplied = sealResult.timestampApplied
+                    status = request.status
                 )
             } finally {
                 // Immediate destruction of the graphic signature from server memory:
@@ -491,7 +464,5 @@ data class SubmitSignatureCommand(
 
 data class SubmitSignatureResult(
     val requestId: SignatureRequestId,
-    val status: SignatureRequestStatus,
-    val sealApplied: Boolean,
-    val timestampApplied: Boolean
+    val status: SignatureRequestStatus
 )

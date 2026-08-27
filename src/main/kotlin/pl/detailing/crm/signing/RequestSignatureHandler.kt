@@ -151,13 +151,10 @@ class RequestSignatureHandler(
                 displayedAt = null,
                 declarationAcceptedAt = null,
                 signedAt = null,
-                sealedAt = null,
                 completedAt = null,
                 signerIpAddress = null,
                 signerDevice = null,
                 signedPdfS3Key = null,
-                sealApplied = false,
-                timestampApplied = false,
                 failureReason = null,
                 updatedAt = now
             )
