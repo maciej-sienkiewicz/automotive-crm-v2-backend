@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.CrmDataKey
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -28,6 +29,7 @@ class CrmDataResolver(
     private val customerRepository: CustomerRepository,
     private val vehicleRepository: VehicleRepository,
     private val studioRepository: StudioRepository,
+    private val studioSettingsRepository: StudioSettingsRepository,
     private val userRepository: UserRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -62,6 +64,8 @@ class CrmDataResolver(
 
             val studioStart = System.currentTimeMillis()
             val studio = studioRepository.findById(studioId.value).orElse(null)
+            // Nazwa na dokumencie to nazwa FIRMY z ustawień, nie nazwa konta w systemie.
+            val studioSettings = studioSettingsRepository.findById(studioId.value).orElse(null)
             logger.info("[PERF]     - Query studio: ${System.currentTimeMillis() - studioStart}ms")
 
             logger.info("[PERF]     - Total DB queries: ${System.currentTimeMillis() - dbStart}ms")
@@ -118,10 +122,24 @@ class CrmDataResolver(
                 put(CrmDataKey.SERVICES_LIST, servicesList)
                 put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
 
-                // Provider (Usługodawca) — the studio itself, unlike STUDIO_NAME
-                // which historically carries the customer's company name for the
-                // "Nazwa firmy" field in the KLIENT section.
-                put(CrmDataKey.PROVIDER_NAME, studio?.name ?: "")
+                /*
+                 * Usługodawca — nazwa FIRMY z Ustawień (studio_settings.name), nie nazwa
+                 * konta w systemie (studios.name). Te dwie rzeczy to nie to samo:
+                 * studios.name powstaje przy zakładaniu konta z imienia właściciela
+                 * („Maciej Sienkiewicz's Detailing Studio") i nikt go potem nie zmienia,
+                 * a firma, która faktycznie świadczy usługę, siedzi w danych firmy —
+                 * tych samych, które idą na fakturę i które zwraca GET /api/v1/company.
+                 * Dokument podpisywany przez klienta niósł przez to nazwę, której nie ma
+                 * w KRS. Kolejność awaryjna jak w CompanyController: ustawienia, potem
+                 * nazwa konta.
+                 *
+                 * Odróżnij od STUDIO_NAME, które mimo nazwy niesie nazwę firmy KLIENTA
+                 * do pola „Nazwa firmy" w sekcji KLIENT.
+                 */
+                val providerName = studioSettings?.name?.takeIf { it.isNotBlank() }
+                    ?: studio?.name
+                    ?: ""
+                put(CrmDataKey.PROVIDER_NAME, providerName)
 
                 // Employee who registered the visit (Osoba przyjmująca pojazd)
                 val receivedBy = visit.createdBy?.let { userId ->
