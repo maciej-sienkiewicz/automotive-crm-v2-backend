@@ -32,6 +32,12 @@ data class AuditFeedFilters(
     val studioId: UUID,
     val modules: List<AuditModule>? = null,
     val actions: List<AuditAction>? = null,
+    /**
+     * Akcje wycięte z wyniku. Odsiew idzie zapytaniem, nie filtrem na liście wyników —
+     * strona keysetowa musi zwrócić tyle wierszy, ile obiecuje kursorowi, a wycinanie
+     * po stronie aplikacji zmniejszałoby stronę i zaburzało „czy jest więcej".
+     */
+    val excludedActions: List<AuditAction>? = null,
     val actorTypes: List<AuditActorType>? = null,
     val severities: List<AuditSeverity>? = null,
     val channels: List<AuditChannel>? = null,
@@ -145,6 +151,9 @@ class AuditFeedQueryRepository(
         }
         filters.actions?.takeIf { it.isNotEmpty() }?.let {
             predicates += root.get<AuditAction>("action").`in`(it)
+        }
+        filters.excludedActions?.takeIf { it.isNotEmpty() }?.let {
+            predicates += builder.not(root.get<AuditAction>("action").`in`(it))
         }
         filters.actorTypes?.takeIf { it.isNotEmpty() }?.let {
             predicates += root.get<AuditActorType>("actorType").`in`(it)

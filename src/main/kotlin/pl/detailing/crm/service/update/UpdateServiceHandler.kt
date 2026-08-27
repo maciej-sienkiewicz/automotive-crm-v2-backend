@@ -31,20 +31,46 @@ class UpdateServiceHandler(
             command.studioId.value
         ) ?: throw EntityNotFoundException("Usługa nie została znaleziona")
 
-        oldServiceEntity.isActive = false
-        oldServiceEntity.updatedAt = Instant.now()
-        serviceRepository.save(oldServiceEntity)
-
         // Manual-price services must not carry a catalog price — any price sent by the client is dropped
         val netAmount = if (command.requireManualPrice) Money.ZERO else command.basePriceNet
         val grossAmount = if (command.requireManualPrice) Money.ZERO
             else command.vatRate.resolveGrossAmount(netAmount, command.basePriceGross)
         val vatAmount = grossAmount.minus(netAmount)
+        val newName = command.name.trim()
+
+        /*
+         * Zapis bez zmian nie jest zmianą. Edytor pozycji na rezerwacji i na karcie
+         * wizyty woła ten endpoint przy każdym potwierdzeniu okna — także wtedy, gdy
+         * użytkownik tylko je otworzył i zamknął przyciskiem „Zapisz". Bez tego
+         * warunku każde takie kliknięcie zakładało nową wersję usługi (stara szła w
+         * isActive = false) i dokładało do Aktywności wiersz „Zaktualizowano usługę"
+         * bez ani jednej zmiany w środku — nie do odróżnienia od wiersza sprzed
+         * chwili, który zmiany niósł. Feed pokazywał duplikat, katalog puchł o wersje
+         * bez treści, a referencje pozycji przeskakiwały na nowe id bez powodu.
+         */
+        if (oldServiceEntity.isActive && oldServiceEntity.isUnchangedBy(newName, netAmount, grossAmount, command)) {
+            return@withContext UpdateServiceResult(
+                oldServiceId = command.oldServiceId,
+                newServiceId = command.oldServiceId,
+                name = oldServiceEntity.name,
+                basePriceNet = oldServiceEntity.basePriceNet,
+                vatRate = oldServiceEntity.vatRate,
+                vatAmount = oldServiceEntity.basePriceGross - oldServiceEntity.basePriceNet,
+                priceGross = oldServiceEntity.basePriceGross,
+                requireManualPrice = oldServiceEntity.requireManualPrice,
+                replacesServiceId = command.oldServiceId,
+                affectedPackages = affectedPackagesOf(command)
+            )
+        }
+
+        oldServiceEntity.isActive = false
+        oldServiceEntity.updatedAt = Instant.now()
+        serviceRepository.save(oldServiceEntity)
 
         val newService = ServiceDomain(
             id = ServiceId.random(),
             studioId = command.studioId,
-            name = command.name.trim(),
+            name = newName,
             basePriceNet = netAmount,
             basePriceGross = grossAmount,
             vatRate = command.vatRate,
@@ -87,18 +113,7 @@ class UpdateServiceHandler(
             metadata = mapOf("replacesServiceId" to command.oldServiceId.value.toString())
         ))
 
-        val affectedPackageItems = packageItemRepository.findByServiceIdAndStudioId(
-            command.oldServiceId.value,
-            command.studioId.value
-        )
-        val affectedPackages = if (affectedPackageItems.isNotEmpty()) {
-            val packageIds = affectedPackageItems.map { it.packageId }.distinct()
-            serviceRepository.findAllById(packageIds)
-                .filter { it.isActive }
-                .map { AffectedPackage(packageId = it.id.toString(), packageName = it.name) }
-        } else {
-            emptyList()
-        }
+        val affectedPackages = affectedPackagesOf(command)
 
         UpdateServiceResult(
             oldServiceId = command.oldServiceId,
@@ -113,6 +128,37 @@ class UpdateServiceHandler(
             affectedPackages = affectedPackages
         )
     }
+
+    /** Pakiety, w których siedzi zmieniana usługa — potrzebne przy każdym wyniku, także pustym. */
+    private fun affectedPackagesOf(command: UpdateServiceCommand): List<AffectedPackage> {
+        val affectedPackageItems = packageItemRepository.findByServiceIdAndStudioId(
+            command.oldServiceId.value,
+            command.studioId.value
+        )
+        if (affectedPackageItems.isEmpty()) return emptyList()
+
+        val packageIds = affectedPackageItems.map { it.packageId }.distinct()
+        return serviceRepository.findAllById(packageIds)
+            .filter { it.isActive }
+            .map { AffectedPackage(packageId = it.id.toString(), packageName = it.name) }
+    }
+
+    /**
+     * Czy żądanie w ogóle coś zmienia. Porównywane jest dokładnie to, co usługa niesie
+     * w katalogu i co trafia do dziennika zmian — nazwa, cena netto, cena brutto,
+     * stawka VAT i tryb ceny ustalanej ręcznie.
+     */
+    private fun ServiceEntity.isUnchangedBy(
+        newName: String,
+        netAmount: Money,
+        grossAmount: Money,
+        command: UpdateServiceCommand
+    ): Boolean =
+        name == newName &&
+            basePriceNet == netAmount.amountInCents &&
+            basePriceGross == grossAmount.amountInCents &&
+            vatRate == command.vatRate.rate &&
+            requireManualPrice == command.requireManualPrice
 }
 
 data class UpdateServiceResult(
