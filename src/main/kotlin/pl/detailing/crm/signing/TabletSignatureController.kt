@@ -308,9 +308,7 @@ class TabletSignatureController(
         ResponseEntity.ok(
             TabletSubmitSignatureResponse(
                 requestId = result.requestId.toString(),
-                status = result.status.name,
-                sealApplied = result.sealApplied,
-                timestampApplied = result.timestampApplied
+                status = result.status.name
             )
         )
     }
@@ -335,9 +333,7 @@ class TabletSignatureController(
         return ResponseEntity.ok(
             TabletSubmitSignatureResponse(
                 requestId = declined.id.toString(),
-                status = declined.status.name,
-                sealApplied = false,
-                timestampApplied = false
+                status = declined.status.name
             )
         )
     }
@@ -422,7 +418,5 @@ data class TabletDeclineRequest(
 
 data class TabletSubmitSignatureResponse(
     val requestId: String,
-    val status: String,
-    val sealApplied: Boolean,
-    val timestampApplied: Boolean
+    val status: String
 )

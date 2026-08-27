@@ -219,8 +219,6 @@ data class SignatureRequestDto(
     val displayedAt: Instant?,
     val signedAt: Instant?,
     val completedAt: Instant?,
-    val sealApplied: Boolean,
-    val timestampApplied: Boolean,
     val failureReason: String?
 )
 
@@ -240,7 +238,5 @@ internal fun SignatureRequest.toDto() = SignatureRequestDto(
     displayedAt = displayedAt,
     signedAt = signedAt,
     completedAt = completedAt,
-    sealApplied = sealApplied,
-    timestampApplied = timestampApplied,
     failureReason = failureReason
 )

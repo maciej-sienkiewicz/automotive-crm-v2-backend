@@ -22,7 +22,7 @@ import javax.imageio.ImageIO
  *  - The bitmap exists exclusively in RAM for the duration of one HTTP request.
  *  - It is NEVER written to disk, S3, the database or application logs.
  *  - All intermediate byte buffers are explicitly zeroed via [wipe] immediately after
- *    the signature is merged into the sealed PDF, so no reusable signature image
+ *    the signature is merged into the signed PDF, so no reusable signature image
  *    survives the signing transaction.
  */
 @Service

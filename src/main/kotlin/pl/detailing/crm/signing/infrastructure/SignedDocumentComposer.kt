@@ -24,9 +24,8 @@ import java.io.ByteArrayOutputStream
  *     + flattening of all form fields (visual immutability)
  *     + appended audit page (Karta Podpisu)
  *
- * The output of this composer is the input of [QualifiedSealService] — the seal and
- * qualified timestamp cover the document, the signature images AND the audit page,
- * closing the cryptographic loop. No intermediate artifact is persisted anywhere.
+ * The output of this composer IS the final signed PDF that gets uploaded to storage.
+ * No intermediate artifact is persisted anywhere.
  */
 @Service
 class SignedDocumentComposer(
@@ -55,8 +54,7 @@ class SignedDocumentComposer(
         companySignaturePngBytes: ByteArray?,
         request: SignatureRequest,
         auditEvents: List<SignatureAuditEventEntity>,
-        visitNumber: String,
-        sealInfo: String
+        visitNumber: String
     ): ByteArray {
         logger.info(
             "[Composer] requestId={} protocolId={} — composing signed PDF: " +
@@ -101,11 +99,11 @@ class SignedDocumentComposer(
                 }
             }
 
-            // Flatten AcroForm fields so the visual state is frozen before sealing
+            // Flatten AcroForm fields so the visual state is frozen in the final PDF
             document.documentCatalog.acroForm?.flatten()
 
             val pagesBeforeAudit = document.numberOfPages
-            auditTrailPageGenerator.appendAuditPage(document, request, auditEvents, visitNumber, sealInfo)
+            auditTrailPageGenerator.appendAuditPage(document, request, auditEvents, visitNumber)
             val pagesAfterAudit = document.numberOfPages
             logger.info(
                 "[Composer] requestId={} — after appendAuditPage: pages {} → {}",

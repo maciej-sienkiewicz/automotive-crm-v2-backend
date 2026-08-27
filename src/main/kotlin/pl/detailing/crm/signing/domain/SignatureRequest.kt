@@ -53,17 +53,12 @@ data class SignatureRequest(
     val displayedAt: Instant?,
     val declarationAcceptedAt: Instant?,
     val signedAt: Instant?,
-    val sealedAt: Instant?,
     val completedAt: Instant?,
     /** IP address of the device that submitted the signature. */
     val signerIpAddress: String?,
     /** User-Agent / device name of the tablet that submitted the signature. */
     val signerDevice: String?,
     val signedPdfS3Key: String?,
-    /** True when a qualified electronic seal (PAdES) was applied to the final PDF. */
-    val sealApplied: Boolean,
-    /** True when a qualified RFC 3161 timestamp was embedded in the seal. */
-    val timestampApplied: Boolean,
     val failureReason: String?,
     val updatedAt: Instant
 ) {
@@ -96,11 +91,8 @@ data class SignatureRequest(
         signedPdfS3Key: String,
         declarationAcceptedAt: Instant,
         signedAt: Instant,
-        sealedAt: Instant?,
         signerIpAddress: String?,
         signerDevice: String?,
-        sealApplied: Boolean,
-        timestampApplied: Boolean,
         now: Instant = Instant.now()
     ): SignatureRequest {
         require(status == SignatureRequestStatus.DISPLAYED) {
@@ -110,13 +102,10 @@ data class SignatureRequest(
             status = SignatureRequestStatus.COMPLETED,
             declarationAcceptedAt = declarationAcceptedAt,
             signedAt = signedAt,
-            sealedAt = sealedAt,
             completedAt = now,
             signerIpAddress = signerIpAddress,
             signerDevice = signerDevice,
             signedPdfS3Key = signedPdfS3Key,
-            sealApplied = sealApplied,
-            timestampApplied = timestampApplied,
             updatedAt = now
         )
     }
@@ -151,7 +140,7 @@ enum class SignatureChannel {
 enum class SignatureRequestStatus {
     PENDING_DISPLAY,  // Created, waiting for the tablet to fetch & display the document
     DISPLAYED,        // Tablet fetched the exact PDF bytes (hash re-verified at delivery)
-    COMPLETED,        // Signature accepted, PDF sealed and stored (immutable)
+    COMPLETED,        // Signature accepted, signed PDF stored (immutable)
     DECLINED,         // Customer refused to sign on the tablet
     CANCELLED,        // Employee cancelled the request in the CRM
     EXPIRED,          // TTL elapsed without a signature
@@ -168,7 +157,12 @@ enum class SignatureAuditEventType {
     DECLARATION_ACCEPTED,   // Signer ticked the "Oświadczam, że zapoznałem się..." checkbox
     SIGNATURE_SUBMITTED,    // Tablet submitted the signature packet
     HASH_VERIFIED,          // Server confirmed tablet hash == expected document hash
-    DOCUMENT_SEALED,        // Qualified seal + timestamp applied
+    /**
+     * Historyczne — pieczętowanie kwalifikowane zostało usunięte z systemu.
+     * Stała zostaje, bo wiersze audytu w bazie ją niosą, a event_type jest
+     * mapowany na ten enum przy odczycie.
+     */
+    DOCUMENT_SEALED,
     REQUEST_COMPLETED,      // Final PDF stored, protocol marked SIGNED
     REQUEST_CANCELLED,
     REQUEST_DECLINED,

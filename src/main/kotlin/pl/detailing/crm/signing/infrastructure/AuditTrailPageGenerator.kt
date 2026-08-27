@@ -15,13 +15,11 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Generates the "Karta Podpisu / Ścieżka Audytu" — an additional final page merged into
- * every signed protocol BEFORE the qualified seal is applied.
+ * every signed protocol.
  *
  * The page carries the transaction metadata forming the evidentiary chain:
  * document ID, SHA-256 digest of the source document, exact second-precision timestamps,
  * signer identity, requesting employee, and the IP address / device of the tablet.
- * Because the seal (with its qualified timestamp) covers this page, none of these fields
- * can be altered without breaking the seal.
  */
 @Service
 class AuditTrailPageGenerator {
@@ -47,8 +45,7 @@ class AuditTrailPageGenerator {
         document: PDDocument,
         request: SignatureRequest,
         auditEvents: List<SignatureAuditEventEntity>,
-        visitNumber: String,
-        sealInfo: String
+        visitNumber: String
     ) {
         val pagesBefore = document.numberOfPages
         logger.info(
@@ -120,22 +117,20 @@ class AuditTrailPageGenerator {
             for (event in auditEvents) {
                 val line = "${formatInstant(event.occurredAt)}  ·  ${describeEvent(event)}"
                 y = paragraph(cs, regular, VALUE_SIZE, y, line, page)
-                if (y < MARGIN + 80f) break // keep the seal note on the page
+                if (y < MARGIN + 80f) break // keep the integrity note on the page
             }
             y -= 6f
 
-            y = section(cs, bold, y, "ZABEZPIECZENIE KRYPTOGRAFICZNE")
-            y = paragraph(cs, regular, VALUE_SIZE, y, sealInfo, page)
-            y -= 4f
+            y = section(cs, bold, y, "ZABEZPIECZENIE INTEGRALNOŚCI")
             paragraph(
                 cs, regular, LABEL_SIZE, y,
                 "Dokument został zabezpieczony zgodnie z zasadą WYSIWYS (What You See Is What You Sign). " +
                     "Podpis odręczny został powiązany kryptograficznie ze skrótem SHA-256 dokumentu " +
-                    "wyświetlonego osobie podpisującej. Obraz podpisu został przetworzony wyłącznie " +
-                    "w pamięci operacyjnej serwera i trwale usunięty po scaleniu z dokumentem — system " +
-                    "nie przechowuje odrębnych plików graficznych podpisów. Integralność i autentyczność " +
-                    "dokumentu opieczętowanego kwalifikowaną pieczęcią elektroniczną korzysta z domniemania " +
-                    "z art. 35 ust. 2 rozporządzenia eIDAS (UE) nr 910/2014.",
+                    "wyświetlonego osobie podpisującej, a zgodność skrótu została zweryfikowana " +
+                    "niezależnie na urządzeniu podpisującym i na serwerze. Obraz podpisu został " +
+                    "przetworzony wyłącznie w pamięci operacyjnej serwera i trwale usunięty po " +
+                    "scaleniu z dokumentem — system nie przechowuje odrębnych plików graficznych " +
+                    "podpisów.",
                 page
             )
         }
