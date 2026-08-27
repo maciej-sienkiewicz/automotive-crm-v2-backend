@@ -84,11 +84,8 @@ class CompetitorPulseService(
         /** Okno, z którego liczymy „normę" profilu. Nigdy nie pokrywa się z oknem raportu. */
         const val BASELINE_WEEKS = 26
 
-        /** Profil bez tylu tygodni obserwacji nie ma wiarygodnej normy — pomijamy go w zdarzeniach porównawczych. */
-        private const val MIN_WEEKS_OBSERVED = 4
-
-        /** …i bez tylu postów w historii również. */
-        private const val MIN_BASELINE_POSTS = 6
+        // Próg wiarygodnej normy (ile tygodni historii, ile postów) mieszka w
+        // DigestRules — jedna definicja zdarzenia dla całego modułu.
 
         /** Post wyróżniający się: tyle razy powyżej mediany profilu. */
         private const val STANDOUT_FACTOR = 2.5
@@ -172,11 +169,17 @@ class CompetitorPulseService(
             val baselinePosts = posts.filter { it.takenAt < windowStartInstant }
             val windowPosts = posts.filter { it.takenAt >= windowStartInstant }.sortedBy { it.takenAt }
 
-            val weeksObserved = ChronoUnit.WEEKS
-                .between(link.createdAt.atZone(ZoneOffset.UTC).toLocalDate(), windowStart)
-                .toInt()
-                .coerceAtMost(BASELINE_WEEKS)
-            val hasBaseline = weeksObserved >= MIN_WEEKS_OBSERVED && baselinePosts.size >= MIN_BASELINE_POSTS
+            // Historia liczona od najstarszego POSTA, nie od wieku powiązania: profil
+            // zatwierdzony wczoraj ma w bazie rok publikacji (initialSync → BACKFILL),
+            // a liczenie normy od daty dodania kazałoby te dane zignorować.
+            // Wspólna definicja z digestem — patrz DigestRules.weeksOfHistory.
+            val weeksObserved = DigestRules.weeksOfHistory(
+                oldestBaselinePost = baselinePosts.minOfOrNull { it.takenAt }
+                    ?.atZone(ZoneOffset.UTC)?.toLocalDate(),
+                windowStart = windowStart,
+                baselineWeeks = BASELINE_WEEKS
+            )
+            val hasBaseline = DigestRules.hasBaseline(weeksObserved, baselinePosts.size)
 
             val medianEngagement = MetricsCalculator.median(baselinePosts.map { engagementOf(it).toDouble() })
             val medianWeeklyPosts = medianWeeklyPosts(baselinePosts, windowStart, weeksObserved)

@@ -129,6 +129,27 @@ object DigestRules {
         weeksObserved >= MIN_WEEKS_OBSERVED && baselinePostCount >= MIN_BASELINE_POSTS
 
     /**
+     * Ile tygodni historii MAMY dla profilu — liczone od najstarszego posta w bazie,
+     * nie od momentu dodania profilu do studia.
+     *
+     * To jest różnica między „nie mamy danych" a „dopiero zaczęliśmy obserwować".
+     * Zatwierdzenie profilu uruchamia `initialSync` w trybie DEEP, który dla profilu
+     * bez postów schodzi na BACKFILL i ściąga rok wstecz (InstagramSyncService) —
+     * profil dodany wczoraj ma więc w bazie 12 miesięcy publikacji. Liczenie normy
+     * od wieku powiązania kazałoby nam wyrzucić te dane do kosza i przez cztery
+     * tygodnie pisać „za krótko obserwowany" o profilu, o którym wiemy wszystko.
+     *
+     * Górne ograniczenie [BASELINE_WEEKS] zostaje: mediana z pół roku wystarczy,
+     * a starsze tygodnie tylko rozmywają obraz zmieniającego się profilu.
+     */
+    fun weeksOfHistory(oldestBaselinePost: LocalDate?, windowStart: LocalDate, baselineWeeks: Int): Int {
+        if (oldestBaselinePost == null) return 0
+        return ChronoUnit.WEEKS.between(oldestBaselinePost, windowStart)
+            .toInt()
+            .coerceIn(0, baselineWeeks)
+    }
+
+    /**
      * Kolejność rozstrzygania ma znaczenie: cisza wyprzedza wszystko (nie ma czego
      * oceniać), a pojedynczy hit jest ciekawszy niż sam fakt, że ktoś opublikował
      * więcej postów.
@@ -373,10 +394,12 @@ class WeeklyDigestService(
         topics: Map<UUID, pl.detailing.crm.instagram.infrastructure.InstagramPostTopicEntity>,
         weekStart: LocalDate
     ): ProfileDigestDto {
-        val weeksObserved = ChronoUnit.WEEKS
-            .between(link.createdAt.atZone(ZoneOffset.UTC).toLocalDate(), weekStart)
-            .toInt()
-            .coerceAtMost(CompetitorPulseService.BASELINE_WEEKS)
+        val weeksObserved = DigestRules.weeksOfHistory(
+            oldestBaselinePost = baselinePosts.minOfOrNull { it.takenAt }
+                ?.atZone(ZoneOffset.UTC)?.toLocalDate(),
+            windowStart = weekStart,
+            baselineWeeks = CompetitorPulseService.BASELINE_WEEKS
+        )
         val hasBaseline = DigestRules.hasBaseline(weeksObserved, baselinePosts.size)
 
         val medianEngagement = MetricsCalculator.median(baselinePosts.map { engagementOf(it).toDouble() })

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
 
 /**
  * Werdykt tygodnia to cała logika produktowa zakładki „Tydzień" — jeden wiersz na
@@ -133,6 +134,36 @@ class DigestRulesTest {
         assertTrue(DigestRules.hasBaseline(weeksObserved = 4, baselinePostCount = 6))
         assertFalse(DigestRules.hasBaseline(weeksObserved = 3, baselinePostCount = 40))
         assertFalse(DigestRules.hasBaseline(weeksObserved = 26, baselinePostCount = 5))
+    }
+
+    @Test
+    fun `norma liczy sie od najstarszego POSTA, nie od daty dodania profilu`() {
+        // Zatwierdzenie profilu ściąga rok historii (initialSync → BACKFILL), więc
+        // profil dodany wczoraj ma pełne dane. Liczenie normy od wieku powiązania
+        // kazałoby je zignorować i przez cztery tygodnie pisać „za krótko
+        // obserwowany" o profilu, o którym wiemy wszystko.
+        val windowStart = LocalDate.of(2026, 8, 24)
+        val oldestPost = windowStart.minusWeeks(40)
+
+        val weeks = DigestRules.weeksOfHistory(oldestPost, windowStart, baselineWeeks = 26)
+
+        assertEquals(26, weeks) // przycięte do okna normy
+        assertTrue(DigestRules.hasBaseline(weeks, baselinePostCount = 12))
+    }
+
+    @Test
+    fun `krotka historia postow nadal nie daje normy`() {
+        val windowStart = LocalDate.of(2026, 8, 24)
+
+        val weeks = DigestRules.weeksOfHistory(windowStart.minusWeeks(2), windowStart, baselineWeeks = 26)
+
+        assertEquals(2, weeks)
+        assertFalse(DigestRules.hasBaseline(weeks, baselinePostCount = 12))
+    }
+
+    @Test
+    fun `brak postow w historii to zero tygodni, nie wyjatek`() {
+        assertEquals(0, DigestRules.weeksOfHistory(null, LocalDate.of(2026, 8, 24), baselineWeeks = 26))
     }
 
     @Test
