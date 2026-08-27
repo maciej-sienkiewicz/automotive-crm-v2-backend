@@ -172,12 +172,27 @@ enum class AuditModule(
  * - [sentence] — impersonal past tense for the feed ("Dodano zdjęcie"). Impersonal is
  *   deliberate: Polish verbs inflect for gender and we do not store the actor's gender,
  *   so "dodał(a)" would be the only alternative.
+ * - [entityMirror] — the entry is a copy of another entry, written only so a second
+ *   object's own history shows the event. It always has a primary entry beside it in the
+ *   same request, so the company-wide feed must not show both.
  */
 enum class AuditAction(
     val label: String,
     val sentence: String,
     val icon: AuditIcon,
-    val severity: AuditSeverity = AuditSeverity.NORMAL
+    val severity: AuditSeverity = AuditSeverity.NORMAL,
+    /**
+     * Kopia zdarzenia, dopisywana po stronie drugiego obiektu, żeby jego własna historia
+     * je pokazała ("Dodano rezerwację" na pojeździe obok "Utworzono rezerwację").
+     *
+     * Odkąd [AuditContextResolver] dokleja kontekst do wpisu głównego, karta obiektu
+     * widzi zdarzenie bez kopii — a firmowa Aktywność pokazywała przez nią dwa wiersze
+     * na jedno kliknięcie. Nowe kopie nie powstają; te już zapisane zostają w dzienniku
+     * (audyt jest rejestrem, nie brudnopisem) i są odsiewane przy odczycie feedu
+     * ogólnego. W historii pojedynczego obiektu zostają — dla wpisów sprzed
+     * [AuditContextResolver] są jedynym śladem zdarzenia na tym obiekcie.
+     */
+    val entityMirror: Boolean = false
 ) {
     // ── CRUD ────────────────────────────────────────────────────────────────
     CREATE("Utworzenie", "Utworzono", AuditIcon.CREATE),
@@ -255,8 +270,8 @@ enum class AuditAction(
     // ── Vehicle-specific ────────────────────────────────────────────────────
     OWNER_ADDED("Dodanie właściciela", "Dodano właściciela pojazdu", AuditIcon.CUSTOMER),
     OWNER_REMOVED("Usunięcie właściciela", "Usunięto właściciela pojazdu", AuditIcon.CUSTOMER, AuditSeverity.HIGH),
-    APPOINTMENT_ADDED("Dodanie rezerwacji", "Dodano rezerwację", AuditIcon.CALENDAR),
-    VISIT_ADDED("Przyjęcie pojazdu", "Przyjęto pojazd", AuditIcon.VEHICLE, AuditSeverity.HIGH),
+    APPOINTMENT_ADDED("Dodanie rezerwacji", "Dodano rezerwację", AuditIcon.CALENDAR, entityMirror = true),
+    VISIT_ADDED("Przyjęcie pojazdu", "Przyjęto pojazd", AuditIcon.VEHICLE, AuditSeverity.HIGH, entityMirror = true),
 
     // ── Company data ────────────────────────────────────────────────────────
     COMPANY_UPDATED("Aktualizacja danych firmy", "Zaktualizowano dane firmy", AuditIcon.EDIT),

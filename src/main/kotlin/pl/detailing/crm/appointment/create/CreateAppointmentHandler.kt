@@ -152,23 +152,12 @@ class CreateAppointmentHandler(
             ) + if (vehicleId != null) mapOf("vehicleId" to vehicleId.value.toString()) else emptyMap()
         ))
 
-        // Log on the vehicle side so its history shows the new appointment
-        if (vehicleId != null) {
-            auditService.log(LogAuditCommand(
-                studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userName ?: "",
-                module = AuditModule.VEHICLE,
-                entityId = vehicleId.value.toString(),
-                action = AuditAction.APPOINTMENT_ADDED,
-                metadata = buildMap {
-                    put("appointmentId", appointment.id.value.toString())
-                    if (command.appointmentTitle != null) put("appointmentTitle", command.appointmentTitle)
-                    put("startDateTime", command.schedule.startDateTime.toString())
-                    put("endDateTime", command.schedule.endDateTime.toString())
-                }
-            ))
-        }
+        // Historia pojazdu bierze ten sam wpis co feed: AppointmentAuditContextResolver
+        // dokleja do zdarzenia rezerwacji jej pojazd i klienta, a karta pojazdu filtruje
+        // dziennik po kolumnie kontekstu (patrz AuditFeedQueryRepository.vehicleId).
+        // Osobny wpis „Dodano rezerwację" po stronie pojazdu był z tego powodu kopią —
+        // uboższą, bo bez tytułu i bez linków do rezerwacji i klienta — i to on
+        // pokazywał się w Aktywności jako drugi wiersz tej samej rezerwacji.
 
         CreateAppointmentResult(
             appointmentId = appointment.id,

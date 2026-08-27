@@ -63,6 +63,7 @@ class GetAuditFeedHandler(
                 studioId = command.studioId.value,
                 modules = command.modules,
                 actions = command.actions,
+                excludedActions = mirrorActionsHiddenFrom(command),
                 actorTypes = command.actorTypes,
                 severities = command.severities,
                 channels = command.channels,
@@ -99,4 +100,30 @@ class GetAuditFeedHandler(
             hasMore = hasMore
         )
     }
+}
+
+/**
+ * Kopie zdarzeń pisane po stronie drugiego obiektu (patrz [AuditAction.entityMirror])
+ * są w firmowej Aktywności drugim wierszem tego samego kliknięcia — „Dodano
+ * rezerwację" tuż pod „Utworzono rezerwację - Toyota Camry", uboższym o tytuł i o
+ * linki do rezerwacji i klienta. Nowe już nie powstają, ale dziennik jest rejestrem:
+ * zapisane zostają i muszą zniknąć przy odczycie.
+ *
+ * Odsiew obowiązuje tylko w widoku ogólnym i tylko wtedy, gdy pytający sam nie wskazał
+ * akcji:
+ *  - historia jednego obiektu (klient, pojazd, wizyta, jedna encja, jeden gest) je
+ *    zostawia — dla zdarzeń sprzed [pl.detailing.crm.audit.domain.AuditContextResolver]
+ *    kopia jest jedynym śladem rezerwacji na karcie pojazdu,
+ *  - jawny filtr `actions=APPOINTMENT_ADDED` znaczy „pokaż mi właśnie te", a filtr,
+ *    który po zaznaczeniu nic nie zwraca, czyta się jak zepsuty.
+ */
+internal fun mirrorActionsHiddenFrom(command: GetAuditFeedCommand): List<AuditAction> {
+    val scopedToOneObject = command.customerId != null ||
+        command.vehicleId != null ||
+        command.visitId != null ||
+        command.correlationId != null ||
+        command.entityId != null
+    if (scopedToOneObject || !command.actions.isNullOrEmpty()) return emptyList()
+
+    return AuditAction.entries.filter { it.entityMirror }
 }
