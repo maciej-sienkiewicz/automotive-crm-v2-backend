@@ -1,17 +1,18 @@
 package pl.detailing.crm.dashboard.reservationsummary
 
 data class GetDashboardReservationSummaryResult(
-    val currentWeek: WeekReservations,
-    val previousWeek: WeekReservations,
+    val currentMonth: MonthReservations,
+    val previousMonth: MonthReservations,
     val deltaPercentage: Double,
-    val buckets: List<WeeklyReservationBucket>
+    val buckets: List<MonthlyReservationBucket>
 )
 
-data class WeekReservations(
+data class MonthReservations(
     val count: Long
 )
 
-data class WeeklyReservationBucket(
-    val weekStart: String,
+data class MonthlyReservationBucket(
+    /** Pierwszy dzień miesiąca, ISO (np. 2026-08-01). */
+    val monthStart: String,
     val count: Long
 )

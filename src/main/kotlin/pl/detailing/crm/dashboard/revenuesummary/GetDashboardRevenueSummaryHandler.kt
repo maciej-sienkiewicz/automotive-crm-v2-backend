@@ -4,11 +4,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.visit.infrastructure.VisitRepository
-import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+/**
+ * Kafelek przychodu na Tablicy liczy MIESIĄCE, nie tygodnie.
+ *
+ * Tygodniowy horyzont okazał się szumem: krótki tydzień z jednym dniem wolnym
+ * potrafił pokazać "-40% vs poprzedni tydzień" przy zdrowym biznesie, a
+ * właściciel i tak rozlicza się miesięcznie (ZUS, VAT, wynagrodzenia).
+ */
 @Service
 class GetDashboardRevenueSummaryHandler(
     private val visitRepository: VisitRepository
@@ -17,15 +22,14 @@ class GetDashboardRevenueSummaryHandler(
 
     suspend fun handle(command: GetDashboardRevenueSummaryCommand): GetDashboardRevenueSummaryResult =
         withContext(Dispatchers.IO) {
-            val weeks = command.weeks.coerceIn(1, 104)
-            val today = LocalDate.now(warsawZone)
-            val currentWeekMonday = today.with(DayOfWeek.MONDAY)
-            val startMonday = currentWeekMonday.minusWeeks((weeks - 1).toLong())
+            val months = command.months.coerceIn(1, 36)
+            val currentMonthStart = LocalDate.now(warsawZone).withDayOfMonth(1)
+            val startMonth = currentMonthStart.minusMonths((months - 1).toLong())
 
-            val fromInstant = startMonday.atStartOfDay(warsawZone).toInstant()
-            // Use start of next week as exclusive upper bound so that visits
-            // scheduled later this week (but already COMPLETED) are included.
-            val toInstant = currentWeekMonday.plusWeeks(1).atStartOfDay(warsawZone).toInstant()
+            val fromInstant = startMonth.atStartOfDay(warsawZone).toInstant()
+            // Górna granica to początek następnego miesiąca (ekskluzywnie), żeby
+            // wizyty zakończone dziś po południu też weszły do bieżącego miesiąca.
+            val toInstant = currentMonthStart.plusMonths(1).atStartOfDay(warsawZone).toInstant()
 
             val visits = visitRepository.findCompletedByStudioIdAndDateRange(
                 studioId = command.studioId.value,
@@ -33,33 +37,32 @@ class GetDashboardRevenueSummaryHandler(
                 to = toInstant
             )
 
-            // Group by the Monday of each visit's scheduled week
-            val byWeek = visits.groupBy { visit ->
-                visit.scheduledDate.atZone(warsawZone).toLocalDate().with(DayOfWeek.MONDAY)
+            val byMonth = visits.groupBy { visit ->
+                visit.scheduledDate.atZone(warsawZone).toLocalDate().withDayOfMonth(1)
             }
 
-            val grossForWeek = { monday: LocalDate ->
-                (byWeek[monday] ?: emptyList()).sumOf { visit ->
+            val grossForMonth = { monthStart: LocalDate ->
+                (byMonth[monthStart] ?: emptyList()).sumOf { visit ->
                     visit.serviceItems.sumOf { it.finalPriceGross }
                 }
             }
 
-            val buckets = (0 until weeks).map { i ->
-                val weekMonday = startMonday.plusWeeks(i.toLong())
-                WeeklyRevenueBucket(
-                    weekStart = weekMonday.toString(),
-                    grossAmount = grossForWeek(weekMonday),
+            val buckets = (0 until months).map { i ->
+                val monthStart = startMonth.plusMonths(i.toLong())
+                MonthlyRevenueBucket(
+                    monthStart = monthStart.toString(),
+                    grossAmount = grossForMonth(monthStart),
                     currency = "PLN"
                 )
             }
 
-            val currentWeekGross = grossForWeek(currentWeekMonday)
-            val previousWeekGross = grossForWeek(currentWeekMonday.minusWeeks(1))
+            val currentGross = grossForMonth(currentMonthStart)
+            val previousGross = grossForMonth(currentMonthStart.minusMonths(1))
 
             GetDashboardRevenueSummaryResult(
-                currentWeek = WeekRevenue(grossAmount = currentWeekGross, currency = "PLN"),
-                previousWeek = WeekRevenue(grossAmount = previousWeekGross, currency = "PLN"),
-                deltaPercentage = calculateDelta(currentWeekGross, previousWeekGross),
+                currentMonth = MonthRevenue(grossAmount = currentGross, currency = "PLN"),
+                previousMonth = MonthRevenue(grossAmount = previousGross, currency = "PLN"),
+                deltaPercentage = calculateDelta(currentGross, previousGross),
                 buckets = buckets
             )
         }
