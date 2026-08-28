@@ -34,6 +34,14 @@ class AppointmentColorEntity(
     @Column(name = "is_active", nullable = false)
     var isActive: Boolean = true,
 
+    /**
+     * Kolor zaznaczony z góry na nowej wizycie. Wyłączność (jeden na studio)
+     * pilnuje częściowy indeks unikalny z V96 — flaga tutaj jest tylko jej
+     * odbiciem w modelu.
+     */
+    @Column(name = "is_default", nullable = false)
+    var isDefault: Boolean = false,
+
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
@@ -52,6 +60,7 @@ class AppointmentColorEntity(
         val name: String,
         val hexColor: String,
         val isActive: Boolean,
+        val isDefault: Boolean = false,
         val createdBy: UserId,
         val updatedBy: UserId,
         val createdAt: Instant,
@@ -64,6 +73,7 @@ class AppointmentColorEntity(
         name = name,
         hexColor = hexColor,
         isActive = isActive,
+        isDefault = isDefault,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -77,6 +87,7 @@ class AppointmentColorEntity(
             name = domain.name,
             hexColor = domain.hexColor,
             isActive = domain.isActive,
+            isDefault = domain.isDefault,
             createdBy = domain.createdBy.value,
             updatedBy = domain.updatedBy.value,
             createdAt = domain.createdAt,

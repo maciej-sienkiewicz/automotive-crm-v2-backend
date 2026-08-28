@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.appointmentcolor.archive.ArchiveAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorCommand
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.create.CreateAppointmentColorRequest
@@ -16,6 +17,7 @@ import pl.detailing.crm.appointmentcolor.getbyid.AppointmentColorResponse
 import pl.detailing.crm.appointmentcolor.getbyid.GetAppointmentColorByIdHandler
 import pl.detailing.crm.appointmentcolor.list.AppointmentColorListItem
 import pl.detailing.crm.appointmentcolor.list.ListAppointmentColorsHandler
+import pl.detailing.crm.appointmentcolor.setdefault.SetDefaultAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.update.UpdateAppointmentColorCommand
 import pl.detailing.crm.appointmentcolor.update.UpdateAppointmentColorHandler
 import pl.detailing.crm.appointmentcolor.update.UpdateAppointmentColorRequest
@@ -30,7 +32,9 @@ class AppointmentColorController(
     private val listAppointmentColorsHandler: ListAppointmentColorsHandler,
     private val getAppointmentColorByIdHandler: GetAppointmentColorByIdHandler,
     private val updateAppointmentColorHandler: UpdateAppointmentColorHandler,
-    private val deleteAppointmentColorHandler: DeleteAppointmentColorHandler
+    private val deleteAppointmentColorHandler: DeleteAppointmentColorHandler,
+    private val setDefaultAppointmentColorHandler: SetDefaultAppointmentColorHandler,
+    private val archiveAppointmentColorHandler: ArchiveAppointmentColorHandler
 ) {
 
     @GetMapping
@@ -126,6 +130,55 @@ class AppointmentColorController(
         ResponseEntity.ok(response)
     }
 
+    /**
+     * Kolor domyślny studia — zaznaczany z góry przy nowej wizycie. Zawsze jeden,
+     * więc to jest „ustaw ten", a nie „przełącz flagę": poprzedni traci rolę.
+     */
+    @PutMapping("/{id}/default")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun setDefaultColor(@PathVariable id: String): ResponseEntity<AppointmentColorResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val colorId = AppointmentColorId.fromString(id)
+
+        setDefaultAppointmentColorHandler.setDefault(colorId, principal.studioId, principal.userId)
+
+        ResponseEntity.ok(getAppointmentColorByIdHandler.handle(colorId, principal.studioId))
+    }
+
+    /** Studio bez koloru domyślnego jest dozwolone — wizard startuje wtedy z pustym polem. */
+    @DeleteMapping("/default")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun clearDefaultColor(): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        setDefaultAppointmentColorHandler.clearDefault(principal.studioId)
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Archiwizacja zamiast usunięcia: kolor znika z list wyboru, ale wizyty,
+     * które go używają, zachowują oznaczenie.
+     */
+    @PutMapping("/{id}/archived")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun setColorArchived(
+        @PathVariable id: String,
+        @RequestBody request: SetArchivedRequest
+    ): ResponseEntity<AppointmentColorResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val colorId = AppointmentColorId.fromString(id)
+
+        archiveAppointmentColorHandler.setArchived(
+            colorId = colorId,
+            studioId = principal.studioId,
+            userId = principal.userId,
+            archived = request.archived
+        )
+
+        ResponseEntity.ok(getAppointmentColorByIdHandler.handle(colorId, principal.studioId))
+    }
+
     @DeleteMapping("/{id}")
     @RequiresPermission(Permission.VISITS_CREATE)
     fun deleteColor(@PathVariable id: String): ResponseEntity<Void> = runBlocking {
@@ -143,6 +196,10 @@ class AppointmentColorController(
         ResponseEntity.noContent().build()
     }
 }
+
+data class SetArchivedRequest(
+    val archived: Boolean
+)
 
 data class AppointmentColorListResponse(
     val colors: List<AppointmentColorListItem>,

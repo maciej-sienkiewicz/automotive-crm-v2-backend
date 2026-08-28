@@ -13,6 +13,10 @@ import java.util.UUID
 @Repository
 interface AppointmentRepository : JpaRepository<AppointmentEntity, UUID> {
 
+    /** Ile rezerwacji nadal wskazuje na kolor — usunięcie zostawiłoby je bez oznaczenia. */
+    @Query("SELECT COUNT(a) FROM AppointmentEntity a WHERE a.appointmentColorId = :colorId AND a.deletedAt IS NULL")
+    fun countByAppointmentColorId(@Param("colorId") colorId: UUID): Long
+
     @Query("SELECT a FROM AppointmentEntity a WHERE a.id = :id AND a.studioId = :studioId AND a.deletedAt IS NULL")
     fun findByIdAndStudioId(
         @Param("id") id: UUID,

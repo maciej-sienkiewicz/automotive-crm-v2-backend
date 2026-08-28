@@ -13,6 +13,10 @@ import java.util.*
 @Repository
 interface VisitRepository : JpaRepository<VisitEntity, UUID> {
 
+    /** Ile wizyt nadal wskazuje na kolor — usunięcie zostawiłoby je bez oznaczenia. */
+    @Query("SELECT COUNT(v) FROM VisitEntity v WHERE v.appointmentColorId = :colorId AND v.deletedAt IS NULL")
+    fun countByAppointmentColorId(@Param("colorId") colorId: UUID): Long
+
     /**
      * Find visit by ID with studio isolation (excludes soft-deleted)
      */
