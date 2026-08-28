@@ -4,5 +4,5 @@ import pl.detailing.crm.shared.StudioId
 
 data class GetDashboardRevenueSummaryCommand(
     val studioId: StudioId,
-    val weeks: Int = 13
+    val months: Int = 12
 )

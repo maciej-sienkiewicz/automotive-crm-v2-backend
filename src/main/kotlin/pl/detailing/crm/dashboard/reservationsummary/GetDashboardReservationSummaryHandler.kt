@@ -4,10 +4,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 
+/**
+ * Kafelek rezerwacji na Tablicy liczy MIESIĄCE, nie tygodnie — z tego samego
+ * powodu co przychód: tygodniowa delta skakała o dziesiątki procent od jednego
+ * długiego weekendu i nie dawała żadnej decyzji.
+ */
 @Service
 class GetDashboardReservationSummaryHandler(
     private val appointmentRepository: AppointmentRepository
@@ -16,13 +20,12 @@ class GetDashboardReservationSummaryHandler(
 
     suspend fun handle(command: GetDashboardReservationSummaryCommand): GetDashboardReservationSummaryResult =
         withContext(Dispatchers.IO) {
-            val weeks = command.weeks.coerceIn(1, 104)
-            val today = LocalDate.now(warsawZone)
-            val currentWeekMonday = today.with(DayOfWeek.MONDAY)
-            val startMonday = currentWeekMonday.minusWeeks((weeks - 1).toLong())
+            val months = command.months.coerceIn(1, 36)
+            val currentMonthStart = LocalDate.now(warsawZone).withDayOfMonth(1)
+            val startMonth = currentMonthStart.minusMonths((months - 1).toLong())
 
-            val from = startMonday.atStartOfDay(warsawZone).toInstant()
-            val to = currentWeekMonday.plusWeeks(1).atStartOfDay(warsawZone).toInstant()
+            val from = startMonth.atStartOfDay(warsawZone).toInstant()
+            val to = currentMonthStart.plusMonths(1).atStartOfDay(warsawZone).toInstant()
 
             val appointments = appointmentRepository.findByStudioIdAndCreatedAtRange(
                 studioId = command.studioId.value,
@@ -30,27 +33,27 @@ class GetDashboardReservationSummaryHandler(
                 to = to
             )
 
-            val byWeek = appointments.groupBy { appointment ->
-                appointment.createdAt.atZone(warsawZone).toLocalDate().with(DayOfWeek.MONDAY)
+            val byMonth = appointments.groupBy { appointment ->
+                appointment.createdAt.atZone(warsawZone).toLocalDate().withDayOfMonth(1)
             }
 
-            val countForWeek = { monday: LocalDate -> (byWeek[monday] ?: emptyList()).size.toLong() }
+            val countForMonth = { monthStart: LocalDate -> (byMonth[monthStart] ?: emptyList()).size.toLong() }
 
-            val buckets = (0 until weeks).map { i ->
-                val weekMonday = startMonday.plusWeeks(i.toLong())
-                WeeklyReservationBucket(
-                    weekStart = weekMonday.toString(),
-                    count = countForWeek(weekMonday)
+            val buckets = (0 until months).map { i ->
+                val monthStart = startMonth.plusMonths(i.toLong())
+                MonthlyReservationBucket(
+                    monthStart = monthStart.toString(),
+                    count = countForMonth(monthStart)
                 )
             }
 
-            val currentWeekCount = countForWeek(currentWeekMonday)
-            val previousWeekCount = countForWeek(currentWeekMonday.minusWeeks(1))
+            val currentCount = countForMonth(currentMonthStart)
+            val previousCount = countForMonth(currentMonthStart.minusMonths(1))
 
             GetDashboardReservationSummaryResult(
-                currentWeek = WeekReservations(count = currentWeekCount),
-                previousWeek = WeekReservations(count = previousWeekCount),
-                deltaPercentage = calculateDelta(currentWeekCount, previousWeekCount),
+                currentMonth = MonthReservations(count = currentCount),
+                previousMonth = MonthReservations(count = previousCount),
+                deltaPercentage = calculateDelta(currentCount, previousCount),
                 buckets = buckets
             )
         }

@@ -138,24 +138,24 @@ class DashboardController(
 
     @GetMapping("/reservation-summary")
     fun getReservationSummary(
-        @RequestParam(required = false, defaultValue = "13") weeks: Int
+        @RequestParam(required = false, defaultValue = "12") months: Int
     ): ResponseEntity<DashboardReservationSummaryResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val command = GetDashboardReservationSummaryCommand(
             studioId = principal.studioId,
-            weeks = weeks
+            months = months
         )
 
         val result = getDashboardReservationSummaryHandler.handle(command)
 
         ResponseEntity.ok(DashboardReservationSummaryResponse(
-            currentWeek = WeekReservationsResponse(count = result.currentWeek.count),
-            previousWeek = WeekReservationsResponse(count = result.previousWeek.count),
+            currentMonth = MonthReservationsResponse(count = result.currentMonth.count),
+            previousMonth = MonthReservationsResponse(count = result.previousMonth.count),
             deltaPercentage = result.deltaPercentage,
             buckets = result.buckets.map { bucket ->
-                WeeklyReservationBucketResponse(
-                    weekStart = bucket.weekStart,
+                MonthlyReservationBucketResponse(
+                    monthStart = bucket.monthStart,
                     count = bucket.count
                 )
             }
@@ -166,30 +166,30 @@ class DashboardController(
     @GetMapping("/revenue-summary")
     @RequiresPermission(Permission.FINANCE_VIEW_REPORTS, Permission.STATISTICS_VIEW)
     fun getRevenueSummary(
-        @RequestParam(required = false, defaultValue = "13") weeks: Int
+        @RequestParam(required = false, defaultValue = "12") months: Int
     ): ResponseEntity<DashboardRevenueSummaryResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val command = GetDashboardRevenueSummaryCommand(
             studioId = principal.studioId,
-            weeks = weeks
+            months = months
         )
 
         val result = getDashboardRevenueSummaryHandler.handle(command)
 
         ResponseEntity.ok(DashboardRevenueSummaryResponse(
-            currentWeek = WeekRevenueResponse(
-                grossAmount = result.currentWeek.grossAmount,
-                currency = result.currentWeek.currency
+            currentMonth = MonthRevenueResponse(
+                grossAmount = result.currentMonth.grossAmount,
+                currency = result.currentMonth.currency
             ),
-            previousWeek = WeekRevenueResponse(
-                grossAmount = result.previousWeek.grossAmount,
-                currency = result.previousWeek.currency
+            previousMonth = MonthRevenueResponse(
+                grossAmount = result.previousMonth.grossAmount,
+                currency = result.previousMonth.currency
             ),
             deltaPercentage = result.deltaPercentage,
             buckets = result.buckets.map { bucket ->
-                WeeklyRevenueBucketResponse(
-                    weekStart = bucket.weekStart,
+                MonthlyRevenueBucketResponse(
+                    monthStart = bucket.monthStart,
                     grossAmount = bucket.grossAmount,
                     currency = bucket.currency
                 )
@@ -250,35 +250,35 @@ data class DashboardDataResponse(
 )
 
 data class DashboardRevenueSummaryResponse(
-    val currentWeek: WeekRevenueResponse,
-    val previousWeek: WeekRevenueResponse,
+    val currentMonth: MonthRevenueResponse,
+    val previousMonth: MonthRevenueResponse,
     val deltaPercentage: Double,
-    val buckets: List<WeeklyRevenueBucketResponse>
+    val buckets: List<MonthlyRevenueBucketResponse>
 )
 
-data class WeekRevenueResponse(
+data class MonthRevenueResponse(
     val grossAmount: Long,
     val currency: String
 )
 
-data class WeeklyRevenueBucketResponse(
-    val weekStart: String,
+data class MonthlyRevenueBucketResponse(
+    val monthStart: String,
     val grossAmount: Long,
     val currency: String
 )
 
 data class DashboardReservationSummaryResponse(
-    val currentWeek: WeekReservationsResponse,
-    val previousWeek: WeekReservationsResponse,
+    val currentMonth: MonthReservationsResponse,
+    val previousMonth: MonthReservationsResponse,
     val deltaPercentage: Double,
-    val buckets: List<WeeklyReservationBucketResponse>
+    val buckets: List<MonthlyReservationBucketResponse>
 )
 
-data class WeekReservationsResponse(
+data class MonthReservationsResponse(
     val count: Long
 )
 
-data class WeeklyReservationBucketResponse(
-    val weekStart: String,
+data class MonthlyReservationBucketResponse(
+    val monthStart: String,
     val count: Long
 )
