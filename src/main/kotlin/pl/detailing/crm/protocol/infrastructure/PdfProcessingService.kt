@@ -245,13 +245,24 @@ class PdfProcessingService(
             logger.info("PDF font setup: classpath '$classpathFont' — found=${stream != null}")
             stream?.use {
                 try {
-                    // embedSubset=true: do PDF trafiają tylko użyte glify, nie cały plik
-                    // fontu. Z false każdy wygenerowany protokół nosił kompletny font
-                    // (~330 KB Liberation / ~750 KB DejaVu) — to była większość bajtów
-                    // lecących na tablet przy każdej prośbie o podpis. Appearance'y pól
-                    // generuje PDFBox przy setValue(), więc subset zawiera wszystko,
-                    // co faktycznie narysowano.
-                    val font = PDType0Font.load(document, it, true)
+                    /*
+                     * embedSubset MUSI być false na tej ścieżce.
+                     *
+                     * Wypełnianie pól idzie przez AppearanceGeneratorHelper (setValue),
+                     * a ten NIE współpracuje z fontem subsetowym: appearance streamy
+                     * dostają kody glifów pełnego fontu, ale font nigdy nie trafia do
+                     * rejestru fontsToSubset dokumentu (robi to tylko PDPageContentStream),
+                     * więc save() nie zapisuje pliku fontu wcale. Czytnik podstawia
+                     * wtedy własny font pod kody Identity-H i tekst wychodzi jako
+                     * "chińskie znaczki". Objaw w logu: seria WARN
+                     * "attempting to use font ... that isn't embedded" przy wypełnianiu.
+                     *
+                     * Subset (true) jest w porządku w AuditTrailPageGenerator, bo tam
+                     * tekst rysuje bezpośrednio PDPageContentStream — wspierana ścieżka.
+                     * Rozmiar pliku trzeba odzyskiwać inaczej (mniejszy plik fontu),
+                     * nie tym przełącznikiem.
+                     */
+                    val font = PDType0Font.load(document, it, false)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont'")
                     return true
@@ -279,8 +290,8 @@ class PdfProcessingService(
             val file = java.io.File(path)
             if (file.exists()) {
                 try {
-                    // embedSubset=true — jak wyżej dla fontów z classpath.
-                    val font = PDType0Font.load(document, java.io.FileInputStream(file), true)
+                    // embedSubset=false — jak wyżej: form-fill nie znosi subsetu.
+                    val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
                     applyFontToAcroForm(document, acroForm, font)
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
                     return true
