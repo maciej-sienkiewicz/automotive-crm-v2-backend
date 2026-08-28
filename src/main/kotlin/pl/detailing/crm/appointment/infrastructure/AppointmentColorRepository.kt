@@ -1,6 +1,7 @@
 package pl.detailing.crm.appointment.infrastructure
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -20,6 +21,30 @@ interface AppointmentColorRepository : JpaRepository<AppointmentColorEntity, UUI
 
     @Query("SELECT ac FROM AppointmentColorEntity ac WHERE ac.studioId = :studioId AND ac.isActive = true")
     fun findActiveByStudioId(@Param("studioId") studioId: UUID): List<AppointmentColorEntity>
+
+    @Query("""
+        SELECT ac FROM AppointmentColorEntity ac
+        WHERE ac.studioId = :studioId AND ac.isDefault = true
+    """)
+    fun findDefaultByStudioId(@Param("studioId") studioId: UUID): AppointmentColorEntity?
+
+    /**
+     * Zdejmuje flagę domyślności ze wszystkich kolorów studia poza wskazanym.
+     * Jedno UPDATE zamiast wczytywania listy: częściowy indeks unikalny z V96
+     * nie pozwoli, żeby stary i nowy domyślny współistniały choćby przez chwilę
+     * w obrębie transakcji.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE AppointmentColorEntity ac
+        SET ac.isDefault = false
+        WHERE ac.studioId = :studioId AND ac.isDefault = true
+        AND (:exceptId IS NULL OR ac.id != :exceptId)
+    """)
+    fun clearDefaultForStudio(
+        @Param("studioId") studioId: UUID,
+        @Param("exceptId") exceptId: UUID?
+    ): Int
 
     @Query("""
         SELECT ac FROM AppointmentColorEntity ac

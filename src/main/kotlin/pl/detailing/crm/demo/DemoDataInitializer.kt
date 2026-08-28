@@ -83,13 +83,16 @@ class DemoDataInitializer(
             "Czerwony PILNE" to "#DC2626",
             "Fioletowy FLOTA" to "#7C3AED"
         )
-        return colorData.map { (name, hex) ->
+        return colorData.mapIndexed { index, (name, hex) ->
             AppointmentColorEntity(
                 id = UUID.randomUUID(),
                 studioId = studioId,
                 name = name,
                 hexColor = hex,
                 isActive = true,
+                // Studio demo ma od razu kolor domyślny — inaczej pierwsza wizyta
+                // startuje z pustym polem, którego wizard i tak wymaga.
+                isDefault = index == 0,
                 createdBy = userId,
                 updatedBy = userId,
                 createdAt = now,
