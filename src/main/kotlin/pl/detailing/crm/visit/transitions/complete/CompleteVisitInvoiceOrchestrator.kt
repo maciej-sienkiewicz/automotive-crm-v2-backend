@@ -2,6 +2,11 @@ package pl.detailing.crm.visit.transitions.complete
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.audit.domain.AuditAction
+import pl.detailing.crm.audit.domain.AuditModule
+import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.LogAuditCommand
+import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
@@ -107,7 +112,8 @@ class CompleteVisitInvoiceOrchestrator(
     private val settingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val capabilityService: CapabilityService
+    private val capabilityService: CapabilityService,
+    private val auditService: AuditService
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitInvoiceOrchestrator::class.java)
 
@@ -262,6 +268,19 @@ class CompleteVisitInvoiceOrchestrator(
             )
         )
 
+        // ── 5. Dane nabywcy wracają do kartoteki klienta ───────────────────────
+        // Kto uzupełnia NIP i nazwę firmy na fakturze, robi to raz — następne
+        // wydanie ma je zastać w prefillu, niezależnie od tego, czy KSeF jest
+        // skonfigurowany. Zapis po wystawieniu faktury: kosmetyka kartoteki nie
+        // ma prawa wywrócić zakończonej wizyty ani faktury.
+        runCatching { persistBuyerToCustomer(command, customer, invoice.buyer, buyerNip) }
+            .onFailure {
+                log.warn(
+                    "Nie udało się zapisać danych nabywcy do kartoteki klienta {}: {}",
+                    visit.customerId, it.message
+                )
+            }
+
         // Powiązanie dokumentu finansowego z fakturą KSeF — zunifikowana lista
         // dokumentów przychodowych prezentuje wtedy jeden rekord zamiast dwóch
         completion.financialDocumentId?.let { documentId ->
@@ -280,6 +299,97 @@ class CompleteVisitInvoiceOrchestrator(
     }
 
     // ── Private ────────────────────────────────────────────────────────────────
+
+    /**
+     * Nadpisuje dane firmowe klienta danymi nabywcy z faktury.
+     *
+     * Tylko dla faktury FIRMOWEJ (jest NIP): nabywca bez NIP-u to konsument, a jego
+     * „nazwa" bywa po prostu imieniem i nazwiskiem z kartoteki — wpisanie jej w pole
+     * companyName robiłoby z osoby firmę. Zasada nadpisywania: pole formularza
+     * wygrywa, gdy niesie wartość; puste pole NICZEGO nie kasuje — „zapisz, żeby
+     * odtworzyć następnym razem", nie „wyczyść, bo tym razem nie wpisano".
+     * E-mail kontaktowy tylko uzupełniamy, gdy kartoteka nie ma żadnego:
+     * e-mail z faktury to często ksiegowosc@, a kontaktowym chodzą SMS-y
+     * i powiadomienia wizyt.
+     */
+    private fun persistBuyerToCustomer(
+        command: CompleteVisitCommand,
+        customer: CustomerEntity?,
+        buyer: CompleteInvoiceBuyer,
+        buyerNip: String?
+    ) {
+        if (customer == null || buyerNip == null) return
+
+        val newName = buyer.name?.trim()?.ifBlank { null }
+        // Firma bez nazwy nie istnieje w modelu klienta: CustomerEntity.toDomain()
+        // buduje companyData tylko przy niepustym companyName, więc zapis samego
+        // NIP-u byłby niewidoczny dla odczytów (w tym dla prefillu nabywcy).
+        val effectiveName = newName ?: customer.companyName?.takeIf { it.isNotBlank() } ?: return
+        val newStreet = buyer.addressLine1?.trim()?.ifBlank { null }
+        val (newPostal, newCity) = parseAddressLine2(buyer.addressLine2)
+        val newEmail = buyer.email?.trim()?.ifBlank { null }
+
+        val oldValues = mapOf(
+            "companyNip" to customer.companyNip,
+            "companyName" to customer.companyName,
+            "companyAddressStreet" to customer.companyAddressStreet,
+            "companyAddressPostalCode" to customer.companyAddressPostalCode,
+            "companyAddressCity" to customer.companyAddressCity,
+            "email" to customer.email
+        )
+
+        customer.companyNip = buyerNip
+        customer.companyName = effectiveName
+        newStreet?.let { customer.companyAddressStreet = it }
+        newPostal?.let { customer.companyAddressPostalCode = it }
+        newCity?.let { customer.companyAddressCity = it }
+        if (customer.email.isNullOrBlank() && newEmail != null) customer.email = newEmail
+        // Kompletny adres wymaga kraju (encja składa CompanyAddress tylko z pełnych
+        // czterech pól) — domyślnie Polska; istniejącej wartości nie ruszamy.
+        if (customer.companyAddressCountry.isNullOrBlank() && customer.companyAddressStreet != null) {
+            customer.companyAddressCountry = "Polska"
+        }
+
+        val newValues = mapOf(
+            "companyNip" to customer.companyNip,
+            "companyName" to customer.companyName,
+            "companyAddressStreet" to customer.companyAddressStreet,
+            "companyAddressPostalCode" to customer.companyAddressPostalCode,
+            "companyAddressCity" to customer.companyAddressCity,
+            "email" to customer.email
+        )
+        val changes = auditService.computeChanges(oldValues, newValues)
+        if (changes.isEmpty()) return
+
+        customer.updatedBy = command.userId.value
+        customer.updatedAt = java.time.Instant.now()
+        customerRepository.save(customer)
+
+        auditService.logSync(LogAuditCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            userDisplayName = command.userName ?: "",
+            module = AuditModule.CUSTOMER,
+            entityId = customer.id.toString(),
+            entityDisplayName = listOfNotNull(customer.firstName, customer.lastName)
+                .joinToString(" ").ifBlank { customer.companyName },
+            action = AuditAction.UPDATE,
+            changes = changes,
+            metadata = mapOf("source" to "INVOICE_BUYER")
+        ))
+        log.info("Dane nabywcy z faktury zapisane w kartotece klienta {}", customer.id)
+    }
+
+    /**
+     * Druga linia adresu faktury powstaje we froncie jako „kod-pocztowy miasto"
+     * — odwracamy dokładnie ten format. Linia w innym kształcie nie nadpisuje
+     * niczego: lepiej zostawić kartotekę, niż wpisać kod do pola miasta.
+     */
+    private fun parseAddressLine2(line2: String?): Pair<String?, String?> {
+        val trimmed = line2?.trim()?.ifBlank { null } ?: return null to null
+        val match = Regex("^(\\d{2}-\\d{3})\\s+(.+)$").find(trimmed) ?: return null to null
+        return match.groupValues[1] to match.groupValues[2].trim()
+    }
 
     internal data class InvoiceTotals(val net: Long, val vat: Long, val gross: Long)
 
