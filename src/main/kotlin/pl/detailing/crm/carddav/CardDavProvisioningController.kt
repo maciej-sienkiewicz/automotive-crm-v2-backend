@@ -1,5 +1,6 @@
 package pl.detailing.crm.carddav
 
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -42,9 +43,16 @@ class CardDavProvisioningController(
 ) {
 
     @PostMapping("/provisionings")
-    fun createProvisioning(@RequestBody request: CreateProvisioningRequest): ResponseEntity<ProvisioningResponse> {
+    fun createProvisioning(
+        @RequestBody request: CreateProvisioningRequest,
+        httpRequest: HttpServletRequest,
+    ): ResponseEntity<ProvisioningResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val link = provisioningService.createProvisioning(principal, request.deviceName ?: "iPhone")
+        val link = provisioningService.createProvisioning(
+            principal,
+            request.deviceName ?: "iPhone",
+            PublicBaseUrl.of(httpRequest),
+        )
         return ResponseEntity.status(HttpStatus.CREATED).body(
             ProvisioningResponse(link.provisioningId, link.installUrl, link.expiresAt)
         )
@@ -84,8 +92,8 @@ class CardDavProfileDownloadController(
 ) {
 
     @GetMapping("/{token}")
-    fun downloadProfile(@PathVariable token: String): ResponseEntity<ByteArray> {
-        val profile = provisioningService.redeemProfile(token)
+    fun downloadProfile(@PathVariable token: String, httpRequest: HttpServletRequest): ResponseEntity<ByteArray> {
+        val profile = provisioningService.redeemProfile(token, PublicBaseUrl.hostName(httpRequest))
         return ResponseEntity.ok()
             // Ten Content-Type każe iOS-owi przechwycić plik jako profil
             // konfiguracyjny („Pobrano profil") zamiast pokazać go jako tekst.
