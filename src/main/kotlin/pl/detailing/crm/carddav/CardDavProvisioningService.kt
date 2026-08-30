@@ -1,6 +1,5 @@
 package pl.detailing.crm.carddav
 
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -37,15 +36,16 @@ class CardDavProvisioningService(
     private val provisioningRepository: CardDavProvisioningRepository,
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
-    @Value("\${carddav.provisioning.backend-base-url:\${BACKEND_BASE_URL:https://api.detailboost.pl}}")
-    private val backendBaseUrl: String,
-    @Value("\${carddav.provisioning.link-ttl-minutes:10}")
-    private val linkTtlMinutes: Long,
 ) {
     private val random = SecureRandom()
 
+    /**
+     * @param publicBaseUrl adres wyprowadzony z bieżącego żądania (PublicBaseUrl.of)
+     *                      — link musi wskazywać domenę, przez którą użytkownik
+     *                      naprawdę wszedł, a nie skonfigurowany na sztywno host.
+     */
     @Transactional
-    fun createProvisioning(principal: UserPrincipal, deviceName: String): ProvisioningLink {
+    fun createProvisioning(principal: UserPrincipal, deviceName: String, publicBaseUrl: String): ProvisioningLink {
         val secret = randomToken(SECRET_BYTES)
         val appPassword = appPasswordRepository.save(
             CardDavAppPasswordEntity(
@@ -62,12 +62,12 @@ class CardDavProvisioningService(
                 appPasswordId = appPassword.id,
                 token = randomToken(TOKEN_BYTES),
                 secretPlain = secret,
-                expiresAt = Instant.now().plusSeconds(linkTtlMinutes * 60),
+                expiresAt = Instant.now().plusSeconds(LINK_TTL_MINUTES * 60),
             )
         )
         return ProvisioningLink(
             provisioningId = provisioning.id,
-            installUrl = "$backendBaseUrl/api/public/carddav-profile/${provisioning.token}",
+            installUrl = "$publicBaseUrl/api/public/carddav-profile/${provisioning.token}",
             expiresAt = provisioning.expiresAt,
         )
     }
@@ -77,7 +77,7 @@ class CardDavProvisioningService(
      * w której go użyto — po pobraniu istnieje już tylko hash i sam telefon.
      */
     @Transactional
-    fun redeemProfile(token: String): ProfilePayload {
+    fun redeemProfile(token: String, hostName: String): ProfilePayload {
         val provisioning = provisioningRepository.findByToken(token)
             ?: throw EntityNotFoundException("Link instalacyjny nie istnieje")
         val secret = provisioning.secretPlain
@@ -99,7 +99,7 @@ class CardDavProvisioningService(
             fileName = "detailboost-kontakty.mobileconfig",
             xml = MobileConfigBuilder.cardDavProfile(
                 accountId = appPassword.id,
-                hostName = backendBaseUrl.removePrefix("https://").removePrefix("http://").substringBefore('/'),
+                hostName = hostName,
                 principalPath = "/api/v1/carddav/${appPassword.studioId}/",
                 username = user.email,
                 password = secret,
@@ -124,6 +124,7 @@ class CardDavProvisioningService(
     }
 
     companion object {
+        private const val LINK_TTL_MINUTES = 10L
         private const val TOKEN_BYTES = 32
         // 24 bajty → 32 znaki base64url; wpisywane tylko maszynowo, więc długość nie boli.
         private const val SECRET_BYTES = 24
