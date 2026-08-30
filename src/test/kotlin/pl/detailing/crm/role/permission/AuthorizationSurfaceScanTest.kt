@@ -49,6 +49,7 @@ class AuthorizationSurfaceScanTest {
         "MobileVoiceController" to ALL_METHODS,           // mobile voice token
         "CardDavController" to ALL_METHODS,               // HTTP Basic (CardDavSecurityConfig)
         "WellKnownCardDavController" to ALL_METHODS,
+        "CardDavProfileDownloadController" to ALL_METHODS, // one-shot, TTL-bound URL token
         // WEBHOOK — provider callbacks
         "Przelewy24WebhookController" to ALL_METHODS,
         "SmsInboundController" to ALL_METHODS,
@@ -56,6 +57,8 @@ class AuthorizationSurfaceScanTest {
         "InboundEmailWebhookController" to ALL_METHODS,
         // SELF_SERVICE — the authenticated user's own data only
         "ProfileController" to ALL_METHODS,
+        "CardDavProvisioningController" to ALL_METHODS,   // pairs/revokes the caller's own phones only
+
         "MyWorkTimeController" to ALL_METHODS,
         "PinController" to ALL_METHODS,                   // PIN user switching; unlock is owner-checked inline
         "MyTasksController" to ALL_METHODS,               // only tasks visible to the caller (TaskVisibility)
