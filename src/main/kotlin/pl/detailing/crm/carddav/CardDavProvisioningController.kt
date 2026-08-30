@@ -31,7 +31,7 @@ data class CardDavAccountResponse(
 
 /**
  * Zarządzanie automatyczną konfiguracją kontaktów na iPhonie — od strony
- * zalogowanego CRM (sesja), więc CELOWO poza prefiksem /api/v1/carddav/**:
+ * zalogowanego CRM (sesja), więc CELOWO poza poddrzewem serwera CardDAV:
  * tamten podgraf ma własny, bezstanowy łańcuch Basic auth dla klientów
  * CardDAV i sesji nie widzi.
  */
@@ -73,7 +73,7 @@ class CardDavProvisioningController(
 
 /**
  * Pobranie profilu spod jednorazowego linku — bez sesji, jak pozostałe
- * /api/public/**: profil bywa pobierany inną przeglądarką niż zalogowany CRM
+ * publiczne ścieżki tokenowe: profil bywa pobierany inną przeglądarką niż CRM
  * (skan QR z komputera otwiera Safari na telefonie). Uwierzytelnia
  * nieodgadywalny, krótkotrwały token w adresie; link spala się przy pobraniu.
  */
