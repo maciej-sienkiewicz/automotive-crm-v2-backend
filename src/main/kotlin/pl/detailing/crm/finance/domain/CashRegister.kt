@@ -13,7 +13,7 @@ import java.time.Instant
  * in CASH) and outflows (EXPENSE payments in CASH + manual adjustments).
  *
  * The full history of how the balance arrived at its current value is tracked in
- * [CashOperation] entries – see [CashOperationRepository.findByStudioId].
+ * [CashOperation] entries – see [CashOperationRepository.findFiltered].
  */
 data class CashRegister(
     val id: CashRegisterId,

@@ -13,6 +13,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.finance.cash.AdjustCashBalanceCommand
 import pl.detailing.crm.finance.cash.AdjustCashBalanceHandler
+import pl.detailing.crm.finance.cash.CashDirection
 import pl.detailing.crm.finance.cash.CashHistoryQuery
 import pl.detailing.crm.finance.cash.GetCashRegisterHandler
 import pl.detailing.crm.finance.cash.GetCashRegisterQuery
@@ -34,6 +35,7 @@ import pl.detailing.crm.finance.reporting.FinanceReportingHandler
 import pl.detailing.crm.finance.reporting.PaymentMethodReportHandler
 import pl.detailing.crm.finance.reporting.PaymentMethodReportQuery
 import pl.detailing.crm.finance.reporting.ReportGranularity
+import pl.detailing.crm.shared.DateRangeFilter
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.ForbiddenException
@@ -245,22 +247,52 @@ class FinanceController(
         return ResponseEntity.ok(getCashRegisterHandler.getCashRegister(GetCashRegisterQuery(principal.studioId)).toResponse())
     }
 
+    /**
+     * Historia kasy z filtrami widoku „Kasa": okres i strona operacji.
+     *
+     * `dateFrom`/`dateTo` to dni kalendarzowe (oba włączające) — na instanty
+     * przelicza je [DateRangeFilter], bo `created_at` jest znacznikiem czasu, a
+     * „do 31 sierpnia" ma obejmować cały 31 sierpnia czasu polskiego.
+     *
+     * `direction` (`IN`/`OUT`) zawęża wyłącznie listę operacji. Sumy w odpowiedzi
+     * zawsze dotyczą całego okresu i obu stron: podsumowanie, które znika po
+     * włączeniu filtra, przestaje być podsumowaniem.
+     */
     @GetMapping("/cash/history")
     @RequiresPermission(Permission.FINANCE_MANAGE_CASH_REGISTER)
     fun getCashHistory(
         @RequestParam(defaultValue = "1")  page: Int,
-        @RequestParam(defaultValue = "30") size: Int
+        @RequestParam(defaultValue = "30") size: Int,
+        @RequestParam(required = false) dateFrom: LocalDate?,
+        @RequestParam(required = false) dateTo: LocalDate?,
+        @RequestParam(required = false) direction: String?
     ): ResponseEntity<CashHistoryResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        if (dateFrom != null && dateTo != null && dateTo.isBefore(dateFrom)) {
+            throw ValidationException("dateTo nie może być wcześniejsze niż dateFrom")
+        }
+        val parsedDirection = direction
+            ?.takeIf { it.isNotBlank() }
+            ?.let { parseEnum<CashDirection>(it, "direction") }
+
         val result = getCashRegisterHandler.getCashHistory(
-            CashHistoryQuery(studioId = principal.studioId, page = maxOf(1, page), pageSize = size.coerceIn(1, 100))
+            CashHistoryQuery(
+                studioId  = principal.studioId,
+                page      = maxOf(1, page),
+                pageSize  = size.coerceIn(1, 100),
+                from      = DateRangeFilter.startOfDay(dateFrom)?.toInstant(),
+                to        = DateRangeFilter.startOfNextDay(dateTo)?.toInstant(),
+                direction = parsedDirection
+            )
         )
         return ResponseEntity.ok(
             CashHistoryResponse(
                 operations = result.operations.map { it.toResponse() },
                 total      = result.total,
                 page       = result.page,
-                pageSize   = result.pageSize
+                pageSize   = result.pageSize,
+                totalIn    = result.totalIn,
+                totalOut   = result.totalOut
             )
         )
     }
@@ -454,7 +486,11 @@ data class CashHistoryResponse(
     val operations: List<CashOperationResponse>,
     val total: Long,
     val page: Int,
-    val pageSize: Int
+    val pageSize: Int,
+
+    /** Sumy w groszach za cały wybrany okres, obie dodatnie, niezależne od `direction`. */
+    val totalIn: Long,
+    val totalOut: Long
 )
 
 data class FinanceSummaryResponse(
