@@ -19,8 +19,8 @@ import java.time.Instant
  *
  * ## Uwierzytelnienie
  *
- * Leży pod `/api/mobile/**`, czyli poza logowaniem (patrz SecurityConfig) — bo telefon,
- * który zeskanował kod QR, nie jest zalogowany i nie ma być. Całym uprawnieniem jest
+ * Endpoint jest w gałęzi `api/mobile`, czyli poza logowaniem (patrz SecurityConfig) — bo
+ * telefon, który zeskanował kod QR, nie jest zalogowany i nie ma być. Całym uprawnieniem jest
  * `handoffToken` z kodu: sekret jednej sesji, ważny kilkanaście minut i **zużywany przy
  * pierwszym przesłaniu**. Nie jest to stały `users.mobile_token`, bo zdjęcie ekranu
  * z kodem nie może dawać komuś bezterminowego prawa wysyłania danych do studia.
