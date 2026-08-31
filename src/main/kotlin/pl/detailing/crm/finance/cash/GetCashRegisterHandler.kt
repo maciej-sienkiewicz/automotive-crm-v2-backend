@@ -34,7 +34,28 @@ data class CashHistoryQuery(
 
     /** `null` = obie strony. */
     val direction: CashDirection? = null
-)
+) {
+    /*
+     * Zapytania dostają granice zawsze, nigdy nulla — „bez filtra" to najszerszy
+     * możliwy zakres, a nie brak warunku. Powód jest po stronie PostgreSQL i opisany
+     * przy [pl.detailing.crm.finance.infrastructure.CashOperationRepository.findFiltered]:
+     * parametr postawiony samotnie w `? is null` nie ma z czego wziąć typu i cały
+     * endpoint kończy się błędem sterownika.
+     */
+
+    /** Dolna granica gdy nie wybrano okresu — przed pierwszą operacją jakiegokolwiek studia. */
+    val fromOrBeginning: Instant get() = from ?: Instant.EPOCH
+
+    /**
+     * Górna granica gdy nie wybrano okresu. Data w przyszłości, nie `Instant.MAX`:
+     * MAX nie mieści się w `timestamptz` i sterownik odrzuciłby zapytanie.
+     */
+    val toOrEndOfTime: Instant get() = to ?: FAR_FUTURE
+
+    private companion object {
+        val FAR_FUTURE: Instant = Instant.parse("9999-12-31T23:59:59Z")
+    }
+}
 
 data class CashHistoryResult(
     val operations: List<CashOperation>,
@@ -76,20 +97,23 @@ class GetCashRegisterHandler(
             Sort.by(Sort.Direction.DESC, "createdAt")
         )
 
+        val from = query.fromOrBeginning
+        val to   = query.toOrEndOfTime
+
         val page = cashOperationRepository.findFiltered(
             studioId = query.studioId.value,
-            from     = query.from,
-            to       = query.to,
+            from     = from,
+            to       = to,
             onlyIn   = query.direction == CashDirection.IN,
             onlyOut  = query.direction == CashDirection.OUT,
             pageable = pageable
         )
 
         // SUM po pustym zbiorze to null, nie zero — okres bez wpłat jest normalny.
-        val inflow  = cashOperationRepository.sumInflow(query.studioId.value, query.from, query.to) ?: 0L
+        val inflow  = cashOperationRepository.sumInflow(query.studioId.value, from, to) ?: 0L
         // Wypłaty siedzą w bazie ze znakiem minus; na zewnątrz idzie moduł, bo pole
         // nazywa się już „totalOut" i podwójne zaprzeczenie w UI niczego nie wnosi.
-        val outflow = cashOperationRepository.sumOutflow(query.studioId.value, query.from, query.to) ?: 0L
+        val outflow = cashOperationRepository.sumOutflow(query.studioId.value, from, to) ?: 0L
 
         return CashHistoryResult(
             operations = page.content.map { it.toDomain() },

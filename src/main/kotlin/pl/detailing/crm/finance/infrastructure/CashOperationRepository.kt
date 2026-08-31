@@ -14,6 +14,20 @@ interface CashOperationRepository : JpaRepository<CashOperationEntity, UUID> {
     /**
      * Historia zawężona filtrami z widoku „Kasa".
      *
+     * ## Dlaczego `from`/`to` nigdy nie są nullem
+     *
+     * Naturalny zapis „filtr opcjonalny" — `(:from IS NULL OR op.createdAt >= :from)` —
+     * wywraca się na PostgreSQL: w `$2 is null` parametr stoi sam, bez niczego, z czego
+     * sterownik mógłby odczytać jego typ, więc serwer odpowiada
+     * `could not determine data type of parameter $2` i endpoint zwraca 500. Że w tym
+     * samym zapytaniu `(:onlyIn = FALSE OR …)` działa, nie jest przypadkiem: tam
+     * porównanie z `FALSE` typ podaje.
+     *
+     * Zamiast obchodzić to castem, brak filtra jest wyrażony jako najszerszy możliwy
+     * zakres ([pl.detailing.crm.finance.cash.CashHistoryQuery] podstawia granice).
+     * Każdy parametr stoi wtedy przy kolumnie, więc typ jest znany, a zapytanie ma
+     * jedną ścieżkę zamiast dwóch.
+     *
      * `from` jest włączające, `to` **wyłączające** — bo pochodzi ze startu dnia
      * następnego po `dateTo` (patrz DateRangeFilter). Porównanie `<=` policzyłoby
      * ostatnią dobę na krawędzi strefy czasowej.
@@ -22,20 +36,22 @@ interface CashOperationRepository : JpaRepository<CashOperationEntity, UUID> {
      * jednym, ani drugim — korekta zerowa jest odrzucana przy zapisie, ale gdyby
      * kiedyś taki wiersz powstał, widać go tylko bez filtra kierunku, i to jest
      * uczciwsze niż doliczanie go do dowolnej ze stron.
+     *
+     * Bez `ORDER BY` w treści: sortowanie niesie `Pageable`, a podane w obu miejscach
+     * lądowało w SQL dwa razy.
      */
     @Query("""
         SELECT op FROM CashOperationEntity op
         WHERE op.studioId = :studioId
-          AND (:from IS NULL OR op.createdAt >= :from)
-          AND (:to   IS NULL OR op.createdAt <  :to)
+          AND op.createdAt >= :from
+          AND op.createdAt <  :to
           AND (:onlyIn  = FALSE OR op.amount > 0)
           AND (:onlyOut = FALSE OR op.amount < 0)
-        ORDER BY op.createdAt DESC
     """)
     fun findFiltered(
         studioId: UUID,
-        from: Instant?,
-        to: Instant?,
+        from: Instant,
+        to: Instant,
         onlyIn: Boolean,
         onlyOut: Boolean,
         pageable: Pageable
@@ -54,10 +70,10 @@ interface CashOperationRepository : JpaRepository<CashOperationEntity, UUID> {
         SELECT SUM(op.amount) FROM CashOperationEntity op
         WHERE op.studioId = :studioId
           AND op.amount > 0
-          AND (:from IS NULL OR op.createdAt >= :from)
-          AND (:to   IS NULL OR op.createdAt <  :to)
+          AND op.createdAt >= :from
+          AND op.createdAt <  :to
     """)
-    fun sumInflow(studioId: UUID, from: Instant?, to: Instant?): Long?
+    fun sumInflow(studioId: UUID, from: Instant, to: Instant): Long?
 
     /**
      * Suma wypłat w okresie — w groszach i **ujemna**, bo `amount` jest podpisane;
@@ -68,10 +84,10 @@ interface CashOperationRepository : JpaRepository<CashOperationEntity, UUID> {
         SELECT SUM(op.amount) FROM CashOperationEntity op
         WHERE op.studioId = :studioId
           AND op.amount < 0
-          AND (:from IS NULL OR op.createdAt >= :from)
-          AND (:to   IS NULL OR op.createdAt <  :to)
+          AND op.createdAt >= :from
+          AND op.createdAt <  :to
     """)
-    fun sumOutflow(studioId: UUID, from: Instant?, to: Instant?): Long?
+    fun sumOutflow(studioId: UUID, from: Instant, to: Instant): Long?
 
     /**
      * Finds all operations linked to a specific financial document.
