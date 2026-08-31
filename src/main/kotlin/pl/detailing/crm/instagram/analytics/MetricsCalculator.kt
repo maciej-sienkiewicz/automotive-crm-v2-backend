@@ -104,6 +104,29 @@ object MetricsCalculator {
         return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2.0 else sorted[mid]
     }
 
+    /**
+     * Percentyl metodą liniowej interpolacji (typ 7, ten sam co w R i NumPy).
+     *
+     * Potrzebny wszędzie tam, gdzie średnia kłamie przez pojedyncze wyskoki: jeden post
+     * z oznaczonym celebrytą albo wypromowany płatnie potrafi mieć zasięg o dwa rzędy
+     * wielkości większy od reszty i sam z siebie przesądzić o wyniku całej analizy.
+     *
+     * @param fraction 0.0–1.0 (0.9 = percentyl 90.)
+     */
+    fun percentile(values: List<Double>, fraction: Double): Double? {
+        if (values.isEmpty()) return null
+        val sorted = values.sorted()
+        if (sorted.size == 1) return sorted.first()
+
+        val position = fraction.coerceIn(0.0, 1.0) * (sorted.size - 1)
+        val lower = kotlin.math.floor(position).toInt()
+        val upper = kotlin.math.ceil(position).toInt()
+        if (lower == upper) return sorted[lower]
+
+        val weight = position - lower
+        return sorted[lower] * (1 - weight) + sorted[upper] * weight
+    }
+
     /** Zmiana procentowa; null gdy brak punktu odniesienia. */
     fun deltaPct(current: Double?, previous: Double?): Double? {
         if (current == null || previous == null || previous == 0.0) return null

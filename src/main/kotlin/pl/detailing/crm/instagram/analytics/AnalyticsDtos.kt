@@ -201,7 +201,13 @@ data class HeatmapCellDto(
 data class HeatmapResponse(
     val cells: List<HeatmapCellDto>,
     val bestDayOfWeek: Int?,
-    val bestDaypart: Int?
+    val bestDaypart: Int?,
+    /**
+     * Ile postów odpadło jako wyskoki (powyżej percentyla 90. zaangażowania) i nie
+     * bierze udziału w tym zestawieniu. Pokazywane w UI, żeby liczba postów w komórkach
+     * dała się pogodzić z tym, co widać na profilach konkurencji.
+     */
+    val excludedOutliers: Int = 0
 )
 
 data class HashtagStatDto(
