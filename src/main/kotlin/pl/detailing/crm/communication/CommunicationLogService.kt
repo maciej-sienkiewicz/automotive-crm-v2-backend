@@ -1,6 +1,8 @@
 package pl.detailing.crm.communication
 
 import org.slf4j.LoggerFactory
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.stereotype.Service
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditActor
@@ -77,10 +79,25 @@ class CommunicationLogService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    /**
+     * Zapis w WŁASNEJ transakcji, z natychmiastowym flushem.
+     *
+     * Jedno i drugie jest konieczne, żeby `catch` niżej cokolwiek dawał. Bez nich
+     * `repository.save()` tylko planuje INSERT, a ten wykonuje się przy commicie
+     * transakcji wywołującego — czyli poza tym blokiem. Błąd nie trafiał więc do
+     * `catch`, tylko wywracał operację biznesową, której ten wpis miał być wyłącznie
+     * opisem. Tak właśnie SMS z linkiem do podpisu potrafił dojść do klienta, podczas
+     * gdy żądanie podpisu znikało razem z rollbackiem (patrz V100__sync_enum_check_constraints.sql).
+     *
+     * Wiadomość wysłana jest faktem, którego nie da się cofnąć. Zapis o niej nie ma
+     * prawa ani zniknąć razem z transakcją wywołującego, ani jej przewrócić — to ten
+     * sam układ, który moduł audytu ma od dawna (patrz AuditLogWriter).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun record(command: RecordCommunicationCommand) {
         val id = UUID.randomUUID()
         try {
-            repository.save(
+            repository.saveAndFlush(
                 CommunicationLogEntity(
                     id = id,
                     studioId = command.studioId.value,
