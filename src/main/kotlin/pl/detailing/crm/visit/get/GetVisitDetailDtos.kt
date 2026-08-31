@@ -212,7 +212,14 @@ data class VisitDocumentResponse(
 data class GetVisitDetailCommand(
     val studioId: StudioId,
     val userId: UserId,
-    val visitId: VisitId
+    val visitId: VisitId,
+    /**
+     * Domyślnie szkic przyjęcia nie jest wizytą, którą wolno otworzyć — patrz
+     * [pl.detailing.crm.shared.VisitNotStartedException]. Flaga istnieje wyłącznie dla
+     * ścieżek, które szkic obsługują świadomie (dokończenie przyjęcia), i nie jest
+     * wystawiona w API.
+     */
+    val allowDraft: Boolean = false
 )
 
 /**

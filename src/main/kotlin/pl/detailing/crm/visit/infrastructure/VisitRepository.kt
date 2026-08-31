@@ -82,6 +82,69 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): Int
 
     /**
+     * Nieukończone przyjęcia studia — wizyty, które utknęły w DRAFT.
+     *
+     * DRAFT jest stanem kreatora przyjęcia, nie stanem biznesowym: powstaje przy
+     * zapisie wizyty, a znika po zatwierdzeniu (IN_PROGRESS) albo anulowaniu (twarde
+     * usunięcie). Każdy wiersz z tej listy to auto, które fizycznie stoi w warsztacie
+     * bez rozpoczętej wizyty — dlatego kolejka musi być widoczna dla obsługi, a nie
+     * tylko dla sprzątającego zadania.
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND v.status = pl.detailing.crm.shared.VisitStatus.DRAFT
+        AND v.deletedAt IS NULL
+        ORDER BY v.createdAt ASC
+    """)
+    fun findOpenDrafts(@Param("studioId") studioId: UUID): List<VisitEntity>
+
+    /**
+     * Same identyfikatory otwartych szkiców — dla filtra Aktywności, który musi tylko
+     * wiedzieć, czego NIE pokazywać, i nie potrzebuje encji ani ich kolekcji.
+     */
+    @Query("""
+        SELECT v.id FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND v.status = pl.detailing.crm.shared.VisitStatus.DRAFT
+        AND v.deletedAt IS NULL
+    """)
+    fun findOpenDraftIds(@Param("studioId") studioId: UUID): List<UUID>
+
+    /**
+     * Otwarty szkic tej rezerwacji, jeśli istnieje. Rezerwacja zostaje w CONFIRMED aż do
+     * zatwierdzenia wizyty, więc sam jej status nie mówi, czy przyjęcie już trwa.
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.appointmentId = :appointmentId
+        AND v.studioId = :studioId
+        AND v.status = pl.detailing.crm.shared.VisitStatus.DRAFT
+        AND v.deletedAt IS NULL
+        ORDER BY v.createdAt DESC
+    """)
+    fun findOpenDraftsByAppointmentId(
+        @Param("appointmentId") appointmentId: UUID,
+        @Param("studioId") studioId: UUID
+    ): List<VisitEntity>
+
+    /**
+     * Szkice starsze niż próg — wejście dla zadania sprzątającego. Bez ograniczenia do
+     * jednego studia: zadanie chodzi po całej instancji.
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.status = pl.detailing.crm.shared.VisitStatus.DRAFT
+        AND v.deletedAt IS NULL
+        AND v.createdAt < :threshold
+        ORDER BY v.createdAt ASC
+    """)
+    fun findDraftsCreatedBefore(
+        @Param("threshold") threshold: Instant,
+        pageable: Pageable
+    ): List<VisitEntity>
+
+    /**
      * Find visits by customer with studio isolation (excludes soft-deleted)
      */
     @Query("SELECT v FROM VisitEntity v WHERE v.customerId = :customerId AND v.studioId = :studioId AND v.deletedAt IS NULL ORDER BY v.scheduledDate DESC")

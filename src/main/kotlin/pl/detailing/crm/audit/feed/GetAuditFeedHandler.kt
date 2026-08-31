@@ -53,14 +53,22 @@ data class GetAuditFeedCommand(
 class GetAuditFeedHandler(
     private val auditFeedQueryRepository: AuditFeedQueryRepository,
     private val auditService: AuditService,
-    private val renderer: AuditFeedRenderer
+    private val renderer: AuditFeedRenderer,
+    private val feedVisitVisibility: FeedVisitVisibility
 ) {
     suspend fun handle(command: GetAuditFeedCommand): AuditFeedResponse = withContext(Dispatchers.IO) {
         val limit = command.limit.coerceIn(1, GetAuditFeedCommand.MAX_LIMIT)
 
+        // Wizyty, które nie wyszły jeszcze ze stanu roboczego kreatora przyjęcia,
+        // nie istnieją dla feedu — ani jako wiersz, ani jako link. Pytamy o nie raz
+        // na żądanie i przekazujemy do zapytania, nie do filtrowania wyniku.
+        val hiddenVisitIds = feedVisitVisibility.hiddenVisitIds(command.studioId.value)
+
         val rows = auditFeedQueryRepository.findPage(
             filters = AuditFeedFilters(
                 studioId = command.studioId.value,
+                hiddenVisitIds = hiddenVisitIds,
+                requireLiveVisitContext = true,
                 modules = command.modules,
                 actions = command.actions,
                 excludedActions = mirrorActionsHiddenFrom(command),

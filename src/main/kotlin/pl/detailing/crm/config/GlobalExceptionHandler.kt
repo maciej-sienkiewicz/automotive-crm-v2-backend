@@ -105,6 +105,43 @@ class GlobalExceptionHandler(
             ))
     }
 
+    /**
+     * 404 — bo dla użytkownika wizyty w tym stanie po prostu nie ma. Kod pozwala
+     * frontendowi zamiast surowego błędu pokazać jedyną sensowną tu akcję:
+     * dokończenie przyjęcia pojazdu.
+     */
+    @ExceptionHandler(VisitNotStartedException::class)
+    fun handleVisitNotStarted(ex: VisitNotStartedException): ResponseEntity<VisitNotStartedResponse> {
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(VisitNotStartedResponse(
+                code = "VISIT_NOT_STARTED",
+                visitId = ex.visitId,
+                visitNumber = ex.visitNumber,
+                message = ex.message ?: "Wizyta nie została jeszcze rozpoczęta"
+            ))
+    }
+
+    /**
+     * 409 z namiarem na istniejący szkic: kreator ma go wznowić, a nie założyć drugą
+     * wizytę dla tego samego auta.
+     */
+    @ExceptionHandler(DraftVisitAlreadyExistsException::class)
+    fun handleDraftVisitAlreadyExists(
+        ex: DraftVisitAlreadyExistsException
+    ): ResponseEntity<DraftVisitAlreadyExistsResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(DraftVisitAlreadyExistsResponse(
+                code = "DRAFT_VISIT_ALREADY_EXISTS",
+                visitId = ex.visitId,
+                visitNumber = ex.visitNumber,
+                createdAt = ex.createdAt.toString(),
+                createdByName = ex.createdByName,
+                message = ex.message ?: "Trwa już nieukończone przyjęcie tej rezerwacji"
+            ))
+    }
+
     @ExceptionHandler(ConflictException::class)
     fun handleConflict(ex: ConflictException): ResponseEntity<ErrorResponse> {
         return ResponseEntity
@@ -298,6 +335,29 @@ data class ErrorResponse(
     val error: String,
     val message: String,
     val timestamp: String
+)
+
+/**
+ * 404 dla wizyty, która nie wyszła jeszcze ze stanu roboczego przyjęcia.
+ */
+data class VisitNotStartedResponse(
+    val code: String,
+    val visitId: String,
+    val visitNumber: String,
+    val message: String
+)
+
+/**
+ * 409 przy próbie przyjęcia rezerwacji, dla której trwa już nieukończone przyjęcie.
+ * Niesie namiar na istniejący szkic, żeby frontend mógł go wznowić bez dopytywania.
+ */
+data class DraftVisitAlreadyExistsResponse(
+    val code: String,
+    val visitId: String,
+    val visitNumber: String,
+    val createdAt: String,
+    val createdByName: String?,
+    val message: String
 )
 
 data class AlreadyLinkedResponse(

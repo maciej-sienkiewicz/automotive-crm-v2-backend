@@ -77,7 +77,8 @@ class CreateVisitFromReservationHandler(
     private val auditService: AuditService,
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
     private val doorToDoorRepository: DoorToDoorRepository,
-    private val appointmentVehicleResolver: AppointmentVehicleResolver
+    private val appointmentVehicleResolver: AppointmentVehicleResolver,
+    private val openDraftVisitService: pl.detailing.crm.visit.drafts.OpenDraftVisitService
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -87,6 +88,31 @@ class CreateVisitFromReservationHandler(
                 command.reservationId.value,
                 command.studioId.value
             )?.toDomain() ?: throw EntityNotFoundException("Rezerwacja nie została znaleziona")
+
+            /*
+             * Step 1.5: jedna rezerwacja — jedno przyjęcie naraz.
+             *
+             * Rezerwacja zostaje w CONFIRMED aż do zatwierdzenia wizyty (Step 10), więc
+             * jej status nie odróżnia „jeszcze nieprzyjęta" od „przyjmowana właśnie
+             * teraz". Bez tej bramki ponowne wejście w kreator — po zamknięciu okna z
+             * dokumentami, po odświeżeniu strony, z drugiego stanowiska — zakładało
+             * kolejną wizytę: nowy numer VIS-, drugi komplet protokołów i drugi wpis w
+             * dzienniku dla jednego auta.
+             *
+             * Odpowiedź niesie namiar na istniejący szkic: kreator ma go wznowić, a nie
+             * dopytywać użytkownika, co się właściwie stało.
+             */
+            openDraftVisitService.findOpenForAppointment(
+                appointmentId = appointment.id.value,
+                studioId = command.studioId
+            )?.let { existing ->
+                throw DraftVisitAlreadyExistsException(
+                    visitId = existing.visitId.toString(),
+                    visitNumber = existing.visitNumber,
+                    createdAt = existing.createdAt,
+                    createdByName = existing.createdByName
+                )
+            }
 
             // Step 2: Handle customer (create new or use existing)
             val customerId = when (val customerData = command.customer) {
