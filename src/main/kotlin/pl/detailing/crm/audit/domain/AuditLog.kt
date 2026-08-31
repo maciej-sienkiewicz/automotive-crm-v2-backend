@@ -213,6 +213,13 @@ enum class AuditAction(
     NOTE_UPDATED("Edycja notatki", "Zmieniono notatkę", AuditIcon.NOTE, AuditSeverity.LOW),
     NOTE_DELETED("Usunięcie notatki", "Usunięto notatkę", AuditIcon.NOTE),
 
+    // ── Customer-specific ───────────────────────────────────────────────────
+    /**
+     * Jeden wpis na cały import książki adresowej, nie jeden na klienta — patrz
+     * [pl.detailing.crm.customer.importing.CustomerImportService].
+     */
+    CUSTOMERS_IMPORTED("Import klientów", "Zaimportowano klientów", AuditIcon.CUSTOMER, AuditSeverity.HIGH),
+
     // ── Visit-specific ──────────────────────────────────────────────────────
     SERVICE_ADDED("Dodanie usługi", "Dodano usługę", AuditIcon.SERVICE),
     SERVICE_UPDATED("Aktualizacja usługi", "Zaktualizowano usługę", AuditIcon.SERVICE),

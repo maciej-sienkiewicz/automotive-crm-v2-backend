@@ -130,6 +130,22 @@ class AuditFeedRenderer {
             }
         }
 
+        // Import kontaktów jest JEDNYM zdarzeniem o wielu klientach — liczby są tu całą
+        // treścią wpisu, bo poszczególnych kartotek ten wiersz nie wymienia.
+        if (log.action == AuditAction.CUSTOMERS_IMPORTED) {
+            log.metadata["importedCount"]?.toIntOrNull()
+                ?.let { parts += "Zaimportowano: $it" }
+            log.metadata["skippedCount"]?.toIntOrNull()?.takeIf { it > 0 }
+                ?.let { parts += "Pominięto: $it" }
+            log.metadata["source"]?.let { source ->
+                parts += when (source) {
+                    "ANDROID_PICKER" -> "Źródło: kontakty z telefonu"
+                    "VCARD_FILE" -> "Źródło: plik vCard"
+                    else -> "Źródło: $source"
+                }
+            }
+        }
+
         // A manual cash correction is only auditable if the reason travels with it, and a
         // reason that needs a click to reach is a reason nobody reads.
         if (log.action == AuditAction.CASH_ADJUSTED) {

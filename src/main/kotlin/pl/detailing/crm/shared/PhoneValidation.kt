@@ -36,3 +36,38 @@ fun normalizePolishPhone(phone: String): String {
         phone // Return as-is if invalid
     }
 }
+
+/**
+ * Sprowadza numer do E.164 (`+48534920205`) albo zwraca `null`, jeśli się nie da.
+ *
+ * Różnica wobec [normalizePolishPhone] jest zamierzona i istotna: tamta funkcja przy
+ * niepowodzeniu oddaje wejście bez zmian, bo służy do *wyświetlania i wysyłki*. Ta służy
+ * do *porównywania* — a klucz dopasowania, który przy śmieciu zwraca śmieć, sklejałby ze
+ * sobą różnych ludzi („brak", „-", „telefon do żony"). Lepiej nie dopasować niczego.
+ *
+ * Reguły, w tej kolejności (muszą odpowiadać backfillowi w V99__customer_import.sql):
+ *  1. numer z jawnym `+` i długością 8–15 cyfr — bierzemy jak jest,
+ *  2. dziewięć cyfr — numer krajowy, dostaje `+48`,
+ *  3. prefiks `00` — telefoniczny zapis międzynarodowy, zamieniany na `+`,
+ *  4. jedenaście cyfr zaczynających się od `48` — polski numer bez plusa.
+ *
+ * Świadomie NIE zgadujemy niczego poza tym. Numer skrócony (infolinia), wewnętrzny czy
+ * z rozszerzeniem nie jest kluczem, po którym wolno łączyć kartoteki.
+ */
+fun normalizeToE164(phone: String?): String? {
+    val raw = phone?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+
+    // Plus ma znaczenie tylko na początku: „+48 (61) 123-45-67" to wciąż jeden numer.
+    val hasPlus = raw.startsWith("+")
+    val digits = raw.filter { it.isDigit() }
+    if (digits.isEmpty()) return null
+
+    return when {
+        hasPlus && digits.length in 8..15 -> "+$digits"
+        digits.length == 9 -> "+48$digits"
+        digits.startsWith("00") && digits.length in 10..17 -> "+${digits.substring(2)}"
+        digits.length == 11 && digits.startsWith("48") -> "+$digits"
+        else -> null
+    }
+}
