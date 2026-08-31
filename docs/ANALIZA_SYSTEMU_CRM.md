@@ -140,444 +140,405 @@ Osobna aplikacja SPA („DetailBoost Tablet") uruchamiana na tablecie recepcyjny
 
 # CZĘŚĆ 2: OPIS FUNKCJONALNY
 
-System jest wielotenantowym CRM‑em dla studiów detailingu samochodowego (tenant = „studio").
-Ok. 1100 plików Kotlina w ~57 modułach biznesowych, ok. 90 bazowych ścieżek REST.
+Jak system działa z perspektywy studia detailingowego: co robi obsługa, co dzieje się
+automatycznie i według jakich reguł. Opis obejmuje wszystkie obszary funkcjonalne wraz
+z uzasadnieniem decyzji, które mają realne konsekwencje biznesowe.
+
+---
 
 ## 2.1 Rezerwacje i przyjmowanie wizyt
 
-### Model dwustopniowy: rezerwacja → wizyta
+### Rezerwacja i wizyta to dwie różne rzeczy
 
-System rozdziela **rezerwację** (`Appointment` — obietnica terminu) od **wizyty**
-(`Visit` — auto fizycznie w warsztacie). To dwie osobne encje z osobnymi cyklami życia.
+System celowo rozdziela **rezerwację** — obietnicę terminu, którą można odwołać i której
+klient może nie dotrzymać — od **wizyty**, czyli auta, które fizycznie stoi w warsztacie.
+Dzięki temu statystyki nie mieszają umówionych terminów z faktycznie wykonaną pracą,
+a automatyczne wiadomości nie dziękują za wizytę, na którą nikt nie przyjechał.
 
-**Cykl życia rezerwacji** (`AppointmentStatus`): `CREATED → CONVERTED` (przyjęto auto) /
-`CANCELLED` (odwołana) / `ABANDONED` (klient nie przyjechał).
+**Życie rezerwacji:**
 
-Status `ABANDONED` nadaje automat: `ReservationStatusUpdateJob` uruchamiany cronem `0 */15 * * * *`
-oznacza jako porzucone wszystkie rezerwacje w statusie `CREATED`, których termin (strefa Europe/Warsaw)
-minął wczoraj lub wcześniej. Zdarzenie trafia do dziennika audytu jako akcja użytkownika „System".
-
-**Cykl życia wizyty** (`VisitStateMachine`, przejścia egzekwowane w kodzie):
-
-```
-IN_PROGRESS ─→ READY_FOR_PICKUP ─→ COMPLETED ─→ ARCHIVED
-     │                  │
-     │                  └─→ IN_PROGRESS (powrót, gdy trzeba dorobić)
-     └─→ REJECTED ─────────────────────────────→ ARCHIVED
-```
-
-Próba niedozwolonego przejścia kończy się `IllegalStateTransitionException`.
-
-### Tworzenie rezerwacji
-
-`POST /api/v1/appointments`. Przed zapisem uruchamiany jest komplet walidatorów:
-istnienie klienta, istnienie pojazdu, unikalność nowego klienta, dane kontaktowe klienta,
-poprawność stawki VAT pozycji, wymagalność ceny ręcznej, poprawność koloru rezerwacji.
-
-Rezerwacja zawiera pozycje usługowe z **silnikiem korekt cenowych** (`AdjustmentType`):
-
-| Typ | Znaczenie |
+| Stan | Znaczenie |
 |---|---|
-| `PERCENT` | rabat/narzut w punktach bazowych (−1050 = −10,5 %) |
-| `FIXED_NET` | kwota stała doliczana do netto |
-| `FIXED_GROSS` | kwota stała doliczana do brutto (netto przeliczane wstecz) |
-| `SET_NET` | nadpisanie ceny netto |
-| `SET_GROSS` | nadpisanie ceny brutto („VAT w stu") |
+| Utworzona | termin umówiony, auto jeszcze nie przyjechało |
+| Zamieniona na wizytę | klient przyjechał, przeprowadzono przyjęcie pojazdu |
+| Odwołana | rezerwacja anulowana przez studio lub klienta; można ją przywrócić |
+| Porzucona | termin minął, a auto nigdy nie dojechało |
 
-Cena wpisana przez użytkownika jest źródłem prawdy — przy wprowadzaniu ceny brutto system
-nie przelicza jej wstecz z netto (dopuszczalna tolerancja 1 grosza na zaokrągleniu).
+Stan „porzucona" nadawany jest automatycznie. Co kwadrans system sprawdza rezerwacje,
+których termin minął wczoraj lub wcześniej i które nadal czekają na przyjęcie auta, po czym
+oznacza je jako porzucone. Kalendarz nie zapełnia się nieaktualnymi wpisami, a właściciel
+widzi realną skalę nieodbytych wizyt. Każda taka zmiana trafia do historii aktywności firmy
+jako działanie systemu, nie pracownika.
 
-**Rezerwacje cykliczne**: `POST /api/v1/appointments/recurring` tworzy `RecurrenceSeries`.
-Pojedyncze wystąpienie można „odczepić" od serii (`isDetached`) i edytować niezależnie;
-`GET /api/v1/appointments/series/{seriesId}` zwraca całą serię.
+**Życie wizyty:**
 
-**Rezerwacja z leada**: `POST /api/v1/appointments/from-lead/{leadId}` — zapytanie ofertowe
-zamienia się w rezerwację wraz z wyceną (`LeadQuoteSyncService`), a lead pozostaje z nią powiązany.
+```
+W realizacji ──► Gotowa do odbioru ──► Zakończona ──► Zarchiwizowana
+     │                    │
+     │                    └──► W realizacji (trzeba jeszcze dorobić)
+     └──► Odrzucona ─────────────────────────────► Zarchiwizowana
+```
 
-### Edycja, anulowanie, usuwanie
+Ścieżka jest zamknięta: nie da się przeskoczyć etapu ani cofnąć wizyty w dowolne miejsce.
+Auto gotowe do odbioru może wrócić do prac, ale wizyty zakończonej nie da się „odkończyć".
+Dokumenty finansowe zawsze opisują więc stan, który faktycznie miał miejsce.
 
-- `PUT /api/v1/appointments/{id}` — pełna edycja (termin, usługi, pojazd, klient).
-- `PATCH /api/v1/appointments/{id}` — zmiana statusu.
-- `POST /api/v1/appointments/{id}/restore` — przywrócenie anulowanej.
-- `DELETE /api/v1/appointments/{id}` — usunięcie miękkie (uprawnienie `VISITS_CREATE`).
-- `DELETE /api/v1/appointments/{id}/permanent` — usunięcie twarde (uprawnienie `VISITS_DELETE`).
-- `PATCH …/sms-preferences` — włączenie/wyłączenie SMS przypominającego dla tej konkretnej rezerwacji.
-- `PATCH …/title` — własny tytuł widoczny w kalendarzu.
+### Umawianie terminu
 
-### Kalendarz
+Przed zapisaniem rezerwacji system sprawdza komplet warunków: czy klient istnieje w bazie,
+czy pojazd istnieje, czy nowy klient nie duplikuje kogoś już zapisanego, czy podano dane
+kontaktowe, czy stawki podatku na pozycjach są prawidłowe, czy tam gdzie trzeba podano cenę
+ręcznie i czy wybrany kolor rezerwacji jest dostępny. Rezerwacja albo powstaje kompletna,
+albo obsługa dostaje konkretną informację, czego brakuje.
 
-`GET /api/v1/calendar/events` zwraca jednorodny strumień zdarzeń: rezerwacje, wizyty,
-urlopy pracowników, zdarzenia własne (`/api/v1/calendar/events-custom`) oraz trasy Door‑to‑Door
-(`GET /api/v1/calendar/door-to-door`). Frontend renderuje je w FullCalendar 6 (widoki miesiąc /
-tydzień / dzień, drag & drop przez `@fullcalendar/interaction`).
+Każdą usługę można wycenić inaczej niż w cenniku: rabaty i narzuty procentowe, kwotowe
+doliczane do ceny netto lub brutto oraz całkowite nadpisanie ceny netto albo brutto.
+**Kwota wpisana przez pracownika jest wiążąca** — jeśli podał cenę brutto, system nie
+przelicza jej wstecz i nie „poprawia" o grosz. Pozornie drobiazg, ale eliminuje sytuację,
+w której klient widzi na dokumencie 200,99 zł zamiast uzgodnionych 201 zł.
 
-**Kolory rezerwacji** to osobny słownik per studio (`/api/v1/appointment-colors`) z operacjami
-tworzenia, edycji, archiwizacji, usuwania i ustawienia domyślnego koloru.
+**Terminy cykliczne**: dla klientów obsługiwanych regularnie można utworzyć całą serię wizyt
+naraz; pojedynczy termin da się odczepić i zmienić niezależnie, nie ruszając pozostałych.
+**Rezerwacja z zapytania**: zapytanie ofertowe zamienia się w rezerwację wraz z przygotowaną
+wyceną i zachowuje powiązanie ze źródłem, więc widać, ile z zapytań kończy się terminem.
 
-### Dostępność pracowników
+### Zmiany i odwołania
 
-Dostępność modelowana jest przez **urlopy i nieobecności** (`EmployeeLeave`) —
-`/api/v1/employees/{id}/leaves` oraz kalendarz urlopowy zespołu. Nieobecności nakładają się
-na kalendarz rezerwacji jako osobna warstwa zdarzeń. Osobno działa **ewidencja czasu pracy**
-(`/api/v1/my/worktime`, `/api/v1/worktime/team`) — wpisy dzienne, miesięczne okresy
-rozliczeniowe ze statusem, automatyczne liczenie nadgodzin (ponad 480 min/dzień).
+Rezerwację można w całości edytować (termin, zakres usług, pojazd, klient), zmienić jej stan,
+odwołać i przywrócić. Usunięcie ma dwa poziomy: **zwykłe** — wpis znika z widoków, ale zostaje
+w bazie i w historii — oraz **trwałe**, wymagające osobnego uprawnienia. Przy każdej rezerwacji
+można też włączyć lub wyłączyć przypomnienie SMS niezależnie od ustawień całego studia oraz
+nadać jej własny tytuł widoczny w kalendarzu.
 
-### Przyjęcie pojazdu (check‑in)
+### Kalendarz i dostępność zespołu
 
-Dwie ścieżki:
+Kalendarz pokazuje w jednym widoku wszystko, co zajmuje czas studia: rezerwacje, wizyty w toku,
+urlopy i nieobecności pracowników, zdarzenia własne (szkolenie, dostawa, przegląd sprzętu)
+oraz trasy odbioru i dowozu aut. Dostępne są widoki miesiąca, tygodnia i dnia, a terminy
+przesuwa się przeciągnięciem. Kolory rezerwacji to własny słownik studia — każde może zbudować
+swoją legendę (rodzaj usługi, stanowisko, priorytet), zarchiwizować nieużywane kolory
+i ustawić kolor domyślny.
 
-1. `POST /api/checkin/reservation-to-visit` — z istniejącej rezerwacji.
-2. `POST /api/checkin/walk-in` — klient „z ulicy", bez wcześniejszej rezerwacji.
+**Dostępność pracowników** wynika z ewidencji urlopów i nieobecności, nakładanej na kalendarz
+jako osobna warstwa — recepcja od razu widzi, że w danym dniu jednej osoby nie ma. Równolegle
+działa **ewidencja czasu pracy**: wpisy dzienne, miesięczne okresy rozliczeniowe zamykane
+po zatwierdzeniu i automatyczne wyliczanie nadgodzin ponad ośmiogodzinny dzień pracy.
 
-Przy przyjęciu rejestrowane są: przebieg, wydanie kluczy, wydanie dokumentów, uwagi z oględzin,
-notatki techniczne, zdjęcia oraz **mapa uszkodzeń** — punkty nanoszone na schemat pojazdu
-(`DamagePoint`, `DamageMarkingService`, obraz mapy generowany i zapisywany w S3).
+### Przyjęcie pojazdu
 
-**Mobilne wsparcie check‑inu przez QR**: `POST /api/checkin/{appointmentId}/upload-token` generuje
-token (TTL 3 h w Redisie); telefon pracownika otwiera `/m/upload`, robi zdjęcia i zaznacza uszkodzenia,
-a desktop dostaje aktualizacje przez WebSocket (`CheckinPhotoUploadedMessageListener`,
-`CheckinDamageUpdatedMessageListener`).
+Auto można przyjąć na dwa sposoby: z wcześniejszej rezerwacji albo bezpośrednio „z ulicy".
+W obu przypadkach rejestrowane są: przebieg, informacja o przekazaniu kluczy i dokumentów,
+uwagi z oględzin, notatki techniczne, zdjęcia oraz **mapa uszkodzeń** — punkty nanoszone
+na schemat nadwozia, z których powstaje trwały obraz dołączany do dokumentacji wizyty.
+To najważniejszy dokument dowodowy w ewentualnym sporze o rysę, której „wcześniej nie było".
 
-**Sesje zdjęciowe** (`/api/photo-sessions`): sesja ważna 2 h, maks. 20 zdjęć, upload bezpośrednio
-do S3 przez presigned URL, porzucone sesje sprząta `PhotoUploadSessionCleanupJob`.
+**Przyjęcie z telefonem w ręku**: pracownik skanuje kod QR i na swoim telefonie robi zdjęcia
+oraz zaznacza uszkodzenia, a komputer na recepcji aktualizuje formularz na bieżąco — nie trzeba
+przenosić plików ani wracać do biurka. Sesja zdjęciowa jest ważna dwie godziny i mieści
+do dwudziestu zdjęć; niedokończone sesje są automatycznie sprzątane.
 
-### Karta wizyty (`Visit`)
+### Karta wizyty
 
-Karta wizyty gromadzi:
+Karta wizyty jest kompletnym zapisem zlecenia. Zawiera **zamrożone dane pojazdu** (marka,
+model, numer rejestracyjny, numer nadwozia, rocznik, kolor) — późniejsza zmiana danych
+w kartotece nie przepisze historii. Poza tym: listę usług z cenami, zdjęcia i mapę uszkodzeń,
+komentarze zespołu, notatkę techniczną z **pełną historią zmian** (widać, kto i kiedy co
+poprawił), dokumenty i protokoły, planowaną i faktyczną datę zakończenia, datę odbioru
+oraz dziennik zdarzeń.
 
-- niezmienne snapshoty pojazdu (marka, model, rejestracja, VIN, rocznik, kolor),
-- listę pozycji usługowych z własnym cyklem akceptacji,
-- zdjęcia i mapę uszkodzeń,
-- komentarze (`/api/visits/{id}/comments` — dodawanie, edycja, usuwanie),
-- notatkę techniczną z **pełną historią zmian** (`/technical-note/history`),
-- dokumenty i protokoły,
-- planowaną i faktyczną datę zakończenia oraz datę odbioru,
-- dziennik zdarzeń (journal).
+> **Zmiana zakresu prac w trakcie wizyty.** Gdy w trakcie pracy okazuje się, że trzeba coś
+> dodać, usunąć albo zmienić cenę, zmiana nie wchodzi od razu w życie — trafia na listę
+> propozycji i czeka na akceptację. **Do wartości wizyty liczą się wyłącznie pozycje
+> potwierdzone**: nowa usługa czekająca na zgodę nie podbija kwoty, a zmieniona cena liczy się
+> jeszcze po starej stawce, dopóki klient jej nie zaakceptuje. Akceptacja może przyjść
+> od pracownika albo **bezpośrednio od klienta, SMS-em zwrotnym**. W obu przypadkach zostaje
+> ślad, kto i kiedy zgodził się na rozszerzenie prac.
 
-**Zmiana zakresu usług w trakcie wizyty** (`PATCH /api/visits/{id}/services/`) to osobny protokół:
-`ServicesChangePlanner` wylicza operacje `ADD` / `EDIT` / `DELETE`, a każda pozycja ma status
-`PENDING → APPROVED | REJECTED | CONFIRMED` z zapamiętanym snapshotem poprzednio potwierdzonej ceny.
-Do sum wizyty wliczane są tylko pozycje potwierdzone (pozycja `PENDING/ADD` nie podbija kwoty,
-pozycja `PENDING/EDIT` liczy się po starej cenie). Akceptacja może przyjść od pracownika
-(`/services/{id}/approve`, `/reject`) albo **od klienta SMS‑em zwrotnym** (patrz 2.2).
+### Wydanie auta
 
-### Zakończenie wizyty
+Kolejne kroki to: oznaczenie auta jako gotowego do odbioru (wysyła powiadomienie do klienta),
+wydanie pojazdu (tu powstają dokumenty sprzedaży i opcjonalnie faktura — patrz 2.6),
+odrzucenie zlecenia, archiwizacja oraz anulowanie wizyty, która nie została jeszcze rozpoczęta.
 
-- `POST /api/visits/{id}/mark-ready-for-pickup` — auto gotowe (wyzwala SMS/e‑mail „do odbioru").
-- `POST /api/visits/{id}/complete` — wydanie auta; tu powstają dokumenty finansowe i opcjonalnie
-  faktura KSeF (patrz 2.6).
-- `POST /api/visits/{id}/reject` — odrzucenie.
-- `POST /api/visits/{id}/archive` — archiwizacja.
-- `DELETE /api/visits/{id}/cancel` — anulowanie wizyty w wersji roboczej.
+### Karta wizyty dla klienta i sprzedaż dodatkowa
 
-### Karta wizyty dla klienta i upsell
+Klient dostaje link do prywatnej strony swojej wizyty, którą otwiera bez logowania
+i bez instalowania czegokolwiek. Widzi tam status swojego auta oraz usługi dodatkowe
+zaproponowane przez studio. Jedno kliknięcie „chcę" uruchamia potwierdzenie, po którym usługi
+dopisują się do zlecenia. Studio widzi, czy i kiedy klient otworzył kartę oraz czy link w ogóle
+do niego dotarł — to zamienia rozmowę „dzwoniliśmy, nie odbierał" w konkretną informację.
 
-`/api/v1/visits/{id}/card-link` generuje publiczny, tokenizowany link
-(`/vc/{token}`, `PublicVisitCardController`), który klient otwiera bez logowania. Widzi tam status
-swojego auta i zaproponowane usługi dodatkowe. Kliknięcie „Chcę" (`POST /{token}/upsell/request`)
-tworzy prośbę o zgodę; potwierdzenie klienta uruchamia `UpsellConsentConfirmedListener`,
-który dopisuje usługi do rezerwacji/wizyty. Odwiedziny karty są rejestrowane
-(`VisitCardViewRecorder`), a status wysyłki linku śledzi `VisitCardSendStatusService`.
+### Odbiór i dowóz auta
 
-### Door‑to‑Door
-
-Osobny moduł obsługi odbioru i dowozu auta (`/api/visits/{id}/door-to-door`) z adresem odbioru,
-adresem dostawy, notatkami i statusem: `SCHEDULED → IN_PICKUP → PICKED_UP → IN_DELIVERY → DELIVERED`.
-Trasy widoczne są jako osobna warstwa kalendarza.
+Dla studiów oferujących obsługę door-to-door dostępny jest osobny moduł z adresem odbioru,
+adresem dostawy, notatkami dla kierowcy i etapami: zaplanowane → w drodze po auto →
+auto odebrane → w drodze do klienta → dostarczone. Trasy pokazują się w kalendarzu jako osobna
+warstwa, więc planowanie dnia kierowcy odbywa się w tym samym miejscu co planowanie stanowisk.
 
 ---
 
-## 2.2 Komunikacja (SMS i e‑mail)
+## 2.2 Komunikacja — SMS i e-mail
 
-### Zasada nadrzędna
+> **Zasada nadrzędna.** Ustawienia komunikacji należą do studia, wszystkie automatyzacje są
+> **domyślnie wyłączone**, a reguła bez wpisanej treści nic nie wysyła. System nigdy nie
+> podstawia własnego tekstu za studio — dopóki właściciel nie przeczyta i nie zatwierdzi
+> treści, żadna wiadomość nie dotrze do klienta.
 
-Konfiguracja jest **per studio**, wszystkie reguły są **domyślnie wyłączone**, a pusty szablon
-oznacza brak wysyłki (`sendable = enabled && messageTemplate.isNotBlank()`). System nigdy nie podstawia
-tekstu zastępczego — jeśli studio nie napisało treści, wiadomość nie wychodzi.
+Każda wiadomość przechodzi przez wspólną bramkę sprawdzającą, czy studio ma wykupiony moduł
+uprawniający do danego rodzaju wysyłki: transakcyjnej (potwierdzenia, przypomnienia,
+powiadomienia o gotowości), marketingowej (kampanie) albo wewnętrznej (zaproszenie pracownika
+do złożenia podpisu). Każda wysłana wiadomość trafia do historii komunikacji widocznej zarówno
+na karcie klienta, jak i na karcie konkretnej wizyty.
 
-Każda wysyłka przechodzi przez `OutboundCommunicationGateway`, który sprawdza kategorię
-(`OutboundMessageCategory`) i wymagane uprawnienie abonamentowe:
+### Kiedy dokładnie wychodzi SMS
 
-| Kategoria | Wymagana zdolność |
-|---|---|
-| `TRANSACTIONAL` | `COMM_SEND_TRANSACTIONAL` (moduł SMS_EMAIL) |
-| `CAMPAIGN` | `COMM_SEND_CAMPAIGN` (moduł CAMPAIGNS) |
-| `SIGNATURE_ONBOARDING` | `SIGNATURE_LOCAL` (moduł e‑podpisów) |
+System sprawdza warunki co minutę, więc wiadomości wychodzą z dokładnością do minuty
+od zaplanowanego momentu.
 
-Każda wiadomość ląduje w `communication_log` (kanał, typ, treść, status, czas), widocznym
-na karcie klienta i karcie wizyty (`GetCustomerCommunicationHandler`, `GetVisitCommunicationHandler`).
+**Wiadomości powiązane z czasem:**
 
-### Automatyzacje SMS — kiedy dokładnie wychodzi wiadomość
-
-`SmsAutomationScheduler` uruchamia się **co minutę** (`0 * * * * *`) i dopasowuje zdarzenia
-w oknie ±60 sekund wokół wyliczonego czasu.
-
-**Reguły czasowe** (`SmsAutomationRule` — mają offset w minutach):
-
-| Trigger | Punkt odniesienia | Domyślny offset | Domyślny szablon |
+| Wiadomość | Liczona od | Domyślnie | Domyślna treść |
 |---|---|---|---|
-| `PRE_VISIT` | *przed* startem rezerwacji | 60 min | „Przypominamy o wizycie dnia {{data}} o godz. {{godzina}}. Do zobaczenia, {{imie}}!" |
-| `POST_VISIT` | *po* odbiorze auta (wizyta `COMPLETED`) | 30 min | „Dziękujemy za wizytę, {{imie}}! Mamy nadzieję, że jesteś zadowolony z usługi." |
-| `DELAYED_REMINDER` | *po* odbiorze auta | 90 dni (129 600 min) | „Cześć {{imie}}! Minęły 3 miesiące od Twojej ostatniej wizyty. Czas na kolejny detailing? Zapraszamy!" |
+| Przypomnienie o wizycie | *przed* umówioną godziną | 1 godz. | „Przypominamy o wizycie dnia {{data}} o godz. {{godzina}}. Do zobaczenia, {{imie}}!" |
+| Podziękowanie po wizycie | *po* odbiorze auta | 30 min | „Dziękujemy za wizytę, {{imie}}! Mamy nadzieję, że jesteś zadowolony z usługi." |
+| Zaproszenie po czasie | *po* odbiorze auta | 90 dni | „Cześć {{imie}}! Minęły 3 miesiące od Twojej ostatniej wizyty. Czas na kolejny detailing?" |
 
-Istotna decyzja projektowa: **tylko `PRE_VISIT` czyta rezerwacje**. `POST_VISIT` i `DELAYED_REMINDER`
-czytają wyłącznie **zakończone wizyty**, bo minięcie godziny rezerwacji nie dowodzi, że klient przyjechał.
-Rezerwacja bez check‑inu nigdy nie dostanie podziękowania ani przypomnienia po miesiącach.
+> **Decyzja o realnych konsekwencjach.** Tylko przypomnienie przed wizytą patrzy na kalendarz
+> rezerwacji. Podziękowanie i zaproszenie po miesiącach liczone są **od momentu, w którym
+> klient odebrał auto**, a nie od godziny w kalendarzu. Minięcie umówionej godziny nie dowodzi,
+> że klient przyjechał. Gdyby liczyć od rezerwacji, osoba, która się nie stawiła, dostałaby
+> podziękowanie za wizytę, której nie było — i to jest dokładnie ten rodzaj wiadomości, który
+> kosztuje studio klienta.
 
-**Reguły zdarzeniowe** (`SmsNotificationRule` — wysyłane natychmiast, bez offsetu):
+**Wiadomości wysyłane od razu po zdarzeniu:**
 
-| Trigger | Moment wysyłki | Domyślny szablon |
+| Wiadomość | Wychodzi, gdy… | Domyślna treść |
 |---|---|---|
-| `bookingConfirmation` | utworzenie rezerwacji | „Drogi/a {{imie}}, potwierdzamy rezerwację na {{data}} o godz. {{godzina}}. Czekamy na Ciebie!" |
-| `rescheduleConfirmation` | zmiana terminu rezerwacji | „…termin Twojej wizyty został zmieniony na {{data}} o godz. {{godzina}}…" |
-| `visitReadyForPickup` | przejście wizyty w `READY_FOR_PICKUP` | „…Twój pojazd {{pojazd}} {{rejestracja}} jest gotowy do odbioru. Zapraszamy!" |
-| `visitCardLink` | wysłanie linku do karty wizyty | „Karta Twojej wizyty {{numer_wizyty}} ({{pojazd}} {{rejestracja}}) jest dostępna tutaj: {{link}}" |
-| `reservationCardLink` | wysłanie linku do karty rezerwacji | „Szczegóły Twojej rezerwacji na {{data}} o godz. {{godzina}} znajdziesz tutaj: {{link}}" |
-| `upsellConsent` | propozycja usług dodatkowych | „Odpisz TAK, żeby do rezerwacji dodać usługi: {{uslugi}}. Łącznie {{kwota}} PLN brutto." |
-| `signatureRequest` | prośba o podpis na urządzeniu klienta | „Dokument „{{dokument}}" czeka na Twój podpis. Otwórz link… {{link}}" |
+| Potwierdzenie rezerwacji | umówiono termin | „…potwierdzamy rezerwację na {{data}} o godz. {{godzina}}. Czekamy na Ciebie!" |
+| Potwierdzenie zmiany terminu | przesunięto rezerwację | „…termin Twojej wizyty został zmieniony na {{data}} o godz. {{godzina}}…" |
+| Auto gotowe do odbioru | zakończono prace | „…Twój pojazd {{pojazd}} {{rejestracja}} jest gotowy do odbioru. Zapraszamy!" |
+| Link do karty wizyty | pracownik wysyła kartę | „Karta Twojej wizyty {{numer_wizyty}} … jest dostępna tutaj: {{link}}" |
+| Link do karty rezerwacji | pracownik wysyła szczegóły terminu | „Szczegóły Twojej rezerwacji na {{data}} … znajdziesz tutaj: {{link}}" |
+| Propozycja usług dodatkowych | studio proponuje rozszerzenie zakresu | „Odpisz TAK, żeby do rezerwacji dodać usługi: {{uslugi}}. Łącznie {{kwota}} PLN brutto." |
+| Prośba o podpis | dokument czeka na podpis klienta | „Dokument „{{dokument}}" czeka na Twój podpis… {{link}}" |
 
-**Przypomnienie „na żądanie"**: jeśli studio ma wyłączoną regułę `PRE_VISIT`, ale pracownik zaznaczył
-`sendReminderSms` na konkretnej rezerwacji, scheduler i tak wyśle przypomnienie — ze sztywnym
-offsetem 60 minut. Opt‑in pojedynczej rezerwacji nadpisuje przełącznik reguły, ale **nie** jej treść:
-bez skonfigurowanego szablonu nie ma czego wysłać.
+**Przypomnienie mimo wyłączonej automatyzacji.** Jeśli studio nie włączyło przypomnień
+na stałe, ale pracownik zaznaczył je przy konkretnej rezerwacji, wiadomość i tak wyjdzie —
+na godzinę przed terminem. Zaznaczenie przy pojedynczej rezerwacji przełamuje wyłącznik,
+ale nie tworzy treści: jeżeli studio nigdy nie napisało tekstu przypomnienia, nie ma czego wysłać.
 
-**Przypomnienie ręczne per wizyta** (`/api/visits/{id}/sms-reminder`): pracownik planuje pojedynczy SMS
-na wskazaną godzinę (`ScheduledSmsReminder`: `PENDING → SENT | FAILED | CANCELLED`). Treść można
-wygenerować modelem językowym (`SmsContentGeneratorService`) albo napisać ręcznie. Numer telefonu
-jest zamrażany w chwili planowania — późniejsza zmiana danych klienta nie wpłynie na zaplanowaną wysyłkę.
+**Pojedyncza wiadomość zaplanowana ręcznie.** Do każdej wizyty można zaplanować jeden SMS
+na wskazaną godzinę — na przykład informację, że lakier potrzebuje jeszcze doby na utwardzenie.
+Treść pracownik pisze sam albo prosi system o propozycję. Numer telefonu jest zapamiętywany
+w chwili planowania, więc późniejsza korekta danych klienta nie zmieni już zaplanowanej wysyłki.
 
-**Deduplikacja**: tabela `sms_send_log` ma unikalny indeks na `(appointment_id, trigger_type)`.
-Raz wysłany SMS danego typu dla danej rezerwacji nigdy nie wyjdzie drugi raz, nawet jeśli
-scheduler trafi w okno ponownie.
+**Ochrona przed dublowaniem.** Wiadomość danego rodzaju wychodzi dla danej rezerwacji dokładnie
+raz. Nawet jeśli warunki spełnią się ponownie, klient nie dostanie drugiego przypomnienia
+o tej samej wizycie.
 
-### SMS dwukierunkowy (2‑way)
+### SMS zwrotny od klienta
 
-Gdy pracownik zmienia zakres usług i zaznaczy „powiadom klienta", wychodzi SMS z prośbą o odpowiedź
-**„TAK"**. SMSAPI wysyła odpowiedź klienta webhookiem na `POST /api/sms/inbound`.
-`SmsConsentService` koreluje odpowiedź po numerze telefonu z rekordem `SmsConsentRequest`
-(`PENDING → CONFIRMED`, starsze żądania dla tej samej wizyty → `SUPERSEDED`) i **automatycznie
-zatwierdza wszystkie oczekujące pozycje usługowe** tej wizyty. To jest formalna zgoda klienta
-na rozszerzenie zakresu prac.
+Gdy pracownik zmienia zakres prac i zaznaczy „powiadom klienta", wychodzi wiadomość z prośbą
+o odpowiedź **„TAK"**. Odpowiedź wraca do systemu, zostaje dopasowana po numerze telefonu
+do właściwej wizyty i **automatycznie zatwierdza wszystkie czekające pozycje**. Jeśli
+w międzyczasie zakres zmienił się jeszcze raz, starsza prośba przestaje obowiązywać, żeby klient
+nie zatwierdził nieaktualnej listy. Powstaje udokumentowana zgoda na rozszerzenie prac —
+bez telefonu, bez papieru.
 
-### Nazwa nadawcy SMS
+### Nazwa nadawcy i budżet SMS
 
-Nie ma globalnej nazwy nadawcy. Nagłówek pochodzi z `sms_automation_configs.sms_sender_name`
-danego studia i jest używany **dopiero po** `sms_api_name_confirmed = true`. Studio bez potwierdzonego
-nagłówka wysyła w trybie ECO (z numeru SMSAPI, bez nazwy). Proces potwierdzenia obejmuje
-wygenerowanie **upoważnienia nadawcy SMS** (szablon `upowaznienie_nadawcy_sms.html` / PDF),
-podpisanie go elektronicznie w aplikacji lub wgranie skanu, po czym `SmsAuthorizationNotifier`
-wysyła dokument do weryfikacji u operatora.
+SMS może wychodzić z nazwą studia zamiast numeru, ale dopiero po formalnym potwierdzeniu
+u operatora. Do tego czasu wiadomości wysyłane są z numeru dostawcy. Proces potwierdzenia
+przeprowadzany jest w aplikacji: system generuje upoważnienie nadawcy, studio podpisuje je
+elektronicznie lub wgrywa skan, a dokument trafia do weryfikacji.
 
-### Kredyty SMS
+**Kredyty SMS** rozliczane są per studio. System pobiera kredyt przed wysyłką i zwraca go,
+jeśli operator zgłosi błąd. Kredyty można dokupić w pakietach, a nowe studio dostaje pulę
+startową. Brak środków blokuje wysyłkę — to twarda bramka, nie ostrzeżenie, więc nie da się
+przypadkiem wygenerować rachunku poza budżetem.
 
-`SmsCreditService` prowadzi saldo per studio z operacjami: `tryDeductCredit` (pobranie przed wysyłką),
-`refundCredit` (zwrot przy błędzie dostawcy), `grantStarterCredits` (pakiet startowy),
-`purchaseCredits` (zakup pakietu). Pakiety kupowane są przez Przelewy24.
-Brak środków blokuje wysyłkę — to twarda bramka, nie ostrzeżenie.
+### Automatyczne e-maile
 
-### Automatyzacje e‑mail
-
-`EmailAutomationConfig` — pięć reguł zdarzeniowych, każda z osobnym szablonem tematu i treści:
-
-| Reguła | Moment wysyłki |
+| Wiadomość | Wychodzi, gdy… |
 |---|---|
-| `visitWelcome` | przyjęcie pojazdu (check‑in) — potwierdzenie z numerem wizyty |
-| `visitReadyForPickup` | oznaczenie auta jako gotowego do odbioru |
-| `visitCardLink` | wysłanie linku do karty wizyty |
-| `reservationCardLink` | wysłanie linku do karty rezerwacji |
-| `batchOrderClose` | zamknięcie miesiąca dla kontrahenta (raport w załączniku) |
+| Potwierdzenie przyjęcia pojazdu | auto zostało przyjęte — z numerem wizyty, opcjonalnie z protokołem przyjęcia w załączniku |
+| Auto gotowe do odbioru | zakończono prace |
+| Link do karty wizyty lub rezerwacji | pracownik wysyła kartę klientowi |
+| Rozliczenie miesiąca dla kontrahenta | zamknięto okres rozliczeniowy — raport w załączniku |
 
-E‑maile transakcyjne wychodzą przez JavaMail (SMTP z STARTTLS). Do wiadomości `visitWelcome`
-może zostać dołączony wygenerowany protokół przyjęcia pojazdu (PDF).
+### Szablony i zmienne
 
-### Szablony i zmienne dynamiczne
+Każdy rodzaj wiadomości ma z góry określony zestaw zmiennych, których wolno w nim użyć.
+Szablon z nieznaną zmienną jest odrzucany **już przy zapisie**, z listą dopuszczalnych
+podpowiedzi w komunikacie. Nie zdarza się więc wysyłka, w której w miejscu imienia zostaje
+surowy nawias.
 
-`MessageTemplateKind` jest **zamkniętym katalogiem** — każdy rodzaj wiadomości deklaruje,
-których zmiennych wolno użyć. Szablon z nieznaną zmienną jest odrzucany **przy zapisie**
-(`ValidationException` z listą dostępnych zmiennych), więc `MessageTemplateRenderer` nigdy nie dostaje
-szablonu, którego nie umiałby wypełnić.
-
-Dostępne zestawy zmiennych:
-
-| Zestaw | Zmienne |
+| Grupa | Zmienne |
 |---|---|
-| Klient | `{{imie}}`, `{{nazwisko}}`, `{{imie_nazwisko}}` (tylko e‑mail) |
-| Termin | `{{data}}`, `{{godzina}}` |
-| Pojazd | `{{pojazd}}`, `{{rejestracja}}` |
-| Wizyta | `{{numer_wizyty}}` |
-| Link | `{{link}}` |
-| Upsell | `{{uslugi}}`, `{{kwota}}` |
-| Podpis | `{{dokument}}` |
-| Zlecenia zbiorcze | `{{kontrahent}}`, `{{okres}}`, `{{kwota_brutto}}`, `{{liczba_wpisow}}` |
-| Kampanie | `{{marka}}`, `{{model}}`, `{{ostatnia_usluga}}`, `{{data_ostatniej_wizyty}}`, `{{dni_od_wizyty}}` |
+| Klient | imię, nazwisko, imię i nazwisko *(to ostatnie tylko w e-mailach)* |
+| Termin | data, godzina |
+| Pojazd i wizyta | pojazd, numer rejestracyjny, numer wizyty |
+| Link i sprzedaż dodatkowa | link, lista usług, kwota, nazwa dokumentu |
+| Zlecenia zbiorcze | kontrahent, okres, kwota brutto, liczba wpisów |
+| Kampanie | marka, model, ostatnia usługa, data ostatniej wizyty, liczba dni od wizyty |
 
-Świadomie **nie ma** zmiennych opisujących samo studio (nazwa, telefon, adres, godziny otwarcia) —
-te dane studio zna i wpisuje w szablon jako zwykły tekst.
-
-Cztery wiadomości są celowo poza katalogiem i mają treść zaszytą w kodzie, bo dyktuje ją przepływ,
-a nie marketing: dwa SMS‑y o zmianie zakresu usług (z „Odpisz TAK" i wariant tylko informacyjny),
-e‑mail resetu hasła oraz e‑mail zaproszenia pracownika.
+Świadomie **nie ma** zmiennych opisujących samo studio — nazwy, telefonu, adresu czy godzin
+otwarcia. Te dane studio zna i wpisuje w szablon jako zwykły tekst; zmienna wnosiłaby tu tylko
+ryzyko pomyłki. Cztery wiadomości mają treść ustaloną na stałe, bo dyktuje ją przebieg sprawy,
+a nie marketing: dwie dotyczące zmiany zakresu usług, reset hasła i zaproszenie pracownika.
 
 ### Kampanie marketingowe
 
-Osobny moduł (`campaigns`) z dwoma rodzajami kampanii dzielącymi jeden model:
-**jednorazowe** (`DRAFT → SCHEDULED → SENDING → COMPLETED`, plus `CANCELLED`/`FAILED`) oraz
-**automatyczne** (`DRAFT → ACTIVE ⇄ PAUSED → ARCHIVED`). Kanał: `SMS`, `EMAIL` lub `BOTH`.
+Kampanie mają dwie odmiany, obsługiwane tak samo poza sposobem uruchomienia. **Jednorazowa**
+jest przygotowywana, planowana i wysyłana w wybranym momencie (świąteczna, okazjonalna).
+**Automatyczna** działa w tle i sama wyłapuje klientów spełniających warunek, na przykład
+„180 dni po powłoce ceramicznej"; można ją wstrzymać i wznowić. Kanał: SMS, e-mail albo oba.
 
-**Definicja grupy odbiorców** (`AudienceCriteria`, zapisywana jako JSONB) pozwala filtrować po:
-liczbie wizyt (min/max), dacie ostatniej wizyty (starsza/nowsza niż N dni), sumie przychodu brutto,
-użytych usługach (`anyOf` / `noneOf`), dacie ostatniego użycia usługi, marce i modelu pojazdu,
-roczniku, typie klienta (indywidualny/firma), dacie utworzenia klienta, a także ręcznym dodaniem
-i wykluczeniem konkretnych osób. Flaga `includeUnnamedCustomers` decyduje o klientach przyjętych
-„na numer telefonu" (kreator ustawia ją na `false` — wiadomość „Cześć !" szkodzi bardziej niż pomaga).
+**Dobór odbiorców** odbywa się przez filtry, które da się łączyć: liczba wizyt, jak dawno klient
+był ostatnio, ile łącznie zostawił w studiu, z jakich usług korzystał, a z jakich nie, kiedy
+ostatnio korzystał z danej usługi, marka i model auta, rocznik, klient prywatny czy firma,
+data pierwszej wizyty. Poszczególne osoby można dodać lub wykluczyć ręcznie. Osobny przełącznik
+decyduje, czy wysyłać do klientów zapisanych tylko z numeru telefonu, bez imienia — kreator
+domyślnie ich pomija, bo wiadomość zaczynająca się od „Cześć !" szkodzi bardziej, niż pomaga.
 
-**Wyzwalacz kampanii automatycznej** (`TriggerConfig`): lista usług + liczba dni po usłudze
-+ godzina wysyłki + opcja „tylko jeśli od tego czasu nie było wizyty".
+**Warunek uruchomienia kampanii automatycznej** to wybrane usługi, liczba dni po usłudze,
+godzina wysyłki oraz opcja pominięcia klientów, którzy w międzyczasie i tak już byli.
 
-**Zabezpieczenia wbudowane w silnik** (`CampaignEngine`, ustawienia domyślne):
+**Zabezpieczenia wbudowane w silnik wysyłki:**
 
-- **Godziny ciszy** 20:00–08:00 — wysyłka wpadająca w okno jest przesuwana na jego koniec
-  (okno może przechodzić przez północ).
-- **Limit częstotliwości** — domyślnie 7 dni między wiadomościami do tej samej osoby.
-- **Zgody marketingowe** — sprawdzane ponownie w chwili wysyłki, nie tylko przy budowaniu listy.
-- **Opt‑out** (`CampaignOptOutService`) ze źródłem: `SMS_STOP`, `EMAIL_LINK`, `MANUAL`.
-- **Stopki** SMS i e‑mail konfigurowane per studio.
-- **Kredyty SMS** — kreator pokazuje z góry, ilu odbiorców odpadnie i ile kredytów pochłonie kampania.
+- **Godziny ciszy** — domyślnie od 20:00 do 8:00. Wysyłka, która trafiłaby w to okno, jest
+  przesuwana na jego koniec. Nikt nie obudzi klienta SMS-em o drugiej w nocy.
+- **Limit częstotliwości** — domyślnie jedna wiadomość na siedem dni do tej samej osoby,
+  niezależnie od tego, ile kampanii ją obejmuje.
+- **Zgody marketingowe** sprawdzane ponownie w chwili wysyłki, a nie tylko przy budowaniu
+  listy — zgoda cofnięta wczoraj działa dziś.
+- **Rezygnacja** odnotowywana bez względu na źródło: odpowiedź STOP, kliknięcie w e-mailu
+  albo ręczne oznaczenie przez pracownika.
+- **Przejrzystość kosztu** — kreator na każdym kroku pokazuje, ilu klientów pasuje do filtrów,
+  ilu odpadnie (brak zgody, brak numeru, limit) i ile kredytów pochłonie wysyłka.
+- **Stopki** SMS i e-mail ustawiane raz dla całego studia.
 
 ---
 
-## 2.3 Skrzynka poczty i social media
+## 2.3 Skrzynka poczty i kontakty
 
-### Centralna skrzynka odbiorcza (moduł `comms`)
+> **Ustalenie faktyczne.** Centralna skrzynka obsługuje **pocztę e-mail**. Nie ma w systemie
+> integracji z wiadomościami prywatnymi Instagrama ani innego komunikatora — Instagram
+> występuje wyłącznie jako narzędzie obserwacji konkurencji i przygotowywania postów
+> (patrz 2.9). Kanałem „z internetu" wpiętym dziś do skrzynki są formularze kontaktowe
+> ze strony WWW, które przychodzą jako poczta i są rozpoznawane automatycznie.
 
-**Zakres rzeczywisty: e‑mail (IMAP/SMTP).** W kodzie nie ma integracji z wiadomościami prywatnymi
-Instagrama ani żadnego innego komunikatora — Instagram występuje wyłącznie jako moduł monitoringu
-konkurencji i generowania postów (patrz 2.9). Kanały społecznościowe wpięte do skrzynki to na dziś
-kanał pocztowy plus formularze WWW wpadające na skrzynkę jako e‑mail.
+### Podłączenie skrzynki
 
-**Podłączanie skrzynki** (`/api/v1/mailbox`):
-`POST /accounts/detect` wykrywa dostawcę (`MailAutodiscoverService`) i typ połączenia
-(`GOOGLE_API`, `MS_GRAPH`, `IMAP_SMTP`) oraz metodę uwierzytelnienia (`OAUTH2`, `PASSWORD`,
-`APP_PASSWORD`), żeby onboarding od razu skierował użytkownika na ekran zgody zamiast pytać o hasło.
-Hasła skrzynek są szyfrowane **AES‑GCM** kluczem `MAILBOX_ENCRYPTION_KEY`; bez ustawionego klucza
-podłączenie skrzynki kończy się błędem, a nie zapisem słabo chronionych danych.
-Konto ma status `ACTIVE | AUTH_FAILED | DISABLED`.
+Studio podaje swój adres, a system sam rozpoznaje dostawcę i sposób logowania — jeśli poczta
+wymaga zgody przez okno dostawcy, onboarding od razu prowadzi na ten ekran zamiast pytać
+o hasło. Hasła skrzynek są przechowywane w postaci zaszyfrowanej; jeżeli klucz szyfrujący
+nie jest skonfigurowany, podłączenie skrzynki kończy się błędem, a nie zapisem hasła w słabo
+chronionej formie. Konto może być aktywne, wymagać ponownego zalogowania albo zostać wyłączone.
 
-**Silnik synchronizacji**:
-- `ImapIdleWatcher` — nasłuch IMAP IDLE (poczta pojawia się bez odpytywania),
-- `ImapSyncEngine` + `CommsIngestService` — pobranie i zapis,
-- `MimeEmailParser` — parsowanie MIME, załączniki wraz z obrazami inline (`cid:`),
-- `EmailHtmlSanitizer` — sanityzacja HTML przed wyświetleniem,
-- `EmailTextCleaner` (jsoup) — usuwanie cytowanej historii i stopek przed zapisem i przed wywołaniem LLM,
-- `CommsOutboxProcessor` — idempotentna kolejka operacji zwrotnych do IMAP:
-  `MARK_SEEN` (ustawienie flagi `\Seen`) i `APPEND_SENT` (dopisanie wysłanej wiadomości do folderu Wysłane).
+### Jak działa synchronizacja
 
-**Stan przeczytania** jest dwukierunkowy: `CommReadSource` rozróżnia, czy wiadomość została otwarta
-w CRM‑ie, czy flaga `\Seen` przyszła z serwera (telefon, webmail). Odczyt w telefonie gasi
-nieprzeczytane w CRM‑ie i odwrotnie.
+System nasłuchuje na serwerze pocztowym, więc nowa wiadomość pojawia się w skrzynce od razu,
+bez odpytywania co kilka minut. Wiadomości są rozkładane na treść i załączniki (razem
+z obrazkami osadzonymi w treści), przechodzą oczyszczenie z niebezpiecznego kodu, a przy zapisie
+odcinana jest cytowana historia i stopka — na liście wątków widać samą nową treść, a nie ścianę
+powtórzeń.
 
-**Funkcje skrzynki** (`/api/v1/comms`):
-wątki z paginacją i wyszukiwaniem, szczegóły wątku, oznaczanie wątku/wiadomości jako przeczytanych,
-wysyłka i odpowiedź, pobieranie i podgląd inline załączników, etykiety (tworzenie, usuwanie,
-przypisanie do wątku), archiwizacja wątku, wątki powiązane z tym samym kontaktem,
-**podpisy użytkowników** (`/signature` — osobisty podpis pod wiadomościami)
-oraz **korekta treści przez AI** (`POST /proofread`, `MailProofreadService`).
+**Stan przeczytania działa w obie strony.** Jeśli pracownik otworzy wiadomość w telefonie,
+w systemie przestanie ona być nieprzeczytana — i odwrotnie. Wysłane odpowiedzi lądują też
+w folderze „Wysłane" na serwerze, więc historia korespondencji jest kompletna niezależnie
+od tego, gdzie ktoś do niej zajrzy.
 
-**Detekcja poczty automatycznej** (`AutomatedMailDetector`) na podstawie nagłówków list/auto‑reply
-odsiewa newslettery i autorespondery od realnych zapytań.
+**Rozpoznawanie poczty automatycznej** odsiewa newslettery i autorespondery od realnych
+zapytań, żeby lista spraw do obsługi nie zapełniała się rzeczami, na które nikt nie odpowiada.
 
-### Powiązanie konwersacji z klientem
+### Praca w skrzynce
 
-To jest oś modułu. `GetContactCardHandler` (`GET /comms/contact-card?email=…`) buduje **kartę kontaktu**
-z adresu e‑mail nadawcy: dopina klienta z bazy CRM, jego pojazdy, historię wizyt i wartość.
-`GET /comms/threads/{id}/contact-badges` pokazuje w wątku plakietki mówiące, kim jest rozmówca
-(klient / lead / nieznany). `GET /comms/threads/{id}/related` zbiera pozostałe wątki tej samej osoby.
+Dostępne są: wątki z wyszukiwaniem, oznaczanie jako przeczytane, odpowiadanie i wysyłanie
+nowych wiadomości, podgląd i pobieranie załączników, etykiety własne, archiwizowanie wątków,
+**osobiste podpisy** każdego pracownika oraz **korekta treści** — system poprawia styl i błędy
+przed wysłaniem odpowiedzi.
 
-**Notatki kontaktowe** (`/comms/notes`, `ContactNoteService`) prowadzone są per adres e‑mail,
-z pełną historią zdarzeń (`/comms/notes/history`).
-**Insighty kontaktu** (`GetContactInsightsHandler`) podsumowują korespondencję.
+### Konwersacja przypięta do klienta
 
-**Lead z wątku**: `MarkThreadAsLeadHandler` zamienia rozmowę w leada. Lead e‑mailowy **nie kopiuje
-wiadomości** — wskazuje na `threadId`, więc historia leada *jest* wątkiem (bez duplikacji i synchronizacji).
+To jest sedno modułu. Na podstawie adresu nadawcy system buduje **kartę kontaktu**: kim jest
+ta osoba, jakie ma auta, kiedy była ostatnio i ile już u nas zostawiła. W wątku widać
+oznaczenie, czy piszący jest klientem, zapytaniem, czy kimś zupełnie nowym, a jednym
+kliknięciem można wyświetlić pozostałe wątki tej samej osoby. Do adresu można prowadzić
+**notatki** z pełną historią zmian — kontekst zostaje przy sprawie, nie w głowie jednej osoby.
 
-**Formularze WWW jako e‑mail**: `FormMailExtractionService` i `FormMailAutoLeadListener` rozpoznają
-wiadomości pochodzące z formularzy kontaktowych na stronie, wyciągają z nich pola i **automatycznie
-tworzą leada**. Konfiguracja źródeł formularzy: `/api/public/lead-forms` i sekcja „Formularze" w ustawieniach.
-Alternatywnie działa webhook bezpośredni: `/api/v1/leads/intake-webhooks` + `LeadIntakeService`.
+**Zapytanie z wątku**: rozmowę można zamienić w zapytanie ofertowe. Zapytanie e-mailowe
+nie kopiuje przy tym wiadomości — jego historia *jest* wątkiem, więc nie ma dwóch
+rozjeżdżających się wersji tej samej korespondencji.
 
-**Połączenia przychodzące** (`/api/v1/inbound/calls`) to równoległy kanał: rejestracja połączenia,
-przyjęcie (`AcceptCallHandler` z walidatorami „połączenie istnieje" / „nie zostało już obsłużone"),
-odrzucenie, aktualizacja. Wpina się w tę samą kartotekę klienta.
+**Formularze ze strony WWW** są rozpoznawane automatycznie: system wyciąga z takiej wiadomości
+pola formularza i **sam zakłada zapytanie**, zamiast zostawiać je jako kolejny e-mail
+do przeczytania. Formularz można też wpiąć bezpośrednio, z pominięciem poczty.
 
-**Click‑to‑call**: kliknięcie numeru na desktopie wysyła web push na sparowany telefon pracownika
-(`RequestCallHandler`, VAPID), który od razu wybiera numer.
+**Połączenia przychodzące** prowadzone są w tej samej kartotece: rejestracja połączenia,
+przyjęcie, odrzucenie i uzupełnienie informacji. Działa też **wybieranie numeru z komputera** —
+kliknięcie numeru w systemie powoduje, że sparowany telefon pracownika dostaje powiadomienie
+i od razu dzwoni.
 
-### CardDAV — kontakty w telefonie
+### Kontakty w telefonie
 
-Osobny serwer CardDAV (`/.well-known/carddav`, `/api/v1/carddav/{tenantId}`) udostępnia bazę klientów
-studia jako książkę adresową telefonu. Eksportowani są aktywni klienci z numerem telefonu
-(`VCardFormatter`), autoryzacja przez **hasła aplikacyjne** (`carddav_app_passwords`, migracja V98),
-konfiguracja przez profil `.mobileconfig` (`MobileConfigBuilder`) i ekran
-„Synchronizacja kontaktów" w ustawieniach. Dzięki temu telefon pracownika pokazuje nazwisko klienta
-przy przychodzącym połączeniu.
+Baza klientów studia może być udostępniona telefonom pracowników jako książka adresowa,
+synchronizowana automatycznie. Eksportowani są aktywni klienci z numerem telefonu, a dostęp
+zabezpieczają osobne hasła urządzeń, które da się w każdej chwili unieważnić. Praktyczny efekt:
+przy przychodzącym połączeniu na ekranie telefonu pojawia się nazwisko klienta zamiast
+nieznanego numeru.
 
 ---
 
 ## 2.4 Karta klienta, historia i zdjęcia
 
-### Kartoteka klienta
+### Co widać na karcie klienta
 
-`GET /api/v1/customers/{id}/detail` zwraca pełną kartę:
+- Dane osobowe i firmowe — dane firmy można dopiąć i odpiąć bez usuwania osoby, więc klient
+  prywatny, który założył działalność, nie musi być zakładany od nowa.
+- Pojazdy klienta, przy czym jedno auto może mieć wielu właścicieli, a jedna osoba wiele aut —
+  model odwzorowuje realne sytuacje: auto firmowe, wspólne, sprzedane innemu klientowi studia.
+- **Historia wizyt** wraz z wykonanymi usługami.
+- **Podsumowanie przychodu** — ile ten klient łącznie zostawił w studiu.
+- Historia komunikacji: SMS-y, e-maile, wątki korespondencji i połączenia telefoniczne
+  w jednym miejscu.
+- Notatki, dokumenty, zgody wraz z ich aktualnym statusem oraz możliwość wysłania SMS-a
+  wprost z karty.
 
-- dane osobowe i firmowe (osobne endpointy `PATCH /company` i `DELETE /company` — dane firmowe
-  można dopiąć i odpiąć bez ruszania osoby),
-- pojazdy klienta (relacja M:N przez `vehicle_owners` — jedno auto może mieć wielu właścicieli,
-  jedna osoba wiele aut),
-- **historię wizyt** z wykonanymi usługami,
-- **podsumowanie przychodu** (`GET /revenue-summary`) — ile ten klient zostawił w studiu,
-- historię komunikacji (SMS, e‑mail, wątki poczty, połączenia),
-- notatki (`/api/v1/customers/{id}/notes`),
-- dokumenty (`/api/v1/customers/{id}/documents`),
-- zgody i ich status (`/api/v1/customers/{id}/consents`),
-- `POST /api/v1/customers/{id}/sms` — wysyłka SMS ad hoc z karty.
-
-Dane osobowe są chronione dwupoziomowo: uprawnienie `CUSTOMERS_VIEW` jest **uprawnieniem
-do danych osobowych**. Widoki warsztatowe (kalendarz, wizyty) działają bez niego, ale pola
-oznaczone `@Pii` są maskowane `"***"` na granicy serializacji (nagłówek `X-Pii-Access: masked`).
-Widoki osobowe (kartoteka, dokumenty, faktury) bez tego uprawnienia zwracają 403 zamiast maskować.
+> **Ochrona danych osobowych.** Dostęp do danych osobowych jest osobnym uprawnieniem,
+> niezależnym od dostępu do samej pracy. Pracownik warsztatu bez tego uprawnienia normalnie
+> korzysta z kalendarza i kart wizyt, ale zamiast nazwiska i telefonu widzi gwiazdki. Widoki,
+> których sensem są dane osobowe — kartoteka klientów, dokumenty, faktury — nie są mu w ogóle
+> pokazywane. To rozróżnienie pozwala dać dostęp do systemu całemu zespołowi, nie oddając
+> bazy klientów.
 
 ### Kartoteka pojazdu
 
-`/api/v1/vehicles/{id}` — dane pojazdu, właściciele (`assign-owner` / `remove-owner`),
-historia wizyt pojazdu, rezerwacje, komentarze, notatki (`/notes`), dokumenty, zdjęcia (`/photos`),
-galeria pojazdu. Dodatkowo:
+Pojazd ma własną kartę: dane techniczne, właścicieli (przypisywanych i odpinanych), historię
+wizyt i rezerwacji, komentarze, notatki, dokumenty, zdjęcia i galerię. Auto można wyszukać
+po numerze rejestracyjnym. Marka i model wpisane przez pracownika są dopasowywane do katalogu
+pojazdów — do bazy trafia zawsze wartość słownikowa, nigdy surowy tekst z literówką, dzięki
+czemu statystyki po markach są wiarygodne. Pojazdy mają też przypisany segment, co pozwala
+różnicować cennik.
 
-- `LookupVehicleByPlateHandler` — wyszukiwanie po numerze rejestracyjnym,
-- `VehicleCatalogMatcher` + `VehicleMatchingAiConfig` — dopasowanie wpisanej marki/modelu
-  do słownika katalogowego (z pomocą LLM); w bazie nigdy nie ląduje surowy tekst od klienta,
-- `VehicleSegmentService` — segmentacja pojazdów (migracja V82),
-- `VehicleMetadataService` (`/api/v1/vehicle-metadata`) — słowniki marek i modeli.
+### Zdjęcia
 
-### Moduł zdjęć
+Zdjęcia funkcjonują w trzech powiązanych miejscach: przy **wizycie**, przy **pojeździe**
+(galeria zbiorcza wszystkich wizyt tego auta) oraz przy **wpisach zleceń zbiorczych**.
+Usunięcie zdjęcia wizyty wymaga osobnego uprawnienia — zdjęcia bywają jedynym dowodem
+w sporze i nie powinny znikać przez przypadek.
 
-Zdjęcia żyją w trzech powiązanych miejscach:
+Pliki trafiają do magazynu w chmurze bezpośrednio z urządzenia, co pozwala wgrywać serie zdjęć
+bez czekania, przy limicie 15 MB na plik. Przy zapisie zdjęcia z telefonu są automatycznie
+obracane do właściwej orientacji i powstają miniatury, dzięki czemu galeria otwiera się
+natychmiast również przy kilkuset zdjęciach.
 
-1. **Zdjęcia wizyty** — `GET/POST /api/visits/{id}/photos`, `DELETE …/photos/{photoId}`
-   (usuwanie wymaga osobnego uprawnienia `VISITS_MEDIA_DELETE`, bo zdjęcia bywają dowodem w sporze).
-2. **Zdjęcia pojazdu** — `/api/v1/vehicles/{id}/photos` plus zbiorcza galeria pojazdu.
-3. **Zdjęcia wpisów zleceń zbiorczych** — `/api/batch-orders/entries/{id}/photos`.
+**Galeria studia** to przekrojowy widok wszystkich zdjęć z filtrowaniem, przydatny przy
+szukaniu materiału na social media. **Tagi zdjęć** pozwalają opisać ujęcie, a system podpowiada
+oznaczenia już używane w studiu, żeby nie powstawało pięć wariantów tego samego słowa.
 
-Przechowywanie: **AWS S3**, upload bezpośredni przez presigned URL (backend nie przepuszcza bajtów
-przez siebie), limit 15 MB na plik. Przy zapisie normalizowana jest orientacja EXIF
-(`metadata-extractor`) i generowane miniatury (`thumbnailator`, `PhotoThumbnailService`,
-`ThumbnailBackfillJob` uzupełnia miniatury historycznych zdjęć).
-
-**Galeria studia** (`GET /api/v1/gallery`) to przekrojowy widok wszystkich zdjęć z filtrowaniem.
-**Tagi zdjęć** (`PUT /api/v1/photos/{id}/tags`, `GET /api/v1/photo-tags/suggestions`) pozwalają
-opisać ujęcie i podpowiadają tagi już używane w studiu (`GalleryTagService`).
-
-Historia zdjęć jest częścią dziennika audytu: akcje `PHOTO_ADDED` (waga niska)
-i `PHOTO_DELETED` (waga wysoka) są zapisywane z informacją kto i kiedy.
+Dodanie i usunięcie zdjęcia są odnotowywane w historii aktywności firmy — z tym, że usunięcie
+ma podwyższoną wagę i wyróżnia się na liście zdarzeń.
 
 ---
 
@@ -585,616 +546,506 @@ i `PHOTO_DELETED` (waga wysoka) są zapisywane z informacją kto i kiedy.
 
 ### Protokoły przyjęcia i wydania pojazdu
 
-**Szablony** (`/api/v1/protocol-templates`) w dwóch formatach:
+Studio wgrywa własne wzory dokumentów w dwóch formatach: **formularz PDF**, który przechodzi
+pełną ścieżkę — automatyczne wypełnienie danymi, podpis na tablecie i zapieczętowanie — oraz
+**dokument HTML**, wypełniany danymi i przeznaczony do podglądu i druku. Podpis na tablecie
+wymaga formatu PDF.
 
-- **PDF** z formularzem AcroForm — pełny pipeline: automatyczne wypełnienie, podpis na tablecie, pieczętowanie;
-- **HTML** z placeholderami `data-field` — wypełniany podstawieniem po stronie serwera, przeznaczony
-  do podglądu i druku (podpis tabletowy wymaga PDF).
+Wgrany wzór przechodzi **weryfikację**: system sprawdza, czy zawiera wszystkie wymagane pola.
+Dokument oczekuje na sprawdzenie, zostaje zatwierdzony albo odrzucony — odrzucony nie wejdzie
+do obiegu, więc nie zdarzy się przyjęcie auta na wzorze, w którym brakuje miejsca na przebieg.
 
-Szablon przechodzi **weryfikację pól wymaganych** (`ProtocolTemplateVerificationService`):
-`PENDING → VERIFIED | REJECTED`. Odrzucony szablon nie wejdzie do obiegu wizytowego.
+System dostarcza gotowe wzory: protokół przyjęcia, protokół wydania, zgody marketingowe,
+oświadczenie RODO i upoważnienie nadawcy SMS. Jeśli studio skasuje wzór potrzebny
+do przyjmowania aut, system go odtworzy — obsługa nigdy nie zostaje bez dokumentu.
 
-System dostarcza szablony domyślne (`protokol_przyjecia_pojazdu`, `protokol_wydania_pojazdu`,
-`zgody_marketingowe`, `oswiadczenie_rodo`, `upowaznienie_nadawcy_sms`), a
-`DefaultProtocolTemplateProvisioner` / `…BackfillRunner` / `…RefreshRunner` dbają, żeby każde studio
-je miało i żeby odzyskało szablon check‑inu, gdyby go skasowało.
+**Mapowanie pól** łączy pola formularza z danymi w systemie, dzięki czemu protokół wypełnia się
+sam: dane klienta, auta, przebieg, zakres usług. **Reguły** decydują, który dokument i na jakim
+etapie ma powstać, więc obsługa nie musi pamiętać, co drukować przy przyjęciu, a co przy
+wydaniu. Do protokołu dopisywana jest też ocena stanu wizualnego pojazdu.
 
-**Mapowanie pól** (`ProtocolFieldMapping`, `CrmDataResolver`) łączy pola formularza z danymi CRM.
-`GET /api/v1/protocol-crm-data-keys` zwraca listę dostępnych kluczy danych.
+### Podpis elektroniczny na tablecie
 
-**Reguły protokołów** (`ProtocolRule`, `/api/v1/protocol-rules`) decydują, który szablon i na jakim
-etapie (`ProtocolStage`) ma zostać wygenerowany. `POST /api/visits/{id}/protocols/generate`
-generuje komplet dokumentów dla wizyty; `POST …/protocols/{id}/visual-condition` dopisuje ocenę
-stanu wizualnego (migracja V89).
+Klient podpisuje palcem na tablecie ustawionym na recepcji ekranem w swoją stronę. Rozwiązanie
+jest zaprojektowane pod kątem jednego konkretnego zarzutu, który może paść w sądzie: „mój podpis
+został skopiowany i wklejony do innej umowy". Odpowiadają na to:
 
-### Podpis elektroniczny (eIDAS)
+1. **Podpis związany z konkretnym dokumentem.** W chwili wysłania prośby o podpis system wylicza
+   cyfrowy odcisk dokładnie tego dokumentu, który klient zobaczy. Odcisk jest liczony ponownie
+   przy wyświetleniu na tablecie i jeszcze raz przy przyjęciu podpisu. Jeśli treść zmieniłaby się
+   choćby o znak, podpis nie zostanie przyjęty. Klient podpisuje więc dokładnie to, co przeczytał.
+2. **Jednorazowość sesji.** Każda prośba o podpis ma jednorazowy kod, który zużywa się w chwili
+   złożenia podpisu. Przechwycenie i powtórzenie tej samej operacji jest niemożliwe.
+3. **Podpis bez tła.** Kreski są zapisywane na przezroczystym tle, więc podpisu nie da się
+   „wyjąć" i nałożyć na inny dokument bez śladu.
+4. **Natychmiastowe niszczenie danych.** Obraz podpisu istnieje wyłącznie w pamięci — do archiwum
+   trafia tylko gotowy, zapieczętowany dokument. Tablet zaraz po wysłaniu, niezależnie od tego,
+   czy się udało, kasuje ze swojej pamięci obraz podpisu i treść dokumentu. Na urządzeniu
+   na recepcji nie zostaje nic.
+5. **Karta podpisu.** Do dokumentu dołączana jest strona ze ścieżką audytu: kiedy dokument
+   wystawiono, kiedy go wyświetlono, kiedy złożono podpis.
+6. **Pieczęć elektroniczna i znacznik czasu.** Gotowy dokument jest opatrywany kwalifikowaną
+   pieczęcią oraz niezależnym znacznikiem czasu, co potwierdza, że od momentu podpisania nic
+   w nim nie zmieniono.
 
-Moduł `signing` realizuje podpis odporny na zarzut „mój podpis skopiowano do innej umowy".
-Pełny opis znajduje się w `docs/EIDAS_TABLET_SIGNING.md`; kluczowe mechanizmy:
+**Podłączenie tabletu** zajmuje chwilę: pracownik generuje w ustawieniach sześciocyfrowy kod
+ważny pięć minut, a tablet go wpisuje. Połączenie nie wygasa samo — kończy je wyłącznie
+odłączenie urządzenia w ustawieniach, więc nikt nie musi parować tabletu co miesiąc. Pojedyncza
+sesja podpisu wygasa po piętnastu minutach.
 
-1. **WYSIWYS** — przy kliknięciu „Poproś o podpis" backend liczy SHA‑256 nad dokładnymi bajtami
-   wypełnionego PDF‑a z S3 i zapisuje go w `SignatureRequest.documentSha256`.
-   Przy wydaniu dokumentu na tablet bajty są hashowane **ponownie** (nagłówek `X-Document-Sha256`) —
-   jeśli obiekt w S3 zmienił się od utworzenia żądania, dokument nie zostanie wyświetlony.
-   Przy submicie wymagana jest **potrójna zgodność**: hash z tabletu = hash żądania = hash bajtów
-   pobranych ponownie z magazynu, porównywana stałoczasowo (`MessageDigest.isEqual`).
-2. **Anty‑replay** — jednorazowy challenge w Redisie zużywany atomowo (`GETDEL`).
-   Przechwycony pakiet nie da się odtworzyć.
-3. **Podpis bez tła** — rysowany na w pełni przezroczystym canvasie, eksportowany jako PNG z kanałem alfa.
-4. **RAM‑only** — obraz podpisu istnieje wyłącznie w pamięci; do S3 trafia **tylko zaplombowany PDF**.
-   Tablet po wysyłce (sukces i błąd) zeruje bufor PDF, niszczy dokument pdf.js i czyści canvas.
-5. **Karta Podpisu** (`AuditTrailPageGenerator`) — strona ze ścieżką audytu dołączana do dokumentu.
-6. **Kwalifikowana pieczęć PAdES** (CMS/CAdES, BouncyCastle) + **znacznik czasu RFC 3161**.
+Dokument można też wysłać klientowi **na jego własny telefon**, linkiem SMS — wymaga to jednak
+wykupionego zarówno modułu podpisów, jak i modułu komunikacji, bo link jedzie SMS-em. Osobno
+zbierane są **podpisy pracowników**: każdy składa go raz, przez link onboardingowy, po czym
+podpis pojawia się na dokumentach studia.
 
-**Parowanie tabletu**: pracownik generuje w ustawieniach 6‑cyfrowy kod (ważny 5 minut, jednorazowy),
-tablet wpisuje go w `POST /api/tablet/pair` i zapisuje token. Parowanie nie wygasa z upływem czasu —
-kończy je wyłącznie odłączenie urządzenia w ustawieniach (migracja V70).
-Sesja podpisu żyje 15 minut. Cykl statusów żądania obejmuje m.in. `DISPLAYED` (dokument pokazany klientowi).
+### Zgody klientów
 
-**Podpis na urządzeniu klienta**: `/api/public/signing` + link SMS‑em (`SMS_SIGNATURE_REQUEST`) —
-wymaga zdolności `SIGNATURE_REMOTE_REQUEST`, czyli e‑podpisów **i** modułu komunikacji.
+Zgoda jest dokumentem **trwałym**: klient podpisuje ją raz i obowiązuje do odwołania —
+w odróżnieniu od protokołu, który powstaje przy każdej wizycie. Zgoda deklaruje, których kanałów
+dotyczy (e-mail, SMS), przy czym **w danym momencie tylko jedna aktywna zgoda studia może
+obejmować dany kanał**, żeby nie powstała sytuacja dwóch sprzecznych zgód na tę samą rzecz.
 
-**Podpisy pracowników**: `/api/public/user-signature` + `UserSignatureLinkService` — pracownik
-podpisuje się raz przez link onboardingowy, podpis trafia potem na dokumenty studia.
+**Nowa wersja zgody** może wymagać ponownego podpisu albo nie. Jeśli nie wymaga, klienci, którzy
+podpisali starszą wersję, pozostają objęci zgodą i nie trzeba prosić ich ponownie. Jeśli wymaga —
+obowiązuje wyłącznie podpis pod aktualnym brzmieniem.
 
-### Zgody i RODO
+**Kiedy system wyśle wiadomość marketingową:**
 
-`ConsentDefinition` to zgoda **trwała**, podpisywana raz na klienta (w odróżnieniu od protokołu
-generowanego per wizyta), ważna do odwołania lub do publikacji wersji wymagającej ponownego podpisu.
+- Studio nie prowadzi żadnej zgody obejmującej dany kanał → wysyłka jest **dozwolona**.
+- Studio prowadzi zgodę na ten kanał → klient musi ją mieć ważną.
+- Klient nie ma ważnej zgody → wysyłka jest **wstrzymana**, a powód odnotowany, żeby dało się
+  ustalić, dlaczego kampania ominęła te osoby.
 
-Kluczowe pole: `marketingChannels: Set<MarketingChannel>` (`EMAIL`, `SMS`) — deklaruje, których
-kanałów zgoda dotyczy. **Najwyżej jedna aktywna zgoda studia może obejmować dany kanał.**
+**Odwołanie zgody** nie kasuje historii — zapisywana jest data cofnięcia, więc w razie kontroli
+widać zarówno, że zgoda była, jak i od kiedy przestała obowiązywać. Podpisane zgody
+przechowywane są w archiwum dokumentów, a każde nowe studio otrzymuje domyślną zgodę
+marketingową gotową do użycia.
 
-**Wersjonowanie**: `ConsentTemplate` z flagą `requiresResign`. `AddConsentVersionHandler` publikuje
-nową wersję. Zgoda jest „ważna", gdy klient podpisał aktualny szablon **albo** dowolny starszy,
-jeśli nowa wersja nie wymaga ponownego podpisu.
+**Retencja danych**: dane obserwowanych profili społecznościowych są automatycznie kasowane
+po 24 miesiącach, a wyprowadzone z nich wnioski po 12 miesiącach — usuwanie jest wpisane
+w system, nie zależy od pamięci administratora.
 
-**Bramka wysyłki** (`MarketingConsentChecker.canSend`):
-- studio nie ma żadnej aktywnej zgody obejmującej kanał → wysyłka dozwolona;
-- ma co najmniej jedną → klient musi mieć ważną zgodę na przynajmniej jedną z nich;
-- brak zgody → wysyłka zablokowana i zalogowana z kontekstem (WARN).
-
-**Odwołanie zgody**: `RevokeConsentHandler` — `revoked_at` zamiast kasowania rekordu (ślad audytowy).
-Podpisane zgody przechowywane są w S3 (`S3ConsentStorageService`);
-migracja V90 usunęła z systemu niepodpisane dokumenty zgód, a V87 uzupełniła załączniki historyczne.
-
-Studio dostaje domyślną zgodę marketingową automatycznie
-(`DefaultMarketingConsentProvisioner`, `DefaultMarketingConsentBackfillRunner`).
-
-**Retencja danych**: dane Instagrama są kasowane po 24 miesiącach (snapshoty) i 12 miesiącach
-(insighty) — zadanie cron `0 0 4 1 * *`, wprost opisane w konfiguracji jako wymóg RODO.
-
-### Dokumenty klienta i wizyty
-
-`/api/v1/customers/{id}/documents` oraz `/api/visits/{id}/documents` — repozytorium plików
-przypiętych do osoby i do zlecenia, ze wspólnym `DocumentStorageService` (S3).
-Usuwanie dokumentów wymaga uprawnienia `VISITS_DELETE`.
+**Dokumenty klienta i wizyty** tworzą wspólne archiwum plików przypiętych do osoby
+i do konkretnego zlecenia; usuwanie dokumentu wymaga uprawnienia do operacji nieodwracalnych.
 
 ---
 
 ## 2.6 Finanse, kasa i fakturowanie
 
-### Dokumenty przychodowe i kosztowe
+### Dokumenty sprzedaży i kosztów
 
-`FinancialDocument` (`/api/v1/finance/documents`) to rekord ewidencyjny CRM‑u — nie formalna faktura.
-Wymiary dokumentu:
+System prowadzi własną ewidencję przychodów i kosztów. Dokument opisany jest kilkoma wymiarami:
 
 | Wymiar | Wartości |
 |---|---|
-| `DocumentType` | `RECEIPT` (PAR — Paragon), `INVOICE` (FAK — Faktura), `OTHER` (DOK — Dokument) |
-| `DocumentDirection` | `INCOME` (Przychód), `EXPENSE` (Koszt) |
-| `DocumentStatus` | `PAID`, `PENDING`, `OVERDUE` |
-| `PaymentMethod` | `CASH`, `CARD`, `TRANSFER`, `BLIK_NA_NUMER`, `BLIK_TERMINAL`, `OTHER` |
-| `DocumentSource` | `VISIT` (z wizyty), `MANUAL` (ręcznie) |
+| Rodzaj | Paragon · Faktura · Dokument (inny) |
+| Kierunek | Przychód · Koszt |
+| Status | Opłacony · Oczekujący · Przeterminowany |
+| Metoda płatności | Gotówka · Karta · Przelew · BLIK na numer · BLIK terminal · Inne |
+| Pochodzenie | Z wizyty · Wprowadzony ręcznie |
 
-Dwie reguły wynikające z metody płatności: `TRANSFER` domyślnie tworzy dokument w statusie `PENDING`
-(reszta — `PAID`), a tylko `CASH` wpływa na saldo kasy (`affectsCashRegister()`).
-
-Wszystkie kwoty w groszach, z inwariantem `totalNet + totalVat == totalGross` sprawdzanym
-w konstruktorze domeny. Usuwanie jest miękkie (`deletedAt`), z możliwością przywrócenia
-(`POST /documents/{id}/restore`).
+Dwie reguły wynikają wprost z metody płatności. Płatność przelewem tworzy dokument
+**oczekujący**, bo pieniądze jeszcze nie wpłynęły — pozostałe metody od razu opłacony. Tylko
+płatność gotówką **wpływa na stan kasy**. Kwoty są pilnowane rachunkowo: suma netto i podatku
+musi zgadzać się z kwotą brutto, inaczej dokument w ogóle nie powstanie. Usunięcie jest
+odwracalne, więc pomyłkowo skasowany dokument da się przywrócić.
 
 ### Kasa
 
-`CashRegister` — dokładnie jedna kasa na studio, tworzona automatycznie przy pierwszej operacji
-gotówkowej. Saldo (`Money`, zawsze ≥ 0) jest wypadkową wpływów gotówkowych, wypływów gotówkowych
-i korekt ręcznych. Pełna historia w `CashOperation`.
-
-- `GET /api/v1/finance/cash` — stan kasy,
-- `GET /api/v1/finance/cash/history` — historia operacji,
-- `POST /api/v1/finance/cash/adjust` — wpłata / wypłata / korekta ręczna.
-
-Operacje kasowe wymagają uprawnienia `FINANCE_MANAGE_CASH_REGISTER` i trafiają do dziennika audytu
-w module `CASH_REGISTER`.
+Każde studio ma jedną kasę, zakładaną automatycznie przy pierwszej operacji gotówkowej. Stan
+kasy jest wypadkową wpływów gotówkowych, wypłat i korekt ręcznych, a pełna historia pokazuje,
+skąd wzięła się aktualna kwota. Obsługa ma dostęp do bieżącego stanu, historii operacji oraz
+do **wpłat, wypłat i korekt** — na przykład wypłaty na zakup materiałów albo wyrównania
+po przeliczeniu szuflady. Operacje kasowe wymagają osobnego uprawnienia i trafiają do historii
+aktywności firmy.
 
 ### Raporty finansowe
 
-- `GET /api/v1/finance/summary` — podsumowanie przychodów i kosztów w okresie,
-- `GET /api/v1/finance/payment-method-report` — rozbicie po metodach płatności,
-- `GET /api/v1/finance/income-documents` — rejestr dokumentów przychodowych z flagą
-  `hide_from_statistics` (migracja V77 — dokument można wyłączyć ze statystyk, nie kasując go),
-- `/api/v1/finance/duplicates` — wykrywanie duplikatów dokumentów (`DocumentDuplicateDetector`,
-  `DocumentDuplicateLink`, migracja V81),
-- `/api/v1/cost-categories` — kategorie kosztów, przypisania kosztów do kategorii
-  oraz **reguły automatycznego przypisania po dostawcy** (`SupplierAutoRuleEntity`).
+- Podsumowanie przychodów i kosztów w wybranym okresie.
+- Rozbicie wpływów po metodach płatności — ile poszło przez terminal, ile gotówką, ile przelewem.
+- Rejestr dokumentów przychodowych z możliwością **wyłączenia dokumentu ze statystyk bez
+  kasowania go** — przydatne przy fakturach korygowanych lub rozliczeniach wewnętrznych.
+- Wykrywanie dokumentów wprowadzonych dwukrotnie.
+- Kategorie kosztów wraz z **regułami automatycznego przypisania po dostawcy** — faktura
+  od stałego dostawcy chemii sama trafia do właściwej kategorii.
 
-### Fakturowanie i integracja z KSeF
+### Fakturowanie i KSeF
 
-Moduł KSeF działa **dwukierunkowo**.
+Integracja z Krajowym Systemem e-Faktur działa w obie strony.
 
-**A. Faktury przychodowe (wystawiane w CRM → wysyłane do KSeF)**
+**Faktury sprzedaży wystawiane w systemie.** Faktura jest budowana zgodnie z obowiązującym
+schematem, numerowana według ustawień studia i wysyłana do KSeF. Obsługiwane są stawki 23%, 8%,
+5%, 0% krajowe oraz zwolnione, z prawidłowym rozdzieleniem podstaw i kwot podatku. Podatek
+liczony jest metodą „w stu", gdy pracownik wpisał cenę brutto — kwota brutto pozostaje dokładnie
+taka, jaką uzgodniono z klientem.
 
-`POST /api/v1/ksef/revenue/invoices`. `Fa3XmlBuilder` buduje XML w schemacie **FA(3)**,
-`RevenueInvoiceNumberGenerator` nadaje numer, `KsefInvoiceSender` wysyła.
+| Stan faktury | Co oznacza dla obsługi |
+|---|---|
+| Do wysłania → Wysyłana → Przyjęta w KSeF | normalny przebieg, nic nie trzeba robić |
+| Odrzucona | KSeF zakwestionował dane — wymaga poprawy i ponowienia |
+| Czeka na ponowienie | KSeF był niedostępny; system sam dośle fakturę, najpóźniej następnego dnia roboczego |
+| Niewysłana | faktura jest kompletna, ale świadomie zatrzymana przez użytkownika — system nigdy nie wyśle jej sam |
 
-Obsługiwane stawki VAT z dokładnym odwzorowaniem schematu FA(3): 23 %, 8 %, 5 %, 0 % krajowe
-(kod P_12 `"0 KR"` — schemat nie dopuszcza samego „0"), `zw`. Agregaty trafiają do właściwych
-pól sekcji `Fa` (23 % → P_13_1/P_14_1, 8 % → P_13_2/P_14_2, 5 % → P_13_3/P_14_3,
-0 % krajowe → P_13_6_1, zw → P_13_7). VAT liczony metodą „w stu" wg art. 106e ust. 7 ustawy o VAT,
-zaokrąglenie HALF_UP.
+Rozróżnienie „niewysłana" od „czeka na ponowienie" jest celowe: pierwsze to decyzja, drugie
+to awaria. Automat zajmuje się wyłącznie awariami. Ponowna wysyłka jest możliwa dla faktur
+zatrzymanych, odrzuconych i czekających, ale nigdy dla już przyjętych — faktura nie może trafić
+do KSeF dwa razy.
 
-**Cykl życia wysyłki** (`KsefRevenueStatus`):
+Poza tym dostępne są: **faktury korygujące**, pobranie urzędowego potwierdzenia odbioru, kody QR
+do weryfikacji faktury, oznaczanie statusu zapłaty, notatki oraz roczne zestawienia sprzedaży.
 
-```
-PENDING → SENDING → SUBMITTED → ACCEPTED
-              ↘ REJECTED        (błąd walidacji KSeF — trwały, wymaga poprawy danych)
-    ↘ QUEUED_RETRY              (niedostępność KSeF — tryb offline24, dosyłka schedulerem)
-```
+> **Ochrona przed podwójnym fakturowaniem.** Jeżeli tę samą transakcję zafakturowano raz
+> w systemie, a raz poza nim (np. w biurze rachunkowym), system wyłapie parę faktur o tym samym
+> nabywcy, tej samej kwocie i zbliżonej dacie i zgłosi podejrzenie. **Nigdy nie scala ich ani
+> nie ukrywa automatycznie** — obie są prawnie wiążące. Decyzję podejmuje użytkownik:
+> potwierdza duplikat (wtedy nadmiarowa faktura jest wyłączana ze statystyk i trzeba ją
+> skorygować do zera) albo odrzuca alert jako fałszywy.
 
-Obok cyklu stoi `NOT_SENT`: faktura istnieje, ma numer i XML, ale użytkownik świadomie jej nie wysłał.
-Scheduler jej nie dotknie — „nie wysłano" to decyzja, nie awaria. Faktury pobrane z KSeF
-(`source = EXTERNAL`) są zawsze `ACCEPTED`, bo z definicji tam istnieją.
-Ponowienie jest możliwe ze statusów `PENDING`, `QUEUED_RETRY`, `REJECTED`, `NOT_SENT` —
-nigdy z `ACCEPTED` ani `SENDING` (idempotencja).
+**Faktury kosztowe pobierane z KSeF.** Co kwadrans system pobiera faktury zakupowe wystawione
+na studio, więc koszty pojawiają się bez ręcznego wprowadzania. Każdy koszt można wyłączyć
+ze statystyk lub przywrócić, oznaczyć jako zapłacony i opatrzyć notatką; koszty spoza KSeF
+(paragony, opłaty) dodaje się ręcznie. System pilnuje przy tym limitów zapytań narzuconych przez
+KSeF, żeby integracja nie została zablokowana w środku dnia.
 
-`KsefRevenueRetryScheduler` obsługuje tryb offline24 — dosyłkę najpóźniej następnego dnia roboczego.
+**Faktura przy wydaniu auta.** Pozycje mogą różnić się od usług na wizycie — pracownik może
+zmienić nazwy i kwoty, na przykład połączyć kilka czynności w jedną pozycję. Cenę podaje się
+netto albo brutto, zależnie od tego, jak uzgodniono z klientem. Jeśli faktura obejmuje tylko
+część kwoty (klient płaci część na firmę, część prywatnie), system wymaga wskazania metody
+płatności dla reszty i **sam wystawia drugi dokument** na pozostałą kwotę. To, czy faktura ma
+od razu iść do KSeF, decyduje ustawienie studia, które można nadpisać przy konkretnej wizycie.
+Wizyty bezpłatne nie generują dokumentów sprzedaży.
 
-Pozostałe operacje: **faktury korygujące** (`POST /invoices/{id}/corrections`, `RodzajFaktury = KOR`),
-pobranie XML i **UPO**, kody QR (`KsefQrCodeUrlBuilder`, host `qr.ksef.mf.gov.pl`),
-statusy płatności, notatki, statystyki roczne.
+### Pobieranie danych firmy po NIP
 
-**Wykrywanie podwójnego fakturowania** (`RevenueDuplicateDetector`): para faktur CRM + EXTERNAL
-o tym samym NIP nabywcy, tej samej kwocie brutto i bliskiej dacie. System **nigdy nie scala ani nie
-ukrywa faktur automatycznie** — obie są prawnie wiążące. Decyduje użytkownik:
-`CONFIRMED_DUPLICATE` (wykluczona ze statystyk, nadmiarową trzeba skorygować do zera) lub `DISMISSED`.
+Po wpisaniu numeru NIP system pobiera dane kontrahenta wprost z rejestru REGON: pełną
+i skróconą nazwę, formę prawną, kompletny adres, telefon, e-mail, stronę WWW, numer KRS, daty
+rozpoczęcia, zawieszenia i zakończenia działalności oraz informację, czy firma jest aktywna.
+Obsługa nie przepisuje danych z faktury ani ze strony klienta — i nie popełnia przy tym literówek
+w nazwie na fakturze.
 
-**B. Faktury kosztowe (pobierane z KSeF)**
+Integracja jest zabezpieczona na wypadek problemów po stronie rejestru: dane firm są
+zapamiętywane na dobę, nieudane zapytanie jest ponawiane, a przy dłuższej awarii system czasowo
+przestaje odpytywać rejestr i wraca do tego automatycznie. Efekt dla użytkownika: awaria
+zewnętrznego rejestru nie zawiesza wystawiania faktur. Dane trafiają do kartoteki klienta
+firmowego, do kontrahentów zleceń zbiorczych i na faktury.
 
-`KsefSyncScheduler` co 15 minut (pierwsze uruchomienie 60 s po starcie) pobiera faktury zakupowe
-(`KsefInvoiceXmlFetcher`, `KsefInvoiceXmlParser`, kursor synchronizacji `KsefSyncCursorEntity`).
-Zaimportowane koszty można: wykluczyć ze statystyk / przywrócić, oznaczyć status płatności,
-opatrzyć notatką. Można też dodać koszt ręcznie (`POST /api/v1/ksef/expenses`).
+### Płatności za system
 
-**Uwierzytelnienie i limity**: `/api/v1/ksef/credentials` (zapis, odczyt, usunięcie, weryfikacja
-tokenu przez `KsefTokenVerifier` — migracja V60), sesja cache'owana (`KsefSessionCache`).
-`MeteredKsefClient` + `KsefApiMetrics` pilnują wykorzystania okna limitów
-(16 zapytań/min, 64/godz. — najostrzejsze udokumentowane limity API).
-
-**C. Faktura przy zakończeniu wizyty**
-
-`CompleteVisitInvoiceOrchestrator` obsługuje zamknięcie wizyty z fakturą:
-pozycje faktury mogą różnić się od usług wizyty (użytkownik może zmienić nazwy i kwoty),
-cena podawana jest w trybie netto **albo** brutto (jedno z dwóch pól, kwota użytkownika jest
-źródłem prawdy). Jeśli suma pozycji faktury jest mniejsza niż kwota wizyty, system wymaga
-metody płatności dla **dokumentu na resztę** (np. paragonu) i tworzy go automatycznie.
-Flaga `sendToKsef` decyduje o natychmiastowej wysyłce; `null` oznacza domyślną odpowiedź studia
-(`StudioSettings.ksefAutoSendDefault`, migracja V79).
-Wizyty bezpłatne (suma zero) nie generują dokumentów przychodowych.
-
-### Integracja z GUS (BIR)
-
-`GET /api/v1/gus/company?nip=…` pobiera dane kontrahenta z rejestru REGON przez SOAP
-(usługa BIR). Zwracane dane: NIP, REGON, nazwa, nazwa skrócona, forma prawna, adres
-(ulica, nr budynku, nr lokalu, miasto, kod pocztowy, kraj), telefon, e‑mail, WWW, numer KRS,
-data rozpoczęcia / zakończenia / zawieszenia działalności, typ podmiotu
-(`LEGAL_PERSON` / `NATURAL_PERSON` / `LOCAL_UNIT_LEGAL` / `LOCAL_UNIT_NATURAL`) oraz status aktywności.
-
-Warstwa odpornościowa:
-- sesja GUS odświeżana co **55 minut** (wygasa po 60),
-- **cache Redis 24 h** (dane firm rzadko się zmieniają),
-- **retry** 3 próby z opóźnieniem początkowym 1 s,
-- **circuit breaker**: próg błędów 50 %, okno 10 wywołań, przerwa 60 s,
-- timeouty: połączenie 5 s, odczyt 15 s.
-
-Dane z GUS zasilają kartotekę klienta firmowego, dane kontrahentów zleceń zbiorczych
-i dane nabywcy na fakturze.
-
-### Płatności
-
-Przelewy24 (`/api/v1/payments/p24`, `CheckoutController`, `Przelewy24WebhookController`) obsługuje
-zakup abonamentu i pakietów SMS. Bez skonfigurowanych credentiali system automatycznie przechodzi
-w tryb mock (zamówienia realizowane natychmiast, bez wywołania P24).
+Abonament i pakiety SMS opłaca się przez bramkę płatniczą. W środowisku bez skonfigurowanej
+bramki zamówienia realizują się od razu, co pozwala testować cały przepływ bez realnych transakcji.
 
 ---
 
-## 2.7 Konta pracowników i moduł zadań
+## 2.7 Konta pracowników i zadania
 
-### Uwierzytelnienie
+### Dostęp do systemu
 
-- `POST /api/v1/auth/signup` — rejestracja studia, z walidatorami e‑maila, hasła
-  (`PasswordPolicy`), nazwy studia i akceptacji regulaminu.
-- `POST /api/v1/auth/login` — logowanie; sesja stanowa w Redisie, ciasteczko HttpOnly/SameSite=Strict.
-  `UserPrincipal` w sesji niesie `userId`, `studioId` i rolę.
-- **Reset hasła** — token ważny 30 minut, cooldown 60 s między żądaniami dla tego samego adresu,
-  link budowany na `FRONTEND_BASE_URL`.
-- **PIN** (`/api/v1/pin`) — szybkie przełączanie użytkownika na współdzielonym stanowisku
-  (`SwitchUserViaPinHandler`) bez pełnego wylogowania.
+- **Rejestracja studia** ze sprawdzeniem adresu e-mail, siły hasła, nazwy studia i akceptacji
+  regulaminu.
+- **Logowanie** z sesją, którą da się natychmiast unieważnić — odebranie dostępu zwolnionemu
+  pracownikowi działa od razu.
+- **Samodzielny reset hasła**: link ważny 30 minut, z minutową przerwą między kolejnymi prośbami.
+- **Kod PIN** do szybkiego przełączania osoby na wspólnym stanowisku — bez wylogowywania
+  i logowania od nowa, ale z zachowaniem informacji, kto faktycznie wykonał daną operację.
 
 ### Pracownicy
 
-`/api/v1/employees` — dane kadrowe (imię, nazwisko, telefon, e‑mail) oddzielone od konta logowania.
-Operacje na kontach: `ProvisionEmployeeAccountHandler` (założenie konta i wysłanie zaproszenia),
-`ChangeEmployeeAccountPasswordHandler`, `BlockEmployeeAccountHandler`, `DeleteEmployeeAccountHandler`.
-Osobno: urlopy i nieobecności (`/leaves` + kalendarz urlopowy) oraz ewidencja czasu pracy.
+Dane kadrowe są oddzielone od konta w systemie: można prowadzić pracownika w ewidencji,
+nie dając mu dostępu do aplikacji, i odwrotnie. Konto zakłada się osobno, wraz z wysłaniem
+zaproszenia; można też zmienić hasło, zablokować konto lub je usunąć. Do tego dochodzą urlopy
+i nieobecności z kalendarzem oraz ewidencja czasu pracy.
 
-### Role i uprawnienia (RBAC)
+### Role i uprawnienia
 
-Katalog uprawnień jest **zaszyty w kodzie** (`Permission.kt`) — administrator nie dodaje ani nie usuwa
-pozycji, tylko włącza je w rolach niestandardowych. Katalog jest skonsolidowany do **25 uprawnień**
-według zasady: checkbox istnieje tylko wtedy, gdy istnieje realna rola potrzebująca go bez sąsiednich.
+Lista uprawnień jest **zamknięta** — administrator nie wymyśla własnych, tylko składa z gotowych
+klocków role odpowiadające stanowiskom w studiu. Uprawnień jest 25 i każde istnieje dlatego,
+że da się wskazać realne stanowisko, które go potrzebuje bez sąsiednich.
 
-Model to **graf zależności**: drzewo (dziecko wymaga całej ścieżki przodków) **plus jawne implikacje**
-(`implies` — kody wymagane dodatkowo, także z innych modułów). Backend domyka zapisany zbiór do punktu
-stałego, więc rola nigdy nie jest niespójna — „tworzenie rezerwacji bez podglądu klientów"
-jest w tym modelu **niewyrażalne**.
+Uprawnienia są ze sobą **powiązane zależnościami**. Zaznaczenie jednego automatycznie włącza
+wszystkie, bez których byłoby bezużyteczne, a system domyka zapisany zestaw tak, żeby rola zawsze
+działała. Nie da się więc utworzyć roli „umawia wizyty, ale nie widzi klientów", która kończyłaby
+się komunikatem o braku dostępu przy pierwszym kliknięciu.
 
-Główny łańcuch modułu wizyt odwzorowuje przepływ recepcji:
+Główny łańcuch odwzorowuje przepływ pracy recepcji: **podgląd wizyt i kalendarza → podgląd danych
+osobowych → podgląd cen usług → umawianie i edycja wizyt**. Wszystkie operacje nieodwracalne —
+usuwanie wizyt, klientów, zdjęć — wiszą pod umawianiem: nie można usuwać tego, czego nie można
+tworzyć.
 
-```
-VISITS_VIEW → CUSTOMERS_VIEW → VISITS_SERVICE_PRICES_VIEW → VISITS_CREATE
-                                                                 ├── VISITS_DELETE
-                                                                 ├── VISITS_MEDIA_DELETE
-                                                                 └── CUSTOMERS_DELETE
-```
-
-Katalog uprawnień:
-
-| Moduł | Uprawnienia |
+| Obszar | Uprawnienia |
 |---|---|
-| Wizyty i kalendarz | `VISITS_VIEW`, `CUSTOMERS_VIEW`, `VISITS_SERVICE_PRICES_VIEW`, `VISITS_CREATE`, `VISITS_DELETE`, `VISITS_MEDIA_DELETE`, `CUSTOMERS_DELETE`, `BATCH_ORDERS` |
-| Finanse | `FINANCE_INVOICES`, `FINANCE_MANAGE_CASH_REGISTER`, `FINANCE_VIEW_REPORTS`, `FINANCE_EARNINGS_NOTIFICATIONS` |
-| Pracownicy | `EMPLOYEES_MANAGE`, `EMPLOYEES_PAYROLL` |
-| Komunikacja | `COMMUNICATION_SEND` |
-| Marketing | `MARKETING_MANAGE` |
-| Statystyki | `STATISTICS_VIEW` |
-| Leady | `LEADS_MANAGE` |
-| Zadania | `TASKS_VIEW`, `TASKS_MANAGE` |
-| Audyt | `AUDIT_VIEW` |
+| Wizyty i kalendarz | Podgląd wizyt i kalendarza · Podgląd danych osobowych · Podgląd cen usług w wizycie · Tworzenie i edycja wizyt oraz rezerwacji · Usuwanie wizyt i dokumentów · Usuwanie zdjęć · Usuwanie klientów i pojazdów · Zlecenia zbiorcze |
+| Finanse | Faktury i dokumenty przychodowe · Zarządzanie kasą · Podgląd raportów finansowych · Powiadomienia o zarobku po wizycie |
+| Pracownicy | Zarządzanie pracownikami i ich kontami · Płace |
+| Komunikacja i marketing | Wysyłanie wiadomości do klientów · Marketing i social media |
+| Pozostałe | Podgląd statystyk · Praca z zapytaniami · Podgląd i realizacja zadań · Tworzenie i przypisywanie zadań · Podgląd historii aktywności firmy |
 
-Decyzje warte odnotowania:
-- `BATCH_ORDERS` to **drugi korzeń bez rodzica** — stanowisko obsługi kontrahentów B2B nie potrzebuje
-  kalendarza studia ani kartoteki klientów detalicznych, i odwrotnie.
-- `FINANCE_EARNINGS_NOTIFICATIONS` jest osobnym korzeniem, a nie dzieckiem raportów: właściciel może
-  chcieć pushy z kwotą bez oddawania komukolwiek raportów, a księgowa raportów bez budzika.
-- `AUDIT_VIEW` nie może opierać się na uprawnieniu żadnego modułu, bo feed obejmuje zdarzenia
-  kadrowo‑płacowe i bezpieczeństwa; właściciel omija sprawdzenie z definicji.
-- Kalendarz i pojazdy **nie są** osobnymi obszarami uprawnień — zdarzenie kalendarza *jest* wizytą
-  lub rezerwacją, a pojazdy jadą na uprawnieniach wizyt i klientów.
-- Kody wycofane w restrukturyzacjach v4/v5 są mapowane przy odczycie (`legacyAliases`),
-  bez migracji SQL. `EMPLOYEES_VIEW` celowo nie ma następcy.
+**Rozstrzygnięcia warte uwagi:**
 
-Egzekwowanie: adnotacje `@RequiresPermission` / `@RequiresOwner` + `PermissionAuthorizationAspect`,
-z cache'em migawek uprawnień (`PermissionSnapshotCache`). Właściciel (OWNER) omija sprawdzenia.
+- **Zlecenia zbiorcze stoją osobno.** Osoba obsługująca kontrahentów B2B nie potrzebuje
+  kalendarza studia ani kartoteki klientów detalicznych — i odwrotnie, recepcja nie musi widzieć
+  stawek kontrahentów. To jedyne uprawnienie, które można nadać całkiem samodzielnie.
+- **Powiadomienie o zarobku to nie raport.** Właściciel może chcieć dostawać na telefon kwotę
+  po każdej zamkniętej wizycie, nie oddając nikomu wglądu w rozliczenia firmy. Osoba prowadząca
+  księgowość może chcieć raportów bez budzika przy każdym odbiorze auta. Oba układy da się ustawić.
+- **Historia aktywności jest osobnym uprawnieniem**, bo obejmuje zdarzenia kadrowo-płacowe
+  i bezpieczeństwa — nie może „przychodzić w pakiecie" z dostępem do jakiegokolwiek modułu.
+- **Kalendarz i pojazdy nie są osobnymi obszarami.** Wpis w kalendarzu *jest* wizytą albo
+  rezerwacją, a dostęp do aut wynika z dostępu do wizyt i klientów.
+- Właściciel ma dostęp do wszystkiego z definicji i nie podlega tym ograniczeniom.
 
-### Entitlementy — druga, niezależna bramka
+### Plany i moduły dodatkowe
 
-Obok uprawnień działa warstwa abonamentowa (`@RequiresFeature`, `@RequiresCapability`):
+Obok uprawnień działa druga, niezależna bramka: co studio ma wykupione. **Plan podstawowy**
+obejmuje kalendarz, wizyty, klientów, pojazdy, dokumenty i galerię. **Plan pełny** obejmuje
+wszystko. Poza tym dostępne są moduły dokupywane osobno: asystent przy obsłudze zapytań,
+monitoring konkurencji na Instagramie, automatyzacja kontaktu z klientem, kampanie marketingowe,
+podpisy elektroniczne, kontrola nad finansami i statystyki.
 
-- **Plany**: `BASIC` (Kalendarz, Wizyty, Klienci, Pojazdy, Dokumenty, Galeria) i `FULL` (wszystko).
-- **Dodatki** (`AddOnKey`): Asystent AI przy obsłudze leadów, Monitoring konkurencji na Instagramie,
-  Automatyzacja kontaktu (SMS i E‑mail), Kampanie marketingowe, Podpisy elektroniczne,
-  Kontrola nad finansami, Statystyki.
-- **Zdolności** (`CapabilityKey`) opisują reguły międzymodułowe, np. `SIGNATURE_REMOTE_REQUEST`
-  (prośba o podpis na urządzeniu klienta) wymaga e‑podpisów **i** modułu komunikacji, bo link jedzie SMS‑em;
-  `COMM_SMS_CREDITS` wymaga *któregokolwiek* z modułów zużywających SMS.
+Niektóre funkcje wymagają dwóch modułów naraz — prośba o podpis na telefonie klienta potrzebuje
+zarówno podpisów elektronicznych, jak i komunikacji, bo link jedzie SMS-em. Kredyty SMS są
+dostępne dla każdego modułu, który wysyła wiadomości. Zmiana planu obejmuje proporcjonalne
+rozliczenie różnicy, a obniżenie planu wchodzi w życie z końcem opłaconego okresu, nie od razu.
 
-Zarządzanie planem: `PlanManagementService`, `ProrationService` (proporcjonalne rozliczenie),
-`PlanDowngradeScheduler` (obniżenie planu na koniec okresu), `SubscriptionLifecycleScheduler`,
-`SubscriptionReconciliationJob`.
+### Zadania
 
-### Moduł zadań
+Zadanie ma tytuł, opis, status wykonania, autora i osobę, która je zamknęła, wraz z datami.
+Usunięcie jest odwracalne. **Przypisanie realizowane jest przez widoczność** — zadanie może być
+skierowane do wszystkich w studiu, do wskazanych osób albo do wszystkich pełniących określoną
+rolę (np. „wszyscy detailerzy"). Reguła jest jedna dla całego systemu: właściciel widzi wszystko,
+autor widzi swoje zadania, a poza tym decyduje wskazanie odbiorcy.
 
-`Task` — tytuł, opis (`meta`), status wykonania, autor, wykonawca, znaczniki czasu utworzenia,
-wykonania i usunięcia (usuwanie miękkie).
+- **Widok zespołowy**: lista zadań, archiwum wykonanych, tworzenie, edycja i usuwanie.
+- **Zadanie z nagrania głosowego** — pracownik dyktuje zadanie do telefonu, a system zamienia je
+  na wpis. Przydatne, gdy ktoś ma ręce w wosku i nie zapisze niczego ręcznie.
+- **Widok pracownika**: moje zadania, licznik nieprzeczytanych, oznaczanie jako przeczytane
+  i odhaczanie wykonania.
 
-**Widoczność zadania** (`TaskVisibilityType`) — to jest mechanizm przypisania:
+### Historia aktywności firmy
 
-| Typ | Kto widzi |
-|---|---|
-| `ALL` | wszyscy w studiu |
-| `USERS` | wskazane osoby (`visibleToUserIds`) |
-| `ROLE` | wszyscy z określoną rolą (`visibleToRoleId`) |
+Jeden wspólny dziennik odpowiada na pytanie: kto, co, kiedy i na jaką kwotę. Obejmuje klientów,
+pojazdy, wizyty, rezerwacje, usługi, zapytania, protokoły, zgody, połączenia, dane studia,
+użytkowników, finanse, kasę, pracowników, zadania, bezpieczeństwo i obsługę door-to-door.
+Zdarzenia mają przypisaną wagę — usunięcie wizyty wyróżnia się na liście inaczej niż dodanie
+komentarza — więc przeglądanie dziennika nie wymaga czytania wszystkiego po kolei.
 
-`TaskVisibility.isVisible` to jedno źródło prawdy, wspólne dla listy zespołowej i widoku „moje zadania":
-właściciel widzi wszystko → autor widzi swoje → dalej decyduje targetowanie.
-
-Endpointy:
-- `/api/v1/tasks` — lista, `GET /visibility-options` (kogo można wskazać), `GET /archive`
-  (archiwum wykonanych), tworzenie, edycja (`PATCH`), usuwanie;
-- `POST /api/v1/tasks/voice` — **utworzenie zadania z nagrania głosowego**
-  (multipart audio → Whisper `whisper-1`, język polski → tytuł zadania);
-- `/api/v1/my/tasks` — widok pracownika: moje zadania, `GET /summary` (licznik nieprzeczytanych),
-  `POST /mark-read`, `PATCH /{taskId}/done`.
-
-Nieprzeczytane zadania śledzi `TaskReadEntity` (per użytkownik), co zasila dzwonek powiadomień.
-
-### Dziennik aktywności (audyt)
-
-`/api/v1/audit` — jeden feed wszystkich zdarzeń w firmie: kto, co, kiedy i na jaką kwotę.
-Zdarzenia mają moduł (`AuditModule`: Klienci, Pojazdy, Wizyty, Rezerwacje, Usługi, Leady, Protokoły,
-Zgody, Połączenia przychodzące, Kolory rezerwacji, Studio, Użytkownicy, Finanse, Kasa, Pracownicy,
-Zadania, Bezpieczeństwo, Door to Door…), akcję (`AuditAction` — CRUD, zmiany statusu, operacje
-na zdjęciach, dokumentach, komentarzach, notatkach, usługach, protokołach) i **wagę**
-(`LOW` / `NORMAL` / `HIGH` / `CRITICAL` — np. usunięcie wizyty jest `CRITICAL`).
-
-Feed jest renderowany zdaniami w języku polskim (`AuditFeedRenderer`, np. „Zmieniono zakres usług"),
-z paginacją kursorową (`AuditFeedCursorCodec`) i kontekstem doklejanym przez `AuditContextResolver`.
-`AuditFieldCatalog` opisuje zmiany pól. Historia pojedynczego obiektu (wizyty, klienta, pojazdu)
-korzysta z tego samego dziennika.
+Wpisy są formułowane pełnymi zdaniami po polsku („Zmieniono zakres usług"), a historia
+pojedynczej wizyty, klienta czy pojazdu pochodzi z tego samego dziennika, więc nigdzie nie ma
+dwóch niezgodnych wersji zdarzeń.
 
 ---
 
 ## 2.8 Zlecenia zbiorcze
 
-Moduł B2B (`/api/batch-orders`) dla studiów obsługujących floty i podwykonawstwo.
-Jest celowo odcięty od kartoteki detalicznej — całość stoi na jednym uprawnieniu `BATCH_ORDERS`.
+Moduł dla studiów obsługujących floty, komisy i podwykonawstwo, gdzie rozliczenie odbywa się nie
+po każdym aucie, lecz raz na miesiąc, z całym kontrahentem. Jest świadomie odcięty od obsługi
+klienta detalicznego — pracownik obsługujący ten obszar nie musi widzieć kalendarza ani kartoteki.
 
-**Kontrahenci** (`BatchContractor`): nazwa, NIP, adres, osoba kontaktowa, e‑mail, telefon, notatki,
-flaga aktywności. CRUD pod `/contractors`.
+- **Kontrahenci**: nazwa, NIP, adres, osoba kontaktowa, e-mail, telefon, notatki i status
+  współpracy.
+- **Wpisy**: data usługi, marka, model, numer rejestracyjny, numer nadwozia, wykonane usługi
+  z kwotami i stawką podatku, notatki oraz informacja, czy wpis został już rozliczony.
+- **Własny cennik zleceń zbiorczych** — stawki dla kontrahentów bywają zupełnie inne niż
+  detaliczne, więc prowadzone są oddzielnie.
+- **Zdjęcia przy wpisie** — dokumentacja stanu auta z floty.
+- **Podpowiadanie pojazdów** zarówno z kartoteki, jak i z wcześniejszych wpisów tego kontrahenta:
+  przy dziesiątym aucie z tej samej floty wystarczy zacząć wpisywać numer rejestracyjny.
 
-**Wpisy zleceń** (`BatchOrderEntry`): data usługi, marka, model, numer rejestracyjny, VIN,
-**lista pozycji usługowych** (nazwa, netto, brutto, stawka VAT), notatki, flaga zamknięcia
-i powiązanie z historią zamknięcia. CRUD pod `/contractors/{id}/entries` i `/entries/{entryId}`.
+> **Odczyt numeru nadwozia ze zdjęcia.** Zamiast przepisywać siedemnastoznakowy numer VIN
+> z tabliczki, pracownik robi zdjęcie, a system odczytuje numer. Wynik jest twardo sprawdzany:
+> musi mieć dokładnie 17 dopuszczalnych znaków, w przeciwnym razie system nie zwraca nic i prosi
+> o ręczne wpisanie. Nigdy nie „dopowiada" brakującego znaku — błędny numer nadwozia
+> na rozliczeniu byłby gorszy niż jego brak.
 
-**Własny katalog usług zbiorczych** (`/services`) — odrębny od cennika detalicznego,
-z wyszukiwaniem (migracja V68).
+**Rozliczenie miesiąca:**
 
-**Zdjęcia wpisu** — `/entries/{id}/photos/upload-url` (presigned S3), lista, usuwanie.
-
-**Odczyt VIN ze zdjęcia**: `POST /vin/extract` przyjmuje zdjęcie tabliczki/szyby,
-`VinExtractionService` wysyła je do modelu multimodalnego, a wynik jest twardo walidowany —
-po odfiltrowaniu znaków spoza `[A-HJ-NPR-Z0-9]` musi mieć dokładnie 17 znaków, inaczej zwracany jest `null`.
-
-**Wyszukiwanie pojazdów**: `/vehicles/search` (po kartotece) i `/vehicles/search-entry`
-(po historii wpisów zbiorczych) — podpowiadanie przy wpisywaniu kolejnych zleceń tej samej floty.
-
-**Raport i zamknięcie miesiąca**:
-- `GET /contractors/{id}/report` — raport za okres (generowany dokument),
-- `POST /contractors/{id}/close-month` — zamknięcie okresu w jednym z dwóch trybów:
-  `ALL` (wszystkie wpisy z zakresu dat) lub `NEW_ONLY` (tylko jeszcze niezamknięte);
-  wynik: liczba wpisów, suma netto, suma brutto, opcjonalna wysyłka e‑maila do kontrahenta
-  (szablon `EMAIL_BATCH_ORDER_CLOSE` ze zmiennymi `{{kontrahent}}`, `{{okres}}`, `{{kwota_brutto}}`,
-  `{{liczba_wpisow}}`) z raportem w załączniku; adres można nadpisać jednorazowo,
-- `GET /contractors/{id}/close-history` — historia zamknięć,
-- `GET /close-history/{historyId}/snapshot` — **migawka raportu** dokładnie w postaci, w jakiej
-  została wysłana (dowód rozliczenia).
+- **Raport za okres** — zestawienie wykonanych usług dla kontrahenta.
+- **Zamknięcie okresu** w jednym z dwóch trybów: wszystkie wpisy z zakresu dat albo wyłącznie
+  te jeszcze nierozliczone. Wynikiem jest liczba wpisów, suma netto i brutto oraz opcjonalna
+  wysyłka raportu e-mailem do kontrahenta — na adres z kartoteki albo jednorazowo wskazany inny.
+- **Historia zamknięć** wraz z **zapisaną kopią raportu** dokładnie w tej postaci, w jakiej
+  został wysłany. Przy sporze o rozliczenie sprzed pół roku studio pokazuje dokładnie ten dokument,
+  który kontrahent dostał, a nie wygenerowany od nowa.
 
 ---
 
 ## 2.9 Śledzenie konkurencji
 
-Moduł monitoringu rynku obejmuje dwa obszary: **Instagram konkurencji** (wdrożony, aktywny)
-oraz **trendy wyszukiwania** (kod przygotowany, poza aktywnym drzewem źródeł).
+Obserwacja rynku obejmuje dwa obszary: **Instagram konkurencji** — działający i używany — oraz
+**trendy wyszukiwania**, przygotowane, ale jeszcze nieuruchomione.
 
-### Monitoring profili Instagram
+### Obserwacja profili konkurencji
 
-**Dodawanie profili** (`/api/v1/instagram`): studio dodaje profil do obserwacji
-(`AddInstagramProfileHandler`), profil przechodzi cykl `zatwierdzenie / odrzucenie`
-(`ApproveInstagramProfileHandler`, `RejectInstagramProfileHandler`), a jeden z profili można oznaczyć
-jako **własny** (`POST /{id}/mark-self`) — to on jest punktem odniesienia dla porównań.
-`POST /resync-failed` ponawia pobranie danych dla profili z błędem, z cooldownem 10 minut
-per studio (ochrona dziennego budżetu RapidAPI).
+Studio wskazuje profile, które chce śledzić; profil przechodzi zatwierdzenie, a jeden z nich
+oznacza się jako **własny** — to on staje się punktem odniesienia we wszystkich porównaniach.
+Jeśli pobranie danych dla profilu się nie powiedzie, można je ponowić ręcznie,
+z dziesięciominutową przerwą chroniącą dzienny limit zapytań.
 
-**Pobieranie danych**:
-- **sync tygodniowy (głęboki)** — cron `0 0 3 * * SUN`, do 8 stron historii (backfill do 31 stron),
-- **sync dzienny (lekki)** — cron `0 30 6 * * *`,
-- limity: 4 zapytania/s, twardy budżet 2000 wywołań na dobę (`RapidApiCallGate`),
-- dostawca przełączalny: `LOOTER` (`instagram-looter2`) lub `IG_SCRAPER5` (legacy).
-
-Dane zapisywane są jako **snapshoty w czasie**: `InstagramPostSnapshot` (posty),
-`InstagramProfileMetricsSnapshot` (metryki profilu), `InstagramProfileStatsWeekly` (statystyki tygodniowe).
-
-**Analityka** (`/api/v1/instagram` — kontroler analityczny):
-
-| Endpoint | Zawartość |
+| Pobieranie danych | Kiedy |
 |---|---|
-| `/overview` | przegląd; każda metryka jako `MetricTriple` = wartość + delta + benchmark (front nie pokazuje liczby bez kontekstu) |
-| `/benchmark` | porównanie profilu własnego z obserwowanymi |
-| `/benchmark/week-detail` | szczegóły tygodnia |
-| `/pulse` | **Puls konkurencji** — co się wydarzyło w oknie tygodnia |
-| `/content` | analiza treści |
-| `/content/heatmap` | mapa cieplna publikacji (dzień × godzina) |
-| `/hashtags` | analiza hashtagów |
-| `/suggestions` | sugestie per profil |
-| `/digest` | tygodniowy werdykt |
+| Pełna aktualizacja historii | w niedziele nad ranem |
+| Lekka aktualizacja dzienna | codziennie o 6:30 |
 
-**Puls konkurencji** (`CompetitorPulseService`) liczony jest **w całości w kodzie, bez modelu AI** —
-bez limitów i bez cache. Norma profilu wyznaczana jest z **26 tygodni** historii. Typy zdarzeń:
-`YOUR_POST`, `YOUR_SILENCE`, `ACCELERATION`, `SLOWDOWN`, `STANDOUT_POST`, `NEW_TOPIC`,
-`FOLLOWER_SPIKE`, `FOLLOWER_DROP`.
+Dane zapisywane są jako zdjęcia stanu w czasie — posty, liczba obserwujących, statystyki
+tygodniowe — dzięki czemu widać nie tylko „ile mają teraz", ale też jak to się zmieniało.
 
-**Werdykt tygodnia** (`WeeklyDigestService`) — dokładnie **jeden wpis na profil**
-(`DigestVerdict`: `SILENT`, `STANDOUT`, `ACCELERATED`, …), świadomie zamiast listy zdarzeń,
-która przy jednym ruchliwym koncie zalewała ekran. Narrację może wygenerować LLM
-(`instagram.report.ai.enabled=true`) z deterministycznym szablonem jako fallbackiem.
+**Co studio dostaje:**
 
-**Silnik insightów** (`InsightEngine`) — deterministyczne detektory z jawnymi progami, zamieniające
-dane w zdania „co się stało → dlaczego to ważne → co możesz zrobić". Zabezpieczenia przed szumem:
-deduplikacja po `(studio, dedup_key)`, **twardy limit 5 nowych insightów na studio na tydzień**
-(kandydaci sortowani wg ważności), a hipotezy (np. „podejrzenie kupionych obserwujących")
-zawsze oznaczone w treści jako przypuszczenie.
+| Widok | Zawartość |
+|---|---|
+| Przegląd | każda liczba pokazywana razem ze zmianą i punktem odniesienia — nigdy sama, bez kontekstu |
+| Porównanie | własny profil zestawiony z obserwowanymi, ze szczegółem wybranego tygodnia |
+| Puls konkurencji | lista tego, co wydarzyło się w minionym tygodniu |
+| Treść | analiza publikacji oraz mapa pokazująca, w które dni i godziny konkurencja publikuje |
+| Hashtagi, sugestie, werdykt tygodnia | używane oznaczenia, podpowiedzi dla własnego profilu, tygodniowe podsumowanie |
 
-**Klasyfikacja tematów** (`TopicClassificationService`, `InstagramPostTopic`) pozwala śledzić,
-o czym publikuje konkurencja i wykrywać nowe tematy.
+**Puls konkurencji** nie jest generowany przez model językowy — liczą go reguły z jawnymi
+progami, bez limitów i bez opóźnień. Za „normę" danego profilu przyjmuje się jego własne
+zachowanie z pół roku wstecz, więc porównanie dotyczy tego, jak konkurent zachowuje się względem
+siebie, a nie względem innych. Wychwytywane zdarzenia to: własny post, własne milczenie,
+przyspieszenie i spowolnienie publikacji, post wyraźnie powyżej normy, nowy temat oraz skok
+i spadek liczby obserwujących.
 
-### Generowanie postów przez AI
+**Werdykt tygodnia** to dokładnie jedno zdanie na profil — milczał, wyróżnił się, przyspieszył
+albo publikował jak zwykle. Świadomie zastąpił listę zdarzeń, która przy jednym aktywnym koncie
+zalewała ekran ośmioma wierszami o tym samym profilu.
 
-`/api/v1/instagram/ai/generate` — `InstagramPostGeneratorService` tworzy propozycję posta.
-Mechanizm **few‑shot** oparty na wektorach: `InstagramPostIndexingService` osadza posty
-(`text-embedding-3-small`, 1536 wymiarów) w pgvector (`instagram_post_vectors`, HNSW, cosine),
-a `InstagramInspirationService` dobiera przykłady. Reakcje studia na posty
-(`ReactToInstagramPostHandler`, `StudioInstagramPostReaction`) uczą system, co się podoba —
-zmiana reakcji publikuje `InstagramPostReactionChangedEvent` i przeindeksowuje przykłady.
-Endpointy diagnostyczne (`/ab-test`, `/negative-impact-test`, `/debug-generate`) są domyślnie wyłączone
-(`instagram.ai.debug-endpoints.enabled=false`).
+> **Ochrona przed zalewem wniosków.** Wnioski formułowane są prostym językiem według schematu
+> „co się stało → dlaczego to ważne → co możesz zrobić". Ten sam wniosek nie powstanie dwa razy,
+> a tygodniowo studio dostaje **najwyżej pięć nowych**, wybranych według ważności. Przypuszczenia —
+> na przykład „podejrzenie kupionych obserwujących" — są zawsze wprost oznaczone jako hipoteza,
+> nigdy jako fakt.
 
-### Trendy wyszukiwania (Growth Engine)
+### Przygotowywanie postów
 
-Frontend ma gotowy moduł `growth-engine` (widok trendów, sezonowość, historia fraz, podział
-na województwa) wołający `/trends/keywords`, `/trends/keywords/{k}/history`, `/trends/voivodeships/{k}`.
-Odpowiadający mu kod backendu (`SearchVolumeClient`, `DataForSeoConfig`, `KeywordSyncScheduler`,
-`TrendsReadController` — integracja **DataForSEO**) znajduje się w `src/main/resources/trends/`,
-czyli **poza kompilowanym drzewem źródeł**. Funkcjonalnie: śledzenie wolumenu wyszukiwań fraz
-detailingowych z podziałem na lokalizacje. **Status: przygotowane, nieaktywne w bieżącym buildzie.**
+System proponuje treść posta, ucząc się na przykładach: podobnych publikacjach, które wcześniej
+zadziałały. Reakcje studia na obserwowane posty (podoba się / nie podoba) wpływają na dobór
+inspiracji, więc propozycje z czasem lepiej trafiają w styl konkretnego studia.
+
+### Trendy wyszukiwania — status: przygotowane, jeszcze nieuruchomione
+
+Zaplanowany moduł pokazuje, ile osób szuka danej usługi detailingowej, jak zmienia się to w czasie
+i jak wygląda w podziale na województwa — czyli kiedy warto zwiększyć budżet reklamowy i na czym.
+Interfejs jest gotowy, a integracja z dostawcą danych o wyszukiwaniach przygotowana, ale nie jest
+częścią uruchomionej wersji systemu. Do włączenia potrzebna jest decyzja i wdrożenie.
 
 ---
 
 ## 2.10 Pozostałe funkcjonalności
 
-### Leady i lejek sprzedaży
+### Zapytania ofertowe i lejek sprzedaży
 
-`/api/v1/leads` — pełny moduł zapytań ofertowych.
+Zapytania trafiają do systemu z pięciu źródeł: korespondencji e-mail, formularza na stronie WWW,
+połączenia telefonicznego, nagrania głosowego z telefonu pracownika oraz wpisu ręcznego. Każde
+zapytanie ma przypisaną kategorię odpowiadającą temu, o co klient pyta: powłoka ceramiczna,
+folia ochronna i oklejanie, korekta lakieru, detailing wnętrza, mycie i pielęgnacja, pełny
+detailing lub inne.
 
-**Źródła leada** (`LeadSource`): wątek e‑mail, formularz WWW (auto‑detekcja z poczty lub webhook),
-połączenie telefoniczne, nagranie głosowe z aplikacji mobilnej, wpis ręczny.
+> **Powody, dla których zapytanie nie kończy się zleceniem.** Lista jest zamknięta, bo tylko taką
+> da się później zsumować. Kluczowe jest rozdzielenie dwóch rzeczy, które w bazie wyglądają tak
+> samo, a w rachunku zupełnie inaczej.
+>
+> **Realna strata:** za drogo · brak wolnego terminu · klient przestał odpowiadać · wybrał
+> konkurencję · za daleko od studia · tylko sprawdzał cenę · stan auta wyklucza usługę · sprzedał
+> albo zmienił auto · inny powód.
+>
+> **To nie była strata:** sami odmówiliśmy · poza zakresem usług · odłożył decyzję na później ·
+> spam. Wrzucenie odmów własnych do sumy strat kazałoby właścicielowi gonić przychód, którego
+> świadomie nie chciał — i psuło statystykę tym bardziej, im lepiej studio kwalifikuje zapytania.
+> „Odłożył decyzję" też nie jest stratą, tylko sprawą wciąż otwartą.
 
-**Kategoria zapytania** (`LeadCategory` — oś „o co pytają"): Powłoka ceramiczna, Folia PPF / oklejanie,
-Korekta lakieru, Detailing wnętrza, Mycie i pielęgnacja, Pełny detailing, Inne.
+Poza tym: wycena pozycjami z ceną zamrażaną w chwili przygotowania oferty, oznaczenia własne,
+notatki, **automatyczne rozpoznawanie auta z treści korespondencji** (do bazy trafia zawsze marka
+ze słownika, nigdy surowy tekst klienta), przypisanie opiekuna, alert o sprawie, która stoi
+w miejscu, **pomiar czasu pierwszej odpowiedzi** — jeden z najsilniejszych wskaźników
+skuteczności sprzedaży — oraz analityka całego lejka: skąd przychodzą zapytania, o co pytają,
+ile z nich zamienia się w zlecenia i dlaczego pozostałe nie.
 
-**Powody utraty** (`LeadLostReason`) — zamknięty słownik, bo tylko taki da się agregować.
-Kluczowe rozróżnienie: flaga `countsAsLoss` oddziela stracone pieniądze od zapytań, które nigdy
-nie były nasze.
+### Cennik i pakiety
 
-| Liczone jako strata | Nieliczone jako strata |
-|---|---|
-| Za drogo, Brak wolnego terminu, Klient przestał odpowiadać, Wybrał konkurencję, Za daleko od studia, Tylko sprawdzał cenę, Stan auta wyklucza usługę, Sprzedał albo zmienił auto, Inny powód | Sami odmówiliśmy, Poza zakresem usług, Odłożył decyzję na później, Spam / nie było zapytaniem |
-
-Uzasadnienie w kodzie: wrzucenie odmów własnych do sumy strat kazałoby właścicielowi ścigać przychód,
-którego świadomie nie chciał, i psułoby statystykę tym mocniej, im lepiej kwalifikuje leady.
-
-**Pozostałe mechanizmy leadów**: wycena pozycjami usługowymi z ceną zamrażaną w chwili przypisania
-(`LeadServiceItem`, `estimatedValue` w groszach), tagi z katalogiem (`LeadTagCatalog`, migracje V71/V74),
-notatki (V85), **automatyczne rozpoznawanie pojazdu z korespondencji**
-(`LeadVehicleExtractionService`, status `PENDING`/`DONE`, migracja V72 — w bazie ląduje wyłącznie
-wartość ze słownika pojazdów, nigdy surowy tekst klienta), przypisanie opiekuna, alert o zastoju
-(`stagnantAlertSentAt`), pomiar **czasu pierwszej odpowiedzi** (`firstResponseAt`, zasilany zdarzeniem
-`CommOutboundSentEvent` przez `LeadFirstResponseListener`), stan konwersacji
-(`LeadConversationStateService`) oraz analityka lejka (`/api/v1/leads/analytics`).
-
-### Katalog usług i pakiety
-
-`/api/v1/services` — cennik studia z walidacją nazwy, ceny i stawki VAT.
-**Zasada „always‑new‑ID"**: edycja usługi archiwizuje starą wersję (`is_active = false`) i tworzy nowy
-rekord, żeby historyczne wizyty nadal wskazywały na właściwe dane cenowe.
-Osobno obsługiwane są **pakiety usług** (`CreatePackageHandler`, `ServicePackageItem`).
+Cennik studia z kontrolą nazwy, ceny i stawki podatku. Przy edycji usługi **stara wersja jest
+archiwizowana, a nie nadpisywana** — dzięki temu wizyta sprzed roku nadal pokazuje cenę, która
+wtedy obowiązywała, i podwyżka cennika nie przepisuje historii ani statystyk. Osobno prowadzone
+są pakiety usług.
 
 ### Statystyki
 
-`/api/v1/statistics`:
-- `/overview` — przegląd,
-- `/breakdown` — rozbicie przychodu i liczby wizyt,
-- `/categories/{id}` i `/services/{id}` — statystyki kategorii i pojedynczej usługi,
-- `/periods/{period}/visits` — wizyty w okresie,
-- `/unassigned-services` — usługi nieprzypisane do żadnej kategorii (kontrola kompletności danych).
+Przegląd działalności, rozbicie przychodu i liczby wizyt w czasie, statystyki pojedynczej
+kategorii i pojedynczej usługi, lista wizyt z wybranego okresu oraz zestawienie **usług
+nieprzypisanych do żadnej kategorii** — kontrola, czy raporty obejmują całość obrotu. Kategorie
+usług są warstwą raportową nakładaną na cennik: właściciel sam decyduje, co składa się
+na „pielęgnację", a co na „korektę lakieru". Usługi wpisywane ręcznie, spoza cennika, również
+trafiają do statystyk, więc nie ma przychodu, który wypada z raportu.
 
-**Kategorie usług** (`/api/v1/service-categories`) to warstwa raportowa nakładana na cennik:
-przypisywanie usług hurtowo i pojedynczo, `ManualServiceRegistry` obsługuje usługi wpisywane ręcznie
-(spoza cennika), żeby i one trafiały do statystyk. Granulacja raportów: `Granularity`.
+### Pulpit
 
-### Pulpit (dashboard)
+Podsumowanie dnia: umówione terminy, przychód i najważniejsze wskaźniki, odświeżane na bieżąco
+bez przeładowywania strony. Osobno wyświetlane są **podpowiedzi** dotyczące niedokończonej
+konfiguracji (np. brak wgranego wzoru protokołu), które można zamknąć na stałe, gdy studio
+świadomie z czegoś nie korzysta.
 
-`/api/v1/dashboard` — podsumowanie dnia: rezerwacje (`GetDashboardReservationSummaryHandler`),
-przychód (`GetDashboardRevenueSummaryHandler`), wskaźniki operacyjne.
-**Podpowiedzi** (`/api/v1/dashboard/hints`) sugerują niedokończone konfiguracje; użytkownik może je
-odrzucić na stałe (`DashboardHintDismissalEntity`, migracja V97).
-`WebSocketEventBridge` odświeża pulpit w czasie rzeczywistym.
+### Powiadomienia na telefon
 
-### Powiadomienia push (PWA)
+System wysyła powiadomienia na sparowane telefony pracowników w dwóch sytuacjach: przy
+**wybieraniu numeru z komputera** oraz jako **informacja o zarobku** po każdej zamkniętej wizycie.
+Ta druga trafia wyłącznie do osób mających do tego uprawnienie, sprawdzane po stronie odbiorcy —
+nie ma znaczenia, kto zamknął wizytę, znaczenie ma, kto może poznać kwotę. Wysyłka nigdy nie
+blokuje pracy: awaria usługi powiadomień nie zamieni zamkniętej wizyty w błąd.
 
-`/api/v1/push` + `/api/v1/pwa` (manifest). Web Push zgodny z RFC 8292 (VAPID, własna implementacja
-`WebPushCrypto` / `WebPushSender`). Zastosowania:
-- **click‑to‑call** — kliknięcie numeru w CRM wywołuje telefon pracownika,
-- **powiadomienie o zarobku** po zamkniętej wizycie — wysyłane wyłącznie do osób z uprawnieniem
-  `FINANCE_EARNINGS_NOTIFICATIONS`, i to sprawdzane **per odbiorca**, nie per wykonawca akcji.
+### Telefon jako narzędzie pracy
 
-Wysyłka jest best‑effort i nigdy nie rzuca wyjątkiem — awaria usługi push nie może zamienić
-zamkniętej wizyty w błąd. Rotacja kluczy VAPID unieważnia wszystkie subskrypcje
-(telefony muszą sparować się od nowa), więc zmienia się je tylko przy wycieku.
-
-### Aplikacja mobilna pracownika
-
-Zestaw ekranów uruchamianych na telefonie po zeskanowaniu QR lub z „skrótów mobilnych":
-- `/m/upload` — zdjęcia i mapa uszkodzeń przy check‑inie,
-- `/m/voice` — **notatki i leady głosowe** (`/api/mobile/voice`): nagranie → Whisper (`whisper-1`, PL)
-  → lead albo notatka,
-- `/m/sig/:token` — podpis dokumentu,
-- `/call-device` — urządzenie do click‑to‑call.
-
-Dostęp przez `MobileTokenService` (tokeny krótkożyjące), bez pełnego logowania.
+Bez pełnego logowania, przez kod QR lub skróty na ekranie telefonu, pracownik ma dostęp do:
+robienia zdjęć i zaznaczania uszkodzeń przy przyjęciu auta, **dyktowania notatek i zapytań**
+(nagranie zamienia się w wpis w systemie), podpisywania dokumentów oraz obsługi wybierania numeru
+z komputera.
 
 ### Ustawienia studia
 
-Jeden ekran `/settings` z sekcjami: dane firmy, usługi, role i uprawnienia, zespół, kolory rezerwacji,
-dokumenty i zgody, faktury (KSeF), karta wizyty, numeracja wizyt (`VisitNumberGenerator`,
-konfiguracja z migracji V58/V59 — w tym losowa część numeru), etykiety skrzynki, formularze leadów,
-kredyty SMS, tablety do podpisu, mój podpis, synchronizacja kontaktów (CardDAV), bezpieczeństwo.
+Jeden ekran z sekcjami: dane firmy, cennik usług, role i uprawnienia, zespół, kolory rezerwacji,
+dokumenty i zgody, ustawienia faktur, karta wizyty dla klienta, sposób numerowania wizyt,
+etykiety skrzynki, formularze zapytań, kredyty SMS, tablety do podpisu, własny podpis,
+synchronizacja kontaktów z telefonem oraz bezpieczeństwo.
 
-### Konto demo
+### Konto demonstracyjne i zgłaszanie problemów
 
-`/api/v1/demo` — `DemoAccountService` + `DemoDataInitializer` zakładają konto demonstracyjne
-z wygenerowanymi danymi; `DemoCleanupJob` je sprząta.
+Konto demo z wygenerowanymi danymi pozwala pokazać system bez ryzyka wprowadzenia czegokolwiek
+do realnej bazy; dane demonstracyjne są automatycznie sprzątane. Problem można zgłosić z poziomu
+aplikacji — zgłoszenie trafia bezpośrednio do zespołu wsparcia.
 
-### Zgłoszenie problemu
+### Bezpieczeństwo
 
-`/api/v1/support/report-problem` — zgłoszenie błędu z poziomu aplikacji, wysyłane e‑mailem
-na adres z `REPORT_PROBLEM_EMAIL`.
+System ogranicza liczbę zapytań z jednego źródła, wysyła nagłówki zabezpieczające przeglądarkę,
+oznacza każdą operację identyfikatorem pozwalającym prześledzić ją w logach, kontroluje szczelność
+podziału między studiami oraz ukrywa dane osobowe przed osobami bez odpowiedniego uprawnienia —
+na poziomie, przez który nie da się przejść, obchodząc interfejs.
 
-### Bezpieczeństwo aplikacji
+### Monitoring i analityka użycia
 
-- `RateLimitFilter` — ograniczenie liczby żądań,
-- `SecurityHeadersFilter` — nagłówki bezpieczeństwa,
-- `CorrelationIdFilter` — identyfikator korelacji w logach,
-- `TenantIsolationAuditService` — audyt naruszeń izolacji tenantów,
-- `PiiMaskingModule` — maskowanie danych osobowych na granicy serializacji.
+Poza monitoringiem technicznym (czasy odpowiedzi, błędy, wykorzystanie limitów integracji) system
+prowadzi analitykę produktową z podziałem na studia. Kilka rozstrzygnięć decyduje o wiarygodności
+tych liczb:
 
-### Obserwowalność i analityka produktowa
-
-**Warstwa techniczna** — Actuator + Micrometer + Prometheus: histogram `crm.api.request.duration`
-z kubełkami SLO (50 ms, 100 ms, 250 ms, 500 ms, 1 s, 2,5 s, 5 s, 10 s) i kwantylami p50/p95/p99,
-`crm.api.response.size` (wykrywanie anomalii bezpieczeństwa), metryki KSeF, komunikacji, magazynu,
-cyklu życia wizyt. Dashboardy Grafany: przegląd platformy, użycie, audyt API, KSeF.
-Grafana łączy się z bazą kontem `grafana_ro` mającym `SELECT` wyłącznie na tabelach `metric_*`
-i dwukolumnowym katalogu studiów — nie odczyta klienta, wizyty, faktury ani stack trace'a.
-
-**Warstwa produktowa** (moduł `metrics`, migracje V65–V67) — analityka z przypisaniem do tenanta
-i długim horyzontem:
-- **czas pracy w systemie**: heartbeat co 60 s, pojedynczy heartbeat dopisuje najwyżej 90 s
-  (laptop zamknięty na noc dopisze 90 s, nie 16 godzin), sesja zamykana po 300 s ciszy
-  **wstecznie, na ostatnim heartbeacie**; sesje krótsze niż 30 s lub bez interakcji się nie liczą;
-- **audyt API / martwe endpointy**: endpoint uznawany za martwy po 90 dniach, uśpiony po 30;
-  raport jest oznaczany jako niewiarygodny, dopóki audyt nie zbiera danych przez 30 dni
-  (raport kwartalny wygląda identycznie jak martwy po trzech dniach obserwacji);
-- **śledzenie błędów**: fingerprint z 5 ramek stosu, limit 8000 znaków stack trace'a,
-  rate limit błędów frontendu 20/min (`/api/v1/metrics/errors`);
-- **kolejka zapisu**: pojemność 20 000, batch 500, flush co 5 s — ścieżka gorąca nigdy nie blokuje;
-- **retencja**: zdarzenia 120 dni, sesje 400 dni, błędy 90 dni, użycie API 400 dni;
-  agregaty dzienne zostają na stałe;
-- **konsola platformy** `/api/internal/metrics/**` chroniona nagłówkiem `X-Platform-Key`;
-  pusty klucz = konsola zamknięta (HTTP 503).
+| Obszar | Reguła |
+|---|---|
+| Czas pracy w systemie | laptop zostawiony otwarty na noc dopisze półtorej minuty, nie szesnaście godzin; sesja bez aktywności zamykana jest wstecznie, na ostatnim śladzie obecności; sesje krótsze niż pół minuty i bez interakcji nie liczą się wcale |
+| Nieużywane funkcje | funkcja uznawana jest za martwą po trzech miesiącach bez użycia, a raport jest oznaczany jako niewiarygodny, dopóki obserwacja nie trwa wystarczająco długo — kwartalne zestawienie po trzech dniach obserwacji wygląda tak samo jak funkcja nieużywana, a usunięcie go byłoby awarią |
+| Błędy | zbierane wraz z kontekstem, z ograniczeniem liczby zgłoszeń, żeby jeden zapętlony błąd nie zasypał systemu |
+| Wydajność | zapis danych analitycznych nigdy nie spowalnia pracy użytkownika — odbywa się w tle, partiami |
+| Retencja | szczegółowe zapisy są kasowane po ustalonym czasie, dzienne podsumowania zostają na stałe |
+| Dostęp | konsola analityczna jest zamknięta, dopóki nie zostanie świadomie otwarta osobnym kluczem; narzędzia raportowe czytają wyłącznie tabele metryk i nie mają dostępu do danych klientów, wizyt ani faktur |
 
 ---
 
-## Podsumowanie — mapa modułów
+## Mapa obszarów funkcjonalnych
 
-| # | Obszar | Główne moduły backendu |
+| # | Obszar | Co obejmuje |
 |---|---|---|
-| 1 | Rezerwacje i wizyty | `appointment`, `visit`, `calendar`, `calendarevent`, `checkin`, `visitcard`, `doortodoor`, `appointmentcolor`, `photosession` |
-| 2 | Komunikacja | `smscampaigns`, `email`, `communication`, `campaigns`, `smscredits` |
-| 3 | Skrzynka i kontakty | `comms`, `mailbox`, `inbound`, `carddav`, `leads` |
-| 4 | Klienci, pojazdy, zdjęcia | `customer`, `vehicle`, `gallery`, `phototags` |
-| 5 | Dokumenty, zgody, RODO | `protocol`, `signing`, `customer/consent`, `customer/documents` |
-| 6 | Finanse i faktury | `finance`, `costs`, `ksef`, `ksef/revenue`, `gus`, `payments` |
-| 7 | Pracownicy i zadania | `auth`, `user`, `employee`, `role`, `task`, `worktime`, `pin`, `subscription` |
-| 8 | Zlecenia zbiorcze | `batchorder` |
-| 9 | Śledzenie konkurencji | `instagram` (+ `resources/trends` — nieaktywne) |
-| 10 | Pozostałe | `dashboard`, `statistics`, `audit`, `metrics`, `push`, `voice`, `studio`, `demo`, `support`, `observability`, `security`, `health`, `service` |
+| 1 | Rezerwacje i wizyty | kalendarz, umawianie i edycja terminów, terminy cykliczne, przyjęcie pojazdu, mapa uszkodzeń, karta wizyty, karta dla klienta, sprzedaż dodatkowa, odbiór i dowóz auta |
+| 2 | Komunikacja | automatyczne SMS-y i e-maile, wiadomości planowane ręcznie, SMS zwrotny, szablony, kampanie marketingowe, kredyty SMS |
+| 3 | Skrzynka i kontakty | poczta studia, wątki, załączniki, karta kontaktu, zapytania z korespondencji, formularze WWW, połączenia przychodzące, kontakty w telefonie |
+| 4 | Klienci, pojazdy, zdjęcia | kartoteka klienta i pojazdu, historia wizyt i przychodu, galeria, tagi zdjęć |
+| 5 | Dokumenty, zgody, RODO | wzory protokołów, automatyczne wypełnianie, podpis elektroniczny na tablecie i u klienta, zgody i ich wersjonowanie, retencja danych |
+| 6 | Finanse i faktury | dokumenty sprzedaży i kosztów, kasa, raporty, faktury sprzedaży i kosztowe w KSeF, pobieranie danych firmy po NIP, płatności |
+| 7 | Pracownicy i zadania | konta i logowanie, ewidencja kadrowa, urlopy, czas pracy, role i uprawnienia, plany i moduły, zadania, historia aktywności |
+| 8 | Zlecenia zbiorcze | kontrahenci, wpisy flotowe, własny cennik, odczyt numeru nadwozia, raport i zamknięcie miesiąca |
+| 9 | Śledzenie konkurencji | obserwacja profili, analityka i puls konkurencji, werdykt tygodnia, przygotowywanie postów, trendy wyszukiwania (nieuruchomione) |
+| 10 | Pozostałe | zapytania ofertowe i lejek, cennik, statystyki, pulpit, powiadomienia na telefon, telefon jako narzędzie pracy, ustawienia, konto demo, bezpieczeństwo, monitoring |
