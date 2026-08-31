@@ -2,6 +2,7 @@ package pl.detailing.crm.audit.infrastructure
 
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
+import jakarta.persistence.criteria.AbstractQuery
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
@@ -11,6 +12,8 @@ import pl.detailing.crm.audit.domain.AuditActorType
 import pl.detailing.crm.audit.domain.AuditChannel
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditSeverity
+import pl.detailing.crm.shared.VisitStatus
+import pl.detailing.crm.visit.infrastructure.VisitEntity
 import java.time.Instant
 import java.util.UUID
 
@@ -38,6 +41,18 @@ data class AuditFeedFilters(
      * po stronie aplikacji zmniejszałoby stronę i zaburzało „czy jest więcej".
      */
     val excludedActions: List<AuditAction>? = null,
+    /**
+     * Wizyty wycięte z wyniku — patrz [pl.detailing.crm.audit.feed.FeedVisitVisibility].
+     * Jak [excludedActions]: odsiew idzie zapytaniem, nie filtrem na liście wyników.
+     */
+    val hiddenVisitIds: List<UUID>? = null,
+    /**
+     * Odsiewa zdarzenia wizyt, których dla użytkownika nie ma: szkiców przyjęcia
+     * (DRAFT) oraz szkiców anulowanych, po których został sam wpis w dzienniku.
+     * Warunek działa na kolumnie kontekstu — [hiddenVisitIds] domyka to samo po
+     * `entity_id` dla wpisów pisanych bez kontekstu.
+     */
+    val requireLiveVisitContext: Boolean = false,
     val actorTypes: List<AuditActorType>? = null,
     val severities: List<AuditSeverity>? = null,
     val channels: List<AuditChannel>? = null,
@@ -83,7 +98,7 @@ class AuditFeedQueryRepository(
         val query = builder.createQuery(AuditLogEntity::class.java)
         val root = query.from(AuditLogEntity::class.java)
 
-        val predicates = buildPredicates(builder, root, filters).toMutableList()
+        val predicates = buildPredicates(builder, query, root, filters).toMutableList()
 
         cursor?.let {
             // Strictly "older than the cursor", with id as the tie-break inside one timestamp.
@@ -113,7 +128,7 @@ class AuditFeedQueryRepository(
         val query = builder.createQuery(AuditLogEntity::class.java)
         val root = query.from(AuditLogEntity::class.java)
 
-        query.where(*buildPredicates(builder, root, filters).toTypedArray())
+        query.where(*buildPredicates(builder, query, root, filters).toTypedArray())
         query.orderBy(
             builder.desc(root.get<Instant>("createdAt")),
             builder.desc(root.get<UUID>("id"))
@@ -133,13 +148,14 @@ class AuditFeedQueryRepository(
         val root = query.from(AuditLogEntity::class.java)
 
         query.select(builder.count(root))
-        query.where(*buildPredicates(builder, root, filters).toTypedArray())
+        query.where(*buildPredicates(builder, query, root, filters).toTypedArray())
 
         return entityManager.createQuery(query).singleResult ?: 0L
     }
 
     private fun buildPredicates(
         builder: CriteriaBuilder,
+        query: AbstractQuery<*>,
         root: Root<AuditLogEntity>,
         filters: AuditFeedFilters
     ): List<Predicate> {
@@ -163,6 +179,55 @@ class AuditFeedQueryRepository(
         }
         filters.channels?.takeIf { it.isNotEmpty() }?.let {
             predicates += root.get<AuditChannel>("channel").`in`(it)
+        }
+
+        /*
+         * Odsiew wizyt niewidocznych w Aktywności. Dwa warunki, bo zdarzenie wiąże się
+         * z wizytą na dwa sposoby: kolumną kontekstu (visit_id, wypełnianą tam, gdzie
+         * piszący podał AuditContext) albo własnym entity_id wpisu z modułu VISIT.
+         *
+         * Każdy warunek przepuszcza NULL jawnie. `NOT (visit_id IN (...))` dla wiersza
+         * bez kontekstu daje w SQL-u NULL, a nie TRUE — bez `IS NULL` obok tego
+         * wykluczenia zniknęłaby z feedu każda pozycja spoza modułu wizyt.
+         */
+        filters.hiddenVisitIds?.takeIf { it.isNotEmpty() }?.let { hidden ->
+            val hiddenAsText = hidden.map { it.toString() }
+            predicates += builder.or(
+                builder.isNull(root.get<UUID>("visitId")),
+                builder.not(root.get<UUID>("visitId").`in`(hidden))
+            )
+            predicates += builder.or(
+                builder.notEqual(root.get<AuditModule>("module"), AuditModule.VISIT),
+                builder.isNull(root.get<String>("entityId")),
+                builder.not(root.get<String>("entityId").`in`(hiddenAsText))
+            )
+        }
+
+        /*
+         * Wizyta, której nie ma — ani jako wiersz feedu, ani jako link.
+         *
+         * Dwa przypadki, jeden warunek: szkic przyjęcia (DRAFT), który jeszcze nie stał
+         * się wizytą, i szkic anulowany, którego rekord zniknął (anulowanie szkicu jest
+         * twardym usunięciem — jedynym w całym module wizyt; „usunięcie" wizyty
+         * potwierdzonej to `deleted_at`, więc jej historia zostaje). Bez tego drugiego
+         * przypadku wpis „Rozpoczęto wizytę" wracałby do Aktywności dokładnie w chwili,
+         * w której wizyta przestawała istnieć — z linkiem prowadzącym donikąd.
+         *
+         * Wiersze bez kontekstu wizyty przechodzą nietknięte; to m.in. samo
+         * „Anulowano wizytę", które ma pozostać śladem po przerwanym przyjęciu.
+         */
+        if (filters.requireLiveVisitContext) {
+            val liveVisit = query.subquery(UUID::class.java)
+            val visit = liveVisit.from(VisitEntity::class.java)
+            liveVisit.select(visit.get<UUID>("id"))
+            liveVisit.where(
+                builder.equal(visit.get<UUID>("id"), root.get<UUID>("visitId")),
+                builder.notEqual(visit.get<VisitStatus>("status"), VisitStatus.DRAFT)
+            )
+            predicates += builder.or(
+                builder.isNull(root.get<UUID>("visitId")),
+                builder.exists(liveVisit)
+            )
         }
 
         filters.actorId?.let { predicates += builder.equal(root.get<UUID>("userId"), it) }

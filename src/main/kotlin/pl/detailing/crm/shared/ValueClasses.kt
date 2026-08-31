@@ -802,6 +802,32 @@ class AlreadyLinkedException(
     val linkedLeadName: String?,
     message: String = "Zasób jest już przypisany do innego leada"
 ) : BusinessException(message)
+/**
+ * Szkic wizyty (DRAFT) jest stanem WEWNĘTRZNYM kreatora przyjęcia — pojazd jest już
+ * zarejestrowany, ale wizyta jeszcze się nie rozpoczęła. Nigdy nie może wyciec do
+ * widoku szczegółów: użytkownik zobaczyłby wizytę, której nie da się ani prowadzić,
+ * ani zamknąć. Rzucane zamiast danych wizyty i mapowane na 404 z kodem, po którym
+ * frontend potrafi zaproponować dokończenie przyjęcia.
+ */
+class VisitNotStartedException(
+    val visitId: String,
+    val visitNumber: String,
+    message: String = "Ta wizyta nie została jeszcze rozpoczęta — przyjęcie pojazdu nie zostało dokończone."
+) : BusinessException(message)
+
+/**
+ * Druga próba przyjęcia tej samej rezerwacji, kiedy poprzednia zostawiła otwarty szkic.
+ * Bez tego każde ponowne wejście w kreator tworzyło kolejną wizytę, kolejny numer
+ * VIS- i kolejny komplet protokołów dla jednego auta.
+ */
+class DraftVisitAlreadyExistsException(
+    val visitId: String,
+    val visitNumber: String,
+    val createdAt: java.time.Instant,
+    val createdByName: String?,
+    message: String = "Dla tej rezerwacji trwa już nieukończone przyjęcie pojazdu."
+) : BusinessException(message)
+
 class VehiclePlateExistsException(
     val vehicleId: String,
     val brand: String,

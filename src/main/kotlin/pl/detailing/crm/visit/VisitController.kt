@@ -76,7 +76,8 @@ class VisitController(
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
     private val updateTechnicalNoteHandler: UpdateTechnicalNoteHandler,
     private val getTechnicalNoteHistoryHandler: GetTechnicalNoteHistoryHandler,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val openDraftVisitService: pl.detailing.crm.visit.drafts.OpenDraftVisitService
 ) {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -180,6 +181,45 @@ class VisitController(
                 totalPages = result.totalPages
             )
         ))
+    }
+
+    /**
+     * Nieukończone przyjęcia pojazdu (wizyty w statusie DRAFT).
+     * GET /api/visits/drafts
+     *
+     * Kolejka robocza obsługi, nie lista wizyt: szkic nie jest wizytą, do której wolno
+     * wejść — jest przyjęciem, które trzeba dokończyć albo anulować.
+     */
+    @GetMapping("/drafts")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun getOpenDrafts(): ResponseEntity<OpenDraftVisitListResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val drafts = openDraftVisitService.listOpen(principal.studioId)
+        ResponseEntity.ok(OpenDraftVisitListResponse(
+            drafts = drafts.map { it.toResponse() },
+            total = drafts.size
+        ))
+    }
+
+    /**
+     * Nieukończone przyjęcie tej rezerwacji, jeśli takie trwa.
+     * GET /api/visits/drafts/by-appointment/{appointmentId}
+     *
+     * Kreator pyta o to przed startem, żeby zaproponować wznowienie zamiast zakładać
+     * drugą wizytę dla tego samego auta. 204, gdy nic nie wisi.
+     */
+    @GetMapping("/drafts/by-appointment/{appointmentId}")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun getOpenDraftForAppointment(
+        @PathVariable appointmentId: String
+    ): ResponseEntity<OpenDraftVisitResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val draft = openDraftVisitService.findOpenForAppointment(
+            appointmentId = UUID.fromString(appointmentId),
+            studioId = principal.studioId
+        )
+        draft?.let { ResponseEntity.ok(it.toResponse()) }
+            ?: ResponseEntity.noContent().build<OpenDraftVisitResponse>()
     }
 
     /**
@@ -983,4 +1023,57 @@ data class AddPhotoResponse(
     val photoId: String,
     val uploadUrl: String,
     val fileId: String
+)
+
+/**
+ * Nieukończone przyjęcie pojazdu w kolejce obsługi.
+ *
+ * Celowo bez kwot, usług i dokumentów: to nie jest podgląd wizyty (tej jeszcze nie ma),
+ * tylko tyle informacji, ile potrzeba do decyzji „dokończyć czy anulować".
+ */
+data class OpenDraftVisitResponse(
+    val visitId: String,
+    val visitNumber: String,
+    val title: String?,
+    val appointmentId: String,
+    val customerId: String,
+    val customerName: String?,
+    val customerPhone: String?,
+    val customerEmail: String?,
+    val vehicleId: String,
+    val vehicleName: String,
+    val licensePlate: String?,
+    val createdAt: String,
+    val createdByName: String?,
+    val ageMinutes: Long,
+    val stale: Boolean,
+    val expiresAt: String?,
+    val hasPhotos: Boolean,
+    val hasDamageMap: Boolean
+)
+
+data class OpenDraftVisitListResponse(
+    val drafts: List<OpenDraftVisitResponse>,
+    val total: Int
+)
+
+private fun pl.detailing.crm.visit.drafts.OpenDraftVisitView.toResponse() = OpenDraftVisitResponse(
+    visitId = visitId.toString(),
+    visitNumber = visitNumber,
+    title = title,
+    appointmentId = appointmentId.toString(),
+    customerId = customerId.toString(),
+    customerName = customerName,
+    customerPhone = customerPhone,
+    customerEmail = customerEmail,
+    vehicleId = vehicleId.toString(),
+    vehicleName = vehicleName,
+    licensePlate = licensePlate,
+    createdAt = createdAt.toString(),
+    createdByName = createdByName,
+    ageMinutes = ageMinutes,
+    stale = stale,
+    expiresAt = expiresAt?.toString(),
+    hasPhotos = hasPhotos,
+    hasDamageMap = hasDamageMap
 )

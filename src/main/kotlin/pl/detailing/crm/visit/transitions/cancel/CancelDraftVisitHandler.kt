@@ -125,15 +125,21 @@ class CancelDraftVisitHandler(
                 }
             }
 
-            auditService.log(LogAuditCommand(
+            // Anulowanie ma dwa źródła: człowieka i zadanie sprzątające
+            // (StaleDraftVisitCleanupJob). W dzienniku muszą się różnić — „System"
+            // przy wpisie jest dla obsługi informacją, że przyjęcia nikt nie odwołał,
+            // tylko wygasło.
+            auditService.record(AuditEvent(
                 studioId = command.studioId,
-                userId = command.userId,
-                userDisplayName = command.userName ?: "",
+                actor = command.userId
+                    ?.let { AuditActor.employee(it, command.userName) }
+                    ?: AuditActor.system(command.userName ?: "System"),
                 module = AuditModule.VISIT,
                 entityId = command.visitId.value.toString(),
                 entityDisplayName = "Wizyta #${db.visitNumber}",
                 action = AuditAction.VISIT_CANCELLED,
-                changes = listOf(FieldChange("status", VisitStatus.DRAFT.name, "CANCELLED"))
+                changes = listOf(FieldChange("status", VisitStatus.DRAFT.name, "CANCELLED")),
+                metadata = command.reason?.let { mapOf("reason" to it) } ?: emptyMap()
             ))
 
             CancelDraftVisitResult(visitId = command.visitId)
@@ -143,8 +149,11 @@ class CancelDraftVisitHandler(
 data class CancelDraftVisitCommand(
     val visitId: VisitId,
     val studioId: StudioId,
-    val userId: UserId,
-    val userName: String? = null
+    /** `null` = anulowanie systemowe (wygasły szkic), nie działanie pracownika. */
+    val userId: UserId? = null,
+    val userName: String? = null,
+    /** Powód trafiający do metadanych wpisu — wypełniany przez anulowanie automatyczne. */
+    val reason: String? = null
 )
 
 data class CancelDraftVisitResult(

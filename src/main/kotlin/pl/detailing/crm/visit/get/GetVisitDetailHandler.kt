@@ -37,6 +37,23 @@ class GetVisitDetailHandler(
             studioId = command.studioId.value
         ) ?: throw EntityNotFoundException("Visit not found: ${command.visitId}")
 
+        /*
+         * DRAFT nie wychodzi tą drogą.
+         *
+         * Szkic powstaje w kreatorze przyjęcia i żyje do zatwierdzenia wizyty albo do
+         * jej anulowania. Wszystkie listy wizyt już go pomijają (patrz zapytania
+         * `...ExcludingDraft` w VisitRepository) — szczegóły były jedyną szczeliną, przez
+         * którą dawało się do niego wejść: z linku w Aktywności albo z zapamiętanego
+         * adresu. Użytkownik dostawał wizytę bez sterowania: „Oczekuje na potwierdzenie
+         * i podpisanie dokumentów" i ani jednego przycisku, którym da się to zrobić.
+         */
+        if (visitEntity.status == VisitStatus.DRAFT && !command.allowDraft) {
+            throw VisitNotStartedException(
+                visitId = visitEntity.id.toString(),
+                visitNumber = visitEntity.visitNumber
+            )
+        }
+
         // Force load lazy collections within transaction
         visitEntity.serviceItems.size  // Force load serviceItems
         visitEntity.photos.size  // Force load photos
