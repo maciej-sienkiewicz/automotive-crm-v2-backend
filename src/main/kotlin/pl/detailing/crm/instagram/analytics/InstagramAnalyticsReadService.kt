@@ -49,6 +49,21 @@ class InstagramAnalyticsReadService(
          * Poniżej progu benchmark = null i UI pokazuje tylko delty + CTA.
          */
         const val MIN_COMPARISON_GROUP = 3
+
+        /**
+         * Granica „wyskoku" w analizie pory publikacji: posty z zaangażowaniem powyżej
+         * percentyla 90. całej próbki nie biorą udziału w liczeniu. To one są zwykle
+         * skutkiem oznaczenia kogoś znanego, płatnej promocji albo przypadkowego virala
+         * — czyli czegoś, co nie ma związku z godziną publikacji, a potrafi samo
+         * przesądzić o rekomendacji.
+         */
+        const val OUTLIER_PERCENTILE = 0.90
+
+        /**
+         * Poniżej tylu postów percentyl niczego nie mierzy — przy pięciu postach „górny
+         * decyl" to po prostu najmocniejszy post. Wtedy liczymy bez odsiewu.
+         */
+        const val MIN_POSTS_FOR_OUTLIER_FILTER = 20
     }
 
     /** Mediana wartości pozostałych profili (leave-one-out); null poniżej progu wiarygodności. */
@@ -411,13 +426,51 @@ class InstagramAnalyticsReadService(
         )
     }
 
+    /**
+     * Kiedy publikować: rozkład postów konkurencji wg dnia i pory, z odsiewem wyskoków.
+     *
+     * ## Dlaczego odsiew jest tu konieczny
+     *
+     * Wskazanie „najlepszej pory" liczy się ze średniego zaangażowania w komórce, a
+     * średnia jest bezbronna wobec pojedynczych anomalii. Jeden post z oznaczonym
+     * celebrytą, jedna płatna promocja albo jeden przypadkowy viral potrafi mieć zasięg
+     * o dwa rzędy wielkości większy od reszty — i w komórce z trzema postami sam
+     * przesądza o rekomendacji. Studio dostawało wtedy radę „publikuj w niedzielę
+     * wieczorem", wyprowadzoną z jednego zdarzenia, które nie ma nic wspólnego z porą
+     * publikacji.
+     *
+     * Odcinamy więc górny decyl (powyżej [OUTLIER_PERCENTILE]) zaangażowania liczonego
+     * na CAŁEJ próbce okna. Zostaje zachowanie typowe, a nie zachowanie wyjątkowe —
+     * a o to w rekomendacji pory chodzi.
+     *
+     * ## Dwa zabezpieczenia
+     *
+     * Przy małej próbce percentyl niczego nie mierzy: przy pięciu postach „górny decyl"
+     * to po prostu najmocniejszy post, a jego usunięcie byłoby arbitralne. Poniżej
+     * [MIN_POSTS_FOR_OUTLIER_FILTER] liczymy więc bez odsiewu.
+     *
+     * Wyskoki znikają z analizy w całości — nie tylko ze średniej, ale i z licznika
+     * postów w komórce. Inaczej dymek („3 posty, śr. X") kłamałby, bo średnia byłaby
+     * z dwóch. Ile postów odpadło, mówi [HeatmapResponse.excludedOutliers].
+     */
     @Transactional(readOnly = true)
     fun heatmap(studioId: StudioId, weeks: Int): HeatmapResponse {
         val basket = loadBasket(studioId)
-        if (basket.links.isEmpty()) return HeatmapResponse(emptyList(), null, null)
+        if (basket.links.isEmpty()) return HeatmapResponse(emptyList(), null, null, 0)
 
         val cutoff = Instant.now().minusSeconds(weeks.toLong() * 7 * 24 * 3600)
-        val posts = postRepository.findByProfileIdInAndTakenAtAfter(basket.links.map { it.profileId }, cutoff)
+        val allPosts = postRepository.findByProfileIdInAndTakenAtAfter(basket.links.map { it.profileId }, cutoff)
+
+        fun engagement(post: InstagramPostSnapshotEntity): Double =
+            (post.likeCount + post.commentCount).toDouble()
+
+        val threshold = if (allPosts.size >= MIN_POSTS_FOR_OUTLIER_FILTER) {
+            MetricsCalculator.percentile(allPosts.map(::engagement), OUTLIER_PERCENTILE)
+        } else {
+            null
+        }
+        val posts = threshold?.let { limit -> allPosts.filter { engagement(it) <= limit } } ?: allPosts
+        val excludedOutliers = allPosts.size - posts.size
 
         fun daypart(hour: Int): Int = when (hour) {
             in 6..10 -> 0
@@ -440,7 +493,7 @@ class InstagramAnalyticsReadService(
 
         val best = cells.filter { it.posts >= 2 }.maxByOrNull { it.avgEngagement }
 
-        return HeatmapResponse(cells, best?.dayOfWeek, best?.daypart)
+        return HeatmapResponse(cells, best?.dayOfWeek, best?.daypart, excludedOutliers)
     }
 
     @Transactional(readOnly = true)
