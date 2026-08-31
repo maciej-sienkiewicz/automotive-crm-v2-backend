@@ -43,6 +43,37 @@ interface CustomerRepository : JpaRepository<CustomerEntity, UUID> {
         @Param("phone") phone: String
     ): Boolean
 
+    /**
+     * Dopasowanie zbiorcze dla importu kontaktów — jedno zapytanie na całą listę zamiast
+     * jednego na wiersz. Przy książce adresowej na 800 pozycji różnica jest między
+     * jednym zapytaniem a ośmiuset.
+     */
+    @Query("""
+        SELECT c FROM CustomerEntity c
+        WHERE c.studioId = :studioId
+        AND c.isActive = true
+        AND c.phoneE164 IN :phones
+    """)
+    fun findActiveByStudioIdAndPhoneE164In(
+        @Param("studioId") studioId: UUID,
+        @Param("phones") phones: Collection<String>
+    ): List<CustomerEntity>
+
+    /**
+     * Jak wyżej, po e-mailu. Porównanie po LOWER(), bo starsze rekordy trafiały do bazy
+     * bez normalizacji wielkości liter (dopiero CreateCustomerHandler ją wymusza).
+     */
+    @Query("""
+        SELECT c FROM CustomerEntity c
+        WHERE c.studioId = :studioId
+        AND c.isActive = true
+        AND LOWER(c.email) IN :emails
+    """)
+    fun findActiveByStudioIdAndEmailLowerIn(
+        @Param("studioId") studioId: UUID,
+        @Param("emails") emails: Collection<String>
+    ): List<CustomerEntity>
+
     @Query("""
         SELECT c FROM CustomerEntity c 
         WHERE c.studioId = :studioId 

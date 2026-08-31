@@ -6,6 +6,7 @@ import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.normalizeToE164
 import java.time.Instant
 import java.util.UUID
 
@@ -84,8 +85,26 @@ class CustomerEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
-    var updatedAt: Instant = Instant.now()
+    var updatedAt: Instant = Instant.now(),
+
+    /**
+     * Telefon sprowadzony do E.164 — klucz dopasowania przy imporcie kontaktów i wszędzie
+     * tam, gdzie „ten sam numer" musi znaczyć to samo niezależnie od zapisu.
+     *
+     * Nie ustawia się go ręcznie: wylicza go [syncPhoneE164] przy każdym zapisie encji.
+     * Gdyby wyliczanie siedziało w handlerach, wystarczyłaby jedna nowa ścieżka zapisu
+     * (przyjęcie pojazdu, import, integracja), żeby kolumna cicho się rozjechała z `phone`
+     * — a wtedy wykrywanie duplikatów przestaje działać bez żadnego widocznego objawu.
+     */
+    @Column(name = "phone_e164", length = 20)
+    var phoneE164: String? = null
 ) {
+    @PrePersist
+    @PreUpdate
+    fun syncPhoneE164() {
+        phoneE164 = normalizeToE164(phone)
+    }
+
     fun toDomain(): Customer = Customer(
         id = CustomerId(id),
         studioId = StudioId(studioId),
