@@ -188,10 +188,16 @@ class RequestSignatureHandler(
                 )
 
                 // Inside the transaction on purpose: a link the customer can never
-                // receive must not leave an active session behind. Trade-off: the
-                // communication-log row for a failed delivery now rolls back with the
-                // request it described. The common failures — no template, template
-                // disabled — are refused before this point and never reach the log.
+                // receive must not leave an active session behind. The common failures —
+                // no template, template disabled — are refused before this point.
+                //
+                // Uwaga na kolejność: SMS wychodzi z tego bloku NIEODWRACALNIE, a wszystko,
+                // co dzieje się po nim, wciąż potrafi wywrócić transakcję i zabrać ze sobą
+                // token linku. Dokładnie tak zepsuł się przepływ przy rozjeździe CHECK-a na
+                // communication_log (V100__sync_enum_check_constraints.sql): klient dostawał
+                // SMS-a, a link odpowiadał „nieprawidłowy lub wygasł". Wpis do dziennika
+                // komunikacji ma dlatego własną transakcję (CommunicationLogService.record)
+                // i nie jest w stanie unieważnić wysłanej już wiadomości.
                 if (command.channel == SignatureChannel.SMS_LINK) {
                     sendSigningLinkSms(request, visitEntity.customerId, documentName)
                 }
