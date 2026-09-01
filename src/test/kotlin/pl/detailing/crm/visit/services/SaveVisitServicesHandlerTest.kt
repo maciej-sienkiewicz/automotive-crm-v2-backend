@@ -2,6 +2,7 @@ package pl.detailing.crm.visit.services
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.runBlocking
@@ -18,7 +19,17 @@ import java.util.*
 class SaveVisitServicesHandlerTest {
 
     private val visitRepository = mockk<VisitRepository>()
-    private val handler = SaveVisitServicesHandler(visitRepository)
+    private val serviceRepository = mockk<pl.detailing.crm.service.infrastructure.ServiceRepository>()
+
+    // Planner jest prawdziwy, bo to on niesie testowaną arytmetykę cen; mockujemy
+    // tylko repozytorium katalogu usług, z którego bierze VAT i cenę brutto.
+    private val handler = SaveVisitServicesHandler(
+        visitRepository,
+        auditService = mockk(relaxed = true),
+        customerRepository = mockk(relaxed = true),
+        smsConsentService = mockk(relaxed = true),
+        servicesChangePlanner = ServicesChangePlanner(serviceRepository)
+    )
 
     @Test
     fun `should correctly handle prices in cents from payload`() = runBlocking {
@@ -32,12 +43,22 @@ class SaveVisitServicesHandlerTest {
         
         coEvery { visitRepository.findByIdAndStudioId(visitId.value, studioId.value) } returns visitEntity
         coEvery { visitEntity.toDomain() } returns visitDomain
-        
+
+        // Usługa istnieje w katalogu — planner odczytuje z niej stawkę VAT.
+        val catalogServiceId = UUID.randomUUID()
+        val catalogService = mockk<pl.detailing.crm.service.infrastructure.ServiceEntity>(relaxed = true) {
+            every { id } returns catalogServiceId
+            every { vatRate } returns 23
+            every { basePriceNet } returns 10000L
+            every { basePriceGross } returns 12300L
+        }
+        every { serviceRepository.findAllById(any()) } returns listOf(catalogService)
+
         val payload = ServicesChangesPayload(
             notifyCustomer = false,
             added = listOf(
                 AddedService(
-                    serviceId = ServiceId.random().toString(),
+                    serviceId = catalogServiceId.toString(),
                     serviceName = "Test Service",
                     basePriceNet = 10000L, // 100.00 PLN in cents
                     vatRate = 23,
@@ -117,6 +138,7 @@ class SaveVisitServicesHandlerTest {
             vehicleId = VehicleId.random(),
             appointmentId = AppointmentId.random(),
             appointmentColorId = null,
+            title = null,
             brandSnapshot = "Brand",
             modelSnapshot = "Model",
             licensePlateSnapshot = null,
@@ -133,9 +155,11 @@ class SaveVisitServicesHandlerTest {
             documentsHandedOver = false,
             inspectionNotes = null,
             technicalNotes = null,
+            vehicleHandoff = null,
             serviceItems = emptyList(),
             photos = emptyList(),
             damageMapFileId = null,
+            smsReminderSuppressed = false,
             createdBy = UserId.random(),
             updatedBy = UserId.random(),
             createdAt = Instant.now(),

@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.test.web.servlet.setup.StandaloneMockMvcBuilder
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -67,7 +68,7 @@ class PiiAccessFilterTest {
         mockMvc = MockMvcBuilders
             .standaloneSetup(FakeController())
             .setMessageConverters(converter)
-            .addFilters(PiiAccessFilter(permissionCheckService))
+            .addFilters<StandaloneMockMvcBuilder>(PiiAccessFilter(permissionCheckService))
             .build()
     }
 
@@ -87,7 +88,7 @@ class PiiAccessFilterTest {
             fullName = "Pracownik Testowy",
             phoneNumber = "600700800"
         )
-        SecurityContextHolder.context = SecurityContextImpl(principal)
+        SecurityContextHolder.setContext(SecurityContextImpl(principal))
         every {
             permissionCheckService.hasPermission(any(), any(), Permission.CUSTOMERS_VIEW)
         } returns hasPermission

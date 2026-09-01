@@ -17,7 +17,7 @@ class VatRateTest {
     }
 
     @Test
-    fun `liczy VAT od brutto wzorem w stu — brutto pozostaje dokladne`() {
+    fun `liczy VAT od brutto wzorem w stu - brutto pozostaje dokladne`() {
         // 500,00 zł brutto @23%: VAT = 50000×23/123 = 9349.59 → 9350; netto 40650
         assertEquals(9_350, VatRate.RATE_23.vatFromGross(50_000))
         assertEquals(50_000, (50_000 - VatRate.RATE_23.vatFromGross(50_000)) + VatRate.RATE_23.vatFromGross(50_000))

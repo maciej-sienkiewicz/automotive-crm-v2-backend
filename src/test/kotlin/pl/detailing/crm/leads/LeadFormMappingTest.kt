@@ -28,7 +28,7 @@ class LeadFormMappingTest {
         mapper.map(reader.read(body, contentType), overrides)
 
     @Test
-    fun `Contact Form 7 — nazwy tagow`() {
+    fun `Contact Form 7 - nazwy tagow`() {
         val form = map(
             """{"your-name":"Jan Kowalski","your-email":"jan@example.com",
                "your-phone":"600100200","your-message":"Poproszę o wycenę ceramiki"}""",
@@ -42,7 +42,7 @@ class LeadFormMappingTest {
     }
 
     @Test
-    fun `Elementor — etykiety po polsku, cialo form-encoded`() {
+    fun `Elementor - etykiety po polsku, cialo form-encoded`() {
         val form = map(
             "Imi%C4%99+i+nazwisko=Anna+Nowak&Telefon=%2B48+601+202+303" +
                 "&Adres+e-mail=anna%40example.com&Marka+pojazdu=BMW&Model=X5" +
@@ -59,7 +59,7 @@ class LeadFormMappingTest {
     }
 
     @Test
-    fun `Tally — tablica label-value pod data fields`() {
+    fun `Tally - tablica label-value pod data fields`() {
         val form = map(
             """{"eventType":"FORM_RESPONSE","createdAt":"2026-08-19T15:00:21.889Z",
                 "data":{"responseId":"2wgx4n","formName":"Wycena",

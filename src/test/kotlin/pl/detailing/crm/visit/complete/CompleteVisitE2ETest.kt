@@ -19,8 +19,9 @@ import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.config.GlobalExceptionHandler
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
+import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
-import pl.detailing.crm.finance.domain.FinancialDocumentId
+import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.VisitTransitionController
 import pl.detailing.crm.visit.domain.Visit
@@ -62,18 +63,27 @@ class CompleteVisitE2ETest {
 
     @BeforeEach
     fun setUp() {
+        val capabilityService =
+            mockk<pl.detailing.crm.subscription.entitlement.capability.CapabilityService>(relaxed = true)
+        // Plan z modułem finansów: bez tego handler pomija wystawienie dokumentu.
+        every { capabilityService.hasCapability(any(), any()) } returns true
+
         val completeVisitHandler = CompleteVisitHandler(
             visitRepository,
             customerRepository,
             auditService,
-            createFinancialDocumentHandler
+            createFinancialDocumentHandler,
+            capabilityService,
+            eventPublisher = mockk(relaxed = true)
         )
 
         val controller = VisitTransitionController(
             markVisitReadyForPickupHandler = mockk(relaxed = true),
             completeVisitHandler = completeVisitHandler,
+            completeVisitInvoiceOrchestrator = mockk(relaxed = true),
             rejectVisitHandler = mockk(relaxed = true),
-            archiveVisitHandler = mockk(relaxed = true)
+            archiveVisitHandler = mockk(relaxed = true),
+            capabilityService = capabilityService
         )
 
         mockMvc = MockMvcBuilders
@@ -84,7 +94,7 @@ class CompleteVisitE2ETest {
         givenAuthenticatedOwner()
 
         coEvery { customerRepository.findByIdAndStudioId(any(), any()) } returns null
-        every { createFinancialDocumentHandler.handle(any()) } returns mockk(relaxed = true)
+        every { createFinancialDocumentHandler.handle(any()) } returns financialDocument()
     }
 
     @AfterEach
@@ -134,10 +144,7 @@ class CompleteVisitE2ETest {
     @Test
     fun `POST complete returns financialDocumentId when visit has service items`() {
         val docId = FinancialDocumentId.random()
-        val finDoc = mockk<FinancialDocument>(relaxed = true) {
-            every { id } returns docId
-            every { documentNumber } returns "PAR/2026/0001"
-        }
+        val finDoc = financialDocument(docId)
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity(serviceItemCount = 1)
         coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
         every { createFinancialDocumentHandler.handle(any()) } returns finDoc
@@ -155,8 +162,7 @@ class CompleteVisitE2ETest {
 
         mockMvc.perform(completeRequest())
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.financialDocumentId").doesNotExist()
-                .or(jsonPath("$.financialDocumentId").value(null as String?)))
+            .andExpect(jsonPath("$.financialDocumentId").value(org.hamcrest.Matchers.nullValue()))
     }
 
     // ─── Photo preservation through the full HTTP cycle ──────────────────────
@@ -241,7 +247,7 @@ class CompleteVisitE2ETest {
     // ─── Repository method selection ─────────────────────────────────────────
 
     @Test
-    fun `findByIdAndStudioIdWithPhotos is used — not the lazy findByIdAndStudioId`() {
+    fun `findByIdAndStudioIdWithPhotos is used - not the lazy findByIdAndStudioId`() {
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity()
         coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
 
@@ -252,7 +258,7 @@ class CompleteVisitE2ETest {
     }
 
     @Test
-    fun `studio isolation is enforced — only visits belonging to the authenticated studio are found`() {
+    fun `studio isolation is enforced - only visits belonging to the authenticated studio are found`() {
         val otherStudioId = StudioId.random()
         // Visit belongs to a different studio — query returns null
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns null
@@ -300,6 +306,7 @@ class CompleteVisitE2ETest {
             vehicleId = VehicleId.random(),
             appointmentId = AppointmentId.random(),
             appointmentColorId = null,
+            title = null,
             brandSnapshot = "BMW",
             modelSnapshot = "X5",
             licensePlateSnapshot = "WA 99999",
@@ -339,7 +346,48 @@ class CompleteVisitE2ETest {
                 adjustmentType = AdjustmentType.PERCENT,
                 adjustmentValue = 0L,
                 customNote = null
-            )
+                // PENDING nie liczy sie do sumy wizyty; dokument finansowy powstaje
+                // tylko dla uslug potwierdzonych
+            ).copy(status = VisitServiceStatus.CONFIRMED)
         }
     }
+
+    /**
+     * Prawdziwy obiekt domenowy zamiast mockk: FinancialDocumentId to value class,
+     * a MockK nie umie poprawnie oddac zmanglowanego gettera (ClassCastException
+     * FinancialDocumentId -> UUID na getId-...).
+     */
+    private fun financialDocument(
+        docId: FinancialDocumentId = FinancialDocumentId.random(),
+        number: String = "PAR/2026/0001"
+    ) = FinancialDocument(
+        id = docId,
+        studioId = studioId,
+        source = pl.detailing.crm.finance.domain.DocumentSource.VISIT,
+        visitId = visitId,
+        vehicleBrand = "Toyota",
+        vehicleModel = "Corolla",
+        customerFirstName = null,
+        customerLastName = null,
+        documentNumber = number,
+        documentType = DocumentType.RECEIPT,
+        direction = pl.detailing.crm.finance.domain.DocumentDirection.INCOME,
+        status = pl.detailing.crm.finance.domain.DocumentStatus.PAID,
+        paymentMethod = PaymentMethod.CASH,
+        totalNet = Money(10000L),
+        totalVat = Money(2300L),
+        totalGross = Money(12300L),
+        currency = "PLN",
+        issueDate = java.time.LocalDate.now(),
+        dueDate = null,
+        paidAt = Instant.now(),
+        description = null,
+        counterpartyName = null,
+        counterpartyNip = null,
+        createdBy = userId,
+        updatedBy = userId,
+        createdAt = Instant.now(),
+        updatedAt = Instant.now()
+    )
+
 }

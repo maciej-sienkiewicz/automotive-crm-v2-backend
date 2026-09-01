@@ -1,5 +1,6 @@
 package pl.detailing.crm.customer.importing
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -147,11 +148,11 @@ data class CommitImportResponse(
 
 data class ImportPreviewRowResponse(
     val index: Int,
-    val firstName: String?,
-    val lastName: String?,
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
     val displayName: String?,
-    val phone: String?,
-    val email: String?,
+    @Pii val phone: String?,
+    @Pii val email: String?,
     val companyName: String?,
     val status: String,
     val matchedCustomerId: String?,

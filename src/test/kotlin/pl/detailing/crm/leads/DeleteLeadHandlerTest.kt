@@ -31,12 +31,17 @@ class DeleteLeadHandlerTest {
     private val threadRepository = mockk<CommThreadRepository>(relaxed = true)
 
     private val handler = DeleteLeadHandler(
-        leadRepository, itemRepository, tagRepository, historyRepository, threadRepository
+        leadRepository, itemRepository, tagRepository, historyRepository, threadRepository,
+        appointmentRepository = mockk(relaxed = true),
+        auditService = mockk(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())
     private val leadId = UUID.randomUUID()
     private val threadId = UUID.randomUUID()
+    private val userId = UUID.randomUUID()
+
+    private fun delete() = handler.handle(studioId, leadId, userId, "Jan Właściciel")
 
     private fun givenLead(appointmentId: UUID? = null, visitId: UUID? = null): LeadEntity {
         val lead = mockk<LeadEntity>(relaxed = true)
@@ -53,8 +58,9 @@ class DeleteLeadHandlerTest {
         val lead = givenLead()
         val thread = mockk<CommThreadEntity>(relaxed = true)
         every { threadRepository.findByIdAndStudioId(threadId, studioId.value) } returns thread
+        every { threadRepository.save(any()) } answers { firstArg() }
 
-        handler.handle(studioId, leadId)
+        delete()
 
         verify { thread.leadId = null }
         verify { threadRepository.save(thread) }
@@ -67,17 +73,29 @@ class DeleteLeadHandlerTest {
         givenLead()
         every { threadRepository.findByIdAndStudioId(threadId, studioId.value) } returns null
 
-        handler.handle(studioId, leadId)
+        delete()
 
         verify { tagRepository.deleteByLeadId(leadId) }
         verify { itemRepository.deleteByLeadId(leadId) }
     }
 
     @Test
-    fun `lead z rezerwacja nie daje sie usunac`() {
-        givenLead(appointmentId = UUID.randomUUID())
+    fun `lead z rezerwacja usuwa sie, a rezerwacja domyslnie zostaje w kalendarzu`() {
+        // Powiązanie jest jednokierunkowe (lead → rezerwacja); usunięcie samego leada
+        // zostawia termin jako samodzielną rezerwację.
+        val lead = givenLead(appointmentId = UUID.randomUUID())
+        every { threadRepository.findByIdAndStudioId(threadId, studioId.value) } returns null
 
-        assertThrows(ConflictException::class.java) { handler.handle(studioId, leadId) }
+        delete()
+
+        verify { leadRepository.delete(lead) }
+    }
+
+    @Test
+    fun `lead z wizyta nie daje sie usunac`() {
+        givenLead(visitId = UUID.randomUUID())
+
+        assertThrows(ConflictException::class.java) { delete() }
         verify(exactly = 0) { leadRepository.delete(any()) }
     }
 
@@ -85,6 +103,6 @@ class DeleteLeadHandlerTest {
     fun `lead z innego studia nie istnieje`() {
         every { leadRepository.findByIdAndStudioId(leadId, studioId.value) } returns null
 
-        assertThrows(NotFoundException::class.java) { handler.handle(studioId, leadId) }
+        assertThrows(NotFoundException::class.java) { delete() }
     }
 }

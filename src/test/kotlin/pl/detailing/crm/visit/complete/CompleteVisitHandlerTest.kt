@@ -33,12 +33,16 @@ class CompleteVisitHandlerTest {
     private val customerRepository = mockk<CustomerRepository>()
     private val auditService = mockk<AuditService>(relaxed = true)
     private val createFinancialDocumentHandler = mockk<CreateFinancialDocumentHandler>()
+    private val capabilityService =
+        mockk<pl.detailing.crm.subscription.entitlement.capability.CapabilityService>(relaxed = true)
 
     private val handler = CompleteVisitHandler(
         visitRepository,
         customerRepository,
         auditService,
-        createFinancialDocumentHandler
+        createFinancialDocumentHandler,
+        capabilityService,
+        eventPublisher = mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()
@@ -48,13 +52,15 @@ class CompleteVisitHandlerTest {
     @BeforeEach
     fun setUp() {
         coEvery { customerRepository.findByIdAndStudioId(any(), any()) } returns null
-        every { createFinancialDocumentHandler.handle(any()) } returns mockk(relaxed = true)
+        every { createFinancialDocumentHandler.handle(any()) } returns financialDocument()
+        // Plan z modułem finansów: bez tego handler pomija wystawienie dokumentu.
+        every { capabilityService.hasCapability(any(), any()) } returns true
     }
 
     // ─── Repository query selection ─────────────────────────────────────────
 
     @Test
-    fun `uses findByIdAndStudioIdWithPhotos — not the bare findByIdAndStudioId`() = runBlocking {
+    fun `uses findByIdAndStudioIdWithPhotos - not the bare findByIdAndStudioId`() = runBlocking {
         val entity = visitEntityWithPhotos(count = 0)
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns entity
         coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
@@ -272,10 +278,7 @@ class CompleteVisitHandlerTest {
     fun `financial document is created when visit has service items`() = runBlocking {
         val entity = visitEntityWithPhotos(count = 0, serviceItemCount = 1)
         val docId = FinancialDocumentId.random()
-        val finDoc = mockk<FinancialDocument>(relaxed = true) {
-            every { id } returns docId
-            every { documentNumber } returns "PAR/2026/0001"
-        }
+        val finDoc = financialDocument(docId)
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns entity
         coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
         every { createFinancialDocumentHandler.handle(any()) } returns finDoc
@@ -294,7 +297,7 @@ class CompleteVisitHandlerTest {
 
         coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns entity
         coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
-        every { createFinancialDocumentHandler.handle(capture(cmdSlot)) } returns mockk(relaxed = true)
+        every { createFinancialDocumentHandler.handle(capture(cmdSlot)) } returns financialDocument()
 
         handler.handle(baseCommand(paymentMethod = PaymentMethod.TRANSFER))
 
@@ -360,6 +363,7 @@ class CompleteVisitHandlerTest {
         vehicleId = VehicleId.random(),
         appointmentId = AppointmentId.random(),
         appointmentColorId = null,
+        title = null,
         brandSnapshot = "Toyota",
         modelSnapshot = "Corolla",
         licensePlateSnapshot = "WA 12345",
@@ -398,7 +402,48 @@ class CompleteVisitHandlerTest {
                 adjustmentType = AdjustmentType.PERCENT,
                 adjustmentValue = 0L,
                 customNote = null
-            )
+                // PENDING nie liczy sie do sumy wizyty; dokument finansowy powstaje
+                // tylko dla uslug potwierdzonych
+            ).copy(status = VisitServiceStatus.CONFIRMED)
         }
     }
+
+    /**
+     * Prawdziwy obiekt domenowy zamiast mockk: FinancialDocumentId to value class,
+     * a MockK nie umie poprawnie oddac zmanglowanego gettera (ClassCastException
+     * FinancialDocumentId -> UUID na getId-...).
+     */
+    private fun financialDocument(
+        docId: FinancialDocumentId = FinancialDocumentId.random(),
+        number: String = "PAR/2026/0001"
+    ) = FinancialDocument(
+        id = docId,
+        studioId = studioId,
+        source = pl.detailing.crm.finance.domain.DocumentSource.VISIT,
+        visitId = visitId,
+        vehicleBrand = "Toyota",
+        vehicleModel = "Corolla",
+        customerFirstName = null,
+        customerLastName = null,
+        documentNumber = number,
+        documentType = DocumentType.RECEIPT,
+        direction = pl.detailing.crm.finance.domain.DocumentDirection.INCOME,
+        status = pl.detailing.crm.finance.domain.DocumentStatus.PAID,
+        paymentMethod = PaymentMethod.CASH,
+        totalNet = Money(10000L),
+        totalVat = Money(2300L),
+        totalGross = Money(12300L),
+        currency = "PLN",
+        issueDate = java.time.LocalDate.now(),
+        dueDate = null,
+        paidAt = Instant.now(),
+        description = null,
+        counterpartyName = null,
+        counterpartyNip = null,
+        createdBy = userId,
+        updatedBy = userId,
+        createdAt = Instant.now(),
+        updatedAt = Instant.now()
+    )
+
 }

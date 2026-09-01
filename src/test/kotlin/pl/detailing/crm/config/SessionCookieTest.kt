@@ -23,6 +23,8 @@ class SessionCookieTest {
             CookieSerializer.CookieValue(MockHttpServletRequest(), response, "session-id")
         )
     }.getCookie("SESSION")
+        // MockHttpServletResponse.getCookie jest @Nullable; brak cookie to złamany kontrakt.
+        ?: error("Serializer nie wystawił cookie SESSION")
 
     @Test
     fun `cookie sesji przezywa zamkniecie przegladarki`() {

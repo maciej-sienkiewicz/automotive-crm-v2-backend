@@ -56,7 +56,20 @@ class PiiResponseSurfaceScanTest {
             // Public business-registry lookups used to prefill company forms:
             "pl.detailing.crm.gus.",
             // Demo-account bootstrap (returns generated demo credentials):
-            "pl.detailing.crm.demo."
+            "pl.detailing.crm.demo.",
+            // Staff account data (team management, PIN user switching) — governed by the
+            // team/roles permission family, not customer PII:
+            "pl.detailing.crm.role.RoleUserResponse",
+            "pl.detailing.crm.pin.StudioProfileResponse",
+            // Platform-operator console (/api/internal, shared-secret) — tenant staff usage,
+            // never rendered through the customer-facing masking pipeline:
+            "pl.detailing.crm.metrics.query.TenantUserUsage",
+            // Karta Wizyty: dane pokazywane SAMEMU klientowi przez tokenowy link — maska
+            // uczyniłaby kartę bezużyteczną; VisitCardCompany to dane studia, nie klienta:
+            "pl.detailing.crm.visitcard.",
+            // Click-to-call: numer jedzie push-em na telefon pracownika po to, żeby go
+            // wybrać — zamaskowany ładunek nie zadzwoni:
+            "pl.detailing.crm.push.call.ClickToCallPayload"
         )
 
         private val MAPPING_ANNOTATIONS = listOf(

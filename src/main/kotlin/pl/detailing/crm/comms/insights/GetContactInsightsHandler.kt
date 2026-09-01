@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.insights
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,7 +16,7 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 
 data class ContactInsightsDto(
-    val email: String,
+    @Pii val email: String,
     /** Dopasowany klient z kartoteki; null = nowy kontakt. */
     val customer: InsightsCustomerDto?,
     /** Poprzednie konwersacje z tym adresem (bez bieżącej), najnowsze pierwsze. */
@@ -31,7 +32,7 @@ data class ContactInsightsDto(
 data class InsightsCustomerDto(
     val id: String,
     val name: String?,
-    val phone: String?,
+    @Pii val phone: String?,
     /** Liczba ukończonych wizyt klienta — "ile razy u nas był". */
     val completedVisitCount: Int,
     /** Suma brutto ukończonych wizyt w groszach — "ile u nas zostawił". */

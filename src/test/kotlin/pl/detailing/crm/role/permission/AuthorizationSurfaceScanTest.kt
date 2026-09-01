@@ -37,6 +37,9 @@ class AuthorizationSurfaceScanTest {
     private val allowlist: Map<String, Set<String>> = mapOf(
         // PUBLIC — anonymous auth flows (SecurityConfig permitAll)
         "AuthController" to ALL_METHODS,
+        "PwaManifestController" to ALL_METHODS,           // manifest PWA musi być czytelny przed logowaniem
+        "FrontendErrorController" to ALL_METHODS,         // zrzut błędów frontendu, także sprzed zalogowania
+        "PublicLeadFormController" to ALL_METHODS,        // publiczne formularze leadowe (permitAll + webhook secret)
         "HealthController" to ALL_METHODS,
         "DemoAccountController" to ALL_METHODS,
         "VehicleMetadataController" to ALL_METHODS,       // public dictionary data (makes/models)
@@ -50,11 +53,12 @@ class AuthorizationSurfaceScanTest {
         "CardDavController" to ALL_METHODS,               // HTTP Basic (CardDavSecurityConfig)
         "WellKnownCardDavController" to ALL_METHODS,
         "CardDavProfileDownloadController" to ALL_METHODS, // one-shot, TTL-bound URL token
+        "MobileContactImportController" to ALL_METHODS,   // opaque handoff token (sesja importu z telefonu)
+        "PlatformMetricsController" to ALL_METHODS,       // /api/internal: shared secret w PlatformAccessInterceptor
         // WEBHOOK — provider callbacks
         "Przelewy24WebhookController" to ALL_METHODS,
         "SmsInboundController" to ALL_METHODS,
         "InboundController" to ALL_METHODS,
-        "InboundEmailWebhookController" to ALL_METHODS,
         // SELF_SERVICE — the authenticated user's own data only
         "ProfileController" to ALL_METHODS,
         "CardDavProvisioningController" to ALL_METHODS,   // pairs/revokes the caller's own phones only
@@ -62,11 +66,15 @@ class AuthorizationSurfaceScanTest {
         "MyWorkTimeController" to ALL_METHODS,
         "PinController" to ALL_METHODS,                   // PIN user switching; unlock is owner-checked inline
         "MyTasksController" to ALL_METHODS,               // only tasks visible to the caller (TaskVisibility)
+        "MetricsSessionController" to ALL_METHODS,        // telemetria sesji zalogowanego użytkownika
+        "PushController" to ALL_METHODS,                  // rejestracja/odpinanie WŁASNYCH urządzeń push
+        "ReportProblemController" to ALL_METHODS,         // zgłoszenie problemu przez zalogowanego użytkownika
         // ALL_USERS — intentionally available to every authenticated studio member
         "EmployeeController" to setOf("listEmployees"),   // coworker names for calendar assignment
         "EmployeeLeaveController" to setOf("leaveCalendar"), // per-day on-leave counts for the shared calendar
         "CompanyController" to setOf(                     // read-only studio branding/config
-            "getCompanySettings", "getEmailAlias", "getLeadAlertConfig", "getIdleTimeout"
+            "getCompanySettings", "getEmailAlias", "getLeadAlertConfig", "getIdleTimeout",
+            "getVisitNumberingConfig"
         ),
         "SubscriptionController" to ALL_METHODS,          // status for gates; mutations owner-checked inline
         "EntitlementsController" to ALL_METHODS,          // entitlements drive the UI gates; mutations owner-checked inline
@@ -82,6 +90,9 @@ class AuthorizationSurfaceScanTest {
 
         scanner.findCandidateComponents("pl.detailing.crm")
             .mapNotNull(BeanDefinition::getBeanClassName)
+            // Kontrolery-atrapy zagnieżdżone w klasach testowych (Fake* w testach MockMvc)
+            // nie są częścią produkcyjnej powierzchni REST.
+            .filterNot { it.contains("Test$") }
             .map { Class.forName(it) }
             .sortedBy { it.simpleName }
             .forEach { controller ->

@@ -83,6 +83,7 @@ class VisitTotalCostTest {
         serviceItems = items,
         photos = emptyList(),
         damageMapFileId = null,
+        smsReminderSuppressed = false,
         createdBy = UserId(UUID.randomUUID()),
         updatedBy = UserId(UUID.randomUUID()),
         createdAt = Instant.now(),

@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.notes
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.NotFoundException
@@ -28,7 +29,7 @@ data class ContactNoteEventDto(
 )
 
 data class ContactNotesDto(
-    val email: String,
+    @Pii val email: String,
     val notes: List<ContactNoteDto>
 )
 

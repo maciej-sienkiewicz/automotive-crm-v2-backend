@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.query
 
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.leads.conversation.LeadConversationState
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.leads.infrastructure.LeadEntity
@@ -12,8 +13,8 @@ data class LeadDto(
     val id: String,
     val source: String,
     val status: String,
-    val contactIdentifier: String,
-    val customerName: String?,
+    @Pii val contactIdentifier: String,
+    @Pii val customerName: String?,
     val initialMessage: String?,
     val estimatedValue: Long,
     val requiresVerification: Boolean,
