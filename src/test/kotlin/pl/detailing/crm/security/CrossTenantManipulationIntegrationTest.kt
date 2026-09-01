@@ -95,7 +95,7 @@ class CrossTenantManipulationIntegrationTest {
     }
 
     @Test
-    fun `response is always 404 regardless of cross-tenant check outcome — no information leak`() {
+    fun `response is always 404 regardless of cross-tenant check outcome - no information leak`() {
         givenAuthenticatedUser(StudioId.random())
 
         // TenantIsolationAuditService finds a cross-tenant hit (returns normally after logging)
@@ -110,7 +110,7 @@ class CrossTenantManipulationIntegrationTest {
     }
 
     @Test
-    fun `TenantIsolationAuditService is still called when check throws internally — 404 returned`() {
+    fun `TenantIsolationAuditService is still called when check throws internally - 404 returned`() {
         val studioId = StudioId.random()
         givenAuthenticatedUser(studioId)
 
@@ -128,7 +128,7 @@ class CrossTenantManipulationIntegrationTest {
     }
 
     @Test
-    fun `TenantIsolationAuditService is still called when request is unauthenticated — 404 returned`() {
+    fun `TenantIsolationAuditService is still called when request is unauthenticated - 404 returned`() {
         // No user in SecurityContext → SecurityContextHelper.getCurrentUser() throws
         SecurityContextHolder.clearContext()
 

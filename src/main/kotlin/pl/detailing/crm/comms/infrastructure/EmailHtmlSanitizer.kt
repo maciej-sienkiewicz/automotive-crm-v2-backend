@@ -45,9 +45,13 @@ class EmailHtmlSanitizer {
             // Relative URLs are our own rewritten /api/v1/comms/... inline images.
             .preserveRelativeLinks(true)
 
+        // Niepusty baseUri jest konieczny od jsoup 1.17: protokół względnego src jest
+        // sprawdzany po rozwiązaniu do URL-a absolutnego, a przy pustej bazie względne
+        // "/api/v1/comms/..." nie przechodzi kontroli i przepisane obrazki inline znikały.
+        // preserveRelativeLinks(true) pilnuje, że do HTML-a i tak trafia forma względna.
         val clean = Jsoup.clean(
             document.html(),
-            "",
+            "https://mail.invalid/",
             safelist,
             Document.OutputSettings().prettyPrint(false)
         )

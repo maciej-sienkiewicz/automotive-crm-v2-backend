@@ -35,9 +35,15 @@ class CompleteVisitInvoiceOrchestratorTest {
     private val visitRepository = mockk<VisitRepository>()
     private val customerRepository = mockk<CustomerRepository>()
 
+    private val capabilityService =
+        mockk<pl.detailing.crm.subscription.entitlement.capability.CapabilityService>(relaxed = true) {
+            every { hasCapability(any(), any()) } returns true
+        }
+
     private val orchestrator = CompleteVisitInvoiceOrchestrator(
         completeVisitHandler, issueInvoiceHandler, createFinancialDocumentHandler,
-        financialDocumentRepository, settingsRepository, visitRepository, customerRepository
+        financialDocumentRepository, settingsRepository, visitRepository, customerRepository,
+        capabilityService, auditService = mockk(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -127,7 +133,7 @@ class CompleteVisitInvoiceOrchestratorTest {
     }
 
     @Test
-    fun `blokuje wystawienie gdy brak danych firmy — zanim wizyta zostanie zakonczona`() {
+    fun `blokuje wystawienie gdy brak danych firmy - zanim wizyta zostanie zakonczona`() {
         every { settingsRepository.findById(studioId.value) } returns Optional.of(
             StudioSettingsEntity(studioId = studioId.value, name = null, taxId = null)
         )

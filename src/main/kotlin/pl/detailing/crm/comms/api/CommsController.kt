@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.api
 
+import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.runBlocking
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpHeaders
@@ -74,7 +75,7 @@ data class ContactNoteRequest(val body: String)
  * zmianie wątku, a insights ciągnie wizyty, rezerwacje i leady.
  */
 data class ThreadContactBadgesDto(
-    val email: String,
+    @Pii val email: String,
     val otherThreadCount: Long,
     val noteCount: Long
 )

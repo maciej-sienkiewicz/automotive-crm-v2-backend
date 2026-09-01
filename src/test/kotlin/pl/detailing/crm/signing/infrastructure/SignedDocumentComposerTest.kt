@@ -43,7 +43,7 @@ import javax.imageio.ImageIO
 class SignedDocumentComposerTest {
 
     private val auditTrailPageGenerator = mockk<AuditTrailPageGenerator> {
-        every { appendAuditPage(any(), any(), any(), any(), any()) } returns Unit
+        every { appendAuditPage(any(), any(), any(), any()) } returns Unit
     }
     private val composer = SignedDocumentComposer(auditTrailPageGenerator)
 
@@ -56,7 +56,7 @@ class SignedDocumentComposerTest {
     fun `oversized tablet signature is scaled down to fit entirely inside the signature field`() {
         val pdf = protocolPdfWithSignatureField()
         // Big tablet: 2000x600px, much larger than the 200x60pt field
-        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), "VIS-1")
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -69,7 +69,7 @@ class SignedDocumentComposerTest {
     @Test
     fun `very wide signature is constrained by field width and centered vertically`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(3000, 300), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(3000, 300), null, request(), emptyList(), "VIS-1")
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -82,7 +82,7 @@ class SignedDocumentComposerTest {
     @Test
     fun `very tall signature is constrained by field height`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(400, 800), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(400, 800), null, request(), emptyList(), "VIS-1")
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -91,21 +91,25 @@ class SignedDocumentComposerTest {
     }
 
     @Test
-    fun `small signature is not upscaled, only centered`() {
+    fun `small signature is upscaled to fill the field on its binding axis`() {
+        // Zmiana kontraktu wzgledem pierwotnej wersji: maly podpis jest powiekszany,
+        // az dotknie ramki na dluzszej osi (patrz KDoc fitPreservingAspect) — podpis
+        // wyglada tak samo niezaleznie od rozdzielczosci tabletu, ktory go zebral.
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(50, 20), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(50, 20), null, request(), emptyList(), "VIS-1")
 
         val (w, h, x, y) = drawnImageGeometry(signed)
-        assertEquals(50f, w, 0.01f)
-        assertEquals(20f, h, 0.01f)
-        assertEquals(fieldRect.lowerLeftX + (fieldRect.width - 50f) / 2, x, 0.01f)
-        assertEquals(fieldRect.lowerLeftY + (fieldRect.height - 20f) / 2, y, 0.01f)
+        assertInsideField(w, h, x, y)
+        assertAspectPreserved(50f, 20f, w, h)
+        // 50x20 (aspekt 2.5) w polu 194x54: wiaze wysokosc — 54 * 2.5 = 135pt szerokosci.
+        assertEquals(fieldRect.height - 2 * padding, h, 0.01f)
+        assertEquals(fieldRect.lowerLeftX + (fieldRect.width - w) / 2, x, 0.01f)
     }
 
     @Test
     fun `signature field is flattened away in the final signed document`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(800, 300), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(800, 300), null, request(), emptyList(), "VIS-1")
 
         Loader.loadPDF(signed).use { doc ->
             val fields = doc.documentCatalog.acroForm?.fields ?: emptyList()
@@ -119,7 +123,7 @@ class SignedDocumentComposerTest {
             doc.addPage(PDPage(PDRectangle.A4))
             ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
         }
-        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), \"VIS-1\")
+        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), "VIS-1")
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         // Fallback box: (50, 50) 200x80pt — the image must stay inside it

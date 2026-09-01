@@ -1,5 +1,6 @@
 package pl.detailing.crm.batchorder.contractor
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
@@ -43,8 +44,8 @@ data class ContractorListItem(
     val taxId: String?,
     val address: String?,
     val contactPersonName: String?,
-    val email: String?,
-    val phone: String?,
+    @Pii val email: String?,
+    @Pii val phone: String?,
     val notes: String?,
     val isActive: Boolean,
     val entryCount: Long,

@@ -120,7 +120,8 @@ class WebPushCryptoTest {
     /** Raw r||s (64 B) → minimal ASN.1 DER, so the JCA verifier can consume it. */
     private fun joseToDer(jose: ByteArray): ByteArray {
         fun derInt(bytes: ByteArray): ByteArray {
-            val stripped = bytes.dropWhile { it == 0.toByte() }.toByteArray().ifEmpty { byteArrayOf(0) }
+            val dropped = bytes.dropWhile { it == 0.toByte() }
+            val stripped = if (dropped.isEmpty()) byteArrayOf(0) else dropped.toByteArray()
             val padded = if (stripped[0].toInt() < 0) byteArrayOf(0) + stripped else stripped
             return byteArrayOf(0x02, padded.size.toByte()) + padded
         }

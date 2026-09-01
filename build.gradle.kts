@@ -129,30 +129,6 @@ sourceSets {
         }
     }
 
-    test {
-        // DŁUG TECHNICZNY: te pliki testowe przestały się kompilować po zmianach w kodzie
-        // produkcyjnym (nieaktualne konstruktory i sygnatury) na długo przed włączeniem
-        // testów do CI — bez wykluczenia blokują kompilację CAŁEGO test sourceSetu,
-        // czyli również testów, które działają. Naprawiając któryś z nich, usuń go z tej
-        // listy. Nie dopisuj tu nowych pozycji: zepsuty test naprawia się, nie wyklucza.
-        kotlin.exclude(
-            "pl/detailing/crm/appointment/UpdateAppointmentRecurrenceScopeE2ETest.kt",
-            "pl/detailing/crm/appointment/get/GetAppointmentHandlerTest.kt",
-            "pl/detailing/crm/appointment/recurrence/update/UpdateRecurringAppointmentHandlerTest.kt",
-            "pl/detailing/crm/comms/ContactNoteServiceTest.kt",
-            "pl/detailing/crm/config/SessionCookieTest.kt",
-            "pl/detailing/crm/finance/reporting/FinanceReportingHandlerTest.kt",
-            "pl/detailing/crm/leads/DeleteLeadHandlerTest.kt",
-            "pl/detailing/crm/push/send/WebPushCryptoTest.kt",
-            "pl/detailing/crm/shared/pii/PiiAccessFilterTest.kt",
-            "pl/detailing/crm/signing/infrastructure/SignedDocumentComposerTest.kt",
-            "pl/detailing/crm/visit/complete/CompleteVisitE2ETest.kt",
-            "pl/detailing/crm/visit/complete/CompleteVisitHandlerTest.kt",
-            "pl/detailing/crm/visit/domain/VisitTotalCostTest.kt",
-            "pl/detailing/crm/visit/services/SaveVisitServicesHandlerTest.kt",
-            "pl/detailing/crm/visit/transitions/complete/CompleteVisitInvoiceOrchestratorTest.kt"
-        )
-    }
 }
 
 kotlin {

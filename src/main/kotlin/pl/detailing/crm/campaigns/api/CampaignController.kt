@@ -1,5 +1,6 @@
 package pl.detailing.crm.campaigns.api
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -208,10 +209,10 @@ data class AudienceEstimateRequest(
 
 data class AudienceCustomerDto(
     val customerId: UUID,
-    val firstName: String?,
-    val lastName: String?,
-    val phone: String?,
-    val email: String?,
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
+    @Pii val phone: String?,
+    @Pii val email: String?,
     val vehicleBrand: String?,
     val vehicleModel: String?,
     val lastVisitDate: Instant?,

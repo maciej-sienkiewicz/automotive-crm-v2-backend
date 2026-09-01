@@ -37,20 +37,24 @@ class FinanceReportingHandlerTest {
         docsExpensePending: Long = 0,
         revenuePaid: Long = 0,
         revenuePending: Long = 0,
-        ksefCostsPaid: Double = 0.0,
-        ksefCostsPending: Double = 0.0
+        ksefCostsPaid: Long = 0,
+        ksefCostsPending: Long = 0
     ) {
+        // Handler pyta o listy statusów: PAID jako „rozliczone", PENDING+OVERDUE jako
+        // „nierozliczone" — zaległy dokument nie znika z należności.
+        val settled = listOf(DocumentStatus.PAID)
+        val outstanding = listOf(DocumentStatus.PENDING, DocumentStatus.OVERDUE)
         every {
-            documentRepository.sumGross(any(), DocumentDirection.INCOME, DocumentStatus.PAID, any(), any())
+            documentRepository.sumGross(any(), DocumentDirection.INCOME, settled, any(), any())
         } returns docsIncomePaid
         every {
-            documentRepository.sumGross(any(), DocumentDirection.INCOME, DocumentStatus.PENDING, any(), any())
+            documentRepository.sumGross(any(), DocumentDirection.INCOME, outstanding, any(), any())
         } returns docsIncomePending
         every {
-            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, DocumentStatus.PAID, any(), any())
+            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, settled, any(), any())
         } returns docsExpensePaid
         every {
-            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, DocumentStatus.PENDING, any(), any())
+            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, outstanding, any(), any())
         } returns docsExpensePending
         every { revenueInvoiceRepository.sumGrossByPaymentStatus(any(), "PAID", any(), any()) } returns revenuePaid
         every { revenueInvoiceRepository.sumGrossByPaymentStatus(any(), "PENDING", any(), any()) } returns revenuePending
@@ -99,7 +103,7 @@ class FinanceReportingHandlerTest {
 
     @Test
     fun `koszty nadal sumuja modul finansowy i faktury kosztowe KSeF`() {
-        stub(docsExpensePaid = 10_000, ksefCostsPaid = 250.0)   // 250 zł → 25 000 gr
+        stub(docsExpensePaid = 10_000, ksefCostsPaid = 25_000)   // ledger zwraca grosze
         assertEquals(35_000, summary().totalCosts)
     }
 }

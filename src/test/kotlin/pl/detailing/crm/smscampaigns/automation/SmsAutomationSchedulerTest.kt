@@ -85,7 +85,7 @@ class SmsAutomationSchedulerTest {
     }
 
     @Test
-    fun `pre-visit still reads appointments — the visit does not exist yet`() {
+    fun `pre-visit still reads appointments - the visit does not exist yet`() {
         givenConfig(preVisit = rule(enabled = true, template = "Do zobaczenia {{data}}"))
 
         scheduler.processPendingAutomations()

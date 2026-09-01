@@ -3,6 +3,8 @@ package pl.detailing.crm.appointment
 import io.mockk.*
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
@@ -76,16 +78,20 @@ class UpdateAppointmentRecurrenceScopeE2ETest {
             cancelAppointmentHandler = mockk(relaxed = true),
             restoreAppointmentHandler = mockk(relaxed = true),
             deleteAppointmentHandler = mockk(relaxed = true),
+            hardDeleteAppointmentHandler = mockk(relaxed = true),
             listAppointmentsHandler = mockk(relaxed = true),
             getAppointmentHandler = mockk(relaxed = true),
             updateAppointmentTitleHandler = mockk(relaxed = true),
             sendBookingConfirmationSmsHandler = mockk(relaxed = true),
-            studioRepository = mockk(relaxed = true),
+            sendAppointmentRescheduleConfirmationSmsHandler = mockk(relaxed = true),
             updateAppointmentSmsPreferencesHandler = mockk(relaxed = true),
             createRecurringAppointmentHandler = mockk(relaxed = true),
+            createLeadAppointmentHandler = mockk(relaxed = true),
             updateRecurringAppointmentHandler = updateRecurringAppointmentHandler,
             deleteRecurringAppointmentHandler = mockk(relaxed = true),
-            getRecurrenceSeriesHandler = mockk(relaxed = true)
+            getRecurrenceSeriesHandler = mockk(relaxed = true),
+            sendReservationCardLinkHandler = mockk(relaxed = true),
+            capabilityService = mockk(relaxed = true)
         )
 
         mockMvc = MockMvcBuilders
@@ -253,6 +259,7 @@ class UpdateAppointmentRecurrenceScopeE2ETest {
           },
           "services": [
             {
+              "id": "${UUID.randomUUID()}",
               "serviceId": "${UUID.randomUUID()}",
               "serviceName": "Detailing premium",
               "basePriceNet": 30000,

@@ -26,14 +26,8 @@ pipeline {
                         sh 'chmod +x gradlew || true'
                         // Testy jadą na PRAWDZIWYM SDK KSeF (CI ma credentiale), więc dryf
                         // stubów z ksef-stub/ nigdy nie ukryje błędu kompilacji.
-                        //
-                        // warnError = czerwone testy oznaczają build jako UNSTABLE, ale nie
-                        // blokują jeszcze wdrożenia: suite wchodzi do CI z zastanym długiem
-                        // (~17 porażek sprzed włączenia testów). Po jego spłacie USUŃ
-                        // warnError, żeby czerwony test zatrzymywał pipeline.
-                        warnError('Testy nie przechodzą — build oznaczony jako UNSTABLE') {
-                            sh "./gradlew -g \"\$GRADLE_USER_HOME\" test -Pgpr.user=${gActor} -Pgpr.key=${gToken} --no-daemon"
-                        }
+                        // Twarda bramka: czerwony test zatrzymuje pipeline przed etapem Build.
+                        sh "./gradlew -g \"\$GRADLE_USER_HOME\" test -Pgpr.user=${gActor} -Pgpr.key=${gToken} --no-daemon"
                     }
                 }
             }

@@ -46,6 +46,7 @@ import pl.detailing.crm.visit.technicalnote.TechnicalNoteHistoryEntry
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.list.PackageItemDto
+import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.shared.pii.PiiAccessContext
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.permission.PermissionCheckService
@@ -993,7 +994,7 @@ data class UpdateVisitCustomerEmailRequest(
 
 data class UpdateVisitCustomerEmailResponse(
     val customerId: String,
-    val email: String
+    @Pii val email: String
 )
 
 data class UpdateEstimatedCompletionDateRequest(
@@ -1037,7 +1038,7 @@ data class OpenDraftVisitResponse(
     val title: String?,
     val appointmentId: String,
     val customerId: String,
-    val customerName: String?,
+    @Pii val customerName: String?,
     val customerPhone: String?,
     val customerEmail: String?,
     val vehicleId: String,

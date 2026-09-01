@@ -3,16 +3,16 @@ package pl.detailing.crm.vehicle
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.test.context.ActiveProfiles
 
-@SpringBootTest
-@ActiveProfiles("test")
+/**
+ * Serwis nie ma żadnych zależności — czyta tylko JSON z classpath, więc testujemy go
+ * bez podnoszenia kontekstu Springa. Wcześniejsza wersja z @SpringBootTest wymagała
+ * działającej bazy i Redisa, przez co nie dawała się uruchomić ani lokalnie bez
+ * infrastruktury, ani w CI. `init()` wołamy ręcznie — to samo robi @PostConstruct.
+ */
 class VehicleMetadataServiceTest {
 
-    @Autowired
-    lateinit var vehicleMetadataService: VehicleMetadataService
+    private val vehicleMetadataService = VehicleMetadataService().apply { init() }
 
     @Test
     fun `should load brands from json`() {

@@ -35,7 +35,9 @@ class GetAppointmentHandlerTest {
         customerRepository,
         vehicleRepository,
         appointmentColorRepository,
-        smsLogRepository
+        smsLogRepository,
+        mockk(relaxed = true),
+        mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()

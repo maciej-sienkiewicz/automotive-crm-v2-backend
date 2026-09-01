@@ -47,14 +47,19 @@ class PermissionSnapshotCacheTest {
     private fun proxiedCache(): PermissionSnapshotCache {
         context = AnnotationConfigApplicationContext()
         context.register(CachingTestConfig::class.java)
-        context.registerBean(PermissionSnapshotCache::class.java, {
-            PermissionSnapshotCache(
-                userRepository,
-                roleRepository,
-                context.getBean(CacheManager::class.java),
-                mockk<StringRedisTemplate>(relaxed = true)
-            )
-        })
+        // Jawny Supplier: goła lambda dopasowuje się do przeciążenia z BeanDefinitionCustomizer
+        // i Spring próbuje autowire'ować konstruktor zamiast użyć naszej fabryki.
+        context.registerBean(
+            PermissionSnapshotCache::class.java,
+            java.util.function.Supplier {
+                PermissionSnapshotCache(
+                    userRepository,
+                    roleRepository,
+                    context.getBean(CacheManager::class.java),
+                    mockk<StringRedisTemplate>(relaxed = true)
+                )
+            }
+        )
         context.refresh()
         return context.getBean(PermissionSnapshotCache::class.java)
     }

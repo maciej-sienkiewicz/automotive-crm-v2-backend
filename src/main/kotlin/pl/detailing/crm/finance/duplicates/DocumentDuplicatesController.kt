@@ -24,6 +24,9 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/v1/finance/duplicates")
 @RequiresPermission(Permission.FINANCE_INVOICES)
+@pl.detailing.crm.subscription.entitlement.capability.RequiresCapability(
+    pl.detailing.crm.subscription.entitlement.capability.CapabilityKey.FINANCE_ACCESS
+)
 class DocumentDuplicatesController(
     private val linkRepository: DocumentDuplicateLinkRepository,
     private val detector: DocumentDuplicateDetector

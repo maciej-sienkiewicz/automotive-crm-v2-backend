@@ -73,6 +73,7 @@ class TabletPairingTest {
     fun `odlaczenie oznacza urzadzenie jako odlaczone, nie kasuje jego historii`() {
         val existing = tablet()
         every { repository.findByIdAndStudioId(existing.id, studioId) } returns existing
+        every { repository.save(any()) } answers { firstArg() }
 
         service.revokeTablet(studioId.toString(), existing.id.toString())
 

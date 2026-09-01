@@ -41,7 +41,10 @@ class CommsIngestServiceTest {
         every { save(any()) } answers { firstArg() }
     }
     private val eventPublisher = mockk<ApplicationEventPublisher> {
-        every { publishEvent(any()) } just Runs
+        // publishEvent ma przeciazenia (Object) i (ApplicationEvent) — stub musi objac oba,
+        // bo zdarzenia domenowe nie dziedzicza po ApplicationEvent
+        every { publishEvent(any<Any>()) } just Runs
+        every { publishEvent(any<org.springframework.context.ApplicationEvent>()) } just Runs
     }
     private val service = CommsIngestService(
         threadRepository, messageRepository, attachmentRepository,

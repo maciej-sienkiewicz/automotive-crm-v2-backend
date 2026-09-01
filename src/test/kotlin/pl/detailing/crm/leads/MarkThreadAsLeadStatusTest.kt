@@ -45,6 +45,12 @@ class MarkThreadAsLeadStatusTest {
     private val statusService = mockk<LeadStatusService>(relaxed = true)
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
+    init {
+        // Relaxed mock zwróciłby z generycznego save() gołe Object, a handler używa wyniku.
+        every { threadRepository.save(any()) } answers { firstArg() }
+        every { leadRepository.save(any()) } answers { firstArg() }
+    }
+
     private val handler = MarkThreadAsLeadHandler(
         threadRepository, leadRepository, customerRepository, messageRepository,
         serviceItems, tagService, statusService, eventPublisher

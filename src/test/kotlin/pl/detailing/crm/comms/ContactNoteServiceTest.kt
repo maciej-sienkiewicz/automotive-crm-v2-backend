@@ -30,12 +30,12 @@ class ContactNoteServiceTest {
     private val studioId = StudioId(UUID.randomUUID())
     private val actorId = UUID.randomUUID()
 
-    private fun capturingSave(): CapturingSlot<ContactNoteEntity> = slot<ContactNoteEntity>().also {
-        every { noteRepository.save(capture(it)) } answers { it.captured }
+    private fun capturingSave(): CapturingSlot<ContactNoteEntity> = slot<ContactNoteEntity>().also { saved ->
+        every { noteRepository.save(capture(saved)) } answers { saved.captured }
     }
 
-    private fun capturingEvent(): CapturingSlot<ContactNoteEventEntity> = slot<ContactNoteEventEntity>().also {
-        every { eventRepository.save(capture(it)) } answers { it.captured }
+    private fun capturingEvent(): CapturingSlot<ContactNoteEventEntity> = slot<ContactNoteEventEntity>().also { saved ->
+        every { eventRepository.save(capture(saved)) } answers { saved.captured }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package pl.detailing.crm.comms.contact
 
+import pl.detailing.crm.shared.pii.Pii
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
@@ -122,7 +123,7 @@ class GetContactCardHandler(
 }
 
 data class ContactCardDto(
-    val email: String,
+    @Pii val email: String,
     /** null = adresu nie ma w kartotece; front proponuje wtedy powiązanie albo założenie. */
     val customer: ContactCardCustomerDto?,
     val vehicles: List<ContactCardVehicleDto>,
@@ -148,7 +149,7 @@ data class ContactCardRiskDto(
 data class ContactCardCustomerDto(
     val id: String,
     val fullName: String,
-    val phone: String?,
+    @Pii val phone: String?,
     val completedVisitCount: Int,
     val totalSpentGross: Long,
     val lastVisitAt: Instant?

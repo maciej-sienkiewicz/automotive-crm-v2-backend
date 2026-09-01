@@ -27,7 +27,8 @@ class UpdateRecurringAppointmentHandlerTest {
     private val handler = UpdateRecurringAppointmentHandler(
         appointmentRepository,
         recurrenceSeriesRepository,
-        auditService
+        auditService,
+        mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()
@@ -54,7 +55,7 @@ class UpdateRecurringAppointmentHandlerTest {
     }
 
     @Test
-    fun `scope THIS updates only the anchor — does not query other series members`() = runBlocking {
+    fun `scope THIS updates only the anchor - does not query other series members`() = runBlocking {
         val anchor = appointmentEntity(index = 0)
         every { appointmentRepository.findByIdAndStudioId(anchor.id, studioId.value) } returns anchor
 
