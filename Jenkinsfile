@@ -8,6 +8,42 @@ pipeline {
 
     stages {
 
+        stage('Test') {
+            agent {
+                docker {
+                    image 'gradle:8.14-jdk17'
+                    label 'docker'
+                    reuseNode true
+                }
+            }
+            steps {
+                configFileProvider([configFile(fileId: 'PROD_ENV_FILE', variable: 'PROD_ENV_PATH')]) {
+                    script {
+                        def gActor = sh(script: "grep 'ENV_GITHUB_ACTOR' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim().replaceAll(/['"]/, '')
+                        def gToken = sh(script: "grep 'ENV_GITHUB_TOKEN' ${PROD_ENV_PATH} | cut -d'=' -f2", returnStdout: true).trim().replaceAll(/['"]/, '')
+
+                        sh 'mkdir -p "$GRADLE_USER_HOME"'
+                        sh 'chmod +x gradlew || true'
+                        // Testy jadą na PRAWDZIWYM SDK KSeF (CI ma credentiale), więc dryf
+                        // stubów z ksef-stub/ nigdy nie ukryje błędu kompilacji.
+                        //
+                        // warnError = czerwone testy oznaczają build jako UNSTABLE, ale nie
+                        // blokują jeszcze wdrożenia: suite wchodzi do CI z zastanym długiem
+                        // (~17 porażek sprzed włączenia testów). Po jego spłacie USUŃ
+                        // warnError, żeby czerwony test zatrzymywał pipeline.
+                        warnError('Testy nie przechodzą — build oznaczony jako UNSTABLE') {
+                            sh "./gradlew -g \"\$GRADLE_USER_HOME\" test -Pgpr.user=${gActor} -Pgpr.key=${gToken} --no-daemon"
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
+                }
+            }
+        }
+
         stage('Build') {
             agent {
                 docker {
