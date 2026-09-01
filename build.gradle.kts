@@ -18,6 +18,15 @@ version = "1.0.0"
  */
 val useKsefStub = providers.gradleProperty("ksefStub").isPresent
 
+/**
+ * Testy oznaczone `@Tag("testcontainers")` (patrz UpdateAppointmentHandlerPersistenceTest)
+ * uderzają w prawdziwego Postgresa przez Testcontainers — wymagają demona Dockera. Domyślne
+ * `./gradlew test` je pomija, żeby nie wywrócić bramki CI na agentach bez dostępu do
+ * Dockera (np. gdy `gradle:8.14-jdk17` w Jenkinsie nie ma zamontowanego docker.sock).
+ * Uruchom `./gradlew test -PrunTestcontainers`, gdy Docker jest potwierdzony dostępny.
+ */
+val runTestcontainers = providers.gradleProperty("runTestcontainers").isPresent
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
 }
@@ -120,6 +129,14 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("io.mockk:mockk:1.13.10")
+
+    // Testcontainers – testy uderzające w prawdziwego Postgresa zamiast mockowanego
+    // repozytorium (patrz UpdateAppointmentHandlerPersistenceTest). Wymaga demona Dockera
+    // na maszynie/agencie CI uruchamiającym testy — patrz komentarz w tym pliku testowym.
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:postgresql")
 }
 
 sourceSets {
@@ -139,7 +156,9 @@ kotlin {
 }
 
 tasks.withType<Test> {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (!runTestcontainers) excludeTags("testcontainers")
+    }
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
