@@ -341,7 +341,12 @@ enum class AuditAction(
     CROSS_TENANT_ACCESS_ATTEMPT("Próba nieautoryzowanego dostępu", "Wykryto próbę nieautoryzowanego dostępu", AuditIcon.SECURITY, AuditSeverity.CRITICAL),
     LOGIN_FAILURE("Nieudane logowanie", "Odnotowano nieudane logowanie", AuditIcon.SECURITY, AuditSeverity.HIGH),
     LOGIN_SUCCESS("Zalogowanie", "Zalogowano się", AuditIcon.SECURITY, AuditSeverity.LOW),
-    ACCOUNT_LOCKED("Zablokowanie konta", "Zablokowano konto", AuditIcon.SECURITY, AuditSeverity.CRITICAL)
+    ACCOUNT_LOCKED("Zablokowanie konta", "Zablokowano konto", AuditIcon.SECURITY, AuditSeverity.CRITICAL),
+
+    // ── Account reset (factory wipe) ────────────────────────────────────────
+    ACCOUNT_RESET_STARTED("Zlecenie wyczyszczenia konta", "Zlecono wyczyszczenie konta", AuditIcon.SECURITY, AuditSeverity.CRITICAL),
+    ACCOUNT_RESET_COMPLETED("Wyczyszczenie konta", "Wyczyszczono konto", AuditIcon.DELETE, AuditSeverity.CRITICAL),
+    ACCOUNT_RESET_FAILED("Błąd wyczyszczenia konta", "Wyczyszczenie konta nie powiodło się", AuditIcon.SECURITY, AuditSeverity.CRITICAL)
 }
 
 /**
