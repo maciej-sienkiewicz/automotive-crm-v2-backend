@@ -113,7 +113,7 @@ Kardynalność jest zamknięta: tenant × typ (5) × wymiar (≤4), godzina (24)
 rezerwacji per tenant. Żadnych id encji w etykietach — te idą wyłącznie do strumienia
 Redis (`attributes`) dla SPA.
 
-### Dwie pułapki, na które te dashboardy są odporne
+### Trzy pułapki, na które te dashboardy są odporne
 
 **Krok minimalny 1 min na wykresach.** Scrape trwa 15 s, a `increase()` potrzebuje co
 najmniej dwóch próbek w oknie. Bez wymuszonego kroku `$__interval` na szerokim panelu
@@ -127,6 +127,23 @@ danych w Prometheusie. Panele mają `interval: 1m` i pytają o `[$__rate_interva
 **`—` zamiast `0` na kaflach KPI.** Gauge wystawia wiersz dla każdego tenanta i typu, także
 z zerem. Brak danych oznacza więc awarię scrape'u, nie spokojny dzień — i ma wyglądać inaczej
 niż prawdziwe zero.
+
+**Filtrowanie po `tenant_id`, nigdy po nazwie studia.** Grafana escapuje wartość zmiennej
+wstawianą do zapytania Prometheusa, więc apostrof w `Maciej Sienkiewicz's Detailing Studio`
+trafiał do matchera jako `\'` i `tenant="$tenant"` nie pasowało do niczego. Mylące było to,
+że tytuł wiersza wyglądał poprawnie — tam interpolacja jest zwykłym tekstem, nie zapytaniem.
+Wybierak na dashboardzie tenanta operuje więc na `tenant_id` (UUID, nic do escapowania,
+odporne na zmianę nazwy), a nazwa studia jest doklejana do tytułów przez ukrytą zmienną
+`tenant_name` wyprowadzoną z wybranego identyfikatora.
+
+### Regeneracja dashboardów
+
+JSON dashboardów jest artefaktem. Oba pliki dzielą ten sam zestaw paneli, więc ręczna edycja
+jednego rozjeżdża je względem siebie i gubi reguły wymuszone wyżej. Po każdej zmianie:
+
+```bash
+python3 deploy/monitoring/grafana/generate_dashboards.py
+```
 
 ## Konfiguracja (`crm.live-metrics.*`)
 

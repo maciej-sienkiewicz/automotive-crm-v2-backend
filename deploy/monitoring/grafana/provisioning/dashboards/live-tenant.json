@@ -1,7 +1,7 @@
 {
   "uid": "crm-live-tenant",
   "title": "Live metrics — tenant",
-  "description": "Te same metryki co na dashboardzie platformy, dla jednego wybranego tenanta (studia).",
+  "description": "Te same metryki co na dashboardzie platformy, dla jednego wybranego tenanta (studia). Wybierak operuje na tenant_id; nazwa studia jest w tytułach wierszy.",
   "tags": [
     "crm",
     "live-metrics"
@@ -28,18 +28,18 @@
   "templating": {
     "list": [
       {
-        "name": "tenant",
-        "label": "Tenant",
+        "name": "tenant_id",
+        "label": "Studio (ID)",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values(crm_business_events_today, tenant)",
-          "refId": "tenant"
+          "query": "label_values(crm_business_events_today, tenant_id)",
+          "refId": "tenant_id"
         },
-        "definition": "label_values(crm_business_events_today, tenant)",
+        "definition": "label_values(crm_business_events_today, tenant_id)",
         "refresh": 2,
         "sort": 1,
         "includeAll": false,
@@ -47,6 +47,27 @@
         "current": {},
         "options": [],
         "hide": 0
+      },
+      {
+        "name": "tenant_name",
+        "label": "Studio",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(crm_business_events_today{tenant_id=\"$tenant_id\"}, tenant)",
+          "refId": "tenant_name"
+        },
+        "definition": "label_values(crm_business_events_today{tenant_id=\"$tenant_id\"}, tenant)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": [],
+        "hide": 2
       }
     ]
   },
@@ -69,7 +90,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Dziś — $tenant",
+      "title": "Dziś — $tenant_name",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -100,7 +121,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"RESERVATION_CREATED\",tenant=\"$tenant\"}))",
+          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"RESERVATION_CREATED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -158,7 +179,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"VISIT_CREATED\",tenant=\"$tenant\"}))",
+          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"VISIT_CREATED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -216,7 +237,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"SERVICE_CREATED\",tenant=\"$tenant\"}))",
+          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"SERVICE_CREATED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -274,7 +295,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"PHOTO_UPLOADED\",tenant=\"$tenant\"}))",
+          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"PHOTO_UPLOADED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -332,7 +353,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"ACTIVITY_LOGGED\",tenant=\"$tenant\"}))",
+          "expr": "sum(max by (tenant_id) (crm_business_events_today{type=\"ACTIVITY_LOGGED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -430,7 +451,7 @@
     {
       "id": 8,
       "type": "row",
-      "title": "Na żywo — $tenant",
+      "title": "Na żywo — $tenant_name",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -461,7 +482,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"RESERVATION_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
+          "expr": "sum(increase(crm_business_events_total{type=\"RESERVATION_CREATED\",tenant_id=\"$tenant_id\"}[$__rate_interval]))",
           "legendFormat": "Rezerwacje",
           "refId": "A",
           "editorMode": "code",
@@ -544,7 +565,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (hour) (max by (hour, tenant_id) (crm_business_events_hour_of_day{type=\"RESERVATION_CREATED\",tenant=\"$tenant\"}))",
+          "expr": "sum by (hour) (max by (hour, tenant_id) (crm_business_events_hour_of_day{type=\"RESERVATION_CREATED\",tenant_id=\"$tenant_id\"}))",
           "legendFormat": "{{hour}}",
           "refId": "A",
           "editorMode": "code",
@@ -628,7 +649,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"VISIT_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"VISIT_CREATED\",tenant_id=\"$tenant_id\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -726,7 +747,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"PHOTO_UPLOADED\",tenant=\"$tenant\"}[$__rate_interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"PHOTO_UPLOADED\",tenant_id=\"$tenant_id\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -793,7 +814,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"SERVICE_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"SERVICE_CREATED\",tenant_id=\"$tenant_id\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -891,7 +912,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\",tenant=\"$tenant\"}[$__rate_interval]))",
+          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\",tenant_id=\"$tenant_id\"}[$__rate_interval]))",
           "legendFormat": "Wpisy",
           "refId": "A",
           "editorMode": "code",
@@ -974,7 +995,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (type) (rate(crm_business_events_total{tenant=\"$tenant\"}[$__rate_interval])) * 60",
+          "expr": "sum by (type) (rate(crm_business_events_total{tenant_id=\"$tenant_id\"}[$__rate_interval])) * 60",
           "legendFormat": "{{type}}",
           "refId": "A",
           "editorMode": "code",
