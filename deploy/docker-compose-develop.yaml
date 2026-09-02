@@ -49,6 +49,63 @@ services:
     networks:
       - network
 
+  # ── Observability Stack ─────────────────────────────────────────────────────
+  # Nazwy kontenerów i wolumeny mają sufiks -develop, aby środowisko develop mogło
+  # współistnieć z produkcyjnym na tym samym hoście Dockera bez kolizji.
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: detailing-crm-prometheus-develop
+    restart: unless-stopped
+    ports:
+      - "${ENV_PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      # Wariant develop: scrape celuje w kontener backendu develop, etykieta środowiska 'develop'
+      - ./monitoring/prometheus/prometheus-develop.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - network
+
+  # Klucz serwisu z sufiksem -develop: nazwa serwisu jest aliasem DNS w sieci,
+  # a nginx-proxy-manager jest wpięty w sieć prod ORAZ develop — serwis "grafana"
+  # w obu sieciach sprawiłby, że grafana.detailboost.pl (cel http://grafana:3000)
+  # rozwiązywałby się losowo między środowiskami.
+  grafana-develop:
+    image: grafana/grafana:11.0.0
+    container_name: detailing-crm-grafana-develop
+    restart: unless-stopped
+    ports:
+      - "${ENV_GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${ENV_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${ENV_GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${ENV_GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_FEATURE_TOGGLES_ENABLE: publicDashboards
+      GF_LOG_LEVEL: "error"
+      GF_LOG_FILTERS: "rendering:error provisioning.dashboard:critical"
+    depends_on:
+      - prometheus
+    networks:
+      - network
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
 networks:
   network:
     name: ${ENV_NETWORK}

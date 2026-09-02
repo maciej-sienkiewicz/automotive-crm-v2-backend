@@ -11,6 +11,8 @@ data class LiveMetricsProperties(
     /** Strefa czasowa kubełków minutowych / godzinowych / dziennych. */
     val zone: String = "Europe/Warsaw",
     val retention: Retention = Retention(),
+    /** Co ile sekund gauge'e Prometheus są odświeżane z Redisa. */
+    val prometheusRefreshSeconds: Long = 15,
     val recentEvents: Int = 200,
     val streamMaxLength: Long = 100_000,
     val ingest: Ingest = Ingest()
