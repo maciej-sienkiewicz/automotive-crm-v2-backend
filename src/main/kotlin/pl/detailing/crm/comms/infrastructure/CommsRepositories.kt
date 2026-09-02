@@ -25,6 +25,8 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
              AND (:labelId IS NULL OR t.labelId = :labelId)
              AND (:onlyUnread = FALSE OR t.unreadCount > 0)
              AND (:onlyLeads = FALSE OR t.leadId IS NOT NULL)
+             AND (:requireInbound = FALSE OR t.inboundCount > 0)
+             AND (:requireOutbound = FALSE OR t.outboundCount > 0)
              AND (:query IS NULL
                   OR LOWER(t.participantEmail) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
                   OR LOWER(COALESCE(t.participantName, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
@@ -38,6 +40,10 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
         @Param("labelId") labelId: UUID?,
         @Param("onlyUnread") onlyUnread: Boolean,
         @Param("onlyLeads") onlyLeads: Boolean,
+        /** Folder Odebrane: przynajmniej jedna wiadomość od uczestnika. */
+        @Param("requireInbound") requireInbound: Boolean,
+        /** Folder Wysłane: przynajmniej jedna wiadomość od nas. */
+        @Param("requireOutbound") requireOutbound: Boolean,
         @Param("query") query: String?,
         pageable: Pageable
     ): Page<CommThreadEntity>
@@ -153,6 +159,9 @@ interface CommAttachmentRepository : JpaRepository<CommAttachmentEntity, UUID> {
     fun findByIdAndStudioId(id: UUID, studioId: UUID): CommAttachmentEntity?
 
     fun findByMessageIdAndContentId(messageId: UUID, contentId: String): CommAttachmentEntity?
+
+    /** Pełne załączniki (z bajtami) jednej wiadomości — do zbudowania kopii MIME dla folderu Wysłane. */
+    fun findByMessageId(messageId: UUID): List<CommAttachmentEntity>
 
     @Query(
         """SELECT new pl.detailing.crm.comms.infrastructure.CommAttachmentMeta(

@@ -275,6 +275,7 @@ class CommsIngestService(
         participantName: String?
     ) {
         thread.messageCount += 1
+        if (message.direction == CommDirection.INBOUND) thread.inboundCount += 1 else thread.outboundCount += 1
         if (!message.isRead) thread.unreadCount += 1
         if (message.hasAttachments) thread.hasAttachments = true
         if (participantName != null && thread.participantName == null) {

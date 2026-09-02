@@ -74,6 +74,17 @@ class CommThreadEntity(
     @Column(name = "unread_count", nullable = false)
     var unreadCount: Int = 0,
 
+    /**
+     * Ile wiadomości przyszło od uczestnika, a ile wyszło od nas. Rozstrzygają o
+     * folderze: wątek bez ani jednej wiadomości przychodzącej to „Wysłane", nie
+     * „Odebrane" — i wraca do Odebranych, gdy klient odpisze.
+     */
+    @Column(name = "inbound_count", nullable = false)
+    var inboundCount: Int = 0,
+
+    @Column(name = "outbound_count", nullable = false)
+    var outboundCount: Int = 0,
+
     @Column(name = "has_attachments", nullable = false)
     var hasAttachments: Boolean = false,
 

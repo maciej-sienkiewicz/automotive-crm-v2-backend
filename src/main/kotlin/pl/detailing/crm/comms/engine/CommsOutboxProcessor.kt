@@ -10,11 +10,13 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
+import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.comms.infrastructure.CommOutboxEntity
 import pl.detailing.crm.comms.infrastructure.CommOutboxRepository
 import pl.detailing.crm.comms.send.AccountMailSender
+import pl.detailing.crm.comms.send.OutgoingAttachment
 import pl.detailing.crm.comms.send.OutgoingMail
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
@@ -33,6 +35,7 @@ import kotlin.math.pow
 class CommsOutboxProcessor(
     private val outboxRepository: CommOutboxRepository,
     private val messageRepository: CommMessageRepository,
+    private val attachmentRepository: CommAttachmentRepository,
     private val accountRepository: MailAccountRepository,
     private val imapSessions: ImapSessions,
     private val sender: AccountMailSender
@@ -127,7 +130,12 @@ class CommsOutboxProcessor(
                     subject = fresh.subject ?: "",
                     bodyHtml = fresh.bodyHtmlSafe ?: "",
                     inReplyTo = fresh.inReplyTo,
-                    references = fresh.referencesIds?.split(' ')?.filter { it.isNotBlank() } ?: emptyList()
+                    references = fresh.referencesIds?.split(' ')?.filter { it.isNotBlank() } ?: emptyList(),
+                    // Kopia w Wysłanych ma nieść te same pliki, które dostał odbiorca —
+                    // inaczej z telefonu nie da się sprawdzić, co właściwie poszło.
+                    attachments = attachmentRepository.findByMessageId(fresh.id)
+                        .filter { !it.isInline }
+                        .map { OutgoingAttachment(it.fileName, it.contentType, it.content) }
                 )
             )
             mime.setFlag(Flags.Flag.SEEN, true)

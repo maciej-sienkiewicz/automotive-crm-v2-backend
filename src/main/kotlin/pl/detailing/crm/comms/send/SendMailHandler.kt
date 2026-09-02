@@ -7,6 +7,7 @@ import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
+import pl.detailing.crm.comms.domain.ParsedAttachment
 import pl.detailing.crm.comms.domain.ParsedEmail
 import pl.detailing.crm.comms.engine.CommsIngestService
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
@@ -37,7 +38,9 @@ data class SendMailCommand(
     val bodyHtml: String,
     /** Append the author's saved signature. Composed here, not in the browser, so the
      *  stored signature stays the single source of truth for every client of this API. */
-    val appendSignature: Boolean = false
+    val appendSignature: Boolean = false,
+    /** Pliki dołączone w kompozytorze; sprawdzane przez [OutgoingAttachmentPolicy] przed wysyłką. */
+    val attachments: List<OutgoingAttachment> = emptyList()
 )
 
 data class SendMailResult(
@@ -68,6 +71,7 @@ class SendMailHandler(
     fun handle(command: SendMailCommand): SendMailResult {
         if (command.to.isEmpty()) throw ValidationException("Podaj adresata wiadomości")
         if (command.bodyHtml.isBlank()) throw ValidationException("Treść wiadomości nie może być pusta")
+        OutgoingAttachmentPolicy.validate(command.attachments)
 
         val thread = command.threadId?.let {
             threadRepository.findByIdAndStudioId(it, command.studioId.value)
@@ -110,7 +114,8 @@ class SendMailHandler(
             subject = subject,
             bodyHtml = safeHtml,
             inReplyTo = lastMessage?.messageIdHdr,
-            references = references.takeLast(MAX_REFERENCES)
+            references = references.takeLast(MAX_REFERENCES),
+            attachments = command.attachments
         )
 
         sender.send(account, messageIdHdr, mail)
@@ -132,7 +137,17 @@ class SendMailHandler(
                 sentAt = sentAt,
                 bodyHtml = safeHtml,
                 bodyText = null,
-                attachments = emptyList(),
+                // Te same bajty, które poszły SMTP-em: kopia w CRM i kopia dopisana
+                // do folderu Wysłane na serwerze (outbox) mają identyczne załączniki.
+                attachments = command.attachments.map {
+                    ParsedAttachment(
+                        fileName = it.fileName,
+                        contentType = it.contentType,
+                        contentId = null,
+                        inline = false,
+                        content = it.content
+                    )
+                },
                 imapUid = null,
                 seen = true
             ),

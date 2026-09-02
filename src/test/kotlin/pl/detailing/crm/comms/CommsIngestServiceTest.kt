@@ -137,6 +137,30 @@ class CommsIngestServiceTest {
         assertEquals(1, thread.captured.unreadCount)
         assertEquals(1, thread.captured.messageCount)
         assertEquals(CommDirection.INBOUND, thread.captured.lastDirection)
+        assertEquals(1, thread.captured.inboundCount)
+        assertEquals(0, thread.captured.outboundCount)
+    }
+
+    @Test
+    fun `message sent from scratch creates a thread that belongs to Sent only`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+
+        val thread = slot<CommThreadEntity>()
+        every { threadRepository.save(capture(thread)) } answers { firstArg() }
+
+        service.ingest(
+            account, CommFolderKind.SENT,
+            parsed(from = account.emailAddress).copy(toEmails = listOf("klient@example.com")),
+            uidValidity = null
+        )
+
+        // Bez ani jednej wiadomości od klienta wątek nie jest „odebraną" korespondencją.
+        assertEquals(0, thread.captured.inboundCount)
+        assertEquals(1, thread.captured.outboundCount)
+        assertEquals(0, thread.captured.unreadCount)
+        assertEquals("klient@example.com", thread.captured.participantEmail)
     }
 
     @Test
@@ -187,6 +211,8 @@ class CommsIngestServiceTest {
 
         assertEquals(threadId, message.captured.threadId)
         assertEquals(2, existingThread.messageCount)
+        // Odpowiedź klienta wciąga wątek z Wysłanych z powrotem do Odebranych.
+        assertEquals(1, existingThread.inboundCount)
     }
 
     @Test

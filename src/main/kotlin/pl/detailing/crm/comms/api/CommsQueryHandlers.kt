@@ -15,12 +15,25 @@ import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
 
+/**
+ * Folder listy wątków. Wątek może być w obu naraz (klient napisał, my odpisaliśmy) —
+ * to nie jest przenoszenie między katalogami, tylko dwa spojrzenia na tę samą rozmowę.
+ */
+enum class ThreadFolder {
+    /** Przynajmniej jedna wiadomość od uczestnika. */
+    INBOX,
+    /** Przynajmniej jedna wiadomość od nas. */
+    SENT
+}
+
 data class ThreadListFilter(
     val accountId: UUID?,
     val archived: Boolean,
     val labelId: UUID?,
     val onlyUnread: Boolean,
     val onlyLeads: Boolean,
+    /** null = bez ograniczenia kierunku (wszystkie wątki). */
+    val folder: ThreadFolder?,
     val query: String?,
     val page: Int,
     val pageSize: Int
@@ -44,6 +57,8 @@ class CommsQueryHandlers(
             filter.labelId,
             filter.onlyUnread,
             filter.onlyLeads,
+            filter.folder == ThreadFolder.INBOX,
+            filter.folder == ThreadFolder.SENT,
             filter.query?.trim()?.takeIf { it.isNotBlank() },
             PageRequest.of(filter.page.coerceAtLeast(0), filter.pageSize.coerceIn(1, 100))
         )

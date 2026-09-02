@@ -1,10 +1,18 @@
 package pl.detailing.crm.comms.send
 
+import jakarta.activation.DataHandler
 import jakarta.mail.Message
+import jakarta.mail.Part
 import jakarta.mail.Session
 import jakarta.mail.Transport
 import jakarta.mail.internet.InternetAddress
+import jakarta.mail.internet.MimeBodyPart
 import jakarta.mail.internet.MimeMessage
+import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.internet.MimeUtility
+import jakarta.mail.util.ByteArrayDataSource
+import org.jsoup.Jsoup
+import org.jsoup.nodes.TextNode
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
@@ -20,7 +28,8 @@ data class OutgoingMail(
     val subject: String,
     val bodyHtml: String,
     val inReplyTo: String? = null,
-    val references: List<String> = emptyList()
+    val references: List<String> = emptyList(),
+    val attachments: List<OutgoingAttachment> = emptyList()
 )
 
 /**
@@ -92,9 +101,65 @@ class AccountMailSender(
         if (mail.references.isNotEmpty()) {
             message.setHeader("References", mail.references.joinToString(" ") { "<$it>" })
         }
-        message.setContent(mail.bodyHtml, "text/html; charset=UTF-8")
+        message.setContent(buildContent(mail))
         message.saveChanges()
         return message
+    }
+
+    /**
+     * Struktura MIME:
+     *
+     *   multipart/mixed
+     *   ├─ multipart/alternative
+     *   │  ├─ text/plain   (treść bez znaczników — dla filtrów antyspamowych i czytników)
+     *   │  └─ text/html    (to, co użytkownik napisał i sformatował)
+     *   └─ application/…   (załączniki, po jednym na część)
+     *
+     * Część tekstowa jest zawsze, także bez załączników: wiadomość z samym HTML-em
+     * ląduje w spamie częściej niż z alternatywą tekstową, a koszt to jedno przejście
+     * jsoupem.
+     */
+    private fun buildContent(mail: OutgoingMail): MimeMultipart {
+        val alternative = MimeMultipart("alternative").apply {
+            addBodyPart(MimeBodyPart().apply { setText(htmlToPlainText(mail.bodyHtml), "UTF-8") })
+            addBodyPart(MimeBodyPart().apply { setContent(mail.bodyHtml, "text/html; charset=UTF-8") })
+        }
+        if (mail.attachments.isEmpty()) return alternative
+
+        return MimeMultipart("mixed").apply {
+            addBodyPart(MimeBodyPart().apply { setContent(alternative) })
+            mail.attachments.forEach { attachment ->
+                addBodyPart(
+                    MimeBodyPart().apply {
+                        dataHandler = DataHandler(ByteArrayDataSource(attachment.content, attachment.contentType))
+                        // RFC 2047: polskie znaki w nazwie pliku muszą być zakodowane,
+                        // inaczej część klientów pokazuje „?????.pdf".
+                        fileName = MimeUtility.encodeText(attachment.fileName, "UTF-8", null)
+                        disposition = Part.ATTACHMENT
+                    }
+                )
+            }
+        }
+    }
+
+    /** Wersja tekstowa treści HTML: bloki jako osobne linie, listy z myślnikiem, odnośniki z adresem. */
+    private fun htmlToPlainText(html: String): String {
+        val document = Jsoup.parse(html)
+        // Podmiana, nie doklejenie: nowsze jsoupy same oddają <br> jako nową linię
+        // w wholeText(), a z doklejonym "\n" wychodziłyby dwie.
+        document.select("br").forEach { it.replaceWith(TextNode("\n")) }
+        document.select("li").forEach { it.prepend("- ") }
+        document.select("p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote").forEach { it.append("\n") }
+        document.select("a[href]").forEach { anchor ->
+            val href = anchor.attr("href")
+            if (href.isNotBlank() && anchor.text().trim() != href) anchor.append(" ($href)")
+        }
+        return document.body().wholeText()
+            .replace('\u00a0', ' ')
+            .lines()
+            .joinToString("\n") { it.trimEnd() }
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
     }
 
     fun passwordOf(account: MailAccountEntity): String =
