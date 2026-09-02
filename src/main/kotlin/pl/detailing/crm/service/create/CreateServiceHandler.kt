@@ -10,12 +10,16 @@ import pl.detailing.crm.service.infrastructure.ServiceEntity
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.ServiceKind
 
 @Service
 class CreateServiceHandler(
     private val validatorComposite: CreateServiceValidatorComposite,
     private val serviceRepository: ServiceRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -47,6 +51,14 @@ class CreateServiceHandler(
 
         val entity = ServiceEntity.fromDomain(service)
         serviceRepository.save(entity)
+
+        // Live metrics — tenant rozszerzył ofertę
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.SERVICE_CREATED,
+            dimensionValue = ServiceKind.SERVICE.name,
+            attributes = mapOf("serviceId" to service.id.value.toString(), "name" to service.name, "userId" to command.userId.value.toString())
+        )
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

@@ -18,7 +18,7 @@ import java.util.UUID
 
 /**
  * Operator-only studio administration. Lives under `/api/internal/...`, which
- * [pl.detailing.crm.metrics.config.PlatformAccessInterceptor] guards with the
+ * [pl.detailing.crm.livemetrics.platform.PlatformKeyInterceptor] guards with the
  * `X-Platform-Key` shared secret (fail-closed when the key is not configured) and
  * which [pl.detailing.crm.config.SecurityConfig] keeps outside the session model on
  * purpose: there is no studio to scope to and no operator row in `users`.

@@ -11,7 +11,6 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
-import pl.detailing.crm.observability.MetricsTags
 import java.time.Duration
 import java.time.Instant
 
@@ -73,8 +72,8 @@ class RateLimitFilter(
 
         if (count > bucket.limit) {
             meterRegistry.counter(
-                MetricsTags.SECURITY_RATE_LIMIT_EXCEEDED,
-                MetricsTags.TAG_PATH, normalizePath(path)
+                "crm.security.rate_limit.exceeded",
+                "path", normalizePath(path)
             ).increment()
 
             response.status = HttpStatus.TOO_MANY_REQUESTS.value()

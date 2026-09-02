@@ -56,6 +56,9 @@ import pl.detailing.crm.shared.DoorToDoorId
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.VisitOrigin
 
 @Service
 class CreateVisitFromReservationHandler(
@@ -75,6 +78,7 @@ class CreateVisitFromReservationHandler(
     private val checkinDamagePointsService: pl.detailing.crm.checkin.qr.CheckinDamagePointsService,
     private val uploadContextTokenService: UploadContextTokenService,
     private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher,
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
     private val doorToDoorRepository: DoorToDoorRepository,
     private val appointmentVehicleResolver: AppointmentVehicleResolver,
@@ -362,6 +366,18 @@ class CreateVisitFromReservationHandler(
             // Step 9: Persist Visit entity (must be done before registering documents)
             visit = persistVisitRetryingOnDuplicateNumber(visit, command.studioId)
 
+            // Step 9.0: Live metrics — wizyta z przekształcenia istniejącej rezerwacji
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.VISIT_CREATED,
+                dimensionValue = VisitOrigin.FROM_RESERVATION.name,
+                attributes = mapOf(
+                    "visitId" to visitId.value.toString(),
+                    "appointmentId" to appointment.id.value.toString(),
+                    "userId" to command.userId.value.toString()
+                )
+            )
+
             // Step 9.1: Retroactively link pre-visit SMS (booking confirmation, reminder) to this visit.
             // Those entries were recorded with visitId = null because the visit did not exist yet.
             appointmentCommunicationLinker.linkToVisit(appointment.id, visitId, command.studioId)
@@ -613,6 +629,17 @@ class CreateVisitFromReservationHandler(
 
             // Step 10: Persist visit
             visit = persistVisitRetryingOnDuplicateNumber(visit, command.studioId)
+
+            // Step 10.0: Live metrics — wizyta utworzona bezpośrednio (walk-in, bez rezerwacji)
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.VISIT_CREATED,
+                dimensionValue = VisitOrigin.DIRECT.name,
+                attributes = mapOf(
+                    "visitId" to visitId.value.toString(),
+                    "userId" to command.userId.value.toString()
+                )
+            )
 
             // Step 10.1: Audit log
             val vehicleDisplayName = "${vehicle.brand} ${vehicle.model}" +

@@ -20,6 +20,8 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerEntity
 import pl.detailing.crm.vehicle.infrastructure.VehicleOwnerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 
 @Service
 class CreateAppointmentHandler(
@@ -30,7 +32,8 @@ class CreateAppointmentHandler(
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val serviceRepository: ServiceRepository,
     private val auditService: AuditService,
-    private val vehicleResolver: AppointmentVehicleResolver
+    private val vehicleResolver: AppointmentVehicleResolver,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -135,6 +138,17 @@ class CreateAppointmentHandler(
             appointmentEntity.d2dNotes = d2d.notes
         }
         appointmentRepository.save(appointmentEntity)
+
+        // Step 6.1: Live metrics — rezerwacja istnieje, licznik tenanta rośnie natychmiast
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.RESERVATION_CREATED,
+            attributes = mapOf(
+                "appointmentId" to appointment.id.value.toString(),
+                "startDateTime" to command.schedule.startDateTime.toString(),
+                "userId" to command.userId.value.toString()
+            )
+        )
 
         // Step 7: Audit log
         auditService.log(LogAuditCommand(

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live metrics — studio</title>
+  <link rel="stylesheet" href="live-metrics.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Live metrics · studio</h1>
+      <div class="sub" id="generated">zdarzenia biznesowe Twojego studia w czasie rzeczywistym</div>
+    </div>
+    <span class="spacer"></span>
+    <span class="status" id="status" data-state="idle"><span class="dot"></span><span id="status-text">rozłączono</span></span>
+  </header>
+
+  <section class="gate card hidden" id="gate-studio">
+    <h2>Wymagane logowanie</h2>
+    <p>Ten widok korzysta z sesji CRM (cookie) i uprawnienia <em>Podgląd statystyk</em>. Zaloguj się do CRM w tej samej domenie i odśwież stronę.</p>
+  </section>
+  <section class="gate card hidden" id="gate"></section>
+
+  <main id="app" class="hidden">
+    <div class="grid kpis" id="kpis"></div>
+    <div class="grid charts" id="charts"></div>
+    <div class="grid charts" style="margin-top:14px">
+      <section class="card"><h2>Ostatnie zdarzenia</h2><p class="desc">Strumień na żywo (SSE). Ten sam strumień jest dostępny w SPA przez STOMP: <code>/topic/studio.{studioId}.metrics</code>.</p><div id="feed"></div></section>
+    </div>
+  </main>
+  <script src="live-metrics.js"></script>
+  <script>LiveMetrics.boot({ mode: 'studio' });</script>
+</body>
+</html>

@@ -10,7 +10,6 @@ import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.auth.UserPrincipal
-import pl.detailing.crm.observability.MetricsTags
 import pl.detailing.crm.shared.StudioId
 import java.util.UUID
 
@@ -85,8 +84,8 @@ class TenantIsolationAuditService(
             )
 
             meterRegistry.counter(
-                MetricsTags.SECURITY_CROSS_TENANT_ATTEMPT,
-                MetricsTags.TAG_STUDIO_ID, user.studioId.toString(),
+                "crm.security.cross_tenant.attempt",
+                "studio_id", user.studioId.toString(),
                 "entity_type", entityType
             ).increment()
 

@@ -61,9 +61,6 @@ class PiiResponseSurfaceScanTest {
             // team/roles permission family, not customer PII:
             "pl.detailing.crm.role.RoleUserResponse",
             "pl.detailing.crm.pin.StudioProfileResponse",
-            // Platform-operator console (/api/internal, shared-secret) — tenant staff usage,
-            // never rendered through the customer-facing masking pipeline:
-            "pl.detailing.crm.metrics.query.TenantUserUsage",
             // Karta Wizyty: dane pokazywane SAMEMU klientowi przez tokenowy link — maska
             // uczyniłaby kartę bezużyteczną; VisitCardCompany to dane studia, nie klienta:
             "pl.detailing.crm.visitcard.",

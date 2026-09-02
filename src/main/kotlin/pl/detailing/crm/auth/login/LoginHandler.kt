@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
-import pl.detailing.crm.observability.MetricsTags
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
@@ -113,6 +112,6 @@ class LoginHandler(
     }
 
     private fun recordAttempt(result: String) {
-        meterRegistry.counter(MetricsTags.SECURITY_LOGIN_ATTEMPTS, "result", result).increment()
+        meterRegistry.counter("crm.security.login.attempts", "result", result).increment()
     }
 }

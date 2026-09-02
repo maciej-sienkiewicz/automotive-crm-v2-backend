@@ -141,11 +141,16 @@ class SecurityConfig(
                 // Uwierzytelnia nieodgadywalny token w adresie; każde zgłoszenie trafia
                 // do dziennika doręczeń razem z surowym ładunkiem.
                 auth.requestMatchers("/api/public/lead-forms/**").permitAll()
-                // Platform metrics console — cross-tenant by design, so it deliberately does
-                // NOT use the studio session identity. Authenticated by the X-Platform-Key
-                // shared secret in PlatformAccessInterceptor, which fails closed when no key
-                // is configured. Expected to sit behind a VPN / IP allow-list as well.
+                // Platform operator console (live-metrics, studio admin) — cross-tenant by
+                // design, so it deliberately does NOT use the studio session identity.
+                // Authenticated by the X-Platform-Key shared secret in PlatformKeyInterceptor,
+                // which fails closed when no key is configured. Expected to sit behind a
+                // VPN / IP allow-list as well.
                 auth.requestMatchers("/api/internal/**").permitAll()
+                // Self-contained live-metrics dashboards (static HTML). The pages carry no
+                // data: the platform page asks for the X-Platform-Key, the studio page uses
+                // the session cookie for every API call it makes.
+                auth.requestMatchers("/live-metrics/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->

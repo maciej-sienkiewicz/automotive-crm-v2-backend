@@ -12,12 +12,16 @@ import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.PhotoTarget
 
 @Service
 class AddBatchOrderPhotoHandler(
     private val entryRepository: BatchOrderEntryRepository,
     private val photoRepository: BatchOrderPhotoRepository,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: AddBatchOrderPhotoCommand): AddBatchOrderPhotoResult {
@@ -40,6 +44,13 @@ class AddBatchOrderPhotoHandler(
             uploadedByName = command.userName
         )
         photoRepository.save(photo)
+
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.PHOTO_UPLOADED,
+            dimensionValue = PhotoTarget.BATCH_ORDER.name,
+            attributes = mapOf("entryId" to command.entryId.value.toString(), "photoId" to photoId.toString())
+        )
 
         val contentType = PhotoSessionService.contentTypeFromFileName(command.fileName)
         val uploadUrl = photoSessionService.generateSimpleUploadUrl(fileId, contentType)

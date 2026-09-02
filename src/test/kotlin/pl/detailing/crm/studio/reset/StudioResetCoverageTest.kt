@@ -39,17 +39,6 @@ class StudioResetCoverageTest {
         "SmsCreditTransactionEntity" to "historia kredytów SMS to pieniądze klienta",
         // Rejestr zdarzeń — reset zostawia w nim własny wpis CRITICAL.
         "AuditLogEntity" to "dziennik audytu jest rejestrem, przetrwa reset",
-        // Telemetria platformy: operacyjna diagnostyka operatora, niewidoczna dla studia.
-        "MetricEventEntity" to "telemetria platformy",
-        "UserSessionEntity" to "telemetria platformy",
-        "ErrorEventEntity" to "telemetria platformy",
-        "ErrorGroupEntity" to "telemetria platformy",
-        "ErrorGroupImpactEntity" to "telemetria platformy",
-        "StudioDailySnapshotEntity" to "telemetria platformy",
-        "StudioApiDailyEntity" to "telemetria platformy",
-        "PlatformDailySnapshotEntity" to "dane globalne całej platformy",
-        "ApiEndpointEntity" to "dane globalne całej platformy",
-        "ApiEndpointDailyEntity" to "dane globalne całej platformy",
         // Globalne katalogi współdzielone między studiami.
         "PlanEntity" to "globalny katalog planów",
         "FeatureEntity" to "globalny katalog funkcji",

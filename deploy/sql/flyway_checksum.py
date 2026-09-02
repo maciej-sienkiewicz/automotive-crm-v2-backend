@@ -26,11 +26,11 @@ zmiana samego komentarza też zmienia sumę, bo liczona jest z całego pliku.
 
 Użycie
 ──────
-    python3 deploy/sql/flyway_checksum.py src/main/resources/db/migration/V65__*.sql
+    python3 deploy/sql/flyway_checksum.py src/main/resources/db/migration/V97__*.sql
 
     # która rewizja odpowiada sumie z bazy:
     for r in a960d94 9814e30 HEAD; do
-        git show $r:src/main/resources/db/migration/V65__metrics_module.sql \
+        git show $r:src/main/resources/db/migration/V97__dashboard_hint_dismissals.sql \
           | python3 deploy/sql/flyway_checksum.py - | sed "s/^/$r /"
     done
 

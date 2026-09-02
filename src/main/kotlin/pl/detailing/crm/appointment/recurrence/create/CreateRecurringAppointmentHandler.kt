@@ -16,12 +16,15 @@ import pl.detailing.crm.appointment.recurrence.infrastructure.RecurrenceSeriesRe
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 
 @Service
 class CreateRecurringAppointmentHandler(
     private val appointmentRepository: AppointmentRepository,
     private val recurrenceSeriesRepository: RecurrenceSeriesRepository,
     private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher,
     private val createAppointmentHandler: CreateAppointmentHandler,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -127,6 +130,22 @@ class CreateRecurringAppointmentHandler(
             }
 
             appointmentRepository.saveAll(additionalEntities)
+
+            // Live metrics: każde kolejne wystąpienie serii to osobna rezerwacja w kalendarzu
+            // (pierwsze policzył już CreateAppointmentHandler). Listener jest AFTER_COMMIT,
+            // więc zdarzenia wyjdą dopiero po zatwierdzeniu tej transakcji.
+            additionalEntities.forEach { occurrence ->
+                businessEventPublisher.publish(
+                    tenantId = command.base.studioId,
+                    type = BusinessEventType.RESERVATION_CREATED,
+                    attributes = mapOf(
+                        "appointmentId" to occurrence.id.toString(),
+                        "recurrenceSeriesId" to series.id.value.toString(),
+                        "userId" to command.base.userId.value.toString()
+                    )
+                )
+            }
+
             }
 
             // Step 8: audit log

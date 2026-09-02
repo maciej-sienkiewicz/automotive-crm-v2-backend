@@ -15,7 +15,6 @@ import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.auth.UserPrincipal
-import pl.detailing.crm.observability.MetricsTags
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.util.UUID
