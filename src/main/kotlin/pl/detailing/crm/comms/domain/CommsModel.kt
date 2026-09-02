@@ -85,6 +85,12 @@ data class ParsedEmail(
 data class CommThreadChangedEvent(
     val studioId: UUID,
     val threadId: UUID,
+    /**
+     * Wątek dostał nową wiadomość PRZYCHODZĄCĄ — jedyny przypadek, w którym warto
+     * zaczepić użytkownika powiadomieniem. Własna wysyłka (z CRM-a albo z telefonu,
+     * zassana z folderu Wysłane) zmienia wątek, ale nie jest niczym nowym dla tego,
+     * kto ją napisał: idzie z tą flagą wyłączoną i odświeża tylko listę.
+     */
     val newMessage: Boolean
 )
 

@@ -147,8 +147,19 @@ class CommsIngestService(
 
         refreshThreadAggregates(thread, message, participantName)
 
+        // „Nowa wiadomość" znaczy: przyszła do nas. Wiadomość WYCHODZĄCA trafia tu
+        // dwiema drogami — wysyłka z CRM-a (SendMailHandler zapisuje kopię tą samą
+        // ścieżką) i odpowiedź wysłana z telefonu czy Outlooka, zassana potem z
+        // folderu Wysłane — i w obu przypadkach jej autor doskonale wie, że ją wysłał.
+        // Powiadomienie „Masz nową wiadomość w skrzynce" tuż po kliknięciu „Wyślij"
+        // jest po prostu nieprawdziwe. Zdarzenie idzie dalej bez tej flagi: lista
+        // wątków ma się odświeżyć, tylko bez zaczepiania użytkownika.
         eventPublisher.publishEvent(
-            CommThreadChangedEvent(studioId = account.studioId, threadId = thread.id, newMessage = !backfill)
+            CommThreadChangedEvent(
+                studioId = account.studioId,
+                threadId = thread.id,
+                newMessage = !backfill && direction == CommDirection.INBOUND
+            )
         )
         // Po zatwierdzeniu tej transakcji automat formularzy sprawdzi nadawcę —
         // stąd osobne zdarzenie z adresem w środku, żeby nieistotne wiadomości
