@@ -33,7 +33,7 @@ class PhotoSessionController(
 
         val session = photoSessionService.createSession(
             studioId = principal.studioId,
-            appointmentId = AppointmentId.fromString(request.appointmentId),
+            appointmentId = request.appointmentId?.takeIf { it.isNotBlank() }?.let { AppointmentId.fromString(it) },
             userId = principal.userId
         )
 
@@ -121,7 +121,9 @@ class PhotoSessionController(
 // Request DTOs
 
 data class CreateSessionRequest(
-    val appointmentId: String
+    // Null dla wizyt z marszu (/checkin/new) — sesja zdjęciowa powstaje, zanim
+    // istnieje jakakolwiek rezerwacja.
+    val appointmentId: String? = null
 )
 
 data class GenerateUploadUrlRequest(
