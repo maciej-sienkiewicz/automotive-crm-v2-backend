@@ -1,6 +1,8 @@
 package pl.detailing.crm.ksef.revenue.issue
 
 import org.slf4j.LoggerFactory
+import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -105,7 +107,8 @@ class IssueRevenueInvoiceHandler(
     private val settingsRepository: StudioSettingsRepository,
     private val xmlBuilder: Fa3XmlBuilder,
     private val dispatchService: KsefRevenueDispatchService,
-    private val numberGenerator: RevenueInvoiceNumberGenerator
+    private val numberGenerator: RevenueInvoiceNumberGenerator,
+    private val customerRepository: CustomerRepository
 ) {
     private val log = LoggerFactory.getLogger(IssueRevenueInvoiceHandler::class.java)
 
@@ -202,7 +205,11 @@ class IssueRevenueInvoiceHandler(
             paymentDueDate     = command.paymentDueDate,
             paidAt             = if (command.isPaid) Instant.now() else null,
             visitId            = command.visitId,
-            customerId         = command.customerId,
+            customerId         = command.customerId?.also { cid ->
+                // Client-supplied id — bind the invoice only to THIS studio's customer.
+                customerRepository.findByIdAndStudioId(cid, command.studioId.value)
+                    ?: throw EntityNotFoundException("Klient nie został znaleziony: $cid")
+            },
             description        = command.description?.trim()?.ifBlank { null },
             createdBy          = command.userId.value
         )

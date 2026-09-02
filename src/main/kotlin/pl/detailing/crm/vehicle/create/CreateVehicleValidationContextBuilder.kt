@@ -27,23 +27,19 @@ class CreateVehicleValidationContextBuilder(
                 false
             }
 
-            val customer = if (command.ownerIds.isNotEmpty()) {
-                    async {
-                        customerRepository.findByIdAndStudioId(
-                            command.ownerIds[0].value,
-                            command.studioId.value
-                        )
-                    }.await()
-                } else {
-                    null
+            // Every owner, not just the first — each lookup carries the studio filter.
+            val owners = command.ownerIds
+                .map { ownerId ->
+                    async { customerRepository.findByIdAndStudioId(ownerId.value, command.studioId.value) }
                 }
+                .map { it.await() }
 
             CreateVehicleValidationContext(
                 studioId = command.studioId,
                 ownerIds = command.ownerIds,
                 licensePlate = command.licensePlate,
                 yearOfProduction = command.yearOfProduction,
-                customerExists = customer,
+                owners = owners,
                 licensePlateExists = licensePlateExists
             )
         }

@@ -12,6 +12,7 @@ import pl.detailing.crm.auth.passwordreset.PasswordResetProperties
 import pl.detailing.crm.auth.passwordreset.PasswordResetTokenService
 import pl.detailing.crm.email.provider.EmailProvider
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
+import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -22,6 +23,7 @@ import java.util.UUID
 class ProvisionEmployeeAccountHandler(
     private val employeeRepository: EmployeeRepository,
     private val userRepository: UserRepository,
+    private val roleRepository: RoleRepository,
     private val passwordEncoder: PasswordEncoder,
     private val tokenService: PasswordResetTokenService,
     private val emailProvider: EmailProvider,
@@ -47,6 +49,12 @@ class ProvisionEmployeeAccountHandler(
         }
 
         val userId = UUID.randomUUID()
+        // The role id comes from the client — it has to be one of THIS studio's roles.
+        command.roleId?.let { roleId ->
+            roleRepository.findByIdAndStudioId(roleId.value, command.studioId.value)
+                ?: throw EntityNotFoundException("Rola nie istnieje")
+        }
+
         val userEntity = UserEntity(
             id = userId,
             studioId = command.studioId.value,

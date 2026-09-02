@@ -43,8 +43,12 @@ class ListTasksHandler(
             val allUserIds = (visibleEntities.map { it.createdByUserId } +
                               visibleEntities.mapNotNull { it.completedByUserId } +
                               visibilityUserIds).distinct()
+            // Studio-scoped resolution: a task row carrying a foreign user id (legacy data or a
+            // dangling reference) must not surface another studio's employee name.
             val usersById = if (allUserIds.isEmpty()) emptyMap()
-                            else userRepository.findAllById(allUserIds).associateBy { it.id }
+                            else userRepository.findByStudioId(query.studioId.value)
+                                .filter { it.id in allUserIds }
+                                .associateBy { it.id }
 
             // Collect role IDs for ROLE-visibility tasks
             val visibilityRoleIds = visibleEntities
@@ -52,7 +56,9 @@ class ListTasksHandler(
                 .mapNotNull { it.visibleToRoleId }
                 .distinct()
             val rolesById = if (visibilityRoleIds.isEmpty()) emptyMap()
-                            else roleRepository.findAllById(visibilityRoleIds).associateBy { it.id }
+                            else roleRepository.findByStudioId(query.studioId.value)
+                                .filter { it.id in visibilityRoleIds }
+                                .associateBy { it.id }
 
             val result = visibleEntities.map { entity ->
                 val createdBy = usersById[entity.createdByUserId]

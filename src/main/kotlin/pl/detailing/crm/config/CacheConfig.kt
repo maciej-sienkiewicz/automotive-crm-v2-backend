@@ -2,7 +2,7 @@ package pl.detailing.crm.config
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
@@ -39,10 +39,22 @@ class CacheConfig {
     @Bean
     @Primary
     fun cacheManager(connectionFactory: RedisConnectionFactory): RedisCacheManager {
+        // Allow-list instead of LaissezFaire: `@class` in a cached JSON blob names the type
+        // Jackson instantiates on read. Whoever can write to Redis must not get to pick a
+        // gadget class — only our own types and the JDK value/collection types we cache.
+        val allowedTypes = BasicPolymorphicTypeValidator.builder()
+            .allowIfSubType("pl.detailing.crm.")
+            .allowIfSubType("java.util.")
+            .allowIfSubType("java.time.")
+            .allowIfSubType("java.lang.")
+            .allowIfSubType("java.math.")
+            .allowIfSubType("kotlin.")
+            .build()
+
         val redisMapper = ObjectMapper()
             .registerModule(kotlinModule())
             .activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
+                allowedTypes,
                 ObjectMapper.DefaultTyping.EVERYTHING,
                 JsonTypeInfo.As.PROPERTY
             )
@@ -56,7 +68,7 @@ class CacheConfig {
             )
             .serializeValuesWith(jsonSerializer)
             .disableCachingNullValues()
-            .prefixCacheNameWith("crm:v3:")
+            .prefixCacheNameWith("crm:v4:")
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
         val userPermissionsConfig = defaultConfig.entryTtl(Duration.ofSeconds(60))

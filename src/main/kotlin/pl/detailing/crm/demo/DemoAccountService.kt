@@ -115,6 +115,9 @@ class DemoAccountService(
             phoneNumber = "+48000000000",
             fullName = "Demo User"
         )
+        // Session fixation defence — same as AuthController.login.
+        request.getSession(false)?.let { request.changeSessionId() }
+
         val context = SecurityContextHolder.createEmptyContext()
         context.authentication = userPrincipal
         SecurityContextHolder.setContext(context)

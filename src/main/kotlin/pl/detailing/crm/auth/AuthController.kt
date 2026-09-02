@@ -81,6 +81,11 @@ class AuthController(
     ): ResponseEntity<UnifiedAuthResponse> = runBlocking {
         val (response, userPrincipal) = loginHandler.handle(request)
 
+        // Session fixation: authentication happens here by hand, so Spring Security's
+        // ChangeSessionIdAuthenticationStrategy never runs. Rotate the id ourselves — a
+        // pre-login session id planted by an attacker must not become the victim's session.
+        httpRequest.getSession(false)?.let { httpRequest.changeSessionId() }
+
         val context = SecurityContextHolder.createEmptyContext()
         context.authentication = userPrincipal
         SecurityContextHolder.setContext(context)

@@ -78,7 +78,8 @@ class CreateVisitFromReservationHandler(
     private val appointmentCommunicationLinker: AppointmentCommunicationLinker,
     private val doorToDoorRepository: DoorToDoorRepository,
     private val appointmentVehicleResolver: AppointmentVehicleResolver,
-    private val openDraftVisitService: pl.detailing.crm.visit.drafts.OpenDraftVisitService
+    private val openDraftVisitService: pl.detailing.crm.visit.drafts.OpenDraftVisitService,
+    private val appointmentColorRepository: pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
 ) {
     @Transactional
     suspend fun handle(command: ReservationToVisitCommand): ReservationToVisitResult =
@@ -308,7 +309,7 @@ class CreateVisitFromReservationHandler(
                 customerId = customerId,
                 vehicleId = vehicleId,
                 appointmentId = appointment.id,
-                appointmentColorId = command.appointmentColorId,
+                appointmentColorId = command.appointmentColorId?.also { requireStudioColor(it, command.studioId) },
                 title = command.title ?: appointment.appointmentTitle,
                 // Immutable vehicle snapshots
                 brandSnapshot = vehicle.brand,
@@ -564,7 +565,7 @@ class CreateVisitFromReservationHandler(
                 customerId = customerId,
                 vehicleId = vehicleId,
                 appointmentId = appointment.id,
-                appointmentColorId = command.appointmentColorId,
+                appointmentColorId = command.appointmentColorId?.also { requireStudioColor(it, command.studioId) },
                 title = command.title,
                 brandSnapshot = vehicle.brand,
                 modelSnapshot = vehicle.model,
@@ -903,6 +904,7 @@ class CreateVisitFromReservationHandler(
 
         val colorId = command.appointmentColorId
             ?: throw ValidationException("appointmentColorId jest wymagany dla wizyty walk-in")
+        requireStudioColor(colorId, command.studioId)
 
         val appointment = Appointment(
             id = AppointmentId.random(),
@@ -1223,5 +1225,14 @@ class CreateVisitFromReservationHandler(
             )
         )
         doorToDoorRepository.save(entity)
+    }
+
+    /**
+     * The colour id is client input. Without this check a foreign studio's colour id was
+     * stored on the visit and its name/hex later rendered by the visit list.
+     */
+    private fun requireStudioColor(colorId: AppointmentColorId, studioId: StudioId) {
+        appointmentColorRepository.findByIdAndStudioId(colorId.value, studioId.value)
+            ?: throw EntityNotFoundException("Kolor rezerwacji nie został znaleziony: ${colorId.value}")
     }
 }

@@ -6,7 +6,9 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.PermissionSnapshotCache
+import pl.detailing.crm.role.permission.RoleGrantGuard
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.shared.StudioId
@@ -19,7 +21,8 @@ class AssignRoleHandler(
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
     private val auditService: AuditService,
-    private val permissionSnapshotCache: PermissionSnapshotCache
+    private val permissionSnapshotCache: PermissionSnapshotCache,
+    private val roleGrantGuard: RoleGrantGuard
 ) {
     /**
      * Assigns [roleId] to the user [userId] within [studioId].
@@ -40,10 +43,18 @@ class AssignRoleHandler(
             throw ValidationException("Właściciel firmy nie może mieć przypisanej roli — ma pełne uprawnienia")
         }
 
-        if (roleId != null) {
-            roleRepository.findByIdAndStudioId(roleId.value, studioId.value)
+        val roleEntity = roleId?.let {
+            roleRepository.findByIdAndStudioId(it.value, studioId.value)
                 ?: throw EntityNotFoundException("Rola nie istnieje")
         }
+
+        // No self-assignment and no assigning a role richer than one's own (RoleGrantGuard).
+        roleGrantGuard.assertCanAssign(
+            requestedBy = requestedBy,
+            studioId = studioId,
+            targetUserId = userId,
+            rolePermissions = roleEntity?.permissions?.mapNotNull { Permission.fromStoredCode(it) }?.toSet()
+        )
 
         val previousRoleId = userEntity.customRoleId
         userEntity.customRoleId = roleId?.value

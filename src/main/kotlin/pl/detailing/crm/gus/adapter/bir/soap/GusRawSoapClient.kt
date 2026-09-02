@@ -24,7 +24,15 @@ class GusRawSoapClient(
     private val endpointUrl: String
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val docBuilderFactory = DocumentBuilderFactory.newInstance().also { it.isNamespaceAware = true }
+    private val docBuilderFactory = DocumentBuilderFactory.newInstance().also {
+        it.isNamespaceAware = true
+        // XXE hardening — see GusXmlParser.
+        it.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        it.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        it.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        it.isXIncludeAware = false
+        it.isExpandEntityReferences = false
+    }
 
     // ─── Public operations ────────────────────────────────────────────────────
 

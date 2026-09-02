@@ -17,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 import org.springframework.security.web.util.matcher.OrRequestMatcher
 import org.springframework.stereotype.Component
+import pl.detailing.crm.auth.login.AccountLockoutService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
 import java.util.UUID
@@ -71,6 +72,7 @@ class CardDavAuthenticationProvider(
     private val userRepository: UserRepository,
     private val appPasswordRepository: CardDavAppPasswordRepository,
     private val passwordEncoder: PasswordEncoder,
+    private val accountLockoutService: AccountLockoutService,
 ) : AuthenticationProvider {
 
     override fun authenticate(authentication: Authentication): Authentication {
@@ -82,6 +84,11 @@ class CardDavAuthenticationProvider(
         if (!entity.isActive) {
             throw UsernameNotFoundException("User account is disabled: $email")
         }
+        // Same lock as the JSON login: this is the same account password, and the lock
+        // must hold on every door, not just the front one.
+        if (accountLockoutService.isLocked(email)) {
+            throw BadCredentialsException("Invalid CardDAV credentials")
+        }
 
         val appPassword = appPasswordRepository.findActiveByUserId(entity.id)
             .firstOrNull { passwordEncoder.matches(rawPassword, it.secretHash) }
@@ -89,7 +96,10 @@ class CardDavAuthenticationProvider(
         if (appPassword != null) {
             touchLastUsed(appPassword)
         } else if (!passwordEncoder.matches(rawPassword, entity.passwordHash)) {
+            accountLockoutService.recordFailure(email)
             throw BadCredentialsException("Invalid CardDAV credentials")
+        } else {
+            accountLockoutService.clear(email)
         }
 
         val details = CardDavUserDetails(

@@ -15,8 +15,8 @@ class VCardFormatter {
         // RFC 2425 §5.2 requires CRLF line endings in vCard data.
         return "BEGIN:VCARD\r\n" +
             "VERSION:3.0\r\n" +
-            "FN:$fn\r\n" +
-            "N:${customer.lastName ?: ""};${customer.firstName ?: ""};;;\r\n" +
+            "FN:${escapeText(fn)}\r\n" +
+            "N:${escapeText(customer.lastName ?: "")};${escapeText(customer.firstName ?: "")};;;\r\n" +
             "TEL;TYPE=CELL,VOICE:$phone\r\n" +
             "UID:$uid\r\n" +
             "END:VCARD\r\n"
@@ -27,6 +27,20 @@ class VCardFormatter {
         val digest = MessageDigest.getInstance("MD5").digest(raw.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
     }
+
+    /**
+     * RFC 6350 §3.4 text escaping. Names are user input (customer API, public lead
+     * forms): an unescaped CR/LF let a name such as `Jan\r\nTEL:+48…` inject extra
+     * properties into every synced phone's address book.
+     */
+    private fun escapeText(value: String): String =
+        value
+            .replace("\\", "\\\\")
+            .replace("\r\n", "\\n")
+            .replace("\r", "\\n")
+            .replace("\n", "\\n")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
 
     private fun buildFn(customer: CustomerEntity): String {
         val first = customer.firstName?.trim().orEmpty()

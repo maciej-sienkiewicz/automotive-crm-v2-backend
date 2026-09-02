@@ -52,7 +52,7 @@ class SaveVisitServicesHandlerTest {
             every { basePriceNet } returns 10000L
             every { basePriceGross } returns 12300L
         }
-        every { serviceRepository.findAllById(any()) } returns listOf(catalogService)
+        every { serviceRepository.findAllByIdInAndStudioId(any(), any()) } returns listOf(catalogService)
 
         val payload = ServicesChangesPayload(
             notifyCustomer = false,

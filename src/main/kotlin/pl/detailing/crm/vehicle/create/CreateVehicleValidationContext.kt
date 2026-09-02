@@ -9,6 +9,15 @@ data class CreateVehicleValidationContext(
     val ownerIds: List<CustomerId>,
     val licensePlate: String?,
     val yearOfProduction: Int?,
-    val customerExists: CustomerEntity?,
+    /**
+     * Every requested owner resolved WITH the studio filter, in [ownerIds] order; a null
+     * entry means "not found in this studio". Validating only the first id used to let a
+     * caller link another studio's customer as co-owner (and later read their name
+     * through the vehicle list).
+     */
+    val owners: List<CustomerEntity?>,
     val licensePlateExists: Boolean
-)
+) {
+    /** Kept for readers that only care about the primary owner. */
+    val customerExists: CustomerEntity? get() = owners.firstOrNull()
+}

@@ -81,21 +81,17 @@ class ServiceController(
         }
 
         val totalItems = services.size
-        val start = (page - 1) * limit
-        val end = minOf(start + limit, totalItems)
-        val paginatedServices = if (start < totalItems) {
-            services.subList(start, end)
-        } else {
-            emptyList()
-        }
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit, max = 500)
+        val paginatedServices = Pagination.slice(services, safePage, safeLimit)
 
         ResponseEntity.ok(ServiceListResponse(
             services = paginatedServices,
             pagination = PaginationInfo(
-                currentPage = page,
-                totalPages = (totalItems + limit - 1) / limit,
+                currentPage = safePage,
+                totalPages = Pagination.totalPages(totalItems, safeLimit),
                 totalItems = totalItems,
-                itemsPerPage = limit
+                itemsPerPage = safeLimit
             )
         ))
     }

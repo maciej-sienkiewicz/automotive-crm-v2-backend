@@ -34,9 +34,11 @@ class IssueRevenueInvoiceHandlerTest {
 
     private val numberGenerator = RevenueInvoiceNumberGenerator(invoiceRepository)
 
+    private val customerRepository = mockk<pl.detailing.crm.customer.infrastructure.CustomerRepository>(relaxed = true)
+
     private val handler = IssueRevenueInvoiceHandler(
         invoiceRepository, itemRepository, settingsRepository, Fa3XmlBuilder(), dispatchService,
-        numberGenerator
+        numberGenerator, customerRepository
     )
 
     private val studioId = StudioId(UUID.randomUUID())

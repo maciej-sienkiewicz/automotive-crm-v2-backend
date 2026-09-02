@@ -31,7 +31,12 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
         @Param("studioId") studioId: UUID
     ): Int
 
-    /** Native query: sum gross_value of assigned items per category in a date window. */
+    /**
+     * Native query: sum gross_value of assigned items per category in a date window.
+     * `ki.studio_id` is checked next to `cia.studio_id` on purpose (defence in depth):
+     * even if an assignment row ever pointed at another studio's invoice item, that
+     * item's amounts must never be aggregated into this studio's breakdown.
+     */
     @Query(value = """
         SELECT
             cia.category_id                          AS categoryId,
@@ -42,6 +47,7 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
         JOIN ksef_invoice_items kii ON kii.id = cia.ksef_item_id
         JOIN ksef_invoices ki ON ki.id = kii.invoice_id
         WHERE cia.studio_id = CAST(:studioId AS uuid)
+          AND ki.studio_id  = CAST(:studioId AS uuid)
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
           AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR CAST(ki.invoicing_date AS date) <= CAST(:dateTo   AS date))
@@ -85,6 +91,7 @@ interface CostItemAssignmentRepository : JpaRepository<CostItemAssignmentEntity,
         JOIN ksef_invoice_items kii ON kii.id = cia.ksef_item_id
         JOIN ksef_invoices ki ON ki.id = kii.invoice_id
         WHERE cia.studio_id    = CAST(:studioId    AS uuid)
+          AND ki.studio_id     = CAST(:studioId    AS uuid)
           AND cia.category_id  = CAST(:categoryId  AS uuid)
           AND ki.status NOT IN ('CANCELLED', 'EXCLUDED')
           AND (CAST(:dateFrom AS date) IS NULL OR CAST(ki.invoicing_date AS date) >= CAST(:dateFrom AS date))

@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.shared.Pagination
 import pl.detailing.crm.customer.create.CreateCustomerCommand
 import pl.detailing.crm.customer.create.CreateCustomerHandler
 import pl.detailing.crm.customer.create.CreateCustomerRequest
@@ -200,21 +201,17 @@ class CustomerController(
         customers = customers.sortedByDescending { !it.firstName.isNullOrBlank() && !it.lastName.isNullOrBlank() }
 
         val totalItems = customers.size
-        val start = (page - 1) * limit
-        val end = minOf(start + limit, totalItems)
-        val paginatedCustomers = if (start < totalItems) {
-            customers.subList(start, end)
-        } else {
-            emptyList()
-        }
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit)
+        val paginatedCustomers = Pagination.slice(customers, safePage, safeLimit)
 
         ResponseEntity.ok(CustomerListResponse(
             data = paginatedCustomers,
             pagination = PaginationMeta(
-                currentPage = page,
-                totalPages = (totalItems + limit - 1) / limit,
+                currentPage = safePage,
+                totalPages = Pagination.totalPages(totalItems, safeLimit),
                 totalItems = totalItems,
-                itemsPerPage = limit
+                itemsPerPage = safeLimit
             )
         ))
     }

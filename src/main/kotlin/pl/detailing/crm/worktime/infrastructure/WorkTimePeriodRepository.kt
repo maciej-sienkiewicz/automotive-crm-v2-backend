@@ -11,6 +11,13 @@ interface WorkTimePeriodRepository : JpaRepository<WorkTimePeriodEntity, UUID> {
 
     fun findByUserIdAndPeriod(userId: UUID, period: String): WorkTimePeriodEntity?
 
+    /**
+     * Tenant-scoped lookup for manager operations. A period reached through
+     * `/worktime/team/{userId}/...` MUST be resolved with the caller's studio —
+     * `userId` alone would let a manager approve or return another studio's card.
+     */
+    fun findByUserIdAndStudioIdAndPeriod(userId: UUID, studioId: UUID, period: String): WorkTimePeriodEntity?
+
     @Query("SELECT p FROM WorkTimePeriodEntity p WHERE p.userId = :userId ORDER BY p.period DESC")
     fun findByUserIdOrderByPeriodDesc(@Param("userId") userId: UUID): List<WorkTimePeriodEntity>
 

@@ -3,6 +3,7 @@ package pl.detailing.crm.pin
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import kotlinx.coroutines.runBlocking
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.context.SecurityContextHolder
@@ -27,7 +28,8 @@ class PinController(
     private val subscriptionService: SubscriptionService,
     private val securityContextRepository: SecurityContextRepository,
     private val mobileTokenService: MobileTokenService,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val redisTemplate: StringRedisTemplate
 ) {
 
     /** Current user's PIN status. */
@@ -68,6 +70,9 @@ class PinController(
             pin = request.pin
         )
 
+        // Identity changes → session id changes (session-fixation defence, same as login).
+        httpRequest.getSession(false)?.let { httpRequest.changeSessionId() }
+
         val context = SecurityContextHolder.createEmptyContext()
         context.authentication = newPrincipal
         SecurityContextHolder.setContext(context)
@@ -107,6 +112,7 @@ class PinController(
         user.pinLocked = false
         user.pinFailedAttempts = 0
         userRepository.save(user)
+        redisTemplate.delete(pinAttemptsKey(principal.studioId.value, targetId))
         ResponseEntity.noContent().build()
     }
 }

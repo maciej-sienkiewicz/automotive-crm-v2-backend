@@ -11,6 +11,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -49,7 +50,7 @@ class WorkTimeService(
 
     @Transactional(readOnly = true)
     fun getPeriodDetail(userId: UserId, studioId: StudioId, yearMonth: YearMonth): PeriodDetailResponse {
-        val periodEntity = periodRepository.findByUserIdAndPeriod(userId.value, yearMonth.toString())
+        val periodEntity = periodRepository.findByUserIdAndStudioIdAndPeriod(userId.value, studioId.value, yearMonth.toString())
         val from = yearMonth.atDay(1)
         val to = yearMonth.atEndOfMonth()
         val entries = entryRepository.findByUserIdAndStudioIdAndDateBetween(userId.value, studioId.value, from, to)
@@ -220,7 +221,9 @@ class WorkTimeService(
 
     @Transactional
     fun approvePeriod(userId: UserId, studioId: StudioId, yearMonth: YearMonth, approvedBy: UserId): PeriodSummaryResponse {
-        val period = periodRepository.findByUserIdAndPeriod(userId.value, yearMonth.toString())
+        // Four-eyes rule: a manager never approves their own card, whatever role they hold.
+        if (userId == approvedBy) throw ForbiddenException("Nie można zatwierdzić własnej karty czasu pracy")
+        val period = periodRepository.findByUserIdAndStudioIdAndPeriod(userId.value, studioId.value, yearMonth.toString())
             ?: throw EntityNotFoundException("Karta za okres ${yearMonth} nie istnieje")
         if (period.status == PeriodStatus.DRAFT) throw ValidationException("Karta nie została jeszcze złożona do zatwierdzenia")
         if (period.status == PeriodStatus.APPROVED) throw ValidationException("Karta jest już zatwierdzona")
@@ -248,7 +251,8 @@ class WorkTimeService(
 
     @Transactional
     fun returnPeriod(userId: UserId, studioId: StudioId, yearMonth: YearMonth, returnedBy: UserId, note: String?): PeriodSummaryResponse {
-        val period = periodRepository.findByUserIdAndPeriod(userId.value, yearMonth.toString())
+        if (userId == returnedBy) throw ForbiddenException("Nie można zwrócić własnej karty czasu pracy")
+        val period = periodRepository.findByUserIdAndStudioIdAndPeriod(userId.value, studioId.value, yearMonth.toString())
             ?: throw EntityNotFoundException("Karta za okres ${yearMonth} nie istnieje")
         if (period.status == PeriodStatus.DRAFT) throw ValidationException("Karta nie była złożona do zatwierdzenia")
 

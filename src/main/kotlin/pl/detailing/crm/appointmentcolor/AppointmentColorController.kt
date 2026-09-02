@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.shared.Pagination
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.appointmentcolor.archive.ArchiveAppointmentColorHandler
@@ -53,22 +54,18 @@ class AppointmentColorController(
         }
 
         val totalItems = colors.size
-        val start = (page - 1) * limit
-        val end = minOf(start + limit, totalItems)
-        val paginatedColors = if (start < totalItems) {
-            colors.subList(start, end)
-        } else {
-            emptyList()
-        }
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit, max = 500)
+        val paginatedColors = Pagination.slice(colors, safePage, safeLimit)
 
         ResponseEntity.ok(
             AppointmentColorListResponse(
                 colors = paginatedColors,
                 pagination = PaginationInfo(
-                    currentPage = page,
-                    totalPages = if (totalItems > 0) ((totalItems + limit - 1) / limit) else 0,
+                    currentPage = safePage,
+                    totalPages = if (totalItems > 0) Pagination.totalPages(totalItems, safeLimit) else 0,
                     totalItems = totalItems,
-                    itemsPerPage = limit
+                    itemsPerPage = safeLimit
                 )
             )
         )

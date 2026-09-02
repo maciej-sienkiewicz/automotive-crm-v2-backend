@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -23,8 +24,8 @@ import java.time.Instant
  *  - signup : 5 requests  / 60 minutes per IP  (account-creation abuse)
  *  - api    : 300 requests / 60 seconds per IP (general API abuse)
  *
- * The real client IP is resolved from the CF-Connecting-IP header (Cloudflare) or
- * X-Forwarded-For, so the rate limit applies to the originating client, not the proxy.
+ * The real client IP is resolved by [ClientIpResolver]: forwarded-IP headers are honoured
+ * only when the request arrived through a trusted proxy, otherwise the socket peer counts.
  *
  * Responses include X-RateLimit-Limit and X-RateLimit-Remaining headers so frontends
  * can implement back-off without polling.
@@ -33,8 +34,15 @@ import java.time.Instant
 @Order(Ordered.HIGHEST_PRECEDENCE + 5)
 class RateLimitFilter(
     private val redisTemplate: StringRedisTemplate,
-    private val meterRegistry: MeterRegistry
+    private val meterRegistry: MeterRegistry,
+    /**
+     * Extra proxy ranges (CIDR, comma-separated) whose forwarded-IP headers we honour on
+     * top of loopback / private networks. See [ClientIpResolver] for the trust model.
+     */
+    @Value("\${security.rate-limit.trusted-proxies:}") trustedProxies: String
 ) : OncePerRequestFilter() {
+
+    private val clientIpResolver = ClientIpResolver(trustedProxies.split(","))
 
     private data class Bucket(val keyPrefix: String, val limit: Int, val windowSeconds: Long)
 
@@ -86,10 +94,7 @@ class RateLimitFilter(
         else                          -> API
     }
 
-    private fun resolveClientIp(request: HttpServletRequest): String =
-        request.getHeader("CF-Connecting-IP")
-            ?: request.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
-            ?: request.remoteAddr
+    private fun resolveClientIp(request: HttpServletRequest): String = clientIpResolver.resolve(request)
 
     private fun normalizePath(uri: String): String =
         uri.split("/").joinToString("/") { seg ->

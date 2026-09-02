@@ -220,21 +220,17 @@ class VehicleController(
 
         // Paginate
         val totalItems = vehicles.size
-        val start = (page - 1) * limit
-        val end = minOf(start + limit, totalItems)
-        val paginatedVehicles = if (start < totalItems) {
-            vehicles.subList(start, end)
-        } else {
-            emptyList()
-        }
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit)
+        val paginatedVehicles = Pagination.slice(vehicles, safePage, safeLimit)
 
         ResponseEntity.ok(VehicleListResponse(
             data = paginatedVehicles,
             pagination = PaginationMeta(
-                currentPage = page,
-                totalPages = (totalItems + limit - 1) / limit,
+                currentPage = safePage,
+                totalPages = Pagination.totalPages(totalItems, safeLimit),
                 totalItems = totalItems,
-                itemsPerPage = limit
+                itemsPerPage = safeLimit
             )
         ))
     }

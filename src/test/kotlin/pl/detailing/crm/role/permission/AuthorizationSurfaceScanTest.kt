@@ -55,6 +55,7 @@ class AuthorizationSurfaceScanTest {
         "CardDavProfileDownloadController" to ALL_METHODS, // one-shot, TTL-bound URL token
         "MobileContactImportController" to ALL_METHODS,   // opaque handoff token (sesja importu z telefonu)
         "PlatformMetricsController" to ALL_METHODS,       // /api/internal: shared secret w PlatformAccessInterceptor
+        "PlatformStudioAdminController" to ALL_METHODS,   // /api/internal: shared secret w PlatformAccessInterceptor
         // WEBHOOK — provider callbacks
         "Przelewy24WebhookController" to ALL_METHODS,
         "SmsInboundController" to ALL_METHODS,

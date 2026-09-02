@@ -11,28 +11,59 @@ import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
 import pl.detailing.crm.shared.DateRangeFilter
+import pl.detailing.crm.shared.EntityNotFoundException
+import jakarta.validation.Valid
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotEmpty
+import jakarta.validation.constraints.Pattern
+import jakarta.validation.constraints.Size
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
 // ─── Request / Response DTOs ──────────────────────────────────────────────────
 
+/** Kolor kategorii: wyłącznie #RRGGBB — wartość trafia bez zmian do atrybutów UI. */
+private const val HEX_COLOR_PATTERN = "^#[0-9a-fA-F]{6}$"
+
 data class CreateCostCategoryRequest(
+    @field:NotBlank @field:Size(max = 200)
     val name: String,
+    @field:Size(max = 2000)
     val description: String?,
+    @field:Pattern(regexp = HEX_COLOR_PATTERN)
     val color: String?
 )
 
 data class UpdateCostCategoryRequest(
+    @field:NotBlank @field:Size(max = 200)
     val name: String,
+    @field:Size(max = 2000)
     val description: String?,
+    @field:Pattern(regexp = HEX_COLOR_PATTERN)
     val color: String?
 )
 
 data class AssignCostItemsRequest(
     /** Item IDs (ksef_invoice_items.id) to assign to this category. */
+    @field:NotEmpty
+    @field:Size(max = MAX_ITEMS_PER_ASSIGNMENT)
     val itemIds: List<String>
-)
+) {
+    companion object {
+        const val MAX_ITEMS_PER_ASSIGNMENT = 500
+    }
+}
+
+/** Górna granica `pageSize` dla listy pozycji kosztowych — `Int.MAX_VALUE` ładował całą tabelę. */
+private const val MAX_EXPENSE_ITEMS_PAGE_SIZE = 2000
+
+/** Identyfikator z żądania: zły format to błąd klienta (400), nie awaria serwera (500). */
+private fun parseUuid(raw: String, what: String): UUID =
+    runCatching { UUID.fromString(raw) }.getOrElse {
+        throw ValidationException("Nieprawidłowy identyfikator ($what): $raw")
+    }
 
 data class SetStatsExclusionRequest(
     /** true = kategoria pomijana w statystykach kosztów (KPI, wykresy, diagram kołowy). */
@@ -167,7 +198,7 @@ class CostCategoryController(
 
     @PostMapping
     @Transactional
-    fun createCategory(@RequestBody req: CreateCostCategoryRequest): ResponseEntity<CreateCostCategoryResponse> {
+    fun createCategory(@Valid @RequestBody req: CreateCostCategoryRequest): ResponseEntity<CreateCostCategoryResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         val entity = CostCategoryEntity(
             studioId    = principal.studioId.value,
@@ -190,7 +221,7 @@ class CostCategoryController(
     @Transactional
     fun updateCategory(
         @PathVariable categoryId: String,
-        @RequestBody req: UpdateCostCategoryRequest
+        @Valid @RequestBody req: UpdateCostCategoryRequest
     ): ResponseEntity<Void> {
         val studioId = SecurityContextHelper.getCurrentUser().studioId.value
         val entity = categoryRepository.findByIdAndStudioId(UUID.fromString(categoryId), studioId)
@@ -241,18 +272,25 @@ class CostCategoryController(
     @Transactional
     fun assignItems(
         @PathVariable categoryId: String,
-        @RequestBody req: AssignCostItemsRequest
+        @Valid @RequestBody req: AssignCostItemsRequest
     ): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
         val studioId  = principal.studioId.value
-        val catId     = UUID.fromString(categoryId)
+        val catId     = parseUuid(categoryId, "categoryId")
 
         categoryRepository.findByIdAndStudioId(catId, studioId)
             ?: return ResponseEntity.notFound().build()
 
         req.itemIds.forEach { rawItemId ->
-            val itemId = UUID.fromString(rawItemId)
-            val item   = invoiceItemRepository.findById(itemId).orElse(null) ?: return@forEach
+            val itemId = parseUuid(rawItemId, "itemId")
+            // Pozycje KSeF nie mają własnej kolumny studio_id — tenant wynika z faktury.
+            // Bez tej weryfikacji studio A mogło przypiąć do swojej kategorii pozycje
+            // faktur studia B i odczytać ich kwoty w /breakdown (cross-tenant IDOR).
+            // Nieistniejąca i cudza pozycja kończą się identycznym 404 — brak sygnału,
+            // że dany identyfikator w ogóle istnieje.
+            val item = invoiceItemRepository.findById(itemId).orElse(null)
+                ?.takeIf { invoiceRepository.findByIdAndStudioId(it.invoiceId, studioId) != null }
+                ?: throw EntityNotFoundException("Pozycja faktury nie została znaleziona: $itemId")
 
             // Remove existing assignment if present (move semantics)
             assignmentRepository.deleteByKsefItemIdAndStudioId(itemId, studioId)
@@ -310,7 +348,7 @@ class CostCategoryController(
             includeExcluded = false,
             dateFrom        = DateRangeFilter.startOfDay(dateFrom),
             dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
-            pageable        = PageRequest.of(0, pageSize)
+            pageable        = PageRequest.of(0, pageSize.coerceIn(1, MAX_EXPENSE_ITEMS_PAGE_SIZE))
         )
 
         val invoiceMap = invoicesPage.content.associateBy { it.id }
