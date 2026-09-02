@@ -10,19 +10,19 @@
   "schemaVersion": 39,
   "version": 1,
   "editable": false,
-  "refresh": "5s",
+  "refresh": "10s",
   "graphTooltip": 1,
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [
-      "5s",
       "10s",
       "30s",
       "1m",
-      "5m"
+      "5m",
+      "15m"
     ]
   },
   "templating": {
@@ -83,7 +83,7 @@
       "id": 2,
       "type": "stat",
       "title": "Rezerwacje dziś",
-      "description": "Od północy w strefie studia. Wartość z Redisa (identyczna na każdej instancji), stąd max by tenant.",
+      "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -117,7 +117,7 @@
             "mode": "fixed",
             "fixedColor": "blue"
           },
-          "noValue": "0"
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -141,7 +141,7 @@
       "id": 3,
       "type": "stat",
       "title": "Wizyty dziś",
-      "description": "Od północy w strefie studia. Wartość z Redisa (identyczna na każdej instancji), stąd max by tenant.",
+      "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -175,7 +175,7 @@
             "mode": "fixed",
             "fixedColor": "orange"
           },
-          "noValue": "0"
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -199,7 +199,7 @@
       "id": 4,
       "type": "stat",
       "title": "Nowe usługi dziś",
-      "description": "Od północy w strefie studia. Wartość z Redisa (identyczna na każdej instancji), stąd max by tenant.",
+      "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -233,7 +233,7 @@
             "mode": "fixed",
             "fixedColor": "purple"
           },
-          "noValue": "0"
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -257,7 +257,7 @@
       "id": 5,
       "type": "stat",
       "title": "Zdjęcia dziś",
-      "description": "Od północy w strefie studia. Wartość z Redisa (identyczna na każdej instancji), stąd max by tenant.",
+      "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -291,7 +291,7 @@
             "mode": "fixed",
             "fixedColor": "yellow"
           },
-          "noValue": "0"
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -315,7 +315,7 @@
       "id": 6,
       "type": "stat",
       "title": "Aktywność dziś",
-      "description": "Od północy w strefie studia. Wartość z Redisa (identyczna na każdej instancji), stąd max by tenant.",
+      "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -349,7 +349,7 @@
             "mode": "fixed",
             "fixedColor": "red"
           },
-          "noValue": "0"
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -373,7 +373,7 @@
       "id": 7,
       "type": "stat",
       "title": "Odrzucone przez potok",
-      "description": "Zdarzenia zgubione przez pełną kolejkę lub nieudany zapis do Redisa. Cokolwiek > 0 = liczby na tym dashboardzie są niepełne.",
+      "description": "Zdarzenia zgubione przez pełną kolejkę lub nieudany zapis do Redisa. Cokolwiek > 0 znaczy, że liczby na tym dashboardzie są niepełne.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -444,7 +444,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Rezerwacje na żywo",
-      "description": "Ile rezerwacji utworzono w każdym przedziale (per $__interval). Przyrost w czasie rzeczywistym.",
+      "description": "Ile rezerwacji utworzono w każdym przedziale. Krok minimalny 1 min — increase() na oknie krótszym niż dwa scrape'y nie zwraca nic.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -461,7 +461,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"RESERVATION_CREATED\",tenant=\"$tenant\"}[$__interval]))",
+          "expr": "sum(increase(crm_business_events_total{type=\"RESERVATION_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
           "legendFormat": "Rezerwacje",
           "refId": "A",
           "editorMode": "code",
@@ -470,6 +470,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -583,7 +584,8 @@
             "fixedColor": "blue"
           },
           "decimals": 0,
-          "min": 0
+          "min": 0,
+          "noValue": "—"
         },
         "overrides": []
       },
@@ -626,7 +628,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"VISIT_CREATED\",tenant=\"$tenant\"}[$__interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"VISIT_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -635,6 +637,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -706,7 +709,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Zdjęcia i multimedia wg miejsca",
-      "description": "Udane uploady zdjęć: VISIT (wizyta), VEHICLE (karta pojazdu/klienta), CHECKIN (QR z telefonu), BATCH_ORDER (zlecenie zbiorcze).",
+      "description": "Udane uploady zdjęć: VISIT (wizyta), VEHICLE (karta pojazdu), CHECKIN (QR z telefonu), BATCH_ORDER (zlecenie zbiorcze).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -723,7 +726,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"PHOTO_UPLOADED\",tenant=\"$tenant\"}[$__interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"PHOTO_UPLOADED\",tenant=\"$tenant\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -732,6 +735,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -789,7 +793,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"SERVICE_CREATED\",tenant=\"$tenant\"}[$__interval]))",
+          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"SERVICE_CREATED\",tenant=\"$tenant\"}[$__rate_interval]))",
           "legendFormat": "{{dimension}}",
           "refId": "A",
           "editorMode": "code",
@@ -798,6 +802,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -886,7 +891,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\",tenant=\"$tenant\"}[$__interval]))",
+          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\",tenant=\"$tenant\"}[$__rate_interval]))",
           "legendFormat": "Wpisy",
           "refId": "A",
           "editorMode": "code",
@@ -895,6 +900,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -905,11 +911,11 @@
           },
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 12,
+            "fillOpacity": 80,
             "showPoints": "never",
             "spanNulls": false,
             "lineInterpolation": "linear",
-            "drawStyle": "line",
+            "drawStyle": "bars",
             "stacking": {
               "mode": "none",
               "group": "A"
@@ -977,6 +983,7 @@
           "format": "time_series"
         }
       ],
+      "interval": "1m",
       "fieldConfig": {
         "defaults": {
           "unit": "short",

@@ -27,6 +27,15 @@ val useKsefStub = providers.gradleProperty("ksefStub").isPresent
  */
 val runTestcontainers = providers.gradleProperty("runTestcontainers").isPresent
 
+/**
+ * Testy oznaczone `@Tag("redis")` (LiveMetricsStoreRedisTest, LiveMetricsExporterRedisTest)
+ * uderzają w prawdziwego Redisa na localhost:6399 — weryfikują, że zdarzenie biznesowe
+ * faktycznie da się odczytać z powrotem przez liczniki kubełkowe i że trafia do scrape'u
+ * Prometheusa. Domyślnie pomijane, bo bramka CI nie ma Redisa.
+ * Uruchom: `redis-server --port 6399 --daemonize yes` a potem `./gradlew test -PrunRedisTests`.
+ */
+val runRedisTests = providers.gradleProperty("runRedisTests").isPresent
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
 }
@@ -158,6 +167,7 @@ kotlin {
 tasks.withType<Test> {
     useJUnitPlatform {
         if (!runTestcontainers) excludeTags("testcontainers")
+        if (!runRedisTests) excludeTags("redis")
     }
 }
 

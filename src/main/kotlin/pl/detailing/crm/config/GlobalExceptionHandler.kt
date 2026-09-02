@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.MaxUploadSizeExceededException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
@@ -404,6 +405,27 @@ class GlobalExceptionHandler(
             .body(ErrorResponse(
                 error = "Konflikt danych",
                 message = userMessage,
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    /**
+     * Żądanie pod adres, którego nie obsługuje żaden kontroler.
+     *
+     * Bez tego handlera Spring oddaje takie żądanie `ResourceHttpRequestHandler`-owi, ten
+     * rzuca [NoResourceFoundException], a łapie ją dopiero `handleGeneric` — czyli 500 ze
+     * stacktrace na poziomie ERROR. Klient wołający usunięty endpoint (np. starszy build
+     * frontendu po wyburzeniu modułu metryk) zalewał wtedy log setkami rzekomych awarii
+     * serwera, maskując prawdziwe błędy. To jest 404: żądanie jest złe, nie serwer.
+     */
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResource(ex: NoResourceFoundException, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        log.debug("No handler for {} {} [{}]", request.method, request.requestURI, resolveContext())
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(ErrorResponse(
+                error = "Nie znaleziono",
+                message = "Żądany zasób nie istnieje",
                 timestamp = Instant.now().toString()
             ))
     }
