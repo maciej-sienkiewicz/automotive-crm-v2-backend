@@ -34,7 +34,9 @@ class ListVehiclesHandler(
                 val owners = vehicleOwnerRepository.findByVehicleId(vehicleEntity.id)
 
                 val ownersInfo = owners.map { ownerEntity ->
-                    val customer = customerRepository.findById(ownerEntity.id.customerId).orElse(null)
+                    // Studio-scoped on purpose: a dangling cross-tenant owner row must never
+                    // surface another studio's customer name here.
+                    val customer = customerRepository.findByIdAndStudioId(ownerEntity.id.customerId, studioId.value)
                     VehicleOwnerInfo(
                         customerId = ownerEntity.id.customerId.toString(),
                         customerName = if (customer != null) "${customer.firstName} ${customer.lastName}" else "Unknown",

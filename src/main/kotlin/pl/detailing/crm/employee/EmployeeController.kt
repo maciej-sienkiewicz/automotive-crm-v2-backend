@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.shared.Pagination
 import pl.detailing.crm.employee.account.*
 import pl.detailing.crm.employee.create.CreateEmployeeCommand
 import pl.detailing.crm.employee.create.CreateEmployeeHandler
@@ -62,10 +63,9 @@ class EmployeeController(
         }
 
         val totalItems = employees.size
-        val start = (page - 1) * limit
-        val paginatedItems = if (start < totalItems) {
-            employees.subList(start, minOf(start + limit, totalItems))
-        } else emptyList()
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit, max = 500)
+        val paginatedItems = Pagination.slice(employees, safePage, safeLimit)
 
         // Role is management information, and this endpoint is deliberately open so the
         // calendar can read coworker names. Enrich only for callers who administer the
@@ -86,10 +86,10 @@ class EmployeeController(
         ResponseEntity.ok(EmployeeListResponse(
             items = paginatedItems.map { it.toListItem(roleByUser) },
             pagination = EmployeePaginationInfo(
-                currentPage = page,
-                totalPages = if (limit > 0) (totalItems + limit - 1) / limit else 1,
+                currentPage = safePage,
+                totalPages = Pagination.totalPages(totalItems, safeLimit),
                 totalItems = totalItems,
-                itemsPerPage = limit
+                itemsPerPage = safeLimit
             )
         ))
     }

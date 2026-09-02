@@ -2,6 +2,7 @@ package pl.detailing.crm.pin
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UnifiedAuthResponse
@@ -16,9 +17,13 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
+import java.time.Duration
 import java.util.UUID
 
 private const val MAX_PIN_ATTEMPTS = 3
+
+/** Klucz Redis licznika nieudanych prób PIN — jeden na (studio, użytkownik docelowy). */
+internal fun pinAttemptsKey(studioId: UUID, userId: UUID) = "pin:attempts:$studioId:$userId"
 
 @Service
 class SwitchUserViaPinHandler(
@@ -26,8 +31,14 @@ class SwitchUserViaPinHandler(
     private val passwordEncoder: PasswordEncoder,
     private val subscriptionService: SubscriptionService,
     private val permissionCheckService: PermissionCheckService,
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val redisTemplate: StringRedisTemplate
 ) {
+    companion object {
+        /** Okno, w którym liczą się nieudane próby; po nim licznik znika sam. */
+        private val ATTEMPTS_WINDOW: Duration = Duration.ofMinutes(15)
+    }
+
     suspend fun handle(
         targetUserId: UUID,
         studioId: UUID,
@@ -50,9 +61,15 @@ class SwitchUserViaPinHandler(
         val pinMatches = passwordEncoder.matches(pin, pinHash)
 
         if (!pinMatches) {
-            val newAttempts = user.pinFailedAttempts + 1
-            user.pinFailedAttempts = newAttempts
-            if (newAttempts >= MAX_PIN_ATTEMPTS) {
+            // Atomic INCR in Redis. The previous read-modify-write on the users row let
+            // N parallel requests all observe 0 failures and each write 1 — a 4-digit PIN
+            // could be brute-forced through the race before the lock ever engaged.
+            val attemptsKey = pinAttemptsKey(studioId, user.id)
+            val attempts = redisTemplate.opsForValue().increment(attemptsKey) ?: 1L
+            if (attempts == 1L) redisTemplate.expire(attemptsKey, ATTEMPTS_WINDOW)
+
+            user.pinFailedAttempts = attempts.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            if (attempts >= MAX_PIN_ATTEMPTS) {
                 user.pinLocked = true
             }
             userRepository.save(user)
@@ -64,6 +81,7 @@ class SwitchUserViaPinHandler(
         }
 
         // Success — reset failed attempts
+        redisTemplate.delete(pinAttemptsKey(studioId, user.id))
         user.pinFailedAttempts = 0
         userRepository.save(user)
 

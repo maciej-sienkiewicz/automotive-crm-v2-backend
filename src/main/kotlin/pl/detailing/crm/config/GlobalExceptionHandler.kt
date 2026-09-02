@@ -3,19 +3,26 @@
 package pl.detailing.crm.config
 
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.core.AuthenticationException
+import org.springframework.validation.BindException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
 import pl.detailing.crm.security.TenantIsolationAuditService
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.IllegalStateTransitionException
 import java.time.Instant
 
 @RestControllerAdvice
@@ -73,6 +80,102 @@ class GlobalExceptionHandler(
             .body(ErrorResponse(
                 error = "Błąd walidacji",
                 message = ex.message ?: "Nieprawidłowe dane żądania",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Client-side input errors → 400. Without these handlers every malformed body,
+    // failed @Valid constraint, bad enum/UUID/int in a path or query parameter and
+    // every `require(...)` in a handler fell through to the generic 500 below — a
+    // wrong status for the client and an ERROR-level stack trace per request that
+    // anyone could trigger at will.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** `@Valid @RequestBody` failures (MethodArgumentNotValidException extends BindException). */
+    @ExceptionHandler(BindException::class)
+    fun handleBeanValidation(ex: BindException): ResponseEntity<ValidationErrorResponse> {
+        val fieldErrors = ex.bindingResult.fieldErrors.map { fe ->
+            FieldErrorDto(field = fe.field, message = fe.defaultMessage ?: "Nieprawidłowa wartość")
+        }
+        val globalErrors = ex.bindingResult.globalErrors.map { ge ->
+            FieldErrorDto(field = ge.objectName, message = ge.defaultMessage ?: "Nieprawidłowa wartość")
+        }
+        log.warn("Bean validation failed [{}]: {}", resolveContext(), fieldErrors + globalErrors)
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ValidationErrorResponse(
+                error = "Błąd walidacji",
+                message = "Nieprawidłowe dane żądania",
+                fieldErrors = fieldErrors + globalErrors,
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    /** `@Validated` on request params / path variables. */
+    @ExceptionHandler(ConstraintViolationException::class)
+    fun handleConstraintViolation(ex: ConstraintViolationException): ResponseEntity<ValidationErrorResponse> {
+        val errors = ex.constraintViolations.map { cv ->
+            FieldErrorDto(field = cv.propertyPath.toString(), message = cv.message ?: "Nieprawidłowa wartość")
+        }
+        log.warn("Constraint violation [{}]: {}", resolveContext(), errors)
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ValidationErrorResponse(
+                error = "Błąd walidacji",
+                message = "Nieprawidłowe dane żądania",
+                fieldErrors = errors,
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    /**
+     * Malformed / unparsable JSON body, type mismatch in a path or query parameter
+     * (`?page=abc`, `{id}` that is not a UUID, unknown enum constant), missing required
+     * parameter. The framework message is deliberately NOT echoed back — it names
+     * internal classes and constructor signatures.
+     */
+    @ExceptionHandler(
+        HttpMessageNotReadableException::class,
+        MethodArgumentTypeMismatchException::class,
+        MissingServletRequestParameterException::class
+    )
+    fun handleMalformedRequest(ex: Exception): ResponseEntity<ErrorResponse> {
+        log.warn("Malformed request [{}]: {}", resolveContext(), ex.message?.lineSequence()?.firstOrNull())
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(
+                error = "Nieprawidłowe żądanie",
+                message = "Żądanie zawiera nieprawidłowe lub brakujące dane",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    /**
+     * `require(...)` / `UUID.fromString` / value-class invariants (`Money` ≥ 0) hit by
+     * client input. Generic message on purpose: `IllegalArgumentException` messages are
+     * written for developers and can carry internal state.
+     */
+    @ExceptionHandler(IllegalArgumentException::class)
+    fun handleIllegalArgument(ex: IllegalArgumentException): ResponseEntity<ErrorResponse> {
+        log.warn("IllegalArgumentException [{}]: {}", resolveContext(), ex.message)
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(
+                error = "Nieprawidłowe żądanie",
+                message = "Żądanie zawiera nieprawidłowe dane",
+                timestamp = Instant.now().toString()
+            ))
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException::class)
+    fun handleUploadTooLarge(ex: MaxUploadSizeExceededException): ResponseEntity<ErrorResponse> {
+        log.warn("Upload too large [{}]: {}", resolveContext(), ex.message)
+        return ResponseEntity
+            .status(HttpStatus.PAYLOAD_TOO_LARGE)
+            .body(ErrorResponse(
+                error = "Plik zbyt duży",
+                message = "Przesłany plik przekracza dopuszczalny rozmiar",
                 timestamp = Instant.now().toString()
             ))
     }
@@ -139,6 +242,19 @@ class GlobalExceptionHandler(
                 createdAt = ex.createdAt.toString(),
                 createdByName = ex.createdByName,
                 message = ex.message ?: "Trwa już nieukończone przyjęcie tej rezerwacji"
+            ))
+    }
+
+    /** Domain state-machine refusals (visit transitions, frozen line items) are conflicts, not crashes. */
+    @ExceptionHandler(IllegalStateTransitionException::class)
+    fun handleIllegalStateTransition(ex: IllegalStateTransitionException): ResponseEntity<ErrorResponse> {
+        log.warn("IllegalStateTransition [{}]: {}", resolveContext(), ex.message)
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(ErrorResponse(
+                error = "Konflikt stanu",
+                message = ex.message ?: "Operacja jest sprzeczna z aktualnym stanem zasobu",
+                timestamp = Instant.now().toString()
             ))
     }
 
@@ -335,6 +451,19 @@ data class ErrorResponse(
     val error: String,
     val message: String,
     val timestamp: String
+)
+
+/** 400 z listą pól, które nie przeszły walidacji JSR-380. */
+data class ValidationErrorResponse(
+    val error: String,
+    val message: String,
+    val fieldErrors: List<FieldErrorDto>,
+    val timestamp: String
+)
+
+data class FieldErrorDto(
+    val field: String,
+    val message: String
 )
 
 /**

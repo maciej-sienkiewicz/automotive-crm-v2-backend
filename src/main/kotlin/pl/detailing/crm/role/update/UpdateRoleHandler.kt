@@ -8,6 +8,7 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.role.permission.PermissionSnapshotCache
+import pl.detailing.crm.role.permission.RoleGrantGuard
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
@@ -16,7 +17,8 @@ import java.time.Instant
 class UpdateRoleHandler(
     private val roleRepository: RoleRepository,
     private val auditService: AuditService,
-    private val permissionSnapshotCache: PermissionSnapshotCache
+    private val permissionSnapshotCache: PermissionSnapshotCache,
+    private val roleGrantGuard: RoleGrantGuard
 ) {
     @Transactional
     suspend fun handle(command: UpdateRoleCommand) = withContext(Dispatchers.IO) {
@@ -25,6 +27,10 @@ class UpdateRoleHandler(
 
         val entity = roleRepository.findByIdAndStudioId(command.roleId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Rola nie istnieje")
+
+        // Editing a role is granting: the new set applies to everyone holding the role,
+        // the editor included (see RoleGrantGuard).
+        roleGrantGuard.assertCanGrant(command.requestedBy, command.studioId, command.permissions)
 
         if (roleRepository.existsByStudioIdAndNameExcluding(command.studioId.value, name, command.roleId.value)) {
             throw ValidationException("Rola o nazwie '$name' już istnieje w tej firmie")

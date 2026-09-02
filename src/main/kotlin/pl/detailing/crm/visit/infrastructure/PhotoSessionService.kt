@@ -273,8 +273,9 @@ class PhotoSessionService(
                 throw ValidationException("Zdjęcie $photoId zostało już wykorzystane")
             }
 
-            // Validate session
-            val session = photoUploadSessionRepository.findById(tempPhoto.sessionId).orElse(null)
+            // Validate session — WITH the studio filter: photo ids are client-supplied, and a
+            // session from another studio must read as "not found", never be claimed.
+            val session = photoUploadSessionRepository.findByIdAndStudioId(tempPhoto.sessionId, studioId.value)
                 ?: throw EntityNotFoundException("Sesja przesyłania nie została znaleziona dla zdjęcia $photoId")
 
             if (session.isExpired()) {

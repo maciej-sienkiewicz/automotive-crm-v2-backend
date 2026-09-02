@@ -10,13 +10,18 @@ import pl.detailing.crm.shared.TaskId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.task.domain.Task
 import pl.detailing.crm.task.infrastructure.TaskEntity
+import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.task.infrastructure.TaskRepository
 import java.time.Instant
 
 @Service
 class CreateTaskHandler(
     private val taskRepository: TaskRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val userRepository: UserRepository,
+    private val roleRepository: RoleRepository
 ) {
     private val log = LoggerFactory.getLogger(CreateTaskHandler::class.java)
 
@@ -25,6 +30,17 @@ class CreateTaskHandler(
         withContext(Dispatchers.IO) {
             if (command.title.isBlank()) {
                 throw ValidationException("Tytuł zadania nie może być pusty")
+            }
+
+            // Visibility targets are client-supplied ids: each must be a user / role of THIS
+            // studio, otherwise the task list would later render a foreign user's or role's name.
+            command.visibleToUserIds.forEach { uid ->
+                userRepository.findByIdAndStudioId(uid, command.studioId.value)
+                    ?: throw EntityNotFoundException("Użytkownik nie istnieje: $uid")
+            }
+            command.visibleToRoleId?.let { rid ->
+                roleRepository.findByIdAndStudioId(rid, command.studioId.value)
+                    ?: throw EntityNotFoundException("Rola nie istnieje: $rid")
             }
 
             val task = Task(

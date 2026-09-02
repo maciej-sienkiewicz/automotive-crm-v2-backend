@@ -290,7 +290,15 @@ class CompanyController(
                 ?: SmsAutomationConfigEntity.fromDomain(SmsAutomationConfig.defaultFor(StudioId(studioId)))
         }
 
-        config.smsApiNameConfirmed = request.smsApiNameConfirmed
+        // The flag certifies that WE (the platform operator) registered the header at SMSAPI
+        // after reviewing the signed authorisation. A studio setting it to `true` by itself
+        // would send every SMS under an unverified name — e.g. a bank's or a courier's.
+        // Studios may only withdraw a confirmation; granting it is an operator action
+        // (PlatformStudioAdminController, behind the platform key).
+        if (request.smsApiNameConfirmed) {
+            throw ForbiddenException("Potwierdzenie nazwy nadawcy nadaje operator platformy po weryfikacji upoważnienia")
+        }
+        config.smsApiNameConfirmed = false
         config.updatedAt = Instant.now()
 
         val saved = withContext(Dispatchers.IO) { smsAutomationConfigRepository.save(config) }

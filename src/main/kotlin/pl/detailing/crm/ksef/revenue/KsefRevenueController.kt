@@ -1,7 +1,9 @@
 package pl.detailing.crm.ksef.revenue
 
 import org.springframework.data.domain.PageRequest
+import org.springframework.http.ContentDisposition
 import org.springframework.http.HttpHeaders
+import java.nio.charset.StandardCharsets
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -380,7 +382,13 @@ class KsefRevenueController(
     private fun xmlDownload(content: String, filename: String): ResponseEntity<String> =
         ResponseEntity.ok()
             .contentType(MediaType.APPLICATION_XML)
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$filename\"")
+            // Built by Spring, not by string concatenation: the invoice number is user- or
+            // KSeF-supplied, and a `"` or `;` inside it used to break out of the quoted
+            // filename (header-parameter injection / filename spoofing).
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString()
+            )
             .body(content)
 
     private fun KsefRevenueInvoiceEntity.toResponse(items: List<KsefRevenueInvoiceItemEntity>?) =

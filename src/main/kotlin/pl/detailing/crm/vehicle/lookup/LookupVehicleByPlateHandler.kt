@@ -32,6 +32,7 @@ class LookupVehicleByPlateHandler(
 
             val owners = vehicleOwnerRepository.findByVehicleId(match.id)
             val customersById = customerRepository.findAllById(owners.map { it.id.customerId })
+                .filter { it.studioId == studioId.value } // never resolve a foreign customer
                 .associateBy { it.id }
 
             VehiclePlateLookupResponse(

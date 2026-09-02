@@ -243,6 +243,18 @@ data class Visit(
     }
 
     /**
+     * Line items may only change while the visit is open. COMPLETED / REJECTED / ARCHIVED
+     * visits are settled documents — see [saveServicesChanges].
+     */
+    private fun requireServicesEditable() {
+        if (status in SERVICES_LOCKED_STATUSES) {
+            throw IllegalStateTransitionException(
+                "Nie można zmieniać usług wizyty w statusie $status"
+            )
+        }
+    }
+
+    /**
      * Save services changes - adds, updates and deletes services.
      * All changes result in service items being set to PENDING status,
      * requiring customer approval.
@@ -253,9 +265,10 @@ data class Visit(
         deletedIds: List<VisitServiceItemId>,
         updatedBy: UserId
     ): Visit {
-        // Only allowed in certain states, though usually allowed while IN_PROGRESS
-        // If we want to restrict this to only IN_PROGRESS:
-        // if (status != VisitStatus.IN_PROGRESS) throw IllegalStateException("Can only change services when visit is IN_PROGRESS")
+        // A closed visit is a settled document: its totals fed the receipt / KSeF invoice
+        // and the statistics. Repricing it afterwards (which used to be possible from the
+        // API regardless of status) desynchronises the visit from the issued document.
+        requireServicesEditable()
 
         val currentItems = serviceItems.toMutableList()
 
@@ -285,6 +298,7 @@ data class Visit(
      * Transitions the service from PENDING to CONFIRMED, or removes it if operation was DELETE
      */
     fun approveService(serviceItemId: VisitServiceItemId, updatedBy: UserId): Visit {
+        requireServicesEditable()
         val updatedItems = serviceItems.mapNotNull { item ->
             if (item.id == serviceItemId) {
                 item.approve()  // Returns null for DELETE operations, confirmed item for ADD/EDIT
@@ -305,6 +319,7 @@ data class Visit(
      * Reverts the change or removes the item depending on the pending operation type
      */
     fun rejectService(serviceItemId: VisitServiceItemId, updatedBy: UserId): Visit {
+        requireServicesEditable()
         val updatedItems = serviceItems.mapNotNull { item ->
             if (item.id == serviceItemId) {
                 item.reject()  // Returns null for ADD operations, restored item for EDIT/DELETE
@@ -318,6 +333,11 @@ data class Visit(
             updatedBy = updatedBy,
             updatedAt = Instant.now()
         )
+    }
+
+    companion object {
+        /** Statusy, w których lista usług jest zamrożona (patrz requireServicesEditable). */
+        val SERVICES_LOCKED_STATUSES = setOf(VisitStatus.COMPLETED, VisitStatus.REJECTED, VisitStatus.ARCHIVED)
     }
 }
 

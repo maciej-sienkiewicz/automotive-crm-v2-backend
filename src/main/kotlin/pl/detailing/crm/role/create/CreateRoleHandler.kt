@@ -9,6 +9,7 @@ import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.infrastructure.RoleEntity
 import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.role.permission.RoleGrantGuard
 import pl.detailing.crm.shared.RoleId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
@@ -16,12 +17,16 @@ import java.time.Instant
 @Service
 class CreateRoleHandler(
     private val roleRepository: RoleRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val roleGrantGuard: RoleGrantGuard
 ) {
     @Transactional
     suspend fun handle(command: CreateRoleCommand): RoleId = withContext(Dispatchers.IO) {
         val name = command.name.trim()
         if (name.isBlank()) throw ValidationException("Nazwa roli nie może być pusta")
+
+        // Nobody hands out more than they hold (see RoleGrantGuard).
+        roleGrantGuard.assertCanGrant(command.requestedBy, command.studioId, command.permissions)
 
         if (roleRepository.existsByStudioIdAndName(command.studioId.value, name)) {
             throw ValidationException("Rola o nazwie '$name' już istnieje w tej firmie")

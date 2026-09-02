@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.ServiceId
 import pl.detailing.crm.shared.UserId
@@ -34,14 +35,23 @@ data class PlannedServicesChange(
 class ServicesChangePlanner(
     private val serviceRepository: ServiceRepository
 ) {
+    companion object {
+        /** 10 000 000 PLN netto w groszach — żadna usługa detailingowa nie kosztuje więcej. */
+        const val MAX_BASE_PRICE_NET_CENTS = 1_000_000_000L
+    }
 
     fun plan(visit: Visit, payload: ServicesChangesPayload): PlannedServicesChange {
         val serviceIds = payload.added.mapNotNull { it.serviceId?.let { id -> ServiceId.fromString(id) } }
+        // Studio-scoped: a serviceId from another studio must resolve to "not found",
+        // never to that studio's VAT rate / gross price or a cross-tenant reference.
         val servicesFromDb = if (serviceIds.isNotEmpty()) {
-            serviceRepository.findAllById(serviceIds.map { it.value }).associateBy { it.id }
+            serviceRepository.findAllByIdInAndStudioId(serviceIds.map { it.value }, visit.studioId.value)
+                .associateBy { it.id }
         } else emptyMap()
 
         val addedItems = payload.added.map { added ->
+            requireValidPrice(added.basePriceNet)
+            added.adjustment?.let { requireValidAdjustment(it) }
             val adjustmentType = added.adjustment?.type ?: AdjustmentType.PERCENT
             val adjustmentValue = added.adjustment?.value ?: 0.0
 
@@ -79,6 +89,8 @@ class ServicesChangePlanner(
         }
 
         val updatedItems = payload.updated.map { updated ->
+            requireValidPrice(updated.basePriceNet)
+            updated.adjustment?.let { requireValidAdjustment(it) }
             val existingItem = visit.serviceItems.find { it.id.value.toString() == updated.serviceLineItemId }
                 ?: throw EntityNotFoundException("Service item ${updated.serviceLineItemId} not found in visit ${visit.id}")
 
@@ -102,6 +114,37 @@ class ServicesChangePlanner(
         }
 
         return PlannedServicesChange(added = addedItems, updated = updatedItems, deleted = deletedItems)
+    }
+
+    /**
+     * Input bounds for client-supplied money. A negative base used to surface as an
+     * `IllegalArgumentException` from `Money` (HTTP 500); an absurd value silently
+     * became the visit total.
+     */
+    private fun requireValidPrice(basePriceNet: Long) {
+        if (basePriceNet < 0) throw ValidationException("Cena netto nie może być ujemna")
+        if (basePriceNet > MAX_BASE_PRICE_NET_CENTS) throw ValidationException("Cena netto przekracza dopuszczalny limit")
+    }
+
+    private fun requireValidAdjustment(adjustment: ServiceAdjustment) {
+        if (adjustment.value.isNaN() || adjustment.value.isInfinite()) {
+            throw ValidationException("Nieprawidłowa wartość korekty ceny")
+        }
+        when (adjustment.type) {
+            // Rabat do -100 % (gratis), narzut do +1000 % — wszystko poza tym to pomyłka albo manipulacja.
+            AdjustmentType.PERCENT ->
+                if (adjustment.value < -100.0 || adjustment.value > 1000.0) {
+                    throw ValidationException("Korekta procentowa musi mieścić się w zakresie od -100 do 1000")
+                }
+            AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS ->
+                if (Math.abs(adjustment.value) > MAX_BASE_PRICE_NET_CENTS) {
+                    throw ValidationException("Korekta kwotowa przekracza dopuszczalny limit")
+                }
+            AdjustmentType.SET_NET, AdjustmentType.SET_GROSS ->
+                if (adjustment.value < 0 || adjustment.value > MAX_BASE_PRICE_NET_CENTS) {
+                    throw ValidationException("Ustawiona cena musi być nieujemna i mieścić się w limicie")
+                }
+        }
     }
 
     /** Applies the plan to [visit] and returns the projected visit (nothing is persisted here). */

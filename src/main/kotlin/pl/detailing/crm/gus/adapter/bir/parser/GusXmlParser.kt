@@ -57,7 +57,16 @@ data class GusFullReportEntry(
  */
 object GusXmlParser {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val docBuilderFactory = DocumentBuilderFactory.newInstance()
+    // Hardened like KsefInvoiceXmlParser: no DOCTYPE, no external entities. The XML comes
+    // from a remote endpoint we do not control — a compromised or misconfigured
+    // GUS_ENDPOINT_URL must not be able to read local files through an entity.
+    private val docBuilderFactory = DocumentBuilderFactory.newInstance().also {
+        it.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        it.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        it.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        it.isXIncludeAware = false
+        it.isExpandEntityReferences = false
+    }
 
     /**
      * Parsuje wynik metody DaneSzukajPodmioty.
