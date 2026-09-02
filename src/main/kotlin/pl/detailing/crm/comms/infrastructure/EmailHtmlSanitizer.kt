@@ -35,12 +35,17 @@ class EmailHtmlSanitizer {
             }
         }
 
+        // Relaxed obejmuje b/strong, i/em, u, ul/ol/li, a i blockquote — całe
+        // formatowanie kompozytora CRM — ale przekreślenie zna tylko jako <strike>;
+        // przeglądarki wystawiają je jako <s> lub <del>, więc dokładamy oba.
         val safelist = Safelist.relaxed()
-            .addTags("style", "center", "font", "hr")
+            .addTags("style", "center", "font", "hr", "s", "del")
             .addAttributes(":all", "style", "align", "valign", "width", "height",
                 "border", "cellpadding", "cellspacing", "bgcolor", "color", "face", "size", "dir")
             .addAttributes("table", "role")
             .addAttributes("a", "target")
+            // „Zadzwoń" w mailu ze studia to link tel: — relaxed zna tylko http/https/mailto/ftp.
+            .addProtocols("a", "href", "tel")
             .addProtocols("img", "src", "http", "https", "data")
             // Relative URLs are our own rewritten /api/v1/comms/... inline images.
             .preserveRelativeLinks(true)

@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.comms.engine.CommsReadService
 import pl.detailing.crm.comms.engine.ImapSyncEngine
@@ -30,6 +32,8 @@ import pl.detailing.crm.comms.notes.ContactNoteDto
 import pl.detailing.crm.comms.notes.ContactNoteEventDto
 import pl.detailing.crm.comms.notes.ContactNoteService
 import pl.detailing.crm.comms.notes.ContactNotesDto
+import pl.detailing.crm.comms.send.OutgoingAttachment
+import pl.detailing.crm.comms.send.OutgoingAttachmentPolicy
 import pl.detailing.crm.comms.send.SendMailCommand
 import pl.detailing.crm.comms.send.SendMailHandler
 import pl.detailing.crm.comms.proofread.MailProofreadService
@@ -38,6 +42,7 @@ import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.shared.ValidationException
 import java.util.UUID
 
 data class SendMailRequest(
@@ -55,7 +60,11 @@ data class MailSignatureResponse(val bodyHtml: String?, val enabledByDefault: Bo
 
 data class SaveMailSignatureRequest(val bodyHtml: String, val enabledByDefault: Boolean = true)
 
-data class ProofreadRequest(val text: String)
+/**
+ * [format] = "html", gdy treść niesie proste znaczniki z edytora (pogrubienie, listy,
+ * odnośniki) — korektor ma je wtedy zostawić na miejscu. Domyślnie czysty tekst.
+ */
+data class ProofreadRequest(val text: String, val format: String = "text")
 
 data class ProofreadResponse(val text: String)
 
@@ -130,11 +139,17 @@ class CommsController(
         @RequestParam(required = false) labelId: String?,
         @RequestParam(defaultValue = "false") onlyUnread: Boolean,
         @RequestParam(defaultValue = "false") onlyLeads: Boolean,
+        /** INBOX | SENT; brak = wszystkie wątki (zgodność z dotychczasowymi klientami API). */
+        @RequestParam(required = false) folder: String?,
         @RequestParam(required = false) query: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "30") pageSize: Int
     ): ResponseEntity<CommThreadPageDto> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val threadFolder = folder?.takeIf { it.isNotBlank() }?.let { value ->
+            runCatching { ThreadFolder.valueOf(value.trim().uppercase()) }.getOrNull()
+                ?: throw ValidationException("Nieznany folder: $value")
+        }
         return ResponseEntity.ok(
             queryHandlers.listThreads(
                 principal.studioId,
@@ -144,6 +159,7 @@ class CommsController(
                     labelId = labelId?.let(UUID::fromString),
                     onlyUnread = onlyUnread,
                     onlyLeads = onlyLeads,
+                    folder = threadFolder,
                     query = query,
                     page = page,
                     pageSize = pageSize
@@ -173,8 +189,35 @@ class CommsController(
         return ResponseEntity.noContent().build()
     }
 
-    @PostMapping("/send")
-    fun send(@RequestBody request: SendMailRequest): ResponseEntity<SendMailResponse> {
+    /** Wysyłka bez załączników — czysty JSON, jak dotychczas. */
+    @PostMapping("/send", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun send(@RequestBody request: SendMailRequest): ResponseEntity<SendMailResponse> =
+        send(request, emptyList())
+
+    /**
+     * Wysyłka z załącznikami: część `request` (JSON) + części `attachments` (pliki).
+     * Ten sam adres co wariant JSON — o wyborze decyduje Content-Type żądania.
+     * Limity wielkości sprawdza [OutgoingAttachmentPolicy]; limit żądania jako całości
+     * pilnuje Spring (spring.servlet.multipart.max-request-size).
+     */
+    @PostMapping("/send", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun sendWithAttachments(
+        @RequestPart("request") request: SendMailRequest,
+        @RequestPart("attachments", required = false) attachments: List<MultipartFile>?
+    ): ResponseEntity<SendMailResponse> =
+        send(
+            request,
+            attachments.orEmpty().map { file ->
+                OutgoingAttachment(
+                    fileName = OutgoingAttachmentPolicy.safeFileName(file.originalFilename),
+                    contentType = file.contentType?.takeIf { it.isNotBlank() }
+                        ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                    content = file.bytes
+                )
+            }
+        )
+
+    private fun send(request: SendMailRequest, attachments: List<OutgoingAttachment>): ResponseEntity<SendMailResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = sendMailHandler.handle(
             SendMailCommand(
@@ -186,7 +229,8 @@ class CommsController(
                 cc = request.cc,
                 subject = request.subject,
                 bodyHtml = request.bodyHtml,
-                appendSignature = request.appendSignature
+                appendSignature = request.appendSignature,
+                attachments = attachments
             )
         )
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -200,7 +244,11 @@ class CommsController(
     @PostMapping("/proofread")
     fun proofread(@RequestBody request: ProofreadRequest): ResponseEntity<ProofreadResponse> = runBlocking {
         SecurityContextHelper.getCurrentUser()
-        ResponseEntity.ok(ProofreadResponse(proofreadService.proofread(request.text)))
+        ResponseEntity.ok(
+            ProofreadResponse(
+                proofreadService.proofread(request.text, html = request.format.equals("html", ignoreCase = true))
+            )
+        )
     }
 
     // ── Stopka nadawcy ───────────────────────────────────────────────────────

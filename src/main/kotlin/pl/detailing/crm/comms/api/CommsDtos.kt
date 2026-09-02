@@ -37,6 +37,9 @@ data class CommThreadDto(
     val lastSnippet: String?,
     val messageCount: Int,
     val unreadCount: Int,
+    /** Kierunki w wątku — z nich wynika, w których folderach (Odebrane/Wysłane) go widać. */
+    val inboundCount: Int,
+    val outboundCount: Int,
     val hasAttachments: Boolean,
     val leadId: String?,
     val labelId: String?,
@@ -123,6 +126,8 @@ fun CommThreadEntity.toDto() = CommThreadDto(
     lastSnippet = lastSnippet,
     messageCount = messageCount,
     unreadCount = unreadCount,
+    inboundCount = inboundCount,
+    outboundCount = outboundCount,
     hasAttachments = hasAttachments,
     leadId = leadId?.toString(),
     labelId = labelId?.toString(),
