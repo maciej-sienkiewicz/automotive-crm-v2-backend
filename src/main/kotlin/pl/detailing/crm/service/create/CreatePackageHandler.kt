@@ -15,6 +15,9 @@ import pl.detailing.crm.service.infrastructure.ServicePackageItemRepository
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.ServiceKind
 
 @Service
 class CreatePackageHandler(
@@ -22,7 +25,8 @@ class CreatePackageHandler(
     private val serviceRepository: ServiceRepository,
     private val packageItemRepository: ServicePackageItemRepository,
     private val auditService: AuditService,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -86,6 +90,14 @@ class CreatePackageHandler(
             serviceRepository.save(ServiceEntity.fromDomain(packageService))
             packageItemRepository.saveAll(itemEntities)
         }
+
+        // Live metrics — nowa pozycja w cenniku (pakiet)
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.SERVICE_CREATED,
+            dimensionValue = ServiceKind.PACKAGE.name,
+            attributes = mapOf("serviceId" to packageService.id.value.toString(), "name" to packageService.name, "userId" to command.userId.value.toString())
+        )
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

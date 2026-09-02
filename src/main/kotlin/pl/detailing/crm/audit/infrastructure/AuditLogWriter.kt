@@ -3,6 +3,9 @@ package pl.detailing.crm.audit.infrastructure
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.shared.StudioId
 
 /**
  * Persists an audit entry in its own transaction.
@@ -22,10 +25,20 @@ import org.springframework.transaction.annotation.Transactional
  */
 @Component
 class AuditLogWriter(
-    private val auditLogRepository: AuditLogRepository
+    private val auditLogRepository: AuditLogRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun write(entity: AuditLogEntity) {
         auditLogRepository.save(entity)
+        // Live metrics: liczy się sam fakt powstania wpisu w historii aktywności. Listener
+        // jest AFTER_COMMIT, więc zdarzenie wyjdzie dopiero, gdy ta transakcja REQUIRES_NEW
+        // faktycznie się zatwierdzi.
+        businessEventPublisher.publish(
+            tenantId = StudioId(entity.studioId),
+            type = BusinessEventType.ACTIVITY_LOGGED,
+            occurredAt = entity.createdAt,
+            attributes = mapOf("module" to entity.module.name, "action" to entity.action.name, "entityId" to entity.entityId)
+        )
     }
 }

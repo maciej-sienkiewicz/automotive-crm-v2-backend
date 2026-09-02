@@ -9,6 +9,9 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.PhotoTarget
 
 /**
  * Handler for adding a photo to an existing visit.
@@ -20,7 +23,8 @@ import java.util.UUID
 class AddVisitPhotoHandler(
     private val visitRepository: VisitRepository,
     private val photoSessionService: PhotoSessionService,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -71,6 +75,14 @@ class AddVisitPhotoHandler(
         })
 
         visitRepository.save(visitEntity)
+
+        // 7.1 Live metrics — zdjęcie przypięte do wizyty
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.PHOTO_UPLOADED,
+            dimensionValue = PhotoTarget.VISIT.name,
+            attributes = mapOf("visitId" to command.visitId.value.toString(), "photoId" to photoId.value.toString())
+        )
 
         // 8. Audit logging
         auditService.log(LogAuditCommand(

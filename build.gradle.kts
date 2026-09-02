@@ -113,9 +113,8 @@ dependencies {
     // JavaMail – transactional email dispatch (welcome emails, protocol attachments)
     implementation("com.sun.mail:jakarta.mail:2.0.1")
 
-    // Observability: Spring Boot Actuator + Micrometer Prometheus registry + AOP for metrics instrumentation
+    // Actuator (health/info) + AOP (permission / entitlement authorization aspects)
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-aop")
 
     // GUS BIR integration – caching + resilience

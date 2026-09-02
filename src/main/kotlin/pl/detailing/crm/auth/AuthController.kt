@@ -22,8 +22,6 @@ import pl.detailing.crm.auth.passwordreset.ResetPasswordRequest
 import pl.detailing.crm.auth.passwordreset.ValidateResetTokenResponse
 import pl.detailing.crm.auth.signup.SignupHandler
 import pl.detailing.crm.auth.signup.SignupRequest
-import pl.detailing.crm.metrics.domain.SessionEndReason
-import pl.detailing.crm.metrics.session.SessionActivityTracker
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -43,8 +41,7 @@ class AuthController(
     private val userRepository: UserRepository,
     private val mobileTokenService: MobileTokenService,
     private val permissionCheckService: PermissionCheckService,
-    private val studioSettingsRepository: StudioSettingsRepository,
-    private val sessionActivityTracker: SessionActivityTracker
+    private val studioSettingsRepository: StudioSettingsRepository
 ) {
 
     @PostMapping("/signup")
@@ -100,16 +97,6 @@ class AuthController(
         httpRequest: HttpServletRequest,
         httpResponse: HttpServletResponse
     ): ResponseEntity<UnifiedAuthResponse> {
-        // Close the usage-tracking session before the HTTP session is invalidated: after
-        // invalidate() the session id is gone and the metrics session could only be closed
-        // later, by the timeout sweeper, as if the user had walked away instead of leaving
-        // deliberately. LOGOUT is the one unambiguous session end there is — worth keeping.
-        runCatching {
-            httpRequest.getSession(false)?.id?.let { sessionId ->
-                sessionActivityTracker.endSession(sessionId, SessionEndReason.LOGOUT)
-            }
-        }
-
         val context = SecurityContextHolder.createEmptyContext()
         securityContextRepository.saveContext(context, httpRequest, httpResponse)
 

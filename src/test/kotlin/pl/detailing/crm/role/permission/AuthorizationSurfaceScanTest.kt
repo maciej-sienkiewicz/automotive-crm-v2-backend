@@ -38,7 +38,6 @@ class AuthorizationSurfaceScanTest {
         // PUBLIC — anonymous auth flows (SecurityConfig permitAll)
         "AuthController" to ALL_METHODS,
         "PwaManifestController" to ALL_METHODS,           // manifest PWA musi być czytelny przed logowaniem
-        "FrontendErrorController" to ALL_METHODS,         // zrzut błędów frontendu, także sprzed zalogowania
         "PublicLeadFormController" to ALL_METHODS,        // publiczne formularze leadowe (permitAll + webhook secret)
         "HealthController" to ALL_METHODS,
         "DemoAccountController" to ALL_METHODS,
@@ -54,8 +53,8 @@ class AuthorizationSurfaceScanTest {
         "WellKnownCardDavController" to ALL_METHODS,
         "CardDavProfileDownloadController" to ALL_METHODS, // one-shot, TTL-bound URL token
         "MobileContactImportController" to ALL_METHODS,   // opaque handoff token (sesja importu z telefonu)
-        "PlatformMetricsController" to ALL_METHODS,       // /api/internal: shared secret w PlatformAccessInterceptor
-        "PlatformStudioAdminController" to ALL_METHODS,   // /api/internal: shared secret w PlatformAccessInterceptor
+        "PlatformLiveMetricsController" to ALL_METHODS,   // /api/internal: shared secret w PlatformKeyInterceptor
+        "PlatformStudioAdminController" to ALL_METHODS,   // /api/internal: shared secret w PlatformKeyInterceptor
         // WEBHOOK — provider callbacks
         "Przelewy24WebhookController" to ALL_METHODS,
         "SmsInboundController" to ALL_METHODS,
@@ -67,7 +66,6 @@ class AuthorizationSurfaceScanTest {
         "MyWorkTimeController" to ALL_METHODS,
         "PinController" to ALL_METHODS,                   // PIN user switching; unlock is owner-checked inline
         "MyTasksController" to ALL_METHODS,               // only tasks visible to the caller (TaskVisibility)
-        "MetricsSessionController" to ALL_METHODS,        // telemetria sesji zalogowanego użytkownika
         "PushController" to ALL_METHODS,                  // rejestracja/odpinanie WŁASNYCH urządzeń push
         "ReportProblemController" to ALL_METHODS,         // zgłoszenie problemu przez zalogowanego użytkownika
         // ALL_USERS — intentionally available to every authenticated studio member

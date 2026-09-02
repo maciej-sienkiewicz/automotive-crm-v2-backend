@@ -23,6 +23,10 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.PhotoTarget
+import pl.detailing.crm.shared.StudioId
 
 /**
  * Handles S3 operations for QR-based checkin photo uploads.
@@ -47,6 +51,7 @@ class CheckinPhotoService(
     private val s3Presigner: S3Presigner,
     private val redisTemplate: StringRedisTemplate,
     private val objectMapper: ObjectMapper,
+    private val businessEventPublisher: BusinessEventPublisher,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String,
     @Value("\${checkin.upload-token-ttl-hours:3}") private val tokenTtlHours: Long
 ) {
@@ -122,6 +127,16 @@ class CheckinPhotoService(
         logger.info("Uploaded QR checkin photo: key=$s3Key, size=${fileBytes.size}B")
 
         val thumbnailUrl = generateDownloadUrl(s3Key)
+
+        // Live metrics — jedyna ścieżka, w której bajty naprawdę już leżą w S3
+        runCatching { StudioId.fromString(metadata.tenantId) }.getOrNull()?.let { tenantId ->
+            businessEventPublisher.publish(
+                tenantId = tenantId,
+                type = BusinessEventType.PHOTO_UPLOADED,
+                dimensionValue = PhotoTarget.CHECKIN.name,
+                attributes = mapOf("checkinId" to metadata.checkinId, "photoId" to photoId.toString())
+            )
+        }
 
         publishPhotoUploadedEvent(
             tenantId = metadata.tenantId,

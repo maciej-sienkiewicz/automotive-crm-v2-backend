@@ -8,8 +8,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import pl.detailing.crm.ksef.config.KsefProperties
-import pl.detailing.crm.metrics.config.MetricsProperties
-import pl.detailing.crm.observability.MetricsTags
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -35,8 +33,7 @@ import java.util.concurrent.ConcurrentHashMap
 @Component
 class KsefApiMetrics(
     private val registry: MeterRegistry,
-    private val ksefProperties: KsefProperties,
-    private val metricsProperties: MetricsProperties
+    private val ksefProperties: KsefProperties
 ) {
     private val log = LoggerFactory.getLogger(KsefApiMetrics::class.java)
 
@@ -67,13 +64,12 @@ class KsefApiMetrics(
 
     @PostConstruct
     fun register() {
-        if (!metricsProperties.enabled) return
 
-        windowGauge = MultiGauge.builder(MetricsTags.KSEF_API_WINDOW_REQUESTS)
+        windowGauge = MultiGauge.builder("crm.ksef.api.window.requests")
             .description("Liczba żądań do API KSeF w oknie czasowym, per studio")
             .register(registry)
 
-        utilizationGauge = MultiGauge.builder(MetricsTags.KSEF_API_WINDOW_UTILIZATION)
+        utilizationGauge = MultiGauge.builder("crm.ksef.api.window.utilization")
             .description("Wykorzystanie limitu żądań KSeF w oknie czasowym (0–1), per studio")
             .register(registry)
     }
@@ -86,13 +82,12 @@ class KsefApiMetrics(
      * @param outcome   [OUTCOME_SUCCESS] / [OUTCOME_RATE_LIMITED] / [OUTCOME_ERROR]
      */
     fun record(studioTag: String, operation: String, outcome: String) {
-        if (!metricsProperties.enabled) return
 
         registry.counter(
-            MetricsTags.KSEF_API_REQUESTS,
-            MetricsTags.TAG_STUDIO_ID, studioTag,
-            MetricsTags.TAG_KSEF_OPERATION, operation,
-            MetricsTags.TAG_RESULT, outcome
+            "crm.ksef.api.requests",
+            "studio_id", studioTag,
+            "ksef_operation", operation,
+            "result", outcome
         ).increment()
 
         windows.computeIfAbsent(studioTag) { RequestWindow() }.add(System.currentTimeMillis())
@@ -106,12 +101,11 @@ class KsefApiMetrics(
      * pobrania, niż mieści się w limicie — czyli że synchronizacja się nie domyka.
      */
     fun recordDeferred(studioTag: String, reason: String) {
-        if (!metricsProperties.enabled) return
 
         registry.counter(
-            MetricsTags.KSEF_API_DEFERRED,
-            MetricsTags.TAG_STUDIO_ID, studioTag,
-            MetricsTags.TAG_REASON, reason
+            "crm.ksef.api.deferred",
+            "studio_id", studioTag,
+            "reason", reason
         ).increment()
     }
 
@@ -122,7 +116,6 @@ class KsefApiMetrics(
      */
     @Scheduled(fixedDelay = 30_000, initialDelay = 15_000)
     fun refreshGauges() {
-        if (!metricsProperties.enabled) return
 
         val now = System.currentTimeMillis()
         val minuteLimit = ksefProperties.requestsPerMinuteLimit.toDouble()
@@ -156,7 +149,7 @@ class KsefApiMetrics(
     }
 
     private fun rowTags(studioTag: String, window: String): Tags =
-        Tags.of(MetricsTags.TAG_STUDIO_ID, studioTag, MetricsTags.TAG_KSEF_WINDOW, window)
+        Tags.of("studio_id", studioTag, "ksef_window", window)
 
     private fun ratio(count: Int, limit: Double): Double =
         if (limit <= 0) 0.0 else count / limit

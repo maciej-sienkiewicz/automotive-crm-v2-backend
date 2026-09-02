@@ -9,6 +9,9 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.vehicle.infrastructure.VehiclePhotoEntity
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.PhotoTarget
 
 /**
  * Handler for adding a photo directly to a vehicle (not associated with a visit).
@@ -20,7 +23,8 @@ import java.time.Instant
 class AddVehiclePhotoHandler(
     private val vehicleRepository: VehicleRepository,
     private val photoSessionService: PhotoSessionService,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -54,6 +58,14 @@ class AddVehiclePhotoHandler(
         vehicleEntity.photos.add(newPhotoEntity)
 
         vehicleRepository.save(vehicleEntity)
+
+        // 5.1 Live metrics — zdjęcie przypięte do karty pojazdu (klienta)
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.PHOTO_UPLOADED,
+            dimensionValue = PhotoTarget.VEHICLE.name,
+            attributes = mapOf("vehicleId" to command.vehicleId.value.toString(), "photoId" to photoId.value.toString())
+        )
 
         // 6. Generate presigned upload URL
         val contentType = PhotoSessionService.contentTypeFromFileName(command.fileName)

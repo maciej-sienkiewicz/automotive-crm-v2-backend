@@ -44,7 +44,7 @@ data class StudioResetStep(
  *    to zapłacone środki;
  *  - `audit_logs` — dziennik jest rejestrem; reset sam zostawia w nim wpis CRITICAL;
  *  - konto ownera zlecającego reset (`users` poza nim są usuwane);
- *  - telemetria platformy (`metric_*`) — diagnostyka operatora, niewidoczna dla studia;
+ *  - liczniki live-metrics w Redisie — diagnostyka operatora, niewidoczna dla studia;
  *  - dane globalne współdzielone między studiami (katalogi planów, segmenty pojazdów,
  *    profile Instagrama — te ostatnie tylko odpinane, z GC osieroconych).
  *

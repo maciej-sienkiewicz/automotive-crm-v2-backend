@@ -29,10 +29,9 @@ import java.time.ZoneId
 object DateRangeFilter {
 
     /**
-     * The business timezone every studio on this platform operates in — the same
-     * convention `MetricsClock` applies to metric bucketing. Kept separate rather than
-     * shared because the metrics module documents that constant as its own seam for a
-     * future per-tenant timezone; this one is about interpreting a query parameter.
+     * The business timezone every studio on this platform operates in. The live-metrics
+     * module bucketing uses the same zone (configurable there); this constant is about
+     * interpreting a query parameter.
      */
     val ZONE: ZoneId = ZoneId.of("Europe/Warsaw")
 
