@@ -1,8 +1,9 @@
 # Live metrics — śledzenie zdarzeń biznesowych w czasie rzeczywistym
 
 Zastępuje moduł metryk (`crm/metrics`, tabele `metric_*`, joby rollupów, audyt API,
-sesje) oraz warstwę Prometheus/Grafana (`crm/observability`, `deploy/monitoring`).
-Wszystko to zostało usunięte; migracja `V104__drop_metrics_module.sql` kasuje tabele.
+sesje), aspekty `crm/observability` i stare dashboardy Grafany. Migracja
+`V104__drop_metrics_module.sql` kasuje tabele. Prometheus i Grafana zostają jako
+warstwa wizualizacji — zasilane teraz przez licznik zdarzeń biznesowych.
 
 ## Architektura
 
@@ -27,6 +28,9 @@ Wszystko to zostało usunięte; migracja `V104__drop_metrics_module.sql` kasuje 
   LiveMetricsBroadcaster ──┬── STOMP  /topic/studio.{tenantId}.metrics   (SPA studia)
                            ├── SSE    /api/v1/live-metrics/stream         (studio, sesja)
                            └── SSE    /api/internal/live-metrics/stream   (platforma, X-Platform-Key)
+
+  LiveMetricsPrometheusExporter ──► /actuator/prometheus ──► Prometheus ──► Grafana
+        (licznik per tenant/typ/wymiar + gauge'e „dziś”/„60 min”/profil godzinowy z Redisa)
 ```
 
 `scope` to `t:{tenantId}` **i** `p` (platforma) — każde zdarzenie inkrementuje oba,
@@ -85,18 +89,30 @@ Ramka:
 
 `PlatformKeyInterceptor` chroni całe `/api/internal/**` (także `/api/internal/studios`).
 
-## Dashboardy
+## Dashboardy (Grafana)
 
-Serwowane przez backend jako statyczne strony bez zewnętrznych zależności:
+Grafana jest provisionowana z repo (`deploy/monitoring/grafana/provisioning`), źródłem
+danych jest Prometheus scrape'ujący `/actuator/prometheus`. Nic nie trzeba klikać:
+usunięcie pliku z repo usuwa dashboard (`disableDeletion: false`).
 
-- `/live-metrics/platform.html` — konsola operatora: 5 kafli KPI z iskierkami, wykresy
-  (rezerwacje na żywo, godziny rezerwacji, lejek wizyt bezpośrednie/z rezerwacji,
-  zdjęcia wg miejsca, nowości w cenniku, log aktywności), strumień zdarzeń, tabela
-  tenantów, stan potoku. Klucz podaje się raz, zostaje w `sessionStorage` karty.
-- `/live-metrics/studio.html` — ten sam zestaw dla zalogowanego studia (cookie sesji).
+| Dashboard | UID | Co pokazuje |
+|---|---|---|
+| Live metrics — platforma | `crm-live-platform` | KPI „dziś” per typ, rezerwacje na żywo, rozkład godzinowy rezerwacji (7 dni), wizyty bezpośrednie vs z rezerwacji, zdjęcia wg miejsca, nowości w cenniku, log aktywności, tempo zdarzeń/min, tabela tenantów, stan potoku |
+| Live metrics — tenant | `crm-live-tenant` | ten sam zestaw dla jednego tenanta (zmienna `$tenant`) |
 
-Wykresy aktualizują się z ramki SSE (patch w pamięci) i co 60 s z pełnego snapshotu.
-Każdy wykres ma widok tabeli, tooltip i tryb jasny/ciemny.
+Odświeżanie co 5 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter`:
+
+| Metryka | Etykiety | Źródło | Agregacja w Grafanie |
+|---|---|---|---|
+| `crm_business_events_total` | `tenant_id, tenant, type, dimension` | licznik ingestu tej instancji | `sum(increase(...[$__interval]))` |
+| `crm_business_events_today` | `tenant_id, tenant, type` | Redis, co 15 s | `max by (tenant_id)` (ta sama wartość na każdej instancji) |
+| `crm_business_events_last_hour` | j.w. | Redis, co 15 s | j.w. |
+| `crm_business_events_hour_of_day` | `tenant_id, tenant, type, hour` | Redis (7 dni), co 15 s; per tenant tylko `RESERVATION_CREATED`, `tenant_id="_platform"` dla wszystkich typów | `max by (hour, tenant_id)` |
+| `crm_live_metrics_pipeline_*`, `crm_live_metrics_sse_subscribers` | — | stan potoku instancji | `sum` |
+
+Kardynalność jest zamknięta: tenant × typ (5) × wymiar (≤4), godzina (24) tylko dla
+rezerwacji per tenant. Żadnych id encji w etykietach — te idą wyłącznie do strumienia
+Redis (`attributes`) dla SPA.
 
 ## Konfiguracja (`crm.live-metrics.*`)
 
@@ -106,6 +122,7 @@ Każdy wykres ma widok tabeli, tooltip i tryb jasny/ciemny.
 | `platform-api-key` | `${PLATFORM_METRICS_KEY:}` |
 | `zone` | `Europe/Warsaw` |
 | `retention.minute-days` / `retention.hour-days` | `3` / `90` |
+| `prometheus-refresh-seconds` | `15` |
 | `recent-events` | `200` |
 | `stream-max-length` | `100000` (XTRIM ~ co 1000 zapisów) |
 | `ingest.queue-capacity` / `batch-size` / `flush-interval-ms` | `20000` / `500` / `250` |

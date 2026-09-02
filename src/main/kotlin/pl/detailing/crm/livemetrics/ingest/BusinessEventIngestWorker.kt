@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import pl.detailing.crm.livemetrics.config.LiveMetricsProperties
 import pl.detailing.crm.livemetrics.domain.BusinessEvent
+import pl.detailing.crm.livemetrics.prometheus.LiveMetricsPrometheusExporter
+import org.springframework.context.annotation.Lazy
 import pl.detailing.crm.livemetrics.store.LiveMetricsStore
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -26,7 +28,8 @@ import java.util.concurrent.atomic.AtomicLong
 @Component
 class BusinessEventIngestWorker(
     private val store: LiveMetricsStore,
-    private val properties: LiveMetricsProperties
+    private val properties: LiveMetricsProperties,
+    @Lazy private val prometheusExporter: LiveMetricsPrometheusExporter? = null
 ) {
     private val log = LoggerFactory.getLogger(BusinessEventIngestWorker::class.java)
 
@@ -97,6 +100,7 @@ class BusinessEventIngestWorker(
         try {
             store.record(batch)
             written.addAndGet(batch.size.toLong())
+            runCatching { prometheusExporter?.count(batch) }
         } catch (e: Exception) {
             failedBatches.incrementAndGet()
             dropped.addAndGet(batch.size.toLong())

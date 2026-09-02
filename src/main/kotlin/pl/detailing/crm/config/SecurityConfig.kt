@@ -147,10 +147,6 @@ class SecurityConfig(
                 // which fails closed when no key is configured. Expected to sit behind a
                 // VPN / IP allow-list as well.
                 auth.requestMatchers("/api/internal/**").permitAll()
-                // Self-contained live-metrics dashboards (static HTML). The pages carry no
-                // data: the platform page asks for the X-Platform-Key, the studio page uses
-                // the session cookie for every API call it makes.
-                auth.requestMatchers("/live-metrics/**").permitAll()
                     .anyRequest().authenticated()
             }
             .sessionManagement { session ->

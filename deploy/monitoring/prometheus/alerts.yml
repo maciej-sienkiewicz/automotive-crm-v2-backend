@@ -1,0 +1,136 @@
+groups:
+  - name: crm_security
+    interval: 30s
+    rules:
+
+      # ── Brute-force / credential stuffing ──────────────────────────────────
+      - alert: LoginBruteForce
+        expr: |
+          rate(crm_security_login_attempts_total{result="failure"}[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Podejrzana liczba błędnych prób logowania"
+          description: >
+            Więcej niż 1 błędna próba logowania na 2 sekundy przez ostatnie 2 minuty.
+            Może oznaczać atak brute-force lub credential stuffing.
+
+      - alert: AccountLockoutSpike
+        expr: |
+          increase(crm_security_login_attempts_total{result="locked"}[10m]) > 3
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Masowe blokady kont w krótkim czasie"
+          description: >
+            Ponad 3 konta zostały zablokowane w ciągu 10 minut.
+            Może oznaczać skoordynowany atak na znane adresy e-mail.
+
+      # ── Rate limiting ───────────────────────────────────────────────────────
+      - alert: RateLimitExceeded
+        expr: |
+          rate(crm_security_rate_limit_exceeded_total[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Przekroczenia limitów żądań (HTTP 429)"
+          description: >
+            Endpoint {{ $labels.path }} regularnie przekracza rate limit.
+            Może oznaczać atak DoS lub nieprawidłowo skonfigurowanego klienta.
+
+      # ── Cross-tenant access ─────────────────────────────────────────────────
+      - alert: CrossTenantAccessAttempt
+        expr: |
+          increase(crm_security_cross_tenant_attempt_total[15m]) > 0
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Próba dostępu do danych innego tenanta!"
+          description: >
+            Studio {{ $labels.studio_id }} próbowało uzyskać dostęp do encji {{ $labels.entity_type }}
+            należącej do innego tenanta. Sprawdź audit_logs tabeli SECURITY.
+
+      # ── Anomalous 401/403 rejections ────────────────────────────────────────
+  - name: crm_ksef_limits
+    interval: 60s
+    rules:
+
+      # ── Zbliżanie się do limitu KSeF ────────────────────────────────────────
+      # Limity KSeF są naliczane per kontekst NIP, więc alert ma sens wyłącznie
+      # per najemca — suma platformy nie powie, kto za chwilę zobaczy 429.
+      - alert: KsefTenantNearHourlyLimit
+        expr: |
+          crm_ksef_api_window_utilization{ksef_window="hour"} >= 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Studio {{ $labels.studio_id }} blisko godzinowego limitu KSeF"
+          description: >
+            Studio zużyło co najmniej 80% godzinowego budżetu żądań do KSeF.
+            Kolejne pobrania faktur zaczną być wstrzymywane, a synchronizacja
+            przestanie domykać się w jednym cyklu.
+
+      - alert: KsefTenantHourlyLimitExhausted
+        expr: |
+          crm_ksef_api_window_utilization{ksef_window="hour"} >= 1
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Studio {{ $labels.studio_id }} wyczerpało godzinowy limit KSeF"
+          description: >
+            Budżet żądań na godzinę jest wyczerpany. Sprawdź, czy studio nie ma
+            zaległości w synchronizacji większej, niż limit pozwala nadrobić.
+
+      # ── Odmowy po stronie KSeF ──────────────────────────────────────────────
+      # To inny sygnał niż powyższe: znaczy, że nasze wyhamowanie zadziałało
+      # za późno albo za słabo i KSeF odrzucił żądanie.
+      - alert: KsefRateLimitRejections
+        expr: |
+          increase(crm_ksef_api_requests_total{result="rate_limited"}[15m]) > 0
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "KSeF odrzuca żądania studia {{ $labels.studio_id }} (429)"
+          description: >
+            Operacja {{ $labels.ksef_operation }} dostała odmowę z powodu limitu.
+            Sprawdź tempo żądań w KsefInvoiceXmlFetcher i budżet godzinowy.
+
+      # ── Synchronizacja, która się nie domyka ────────────────────────────────
+      - alert: KsefSyncPersistentlyDeferred
+        expr: |
+          increase(crm_ksef_api_deferred_total[6h]) > 12
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Synchronizacja KSeF studia {{ $labels.studio_id }} nie nadąża"
+          description: >
+            Przebiegi synchronizacji były wstrzymywane ponad 12 razy w ciągu 6 godzin
+            z powodu {{ $labels.reason }}. Zaległość dokumentów rośnie szybciej,
+            niż limit KSeF pozwala ją nadrobić — podgląd faktur zostaje bez pozycji.
+
+      # ── Błędy komunikacji z KSeF ────────────────────────────────────────────
+      - alert: KsefApiErrorRate
+        expr: |
+          sum by (studio_id) (rate(crm_ksef_api_requests_total{result="error"}[15m]))
+            /
+          sum by (studio_id) (rate(crm_ksef_api_requests_total[15m])) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Ponad 25% żądań do KSeF studia {{ $labels.studio_id }} kończy się błędem"
+          description: >
+            Sprawdź ważność tokenu KSeF studia i dostępność API Ministerstwa Finansów.
