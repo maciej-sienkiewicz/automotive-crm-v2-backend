@@ -74,15 +74,15 @@ class PhotoSessionService(
      */
     suspend fun createSession(
         studioId: StudioId,
-        appointmentId: AppointmentId,
+        appointmentId: AppointmentId?,
         userId: UserId
     ): PhotoUploadSessionEntity = withContext(Dispatchers.IO) {
-        logger.info("Creating photo upload session for appointment ${appointmentId.value}, studio ${studioId.value}")
+        logger.info("Creating photo upload session for appointment ${appointmentId?.value ?: "-"}, studio ${studioId.value}")
 
         val session = PhotoUploadSessionEntity(
             id = UUID.randomUUID(),
             studioId = studioId.value,
-            appointmentId = appointmentId.value,
+            appointmentId = appointmentId?.value,
             token = generateSecureToken(),
             expiresAt = Instant.now().plusSeconds(sessionTtlHours * 3600),
             createdAt = Instant.now()

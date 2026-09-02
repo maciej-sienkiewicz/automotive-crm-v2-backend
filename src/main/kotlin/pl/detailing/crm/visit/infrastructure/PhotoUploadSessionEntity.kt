@@ -30,8 +30,9 @@ class PhotoUploadSessionEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "appointment_id", nullable = false, columnDefinition = "uuid")
-    val appointmentId: UUID,
+    // Nullable — wizyty z marszu tworzą sesję, zanim powstanie rezerwacja.
+    @Column(name = "appointment_id", nullable = true, columnDefinition = "uuid")
+    val appointmentId: UUID? = null,
 
     @Column(name = "token", nullable = false, length = 500, unique = true)
     val token: String,
