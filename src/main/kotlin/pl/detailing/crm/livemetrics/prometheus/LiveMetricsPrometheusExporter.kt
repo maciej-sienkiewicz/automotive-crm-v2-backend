@@ -17,9 +17,7 @@ import pl.detailing.crm.livemetrics.store.LiveMetricsKeys
 import pl.detailing.crm.livemetrics.store.LiveMetricsStore
 import pl.detailing.crm.livemetrics.stream.LiveMetricsBroadcaster
 import pl.detailing.crm.studio.infrastructure.StudioRepository
-import java.time.Instant
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -32,7 +30,6 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `crm_business_events_today{tenant_id, tenant, type}` — liczba od północy
  *    (strefa studia), odświeżana z Redisa; identyczna na każdej instancji, więc w
  *    Grafanie agregujemy `max by (tenant_id)`, nie `sum`;
- *  - `crm_business_events_last_hour{...}` — j.w., ostatnie 60 minut;
  *  - `crm_business_events_hour_of_day{tenant_id, tenant, type, hour}` — profil
  *    „o której klienci rezerwują” z ostatnich 7 dni; per tenant tylko dla rezerwacji,
  *    dla całej platformy (`tenant_id="_platform"`) dla wszystkich typów — świadomy
@@ -56,23 +53,21 @@ class LiveMetricsPrometheusExporter(
     companion object {
         const val EVENTS = "crm.business.events"
         const val TODAY = "crm.business.events.today"
-        const val LAST_HOUR = "crm.business.events.last_hour"
         const val HOUR_OF_DAY = "crm.business.events.hour_of_day"
         const val PLATFORM_TENANT = "_platform"
         const val NO_DIMENSION = "none"
         const val HOUR_PROFILE_DAYS = 7
+        const val HOUR_PROFILE_REFRESH_MS = 5L * 60 * 1000
     }
 
     private val counters = ConcurrentHashMap<String, Counter>()
     private val tenantNames = ConcurrentHashMap<UUID, String>()
     private lateinit var todayGauge: MultiGauge
-    private lateinit var lastHourGauge: MultiGauge
     private lateinit var hourOfDayGauge: MultiGauge
 
     @PostConstruct
     fun register() {
         todayGauge = MultiGauge.builder(TODAY).description("Zdarzenia biznesowe od północy (strefa studia)").register(registry)
-        lastHourGauge = MultiGauge.builder(LAST_HOUR).description("Zdarzenia biznesowe z ostatnich 60 minut").register(registry)
         hourOfDayGauge = MultiGauge.builder(HOUR_OF_DAY).description("Rozkład godzinowy zdarzeń z ostatnich 7 dni").register(registry)
         Gauge.builder("crm.live_metrics.pipeline.queued") { worker.queued() }.register(registry)
         Gauge.builder("crm.live_metrics.pipeline.queue_capacity") { worker.capacity() }.register(registry)
@@ -98,46 +93,57 @@ class LiveMetricsPrometheusExporter(
         }
     }
 
+    /**
+     * Liczniki „od północy" — jedna partia HGET-ów na wszystkie tenanty i typy.
+     * To jedyny gauge odświeżany w tempie scrape'u, bo tylko on musi nadążać za żywym ruchem.
+     */
     @Scheduled(fixedDelayString = "\${crm.live-metrics.prometheus-refresh-seconds:15}000", initialDelay = 10_000)
-    fun refreshGauges() {
+    fun refreshTodayGauges() {
         if (!properties.enabled) return
         try {
             val tenants = store.tenants().toList()
             refreshTenantNames(tenants)
-            val now = Instant.now()
-            val today = LocalDate.now(store.zone)
-            val baseSeries = BusinessEventType.entries.map { it.series }
             val scopes = tenants.map { LiveMetricsKeys.tenantScope(it) }
-            val todayCounts = store.dayCounts(scopes, baseSeries, today)
+            val baseSeries = BusinessEventType.entries.map { it.series }
+            val todayCounts = store.dayCounts(scopes, baseSeries, LocalDate.now(store.zone))
 
-            val todayRows = ArrayList<MultiGauge.Row<Number>>()
-            val lastHourRows = ArrayList<MultiGauge.Row<Number>>()
-            val hourRows = ArrayList<MultiGauge.Row<Number>>()
-
+            val rows = ArrayList<MultiGauge.Row<Number>>(tenants.size * baseSeries.size)
             tenants.forEachIndexed { idx, tenant ->
-                val scope = scopes[idx]
                 val tags = tenantTags(tenant)
                 for (type in BusinessEventType.entries) {
-                    val t = tags.and("type", type.name)
-                    todayRows += MultiGauge.Row.of(t, todayCounts[scope]?.get(type.series) ?: 0L)
-                    val lastHour = store.minuteSeries(scope, type.series, now.minus(59, ChronoUnit.MINUTES), now).sumOf { it.count }
-                    lastHourRows += MultiGauge.Row.of(t, lastHour)
+                    rows += MultiGauge.Row.of(tags.and("type", type.name), todayCounts[scopes[idx]]?.get(type.series) ?: 0L)
                 }
-                store.hourOfDayProfile(scope, BusinessEventType.RESERVATION_CREATED.series, HOUR_PROFILE_DAYS).forEachIndexed { h, c ->
-                    hourRows += MultiGauge.Row.of(tags.and("type", BusinessEventType.RESERVATION_CREATED.name).and("hour", "%02d".format(h)), c)
-                }
+            }
+            todayGauge.register(rows, true)
+        } catch (e: Exception) {
+            log.warn("[LIVE-METRICS] today gauge refresh failed: {}", e.toString())
+        }
+    }
+
+    /**
+     * Profil godzinowy z ostatnich 7 dni. Odświeżany rzadko, bo czyta 7 kubełków na tenanta,
+     * a odpowiada na pytanie („o której klienci rezerwują"), które nie zmienia się w minutę.
+     */
+    @Scheduled(fixedDelay = HOUR_PROFILE_REFRESH_MS, initialDelay = 20_000)
+    fun refreshHourProfileGauges() {
+        if (!properties.enabled) return
+        try {
+            val tenants = store.tenants().toList()
+            refreshTenantNames(tenants)
+            val rows = ArrayList<MultiGauge.Row<Number>>()
+            for (tenant in tenants) {
+                val tags = tenantTags(tenant).and("type", BusinessEventType.RESERVATION_CREATED.name)
+                store.hourOfDayProfile(LiveMetricsKeys.tenantScope(tenant), BusinessEventType.RESERVATION_CREATED.series, HOUR_PROFILE_DAYS)
+                    .forEachIndexed { h, c -> rows += MultiGauge.Row.of(tags.and("hour", "%02d".format(h)), c) }
             }
             val platformTags = Tags.of("tenant_id", PLATFORM_TENANT, "tenant", "Cała platforma")
             for (type in BusinessEventType.entries) {
-                store.hourOfDayProfile(LiveMetricsKeys.PLATFORM_SCOPE, type.series, HOUR_PROFILE_DAYS).forEachIndexed { h, c ->
-                    hourRows += MultiGauge.Row.of(platformTags.and("type", type.name).and("hour", "%02d".format(h)), c)
-                }
+                store.hourOfDayProfile(LiveMetricsKeys.PLATFORM_SCOPE, type.series, HOUR_PROFILE_DAYS)
+                    .forEachIndexed { h, c -> rows += MultiGauge.Row.of(platformTags.and("type", type.name).and("hour", "%02d".format(h)), c) }
             }
-            todayGauge.register(todayRows, true)
-            lastHourGauge.register(lastHourRows, true)
-            hourOfDayGauge.register(hourRows, true)
+            hourOfDayGauge.register(rows, true)
         } catch (e: Exception) {
-            log.warn("[LIVE-METRICS] Prometheus gauge refresh failed: {}", e.toString())
+            log.warn("[LIVE-METRICS] hour-of-day gauge refresh failed: {}", e.toString())
         }
     }
 

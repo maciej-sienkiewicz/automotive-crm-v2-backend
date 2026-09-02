@@ -100,19 +100,33 @@ usunięcie pliku z repo usuwa dashboard (`disableDeletion: false`).
 | Live metrics — platforma | `crm-live-platform` | KPI „dziś” per typ, rezerwacje na żywo, rozkład godzinowy rezerwacji (7 dni), wizyty bezpośrednie vs z rezerwacji, zdjęcia wg miejsca, nowości w cenniku, log aktywności, tempo zdarzeń/min, tabela tenantów, stan potoku |
 | Live metrics — tenant | `crm-live-tenant` | ten sam zestaw dla jednego tenanta (zmienna `$tenant`) |
 
-Odświeżanie co 5 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter`:
+Odświeżanie co 10 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter`:
 
 | Metryka | Etykiety | Źródło | Agregacja w Grafanie |
 |---|---|---|---|
 | `crm_business_events_total` | `tenant_id, tenant, type, dimension` | licznik ingestu tej instancji | `sum(increase(...[$__interval]))` |
 | `crm_business_events_today` | `tenant_id, tenant, type` | Redis, co 15 s | `max by (tenant_id)` (ta sama wartość na każdej instancji) |
-| `crm_business_events_last_hour` | j.w. | Redis, co 15 s | j.w. |
-| `crm_business_events_hour_of_day` | `tenant_id, tenant, type, hour` | Redis (7 dni), co 15 s; per tenant tylko `RESERVATION_CREATED`, `tenant_id="_platform"` dla wszystkich typów | `max by (hour, tenant_id)` |
+| `crm_business_events_hour_of_day` | `tenant_id, tenant, type, hour` | Redis (7 dni), co 5 min; per tenant tylko `RESERVATION_CREATED`, `tenant_id="_platform"` dla wszystkich typów | `max by (hour, tenant_id)` |
 | `crm_live_metrics_pipeline_*`, `crm_live_metrics_sse_subscribers` | — | stan potoku instancji | `sum` |
 
 Kardynalność jest zamknięta: tenant × typ (5) × wymiar (≤4), godzina (24) tylko dla
 rezerwacji per tenant. Żadnych id encji w etykietach — te idą wyłącznie do strumienia
 Redis (`attributes`) dla SPA.
+
+### Dwie pułapki, na które te dashboardy są odporne
+
+**Krok minimalny 1 min na wykresach.** Scrape trwa 15 s, a `increase()` potrzebuje co
+najmniej dwóch próbek w oknie. Bez wymuszonego kroku `$__interval` na szerokim panelu
+schodzi do kilku sekund i każdy słupek jest pusty — wykres pokazuje zero mimo poprawnych
+danych w Prometheusie. Panele mają `interval: 1m` i pytają o `[$__rate_interval]`.
+
+**Tabela tenantów to jedno zapytanie.** Sklejanie sześciu zapytań `joinByField` po
+`tenant_id` rozjeżdżało kolumny, gdy któraś seria nie istniała. Teraz jedno zapytanie
+`max by (tenant, type) (crm_business_events_today)` i pivot `groupingToMatrix`.
+
+**`—` zamiast `0` na kaflach KPI.** Gauge wystawia wiersz dla każdego tenanta i typu, także
+z zerem. Brak danych oznacza więc awarię scrape'u, nie spokojny dzień — i ma wyglądać inaczej
+niż prawdziwe zero.
 
 ## Konfiguracja (`crm.live-metrics.*`)
 
