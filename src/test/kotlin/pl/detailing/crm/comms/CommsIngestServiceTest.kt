@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
+import pl.detailing.crm.comms.domain.CommThreadChangedEvent
 import pl.detailing.crm.comms.domain.EmailTextCleaner
 import pl.detailing.crm.comms.domain.ParsedEmail
 import pl.detailing.crm.comms.engine.CommsIngestService
@@ -213,6 +214,62 @@ class CommsIngestServiceTest {
         assertEquals(2, existingThread.messageCount)
         // Odpowiedź klienta wciąga wątek z Wysłanych z powrotem do Odebranych.
         assertEquals(1, existingThread.inboundCount)
+    }
+
+    /**
+     * Powiadomienie „Masz nową wiadomość" po kliknięciu „Wyślij" to komunikat
+     * nieprawdziwy: autor wiadomości wie, że ją wysłał. Kopia własnej wysyłki idzie
+     * tą samą ścieżką importu co poczta przychodząca, więc flaga musi rozróżniać
+     * kierunek — samo „nie backfill" nie wystarcza.
+     */
+    @Test
+    fun `outbound copy refreshes the thread without announcing a new message`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(
+            account, CommFolderKind.SENT,
+            parsed(from = account.emailAddress).copy(toEmails = listOf("klient@example.com")),
+            uidValidity = null
+        )
+
+        val changed = events.filterIsInstance<CommThreadChangedEvent>().single()
+        assertFalse(changed.newMessage)
+    }
+
+    @Test
+    fun `inbound message announces a new message`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(account, CommFolderKind.INBOX, parsed(), uidValidity = 7L)
+
+        val changed = events.filterIsInstance<CommThreadChangedEvent>().single()
+        assertTrue(changed.newMessage)
+    }
+
+    /** Pierwszy import skrzynki: setki historycznych maili to nie setki powiadomień. */
+    @Test
+    fun `backfilled inbound message stays silent`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(account, CommFolderKind.INBOX, parsed(), uidValidity = 7L, backfill = true)
+
+        val changed = events.filterIsInstance<CommThreadChangedEvent>().single()
+        assertFalse(changed.newMessage)
     }
 
     @Test
