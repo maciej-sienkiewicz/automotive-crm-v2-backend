@@ -61,6 +61,7 @@ class LiveMetricsPrometheusExporter(
     }
 
     private val counters = ConcurrentHashMap<String, Counter>()
+    private val primedTenants = ConcurrentHashMap.newKeySet<UUID>()
     private val tenantNames = ConcurrentHashMap<UUID, String>()
     private lateinit var todayGauge: MultiGauge
     private lateinit var hourOfDayGauge: MultiGauge
@@ -82,16 +83,39 @@ class LiveMetricsPrometheusExporter(
     /** Wołane przez ingest po udanym zapisie partii — licznik rośnie tylko za realnie zapisane zdarzenia. */
     fun count(events: List<BusinessEvent>) {
         for (e in events) {
-            val dim = e.dimensionValue ?: NO_DIMENSION
-            val key = "${e.tenantId.value}|${e.type.name}|$dim"
-            counters.computeIfAbsent(key) {
-                Counter.builder(EVENTS)
-                    .description("Zdarzenia biznesowe zapisane przez tę instancję")
-                    .tags(tenantTags(e.tenantId.value).and("type", e.type.name).and("dimension", dim))
-                    .register(registry)
-            }.increment()
+            counter(e.tenantId.value, e.type, e.dimensionValue ?: NO_DIMENSION).increment()
         }
     }
+
+    /**
+     * Rejestruje z zerem wszystkie liczniki tenanta — każdy typ i każdą dozwoloną wartość wymiaru.
+     *
+     * Bez tego licznik powstaje dopiero przy pierwszym zdarzeniu i od razu ma wartość 1, więc seria
+     * pojawia się w Prometheusie „od jedynki". `increase()` liczy przyrost MIĘDZY dwiema próbkami i
+     * nie ma czego odjąć od pierwszej z nich: skok „serii nie ma → 1" jest niewidzialny, a wykresy
+     * gubiły pierwsze zdarzenie każdej kombinacji (tenant, typ, wymiar) — po każdym restarcie
+     * instancji od nowa, bo liczniki żyją w jej pamięci. Widoczny skok `0 → 1` wymaga, żeby zero
+     * zostało wyscrape'owane WCZEŚNIEJ, czyli rejestracji z wyprzedzeniem, nie przy inkrementacji.
+     *
+     * Kardynalność się nie zmienia: to dokładnie te serie, które i tak by powstały (10 na tenanta).
+     */
+    private fun primeCounters(tenants: List<UUID>) {
+        for (tenant in tenants) {
+            if (!primedTenants.add(tenant)) continue
+            for (type in BusinessEventType.entries) {
+                val dims = if (type.dimensions.isEmpty()) setOf(NO_DIMENSION) else type.dimensions
+                for (dim in dims) counter(tenant, type, dim)
+            }
+        }
+    }
+
+    private fun counter(tenantId: UUID, type: BusinessEventType, dim: String): Counter =
+        counters.computeIfAbsent("$tenantId|${type.name}|$dim") {
+            Counter.builder(EVENTS)
+                .description("Zdarzenia biznesowe zapisane przez tę instancję")
+                .tags(tenantTags(tenantId).and("type", type.name).and("dimension", dim))
+                .register(registry)
+        }
 
     /**
      * Liczniki „od północy" — jedna partia HGET-ów na wszystkie tenanty i typy.
@@ -103,6 +127,7 @@ class LiveMetricsPrometheusExporter(
         try {
             val tenants = store.tenants().toList()
             refreshTenantNames(tenants)
+            primeCounters(tenants)
             val scopes = tenants.map { LiveMetricsKeys.tenantScope(it) }
             val baseSeries = BusinessEventType.entries.map { it.series }
             val todayCounts = store.dayCounts(scopes, baseSeries, LocalDate.now(store.zone))

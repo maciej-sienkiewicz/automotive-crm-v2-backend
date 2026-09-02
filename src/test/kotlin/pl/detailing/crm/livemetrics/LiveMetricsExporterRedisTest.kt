@@ -75,6 +75,13 @@ class LiveMetricsExporterRedisTest {
         assertEquals(0.0, value("""crm_business_events_today{tenant="Studio Blask",tenant_id="$t",type="VISIT_CREATED",}"""))
         assertEquals(1.0, value("""crm_business_events_total{dimension="none",tenant="Studio Blask",tenant_id="$t",type="RESERVATION_CREATED",}"""))
 
+        // Liczniki muszą być widoczne z zerem, zanim padnie pierwsze zdarzenie danej kombinacji.
+        // Seria pojawiająca się od razu z jedynką jest dla increase() niewidzialna (nie ma od czego
+        // odjąć pierwszej próbki), przez co wykresy gubiły pierwsze zdarzenie po każdym restarcie.
+        assertEquals(0.0, value("""crm_business_events_total{dimension="DIRECT",tenant="Studio Blask",tenant_id="$t",type="VISIT_CREATED",}"""))
+        assertEquals(0.0, value("""crm_business_events_total{dimension="FROM_RESERVATION",tenant="Studio Blask",tenant_id="$t",type="VISIT_CREATED",}"""))
+        assertEquals(0.0, value("""crm_business_events_total{dimension="CHECKIN",tenant="Studio Blask",tenant_id="$t",type="PHOTO_UPLOADED",}"""))
+
         val hour = "%02d".format(now.atZone(store.zone).hour)
         assertEquals(1.0, value("""crm_business_events_hour_of_day{hour="$hour",tenant="Studio Blask",tenant_id="$t",type="RESERVATION_CREATED",}"""))
     }

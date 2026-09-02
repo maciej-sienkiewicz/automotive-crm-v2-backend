@@ -98,7 +98,7 @@ usunięcie pliku z repo usuwa dashboard (`disableDeletion: false`).
 | Dashboard | UID | Co pokazuje |
 |---|---|---|
 | Live metrics — platforma | `crm-live-platform` | KPI „dziś” per typ, rezerwacje na żywo, rozkład godzinowy rezerwacji (7 dni), wizyty bezpośrednie vs z rezerwacji, zdjęcia wg miejsca, nowości w cenniku, log aktywności, tempo zdarzeń/min, tabela tenantów, stan potoku |
-| Live metrics — tenant | `crm-live-tenant` | ten sam zestaw dla jednego tenanta (zmienna `$tenant`) |
+| Live metrics — tenant | `crm-live-tenant` | ten sam zestaw dla jednego tenanta (zmienna `$tenant_id`) |
 
 Odświeżanie co 10 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter`:
 
@@ -113,7 +113,7 @@ Kardynalność jest zamknięta: tenant × typ (5) × wymiar (≤4), godzina (24)
 rezerwacji per tenant. Żadnych id encji w etykietach — te idą wyłącznie do strumienia
 Redis (`attributes`) dla SPA.
 
-### Trzy pułapki, na które te dashboardy są odporne
+### Pułapki, na które te dashboardy są odporne
 
 **Krok minimalny 1 min na wykresach.** Scrape trwa 15 s, a `increase()` potrzebuje co
 najmniej dwóch próbek w oknie. Bez wymuszonego kroku `$__interval` na szerokim panelu
@@ -127,6 +127,16 @@ danych w Prometheusie. Panele mają `interval: 1m` i pytają o `[$__rate_interva
 **`—` zamiast `0` na kaflach KPI.** Gauge wystawia wiersz dla każdego tenanta i typu, także
 z zerem. Brak danych oznacza więc awarię scrape'u, nie spokojny dzień — i ma wyglądać inaczej
 niż prawdziwe zero.
+
+**Liczniki rejestrowane z zerem, zanim padnie pierwsze zdarzenie.** `increase()` liczy przyrost
+między dwiema próbkami, więc seria, która pojawia się w Prometheusie od razu z wartością `1`,
+jest dla niego niewidzialna — nie ma czego odjąć od pierwszej próbki. Licznik tworzony leniwie
+(przy pierwszym zdarzeniu) gubił więc pierwsze zdarzenie każdej kombinacji tenant × typ × wymiar,
+i to od nowa po każdym restarcie instancji, bo `crm_business_events_total` żyje w jej pamięci.
+Kafle KPI działały przy tym normalnie, bo czytają gauge z Redisa — rozjazd „licznik pokazuje 1,
+wykres pusty" jest sygnaturą właśnie tego błędu. `primeCounters` rejestruje więc komplet liczników
+tenanta z zerem przy odświeżaniu gauge'y „dziś" (co 15 s). Kardynalność bez zmian: to te same
+serie, które i tak by powstały (10 na tenanta).
 
 **Filtrowanie po `tenant_id`, nigdy po nazwie studia.** Grafana escapuje wartość zmiennej
 wstawianą do zapytania Prometheusa, więc apostrof w `Maciej Sienkiewicz's Detailing Studio`
@@ -143,6 +153,17 @@ jednego rozjeżdża je względem siebie i gubi reguły wymuszone wyżej. Po każ
 
 ```bash
 python3 deploy/monitoring/grafana/generate_dashboards.py
+```
+
+Wdrożenie na serwer jest ręczne — Jenkins buduje wyłącznie obraz backendu i nie dotyka
+`deploy/monitoring`. Grafana montuje provisioning z katalogu na hoście
+(`/opt/apps/prod/app-backend/monitoring/grafana/provisioning`), a jej własna baza
+(`app-backend_grafana_data`) przeżywa restarty i potrafi serwować STARĄ wersję dashboardu mimo
+nowego pliku na dysku. Po aktualizacji plików zweryfikuj, co Grafana naprawdę oddaje, i w razie
+rozjazdu zrestartuj kontener:
+
+```bash
+curl -s http://localhost:3000/api/dashboards/uid/crm-live-tenant | grep -c tenant_id
 ```
 
 ## Konfiguracja (`crm.live-metrics.*`)
