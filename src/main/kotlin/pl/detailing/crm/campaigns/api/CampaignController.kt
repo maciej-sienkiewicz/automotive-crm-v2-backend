@@ -12,7 +12,6 @@ import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.OutboundMessageCategory
-import pl.detailing.crm.email.provider.EmailProvider
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.time.LocalTime
@@ -343,8 +342,7 @@ data class CampaignSettingsDto(
 @RequiresPermission(Permission.COMMUNICATION_SEND)
 class CampaignController(
     private val service: CampaignService,
-    private val gateway: OutboundCommunicationGateway,
-    private val emailProvider: EmailProvider
+    private val gateway: OutboundCommunicationGateway
 ) {
 
     @GetMapping
@@ -514,7 +512,10 @@ class CampaignController(
             RecipientChannel.EMAIL -> {
                 val subject = request.emailSubject ?: throw ValidationException("Temat e-maila nie może być pusty")
                 val body = request.emailBody ?: throw ValidationException("Treść e-maila nie może być pusta")
-                val r = emailProvider.send(request.address, subject, body)
+                val r = gateway.sendTransactionalEmail(
+                    principal.studioId.value, request.address, subject, body,
+                    category = OutboundMessageCategory.CAMPAIGN
+                )
                 r.success to r.errorMessage
             }
         }

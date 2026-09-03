@@ -256,6 +256,7 @@ class StudioDataPurger(
             deleteByStudio("SmsConsentRequestEntity", ctx)
             deleteByStudio("ScheduledSmsReminderEntity", ctx)
             deleteByStudio("EmailAutomationConfigEntity", ctx)
+            deleteByStudio("CommunicationRedirectEntity", ctx)
         },
 
         StudioResetStep("Zlecenia hurtowe") { ctx ->

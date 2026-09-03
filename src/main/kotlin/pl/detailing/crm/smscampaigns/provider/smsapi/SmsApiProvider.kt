@@ -56,11 +56,6 @@ class SmsApiProvider(
         }
 
         val e164Number = phoneNumber.normalizePhone()
-        if (properties.whitelist.isNotEmpty() && e164Number !in properties.whitelist.map { it.normalizePhone() }) {
-            logger.warn("[SMS WHITELIST] Blocked send to {} — number not on whitelist", phoneNumber)
-            return SmsDeliveryResult.failure("Numer został celowo zablokowany. Faza testowa.")
-        }
-
         // SMSAPI expects numbers without the leading '+', e.g. "48100200300"
         val normalizedNumber = e164Number.removePrefix("+")
 

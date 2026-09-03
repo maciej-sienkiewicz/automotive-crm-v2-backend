@@ -7,6 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *
  * Set [enabled] = false in non-production environments to log messages without
  * actually calling the external API.
+ *
+ * There is no recipient whitelist here any more: who receives a message is a per-studio
+ * decision (the communication redirect switch), applied in the outbound gateway. A global
+ * list once shipped in application.properties and blocked every customer number.
  */
 @ConfigurationProperties(prefix = "smsapi")
 data class SmsApiProperties(
@@ -20,13 +24,5 @@ data class SmsApiProperties(
      */
     val apiUrl: String = "https://api.smsapi.pl/",
     /** When false the provider logs the message but does NOT call the SMSAPI endpoint. */
-    val enabled: Boolean = false,
-    /**
-     * Phone number whitelist for the testing phase.
-     * When non-empty, SMS is only sent to numbers on this list — all others are silently blocked.
-     * Empty list = whitelist disabled (all numbers allowed).
-     * Format: E.164, e.g. +48888915358
-     * Example property: smsapi.whitelist=+48888915358,+48123456789
-     */
-    val whitelist: List<String> = emptyList()
+    val enabled: Boolean = false
 )

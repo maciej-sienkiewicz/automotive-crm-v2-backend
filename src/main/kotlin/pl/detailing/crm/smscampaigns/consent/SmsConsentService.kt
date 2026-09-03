@@ -5,20 +5,21 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
 import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.smscampaigns.provider.SmsDeliveryResult
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestEntity
 import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestRepository
 import pl.detailing.crm.smscampaigns.infrastructure.SmsConsentRequestStatus
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
-import pl.detailing.crm.smscampaigns.sendername.SmsSenderNameResolver
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -46,13 +47,25 @@ data class ServiceChangesSummary(
  */
 @Service
 class SmsConsentService(
-    private val smsProvider: SmsProvider,
-    private val senderNameResolver: SmsSenderNameResolver,
+    private val gateway: OutboundCommunicationGateway,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService,
     private val eventPublisher: ApplicationEventPublisher
 ) {
+
+    /**
+     * Customer SMS goes through the gateway like every other one: module check, credits,
+     * sender name and — when the studio switched it on — redirect to the studio's own phone.
+     * Missing credits used to be invisible here (the provider was called directly); now the
+     * request is simply recorded as failed with a readable reason.
+     */
+    private fun dispatch(studioId: StudioId, phone: String, message: String): SmsDeliveryResult = try {
+        gateway.sendTransactionalSms(studioId.value, phone, message)
+    } catch (e: InsufficientSmsCreditsException) {
+        logger.warn("Service-change SMS blocked — no credits for studio={}", studioId.value)
+        SmsDeliveryResult.failure("Brak kredytów SMS")
+    }
 
     companion object {
         private val logger = LoggerFactory.getLogger(SmsConsentService::class.java)
@@ -182,7 +195,7 @@ class SmsConsentService(
 
         val message = composeMessage(customMessage, changes, proposedTotalGrossCents, usePolishCharacters, appendCta = true)
 
-        val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
+        val result = dispatch(studioId, normalizedPhone, message)
 
         smsConsentRequestRepository.save(
             SmsConsentRequestEntity(
@@ -248,7 +261,7 @@ class SmsConsentService(
     ) {
         val normalizedPhone = normalizePolishPhone(customerPhone)
         val message = composeMessage(customMessage, changes, totalGrossCents, usePolishCharacters, appendCta = false)
-        val result = smsProvider.send(normalizedPhone, message, senderNameResolver.resolve(studioId))
+        val result = dispatch(studioId, normalizedPhone, message)
 
         val customerId = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)?.customerId
         if (customerId != null) {

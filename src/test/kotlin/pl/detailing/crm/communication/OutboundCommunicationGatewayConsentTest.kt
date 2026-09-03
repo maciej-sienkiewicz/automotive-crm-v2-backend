@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.email.provider.EmailDeliveryResult
 import pl.detailing.crm.email.provider.EmailProvider
@@ -36,10 +37,11 @@ class OutboundCommunicationGatewayConsentTest {
     private val senderNameResolver: SmsSenderNameResolver = mockk()
     private val capabilityService: CapabilityService = mockk()
     private val businessEventPublisher: BusinessEventPublisher = mockk(relaxed = true)
+    private val redirectService: CommunicationRedirectService = mockk { every { activeFor(any()) } returns null }
 
     private val gateway = OutboundCommunicationGateway(
         smsProvider, emailProvider, consentChecker, smsCreditService,
-        senderNameResolver, capabilityService, SimpleMeterRegistry(), businessEventPublisher
+        senderNameResolver, capabilityService, SimpleMeterRegistry(), businessEventPublisher, redirectService
     )
 
     private val customerId = UUID.randomUUID()
