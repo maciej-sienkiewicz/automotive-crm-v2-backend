@@ -21,6 +21,11 @@ import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
+import pl.detailing.crm.worktime.infrastructure.PeriodStatus
+import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryEntity
+import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryRepository
+import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodEntity
+import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodRepository
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetCommand
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetHandler
 import java.time.YearMonth
@@ -43,9 +48,12 @@ class AttendanceSheetPdfTest {
     private val roleRepository = mockk<RoleRepository>()
     private val studioSettingsRepository = mockk<StudioSettingsRepository>()
     private val documentStorageService = mockk<DocumentStorageService>(relaxed = true)
+    private val entryRepository = mockk<WorkTimeEntryRepository>()
+    private val periodRepository = mockk<WorkTimePeriodRepository>()
 
     private val handler = GenerateAttendanceSheetHandler(
-        employeeRepository, userRepository, roleRepository, studioSettingsRepository, documentStorageService
+        employeeRepository, userRepository, roleRepository, studioSettingsRepository,
+        documentStorageService, entryRepository, periodRepository
     )
 
     private val studio = StudioId.random()
@@ -63,8 +71,17 @@ class AttendanceSheetPdfTest {
             updatedBy = UUID.randomUUID()
         )
 
-    /** Rejestruje pracownika w mockach razem z rolą i jej flagą trackWorkTime. */
-    private fun register(entity: EmployeeEntity, tracksWorkTime: Boolean, isOwner: Boolean = false) {
+    /**
+     * Rejestruje pracownika w mockach razem z rolą, flagą trackWorkTime i kartą czasu
+     * pracy: [hoursByDay] to dzień miesiąca → minuty.
+     */
+    private fun register(
+        entity: EmployeeEntity,
+        tracksWorkTime: Boolean,
+        isOwner: Boolean = false,
+        hoursByDay: Map<Int, Int> = emptyMap(),
+        status: PeriodStatus? = PeriodStatus.APPROVED
+    ) {
         every { employeeRepository.findByIdAndStudioId(entity.id, studio.value) } returns entity
 
         val userId = entity.userId ?: return
@@ -77,6 +94,24 @@ class AttendanceSheetPdfTest {
         val role = mockk<RoleEntity>()
         every { role.trackWorkTime } returns tracksWorkTime
         every { roleRepository.findByIdAndStudioId(roleId, studio.value) } returns role
+
+        every {
+            entryRepository.findByUserIdAndStudioIdAndDateBetween(userId, studio.value, any(), any())
+        } answers {
+            val from = arg<java.time.LocalDate>(2)
+            hoursByDay.map { (day, minutes) ->
+                WorkTimeEntryEntity(
+                    userId = userId, studioId = studio.value,
+                    date = from.withDayOfMonth(day), minutes = minutes
+                )
+            }
+        }
+        val period = status?.let {
+            mockk<WorkTimePeriodEntity>().also { entity -> every { entity.status } returns it }
+        }
+        every {
+            periodRepository.findByUserIdAndStudioIdAndPeriod(userId, studio.value, any())
+        } returns period
     }
 
     private fun stubSettings(name: String? = "Studio Blask") {
@@ -111,6 +146,56 @@ class AttendanceSheetPdfTest {
         assertTrue(text.contains("Styczeń 2026"), "Miesiąc w metryce: $text")
         assertTrue(text.contains("31 sb"), "Ostatni dzień stycznia jako wiersz")
         assertTrue(text.contains("Studio Blask"), "Nazwa studia w polu USŁUGODAWCA")
+    }
+
+    @Test
+    fun `godziny z kart czasu pracy trafiaja do komorek razem z suma miesiaca`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        // 2 i 3 marca po 8h, 4 marca 7h30 — razem 23:30.
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(2 to 480, 3 to 480, 4 to 450))
+
+        val text = textOf(
+            handler.handle(
+                GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id)))
+            )
+        )
+
+        assertTrue(text.contains("8:00"), "Godziny z karty czasu pracy: $text")
+        assertTrue(text.contains("7:30"), "Niepełna godzina zapisana jak w module Czasu pracy")
+        assertTrue(text.contains("RAZEM"), "Wiersz sumy")
+        assertTrue(text.contains("23:30"), "Suma miesiąca")
+        assertTrue(text.contains("zatwierdzone"), "Stan kart czasu pracy w stopce")
+    }
+
+    @Test
+    fun `dzien bez wpisu zostaje pusty, a nie zerowy`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(2 to 480))
+
+        val text = textOf(
+            handler.handle(
+                GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id)))
+            )
+        )
+
+        assertTrue(!text.contains("0:00"), "Nieobecność to puste pole, nie wpisane zero")
+    }
+
+    @Test
+    fun `niezatwierdzone karty sa opisane w stopce`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(2 to 480), status = PeriodStatus.SUBMITTED)
+
+        val text = textOf(
+            handler.handle(
+                GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id)))
+            )
+        )
+
+        assertTrue(text.contains("niezatwierdzona"), "Arkusz musi mówić, że godziny nie są jeszcze zatwierdzone: $text")
     }
 
     @Test
