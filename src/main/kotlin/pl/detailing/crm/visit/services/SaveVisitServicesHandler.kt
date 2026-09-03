@@ -106,8 +106,14 @@ class SaveVisitServicesHandler(
             )
         ))
 
-        if (payload.notifyCustomer) {
-            val changesSummary = buildChangesSummary(payload, visit)
+        val changesSummary = buildChangesSummary(payload, visit)
+        if (payload.notifyCustomer && !changesSummary.hasChanges) {
+            // A repeated PATCH (client retry, double submit) or a save with the switch on
+            // and nothing changed would otherwise text the customer about nothing —
+            // and, on a retry, text them the same thing twice.
+            logger.info("notifyCustomer=true but nothing changed for visit {} — SMS skipped", visitId)
+        }
+        if (payload.notifyCustomer && changesSummary.hasChanges) {
             if (payload.requireConfirmation) {
                 sendConsentSms(
                     visitEntity.customerId, studioId, visitId, updatedVisit, changesSummary,
