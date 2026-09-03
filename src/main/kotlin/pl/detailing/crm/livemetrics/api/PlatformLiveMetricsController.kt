@@ -37,7 +37,7 @@ class PlatformLiveMetricsController(
         @RequestParam(required = false) to: Instant?
     ): SeriesResponse {
         val end = to ?: Instant.now()
-        val start = from ?: StudioLiveMetricsController.defaultFrom(bucket, end)
+        val start = from ?: defaultFrom(bucket, end)
         return query.series(scope(tenantId), series, bucket, start, end)
     }
 
@@ -60,4 +60,13 @@ class PlatformLiveMetricsController(
 
     private fun scope(tenantId: UUID?): String =
         tenantId?.let { LiveMetricsKeys.tenantScope(it) } ?: LiveMetricsKeys.PLATFORM_SCOPE
+
+    companion object {
+        /** Domyślne okno zapytania, gdy konsola nie poda `from`. */
+        fun defaultFrom(bucket: String, end: Instant): Instant = when (bucket.lowercase()) {
+            "hour" -> end.minusSeconds(24 * 3600)
+            "day" -> end.minusSeconds(30L * 24 * 3600)
+            else -> end.minusSeconds(60 * 60)
+        }
+    }
 }

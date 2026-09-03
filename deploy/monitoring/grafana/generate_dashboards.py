@@ -228,7 +228,7 @@ def pipeline_row(y):
             stat("Przyjęte", "sum(crm_live_metrics_pipeline_accepted)", "text", 4, y, no_value="0"),
             stat("Zapisane do Redisa", "sum(crm_live_metrics_pipeline_written)", "green", 8, y, no_value="0"),
             stat("Nieudane partie", "sum(crm_live_metrics_pipeline_failed_batches)", "red", 12, y, no_value="0"),
-            stat("Rozgłoszone (WS/SSE)", "sum(crm_live_metrics_pipeline_broadcast)", "text", 16, y, no_value="0"),
+            stat("Rozgłoszone (SSE)", "sum(crm_live_metrics_pipeline_broadcast)", "text", 16, y, no_value="0"),
             stat("Subskrybenci SSE", "sum(crm_live_metrics_sse_subscribers)", "text", 20, y, no_value="0")]
 
 def dashboard(uid, title, desc, panels, templating):
