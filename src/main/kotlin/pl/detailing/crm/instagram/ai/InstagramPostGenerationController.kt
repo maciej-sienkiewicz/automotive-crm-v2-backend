@@ -125,6 +125,9 @@ class InstagramPostGenerationController(
                     postId = saved.id.toString(),
                     verificationPassed = result.verificationPassed,
                     failedRules = result.failedRules,
+                    failedRuleDetails = result.verdicts
+                        .filter { !it.passed }
+                        .map { FailedRule(rule = it.ruleText, reason = it.violation ?: "") },
                     iterations = result.iterations
                 )
             )
