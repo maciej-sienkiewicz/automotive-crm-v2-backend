@@ -185,15 +185,19 @@ data class InstagramAiErrorResponse(
 /**
  * Werdykt weryfikatora dla POJEDYNCZEJ reguły stylistycznej.
  *
- * @param ruleIndex Numer reguły na liście przekazanej weryfikatorowi (od 1)
- * @param ruleText  Treść reguły — powtórzona, żeby raport był czytelny bez listy wejściowej
- * @param passed    Czy draft spełnia regułę
- * @param violation Krótki opis naruszenia (tylko gdy [passed] = false)
+ * @param ruleIndex Numer reguły na liście przekazanej weryfikatorowi (od 1). Nie jest
+ *                  nośnikiem prawdy — modele bywają w tym niekonsekwentne, więc
+ *                  przypisanie werdyktu do reguły idzie przede wszystkim po [ruleText].
+ * @param ruleText  Treść reguły przepisana przez model — po niej wiążemy werdykt z regułą
+ * @param passed    Czy draft spełnia regułę. Domyślnie TRUE: brak pola w odpowiedzi modelu
+ *                  ma znaczyć „nie stwierdzono naruszenia", a nie zmyślone naruszenie,
+ *                  które uruchamia korektę poprawnego tekstu.
+ * @param violation Cytat z posta uzasadniający naruszenie (wymagany, gdy [passed] = false)
  */
 data class RuleVerdict(
     val ruleIndex: Int = 0,
     val ruleText: String = "",
-    val passed: Boolean = false,
+    val passed: Boolean = true,
     val violation: String? = null
 )
 
@@ -234,6 +238,18 @@ data class VerifiedGenerationResult(
 // ── Odpowiedź /generate ──────────────────────────────────────────────────────
 
 /**
+ * Niespełniona reguła razem z UZASADNIENIEM od weryfikatora.
+ *
+ * Sama nazwa reguły nie wystarcza: „post łamie regułę «bez emoji»" przy poście bez
+ * emoji nie daje się ani zweryfikować, ani zgłosić. Cytat z tekstu zamienia werdykt
+ * w coś, co użytkownik może sprawdzić wzrokiem w sekundę.
+ */
+data class FailedRule(
+    val rule: String,
+    val reason: String
+)
+
+/**
  * Odpowiedź endpointu POST /generate.
  *
  * Pole [content] zachowane w niezmienionej formie — frontend już z niego korzysta;
@@ -244,6 +260,8 @@ data class GenerateInstagramPostResponse(
     val postId: String,
     val verificationPassed: Boolean,
     val failedRules: List<String>,
+    /** To samo co [failedRules], ale z powodem — po jednym wpisie na regułę. */
+    val failedRuleDetails: List<FailedRule>,
     val iterations: Int
 )
 
