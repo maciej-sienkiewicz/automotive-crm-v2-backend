@@ -30,7 +30,7 @@ data class BusinessEventDto(
     }
 }
 
-/** Ramka wysyłana na `/topic/studio.{id}.metrics` i strumieniem SSE. */
+/** Ramka wysyłana strumieniem SSE do konsoli operatora platformy. */
 data class LiveMetricsFrame(
     val kind: String,
     val event: BusinessEventDto? = null,
