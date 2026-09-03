@@ -13,12 +13,14 @@ import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
-import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetCommand
-import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetHandler
+import pl.detailing.crm.shared.pii.Pii
+import pl.detailing.crm.worktime.attendance.AttendanceSheetEntity
+import pl.detailing.crm.worktime.attendance.AttendanceSheetService
 import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeParseException
+import java.util.UUID
 
 // ── Self-service endpoints (employee's own time) ─────────────────────────────
 
@@ -129,12 +131,15 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
 @RequestMapping("/api/v1/worktime/team")
 class TeamWorkTimeController(
     private val workTimeService: WorkTimeService,
-    private val generateAttendanceSheetHandler: GenerateAttendanceSheetHandler
+    private val attendanceSheetService: AttendanceSheetService
 ) {
 
     /**
-     * Lista obecności na wskazany miesiąc dla zaznaczonych pracowników — arkusz PDF
-     * do wydruku i podpisu (kolumny: pracownicy, wiersze: dni miesiąca).
+     * Lista obecności na wskazany miesiąc dla zaznaczonych pracowników.
+     *
+     * Zwraca OPIS dokumentu, a nie jego bajty: arkusz jest zapisywany w systemie
+     * (podpisany dokument kadrowy musi dać się odszukać później), a przed pobraniem
+     * użytkownik decyduje jeszcze, czy go podpisać. Sam plik idzie osobnym GET-em.
      *
      * POST, a nie GET, bo lista pracowników bywa długa i nie ma po co lądować
      * w logach serwera ani w historii przeglądarki.
@@ -142,23 +147,74 @@ class TeamWorkTimeController(
     @PostMapping("/attendance-sheet")
     fun generateAttendanceSheet(
         @RequestBody body: AttendanceSheetRequest
-    ): ResponseEntity<ByteArray> = runBlocking {
+    ): ResponseEntity<AttendanceSheetResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        val period = parsePeriod(body.period)
+        val sheet = attendanceSheetService.generate(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            period = parsePeriod(body.period),
+            employeeIds = body.employeeIds.map { EmployeeId.fromString(it) }
+        )
+        ResponseEntity.ok(sheet.toResponse())
+    }
 
-        val pdfBytes = generateAttendanceSheetHandler.handle(
-            GenerateAttendanceSheetCommand(
-                studioId = principal.studioId,
-                period = period,
-                employeeIds = body.employeeIds.map { EmployeeId.fromString(it) }
-            )
+    /** Plik arkusza — podpisany, jeśli podpis już złożono. */
+    @GetMapping("/attendance-sheet/{sheetId}/file")
+    fun downloadAttendanceSheet(@PathVariable sheetId: String): ResponseEntity<ByteArray> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val (sheet, bytes) = attendanceSheetService.download(
+            principal.studioId, UUID.fromString(sheetId)
         )
 
+        val suffix = if (sheet.signedFileS3Key != null) "-podpisana" else ""
         val headers = HttpHeaders()
         headers.contentType = MediaType.APPLICATION_PDF
-        headers.setContentDispositionFormData("attachment", "lista-obecnosci-$period.pdf")
-        ResponseEntity.ok().headers(headers).body(pdfBytes)
+        headers.setContentDispositionFormData("attachment", "lista-obecnosci-${sheet.period}$suffix.pdf")
+        ResponseEntity.ok().headers(headers).body(bytes)
     }
+
+    /**
+     * Podpis złożony na TYM urządzeniu — kanwa w przeglądarce oddaje PNG z kanałem alfa.
+     *
+     * Kto podpisał, wynika z sesji: podpisuje osoba zalogowana, więc nazwiska nie
+     * przyjmujemy z żądania — inaczej dokument mógłby wskazać kogokolwiek.
+     */
+    @PostMapping("/attendance-sheet/{sheetId}/sign")
+    fun signAttendanceSheet(
+        @PathVariable sheetId: String,
+        @RequestBody body: SignAttendanceSheetRequest
+    ): ResponseEntity<AttendanceSheetResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val sheet = attendanceSheetService.sign(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            signerName = principal.fullName,
+            sheetId = UUID.fromString(sheetId),
+            signatureDataUrl = body.signatureImage
+        )
+        ResponseEntity.ok(sheet.toResponse())
+    }
+
+    /** Historia wygenerowanych arkuszy — od najnowszych. */
+    @GetMapping("/attendance-sheets")
+    fun listAttendanceSheets(
+        @RequestParam(defaultValue = "20") limit: Int
+    ): ResponseEntity<List<AttendanceSheetResponse>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            attendanceSheetService.history(principal.studioId, limit).map { it.toResponse() }
+        )
+    }
+
+    private fun AttendanceSheetEntity.toResponse() = AttendanceSheetResponse(
+        id = id.toString(),
+        period = period,
+        employeeCount = attendanceSheetService.employeeIdsOf(this).size,
+        signed = signedFileS3Key != null,
+        signerName = signerName,
+        signedAt = signedAt?.toEpochMilli(),
+        createdAt = createdAt.toEpochMilli()
+    )
 
     @GetMapping("/{userId}/periods")
     fun listUserPeriods(@PathVariable userId: String): ResponseEntity<List<PeriodSummaryResponse>> {
@@ -224,6 +280,22 @@ data class ReturnPeriodRequest(
 data class AttendanceSheetRequest(
     val period: String,
     val employeeIds: List<String> = emptyList()
+)
+
+/** @param signatureImage podpis z kanwy jako `data:image/png;base64,...` */
+data class SignAttendanceSheetRequest(
+    val signatureImage: String
+)
+
+data class AttendanceSheetResponse(
+    val id: String,
+    val period: String,
+    val employeeCount: Int,
+    val signed: Boolean,
+    /** Imię i nazwisko osoby, która podpisała — maskowane tak jak przy podpisach protokołów. */
+    @Pii val signerName: String?,
+    val signedAt: Long?,
+    val createdAt: Long
 )
 
 data class EntryResponse(
