@@ -49,7 +49,7 @@ które już wyciekły.
 
 | Warstwa | Plik | Rola |
 |---------|------|------|
-| Tabela | `db/migration/V100__communication_redirect_settings.sql` | `communication_redirect_settings`: jeden wiersz na studio (`enabled`, `phone`, `email`, `updated_at`, `updated_by_user_id`). Brak wiersza = wysyłka do klientów. |
+| Tabela | `db/migration/V108__communication_redirect_settings.sql` | `communication_redirect_settings`: jeden wiersz na studio (`enabled`, `phone`, `email`, `updated_at`, `updated_by_user_id`). Brak wiersza = wysyłka do klientów. |
 | Serwis | `communication/redirect/CommunicationRedirectService.kt` | `settings`, `update` (walidacja: włączenie wymaga **obu** danych; telefon do E.164, e-mail sprawdzony i obniżony do małych liter), `activeFor(studioId)` — `null`, gdy nie przekierowujemy. |
 | API | `communication/redirect/CommunicationRedirectController.kt` | `GET/PUT /api/v1/communication/redirect`, uprawnienie `COMMUNICATION_SEND`, moduł `COMM_SEND_TRANSACTIONAL`. Pola `phone`/`email` oznaczone `@Pii`. |
 | Bramka | `communication/OutboundCommunicationGateway.kt` | **Jedyne miejsce podmiany i jedyne miejsce whitelisty.** `redirected()` tuż przed `provider.send`: SMS dostaje prefiks `[TEST → +48…] ` w treści, e-mail w **temacie** (treść musi być dokładnie tym, co zobaczyłby klient). Licznik `communication.redirected{channel}` i log INFO per wysyłka. |

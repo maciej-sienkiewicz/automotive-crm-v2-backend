@@ -26,6 +26,12 @@ services:
       GITHUB_TOKEN: ${ENV_GITHUB_TOKEN}
       OPENAI_API_KEY: ${ENV_OPENAI_API_KEY}
       SMSAPI_OAUTH_TOKEN: ${ENV_SMSAPI_OAUTH_TOKEN}
+      # Whitelista odbiorców wiadomości do klientów (RecipientWhitelistProperties).
+      # enabled=true + puste listy = blokada wszystkich klientów; przekierowanie studia na własne dane działa niezależnie.
+      # Go-live = ENV_COMMUNICATION_WHITELIST_ENABLED=false.
+      COMMUNICATION_WHITELIST_ENABLED: ${ENV_COMMUNICATION_WHITELIST_ENABLED:-true}
+      COMMUNICATION_WHITELIST_PHONES: ${ENV_COMMUNICATION_WHITELIST_PHONES:-}
+      COMMUNICATION_WHITELIST_EMAILS: ${ENV_COMMUNICATION_WHITELIST_EMAILS:-}
       CLOUDFLARE_EMAIL_WEBHOOK_TOKEN: ${ENV_CLOUDFLARE_EMAIL_WEBHOOK_TOKEN}
       APP_ENV: ${ENV_APP_ENV:-develop}
       GUS_API_KEY: ${ENV_GUS_API_KEY}
