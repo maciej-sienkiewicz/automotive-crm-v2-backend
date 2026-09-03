@@ -407,22 +407,29 @@ class VisitController(
             }
         }
 
-        // Visit Card link — sent over the studio-configured channel (EMAIL/SMS/BOTH/NONE)
-        runCatching {
-            sendVisitCardLinkHandler.handle(
-                pl.detailing.crm.visitcard.SendVisitCardLinkCommand(
-                    visitId = command.visitId,
-                    studioId = command.studioId,
-                    initiatedBy = AuditActor.employee(principal.userId, principal.fullName)
+        // Visit Card link — only when the operator asked for it in the "Dokumentacja i Podpisy"
+        // window, over the studio-configured channel (EMAIL/SMS/BOTH/NONE). This is the ONE
+        // place the card is sent on confirmation: the frontend must not send it again itself,
+        // or the customer gets the SMS twice.
+        val visitCard = if (req.sendVisitCard) {
+            runCatching {
+                sendVisitCardLinkHandler.handle(
+                    pl.detailing.crm.visitcard.SendVisitCardLinkCommand(
+                        visitId = command.visitId,
+                        studioId = command.studioId,
+                        initiatedBy = AuditActor.employee(principal.userId, principal.fullName)
+                    )
                 )
-            )
-        }.onFailure { ex ->
-            logger.warn("confirmVisit: visit card link send failed [visitId={}]: {}", visitId, ex.message)
-        }
+            }.onFailure { ex ->
+                logger.warn("confirmVisit: visit card link send failed [visitId={}]: {}", visitId, ex.message)
+            }.getOrNull()?.let { ConfirmVisitCardResult(it.emailSent, it.smsSent, it.message) }
+                ?: ConfirmVisitCardResult(emailSent = false, smsSent = false, message = "Nie udało się wysłać Karty Wizyty")
+        } else null
 
         ResponseEntity.ok(ConfirmVisitResponse(
             visitId = result.visitId.value.toString(),
-            message = "Visit confirmed successfully"
+            message = "Visit confirmed successfully",
+            visitCard = visitCard
         ))
     }
 
@@ -949,7 +956,9 @@ data class PaginationMetadata(
 
 data class ConfirmVisitRequest(
     val sendEmail: Boolean = false,
-    val emailOptions: ConfirmEmailOptionsRequest? = null
+    val emailOptions: ConfirmEmailOptionsRequest? = null,
+    /** "Wyślij Kartę Wizyty" switch from the documentation window. Absent = do not send. */
+    val sendVisitCard: Boolean = false
 )
 
 data class ConfirmEmailOptionsRequest(
@@ -959,9 +968,18 @@ data class ConfirmEmailOptionsRequest(
     val attachDamageMap: Boolean = false
 )
 
+/** Outcome of the Visit Card send requested together with the confirmation. */
+data class ConfirmVisitCardResult(
+    val emailSent: Boolean,
+    val smsSent: Boolean,
+    val message: String
+)
+
 data class ConfirmVisitResponse(
     val visitId: String,
-    val message: String
+    val message: String,
+    /** Null when the operator did not ask for the Visit Card. */
+    val visitCard: ConfirmVisitCardResult? = null
 )
 
 /**
