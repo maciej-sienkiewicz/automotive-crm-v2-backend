@@ -9,9 +9,11 @@ import org.springframework.ai.vectorstore.SearchRequest
 import org.springframework.ai.vectorstore.VectorStore
 import org.springframework.ai.vectorstore.filter.Filter
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder
+import org.springframework.ai.document.Document
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.ai.model.FallbackInfo
 import pl.detailing.crm.instagram.ai.model.InstagramInspirationContext
+import pl.detailing.crm.instagram.ai.model.OwnRejectionExample
 import pl.detailing.crm.shared.InstagramPostReaction
 import pl.detailing.crm.shared.StudioId
 
@@ -28,7 +30,13 @@ import pl.detailing.crm.shared.StudioId
  * Przykłady negatywne (DISLIKED) są zawsze per-studio, bez filtrów ton/długość.
  *
  * Klucze metadanych w VectorStore: feedback_status, studio_id, post_tone,
- *   post_length, service_type, car_brand, full_content, source_post_id.
+ *   post_length, service_type, car_brand, full_content, source_post_id,
+ *   source ("generated" dla własnych postów studia) i rating_comment (powód odrzucenia).
+ *
+ * Własne, ocenione posty studia są traktowane inaczej niż posty konkurencji:
+ *   - POZYTYWNE trafiają na początek POSITIVE_EXAMPLES (własny zaakceptowany post
+ *     jest mocniejszą kotwicą stylu niż cudzy polubiony),
+ *   - NEGATYWNE trafiają do osobnej sekcji promptu razem z komentarzem „dlaczego".
  */
 @Service
 class InstagramInspirationService(
@@ -41,11 +49,21 @@ class InstagramInspirationService(
         private const val DISLIKED_TOP_K = 3
         private const val MIN_RESULTS_THRESHOLD = 3
 
+        /** Własne posty studia — mocniejsza kotwica stylu, więc mają własny, mniejszy budżet. */
+        private const val OWN_LIKED_TOP_K = 3
+        private const val OWN_REJECTIONS_TOP_K = 3
+
         const val META_FEEDBACK_STATUS = "feedback_status"
         const val META_STUDIO_ID = "studio_id"
         const val META_POST_TONE = "post_tone"
         const val META_POST_LENGTH = "post_length"
         const val META_SERVICE_TYPE = "service_type"
+        const val META_SOURCE = "source"
+        const val META_RATING_COMMENT = "rating_comment"
+        const val META_FULL_CONTENT = "full_content"
+
+        /** Wartość [META_SOURCE] dla postów wygenerowanych i ocenionych przez samo studio. */
+        const val SOURCE_GENERATED = "generated"
     }
 
     /**
@@ -79,6 +97,29 @@ class InstagramInspirationService(
             }
         }
 
+        // Własne posty studia ocenione POZYTYWNIE — pierwszeństwo w POSITIVE_EXAMPLES.
+        val ownPositivesDeferred = async {
+            withContext(Dispatchers.IO) {
+                searchDocuments(
+                    topic, OWN_LIKED_TOP_K,
+                    buildFilter(InstagramPostReaction.LIKED.name, studioId, null, null, null, SOURCE_GENERATED)
+                ).mapNotNull { it.metadata[META_FULL_CONTENT] as? String }
+            }
+        }
+
+        // Własne posty ODRZUCONE — razem z komentarzem „dlaczego" (osobna sekcja promptu).
+        val ownRejectionsDeferred = async {
+            withContext(Dispatchers.IO) {
+                searchDocuments(
+                    topic, OWN_REJECTIONS_TOP_K,
+                    buildFilter(InstagramPostReaction.DISLIKED.name, studioId, null, null, null, SOURCE_GENERATED)
+                ).mapNotNull { doc ->
+                    val content = doc.metadata[META_FULL_CONTENT] as? String ?: return@mapNotNull null
+                    OwnRejectionExample(content, doc.metadata[META_RATING_COMMENT] as? String)
+                }
+            }
+        }
+
         // Przykłady pozytywne: warstwowe fallbacki
         val likedDeferred = async {
             withContext(Dispatchers.IO) {
@@ -86,12 +127,19 @@ class InstagramInspirationService(
             }
         }
 
-        val (positives, fallbackInfo) = likedDeferred.await()
+        val (competitorPositives, fallbackInfo) = likedDeferred.await()
         val negatives = dislikedDeferred.await()
+        val ownPositives = ownPositivesDeferred.await()
+        val ownRejections = ownRejectionsDeferred.await()
+
+        // Własny zaakceptowany post jest mocniejszą kotwicą stylu niż polubiony post
+        // konkurencji, więc idzie na początek listy — i wypiera cudzy przykład,
+        // a nie dokłada się do niego (budżet promptu jest stały).
+        val positives = (ownPositives + competitorPositives).distinct().take(LIKED_TOP_K)
 
         logger.info(
-            "Inspiration ready: {} positive, {} negative, fallback level={}",
-            positives.size, negatives.size, fallbackInfo.level
+            "Inspiration ready: {} positive ({} own), {} negative, {} own rejections, fallback level={}",
+            positives.size, ownPositives.size, negatives.size, ownRejections.size, fallbackInfo.level
         )
 
         InstagramInspirationContext(
@@ -100,7 +148,8 @@ class InstagramInspirationService(
             requestedTone = postTone,
             requestedLength = postLength,
             fallbackInfo = fallbackInfo,
-            styleNotes = styleNotes
+            styleNotes = styleNotes,
+            ownRejections = ownRejections
         )
     }
 
@@ -157,7 +206,8 @@ class InstagramInspirationService(
         studioId: StudioId?,
         tone: String?,
         length: String?,
-        service: String?
+        service: String?,
+        source: String? = null
     ): Filter.Expression {
         val b = FilterExpressionBuilder()
 
@@ -167,15 +217,17 @@ class InstagramInspirationService(
         if (tone != null)     expr = b.and(expr, b.eq(META_POST_TONE, tone))
         if (length != null)   expr = b.and(expr, b.eq(META_POST_LENGTH, length))
         if (service != null)  expr = b.and(expr, b.eq(META_SERVICE_TYPE, service))
+        if (source != null)   expr = b.and(expr, b.eq(META_SOURCE, source))
 
         return expr.build()
     }
 
-    private fun similaritySearch(
+    /** Zwraca całe dokumenty — potrzebne wszędzie tam, gdzie liczy się więcej niż `full_content`. */
+    private fun searchDocuments(
         query: String,
         topK: Int,
         filter: Filter.Expression
-    ): List<String> {
+    ): List<Document> {
         val request = SearchRequest.builder()
             .query(query)
             .topK(topK)
@@ -188,8 +240,14 @@ class InstagramInspirationService(
             logger.debug("  [{}] text='{}', metadata={}", i, doc.text?.take(80), doc.metadata)
         }
 
-        // Zwraca full_content z metadanych — pełna treść posta (lepszy wzorzec dla few-shot)
-        return results.mapNotNull { it.metadata["full_content"] as? String }
-            .also { logger.debug("Search returned {} results", it.size) }
+        return results.also { logger.debug("Search returned {} results", it.size) }
     }
+
+    /** Zwraca full_content z metadanych — pełna treść posta (lepszy wzorzec dla few-shot). */
+    private fun similaritySearch(
+        query: String,
+        topK: Int,
+        filter: Filter.Expression
+    ): List<String> =
+        searchDocuments(query, topK, filter).mapNotNull { it.metadata[META_FULL_CONTENT] as? String }
 }

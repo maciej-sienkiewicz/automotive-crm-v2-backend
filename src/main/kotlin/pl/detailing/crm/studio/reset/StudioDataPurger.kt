@@ -295,6 +295,10 @@ class StudioDataPurger(
             // jak DemoCleanupJob (krok 22).
             val links = studioInstagramProfileRepository.findByStudioId(ctx.studioId)
             deleteByStudio("StudioInstagramPostReactionEntity", ctx)
+            // Generator AI: reguły stylistyczne i historia wygenerowanych postów to dane
+            // operacyjne studia — po resecie model uczy się jego stylu od zera.
+            deleteByStudio("InstagramStyleRuleEntity", ctx)
+            deleteByStudio("InstagramGeneratedPostEntity", ctx)
             deleteByStudio("InstagramInsightEntity", ctx)
             deleteByStudio("InstagramReportEntity", ctx)
             deleteByStudio("StudioInstagramProfileEntity", ctx)

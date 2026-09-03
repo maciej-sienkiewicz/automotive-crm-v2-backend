@@ -127,7 +127,9 @@ data class InstagramInspirationContext(
     val requestedLength: String?,
     val fallbackInfo: FallbackInfo,
     /** Reguły stylistyczne — nadrzędne wobec przykładów few-shot */
-    val styleNotes: List<String> = emptyList()
+    val styleNotes: List<String> = emptyList(),
+    /** Własne posty studia odrzucone przy ocenie — razem z komentarzem „dlaczego" */
+    val ownRejections: List<OwnRejectionExample> = emptyList()
 )
 
 /**
@@ -176,4 +178,132 @@ data class InstagramAiErrorResponse(
     val error: String,
     val message: String,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+// ── Weryfikacja reguł (pętla generuj → weryfikuj → popraw) ───────────────────
+
+/**
+ * Werdykt weryfikatora dla POJEDYNCZEJ reguły stylistycznej.
+ *
+ * @param ruleIndex Numer reguły na liście przekazanej weryfikatorowi (od 1)
+ * @param ruleText  Treść reguły — powtórzona, żeby raport był czytelny bez listy wejściowej
+ * @param passed    Czy draft spełnia regułę
+ * @param violation Krótki opis naruszenia (tylko gdy [passed] = false)
+ */
+data class RuleVerdict(
+    val ruleIndex: Int = 0,
+    val ruleText: String = "",
+    val passed: Boolean = false,
+    val violation: String? = null
+)
+
+/**
+ * Odpowiedź weryfikatora — werdykt dla każdej z przekazanych reguł.
+ * Structured output LLM (temperatura 0.0).
+ */
+data class VerificationReport(
+    val verdicts: List<RuleVerdict> = emptyList()
+)
+
+/**
+ * Raport pętli zapisywany w kolumnie `verification_report` (JSONB).
+ * Trzyma ostatnie werdykty ORAZ liczbę wykonanych rund — po fakcie widać,
+ * czy post przeszedł od razu, czy dopiero po korektach (albo wcale).
+ */
+data class StoredVerificationReport(
+    val iterations: Int,
+    val passed: Boolean,
+    val verdicts: List<RuleVerdict>
+)
+
+/**
+ * Wynik pełnego przebiegu generowania z weryfikacją.
+ *
+ * @param iterations Liczba WYKONANYCH rund weryfikacji (0 = brak reguł, weryfikacja pominięta)
+ * @param failedRules Treści reguł niespełnionych w ostatniej rundzie (puste, gdy [verificationPassed])
+ */
+data class VerifiedGenerationResult(
+    val content: String,
+    val verificationPassed: Boolean,
+    val failedRules: List<String>,
+    val iterations: Int,
+    val verdicts: List<RuleVerdict>,
+    val appliedRules: List<String>
+)
+
+// ── Odpowiedź /generate ──────────────────────────────────────────────────────
+
+/**
+ * Odpowiedź endpointu POST /generate.
+ *
+ * Pole [content] zachowane w niezmienionej formie — frontend już z niego korzysta;
+ * pozostałe pola są DODANE, nie zamieniają niczego.
+ */
+data class GenerateInstagramPostResponse(
+    val content: String,
+    val postId: String,
+    val verificationPassed: Boolean,
+    val failedRules: List<String>,
+    val iterations: Int
+)
+
+// ── Reguły stylistyczne (CRUD) ───────────────────────────────────────────────
+
+data class CreateStyleRuleRequest(
+    val ruleText: String
+)
+
+data class UpdateStyleRuleRequest(
+    val ruleText: String? = null,
+    val active: Boolean? = null
+)
+
+data class StyleRuleResponse(
+    val id: String,
+    val ruleText: String,
+    val active: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+// ── Ocena wygenerowanych postów ──────────────────────────────────────────────
+
+enum class GeneratedPostRating { POSITIVE, NEGATIVE }
+
+data class RateGeneratedPostRequest(
+    val rating: GeneratedPostRating,
+    val comment: String? = null
+)
+
+/**
+ * Pozycja historii wygenerowanych postów (GET /posts).
+ */
+data class GeneratedPostResponse(
+    val id: String,
+    val topic: String,
+    val content: String,
+    val requestedTone: String?,
+    val requestedLength: String?,
+    val rating: String?,
+    val ratingComment: String?,
+    val verificationPassed: Boolean?,
+    val iterations: Int?,
+    val failedRules: List<String>,
+    val rulesSnapshot: List<String>,
+    val createdAt: Long,
+    val ratedAt: Long?
+)
+
+// ── Własne odrzucone posty (pętla uczenia) ───────────────────────────────────
+
+/**
+ * Własny post studia oceniony negatywnie wraz z komentarzem „dlaczego".
+ *
+ * Trzymany osobno od anonimowych negatywnych przykładów konkurencji: komentarz
+ * „za dużo wykrzykników" niesie konkretną instrukcję, która rozmyłaby się,
+ * gdyby post wpadł do wspólnego worka NEGATIVE_EXAMPLES.
+ */
+data class OwnRejectionExample(
+    val content: String,
+    val comment: String?
 )
