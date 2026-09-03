@@ -19,7 +19,12 @@ enum class RehearsalChannel { SMS, EMAIL }
  */
 object RenderedMessageValidator {
 
-    private val ORPHAN_BRACES = Regex("""\{\{|}}|\{[^{}\n]{1,40}}|\{\{[^}]*$""")
+    /**
+     * Any brace at all. A customer never needs to see one: a lone `}` after `{{dokument}}}`
+     * is as much a template accident as `{{imie`. Longer alternatives come first so the
+     * reported snippet shows the whole token rather than its first character.
+     */
+    private val ORPHAN_BRACES = Regex("""\{\{[^}]*}}|\{[^{}\n]{1,40}}|[{}]""")
     private val DIACRITIC_PLACEHOLDER = Regex("""\{\{\s*[^}]*[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ][^}]*}}""")
     private val TEMPLATE_LEFTOVERS = Regex("""\$\{|%s|%d|\[\[|]]|\bnull\b|\bundefined\b|\bNaN\b""", RegexOption.IGNORE_CASE)
     private val HTML_TAG = Regex("""</?[a-z][a-z0-9]*(\s[^>]*)?>""", RegexOption.IGNORE_CASE)

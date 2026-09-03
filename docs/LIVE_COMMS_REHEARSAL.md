@@ -52,7 +52,7 @@ które już wyciekły.
 | Tabela | `db/migration/V100__communication_redirect_settings.sql` | `communication_redirect_settings`: jeden wiersz na studio (`enabled`, `phone`, `email`, `updated_at`, `updated_by_user_id`). Brak wiersza = wysyłka do klientów. |
 | Serwis | `communication/redirect/CommunicationRedirectService.kt` | `settings`, `update` (walidacja: włączenie wymaga **obu** danych; telefon do E.164, e-mail sprawdzony i obniżony do małych liter), `activeFor(studioId)` — `null`, gdy nie przekierowujemy. |
 | API | `communication/redirect/CommunicationRedirectController.kt` | `GET/PUT /api/v1/communication/redirect`, uprawnienie `COMMUNICATION_SEND`, moduł `COMM_SEND_TRANSACTIONAL`. Pola `phone`/`email` oznaczone `@Pii`. |
-| Bramka | `communication/OutboundCommunicationGateway.kt` | **Jedyne miejsce podmiany.** `redirected()` tuż przed `provider.send`: SMS dostaje prefiks `[TEST → +48…] ` w treści, e-mail w **temacie** (treść musi być dokładnie tym, co zobaczyłby klient). Licznik `communication.redirected{channel}` i log INFO per wysyłka. |
+| Bramka | `communication/OutboundCommunicationGateway.kt` | **Jedyne miejsce podmiany i jedyne miejsce whitelisty.** `redirected()` tuż przed `provider.send`: SMS dostaje prefiks `[TEST → +48…] ` w treści, e-mail w **temacie** (treść musi być dokładnie tym, co zobaczyłby klient). Licznik `communication.redirected{channel}` i log INFO per wysyłka. |
 | UI | `detailing-crm-v2/src/modules/message-templates/components/RedirectCard.tsx` | Karta nad listą szablonów: przełącznik, dwa pola, „Sprawdź szablony", „Wyślij wszystkie testowo". Włączona = bursztyn i zdanie wprost: *Klienci nie dostają teraz żadnych wiadomości.* |
 
 ### 1.2. Dlaczego bramka, i co z tym zrobiliśmy
@@ -84,15 +84,37 @@ To celowo — to nie jest komunikacja z klientem i nie podlega przekierowaniu.
   (test `redirect is looked up per studio`).
 - Wyłączenie przełącznika zostawia wpisane dane, ale od tej chwili klienci dostają wiadomości.
 
-### 1.4. Usunięte blokady z fazy testów
+### 1.4. Whitelista odbiorców — zawsze w mocy, chyba że studio przekierowuje do siebie
+
+Decyzja founderów: whitelista zostaje jako stały bezpiecznik fazy testów, ale w jednym
+miejscu i z jasną relacją do przekierowania.
+
+| Element | Gdzie |
+|---------|-------|
+| Konfiguracja | `communication.whitelist.enabled` (domyślnie `true`), `communication.whitelist.phones`, `communication.whitelist.emails` w `application.properties`; env `COMMUNICATION_WHITELIST_ENABLED / _PHONES / _EMAILS`, listy po przecinku. |
+| Komponent | `communication/whitelist/RecipientWhitelist.kt` — numery normalizowane tak samo jak przy dopasowaniu klientów (`normalizeToE164`), e-maile bez rozróżniania wielkości liter. Przy starcie loguje WARN ze stanem listy i ERROR dla wpisów, których nie da się sparsować. |
+| Egzekwowanie | `OutboundCommunicationGateway` — **po** rozwiązaniu przekierowania, **przed** pobraniem kredytu. Zablokowany SMS nic nie kosztuje. Licznik `communication.blocked.whitelist{channel}`. |
+
+Reguły (każda ma test w `OutboundCommunicationGatewayWhitelistTest`):
+
+1. **Whitelista w mocy, przekierowanie wyłączone** → wiadomość wychodzi tylko do numeru/adresu z listy; reszta dostaje `failure("… poza whitelistą odbiorców (faza testowa)")`, provider nie jest wołany, kredyt nie schodzi.
+2. **Whitelista w mocy, przekierowanie włączone** → whitelista **nie obowiązuje**: wiadomość idzie na dane studia, nawet jeśli tych danych nie ma na liście.
+3. **Whitelista wyłączona (`enabled=false`), przekierowanie włączone** → nadal przekierowanie.
+4. **Whitelista wyłączona, przekierowanie wyłączone** → klienci dostają wiadomości. To jest stan „go-live".
+5. **Włączona, ale pusta lista** → blokuje wszystko poza przekierowaniem. Nie ma skrótu „pusta = wszyscy": tak właśnie ginie lista, o której ktoś zapomniał.
+6. Dotyczy **tylko** wiadomości do klientów (bramka). Maile do personelu (reset hasła, zaproszenia, zgłoszenia) idą zawsze.
+
+Skoro pusta lista blokuje wszystko, potrzebny jest jawny wyłącznik: `COMMUNICATION_WHITELIST_ENABLED=false`
+to jedyna droga do wysyłki do wszystkich klientów i jest to świadoma decyzja o wdrożeniu.
+
+Usunięte i zastąpione powyższym:
 
 - `JavaMailProvider.allowedMails` — skasowane; przy `enabled=false` provider zwraca `success("mock-disabled")`
   tak jak provider SMS, zamiast udawać błąd.
 - `smsapi.whitelist` — skasowane z `SmsApiProperties`, `SmsApiProvider` i `application.properties`.
 - `email.javamail.password` — bez wartości domyślnej; tylko `MAIL_PASSWORD` z env. **Stare hasło do rotacji.**
-- Strażnik: `NoHardcodedRecipientAllowListTest` nie pozwoli żadnej z tych rzeczy wrócić
-  (skanuje providerów i pliki properties po `allowedMails`, `smsapi.whitelist`, „celowo zablokowany", „Faza testowa"
-  i sprawdza, że hasło SMTP nie ma domyślnej wartości).
+- Strażnik: `NoHardcodedRecipientAllowListTest` nie pozwoli listom wrócić do providerów ani do properties
+  pod starymi kluczami.
 
 ### 1.5. Co przestaje być problemem, a co zostaje
 

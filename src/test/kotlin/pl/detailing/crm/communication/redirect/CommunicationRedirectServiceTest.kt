@@ -81,4 +81,75 @@ class CommunicationRedirectServiceTest {
         assertNotNull(active)
         assertEquals("[TEST → +48600700800] ", active!!.prefixFor("+48600700800"))
     }
+
+    @Test
+    fun `phone spellings are all stored as the same E164 number`() {
+        every { repository.findByStudioId(studio.value) } returns null
+        stubSave()
+        listOf("500100200", "+48 500 100 200", "500-100-200", "0048500100200", "48500100200").forEach {
+            assertEquals("+48500100200", service.update(studio, true, it, "owner@studio.pl", null).phone, it)
+        }
+    }
+
+    @Test
+    fun `email must have one at sign and a dotted domain`() {
+        every { repository.findByStudioId(studio.value) } returns null
+        listOf("owner", "owner@", "@studio.pl", "owner@studio", "owner @studio.pl", "owner@@studio.pl").forEach {
+            assertThrows(ValidationException::class.java, { service.update(studio, true, "500100200", it, null) }, it)
+        }
+    }
+
+    @Test
+    fun `switching off with empty fields is allowed and clears nothing that was not given`() {
+        every { repository.findByStudioId(studio.value) } returns null
+        stubSave()
+        val settings = service.update(studio, false, "", "", null)
+        assertFalse(settings.enabled)
+        assertEquals("", settings.phone)
+        assertEquals("", settings.email)
+    }
+
+    @Test
+    fun `switching off with an invalid phone is still rejected, so garbage never lands in the row`() {
+        every { repository.findByStudioId(studio.value) } returns null
+        assertThrows(ValidationException::class.java) { service.update(studio, false, "abc", "", null) }
+    }
+
+    @Test
+    fun `the row records who changed it and when`() {
+        every { repository.findByStudioId(studio.value) } returns null
+        val saved = slot<CommunicationRedirectEntity>()
+        every { repository.save(capture(saved)) } answers { saved.captured }
+        val user = UUID.randomUUID()
+        val before = Instant.now()
+
+        service.update(studio, true, "500100200", "owner@studio.pl", user)
+
+        assertEquals(user, saved.captured.updatedByUserId)
+        assertEquals(studio.value, saved.captured.studioId)
+        assertFalse(saved.captured.updatedAt.isBefore(before))
+    }
+
+    @Test
+    fun `an existing row is updated in place, not duplicated`() {
+        val row = CommunicationRedirectEntity(UUID.randomUUID(), studio.value, false, "", "", Instant.now(), null)
+        every { repository.findByStudioId(studio.value) } returns row
+        val saved = slot<CommunicationRedirectEntity>()
+        every { repository.save(capture(saved)) } answers { saved.captured }
+
+        service.update(studio, true, "500100200", "owner@studio.pl", null)
+
+        assertEquals(row.id, saved.captured.id)
+        assertEquals(true, saved.captured.enabled)
+    }
+
+    @Test
+    fun `settings reflect the stored row`() {
+        every { repository.findByStudioId(studio.value) } returns
+            CommunicationRedirectEntity(UUID.randomUUID(), studio.value, true, "+48500100200", "owner@studio.pl", Instant.now(), null)
+        val s = service.settings(studio)
+        assertEquals(true, s.enabled)
+        assertEquals("+48500100200", s.phone)
+        assertNotNull(s.updatedAt)
+    }
 }
