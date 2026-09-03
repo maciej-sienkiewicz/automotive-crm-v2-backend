@@ -279,6 +279,8 @@ class StudioDataPurger(
             deleteByStudio("EmployeeLeaveEntity", ctx)
             deleteByStudio("WorkTimeEntryEntity", ctx)
             deleteByStudio("WorkTimePeriodEntity", ctx)
+            // Wygenerowane listy obecności — dokumenty kadrowe tego studia.
+            deleteByStudio("AttendanceSheetEntity", ctx)
             deleteByStudio("EmployeeEntity", ctx)
         },
 

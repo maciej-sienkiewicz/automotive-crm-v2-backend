@@ -56,8 +56,24 @@ class GenerateAttendanceSheetHandler(
     private val workTimePeriodRepository: WorkTimePeriodRepository
 ) {
     companion object {
-        /** Tyle kolumn mieści się na stronie, żeby w komórce dało się złożyć podpis. */
+        /** Tyle kolumn mieści się na stronie, żeby liczby dało się przeczytać. */
         private const val MAX_EMPLOYEES_PER_PAGE = 7
+
+        /**
+         * Geometria stopki liczona od DOŁU strony, a nie od końca tabeli.
+         *
+         * Podpis dorysowuje się do gotowego pliku ([AttendanceSheetSigner]), więc jego
+         * miejsce musi być znane bez czytania układu tabeli — inaczej podpis lądowałby
+         * raz nad linią, raz na wierszach, zależnie od długości miesiąca.
+         */
+        const val FOOTER_LINE_Y = 52f
+        const val STATUS_LINE_Y = 74f
+
+        /** Prostokąt na podpis: tuż nad linią „Podpis osoby potwierdzającej". */
+        const val SIGNATURE_BOX_X = 30.24f + 132f
+        const val SIGNATURE_BOX_Y = FOOTER_LINE_Y - 2f
+        const val SIGNATURE_BOX_WIDTH = 170f
+        const val SIGNATURE_BOX_HEIGHT = 30f
 
         /** Kolory protokołu przyjęcia pojazdu (protokol_przyjecia_pojazdu.html). */
         private val NAVY = Triple(17f / 255f, 23f / 255f, 41f / 255f)      // #111729
@@ -277,7 +293,8 @@ class GenerateAttendanceSheetHandler(
         // Wysokość wiersza liczona z tego, co zostało: arkusz ma się zmieścić na
         // jednej stronie niezależnie od tego, czy miesiąc ma 28 czy 31 dni.
         // Wiersz sumy liczy się do wysokości tak samo jak dzień.
-        val bottomLimit = 64f
+        // Tabela nie może wejść w strefę stopki: tam podpisuje się gotowy arkusz.
+        val bottomLimit = STATUS_LINE_Y + 22f
         val available = y - headerHeight - bottomLimit
         val rowHeight = (available / (daysInMonth + 1)).coerceIn(13f, 22f)
 
@@ -384,9 +401,9 @@ class GenerateAttendanceSheetHandler(
                 it.name + " — " + describeStatus(it.status)
             }
         }
-        drawText(cs, statusLabel, regular, 7f, left, tableBottom - 12f, INK, right - left)
+        drawText(cs, statusLabel, regular, 7f, left, STATUS_LINE_Y, INK, right - left)
 
-        val footerY = tableBottom - 30f
+        val footerY = FOOTER_LINE_Y
         drawText(cs, "Podpis osoby potwierdzającej:", regular, 8f, left, footerY, INK)
         cs.setStrokingColor(HAIRLINE.first, HAIRLINE.second, HAIRLINE.third)
         cs.moveTo(left + 132f, footerY - 2f)

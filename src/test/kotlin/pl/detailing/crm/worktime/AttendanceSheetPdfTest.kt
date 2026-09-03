@@ -26,10 +26,17 @@ import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryEntity
 import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryRepository
 import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodEntity
 import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodRepository
+import org.apache.pdfbox.pdmodel.PDDocument
+import pl.detailing.crm.signing.infrastructure.SignatureImageProcessor
+import pl.detailing.crm.worktime.attendance.AttendanceSheetSigner
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetCommand
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetHandler
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import java.time.Instant
 import java.time.YearMonth
 import java.util.Optional
+import javax.imageio.ImageIO
 import java.util.UUID
 
 /**
@@ -268,5 +275,56 @@ class AttendanceSheetPdfTest {
         val pages = Loader.loadPDF(pdf).use { it.numberOfPages }
         assertEquals(2, pages, "Ośmiu i więcej pracowników nie mieści się na jednej stronie")
         assertTrue(textOf(pdf).contains("Strona 1 z 2"))
+    }
+
+    @Test
+    fun `podpis laduje na ostatniej stronie arkusza`() = runBlocking {
+        stubSettings()
+        val employees = (1..9).map { index ->
+            employee("Imie$index", "Nazwisko$index", UUID.randomUUID()).also { register(it, tracksWorkTime = true) }
+        }
+        val pdf = handler.handle(
+            GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 4), employees.map { EmployeeId(it.id) })
+        )
+
+        val signer = AttendanceSheetSigner(SignatureImageProcessor())
+        val signed = signer.sign(pdf, inkPng(), "Mikołaj Właściciel", Instant.parse("2026-04-30T09:15:00Z"))
+
+        val text = Loader.loadPDF(signed).use { PDFTextStripper().getText(it) }
+        assertTrue(text.contains("Mikołaj Właściciel"), "Podpisujący i data pod linią podpisu")
+        assertTrue(text.contains("30.04.2026"), "Data złożenia podpisu: $text")
+
+        // Podpis rysuje się na ostatniej stronie — pod tabelą, która się kończy.
+        val lastPageText = Loader.loadPDF(signed).use { document ->
+            PDFTextStripper().apply { startPage = document.numberOfPages; endPage = document.numberOfPages }
+                .getText(document)
+        }
+        assertTrue(lastPageText.contains("Mikołaj Właściciel"))
+    }
+
+    @Test
+    fun `pusty podpis jest odrzucany`() {
+        val signer = AttendanceSheetSigner(SignatureImageProcessor())
+        val blank = BufferedImage(120, 60, BufferedImage.TYPE_INT_ARGB)
+        val bytes = ByteArrayOutputStream().also { ImageIO.write(blank, "PNG", it) }.toByteArray()
+
+        assertThrows(ValidationException::class.java) {
+            signer.sign(minimalPdf(), bytes, "Ktoś", Instant.now())
+        }
+    }
+
+    /** Kwadrat „atramentu" — tyle wystarczy, żeby procesor obrazu uznał podpis za niepusty. */
+    private fun inkPng(): ByteArray {
+        val image = BufferedImage(200, 80, BufferedImage.TYPE_INT_ARGB)
+        val graphics = image.createGraphics()
+        graphics.color = java.awt.Color.BLACK
+        graphics.fillRect(20, 20, 120, 30)
+        graphics.dispose()
+        return ByteArrayOutputStream().also { ImageIO.write(image, "PNG", it) }.toByteArray()
+    }
+
+    private fun minimalPdf(): ByteArray = PDDocument().use { document ->
+        document.addPage(org.apache.pdfbox.pdmodel.PDPage())
+        ByteArrayOutputStream().also { document.save(it) }.toByteArray()
     }
 }
