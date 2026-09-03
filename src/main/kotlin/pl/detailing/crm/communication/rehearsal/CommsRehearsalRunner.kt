@@ -150,7 +150,11 @@ class CommsRehearsalRunner(
         return try {
             val subject = subjectTemplate?.let { renderer.render(it, values) }
             val body = renderer.render(bodyTemplate, values)
-            val findings = RenderedMessageValidator.validate(channel, subject, body, values)
+            // A template may use any subset of its kind's placeholders. Only the ones it
+            // actually contains are expected in the output — a reminder that never mentions
+            // the surname is a choice, not a defect.
+            val used = renderer.placeholdersIn(subjectTemplate.orEmpty() + "\n" + bodyTemplate)
+            val findings = RenderedMessageValidator.validate(channel, subject, body, values.filterKeys { it in used })
             val segments = if (channel == RehearsalChannel.SMS) SmsSegmentCalculator.segments(body) else null
             RehearsalItem(seq, total, kind, channel, enabled, subject, body, segments, findings)
         } catch (e: UnresolvedPlaceholderException) {

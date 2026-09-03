@@ -122,6 +122,38 @@ class CommsRehearsalRunnerTest {
         }
 
         @Test
+        fun `a template that uses only some of its allowed placeholders is clean`() {
+            val partial = fullSms().copy(
+                preVisit = SmsAutomationRule(true, 60, "Cześć {{imie}}, do zobaczenia jutro o {{godzina}}!"),
+                visitReadyForPickup = SmsNotificationRule(true, "Twoje auto {{pojazd}} jest gotowe do odbioru.")
+            )
+            val partialEmail = fullEmail().copy(
+                visitWelcome = EmailNotificationRule(true, "Witamy w studiu", "Szanowny/a {{imie_nazwisko}}, dziękujemy za powierzenie nam pojazdu {{pojazd}}.")
+            )
+            stubConfigs(sms = partial, email = partialEmail); every { redirectService.activeFor(studioId.value) } returns null
+
+            val report = runner.plan(studioId)
+
+            val pre = report.items.first { it.kind == MessageTemplateKind.SMS_PRE_VISIT }
+            val ready = report.items.first { it.kind == MessageTemplateKind.SMS_VISIT_READY_FOR_PICKUP }
+            val welcome = report.items.first { it.kind == MessageTemplateKind.EMAIL_VISIT_WELCOME }
+            assertEquals(emptyList<Finding>(), pre.findings.filter { it.severity == Severity.ERROR })
+            assertEquals(emptyList<Finding>(), ready.findings.filter { it.severity == Severity.ERROR })
+            assertEquals(emptyList<Finding>(), welcome.findings.filter { it.severity == Severity.ERROR })
+            assertEquals("Cześć Jan, do zobaczenia jutro o 10:00!", pre.body)
+        }
+
+        @Test
+        fun `a placeholder the template uses must show up in the output`() {
+            // {{data}} is used, so a rendered text without the year is still caught
+            val cfg = fullSms().copy(preVisit = SmsAutomationRule(true, 60, "{{imie}}, {{data}} o {{godzina}}"))
+            stubConfigs(sms = cfg); every { redirectService.activeFor(studioId.value) } returns null
+            val pre = runner.plan(studioId).items.first { it.kind == MessageTemplateKind.SMS_PRE_VISIT }
+            assertEquals(emptyList<Finding>(), pre.findings.filter { it.severity == Severity.ERROR })
+            assertTrue("04.09.2026" in pre.body || Regex("\\d{2}\\.\\d{2}\\.\\d{4}").containsMatchIn(pre.body))
+        }
+
+        @Test
         fun `a template with an unknown placeholder is an error, not a crash`() {
             val broken = fullSms().copy(preVisit = SmsAutomationRule(true, 60, "{{clinet_name}} 04.09.2026 10:00"))
             stubConfigs(sms = broken); every { redirectService.activeFor(studioId.value) } returns null
