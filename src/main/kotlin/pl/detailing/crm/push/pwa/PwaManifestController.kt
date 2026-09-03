@@ -64,7 +64,11 @@ class PwaManifestController(
                     "short_name" to shortName,
                     "description" to "CRM dla studiów detailingu — wizyty, klienci, połączenia z komputera.",
                     "id" to "/",
-                    "start_url" to "/",
+                    // Zainstalowana aplikacja otwiera się na Tablicy. "/" trafiałoby przez
+                    // HomeRedirect do Klientów (historyczny domyślny widok właściciela), a na
+                    // telefonie pierwszy ekran ma być tablicą dnia. Kto nie ma do niej
+                    // uprawnień, zostanie przekierowany do swojego domyślnego widoku jak zwykle.
+                    "start_url" to "/dashboard",
                     "scope" to "/",
                     "display" to "standalone",
                     "orientation" to "portrait",
