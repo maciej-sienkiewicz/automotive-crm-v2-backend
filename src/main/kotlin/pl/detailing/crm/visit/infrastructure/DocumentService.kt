@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.VisitDocument
 import java.time.Instant
 import java.util.UUID
+import pl.detailing.crm.shared.EntityNotFoundException
 
 /**
  * Service for managing visit documents
@@ -107,9 +108,11 @@ class DocumentService(
      */
     @Transactional(readOnly = true)
     fun getDocumentsByVisit(visitId: UUID, studioId: UUID): List<VisitDocument> {
-        // Verify visit exists and belongs to studio
+        // Nieistniejąca wizyta to brak zasobu (404), a nie wadliwe żądanie: przy 400
+        // użytkownik dostawał „Żądanie zawiera nieprawidłowe dane" na poprawnie
+        // zbudowany GET — np. po wejściu w link do wizyty, której już nie ma.
         val visit = visitRepository.findByIdAndStudioId(visitId, studioId)
-            ?: throw IllegalArgumentException("Visit not found or access denied: $visitId")
+            ?: throw EntityNotFoundException("Visit not found or access denied: $visitId")
 
         val documents = visitDocumentRepository.findByVisit_IdOrderByUploadedAtDesc(visitId)
 
