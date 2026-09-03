@@ -3,6 +3,8 @@ package pl.detailing.crm.communication
 import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.communication.redirect.ActiveRedirect
+import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
@@ -23,8 +25,10 @@ import java.util.UUID
 /**
  * Single infrastructure-level gateway for all outbound communication.
  *
- * Every SMS and email in the system MUST go through this gateway — never via
- * SmsProvider or EmailProvider directly from application code.
+ * Every SMS and email addressed to a customer MUST go through this gateway — never via
+ * SmsProvider or EmailProvider directly from application code. (Messages to the studio's
+ * own staff — password reset, employee invitation, problem reports — are not customer
+ * communication and keep using the providers directly.)
  *
  * Responsibilities enforced here for free, for every caller:
  *   1. Module entitlement check — the "point of effect" (W1) enforcement layer.
@@ -40,9 +44,14 @@ import java.util.UUID
  *   3. SMS credit check — blocked if the studio has no available credits.
  *      Credits are deducted atomically (SELECT FOR UPDATE) before the send attempt.
  *      If the provider call fails, the credit is refunded automatically.
- *   4. Delegating to the actual transport provider.
+ *   4. Studio redirect — when the studio switched on "send every message to me", the
+ *      recipient is replaced by the studio's own phone / e-mail at the very last step,
+ *      and the message is stamped with the customer it was meant for (see [redirected]).
+ *      This is the ONLY place the swap happens, which is exactly why customer messages
+ *      may not bypass the gateway.
+ *   5. Delegating to the actual transport provider.
  *
- * Because all four checks live here, new send paths automatically inherit them
+ * Because all checks live here, new send paths automatically inherit them
  * without any extra effort from the developer — and there is no way to bypass them.
  */
 @Service
@@ -54,9 +63,11 @@ class OutboundCommunicationGateway(
     private val senderNameResolver: SmsSenderNameResolver,
     private val capabilityService: CapabilityService,
     private val meterRegistry: MeterRegistry,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val redirectService: CommunicationRedirectService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
 
     /**
      * Null means the studio has no SMSAPI-confirmed sender ID — the provider then sends
@@ -124,6 +135,27 @@ class OutboundCommunicationGateway(
         return "Moduł '${capability.displayName}' nie jest aktywny w tym studiu — wiadomość zablokowana"
     }
 
+
+    /** The address a message actually goes to, and what to stamp on it. */
+    private data class Recipient(val address: String, val prefix: String)
+
+    /**
+     * Applies the studio's redirect, if any. Counted and logged per send, because a redirect
+     * that is on is the single most common reason a customer "did not get the SMS".
+     */
+    private fun redirected(
+        studioId: UUID,
+        original: String,
+        channel: MessageChannel,
+        pick: (ActiveRedirect) -> String
+    ): Recipient {
+        val redirect = redirectService.activeFor(studioId) ?: return Recipient(original, "")
+        val target = pick(redirect)
+        meterRegistry.counter("communication.redirected", "channel", channel.name).increment()
+        logger.info("Outbound {} redirected for studio={}: {} -> {}", channel, studioId, original, target)
+        return Recipient(target, redirect.prefixFor(original))
+    }
+
     fun sendSms(
         customerId: UUID,
         studioId: UUID,
@@ -138,22 +170,7 @@ class OutboundCommunicationGateway(
             return SmsDeliveryResult.failure("Brak zgody na komunikację SMS")
         }
 
-        val creditDeducted = smsCreditService.tryDeductCredit(StudioId(studioId))
-        if (!creditDeducted) {
-            logger.warn("SMS blocked — insufficient credits for studio={}", studioId)
-            throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
-        }
-
-        val senderName = resolveSmsSenderName(studioId)
-        val result = smsProvider.send(phoneNumber, message, senderName)
-
-        if (!result.success) {
-            smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
-        } else {
-            countSent(studioId, MessageChannel.SMS, context.ifBlank { category.name })
-        }
-
-        return result
+        return dispatchSms(studioId, phoneNumber, message, context.ifBlank { category.name })
     }
 
     fun sendTransactionalSms(
@@ -163,20 +180,24 @@ class OutboundCommunicationGateway(
         category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL
     ): SmsDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return SmsDeliveryResult.failure(it) }
+        return dispatchSms(studioId, phoneNumber, message, category.name)
+    }
 
+    private fun dispatchSms(studioId: UUID, phoneNumber: String, message: String, context: String): SmsDeliveryResult {
         val creditDeducted = smsCreditService.tryDeductCredit(StudioId(studioId))
         if (!creditDeducted) {
-            logger.warn("Transactional SMS blocked — insufficient credits for studio={}", studioId)
+            logger.warn("SMS blocked — insufficient credits for studio={}", studioId)
             throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
         }
 
+        val recipient = redirected(studioId, phoneNumber, MessageChannel.SMS) { it.phone }
         val senderName = resolveSmsSenderName(studioId)
-        val result = smsProvider.send(phoneNumber, message, senderName)
+        val result = smsProvider.send(recipient.address, recipient.prefix + message, senderName)
 
         if (!result.success) {
             smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
         } else {
-            countSent(studioId, MessageChannel.SMS, category.name)
+            countSent(studioId, MessageChannel.SMS, context)
         }
 
         return result
@@ -197,8 +218,39 @@ class OutboundCommunicationGateway(
         if (marketingConsentBlocked(customerId, studioId, MarketingChannel.EMAIL, category, context)) {
             return EmailDeliveryResult.failure("Brak zgody na komunikację EMAIL")
         }
-        val result = emailProvider.send(to, subject, bodyText, attachments)
-        if (result.success) countSent(studioId, MessageChannel.EMAIL, context.ifBlank { category.name })
+        return dispatchEmail(studioId, to, subject, bodyText, attachments, context.ifBlank { category.name })
+    }
+
+    /**
+     * E-mail without a customer record behind it (a contractor's monthly statement, a
+     * "send a test to myself" from the campaign editor). Same entitlement and redirect
+     * rules; no marketing-consent question, because there is no customer to ask about.
+     */
+    fun sendTransactionalEmail(
+        studioId: UUID,
+        to: String,
+        subject: String,
+        bodyText: String,
+        attachments: List<EmailAttachment> = emptyList(),
+        category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL
+    ): EmailDeliveryResult {
+        moduleBlockReason(studioId, category)?.let { return EmailDeliveryResult.failure(it) }
+        return dispatchEmail(studioId, to, subject, bodyText, attachments, category.name)
+    }
+
+    private fun dispatchEmail(
+        studioId: UUID,
+        to: String,
+        subject: String,
+        bodyText: String,
+        attachments: List<EmailAttachment>,
+        context: String
+    ): EmailDeliveryResult {
+        // The stamp goes on the subject, not the body: the body must be exactly what a
+        // customer would read, so the person reviewing it judges the real thing.
+        val recipient = redirected(studioId, to, MessageChannel.EMAIL) { it.email }
+        val result = emailProvider.send(recipient.address, recipient.prefix + subject, bodyText, attachments)
+        if (result.success) countSent(studioId, MessageChannel.EMAIL, context)
         return result
     }
 }

@@ -36,185 +36,77 @@ które już wyciekły.
 
 ---
 
-## 1. Tryb „Live Override" — bezpieczne przekierowanie odbiorców
+## 1. Przekierowanie na dane studia — funkcja produktu, nie tryb z env
 
-### 1.1. Zasady projektowe
+> Wersja pierwotna tego rozdziału opisywała tryb włączany zmiennymi środowiskowymi.
+> Zastąpiła go decyzja biznesowa: **każde studio** ma w `/settings?tab=templates`
+> przełącznik „Przekieruj każdą wiadomość mailową i SMS na moje dane" z dwoma polami.
+> Studio włącza go na czas oglądania prawdziwych wiadomości na własnym telefonie
+> (dzień, tydzień — ile trzeba), a wyłącza, gdy chce, żeby klienci zaczęli je dostawać.
+> Poniżej stan **zaimplementowany** na tej gałęzi.
 
-1. **Jedno źródło prawdy, tylko z env.** Żadnego wpisu w `application.properties`,
-   żadnej flagi w panelu admina (flaga w bazie przeżyje deploy; env nie).
-2. **Domyślnie wyłączony i niemożliwy do włączenia „przypadkiem".** Włączenie wymaga
-   pięciu zmiennych naraz; brak którejkolwiek = tryb nieaktywny.
-3. **Ograniczony czasowo.** Obowiązkowa data wygaśnięcia. Aplikacja **odmawia startu**
-   z aktywnym, ale przeterminowanym trybem. Nikt nie „zapomni" go wyłączyć — po prostu
-   nie wstanie z nim po 24 h.
-4. **Dwie warstwy, obie fail-closed.**
-   - Warstwa A (bramka, zna `studioId`): **przekierowanie** odbiorcy.
-   - Warstwa B (dekorator providera, ostatni skok przed API): **twarda odmowa** wysyłki
-     do kogokolwiek spoza listy founderów, gdy tryb jest aktywny. Łapie każde ominięcie
-     bramki — dziś takim ominięciem jest `CampaignController.kt:518`, który woła
-     `emailProvider.send` bezpośrednio.
-5. **Głośny.** Baner w logu przy starcie, gauge w Micrometer, pole w `/actuator/health`,
-   prefiks w treści każdej przekierowanej wiadomości, oryginalny odbiorca w `communication_log`.
-6. **Pilnowany przez CI i deploy.** Test jednostkowy + krok w Jenkinsie, które nie dopuszczą
-   trybu do produkcji.
+### 1.1. Gdzie to żyje
 
-### 1.2. Konfiguracja
+| Warstwa | Plik | Rola |
+|---------|------|------|
+| Tabela | `db/migration/V100__communication_redirect_settings.sql` | `communication_redirect_settings`: jeden wiersz na studio (`enabled`, `phone`, `email`, `updated_at`, `updated_by_user_id`). Brak wiersza = wysyłka do klientów. |
+| Serwis | `communication/redirect/CommunicationRedirectService.kt` | `settings`, `update` (walidacja: włączenie wymaga **obu** danych; telefon do E.164, e-mail sprawdzony i obniżony do małych liter), `activeFor(studioId)` — `null`, gdy nie przekierowujemy. |
+| API | `communication/redirect/CommunicationRedirectController.kt` | `GET/PUT /api/v1/communication/redirect`, uprawnienie `COMMUNICATION_SEND`, moduł `COMM_SEND_TRANSACTIONAL`. Pola `phone`/`email` oznaczone `@Pii`. |
+| Bramka | `communication/OutboundCommunicationGateway.kt` | **Jedyne miejsce podmiany.** `redirected()` tuż przed `provider.send`: SMS dostaje prefiks `[TEST → +48…] ` w treści, e-mail w **temacie** (treść musi być dokładnie tym, co zobaczyłby klient). Licznik `communication.redirected{channel}` i log INFO per wysyłka. |
+| UI | `detailing-crm-v2/src/modules/message-templates/components/RedirectCard.tsx` | Karta nad listą szablonów: przełącznik, dwa pola, „Sprawdź szablony", „Wyślij wszystkie testowo". Włączona = bursztyn i zdanie wprost: *Klienci nie dostają teraz żadnych wiadomości.* |
 
-```kotlin
-// communication/override/LiveOverrideProperties.kt
-@ConfigurationProperties("comms.live-override")
-data class LiveOverrideProperties(
-    /** COMMS_LIVE_OVERRIDE_ENABLED — musi być dosłownie "true". */
-    val enabled: Boolean = false,
-    /** COMMS_LIVE_OVERRIDE_PHONE — E.164, np. +48500100200. */
-    val phone: String = "",
-    /** COMMS_LIVE_OVERRIDE_EMAIL */
-    val email: String = "",
-    /**
-     * COMMS_LIVE_OVERRIDE_ALLOWED — pełna lista numerów i adresów founderów,
-     * oddzielona przecinkami. Warstwa B przepuszcza TYLKO te odbiorcy.
-     */
-    val allowed: List<String> = emptyList(),
-    /** COMMS_LIVE_OVERRIDE_UNTIL — ISO-8601 z offsetem, np. 2026-09-12T18:00:00+02:00. */
-    val until: OffsetDateTime? = null,
-    /**
-     * COMMS_LIVE_OVERRIDE_STUDIO_IDS — UUID-y studiów objętych przekierowaniem.
-     * Pusta lista = tryb globalny; dozwolony tylko, gdy nie ma profilu `prod`.
-     */
-    val studioIds: Set<UUID> = emptySet(),
-) {
-    val active: Boolean get() = enabled && phone.isNotBlank() && email.isNotBlank()
-        && allowed.isNotEmpty() && until != null
-}
-```
+### 1.2. Dlaczego bramka, i co z tym zrobiliśmy
 
-Walidator uruchamiany przy starcie (`@PostConstruct` w `LiveOverrideConfig`):
+Podmiana odbiorcy jest bezpieczna tylko wtedy, gdy **każda** wiadomość do klienta przechodzi
+przez bramkę. Przed tą zmianą cztery ścieżki wołały providerów bezpośrednio, więc ominęłyby
+przekierowanie (i przy okazji kredyty SMS):
 
-```kotlin
-if (props.enabled) {
-    require(props.active) { "comms.live-override: enabled=true, ale brakuje phone/email/allowed/until — odmowa startu" }
-    val now = OffsetDateTime.now()
-    require(props.until!!.isAfter(now)) { "comms.live-override: until=${props.until} już minęło — usuń zmienne env i uruchom ponownie" }
-    require(Duration.between(now, props.until) <= Duration.ofHours(24)) { "comms.live-override: until może być najwyżej 24 h w przód" }
-    require(props.phone in props.allowed && props.email in props.allowed) { "comms.live-override: phone/email muszą być na liście allowed" }
-    require(props.studioIds.isNotEmpty() || !env.acceptsProfiles(Profiles.of("prod"))) {
-        "comms.live-override: tryb globalny (pusta lista studioIds) jest zabroniony na profilu prod"
-    }
-    logger.error("""
-        ╔══════════════════════════════════════════════════════════════════╗
-        ║  COMMS LIVE OVERRIDE AKTYWNY — WSZYSTKIE WIADOMOŚCI IDĄ DO:      ║
-        ║  SMS  → ${props.phone}   E-MAIL → ${props.email}                  ║
-        ║  studia: ${props.studioIds.ifEmpty { "WSZYSTKIE" }}  do: ${props.until} ║
-        ╚══════════════════════════════════════════════════════════════════╝
-    """.trimIndent())
-    meterRegistry.gauge("comms.live_override.active", 1)
-}
-```
+| Ścieżka | Było | Jest |
+|---------|------|------|
+| `campaigns/api/CampaignController.testSend` (e-mail) | `emailProvider.send` | `gateway.sendTransactionalEmail(category = CAMPAIGN)` |
+| `batchorder/report/CloseMonthHandler` (zestawienie B2B) | `emailProvider.send` | `gateway.sendTransactionalEmail` |
+| `smscampaigns/consent/SmsConsentService` (2 SMS-y o zmianie usług) | `smsProvider.send` | `gateway.sendTransactionalSms` (brak kredytów = wynik `failure`, nie wyjątek) |
+| `visitcard/upsell/RequestUpsellServicesHandler` | `smsProvider.send` | `gateway.sendTransactionalSms` |
 
-### 1.3. Warstwa A — przekierowanie w bramce
+Bramka dostała nową metodę `sendTransactionalEmail(studioId, to, subject, body, attachments, category)`
+dla maili bez rekordu klienta (kontrahent, test do siebie).
 
-`OutboundCommunicationGateway` (`communication/OutboundCommunicationGateway.kt:48`) jest
-już obowiązkowym punktem przejścia i zna `studioId`. Dodajemy `RecipientResolver`
-wołany w `sendSms`, `sendTransactionalSms` i `sendEmail` tuż przed `provider.send`:
+Bezpośrednio z providerów korzystają już **tylko** maile do personelu i do DetailBoost:
+reset hasła, zaproszenie pracownika, zgłoszenie problemu, powiadomienie o upoważnieniu SMS.
+To celowo — to nie jest komunikacja z klientem i nie podlega przekierowaniu.
 
-```kotlin
-// communication/override/RecipientResolver.kt
-@Component
-class RecipientResolver(private val props: LiveOverrideProperties, private val clock: Clock) {
+### 1.3. Fail-closed
 
-    data class Resolved(val recipient: String, val redirectedFrom: String?, val prefix: String)
+- Włączenie bez telefonu lub bez e-maila → `ValidationException` przy zapisie, nie przy wysyłce.
+- Wiersz `enabled=true` z pustym polem (np. po ręcznej edycji bazy) → `activeFor` zwraca `null`:
+  nie przekierowuje i **nie blokuje**. Nie ma stanu, w którym wiadomość nie wychodzi nigdzie.
+- Przekierowanie jest per studio. Inne studia w tej samej bazie nic nie zauważą
+  (test `redirect is looked up per studio`).
+- Wyłączenie przełącznika zostawia wpisane dane, ale od tej chwili klienci dostają wiadomości.
 
-    fun phone(studioId: UUID, original: String): Resolved = resolve(studioId, original, props.phone)
-    fun email(studioId: UUID, original: String): Resolved = resolve(studioId, original, props.email)
+### 1.4. Usunięte blokady z fazy testów
 
-    private fun resolve(studioId: UUID, original: String, target: String): Resolved {
-        if (!props.active) return Resolved(original, null, "")
-        if (props.studioIds.isNotEmpty() && studioId !in props.studioIds) return Resolved(original, null, "")
-        if (OffsetDateTime.now(clock).isAfter(props.until)) {
-            throw LiveOverrideExpiredException()   // fail-closed: patrz 1.5
-        }
-        return Resolved(target, original, "[TEST → $original] ")
-    }
-}
-```
+- `JavaMailProvider.allowedMails` — skasowane; przy `enabled=false` provider zwraca `success("mock-disabled")`
+  tak jak provider SMS, zamiast udawać błąd.
+- `smsapi.whitelist` — skasowane z `SmsApiProperties`, `SmsApiProvider` i `application.properties`.
+- `email.javamail.password` — bez wartości domyślnej; tylko `MAIL_PASSWORD` z env. **Stare hasło do rotacji.**
+- Strażnik: `NoHardcodedRecipientAllowListTest` nie pozwoli żadnej z tych rzeczy wrócić
+  (skanuje providerów i pliki properties po `allowedMails`, `smsapi.whitelist`, „celowo zablokowany", „Faza testowa"
+  i sprawdza, że hasło SMTP nie ma domyślnej wartości).
 
-W bramce:
+### 1.5. Co przestaje być problemem, a co zostaje
 
-```kotlin
-val r = recipientResolver.phone(studioId, phoneNumber)
-val result = smsProvider.send(r.recipient, r.prefix + message, resolveSmsSenderName(studioId))
-communicationLog.record(..., recipient = r.recipient, redirectedFrom = r.redirectedFrom)
-```
+Pytanie „jak upewnić się, że tryb nie wycieknie na produkcję" zmienia sens: przekierowanie
+**ma** być na produkcji, bo to funkcja dla studiów. Ryzykiem nie jest wyciek, tylko
+**zapomniany przełącznik** — studio, które włączyło przekierowanie i nie pamięta, że klienci
+nic nie dostają. Zabezpieczenia:
 
-Dla e-maila prefiks trafia do **tematu** (`[TEST → jan@…] Twoja wizyta…`), nie do treści —
-treść musi wyglądać dokładnie tak, jak zobaczy ją klient.
-
-Do `communication_log` dochodzi kolumna `redirected_from` (nullable). Po teście każdy
-wiersz z niepustym `redirected_from` to dowód, co poszło gdzie.
-
-### 1.4. Warstwa B — dekorator providera (ostatni skok)
-
-Dekoratory opakowują beany z `SmsApiConfig.kt:19` i `JavaMailConfig.kt:19`:
-
-```kotlin
-class GuardedSmsProvider(private val delegate: SmsProvider, private val props: LiveOverrideProperties) : SmsProvider {
-    override fun send(phoneNumber: String, message: String, senderName: String?): SmsDeliveryResult {
-        if (props.active && phoneNumber.normalizePhone() !in props.allowed.map { it.normalizePhone() }) {
-            meterRegistry.counter("comms.live_override.blocked", "channel", "sms").increment()
-            logger.error("LIVE OVERRIDE: odmowa wysyłki SMS do {} — odbiorca spoza allowed. Ścieżka ominęła bramkę!", phoneNumber)
-            return SmsDeliveryResult.failure("Live override: odbiorca spoza listy testowej")
-        }
-        return delegate.send(phoneNumber, message, senderName)
-    }
-}
-```
-
-Analogicznie `GuardedEmailProvider`. Wiring:
-
-```kotlin
-@Bean fun smsProvider(p: SmsApiProperties, o: LiveOverrideProperties): SmsProvider =
-    GuardedSmsProvider(SmsApiProvider(p), o)
-```
-
-Gdy tryb jest **nieaktywny**, dekorator jest czystym pass-through — zero logiki, zero
-ryzyka. Tu właśnie **kasujemy** `allowedMails` z `JavaMailProvider` i `smsapi.whitelist`
-z `SmsApiProperties` — warstwa B to ich jedyny następca.
-
-Metryka `comms.live_override.blocked > 0` w trakcie testu oznacza, że jakaś ścieżka
-kodu omija bramkę. To samo w sobie jest znaleziskiem do naprawy przed deployem.
-
-### 1.5. Co się dzieje po wygaśnięciu `until` w trakcie działania aplikacji
-
-Wybór świadomy: **blokada, nie pass-through.** Jeśli tryb wygasł, a aplikacja nadal
-działa, to znaczy, że ktoś zapomniał zrobić redeploy bez zmiennych. Przepuszczenie
-wiadomości do realnych klientów w tym momencie byłoby gorsze niż zatrzymanie ich
-na kilka godzin z alarmem. `LiveOverrideExpiredException` → wysyłka kończy się
-`failure`, log ERROR, licznik `comms.live_override.expired`, alert w Grafanie
-(`deploy/monitoring`). Naprawa = usunąć env, zrestartować.
-
-### 1.6. Gwarancje, że tryb nie trafi na produkcję
-
-1. **Test jednostkowy na pliki konfiguracyjne** (`LiveOverrideLeakGuardTest`):
-   wczytuje `application.properties`, `application-docker-props.properties`,
-   `deploy/docker-compose.yaml`, `deploy/docker-compose-develop.yaml` i asercją
-   sprawdza, że **nie zawierają** `comms.live-override`, `COMMS_LIVE_OVERRIDE`,
-   `smsapi.whitelist`, `allowedMails`. Zmienne mogą istnieć wyłącznie w pliku `.env`
-   hosta, nigdy w repo.
-2. **Test na kod**: `JavaMailProvider` i `SmsApiProvider` nie zawierają żadnej listy
-   odbiorców (grep po źródle w teście, prosty i skuteczny).
-3. **Krok w `Jenkinsfile` przed deployem prod**:
-   ```sh
-   ssh prod 'grep -q COMMS_LIVE_OVERRIDE /opt/detailboost/.env' && { echo "LIVE OVERRIDE W ENV PRODUKCJI — STOP"; exit 1; }
-   ```
-4. **Health**: `LiveOverrideHealthIndicator` dodaje do `/actuator/health` pole
-   `commsLiveOverride: {active, until, phone, email}`. Po deployu prod pierwsza czynność
-   checklisty to `curl /actuator/health | jq .components.commsLiveOverride` → `active=false`.
-5. **Runtime guard** z pkt 1.5 — nawet jeśli 1–4 zawiodą, tryb wygaśnie sam po ≤ 24 h
-   i zamiast cicho przekierowywać, zacznie krzyczeć.
-6. **Smoke po deployu** (pkt 4.6): jedna prawdziwa wiadomość do foundera **jako klienta**
-   normalną ścieżką, bez override. Jeśli dojdzie — mechanizm nie blokuje produkcji.
-
----
+1. Karta w stanie włączonym jest bursztynowa i mówi wprost, że klienci nic nie dostają.
+2. Każda przekierowana wiadomość ma prefiks `[TEST → …]`, więc odbiorca widzi, że to nie do niego.
+3. Log WARN przy włączeniu, INFO przy każdej wysyłce, metryka `communication.redirected` do alertu
+   „studio X ma przekierowanie włączone od > 7 dni".
+4. Do rozważenia (nie zaimplementowane): baner na dashboardzie, gdy przekierowanie jest włączone
+   dłużej niż 24 h, i automatyczny e-mail przypominający po tygodniu.
 
 ## 2. Runner — automatyczne wymuszenie każdej wiadomości w systemie
 
@@ -324,8 +216,11 @@ Ważne szczegóły fixture'a, celowo dobrane pod pułapki:
 ### 2.4. Endpoint / uruchomienie
 
 Nie CLI (aplikacja to jeden monolit w Dockerze — nie ma jak wpiąć się z boku w
-bramkę i kredyty) tylko **wewnętrzny endpoint, który istnieje wyłącznie przy aktywnym
-override**:
+bramkę i kredyty) tylko endpoint, który wysyła **wyłącznie przy włączonym przekierowaniu**
+danego studia. Zaimplementowane: `communication/rehearsal/CommsRehearsalController.kt`
+(`POST /api/v1/communication/rehearsal/plan`, `POST …/run`) oraz `CommsRehearsalRunner.kt`,
+`RehearsalFixture.kt`, `RenderedMessageValidator.kt`. Poniższy szkic zachowany dla kontekstu;
+`journey` (Tier 2) **nie jest** zaimplementowany — Tier 2 wykonuje się ręcznie z UI wg pkt 4.4.
 
 ```kotlin
 @RestController

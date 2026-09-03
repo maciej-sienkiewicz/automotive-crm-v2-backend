@@ -9,7 +9,7 @@ import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryReposito
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.email.automation.GetEmailTemplateConfigHandler
 import pl.detailing.crm.email.provider.EmailAttachment
-import pl.detailing.crm.email.provider.EmailProvider
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -61,7 +61,7 @@ class CloseMonthHandler(
     private val closeHistoryRepository: BatchOrderCloseHistoryRepository,
     private val generateBatchReportHandler: GenerateBatchReportHandler,
     private val getEmailTemplateConfigHandler: GetEmailTemplateConfigHandler,
-    private val emailProvider: EmailProvider,
+    private val gateway: OutboundCommunicationGateway,
     private val renderer: MessageTemplateRenderer,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -157,7 +157,8 @@ class CloseMonthHandler(
 
                 val fileName = "zestawienie-${contractor.name.replace(Regex("\\s+"), "-")}-${command.from.format(DateTimeFormatter.ofPattern("yyyy-MM"))}.pdf"
 
-                emailProvider.send(
+                gateway.sendTransactionalEmail(
+                    studioId = command.studioId.value,
                     to = resolvedEmailTo,
                     subject = subject,
                     bodyText = body,

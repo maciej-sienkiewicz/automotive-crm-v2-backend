@@ -15,11 +15,10 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.communication.RecordCommunicationCommand
-import pl.detailing.crm.smscampaigns.provider.SmsProvider
-import pl.detailing.crm.smscampaigns.sendername.SmsSenderNameResolver
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
@@ -79,8 +78,7 @@ class RequestUpsellServicesHandler(
     private val suggestionRepository: VisitUpsellSuggestionRepository,
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val reservationConsentRepository: UpsellReservationConsentRepository,
-    private val smsProvider: SmsProvider,
-    private val senderNameResolver: SmsSenderNameResolver,
+    private val gateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
@@ -390,7 +388,7 @@ class RequestUpsellServicesHandler(
     /** @return Triple(smsSent, externalMessageId, errorMessage) */
     private fun sendConsentSms(studioId: StudioId, phone: String, message: String): Triple<Boolean, String?, String?> =
         try {
-            val result = smsProvider.send(phone, message, senderNameResolver.resolve(studioId))
+            val result = gateway.sendTransactionalSms(studioId.value, phone, message)
             Triple(result.success, result.externalMessageId, result.errorMessage)
         } catch (e: InsufficientSmsCreditsException) {
             logger.warn("Upsell consent SMS blocked — no credits")
