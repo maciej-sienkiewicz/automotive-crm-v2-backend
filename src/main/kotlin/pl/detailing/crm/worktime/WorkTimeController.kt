@@ -1,14 +1,20 @@
 package pl.detailing.crm.worktime
 
+import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetCommand
+import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetHandler
 import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import java.time.LocalDate
 import java.time.YearMonth
@@ -121,7 +127,38 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
 @RequiresPermission(Permission.EMPLOYEES_MANAGE)
 @RestController
 @RequestMapping("/api/v1/worktime/team")
-class TeamWorkTimeController(private val workTimeService: WorkTimeService) {
+class TeamWorkTimeController(
+    private val workTimeService: WorkTimeService,
+    private val generateAttendanceSheetHandler: GenerateAttendanceSheetHandler
+) {
+
+    /**
+     * Lista obecności na wskazany miesiąc dla zaznaczonych pracowników — arkusz PDF
+     * do wydruku i podpisu (kolumny: pracownicy, wiersze: dni miesiąca).
+     *
+     * POST, a nie GET, bo lista pracowników bywa długa i nie ma po co lądować
+     * w logach serwera ani w historii przeglądarki.
+     */
+    @PostMapping("/attendance-sheet")
+    fun generateAttendanceSheet(
+        @RequestBody body: AttendanceSheetRequest
+    ): ResponseEntity<ByteArray> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val period = parsePeriod(body.period)
+
+        val pdfBytes = generateAttendanceSheetHandler.handle(
+            GenerateAttendanceSheetCommand(
+                studioId = principal.studioId,
+                period = period,
+                employeeIds = body.employeeIds.map { EmployeeId.fromString(it) }
+            )
+        )
+
+        val headers = HttpHeaders()
+        headers.contentType = MediaType.APPLICATION_PDF
+        headers.setContentDispositionFormData("attachment", "lista-obecnosci-$period.pdf")
+        ResponseEntity.ok().headers(headers).body(pdfBytes)
+    }
 
     @GetMapping("/{userId}/periods")
     fun listUserPeriods(@PathVariable userId: String): ResponseEntity<List<PeriodSummaryResponse>> {
@@ -178,6 +215,15 @@ data class UpsertEntryRequest(
 
 data class ReturnPeriodRequest(
     val note: String? = null
+)
+
+/**
+ * @param period miesiąc w formacie YYYY-MM
+ * @param employeeIds identyfikatory PRACOWNIKÓW (nie kont) zaznaczonych na liście
+ */
+data class AttendanceSheetRequest(
+    val period: String,
+    val employeeIds: List<String> = emptyList()
 )
 
 data class EntryResponse(
