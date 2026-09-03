@@ -32,6 +32,11 @@ object RenderedMessageValidator {
 
     private val REQUIRED_NON_EMPTY = setOf("imie", "data", "godzina", "link")
 
+    /**
+     * @param expectedValues the values substituted for the placeholders the template
+     *   actually uses — not every placeholder its kind allows. Rules B–E reason only
+     *   about these.
+     */
     fun validate(
         channel: RehearsalChannel,
         subject: String?,
