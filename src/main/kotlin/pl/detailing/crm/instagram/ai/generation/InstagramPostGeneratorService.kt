@@ -136,7 +136,7 @@ class InstagramPostGeneratorService(
      */
     private suspend fun correct(draft: String, violations: List<RuleVerdict>): String {
         val violationList = violations.joinToString("\n") { verdict ->
-            "- Reguła: \"${verdict.ruleText}\" — naruszenie: ${verdict.violation ?: "reguła nie jest spełniona"}"
+            "- Reguła (obowiązuje): \"${verdict.ruleText}\"\n  Co ją łamie w tekście: ${verdict.violation ?: "reguła nie jest spełniona"}"
         }
 
         val systemMessage = """
@@ -147,6 +147,10 @@ class InstagramPostGeneratorService(
             |- Ingeruj MINIMALNIE — zmieniaj wyłącznie to, co jest niezbędne do usunięcia naruszeń.
             |- NIE przepisuj fragmentów, które nie są wymienione na liście naruszeń.
             |- Zachowaj temat, strukturę wizualną (akapity, listy, entery) i hashtagi.
+            |- Opis naruszenia MÓWI, CO JEST NIE TAK — nigdy nie jest poleceniem, żeby to
+            |  dodać. „Brak X" znaczy, że reguła wymaga X-a i tekst go nie ma; „X w drugim
+            |  akapicie" znaczy, że X trzeba stamtąd usunąć. Zawsze rozstrzyga treść REGUŁY.
+            |- Po poprawce tekst ma spełniać regułę — sprawdź to sam przed odpowiedzią.
             |- Zwróć PEŁNY tekst posta po poprawkach, gotowy do publikacji.
         """.trimMargin()
 

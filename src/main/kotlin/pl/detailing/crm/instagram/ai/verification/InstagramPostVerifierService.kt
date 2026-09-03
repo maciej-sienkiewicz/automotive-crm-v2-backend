@@ -23,7 +23,8 @@ import pl.detailing.crm.instagram.ai.model.VerificationReport
  */
 @Service
 class InstagramPostVerifierService(
-    @Qualifier("instagramChatClient") private val chatClient: ChatClient
+    @Qualifier("instagramChatClient") private val chatClient: ChatClient,
+    private val ruleChecker: StyleRuleChecker
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostVerifierService::class.java)
 
@@ -43,7 +44,16 @@ class InstagramPostVerifierService(
     suspend fun verify(draft: String, rules: List<String>): VerificationReport {
         if (rules.isEmpty()) return VerificationReport(emptyList())
 
-        val numberedRules = rules.mapIndexed { i, rule -> "${i + 1}. $rule" }.joinToString("\n")
+        // Reguły policzalne rozstrzyga kod i NIE trafiają one do modelu: nie ma sensu
+        // pytać o liczbę myślników czegoś, co liczy źle, a potem prostować odpowiedź.
+        val deterministic = rules.mapIndexed { i, rule -> ruleChecker.check(rule, draft, i + 1) }
+        val forModel = rules.filterIndexed { i, _ -> deterministic[i] == null }
+
+        if (forModel.isEmpty()) {
+            return report(rules, deterministic, VerificationReport(emptyList()))
+        }
+
+        val numberedRules = forModel.mapIndexed { i, rule -> "${i + 1}. $rule" }.joinToString("\n")
 
         val systemMessage = """
             |Jesteś surowym audytorem tekstu. Twoim JEDYNYM zadaniem jest sprawdzenie,
@@ -71,7 +81,7 @@ class InstagramPostVerifierService(
             |$draft
         """.trimMargin()
 
-        val report = withContext(Dispatchers.IO) {
+        val modelReport = withContext(Dispatchers.IO) {
             chatClient.prompt()
                 .options(OpenAiChatOptions.builder().temperature(VERIFIER_TEMPERATURE).build())
                 .system(systemMessage)
@@ -80,7 +90,7 @@ class InstagramPostVerifierService(
                 .entity(VerificationReport::class.java)
         } ?: VerificationReport(emptyList())
 
-        val normalized = normalize(report, rules)
+        val normalized = report(rules, deterministic, modelReport)
         val violations = normalized.verdicts.filter { !it.passed }
         if (violations.isEmpty()) {
             logger.info("Verification done: {} rules, no violations", rules.size)
@@ -94,6 +104,29 @@ class InstagramPostVerifierService(
             )
         }
         return normalized
+    }
+
+    /**
+     * Scala werdykty policzone w kodzie z tymi, które ocenił model.
+     *
+     * Werdykt deterministyczny jest ostateczny — model nie dostał tych reguł do oceny,
+     * więc nie ma tu żadnego „głosowania": jest wynik pomiaru albo ocena modelu, nigdy
+     * oba naraz dla tej samej reguły.
+     */
+    private fun report(
+        rules: List<String>,
+        deterministic: List<RuleVerdict?>,
+        modelReport: VerificationReport
+    ): VerificationReport {
+        val modelRules = rules.filterIndexed { i, _ -> deterministic[i] == null }
+        val modelVerdicts = normalize(modelReport, modelRules).verdicts.associateBy { it.ruleText }
+
+        return VerificationReport(
+            rules.mapIndexed { i, rule ->
+                val verdict = deterministic[i] ?: modelVerdicts[rule] ?: RuleVerdict(i + 1, rule, passed = true)
+                verdict.copy(ruleIndex = i + 1, ruleText = rule)
+            }
+        )
     }
 
     /**

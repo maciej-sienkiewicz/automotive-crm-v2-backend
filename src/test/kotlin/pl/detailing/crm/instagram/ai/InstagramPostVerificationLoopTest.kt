@@ -18,6 +18,7 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostResult
 import pl.detailing.crm.instagram.ai.model.RuleVerdict
 import pl.detailing.crm.instagram.ai.model.VerificationReport
 import pl.detailing.crm.instagram.ai.verification.InstagramPostVerifierService
+import pl.detailing.crm.instagram.ai.verification.StyleRuleChecker
 
 /**
  * Pętla generuj → weryfikuj → popraw.
@@ -33,9 +34,11 @@ class InstagramPostVerificationLoopTest {
     private val requestSpec = mockk<ChatClient.ChatClientRequestSpec>()
     private val callSpec = mockk<ChatClient.CallResponseSpec>()
 
-    private val service = InstagramPostGeneratorService(chatClient, InstagramPostVerifierService(chatClient))
+    private val service = InstagramPostGeneratorService(chatClient, InstagramPostVerifierService(chatClient, StyleRuleChecker()))
 
-    private val rules = listOf("Nie używaj emoji")
+    // Reguła jakościowa: policzalne („bez emoji", „3 bullet pointy") rozstrzyga
+    // StyleRuleChecker bez pytania modelu, więc nie nadają się do testu samej pętli.
+    private val rules = listOf("Pisz ciepłym, bezpośrednim tonem")
 
     @BeforeEach
     fun setUp() {
@@ -60,7 +63,7 @@ class InstagramPostVerificationLoopTest {
     )
 
     private fun failedReport() = VerificationReport(
-        listOf(RuleVerdict(ruleIndex = 1, ruleText = rules[0], passed = false, violation = "Emoji w pierwszej linii"))
+        listOf(RuleVerdict(ruleIndex = 1, ruleText = rules[0], passed = false, violation = "Ton urzędowy w pierwszym akapicie"))
     )
 
     @Test
@@ -81,8 +84,8 @@ class InstagramPostVerificationLoopTest {
     @Test
     fun `naruszenie jest poprawiane i ponownie weryfikowane`() = runBlocking {
         every { callSpec.entity(InstagramPostResult::class.java) } returnsMany listOf(
-            InstagramPostResult("Post z emoji 🔥"),
-            InstagramPostResult("Post bez emoji")
+            InstagramPostResult("Post w tonie urzędowym"),
+            InstagramPostResult("Post w ciepłym tonie")
         )
         every { callSpec.entity(VerificationReport::class.java) } returnsMany listOf(
             failedReport(),
@@ -93,21 +96,21 @@ class InstagramPostVerificationLoopTest {
 
         assertTrue(result.verificationPassed)
         assertEquals(2, result.iterations)
-        assertEquals("Post bez emoji", result.content, "Zwracana jest wersja PO korekcie")
+        assertEquals("Post w ciepłym tonie", result.content, "Zwracana jest wersja PO korekcie")
         // Generator, weryfikacja, korekta, weryfikacja.
         verify(exactly = 4) { chatClient.prompt() }
     }
 
     @Test
     fun `permanentne naruszenie zatrzymuje petle po trzech rundach bez udawania sukcesu`() = runBlocking {
-        every { callSpec.entity(InstagramPostResult::class.java) } returns InstagramPostResult("Post z emoji 🔥")
+        every { callSpec.entity(InstagramPostResult::class.java) } returns InstagramPostResult("Post w tonie urzędowym")
         every { callSpec.entity(VerificationReport::class.java) } returns failedReport()
 
         val result = service.generateVerified("PPF na BMW", null, context(rules))
 
         assertFalse(result.verificationPassed)
         assertEquals(InstagramPostGeneratorService.MAX_VERIFICATION_ROUNDS, result.iterations)
-        assertEquals(listOf("Nie używaj emoji"), result.failedRules)
+        assertEquals(listOf("Pisz ciepłym, bezpośrednim tonem"), result.failedRules)
         // Generator + 3 weryfikacje + 2 korekty (po ostatniej weryfikacji nie ma już rundy).
         verify(exactly = 6) { chatClient.prompt() }
     }
