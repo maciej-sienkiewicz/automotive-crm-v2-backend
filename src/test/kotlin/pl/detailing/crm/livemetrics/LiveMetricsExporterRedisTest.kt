@@ -15,6 +15,7 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import pl.detailing.crm.livemetrics.config.LiveMetricsProperties
 import pl.detailing.crm.livemetrics.domain.BusinessEvent
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.MessageChannel
 import pl.detailing.crm.livemetrics.ingest.BusinessEventIngestWorker
 import pl.detailing.crm.livemetrics.prometheus.LiveMetricsPrometheusExporter
 import pl.detailing.crm.livemetrics.store.LiveMetricsStore
@@ -54,13 +55,16 @@ class LiveMetricsExporterRedisTest {
         val batch = listOf(
             BusinessEvent(tenant, BusinessEventType.RESERVATION_CREATED, occurredAt = now),
             BusinessEvent(tenant, BusinessEventType.ACTIVITY_LOGGED, occurredAt = now),
-            BusinessEvent(tenant, BusinessEventType.ACTIVITY_LOGGED, occurredAt = now)
+            BusinessEvent(tenant, BusinessEventType.ACTIVITY_LOGGED, occurredAt = now),
+            BusinessEvent(tenant, BusinessEventType.MESSAGE_SENT, dimensionValue = MessageChannel.MAILBOX.name, occurredAt = now),
+            BusinessEvent(tenant, BusinessEventType.MAILBOX_CONNECTED, occurredAt = now)
         )
         store.record(batch)
         exporter.count(batch)
         exporter.refreshTodayGauges()
 
         exporter.refreshHourProfileGauges()
+        exporter.refreshAllTimeGauges()
 
         // Dokładnie to, co zobaczy Prometheus — łącznie z nazwami metryk po konwersji Micrometera.
         val scrape = registry.scrape()
@@ -81,6 +85,14 @@ class LiveMetricsExporterRedisTest {
         assertEquals(0.0, value("""crm_business_events_total{dimension="DIRECT",tenant="Studio Blask",tenant_id="$t",type="VISIT_CREATED",}"""))
         assertEquals(0.0, value("""crm_business_events_total{dimension="FROM_RESERVATION",tenant="Studio Blask",tenant_id="$t",type="VISIT_CREATED",}"""))
         assertEquals(0.0, value("""crm_business_events_total{dimension="CHECKIN",tenant="Studio Blask",tenant_id="$t",type="PHOTO_UPLOADED",}"""))
+
+        // Pytania o stan („czy studio ma podłączoną pocztę") odpowiada wyłącznie suma od początku:
+        // licznik dzienny wyzeruje się o północy i od następnego dnia będzie nieodróżnialny od zera.
+        assertEquals(1.0, value("""crm_business_events_all_time{tenant="Studio Blask",tenant_id="$t",type="MAILBOX_CONNECTED",}"""))
+        assertEquals(1.0, value("""crm_business_events_all_time{tenant="Studio Blask",tenant_id="$t",type="MESSAGE_SENT",}"""))
+        assertEquals(0.0, value("""crm_business_events_all_time{tenant="Studio Blask",tenant_id="$t",type="EMPLOYEE_CREATED",}"""))
+        // Pod-seria nie może wpaść do sumy drugi raz — zdarzenie inkrementuje bazową i pod-serię.
+        assertEquals(1.0, value("""crm_business_events_today{tenant="Studio Blask",tenant_id="$t",type="MESSAGE_SENT",}"""))
 
         val hour = "%02d".format(now.atZone(store.zone).hour)
         assertEquals(1.0, value("""crm_business_events_hour_of_day{hour="$hour",tenant="Studio Blask",tenant_id="$t",type="RESERVATION_CREATED",}"""))

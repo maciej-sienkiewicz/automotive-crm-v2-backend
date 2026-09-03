@@ -19,6 +19,9 @@ import pl.detailing.crm.comms.signature.UserMailSignatureService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.mailbox.domain.MailAccountStatus
 import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.MessageChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -64,7 +67,8 @@ class SendMailHandler(
     private val sanitizer: EmailHtmlSanitizer,
     private val ingestService: CommsIngestService,
     private val signatureService: UserMailSignatureService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -174,6 +178,14 @@ class SendMailHandler(
 
         eventPublisher.publishEvent(
             CommOutboundSentEvent(studioId = account.studioId, threadId = saved.threadId, sentAt = sentAt)
+        )
+
+        // Live metrics — mail napisany ręcznie przez człowieka, osobny kanał od wysyłki systemowej
+        businessEventPublisher.publish(
+            tenantId = StudioId(account.studioId),
+            type = BusinessEventType.MESSAGE_SENT,
+            dimensionValue = MessageChannel.MAILBOX.name,
+            attributes = mapOf("messageId" to saved.id.toString(), "userId" to command.userId.value.toString())
         )
 
         log.info("[COMMS] Wiadomość wysłana i zapisana | thread={} message={}", saved.threadId, saved.id)

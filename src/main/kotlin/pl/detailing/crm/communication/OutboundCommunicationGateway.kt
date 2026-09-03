@@ -4,6 +4,9 @@ import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.customer.consent.MarketingConsentChecker
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.MessageChannel
 import pl.detailing.crm.email.provider.EmailAttachment
 import pl.detailing.crm.email.provider.EmailDeliveryResult
 import pl.detailing.crm.email.provider.EmailProvider
@@ -48,7 +51,8 @@ class OutboundCommunicationGateway(
     private val smsCreditService: SmsCreditService,
     private val senderNameResolver: SmsSenderNameResolver,
     private val capabilityService: CapabilityService,
-    private val meterRegistry: MeterRegistry
+    private val meterRegistry: MeterRegistry,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -57,6 +61,20 @@ class OutboundCommunicationGateway(
      * the message as ECO (from an SMSAPI number), never under a placeholder header.
      */
     private fun resolveSmsSenderName(studioId: UUID): String? = senderNameResolver.resolve(studioId)
+
+    /**
+     * Live metrics — liczymy tylko wysyłki, które naprawdę wyszły do dostawcy.
+     * Blokady (brak modułu, brak zgody, brak kredytów) wracają wcześniej i celowo nie liczą się
+     * jako wysłana wiadomość; od tego są osobne liczniki `communication.blocked.*`.
+     */
+    private fun countSent(studioId: UUID, channel: MessageChannel, context: String) {
+        businessEventPublisher.publish(
+            tenantId = StudioId(studioId),
+            type = BusinessEventType.MESSAGE_SENT,
+            dimensionValue = channel.name,
+            attributes = mapOf("context" to context)
+        )
+    }
 
     /**
      * Returns a human-readable block reason when the studio lacks the module for
@@ -104,6 +122,8 @@ class OutboundCommunicationGateway(
 
         if (!result.success) {
             smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
+        } else {
+            countSent(studioId, MessageChannel.SMS, context.ifBlank { category.name })
         }
 
         return result
@@ -128,6 +148,8 @@ class OutboundCommunicationGateway(
 
         if (!result.success) {
             smsCreditService.refundCredit(StudioId(studioId), "Błąd dostawcy SMS: ${result.errorMessage}")
+        } else {
+            countSent(studioId, MessageChannel.SMS, category.name)
         }
 
         return result
@@ -148,6 +170,8 @@ class OutboundCommunicationGateway(
         if (!consentChecker.canSend(customerId, studioId, MarketingChannel.EMAIL, context.ifBlank { "OutboundGateway" })) {
             return EmailDeliveryResult.failure("Brak zgody na komunikację EMAIL")
         }
-        return emailProvider.send(to, subject, bodyText, attachments)
+        val result = emailProvider.send(to, subject, bodyText, attachments)
+        if (result.success) countSent(studioId, MessageChannel.EMAIL, context.ifBlank { category.name })
+        return result
     }
 }

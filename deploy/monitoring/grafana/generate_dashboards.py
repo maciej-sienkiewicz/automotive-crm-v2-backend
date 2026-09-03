@@ -10,10 +10,23 @@ import json, os
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'provisioning', 'dashboards')
 DS = {"type": "prometheus", "uid": "prometheus"}
 LABELS = {"RESERVATION_CREATED": "Rezerwacje", "VISIT_CREATED": "Wizyty", "SERVICE_CREATED": "Nowe usługi",
-          "PHOTO_UPLOADED": "Zdjęcia", "ACTIVITY_LOGGED": "Aktywność"}
+          "PHOTO_UPLOADED": "Zdjęcia", "ACTIVITY_LOGGED": "Aktywność", "LEAD_CREATED": "Leady",
+          "MESSAGE_SENT": "Wiadomości", "CAMPAIGN_CREATED": "Kampanie", "EMPLOYEE_CREATED": "Pracownicy",
+          "VISIT_CARD_SENT": "Karty wizyt", "INSTAGRAM_PROFILE_ADDED": "Profile IG",
+          "MAILBOX_CONNECTED": "Poczta"}
 COLORS = {"RESERVATION_CREATED": "blue", "VISIT_CREATED": "orange", "SERVICE_CREATED": "purple",
-          "PHOTO_UPLOADED": "yellow", "ACTIVITY_LOGGED": "red"}
+          "PHOTO_UPLOADED": "yellow", "ACTIVITY_LOGGED": "red", "LEAD_CREATED": "green",
+          "MESSAGE_SENT": "light-blue", "CAMPAIGN_CREATED": "pink", "EMPLOYEE_CREATED": "super-light-purple",
+          "VISIT_CARD_SENT": "semi-dark-orange", "INSTAGRAM_PROFILE_ADDED": "dark-purple",
+          "MAILBOX_CONNECTED": "dark-green"}
 TYPES = list(LABELS)
+# Kafle „dziś" — tylko to, co realnie zmienia się w ciągu dnia. Pozycje o charakterze stanu
+# (poczta, profile IG, pracownicy) mają własny wiersz „od początku"; kafel dzienny pokazywałby
+# u nich zero każdego dnia poza dniem konfiguracji.
+TODAY_TYPES = ["RESERVATION_CREATED", "VISIT_CREATED", "LEAD_CREATED", "MESSAGE_SENT",
+               "PHOTO_UPLOADED", "ACTIVITY_LOGGED"]
+ALL_TIME_TYPES = ["LEAD_CREATED", "MESSAGE_SENT", "CAMPAIGN_CREATED", "EMPLOYEE_CREATED",
+                  "VISIT_CARD_SENT", "INSTAGRAM_PROFILE_ADDED", "MAILBOX_CONNECTED"]
 # Minimalny krok. Scrape trwa 15 s, a increase() potrzebuje >=2 próbek w oknie: bez tego
 # $__interval na szerokim panelu schodzi do ~5 s i KAŻDY słupek jest pusty.
 MIN_STEP = "1m"
@@ -82,8 +95,26 @@ def kpi_row(y, extra):
                    COLORS[t], i * 4, y,
                    desc="Licznik od północy (strefa studia), czytany z Redisa co 15 s. "
                         "`—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.")
-              for i, t in enumerate(TYPES)]
-    panels.append(stat("Odrzucone przez potok", "sum(crm_live_metrics_pipeline_dropped)", "red", 20, y,
+              for i, t in enumerate(TODAY_TYPES)]
+    return panels
+
+def all_time_row(y, extra):
+    """Stan, nie ruch: „ile w sumie", nie „ile dziś".
+
+    Poczta konfigurowana raz w życiu i profil IG dodany w zeszłym miesiącu są na kaflu dziennym
+    nie do odróżnienia od studia, które nie zrobiło nic — oba pokazują zero. Ten wiersz czyta
+    sumę od początku (`lm:{scope}:total` w Redisie, bez TTL), więc odpowiada na pytanie
+    „kto to w ogóle ma".
+    """
+    panels = [stat(LABELS[t],
+                   f'sum(max by (tenant_id) (crm_business_events_all_time{{type="{t}"{sel(extra)}}}))',
+                   COLORS[t], i * 3, y, w=3,
+                   desc="Suma od początku istnienia studia — odporna na restarty i na to, "
+                        "że dziś akurat nic się nie wydarzyło.")
+              for i, t in enumerate(ALL_TIME_TYPES)]
+    # Siedem kafli po 3 zostawia dokładnie 3 kolumny — zdrowie potoku jedzie z nimi w jednej linii,
+    # bo bez niego wszystkie liczby obok są bez gwarancji kompletności.
+    panels.append(stat("Odrzucone przez potok", "sum(crm_live_metrics_pipeline_dropped)", "red", 21, y, w=3,
                        desc="Zdarzenia zgubione przez pełną kolejkę lub nieudany zapis do Redisa. "
                             "Cokolwiek > 0 znaczy, że liczby na tym dashboardzie są niepełne.", no_value="0"))
     return panels
@@ -123,6 +154,42 @@ def charts(y, extra, hod_extra):
                         desc="Przyrost rekordów w historii aktywności — sam fakt powstania wpisu systemowego.",
                         bars=True, overrides=[color_override("Wpisy", "red")]))
     y += 8
+    p.append(timeseries("Leady wg źródła",
+                        [target(inc("LEAD_CREATED", extra, "dimension"), "{{dimension}}")], 0, y,
+                        desc="Skąd przychodzą leady: PHONE (telefon), EMAIL (poczta), "
+                             "FORM (formularz na stronie), MANUAL (dodany ręcznie).",
+                        stacked=True, bars=True,
+                        overrides=[color_override("FORM", "green"), color_override("MANUAL", "blue"),
+                                   color_override("PHONE", "orange"), color_override("EMAIL", "purple")]))
+    p.append(timeseries("Wysłane wiadomości wg kanału",
+                        [target(inc("MESSAGE_SENT", extra, "dimension"), "{{dimension}}")], 12, y,
+                        desc="Tylko wysyłki, które naprawdę wyszły do dostawcy — blokady (brak modułu, "
+                             "zgody, kredytów) się nie liczą. SMS i EMAIL to wysyłka systemowa "
+                             "(przypomnienia, kampanie, karty wizyt), MAILBOX to mail napisany ręcznie "
+                             "w module Poczta. Wszystkie maile razem = EMAIL + MAILBOX.",
+                        stacked=True, bars=True,
+                        overrides=[color_override("SMS", "green"), color_override("EMAIL", "light-blue"),
+                                   color_override("MAILBOX", "purple")]))
+    y += 8
+    p.append(timeseries("Karty wizyt wg kanału",
+                        [target(inc("VISIT_CARD_SENT", extra, "dimension"), "{{dimension}}")], 0, y,
+                        desc="Karty Wizyt i Karty Rezerwacji policzone per realnie wysłany kanał — "
+                             "jedno żądanie wysyłki na oba kanały to dwa zdarzenia.",
+                        stacked=True, bars=True,
+                        overrides=[color_override("EMAIL", "light-blue"), color_override("SMS", "green")]))
+    p.append(timeseries("Kampanie, pracownicy, profile IG, poczta",
+                        [target(inc("CAMPAIGN_CREATED", extra), "Kampanie", ref="A"),
+                         target(inc("EMPLOYEE_CREATED", extra), "Pracownicy", ref="B"),
+                         target(inc("INSTAGRAM_PROFILE_ADDED", extra), "Profile IG", ref="C"),
+                         target(inc("MAILBOX_CONNECTED", extra), "Poczta", ref="D")], 12, y,
+                        desc="Zdarzenia rzadkie, więc w jednym panelu. Puste nie znaczy „nie ma” — "
+                             "aktualny stan czytaj z kafli „od początku” na górze dashboardu.",
+                        bars=True,
+                        overrides=[color_override("Kampanie", "pink"),
+                                   color_override("Pracownicy", "super-light-purple"),
+                                   color_override("Profile IG", "dark-purple"),
+                                   color_override("Poczta", "dark-green")]))
+    y += 8
     p.append(timeseries("Wszystkie zdarzenia — tempo na minutę",
                         [target(f'sum by (type) (rate(crm_business_events_total{{{extra}}}[$__rate_interval])) * 60',
                                 "{{type}}")], 0, y, w=24,
@@ -136,10 +203,14 @@ def tenants_table(y):
     # ukośnikami trzymamy na wypadek innej wersji Grafany — nadmiarowy wpis jest ignorowany.
     rename = {"tenant\\type": "Tenant", "tenant\\\\type": "Tenant"}
     rename.update({t: LABELS[t] for t in TYPES})
+    # Tylko typy o charakterze dziennym. Dosypanie tu poczty czy pracowników dałoby kolumny,
+    # w których każdy tenant ma zero przez 364 dni w roku — szum kosztem czytelności tabeli.
+    types_filter = "|".join(TODAY_TYPES)
     return {"id": nid(), "type": "table", "title": "Tenanci — dziś", "datasource": DS,
             "description": "Liczniki od północy per tenant. Jedno zapytanie, przestawione na kolumny.",
             "gridPos": {"h": 12, "w": 24, "x": 0, "y": y},
-            "targets": [target("max by (tenant, type) (crm_business_events_today)", instant=True, fmt="table")],
+            "targets": [target(f'max by (tenant, type) (crm_business_events_today{{type=~"{types_filter}"}})',
+                               instant=True, fmt="table")],
             "transformations": [
                 {"id": "groupingToMatrix", "options": {"columnField": "type", "rowField": "tenant",
                                                        "valueField": "Value", "emptyValue": "zero"}},
@@ -174,13 +245,15 @@ def dashboard(uid, title, desc, panels, templating):
 # ── platforma ───────────────────────────────────────────────────────────────
 _id[0] = 0
 p = [row("Dziś — cała platforma", 0)] + kpi_row(1, "")
-p.append(row("Na żywo", 5))
-c, y = charts(6, "", 'tenant_id="_platform"'); p += c
+p.append(row("Od początku — cała platforma", 5)); p += all_time_row(6, "")
+p.append(row("Na żywo", 10))
+c, y = charts(11, "", 'tenant_id="_platform"'); p += c
 p.append(row("Tenanci", y)); p.append(tenants_table(y + 1)); y += 13
 p.append(row("Potok metryk (ingest → Redis → Prometheus / WebSocket)", y)); p += pipeline_row(y + 1)
 json.dump(dashboard("crm-live-platform", "Live metrics — platforma",
                     "Zdarzenia biznesowe wszystkich tenantów w czasie rzeczywistym: rezerwacje, wizyty "
-                    "(wg źródła), nowe usługi, zdjęcia, log aktywności. Źródło: /actuator/prometheus.",
+                    "(wg źródła), leady, wysłane wiadomości, karty wizyt, kampanie, pracownicy, profile IG, "
+                    "poczta, nowe usługi, zdjęcia, log aktywności. Źródło: /actuator/prometheus.",
                     p, []),
           open(os.path.join(OUT, "live-platform.json"), "w"), ensure_ascii=False, indent=2)
 
@@ -196,8 +269,9 @@ _id[0] = 0
 # zmianie nazwy studia.
 extra = 'tenant_id="$tenant_id"' 
 p = [row("Dziś — $tenant_name", 0)] + kpi_row(1, extra)
-p.append(row("Na żywo — $tenant_name", 5))
-c, y = charts(6, extra, extra); p += c
+p.append(row("Od początku — $tenant_name", 5)); p += all_time_row(6, extra)
+p.append(row("Na żywo — $tenant_name", 10))
+c, y = charts(11, extra, extra); p += c
 def query_var(name, label, query, hide=0):
     return {"name": name, "label": label, "type": "query", "datasource": DS,
             "query": {"query": query, "refId": name}, "definition": query,

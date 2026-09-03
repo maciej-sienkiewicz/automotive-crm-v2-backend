@@ -15,6 +15,8 @@ import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceQueryService
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -70,7 +72,8 @@ class CampaignService(
     private val smsCreditService: SmsCreditService,
     private val auditService: AuditService,
     private val auditActorResolver: AuditActorResolver,
-    private val templateRenderer: MessageTemplateRenderer
+    private val templateRenderer: MessageTemplateRenderer,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -199,6 +202,15 @@ class CampaignService(
         val saved = campaigns.save(campaign)
 
         recordCampaignEvent(saved, userId, AuditAction.CAMPAIGN_CREATED)
+
+        // Live metrics — studio uruchomiło kampanię
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.CAMPAIGN_CREATED,
+            dimensionValue = saved.channel.name,
+            attributes = mapOf("campaignId" to saved.id.toString(), "name" to saved.name,
+                               "kind" to saved.kind.name, "userId" to userId.value.toString())
+        )
 
         return saved
     }

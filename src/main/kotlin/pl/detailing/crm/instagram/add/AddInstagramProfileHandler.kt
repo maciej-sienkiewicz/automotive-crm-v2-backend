@@ -9,6 +9,8 @@ import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepositor
 import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.util.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 
 data class AddInstagramProfileResult(
     val studioProfileId: StudioInstagramProfileId,
@@ -20,7 +22,8 @@ data class AddInstagramProfileResult(
 @Service
 class AddInstagramProfileHandler(
     private val profileRepository: InstagramProfileRepository,
-    private val studioProfileRepository: StudioInstagramProfileRepository
+    private val studioProfileRepository: StudioInstagramProfileRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     /** Dopuszczalne znaki w nazwie użytkownika Instagram: litery, cyfry, _ i . */
@@ -75,6 +78,13 @@ class AddInstagramProfileHandler(
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()
             )
+        )
+
+        // Live metrics — studio rozszerza listę obserwowanych profili
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.INSTAGRAM_PROFILE_ADDED,
+            attributes = mapOf("username" to globalProfile.username, "userId" to command.userId.value.toString())
         )
 
         return AddInstagramProfileResult(

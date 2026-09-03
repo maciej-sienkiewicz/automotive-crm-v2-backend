@@ -22,6 +22,8 @@ import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.Properties
 import java.util.UUID
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 
 data class DetectMailProviderQuery(val email: String)
 
@@ -48,7 +50,8 @@ class MailAccountService(
     private val accountRepository: MailAccountRepository,
     private val autodiscoverService: MailAutodiscoverService,
     private val encryptionService: MailboxEncryptionService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -115,6 +118,13 @@ class MailAccountService(
 
         val saved = accountRepository.save(account)
         eventPublisher.publishEvent(MailAccountConnectedEvent(saved.id))
+        // Live metrics — studio skonfigurowało pocztę. Zdarzenie leci przy każdym podłączeniu,
+        // także ponownym (zmiana hasła, przełączenie skrzynki) — liczy konfigurowanie, nie skrzynki.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.MAILBOX_CONNECTED,
+            attributes = mapOf("accountId" to saved.id.toString(), "email" to email)
+        )
         log.info("[MAILBOX] Mailbox {} connected for studio {}", email, command.studioId)
         saved
     }

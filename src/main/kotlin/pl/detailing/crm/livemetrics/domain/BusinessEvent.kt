@@ -1,5 +1,6 @@
 package pl.detailing.crm.livemetrics.domain
 
+import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.util.UUID
@@ -38,7 +39,33 @@ enum class BusinessEventType(
     PHOTO_UPLOADED("target", PhotoTarget.entries.map { it.name }.toSet(), "Zdjęcia"),
 
     /** Powstał nowy rekord w ogólnej historii aktywności (audit log) tenanta. */
-    ACTIVITY_LOGGED(null, emptySet(), "Aktywność");
+    ACTIVITY_LOGGED(null, emptySet(), "Aktywność"),
+
+    /** Powstał nowy lead. Wymiar `source` mówi, skąd przyszedł (telefon, mail, formularz, ręcznie). */
+    LEAD_CREATED("source", LeadSource.entries.map { it.name }.toSet(), "Leady"),
+
+    /**
+     * Wiadomość wyszła do odbiorcy. Wymiar `channel` rozróżnia trzy drogi, bo mierzą co innego:
+     * `SMS` i `EMAIL` to wysyłka systemowa (przypomnienia, kampanie, karty wizyt) przez
+     * `OutboundCommunicationGateway`, a `MAILBOX` to mail napisany ręcznie przez człowieka
+     * w module Poczta. Wszystkie maile razem to `EMAIL + MAILBOX`.
+     */
+    MESSAGE_SENT("channel", MessageChannel.entries.map { it.name }.toSet(), "Wysłane wiadomości"),
+
+    /** Utworzono kampanię. Wymiar `medium` = kanał kampanii (SMS, e-mail albo oba). */
+    CAMPAIGN_CREATED("medium", CampaignMedium.entries.map { it.name }.toSet(), "Kampanie"),
+
+    /** Do studia dodano pracownika. */
+    EMPLOYEE_CREATED(null, emptySet(), "Pracownicy"),
+
+    /** Wysłano link do Karty Wizyty lub Karty Rezerwacji. Wymiar `channel` = kanał dostarczenia. */
+    VISIT_CARD_SENT("channel", VisitCardChannel.entries.map { it.name }.toSet(), "Karty wizyt"),
+
+    /** Studio dodało profil na Instagramie do obserwowanych. */
+    INSTAGRAM_PROFILE_ADDED(null, emptySet(), "Profile IG"),
+
+    /** Studio podłączyło skrzynkę pocztową (moduł Poczta). */
+    MAILBOX_CONNECTED(null, emptySet(), "Podłączona poczta");
 
     /** Nazwa serii bazowej (bez wymiaru). */
     val series: String get() = name
@@ -64,6 +91,25 @@ enum class VisitOrigin {
 }
 
 enum class ServiceKind { SERVICE, PACKAGE }
+
+/**
+ * Kanał wysyłki dla [BusinessEventType.MESSAGE_SENT].
+ *
+ * `MAILBOX` celowo stoi obok `EMAIL`, zamiast się w nim rozpływać: mail wygenerowany przez
+ * automat i mail napisany ręcznie w Poczcie to dwie różne rzeczy, a rozdzielenie ich po fakcie
+ * (gdy oba wpadły do jednego kubełka) jest niemożliwe.
+ */
+enum class MessageChannel { SMS, EMAIL, MAILBOX }
+
+/**
+ * Kanał kampanii. Świadoma kopia `campaigns.domain.CampaignChannel` — moduł metryk nie zależy
+ * od modułów biznesowych. Nowa wartość po tamtej stronie nie wywróci wysyłki: konstruktor
+ * [BusinessEvent] odrzuci nieznany wymiar, a publisher zaloguje błąd i pójdzie dalej.
+ */
+enum class CampaignMedium { SMS, EMAIL, BOTH }
+
+/** Kanał dostarczenia Karty Wizyty / Karty Rezerwacji. */
+enum class VisitCardChannel { EMAIL, SMS }
 
 enum class PhotoTarget { VISIT, VEHICLE, BATCH_ORDER, CHECKIN }
 

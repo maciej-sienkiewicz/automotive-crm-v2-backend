@@ -23,6 +23,9 @@ import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.VisitCardChannel
 
 data class SendReservationCardLinkCommand(
     val appointmentId: AppointmentId,
@@ -48,7 +51,8 @@ class SendReservationCardLinkHandler(
     private val properties: VisitCardProperties,
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val emailAutomationConfigRepository: EmailAutomationConfigRepository,
-    private val renderer: MessageTemplateRenderer
+    private val renderer: MessageTemplateRenderer,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -184,6 +188,20 @@ class SendReservationCardLinkHandler(
                     )
                 )
             }
+        }
+
+        // Live metrics — liczymy realnie wysłane kanały, nie samo żądanie wysyłki.
+        // Kanał, który poległ na braku szablonu, zgody albo kredytów, nie jest wysłaną kartą.
+        for (ch in listOfNotNull(
+            VisitCardChannel.EMAIL.takeIf { emailSent },
+            VisitCardChannel.SMS.takeIf { smsSent }
+        )) {
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.VISIT_CARD_SENT,
+                dimensionValue = ch.name,
+                attributes = mapOf("appointmentId" to command.appointmentId.value.toString())
+            )
         }
 
         logger.info(

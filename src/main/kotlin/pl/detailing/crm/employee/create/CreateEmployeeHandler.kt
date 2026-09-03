@@ -12,6 +12,8 @@ import pl.detailing.crm.employee.infrastructure.EmployeeEntity
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import java.time.Instant
 
 @Service
@@ -19,7 +21,8 @@ class CreateEmployeeHandler(
     private val validatorComposite: CreateEmployeeValidatorComposite,
     private val employeeRepository: EmployeeRepository,
     private val auditService: AuditService,
-    private val provisionEmployeeAccountHandler: ProvisionEmployeeAccountHandler
+    private val provisionEmployeeAccountHandler: ProvisionEmployeeAccountHandler,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: CreateEmployeeCommand): CreateEmployeeResult = withContext(Dispatchers.IO) {
@@ -41,6 +44,13 @@ class CreateEmployeeHandler(
 
         val entity = EmployeeEntity.fromDomain(employee)
         employeeRepository.save(entity)
+
+        // Live metrics — studio rozbudowuje zespół
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.EMPLOYEE_CREATED,
+            attributes = mapOf("employeeId" to employee.id.value.toString(), "userId" to command.userId.value.toString())
+        )
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

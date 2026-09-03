@@ -48,6 +48,13 @@ Hot path ma trzy nienegocjowalne własności: nigdy nie rzuca, nigdy nie blokuje
 | `SERVICE_CREATED` | `kind` = `SERVICE` \| `PACKAGE` | `CreateServiceHandler`, `CreatePackageHandler` |
 | `PHOTO_UPLOADED` | `target` = `VISIT` \| `VEHICLE` \| `BATCH_ORDER` \| `CHECKIN` | `AddVisitPhotoHandler`, `AddVehiclePhotoHandler`, `AddBatchOrderPhotoHandler` (po zapisie metadanych i wydaniu presigned URL), `CheckinPhotoService.uploadPhoto` (po `putObject` do S3) |
 | `ACTIVITY_LOGGED` | — | `AuditLogWriter.write` — jedyny punkt zapisu do `audit_logs`; listener AFTER_COMMIT respektuje transakcję REQUIRES_NEW |
+| `LEAD_CREATED` | `source` = `PHONE` \| `EMAIL` \| `FORM` \| `MANUAL` | `LeadMetricsListener` nasłuchuje `NewLeadCreatedEvent`. Lead powstaje na czterech ścieżkach (`CreateLeadHandler`, `HandleFormSubmissionHandler`, `FormMailLeadProcessor`, `MarkThreadAsLeadHandler`) i każda publikuje to zdarzenie — piąta policzy się sama |
+| `MESSAGE_SENT` | `channel` = `SMS` \| `EMAIL` \| `MAILBOX` | `OutboundCommunicationGateway` (SMS + mail systemowy, tylko gdy `result.success`), `SendMailHandler` (`MAILBOX` — mail napisany ręcznie w Poczcie). Blokada (brak modułu, zgody, kredytów) **nie** jest wysyłką; od niej są liczniki `communication.blocked.*` |
+| `CAMPAIGN_CREATED` | `medium` = `SMS` \| `EMAIL` \| `BOTH` | `CampaignService.create` |
+| `EMPLOYEE_CREATED` | — | `CreateEmployeeHandler` |
+| `VISIT_CARD_SENT` | `channel` = `EMAIL` \| `SMS` | `SendVisitCardLinkHandler`, `SendReservationCardLinkHandler` — po jednym zdarzeniu na **realnie wysłany** kanał, więc wysyłka na oba to dwa zdarzenia |
+| `INSTAGRAM_PROFILE_ADDED` | — | `AddInstagramProfileHandler` |
+| `MAILBOX_CONNECTED` | — | `MailAccountService.connect` — liczy konfigurowanie, nie skrzynki: ponowne podłączenie (zmiana hasła) to kolejne zdarzenie |
 
 Wymiary są zamkniętymi zbiorami (`BusinessEventType.dimensions`) — konstruktor
 `BusinessEvent` odrzuca inne wartości. Wszystko o nieograniczonej kardynalności
@@ -106,6 +113,7 @@ Odświeżanie co 10 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter
 |---|---|---|---|
 | `crm_business_events_total` | `tenant_id, tenant, type, dimension` | licznik ingestu tej instancji | `sum(increase(...[$__interval]))` |
 | `crm_business_events_today` | `tenant_id, tenant, type` | Redis, co 15 s | `max by (tenant_id)` (ta sama wartość na każdej instancji) |
+| `crm_business_events_all_time` | `tenant_id, tenant, type` | Redis (`lm:{scope}:total`, bez TTL), co 5 min | `max by (tenant_id)` |
 | `crm_business_events_hour_of_day` | `tenant_id, tenant, type, hour` | Redis (7 dni), co 5 min; per tenant tylko `RESERVATION_CREATED`, `tenant_id="_platform"` dla wszystkich typów | `max by (hour, tenant_id)` |
 | `crm_live_metrics_pipeline_*`, `crm_live_metrics_sse_subscribers` | — | stan potoku instancji | `sum` |
 
@@ -127,6 +135,15 @@ danych w Prometheusie. Panele mają `interval: 1m` i pytają o `[$__rate_interva
 **`—` zamiast `0` na kaflach KPI.** Gauge wystawia wiersz dla każdego tenanta i typu, także
 z zerem. Brak danych oznacza więc awarię scrape'u, nie spokojny dzień — i ma wyglądać inaczej
 niż prawdziwe zero.
+
+**Stan czyta się z „od początku", nie z „dziś".** Część pytań dotyczy faktu, który zdarzył się
+raz i dawno: „kto ma skonfigurowaną pocztę", „ile profili IG obserwuje". Kafel dzienny odpowiada
+na nie zerem u każdego, kogo pytanie dotyczy — bo dziś akurat nic nie zrobił — i jest nie do
+odróżnienia od studia, które nie ma niczego. Dlatego `MAILBOX_CONNECTED`, `INSTAGRAM_PROFILE_ADDED`,
+`EMPLOYEE_CREATED`, `CAMPAIGN_CREATED` i `VISIT_CARD_SENT` nie mają kafla „dziś" ani kolumny w tabeli
+tenantów; są w wierszu „Od początku", który czyta sumę z Redisa bez TTL. Uwaga na granicę: suma
+liczy zdarzenia **od wdrożenia tej metryki**, a nie stan bazy — poczta podłączona wcześniej nie
+zostanie policzona, dopóki ktoś nie podłączy jej ponownie.
 
 **Liczniki rejestrowane z zerem, zanim padnie pierwsze zdarzenie.** `increase()` liczy przyrost
 między dwiema próbkami, więc seria, która pojawia się w Prometheusie od razu z wartością `1`,
