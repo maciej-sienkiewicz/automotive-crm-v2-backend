@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.redirect.ActiveRedirect
 import pl.detailing.crm.communication.redirect.CommunicationRedirectService
+import pl.detailing.crm.communication.whitelist.RecipientWhitelist
 import pl.detailing.crm.customer.consent.MarketingConsentChecker
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
@@ -49,7 +50,11 @@ import java.util.UUID
  *      and the message is stamped with the customer it was meant for (see [redirected]).
  *      This is the ONLY place the swap happens, which is exactly why customer messages
  *      may not bypass the gateway.
- *   5. Delegating to the actual transport provider.
+ *   5. Recipient whitelist — while [RecipientWhitelist] is in force, a customer message
+ *      may only go to a listed number or address. A redirected message is exempt: it goes
+ *      to the studio itself, which is the whole point of the redirect. Checked before the
+ *      credit deduction, so a blocked SMS costs nothing.
+ *   6. Delegating to the actual transport provider.
  *
  * Because all checks live here, new send paths automatically inherit them
  * without any extra effort from the developer — and there is no way to bypass them.
@@ -64,7 +69,8 @@ class OutboundCommunicationGateway(
     private val capabilityService: CapabilityService,
     private val meterRegistry: MeterRegistry,
     private val businessEventPublisher: BusinessEventPublisher,
-    private val redirectService: CommunicationRedirectService
+    private val redirectService: CommunicationRedirectService,
+    private val whitelist: RecipientWhitelist
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -136,8 +142,29 @@ class OutboundCommunicationGateway(
     }
 
 
-    /** The address a message actually goes to, and what to stamp on it. */
-    private data class Recipient(val address: String, val prefix: String)
+    /** The address a message actually goes to, what to stamp on it, and whether it was swapped. */
+    private data class Recipient(val address: String, val prefix: String, val redirected: Boolean)
+
+    /**
+     * Whitelist verdict for a resolved recipient. A redirected message is never blocked —
+     * the studio asked to see it on its own phone. Every block is counted
+     * (`communication.blocked.whitelist`) so a non-zero rate is visible in Grafana.
+     */
+    private fun whitelistBlockReason(studioId: UUID, recipient: Recipient, channel: MessageChannel): String? {
+        if (recipient.redirected) return null
+        val allowed = when (channel) {
+            MessageChannel.SMS -> whitelist.allowsPhone(recipient.address)
+            MessageChannel.EMAIL -> whitelist.allowsEmail(recipient.address)
+            else -> true
+        }
+        if (allowed) return null
+        meterRegistry.counter("communication.blocked.whitelist", "channel", channel.name).increment()
+        logger.warn("Outbound {} blocked by recipient whitelist for studio={}: {}", channel, studioId, recipient.address)
+        return when (channel) {
+            MessageChannel.SMS -> RecipientWhitelist.BLOCK_REASON_SMS
+            else -> RecipientWhitelist.BLOCK_REASON_EMAIL
+        }
+    }
 
     /**
      * Applies the studio's redirect, if any. Counted and logged per send, because a redirect
@@ -149,11 +176,11 @@ class OutboundCommunicationGateway(
         channel: MessageChannel,
         pick: (ActiveRedirect) -> String
     ): Recipient {
-        val redirect = redirectService.activeFor(studioId) ?: return Recipient(original, "")
+        val redirect = redirectService.activeFor(studioId) ?: return Recipient(original, "", redirected = false)
         val target = pick(redirect)
         meterRegistry.counter("communication.redirected", "channel", channel.name).increment()
         logger.info("Outbound {} redirected for studio={}: {} -> {}", channel, studioId, original, target)
-        return Recipient(target, redirect.prefixFor(original))
+        return Recipient(target, redirect.prefixFor(original), redirected = true)
     }
 
     fun sendSms(
@@ -184,13 +211,15 @@ class OutboundCommunicationGateway(
     }
 
     private fun dispatchSms(studioId: UUID, phoneNumber: String, message: String, context: String): SmsDeliveryResult {
+        val recipient = redirected(studioId, phoneNumber, MessageChannel.SMS) { it.phone }
+        whitelistBlockReason(studioId, recipient, MessageChannel.SMS)?.let { return SmsDeliveryResult.failure(it) }
+
         val creditDeducted = smsCreditService.tryDeductCredit(StudioId(studioId))
         if (!creditDeducted) {
             logger.warn("SMS blocked — insufficient credits for studio={}", studioId)
             throw InsufficientSmsCreditsException("Brak kredytów SMS. Doładuj konto w panelu zarządzania.")
         }
 
-        val recipient = redirected(studioId, phoneNumber, MessageChannel.SMS) { it.phone }
         val senderName = resolveSmsSenderName(studioId)
         val result = smsProvider.send(recipient.address, recipient.prefix + message, senderName)
 
@@ -249,6 +278,7 @@ class OutboundCommunicationGateway(
         // The stamp goes on the subject, not the body: the body must be exactly what a
         // customer would read, so the person reviewing it judges the real thing.
         val recipient = redirected(studioId, to, MessageChannel.EMAIL) { it.email }
+        whitelistBlockReason(studioId, recipient, MessageChannel.EMAIL)?.let { return EmailDeliveryResult.failure(it) }
         val result = emailProvider.send(recipient.address, recipient.prefix + subject, bodyText, attachments)
         if (result.success) countSent(studioId, MessageChannel.EMAIL, context)
         return result
