@@ -74,12 +74,23 @@ class VisitCardController(
         @RequestBody(required = false) request: SendCardLinkRequest?
     ): ResponseEntity<VisitCardSendResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val id = VisitId.fromString(visitId)
+        val channel = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
+
+        val visitEntity = visitRepository.findByIdAndStudioId(id.value, principal.studioId.value)
+            ?: throw EntityNotFoundException("Visit not found: $visitId")
+        val status = sendStatusService.status(principal.studioId.value, visitEntity.id, visitEntity.appointmentId)
+        sendStatusService.blockReason(status, channel, request?.resend == true)?.let { reason ->
+            return@runBlocking ResponseEntity.ok(
+                VisitCardSendResponse(emailSent = false, smsSent = false, message = reason, alreadySent = true)
+            )
+        }
 
         val result = sendVisitCardLinkHandler.handle(
             SendVisitCardLinkCommand(
-                visitId = VisitId.fromString(visitId),
+                visitId = id,
                 studioId = principal.studioId,
-                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) },
+                channelOverride = channel,
                 initiatedBy = AuditActor.employee(principal.userId, principal.fullName)
             )
         )
@@ -105,11 +116,20 @@ data class VisitCardLinkResponse(
 /** Optional send-request body; when absent the studio-configured channel applies. */
 data class SendCardLinkRequest(
     /** EMAIL, SMS or BOTH */
-    val channel: String? = null
+    val channel: String? = null,
+    /**
+     * The employee knows the card was already delivered and wants it sent again.
+     * Without it a send to a customer who already has the link is refused with
+     * [VisitCardSendResponse.alreadySent] = true, so a stray second call never costs
+     * the customer a duplicate.
+     */
+    val resend: Boolean = false
 )
 
 data class VisitCardSendResponse(
     val emailSent: Boolean,
     val smsSent: Boolean,
-    val message: String
+    val message: String,
+    /** True when nothing was sent because the card had already reached the customer (see [SendCardLinkRequest.resend]). */
+    val alreadySent: Boolean = false
 )

@@ -57,10 +57,16 @@ class MarkVisitReadyForPickupHandler(
 
         // Step 5: Side-effects — run inside runBlocking so any exception (e.g.
         // InsufficientSmsCreditsException) propagates synchronously and triggers rollback.
-        if (command.sendEmail) {
+        //
+        // Order matters: the SMS goes FIRST. Missing credits throw before anything leaves
+        // the building, so the rollback that follows undoes a transition nobody was told
+        // about. The e-mail used to go first, and when the SMS then failed on credits the
+        // status rolled back but the e-mail had already been delivered — the operator
+        // topped up, retried, and the customer got "your car is ready" twice.
+        if (command.sendSms) {
             runBlocking {
-                sendVisitReadyForPickupEmailHandler.handle(
-                    SendVisitReadyForPickupEmailCommand(
+                sendVisitReadyForPickupSmsHandler.handle(
+                    SendVisitReadyForPickupSmsCommand(
                         visitId = command.visitId,
                         studioId = command.studioId
                     )
@@ -68,10 +74,10 @@ class MarkVisitReadyForPickupHandler(
             }
         }
 
-        if (command.sendSms) {
+        if (command.sendEmail) {
             runBlocking {
-                sendVisitReadyForPickupSmsHandler.handle(
-                    SendVisitReadyForPickupSmsCommand(
+                sendVisitReadyForPickupEmailHandler.handle(
+                    SendVisitReadyForPickupEmailCommand(
                         visitId = command.visitId,
                         studioId = command.studioId
                     )

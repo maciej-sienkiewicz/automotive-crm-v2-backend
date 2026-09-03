@@ -53,6 +53,18 @@ class SendBookingConfirmationSmsHandler(
             return@withContext
         }
 
+        // Idempotent per booking: a duplicated create request (client retry, double
+        // submit) must not confirm the same reservation twice. The row is written below
+        // after every attempt, so this check is the read side of the same key the
+        // scheduler already uses.
+        if (smsLogRepository.existsByAppointmentIdAndTriggerType(command.appointmentId.value, SmsTriggerType.BOOKING_CONFIRMATION)) {
+            logger.info(
+                "SendBookingConfirmationSms: already sent for appointment={} — skipping duplicate",
+                command.appointmentId
+            )
+            return@withContext
+        }
+
         val appointment = appointmentRepository.findByIdAndStudioId(
             command.appointmentId.value,
             command.studioId.value

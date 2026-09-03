@@ -63,12 +63,21 @@ class ReservationCardController(
         @RequestBody(required = false) request: SendCardLinkRequest?
     ): ResponseEntity<VisitCardSendResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        val id = AppointmentId.fromString(appointmentId)
+        val channel = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
+
+        val status = sendStatusService.status(principal.studioId.value, visitId = null, appointmentId = id.value)
+        sendStatusService.blockReason(status, channel, request?.resend == true)?.let { reason ->
+            return@runBlocking ResponseEntity.ok(
+                VisitCardSendResponse(emailSent = false, smsSent = false, message = reason, alreadySent = true)
+            )
+        }
 
         val result = sendReservationCardLinkHandler.handle(
             SendReservationCardLinkCommand(
-                appointmentId = AppointmentId.fromString(appointmentId),
+                appointmentId = id,
                 studioId = principal.studioId,
-                channelOverride = request?.channel?.let { VisitCardDeliveryChannel.fromString(it) }
+                channelOverride = channel
             )
         )
         ResponseEntity.ok(

@@ -33,7 +33,10 @@ data class ServiceChangesSummary(
     val addedNames: List<String>,
     val removedNames: List<String>,
     val priceChangedNames: List<String>
-)
+) {
+    /** False for a save that changed nothing — there is nothing to tell the customer about. */
+    val hasChanges: Boolean get() = addedNames.isNotEmpty() || removedNames.isNotEmpty() || priceChangedNames.isNotEmpty()
+}
 
 /**
  * Handles 2-way SMS consent flow for service scope changes:
