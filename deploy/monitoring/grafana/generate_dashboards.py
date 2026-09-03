@@ -71,6 +71,18 @@ def color_override(name, color):
     return {"matcher": {"id": "byName", "options": name},
             "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": color}}]}
 
+def type_override(t):
+    """Surowa nazwa z etykiety `type` → polska nazwa i stały kolor serii.
+
+    Jedno zapytanie z `{{type}}` w legendzie daje serie nazwane ACTIVITY_LOGGED,
+    CAMPAIGN_CREATED, MAILBOX_CONNECTED… — czytelne dla Prometheusa, nie dla człowieka.
+    Dwanaście osobnych zapytań tylko po to, żeby wpisać legendę ręcznie, kosztowałoby
+    dwanaście razy więcej odpytań co 10 sekund; override robi to samo po stronie Grafany.
+    """
+    return {"matcher": {"id": "byName", "options": t},
+            "properties": [{"id": "displayName", "value": LABELS[t]},
+                           {"id": "color", "value": {"mode": "fixed", "fixedColor": COLORS[t]}}]}
+
 def barchart(title, expr, x, y, w=12, h=8, desc="", color="blue"):
     return {"id": nid(), "type": "barchart", "title": title, "description": desc, "datasource": DS,
             "gridPos": {"h": h, "w": w, "x": x, "y": y},
@@ -190,10 +202,20 @@ def charts(y, extra, hod_extra):
                                    color_override("Profile IG", "dark-purple"),
                                    color_override("Poczta", "dark-green")]))
     y += 8
-    p.append(timeseries("Wszystkie zdarzenia — tempo na minutę",
-                        [target(f'sum by (type) (rate(crm_business_events_total{{{extra}}}[$__rate_interval])) * 60',
+    # Narastająco, nie „na minutę”. Tempo odpowiada na pytanie „ile dzieje się TERAZ”, a to
+    # mówią już panele wyżej — każdy w rozbiciu na wymiar, więc dokładniej. Bez odpowiedzi
+    # zostawało pytanie „ile tego w ogóle jest do tego momentu”. Rate go nie dotykał: wykres
+    # wracał do zera po każdej ciszy i wyglądał tak samo przy pierwszym leadzie studia,
+    # co przy dziesięciotysięcznym.
+    p.append(timeseries("Wszystkie zdarzenia — narastająco",
+                        [target(f'sum by (type) (max by (tenant_id, type) (crm_business_events_all_time{{{extra}}}))',
                                 "{{type}}")], 0, y, w=24,
-                        desc="Zdarzeń na minutę per typ (wygładzone rate)."))
+                        desc="Suma od początku per typ: wysokość linii w danym punkcie to „ile było "
+                             "do tego momentu”. Linia tylko rośnie, więc płaski odcinek znaczy „nic się "
+                             "nie działo”, a nie „brak danych”. Źródłem jest licznik z Redisa bez TTL — "
+                             "restart aplikacji go nie zeruje — odświeżany co 5 minut, stąd schodki. "
+                             "Liczy od wdrożenia metryki, nie od założenia studia.",
+                        overrides=[type_override(t) for t in TYPES]))
     return p, y + 8
 
 def tenants_table(y):

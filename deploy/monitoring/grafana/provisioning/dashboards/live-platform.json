@@ -1917,8 +1917,8 @@
     {
       "id": 28,
       "type": "timeseries",
-      "title": "Wszystkie zdarzenia — tempo na minutę",
-      "description": "Zdarzeń na minutę per typ (wygładzone rate).",
+      "title": "Wszystkie zdarzenia — narastająco",
+      "description": "Suma od początku per typ: wysokość linii w danym punkcie to „ile było do tego momentu”. Linia tylko rośnie, więc płaski odcinek znaczy „nic się nie działo”, a nie „brak danych”. Źródłem jest licznik z Redisa bez TTL — restart aplikacji go nie zeruje — odświeżany co 5 minut, stąd schodki. Liczy od wdrożenia metryki, nie od założenia studia.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1935,7 +1935,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (type) (rate(crm_business_events_total{}[$__rate_interval])) * 60",
+          "expr": "sum by (type) (max by (tenant_id, type) (crm_business_events_all_time{}))",
           "legendFormat": "{{type}}",
           "refId": "A",
           "editorMode": "code",
@@ -1967,7 +1967,236 @@
             "axisSoftMin": 0
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RESERVATION_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Rezerwacje"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VISIT_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Wizyty"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SERVICE_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Nowe usługi"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PHOTO_UPLOADED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Zdjęcia"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ACTIVITY_LOGGED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Aktywność"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LEAD_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Leady"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MESSAGE_SENT"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Wiadomości"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CAMPAIGN_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kampanie"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "pink"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "EMPLOYEE_CREATED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Pracownicy"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VISIT_CARD_SENT"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Karty wizyt"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "semi-dark-orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "INSTAGRAM_PROFILE_ADDED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Profile IG"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MAILBOX_CONNECTED"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Poczta"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-green"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -2347,7 +2576,7 @@
     {
       "id": 36,
       "type": "stat",
-      "title": "Rozgłoszone (WS/SSE)",
+      "title": "Rozgłoszone (SSE)",
       "description": "",
       "datasource": {
         "type": "prometheus",
