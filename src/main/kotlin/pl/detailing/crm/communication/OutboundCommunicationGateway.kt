@@ -34,7 +34,9 @@ import java.util.UUID
  *      returns a failure result (never throws), so background dispatchers mark the
  *      item FAILED once instead of retrying forever; interactive paths are expected
  *      to be stopped earlier with HTTP 402 by @RequiresCapability.
- *   2. Marketing consent check — blocked if the customer has not signed the required consent.
+ *   2. Marketing consent check — campaigns only. A campaign is blocked when the customer has
+ *      not signed the required marketing consent; transactional messages are not marketing and
+ *      are never gated by it (see [marketingConsentBlocked]).
  *   3. SMS credit check — blocked if the studio has no available credits.
  *      Credits are deducted atomically (SELECT FOR UPDATE) before the send attempt.
  *      If the provider call fails, the credit is refunded automatically.
@@ -61,6 +63,31 @@ class OutboundCommunicationGateway(
      * the message as ECO (from an SMSAPI number), never under a placeholder header.
      */
     private fun resolveSmsSenderName(studioId: UUID): String? = senderNameResolver.resolve(studioId)
+
+    /**
+     * Zgoda marketingowa dotyczy marketingu — czyli wyłącznie kampanii.
+     *
+     * [MarketingConsentChecker] sprawdza podpisaną zgodę marketingową, a nie prawo do kontaktu
+     * w ogóle. Wiadomość transakcyjna (przypomnienie o wizycie, gotowość do odbioru, karta wizyty,
+     * link do podpisu) jest wykonaniem usługi, o którą klient sam poprosił, i nie jest marketingiem.
+     * Sprawdzanie jej po zgodzie marketingowej blokowało wysyłki komunikatem „Brak zgody na
+     * komunikację SMS" u każdego studia, które w ogóle zdefiniowało zgodę marketingową — wystarczyło,
+     * że klient jej nie podpisał, żeby przestał dostawać powiadomienia o własnej wizycie.
+     *
+     * Bramkę wyznacza więc [OutboundMessageCategory], a nie to, którą metodę wywołał kod:
+     * `CAMPAIGN` wymaga zgody, wszystko inne nie. Ta sama reguła obowiązuje w obu kanałach —
+     * transakcyjny mail nie staje się marketingiem przez to, że jest mailem.
+     */
+    private fun marketingConsentBlocked(
+        customerId: UUID,
+        studioId: UUID,
+        channel: MarketingChannel,
+        category: OutboundMessageCategory,
+        context: String
+    ): Boolean {
+        if (category != OutboundMessageCategory.CAMPAIGN) return false
+        return !consentChecker.canSend(customerId, studioId, channel, context.ifBlank { "OutboundGateway" })
+    }
 
     /**
      * Live metrics — liczymy tylko wysyłki, które naprawdę wyszły do dostawcy.
@@ -107,7 +134,7 @@ class OutboundCommunicationGateway(
     ): SmsDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return SmsDeliveryResult.failure(it) }
 
-        if (!consentChecker.canSend(customerId, studioId, MarketingChannel.SMS, context.ifBlank { "OutboundGateway" })) {
+        if (marketingConsentBlocked(customerId, studioId, MarketingChannel.SMS, category, context)) {
             return SmsDeliveryResult.failure("Brak zgody na komunikację SMS")
         }
 
@@ -167,7 +194,7 @@ class OutboundCommunicationGateway(
     ): EmailDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return EmailDeliveryResult.failure(it) }
 
-        if (!consentChecker.canSend(customerId, studioId, MarketingChannel.EMAIL, context.ifBlank { "OutboundGateway" })) {
+        if (marketingConsentBlocked(customerId, studioId, MarketingChannel.EMAIL, category, context)) {
             return EmailDeliveryResult.failure("Brak zgody na komunikację EMAIL")
         }
         val result = emailProvider.send(to, subject, bodyText, attachments)
