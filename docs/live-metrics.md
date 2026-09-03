@@ -104,7 +104,7 @@ usunięcie pliku z repo usuwa dashboard (`disableDeletion: false`).
 
 | Dashboard | UID | Co pokazuje |
 |---|---|---|
-| Live metrics — platforma | `crm-live-platform` | KPI „dziś” per typ, rezerwacje na żywo, rozkład godzinowy rezerwacji (7 dni), wizyty bezpośrednie vs z rezerwacji, zdjęcia wg miejsca, nowości w cenniku, log aktywności, tempo zdarzeń/min, tabela tenantów, stan potoku |
+| Live metrics — platforma | `crm-live-platform` | KPI „dziś” per typ, rezerwacje na żywo, rozkład godzinowy rezerwacji (7 dni), wizyty bezpośrednie vs z rezerwacji, zdjęcia wg miejsca, nowości w cenniku, log aktywności, narastająca suma wszystkich typów, tabela tenantów, stan potoku |
 | Live metrics — tenant | `crm-live-tenant` | ten sam zestaw dla jednego tenanta (zmienna `$tenant_id`) |
 
 Odświeżanie co 10 s. Metryki eksportowane przez `LiveMetricsPrometheusExporter`:
@@ -135,6 +135,14 @@ danych w Prometheusie. Panele mają `interval: 1m` i pytają o `[$__rate_interva
 **`—` zamiast `0` na kaflach KPI.** Gauge wystawia wiersz dla każdego tenanta i typu, także
 z zerem. Brak danych oznacza więc awarię scrape'u, nie spokojny dzień — i ma wyglądać inaczej
 niż prawdziwe zero.
+
+**Wykres zbiorczy jest narastający, nie „na minutę".** Tempo zdarzeń mówi, ile dzieje się
+teraz — i mówią to już panele wyżej, każdy w rozbiciu na wymiar. Panel zbiorczy odpowiada
+na inne pytanie: „ile tego w ogóle jest do tego momentu". `rate()` go nie dotykał, bo wracał
+do zera po każdej ciszy i wyglądał tak samo przy pierwszym leadzie studia, co przy
+dziesięciotysięcznym. Dlatego czyta z `crm_business_events_all_time`
+(`sum by (type) (max by (tenant_id, type) (...))`) — sumy z Redisa bez TTL, odpornej na
+restarty. Cena: odświeżanie co 5 minut, więc linia jest schodkowa.
 
 **Stan czyta się z „od początku", nie z „dziś".** Część pytań dotyczy faktu, który zdarzył się
 raz i dawno: „kto ma skonfigurowaną pocztę", „ile profili IG obserwuje". Kafel dzienny odpowiada
