@@ -11,10 +11,15 @@ import pl.detailing.crm.instagram.ai.generation.InstagramPostGenerationException
 import pl.detailing.crm.instagram.ai.generation.InstagramPostGeneratorService
 import pl.detailing.crm.instagram.ai.inspiration.InstagramInspirationService
 import pl.detailing.crm.instagram.ai.model.*
+import pl.detailing.crm.instagram.ai.ratelimit.InstagramAiRateLimitExceededException
+import pl.detailing.crm.instagram.ai.ratelimit.InstagramAiRateLimiter
+import pl.detailing.crm.instagram.ai.rating.InstagramGeneratedPostService
+import pl.detailing.crm.instagram.ai.rules.InstagramStyleRuleService
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
+import java.util.UUID
 
 /**
  * Kontroler REST dla modułu generowania postów Instagram za pomocą AI.
@@ -31,6 +36,9 @@ import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 class InstagramPostGenerationController(
     private val inspirationService: InstagramInspirationService,
     private val generatorService: InstagramPostGeneratorService,
+    private val styleRuleService: InstagramStyleRuleService,
+    private val generatedPostService: InstagramGeneratedPostService,
+    private val rateLimiter: InstagramAiRateLimiter,
     @org.springframework.beans.factory.annotation.Value("\${instagram.ai.debug-endpoints.enabled:false}")
     private val debugEndpointsEnabled: Boolean
 ) {
@@ -51,40 +59,139 @@ class InstagramPostGenerationController(
      * Generuje nowy post Instagram dla zalogowanego studia.
      *
      * Przepływ:
-     *   1. Pobiera studioId z kontekstu bezpieczeństwa (multi-tenant)
-     *   2. Retrieval: wyszukuje polubione/odrzucone posty w VectorStore (few-shot)
-     *   3. Generation: buduje prompt i wywołuje OpenAI
+     *   1. Limit per studio (przed retrievalem i przed jakimkolwiek wywołaniem LLM —
+     *      odrzucone żądanie nie może kosztować ani jednego tokenu)
+     *   2. Reguły stylistyczne: aktywne reguły studia + reguły ad-hoc z żądania (styleNotes)
+     *   3. Retrieval: przykłady few-shot z VectorStore (własne posty mają pierwszeństwo)
+     *   4. Pętla generuj → weryfikuj → popraw (max 3 rundy weryfikacji)
+     *   5. Zapis posta razem z raportem weryfikacji i snapshotem reguł — ZAWSZE
      *
-     * Zwraca: [InstagramPostResult] z headline, description, punchline
+     * Kształt żądania pozostaje bez zmian; odpowiedź jest ROZSZERZONA o postId,
+     * verificationPassed, failedRules i iterations — pole content zostaje.
      */
     @PostMapping("/generate")
     fun generatePost(
         @RequestBody request: GenerateInstagramPostRequest
-    ): ResponseEntity<InstagramPostResult> = runBlocking {
+    ): ResponseEntity<GenerateInstagramPostResponse> = runBlocking {
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
 
         val principal = SecurityContextHelper.getCurrentUser()
+        val rateLimit = rateLimiter.checkAndConsume(principal.studioId)
+
         logger.info(
             "Generate request: studioId={}, topic='{}', tone={}, length={}",
             principal.studioId, request.topic, request.postTone, request.postLength
         )
+
+        // Reguły z bazy studia + reguły ad-hoc z żądania (pole styleNotes zostaje
+        // dla kompatybilności ze starszym frontendem, który trzyma reguły u siebie).
+        val adHocRules = request.styleNotes.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
+        val rules = (styleRuleService.activeRuleTexts(principal.studioId) + adHocRules).distinct()
 
         val inspirationContext = inspirationService.getInspirationContext(
             topic = request.topic,
             studioId = principal.studioId,
             postTone = request.postTone,
             postLength = request.postLength,
-            styleNotes = request.styleNotes ?: emptyList()
+            styleNotes = rules
         )
 
-        val result = generatorService.generate(
+        val result = generatorService.generateVerified(
             topic = request.topic,
             additionalContext = request.context,
             inspirationContext = inspirationContext
         )
 
-        logger.info("Post generated: studioId={}, headline='{}'", principal.studioId, result.content)
-        ResponseEntity.ok(result)
+        val saved = generatedPostService.save(
+            studioId = principal.studioId,
+            topic = request.topic,
+            additionalContext = request.context,
+            requestedTone = request.postTone,
+            requestedLength = request.postLength,
+            result = result
+        )
+
+        logger.info(
+            "Post generated: studioId={}, postId={}, verified={}, iterations={}",
+            principal.studioId, saved.id, result.verificationPassed, result.iterations
+        )
+
+        ResponseEntity.ok()
+            .header("X-RateLimit-Limit", rateLimit.limit.toString())
+            .header("X-RateLimit-Remaining", rateLimit.remaining.toString())
+            .body(
+                GenerateInstagramPostResponse(
+                    content = result.content,
+                    postId = saved.id.toString(),
+                    verificationPassed = result.verificationPassed,
+                    failedRules = result.failedRules,
+                    iterations = result.iterations
+                )
+            )
+    }
+
+    // ── Reguły stylistyczne ────────────────────────────────────────────────────
+
+    /** GET /api/v1/instagram/ai/style-rules — wszystkie reguły studia (aktywne i wyłączone). */
+    @GetMapping("/style-rules")
+    fun listStyleRules(): ResponseEntity<List<StyleRuleResponse>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(styleRuleService.list(principal.studioId))
+    }
+
+    /** POST /api/v1/instagram/ai/style-rules — dodaje regułę (max 20 aktywnych, max 500 znaków). */
+    @PostMapping("/style-rules")
+    fun createStyleRule(
+        @RequestBody request: CreateStyleRuleRequest
+    ): ResponseEntity<StyleRuleResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(styleRuleService.create(principal.studioId, request))
+    }
+
+    /** PUT /api/v1/instagram/ai/style-rules/{id} — zmiana treści i/lub aktywności reguły. */
+    @PutMapping("/style-rules/{id}")
+    fun updateStyleRule(
+        @PathVariable id: UUID,
+        @RequestBody request: UpdateStyleRuleRequest
+    ): ResponseEntity<StyleRuleResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(styleRuleService.update(principal.studioId, id, request))
+    }
+
+    /** DELETE /api/v1/instagram/ai/style-rules/{id} */
+    @DeleteMapping("/style-rules/{id}")
+    fun deleteStyleRule(@PathVariable id: UUID): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        styleRuleService.delete(principal.studioId, id)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ── Historia i ocena wygenerowanych postów ─────────────────────────────────
+
+    /** GET /api/v1/instagram/ai/posts?limit=20 — historia od najnowszych. */
+    @GetMapping("/posts")
+    fun listGeneratedPosts(
+        @RequestParam(defaultValue = "20") limit: Int
+    ): ResponseEntity<List<GeneratedPostResponse>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(generatedPostService.history(principal.studioId, limit))
+    }
+
+    /**
+     * POST /api/v1/instagram/ai/posts/{id}/rate
+     *
+     * Ocena zamyka pętlę uczenia — po zapisie post trafia do VectorStore jako wzorzec
+     * (POSITIVE) albo antywzorzec (NEGATIVE) dla kolejnych generowań tego studia.
+     * Komentarz ma sens wyłącznie przy ocenie negatywnej. Endpoint nie woła LLM
+     * synchronicznie, więc nie podlega limitowi generowań.
+     */
+    @PostMapping("/posts/{id}/rate")
+    fun rateGeneratedPost(
+        @PathVariable id: UUID,
+        @RequestBody request: RateGeneratedPostRequest
+    ): ResponseEntity<GeneratedPostResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(generatedPostService.rate(principal.studioId, id, request))
     }
 
     // ── Debug ──────────────────────────────────────────────────────────────────
@@ -369,6 +476,37 @@ class InstagramAiExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.SERVICE_UNAVAILABLE)
             .body(InstagramAiErrorResponse(error = "CLASSIFICATION_FAILED", message = ex.message ?: "Błąd klasyfikacji posta"))
+    }
+
+    @ExceptionHandler(InstagramAiRateLimitExceededException::class)
+    fun handleRateLimit(ex: InstagramAiRateLimitExceededException): ResponseEntity<InstagramAiErrorResponse> {
+        logger.warn("Instagram AI rate limit hit: window={}, limit={}", ex.window, ex.limit)
+        return ResponseEntity
+            .status(HttpStatus.TOO_MANY_REQUESTS)
+            .header("X-RateLimit-Limit", ex.limit.toString())
+            .header("X-RateLimit-Remaining", "0")
+            .header("Retry-After", ex.retryAfterSeconds.toString())
+            .body(InstagramAiErrorResponse(error = "RATE_LIMITED", message = ex.message ?: "Przekroczono limit żądań."))
+    }
+
+    /**
+     * Lokalny advice przechwytuje dla tego kontrolera także [Exception], więc bez tych
+     * dwóch handlerów wyjątki biznesowe kończyłyby się tutaj kodem 500 zamiast 404/400.
+     */
+    @ExceptionHandler(pl.detailing.crm.shared.EntityNotFoundException::class)
+    fun handleNotFound(ex: pl.detailing.crm.shared.EntityNotFoundException): ResponseEntity<InstagramAiErrorResponse> {
+        logger.warn("Not found: {}", ex.message)
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(InstagramAiErrorResponse(error = "NOT_FOUND", message = ex.message ?: "Nie znaleziono zasobu."))
+    }
+
+    @ExceptionHandler(pl.detailing.crm.shared.ValidationException::class)
+    fun handleBusinessValidation(ex: pl.detailing.crm.shared.ValidationException): ResponseEntity<InstagramAiErrorResponse> {
+        logger.warn("Validation error: {}", ex.message)
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(InstagramAiErrorResponse(error = "VALIDATION_ERROR", message = ex.message ?: "Nieprawidłowe żądanie"))
     }
 
     @ExceptionHandler(IllegalArgumentException::class)

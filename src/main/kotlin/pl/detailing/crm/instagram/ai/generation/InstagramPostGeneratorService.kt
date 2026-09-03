@@ -4,11 +4,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.openai.OpenAiChatOptions
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.ai.model.DebugInstagramPostResult
 import pl.detailing.crm.instagram.ai.model.InstagramInspirationContext
 import pl.detailing.crm.instagram.ai.model.InstagramPostResult
+import pl.detailing.crm.instagram.ai.model.RuleVerdict
+import pl.detailing.crm.instagram.ai.model.VerifiedGenerationResult
+import pl.detailing.crm.instagram.ai.verification.InstagramPostVerifierService
 
 /**
  * Warstwa Generowania – konstruuje prompt few-shot i wywołuje LLM (OpenAI).
@@ -26,9 +30,145 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostResult
  */
 @Service
 class InstagramPostGeneratorService(
-    @Qualifier("instagramChatClient") private val chatClient: ChatClient
+    @Qualifier("instagramChatClient") private val chatClient: ChatClient,
+    private val verifierService: InstagramPostVerifierService
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostGeneratorService::class.java)
+
+    companion object {
+        /**
+         * Twardy limit rund weryfikacji. Model, który po trzech podejściach nadal łamie
+         * regułę, zwykle jej po prostu nie rozumie — kolejne rundy palą tokeny i czas
+         * odpowiedzi, nie zmieniając wyniku.
+         */
+        const val MAX_VERIFICATION_ROUNDS = 3
+
+        /**
+         * Korekta ma poprawić naruszenie, a nie napisać post od nowa — stąd temperatura
+         * niższa od generatora (0.7), ale nie zerowa: przepisanie fragmentu wymaga
+         * odrobiny swobody językowej.
+         */
+        private const val CORRECTOR_TEMPERATURE = 0.3
+    }
+
+    /**
+     * Pełny przebieg: GENERATOR → WERYFIKATOR → KOREKTOR → WERYFIKATOR → ...
+     *
+     * Lista reguł to `inspirationContext.styleNotes` — reguły aktywne w bazie studia
+     * plus ewentualne reguły ad-hoc z żądania. Gdy jest pusta, weryfikacja jest POMIJANA
+     * (zero wywołań weryfikatora): sprawdzanie pustej listy reguł zawsze kończy się
+     * sukcesem, więc byłoby to wyłącznie spalenie tokenów.
+     *
+     * Po wyczerpaniu [MAX_VERIFICATION_ROUNDS] zwracana jest najlepsza uzyskana wersja
+     * z `verificationPassed = false` — nigdy nie udajemy sukcesu i nigdy nie zamieniamy
+     * niespełnionej reguły w błąd 500: post z drobnym odstępstwem od stylu i tak jest
+     * dla studia użyteczny, brak posta nie jest.
+     */
+    suspend fun generateVerified(
+        topic: String,
+        additionalContext: String?,
+        inspirationContext: InstagramInspirationContext
+    ): VerifiedGenerationResult {
+        val rules = inspirationContext.styleNotes
+        var draft = generate(topic, additionalContext, inspirationContext).content
+
+        if (rules.isEmpty()) {
+            logger.info("No style rules for topic='{}' — skipping verification", topic)
+            return VerifiedGenerationResult(
+                content = draft,
+                verificationPassed = true,
+                failedRules = emptyList(),
+                iterations = 0,
+                verdicts = emptyList(),
+                appliedRules = rules
+            )
+        }
+
+        var iterations = 0
+        var verdicts: List<RuleVerdict> = emptyList()
+
+        while (iterations < MAX_VERIFICATION_ROUNDS) {
+            verdicts = verifierService.verify(draft, rules).verdicts
+            iterations++
+
+            val violations = verdicts.filter { !it.passed }
+            if (violations.isEmpty()) {
+                logger.info("Verification passed after {} round(s), topic='{}'", iterations, topic)
+                return VerifiedGenerationResult(
+                    content = draft,
+                    verificationPassed = true,
+                    failedRules = emptyList(),
+                    iterations = iterations,
+                    verdicts = verdicts,
+                    appliedRules = rules
+                )
+            }
+
+            if (iterations >= MAX_VERIFICATION_ROUNDS) break
+
+            logger.info(
+                "Verification round {} found {} violation(s), correcting...",
+                iterations, violations.size
+            )
+            draft = correct(draft, violations)
+        }
+
+        val failedRules = verdicts.filter { !it.passed }.map { it.ruleText }
+        logger.warn(
+            "Verification exhausted after {} rounds, topic='{}', unmet rules={}",
+            iterations, topic, failedRules
+        )
+        return VerifiedGenerationResult(
+            content = draft,
+            verificationPassed = false,
+            failedRules = failedRules,
+            iterations = iterations,
+            verdicts = verdicts,
+            appliedRules = rules
+        )
+    }
+
+    /**
+     * KOREKTOR — dostaje draft i WYŁĄCZNIE listę naruszeń (bez promptu generatora
+     * i bez reguł, które przeszły). Instrukcja minimalnej ingerencji chroni fragmenty,
+     * które już są poprawne: przepisanie całości gubi to, co weryfikator zaakceptował,
+     * i zwykle wprowadza nowe naruszenia.
+     */
+    private suspend fun correct(draft: String, violations: List<RuleVerdict>): String {
+        val violationList = violations.joinToString("\n") { verdict ->
+            "- Reguła: \"${verdict.ruleText}\" — naruszenie: ${verdict.violation ?: "reguła nie jest spełniona"}"
+        }
+
+        val systemMessage = """
+            |Jesteś redaktorem poprawiającym gotowy post na Instagram.
+            |Dostajesz post oraz listę naruszonych reguł stylistycznych.
+            |
+            |ZASADY POPRAWIANIA:
+            |- Ingeruj MINIMALNIE — zmieniaj wyłącznie to, co jest niezbędne do usunięcia naruszeń.
+            |- NIE przepisuj fragmentów, które nie są wymienione na liście naruszeń.
+            |- Zachowaj temat, strukturę wizualną (akapity, listy, entery) i hashtagi.
+            |- Zwróć PEŁNY tekst posta po poprawkach, gotowy do publikacji.
+        """.trimMargin()
+
+        val userMessage = """
+            |=== NARUSZENIA DO USUNIĘCIA ===
+            |$violationList
+            |
+            |=== POST DO POPRAWY ===
+            |$draft
+        """.trimMargin()
+
+        val corrected = withContext(Dispatchers.IO) {
+            chatClient.prompt()
+                .options(OpenAiChatOptions.builder().temperature(CORRECTOR_TEMPERATURE).build())
+                .system(systemMessage)
+                .user(userMessage)
+                .call()
+                .entity(InstagramPostResult::class.java)
+        } ?: throw InstagramPostGenerationException("LLM zwrócił pustą odpowiedź przy korekcie posta")
+
+        return corrected.content
+    }
 
     /**
      * Generuje post Instagramowy na podstawie tematu i kontekstu inspiracji.
@@ -113,6 +253,7 @@ class InstagramPostGeneratorService(
             "=== NEGATIVE_EXAMPLES ===\nBrak dostępnych przykładów.\n"
         }
 
+        val ownRejectionsSection = buildOwnRejectionsSection(context)
         val toneSection = buildToneSection(context)
         val lengthSection = buildLengthSection(context)
         val styleNotesSection = buildStyleNotesSection(context.styleNotes)
@@ -123,6 +264,7 @@ class InstagramPostGeneratorService(
     |
     |$positiveSection
     |$negativeSection
+    |$ownRejectionsSection
     |$toneSection
     |$lengthSection
     |$styleNotesSection
@@ -145,6 +287,30 @@ class InstagramPostGeneratorService(
     |- Reguły ze STYLE_NOTES mają najwyższy priorytet (nadpisują styl z przykładów).
     |- Na samym dole dodaj blok 5-8 trafnych hashtagów, oddzielony od reszty tekstu pustą linią.
 """.trimMargin()
+    }
+
+    /**
+     * Sekcja WCZEŚNIEJSZE ODRZUCENIA — własne posty studia ocenione negatywnie
+     * wraz z komentarzem „dlaczego".
+     *
+     * Osobna od NEGATIVE_EXAMPLES celowo: komentarz „za dużo wykrzykników" to konkretna
+     * instrukcja od tego studia, a wrzucony do wspólnego worka anonimowych negatywów
+     * traci całą swoją wartość.
+     */
+    private fun buildOwnRejectionsSection(context: InstagramInspirationContext): String {
+        if (context.ownRejections.isEmpty()) return ""
+        val entries = context.ownRejections.joinToString("\n\n") { rejection ->
+            val reason = rejection.comment?.takeIf { it.isNotBlank() }
+                ?: "Studio odrzuciło ten post bez komentarza."
+            "POST: \"${rejection.content}\"\nPOWÓD ODRZUCENIA: $reason"
+        }
+        return """
+            |=== WCZEŚNIEJSZE ODRZUCENIA (Twoje wcześniejsze propozycje, które studio ODRZUCIŁO) ===
+            |To są posty wygenerowane dla TEGO studia i przez nie odrzucone, wraz z powodem.
+            |Powód odrzucenia traktuj jak twardą regułę — NIE POWTARZAJ tych błędów.
+            |
+            |$entries
+        """.trimMargin() + "\n"
     }
 
     private fun buildToneSection(context: InstagramInspirationContext): String {
