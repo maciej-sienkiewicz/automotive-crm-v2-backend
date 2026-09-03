@@ -2,6 +2,7 @@ package pl.detailing.crm.instagram.ai
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -13,6 +14,7 @@ import org.springframework.ai.openai.OpenAiChatOptions
 import pl.detailing.crm.instagram.ai.model.RuleVerdict
 import pl.detailing.crm.instagram.ai.model.VerificationReport
 import pl.detailing.crm.instagram.ai.verification.InstagramPostVerifierService
+import pl.detailing.crm.instagram.ai.verification.StyleRuleChecker
 
 /**
  * Przypisanie werdyktów modelu do reguł.
@@ -29,9 +31,17 @@ class InstagramPostVerifierAttributionTest {
     private val requestSpec = mockk<ChatClient.ChatClientRequestSpec>()
     private val callSpec = mockk<ChatClient.CallResponseSpec>()
 
-    private val service = InstagramPostVerifierService(chatClient)
+    private val service = InstagramPostVerifierService(chatClient, StyleRuleChecker())
 
-    private val rules = listOf("bez emoji", "bez przerw między punktami listy", "maksymalnie 8 hashtagów")
+    /**
+     * Wyłącznie reguły JAKOŚCIOWE: policzalne („bez emoji", „3 bullet pointy") rozstrzyga
+     * teraz StyleRuleChecker i nigdy nie trafiają do modelu — patrz [StyleRuleCheckerTest].
+     */
+    private val rules = listOf(
+        "Pisz ciepłym, bezpośrednim tonem",
+        "Nie obiecuj efektów bez pokrycia",
+        "Zakończ wezwaniem do działania"
+    )
 
     @BeforeEach
     fun setUp() {
@@ -50,25 +60,25 @@ class InstagramPostVerifierAttributionTest {
     fun `numeracja od zera nie przesuwa naruszenia na sasiednia regule`() = runBlocking {
         // Model liczy od zera: naruszenie dotyczy reguły o odstępach (jego indeks 1).
         stub(VerificationReport(listOf(
-            RuleVerdict(0, "bez emoji", passed = true),
-            RuleVerdict(1, "bez przerw między punktami listy", passed = false, violation = "pusta linia między punktami"),
-            RuleVerdict(2, "maksymalnie 8 hashtagów", passed = true)
+            RuleVerdict(0, "Pisz ciepłym, bezpośrednim tonem", passed = true),
+            RuleVerdict(1, "Nie obiecuj efektów bez pokrycia", passed = false, violation = "obietnica 100% efektu"),
+            RuleVerdict(2, "Zakończ wezwaniem do działania", passed = true)
         )))
 
-        val verdicts = service.verify("Post bez emoji", rules).verdicts
+        val verdicts = service.verify("Dowolny post", rules).verdicts
 
-        assertTrue(verdicts[0].passed, "Reguła o emoji nie może przejąć cudzego naruszenia")
+        assertTrue(verdicts[0].passed, "Reguła o tonie nie może przejąć cudzego naruszenia")
         assertFalse(verdicts[1].passed)
-        assertEquals("pusta linia między punktami", verdicts[1].violation)
+        assertEquals("obietnica 100% efektu", verdicts[1].violation)
         assertTrue(verdicts[2].passed)
     }
 
     @Test
     fun `werdykty w innej kolejnosci trafiaja do wlasciwych regul po tresci`() = runBlocking {
         stub(VerificationReport(listOf(
-            RuleVerdict(1, "maksymalnie 8 hashtagów", passed = false, violation = "11 hashtagów na końcu"),
-            RuleVerdict(2, "bez emoji", passed = true),
-            RuleVerdict(3, "bez przerw między punktami listy", passed = true)
+            RuleVerdict(1, "Zakończ wezwaniem do działania", passed = false, violation = "post kończy się hashtagami"),
+            RuleVerdict(2, "Pisz ciepłym, bezpośrednim tonem", passed = true),
+            RuleVerdict(3, "Nie obiecuj efektów bez pokrycia", passed = true)
         )))
 
         val verdicts = service.verify("Post", rules).verdicts
@@ -76,18 +86,18 @@ class InstagramPostVerifierAttributionTest {
         assertTrue(verdicts[0].passed, "«bez emoji» dostało numer 2, ale treść mówi, czyj to werdykt")
         assertTrue(verdicts[1].passed)
         assertFalse(verdicts[2].passed)
-        assertEquals("11 hashtagów na końcu", verdicts[2].violation)
+        assertEquals("post kończy się hashtagami", verdicts[2].violation)
     }
 
     @Test
     fun `naruszenie bez wskazania fragmentu nie jest naruszeniem`() = runBlocking {
         stub(VerificationReport(listOf(
-            RuleVerdict(1, "bez emoji", passed = false, violation = null),
-            RuleVerdict(2, "bez przerw między punktami listy", passed = false, violation = "   "),
-            RuleVerdict(3, "maksymalnie 8 hashtagów", passed = true)
+            RuleVerdict(1, "Pisz ciepłym, bezpośrednim tonem", passed = false, violation = null),
+            RuleVerdict(2, "Nie obiecuj efektów bez pokrycia", passed = false, violation = "   "),
+            RuleVerdict(3, "Zakończ wezwaniem do działania", passed = true)
         )))
 
-        val verdicts = service.verify("Post bez emoji", rules).verdicts
+        val verdicts = service.verify("Dowolny post", rules).verdicts
 
         assertTrue(verdicts.all { it.passed }, "Model, który nie potrafi pokazać naruszenia, go nie znalazł")
     }
@@ -95,7 +105,7 @@ class InstagramPostVerifierAttributionTest {
     @Test
     fun `brakujacy werdykt nie zamienia sie w naruszenie`() = runBlocking {
         stub(VerificationReport(listOf(
-            RuleVerdict(1, "bez emoji", passed = true)
+            RuleVerdict(1, "Pisz ciepłym, bezpośrednim tonem", passed = true)
         )))
 
         val verdicts = service.verify("Post", rules).verdicts
@@ -108,28 +118,44 @@ class InstagramPostVerifierAttributionTest {
     fun `prawdziwe naruszenie nadal jest zglaszane z oryginalna trescia reguly`() = runBlocking {
         stub(VerificationReport(listOf(
             // Model przepisał regułę po swojemu i zmienił wielkość liter — bez znaczenia.
-            RuleVerdict(1, "Bez emoji.", passed = false, violation = "emoji 🔥 w pierwszej linii"),
+            RuleVerdict(1, "Pisz ciepłym, bezpośrednim tonem.", passed = false, violation = "urzędowy zwrot uprzejmie informujemy"),
             RuleVerdict(2, "bez przerw między punktami listy", passed = true),
-            RuleVerdict(3, "maksymalnie 8 hashtagów", passed = true)
+            RuleVerdict(3, "Zakończ wezwaniem do działania", passed = true)
         )))
 
-        val verdicts = service.verify("Świetny post 🔥", rules).verdicts
+        val verdicts = service.verify("Uprzejmie informujemy o ofercie", rules).verdicts
 
         assertFalse(verdicts[0].passed)
-        assertEquals("bez emoji", verdicts[0].ruleText, "Raport niesie regułę studia, nie parafrazę modelu")
-        assertEquals("emoji 🔥 w pierwszej linii", verdicts[0].violation)
+        assertEquals("Pisz ciepłym, bezpośrednim tonem", verdicts[0].ruleText, "Raport niesie regułę studia, nie parafrazę modelu")
+        assertEquals("urzędowy zwrot uprzejmie informujemy", verdicts[0].violation)
     }
 
     @Test
     fun `dwa werdykty dla tej samej reguly sa niejednoznaczne i nie blokuja posta`() = runBlocking {
         stub(VerificationReport(listOf(
-            RuleVerdict(1, "bez emoji", passed = false, violation = "emoji"),
-            RuleVerdict(1, "bez emoji", passed = true),
-            RuleVerdict(3, "maksymalnie 8 hashtagów", passed = true)
+            RuleVerdict(1, "Pisz ciepłym, bezpośrednim tonem", passed = false, violation = "ton urzędowy"),
+            RuleVerdict(1, "Pisz ciepłym, bezpośrednim tonem", passed = true),
+            RuleVerdict(3, "Zakończ wezwaniem do działania", passed = true)
         )))
 
-        val verdicts = service.verify("Post bez emoji", rules).verdicts
+        val verdicts = service.verify("Dowolny post", rules).verdicts
 
         assertTrue(verdicts[0].passed, "Sprzeczne werdykty nie są dowodem naruszenia")
+    }
+
+    @Test
+    fun `regula policzalna nie trafia do modelu i wygrywa z jego werdyktem`() = runBlocking {
+        val countable = listOf("bez emoji", "3 bullet pointy")
+        // Gdyby model dostał te reguły, „naruszyłby" obie — a tekst spełnia jedną i drugą.
+        stub(VerificationReport(listOf(
+            RuleVerdict(1, "bez emoji", passed = false, violation = "brak emoji w poście"),
+            RuleVerdict(2, "3 bullet pointy", passed = false, violation = "4 bullet pointy")
+        )))
+
+        val post = "Zalety:\n- pierwsza\n- druga\n- trzecia\n\nZapraszamy."
+        val verdicts = service.verify(post, countable).verdicts
+
+        assertTrue(verdicts.all { it.passed }, "Liczy kod, nie model: ${verdicts.map { it.violation }}")
+        verify(exactly = 0) { chatClient.prompt() }
     }
 }
