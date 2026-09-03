@@ -4,9 +4,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
-import org.springframework.ai.openai.OpenAiChatOptions
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import pl.detailing.crm.instagram.ai.config.InstagramAiModels
 import pl.detailing.crm.instagram.ai.model.RuleVerdict
 import pl.detailing.crm.instagram.ai.model.VerificationReport
 
@@ -19,19 +19,16 @@ import pl.detailing.crm.instagram.ai.model.VerificationReport
  *
  * Temperatura 0.0 ustawiana PER ŻĄDANIE (globalna konfiguracja `spring.ai.*` zostaje
  * nietknięta — generator dalej pracuje na swoich 0.7): ocena „spełnia / nie spełnia"
- * ma być powtarzalna, nie kreatywna.
+ * ma być powtarzalna, nie kreatywna. Model i temperaturę tego kroku trzyma
+ * [InstagramAiModels].
  */
 @Service
 class InstagramPostVerifierService(
     @Qualifier("instagramChatClient") private val chatClient: ChatClient,
-    private val ruleChecker: StyleRuleChecker
+    private val ruleChecker: StyleRuleChecker,
+    private val models: InstagramAiModels = InstagramAiModels()
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostVerifierService::class.java)
-
-    companion object {
-        /** Ocena binarna musi być powtarzalna — stąd 0.0, a nie temperatura generatora. */
-        private const val VERIFIER_TEMPERATURE = 0.0
-    }
 
     /**
      * Sprawdza draft względem [rules] i zwraca werdykt dla KAŻDEJ reguły.
@@ -83,7 +80,7 @@ class InstagramPostVerifierService(
 
         val modelReport = withContext(Dispatchers.IO) {
             chatClient.prompt()
-                .options(OpenAiChatOptions.builder().temperature(VERIFIER_TEMPERATURE).build())
+                .options(models.verifier)
                 .system(systemMessage)
                 .user(userMessage)
                 .call()

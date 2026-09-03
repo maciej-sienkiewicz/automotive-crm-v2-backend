@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
+import pl.detailing.crm.instagram.ai.config.InstagramAiModels
 import pl.detailing.crm.instagram.ai.model.InstagramPostClassification
 
 /**
@@ -22,7 +23,8 @@ import pl.detailing.crm.instagram.ai.model.InstagramPostClassification
  */
 @Service
 class InstagramPostClassificationService(
-    @Qualifier("instagramChatClient") private val chatClient: ChatClient
+    @Qualifier("instagramChatClient") private val chatClient: ChatClient,
+    private val models: InstagramAiModels = InstagramAiModels()
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostClassificationService::class.java)
 
@@ -69,8 +71,12 @@ class InstagramPostClassificationService(
 
         val userMessage = "Sklasyfikuj poniższy post Instagramowy:\n\n\"$postContent\""
 
+        // Wybór jednej z czterech etykiet — najtańszy model wystarcza, więc domyślnie
+        // nie ma tu żadnych opcji i krok zostaje na modelu z konfiguracji globalnej.
         val result = withContext(Dispatchers.IO) {
-            chatClient.prompt()
+            val request = chatClient.prompt()
+            models.classifier?.let { request.options(it) }
+            request
                 .system(systemMessage)
                 .user(userMessage)
                 .call()
