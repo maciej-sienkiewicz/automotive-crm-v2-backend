@@ -40,6 +40,8 @@ class InstagramPostVerificationLoopTest {
     // StyleRuleChecker bez pytania modelu, więc nie nadają się do testu samej pętli.
     private val rules = listOf("Pisz ciepłym, bezpośrednim tonem")
 
+    private val twoRules = listOf("Pisz ciepłym, bezpośrednim tonem", "Nie obiecuj efektów bez pokrycia")
+
     @BeforeEach
     fun setUp() {
         every { chatClient.prompt() } returns requestSpec
@@ -103,7 +105,11 @@ class InstagramPostVerificationLoopTest {
 
     @Test
     fun `permanentne naruszenie zatrzymuje petle po trzech rundach bez udawania sukcesu`() = runBlocking {
-        every { callSpec.entity(InstagramPostResult::class.java) } returns InstagramPostResult("Post w tonie urzędowym")
+        every { callSpec.entity(InstagramPostResult::class.java) } returnsMany listOf(
+            InstagramPostResult("Post w tonie urzędowym"),
+            InstagramPostResult("Nadal w tonie urzędowym"),
+            InstagramPostResult("Wciąż w tonie urzędowym")
+        )
         every { callSpec.entity(VerificationReport::class.java) } returns failedReport()
 
         val result = service.generateVerified("PPF na BMW", null, context(rules))
@@ -113,6 +119,53 @@ class InstagramPostVerificationLoopTest {
         assertEquals(listOf("Pisz ciepłym, bezpośrednim tonem"), result.failedRules)
         // Generator + 3 weryfikacje + 2 korekty (po ostatniej weryfikacji nie ma już rundy).
         verify(exactly = 6) { chatClient.prompt() }
+    }
+
+    @Test
+    fun `korekta oddajaca ten sam tekst konczy petle wczesniej`() = runBlocking {
+        // Korektor zwraca draft bez zmian — kolejna runda to dwa wywołania modelu
+        // z góry wiadomym werdyktem.
+        every { callSpec.entity(InstagramPostResult::class.java) } returns InstagramPostResult("Post w tonie urzędowym")
+        every { callSpec.entity(VerificationReport::class.java) } returns failedReport()
+
+        val result = service.generateVerified("PPF na BMW", null, context(rules))
+
+        assertFalse(result.verificationPassed, "Zatrzymanie pętli to nie to samo co zgodność ze stylem")
+        assertEquals(1, result.iterations)
+        assertEquals("Post w tonie urzędowym", result.content)
+        // Generator + weryfikacja + jedna korekta. Bez wczesnego wyjścia byłoby 6.
+        verify(exactly = 3) { chatClient.prompt() }
+    }
+
+    @Test
+    fun `zwracany jest najlepszy draft, a nie ostatni`() = runBlocking {
+        val second = "Pisz ciepło, ale obiecaj cuda"
+        every { callSpec.entity(InstagramPostResult::class.java) } returnsMany listOf(
+            InstagramPostResult("Draft z jednym potknięciem"),
+            InstagramPostResult(second),
+            InstagramPostResult("Trzecia wersja, wciąż gorsza")
+        )
+        // Korekta cofnęła jakość: z jednego naruszenia zrobiły się dwa i takie zostały.
+        every { callSpec.entity(VerificationReport::class.java) } returnsMany listOf(
+            VerificationReport(listOf(
+                RuleVerdict(1, twoRules[0], passed = false, violation = "ton urzędowy"),
+                RuleVerdict(2, twoRules[1], passed = true)
+            )),
+            VerificationReport(listOf(
+                RuleVerdict(1, twoRules[0], passed = false, violation = "ton urzędowy"),
+                RuleVerdict(2, twoRules[1], passed = false, violation = "obietnica 100% efektu")
+            )),
+            VerificationReport(listOf(
+                RuleVerdict(1, twoRules[0], passed = false, violation = "ton urzędowy"),
+                RuleVerdict(2, twoRules[1], passed = false, violation = "obietnica 100% efektu")
+            ))
+        )
+
+        val result = service.generateVerified("PPF na BMW", null, context(twoRules))
+
+        assertEquals("Draft z jednym potknięciem", result.content, "Oddajemy wersję z najmniejszą liczbą naruszeń")
+        assertEquals(listOf(twoRules[0]), result.failedRules, "Raport opisuje wersję, którą naprawdę oddajemy")
+        assertFalse(result.verificationPassed)
     }
 
     @Test
