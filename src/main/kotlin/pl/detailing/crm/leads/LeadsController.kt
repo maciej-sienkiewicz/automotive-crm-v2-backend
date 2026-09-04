@@ -34,7 +34,6 @@ import pl.detailing.crm.leads.callback.RecordLeadCallbackHandler
 import pl.detailing.crm.leads.query.LeadTimelineEntryDto
 import pl.detailing.crm.leads.similar.SimilarVisitsDto
 import pl.detailing.crm.leads.similar.SimilarVisitsHandler
-import pl.detailing.crm.leads.similar.VisitMatchVerdict
 import pl.detailing.crm.leads.query.leadDictionaries
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
@@ -70,9 +69,6 @@ data class MarkThreadAsLeadRequest(
     val tags: List<String> = emptyList(),
     val services: List<LeadServiceItemRequest> = emptyList()
 )
-
-/** RELEVANT albo IRRELEVANT — ocena trafności podobnego zlecenia. */
-data class RateSimilarVisitRequest(val verdict: String)
 
 /** Notatka jest opcjonalna — sam fakt telefonu bywa całą informacją. */
 data class RecordCallbackRequest(val note: String? = null)
@@ -233,24 +229,23 @@ class LeadsController(
     }
 
     /**
-     * Ocena trafności dopasowania. Odrzucona para nie wraca przy tym leadzie, a całość
-     * zbiera się w materiał do strojenia progu i promptu.
+     * Usunięcie jednej podpowiedzi z tego leada.
+     *
+     * DELETE, bo to jest usunięcie, a nie ocena: nie zbieramy opinii o zleceniu,
+     * tylko chowamy ją z tej listy. Zlecenie żyje dalej i przy innym leadzie może
+     * być najlepszą odpowiedzią, jaką mamy — dlatego zapis jest per para lead↔zlecenie,
+     * a nie per zlecenie.
      */
-    @PutMapping("/{id}/similar-visits/{visitId}")
-    fun rateSimilarVisit(
+    @DeleteMapping("/{id}/similar-visits/{visitId}")
+    fun dismissSimilarVisit(
         @PathVariable id: String,
-        @PathVariable visitId: String,
-        @RequestBody request: RateSimilarVisitRequest
+        @PathVariable visitId: String
     ): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val verdict = runCatching { VisitMatchVerdict.valueOf(request.verdict.uppercase()) }
-            .getOrElse { throw ValidationException("Nieznana ocena: ${request.verdict}") }
-
-        similarVisitsHandler.recordFeedback(
+        similarVisitsHandler.dismiss(
             studioId = principal.studioId,
             leadId = UUID.fromString(id),
             visitId = UUID.fromString(visitId),
-            verdict = verdict,
             userId = principal.userId,
             userName = principal.fullName
         )

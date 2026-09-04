@@ -35,9 +35,7 @@ data class SimilarVisitDto(
      */
     val priceProvisional: Boolean,
     /** SAME_MODEL | SAME_BRAND | SAME_CLASS | ANY — jak blisko trafiliśmy w pojazd. */
-    val matchTier: String,
-    /** RELEVANT | IRRELEVANT | null — ocena człowieka, jeśli już padła. */
-    val feedback: String?
+    val matchTier: String
 )
 
 data class SimilarVisitsDto(
@@ -93,23 +91,16 @@ class SimilarVisitsHandler(
         val indexed = indexStateRepository.countByStudioId(studioId.value)
         if (!enabled) return SimilarVisitsDto(emptyList(), indexed)
 
-        // Odrzucone pary nie wracają: pokazanie zlecenia drugi raz po tym, jak człowiek
-        // powiedział „nie", jest gorsze niż niepokazanie niczego.
-        val feedback = feedbackRepository.findByLeadId(leadId).associate { it.visitId to it.verdict }
-        val rejected = feedback.filterValues { it == VisitMatchVerdict.IRRELEVANT.name }.keys
+        // Usunięta podpowiedź nie wraca: pokazanie zlecenia drugi raz po tym, jak
+        // człowiek je stąd zdjął, jest gorsze niż niepokazanie niczego. Zapis jest
+        // per para lead↔zlecenie, więc przy innym leadzie to samo zlecenie wróci.
+        val dismissed = feedbackRepository.findByLeadId(leadId).map { it.visitId }.toSet()
 
         val ranked = cachedRanking(leadId)
             ?: rank(studioId, lead.vehicleBrand, lead.vehicleModel, buildQuery(studioId, leadId, lead.initialMessage))
                 .also { cacheRanking(leadId, it) }
 
-        // Potwierdzone dopasowanie idzie na górę i NIE może wypaść z listy przy
-        // kolejnym doborze — inaczej kciuk w górę byłby przyciskiem bez skutku.
-        // Sortowanie jest stabilne, więc wewnątrz obu grup zostaje kolejność po aucie.
-        val confirmed = feedback.filterValues { it == VisitMatchVerdict.RELEVANT.name }.keys
-        val visible = ranked
-            .filterNot { it.visitId in rejected }
-            .sortedByDescending { it.visitId in confirmed }
-            .take(maxResults)
+        val visible = ranked.filterNot { it.visitId in dismissed }.take(maxResults)
         if (visible.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
 
         val visits = visitRepository
@@ -118,7 +109,7 @@ class SimilarVisitsHandler(
 
         return SimilarVisitsDto(
             items = visible.mapNotNull { match ->
-                visits[match.visitId]?.let { toDto(it, match.tier, feedback[it.id]) }
+                visits[match.visitId]?.let { toDto(it, match.tier) }
             },
             indexedVisits = indexed
         )
@@ -182,38 +173,38 @@ class SimilarVisitsHandler(
             .sortedBy { it.tier.ordinal }
     }
 
+    /**
+     * Zdejmuje jedną podpowiedź z tego leada.
+     *
+     * Idempotentne: drugie kliknięcie w to samo (podwójny klik, ponowiony request)
+     * nie może wywrócić się na indeksie unikalnym pary lead↔zlecenie.
+     */
     @Transactional
-    fun recordFeedback(
+    fun dismiss(
         studioId: StudioId,
         leadId: UUID,
         visitId: UUID,
-        verdict: VisitMatchVerdict,
         userId: UserId,
         userName: String
     ) {
         leadRepository.findByIdAndStudioId(leadId, studioId.value)
             ?: throw NotFoundException("Nie znaleziono leada")
 
-        val existing = feedbackRepository.findByLeadIdAndVisitId(leadId, visitId)
-        if (existing != null) {
-            // Zmiana zdania nadpisuje ocenę, nie dokłada drugiego wiersza.
-            existing.verdict = verdict.name
-            feedbackRepository.save(existing)
-            return
-        }
+        if (feedbackRepository.findByLeadIdAndVisitId(leadId, visitId) != null) return
+
         feedbackRepository.save(
             VisitMatchFeedbackEntity(
                 studioId = studioId.value,
                 leadId = leadId,
                 visitId = visitId,
-                verdict = verdict.name,
+                verdict = VisitMatchVerdict.IRRELEVANT.name,
                 createdBy = userId.value,
                 createdByName = userName
             )
         )
     }
 
-    private fun toDto(visit: VisitEntity, tier: MatchTier, feedback: String?): SimilarVisitDto {
+    private fun toDto(visit: VisitEntity, tier: MatchTier): SimilarVisitDto {
         val provisional = visit.status == VisitStatus.IN_PROGRESS
         return SimilarVisitDto(
             visitId = visit.id.toString(),
@@ -228,8 +219,7 @@ class SimilarVisitsHandler(
             date = visit.actualCompletionDate ?: visit.scheduledDate,
             status = visit.status.name,
             priceProvisional = provisional,
-            matchTier = tier.name,
-            feedback = feedback
+            matchTier = tier.name
         )
     }
 

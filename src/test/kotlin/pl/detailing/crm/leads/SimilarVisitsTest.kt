@@ -35,6 +35,7 @@ import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import pl.detailing.crm.visit.domain.VisitFixtures
@@ -318,18 +319,18 @@ class SimilarVisitRerankerTest {
 }
 
 /**
- * Co robią kciuki pod wierszem.
+ * Co robi „X" pod wierszem.
  *
- * Ocena jest jedyną rzeczą w tej sekcji, którą wnosi człowiek, więc musi być
- * widoczna od razu i nie może zniknąć przy kolejnym doborze. Odrzucenie jest twarde
- * (zlecenie nie wraca), potwierdzenie wynosi zlecenie na górę PRZED przycięciem
- * listy — inaczej kciuk w górę byłby przyciskiem, po którym nic się nie dzieje.
+ * Zdjęcie podpowiedzi jest jedyną rzeczą w tej sekcji, którą wnosi człowiek, i musi
+ * być twarde: raz zdjęte zlecenie nie wraca przy tym leadzie, także po przeliczeniu
+ * doboru od nowa.
  *
- * Obie reguły działają wyłącznie w obrębie TEGO leada. To nie jest niedoróbka,
- * tylko granica, której nie wolno przekroczyć po cichu: „to zlecenie nie pasuje
- * do pytania o mycie" nie znaczy „to zlecenie jest złe".
+ * Zasięg to JEDEN lead. To nie jest niedoróbka, tylko granica, której nie wolno
+ * przekroczyć po cichu: „to zlecenie nie pasuje do pytania o mycie" nie znaczy
+ * „to zlecenie jest złe" — przy pytaniu o oklejenie może być najlepszą odpowiedzią,
+ * jaką mamy.
  */
-class SimilarVisitsFeedbackTest {
+class SimilarVisitsDismissalTest {
 
     private val leadRepository = mockk<LeadRepository>()
     private val visitRepository = mockk<SimilarVisitReadRepository>()
@@ -382,7 +383,7 @@ class SimilarVisitsFeedbackTest {
     }
 
     @Test
-    fun `bez ocen kolejnosc wyznacza blizsze auto`() {
+    fun `bez zdjetych podpowiedzi kolejnosc wyznacza blizsze auto`() {
         every { feedbackRepository.findByLeadId(leadId) } returns emptyList()
 
         val items = handler.findFor(studioId, leadId).items
@@ -390,9 +391,14 @@ class SimilarVisitsFeedbackTest {
         assertEquals(listOf(byModel.toString(), byBrand.toString()), items.map { it.visitId })
     }
 
+    /**
+     * Sedno: dobór wciąż zwraca `byModel` na pierwszym miejscu, bo zdjęcie podpowiedzi
+     * nie unieważnia pamięci podręcznej. Odsiew musi działać przy KAŻDYM odczycie,
+     * inaczej zlecenie wróciłoby po odświeżeniu strony.
+     */
     @Test
-    fun `odrzucone zlecenie nie wraca`() {
-        every { feedbackRepository.findByLeadId(leadId) } returns listOf(feedback(byModel, VisitMatchVerdict.IRRELEVANT))
+    fun `zdjeta podpowiedz nie wraca`() {
+        every { feedbackRepository.findByLeadId(leadId) } returns listOf(dismissal(byModel))
 
         val items = handler.findFor(studioId, leadId).items
 
@@ -401,30 +407,40 @@ class SimilarVisitsFeedbackTest {
     }
 
     /**
-     * Sedno: `byClass` jest ostatni w doborze i przy limicie dwóch pozycji wypadłby
-     * z listy. Potwierdzenie ma go wynieść na górę, a nie tylko podświetlić kciuk.
+     * Odsiew idzie PRZED przycięciem do `maxResults`, nie po nim. Odwrotna kolejność
+     * dałaby listę krótszą o zdjęte pozycje zamiast dosunąć następne.
      */
     @Test
-    fun `potwierdzone zlecenie idzie na gore i nie wypada przy przycieciu listy`() {
-        every { feedbackRepository.findByLeadId(leadId) } returns listOf(feedback(byClass, VisitMatchVerdict.RELEVANT))
+    fun `zdjecie podpowiedzi wpuszcza na jej miejsce nastepna`() {
+        every { feedbackRepository.findByLeadId(leadId) } returns listOf(dismissal(byBrand))
 
         val items = handler.findFor(studioId, leadId).items
 
-        assertEquals(byClass.toString(), items.first().visitId)
-        assertEquals("RELEVANT", items.first().feedback)
-        // Reszta zachowuje kolejność po aucie — potwierdzenie przesuwa jedno zlecenie,
-        // a nie przestawia całej listy.
-        assertEquals(listOf(byClass.toString(), byModel.toString()), items.map { it.visitId })
+        assertEquals(2, items.size)
+        assertEquals(listOf(byModel.toString(), byClass.toString()), items.map { it.visitId })
+    }
+
+    /** Podwójny klik nie może wywrócić się na indeksie unikalnym pary. */
+    @Test
+    fun `powtorne zdjecie tej samej podpowiedzi nic nie zapisuje`() {
+        every { feedbackRepository.findByLeadIdAndVisitId(leadId, byModel) } returns dismissal(byModel)
+
+        handler.dismiss(studioId, leadId, byModel, UserId(UUID.randomUUID()), "Anna")
+
+        verify(exactly = 0) { feedbackRepository.save(any()) }
     }
 
     @Test
-    fun `ocena z innego leada nie rusza tej listy`() {
-        every { feedbackRepository.findByLeadId(leadId) } returns emptyList()
+    fun `zdjecie zapisuje sie na parze lead i zlecenie, nie na samym zleceniu`() {
+        every { feedbackRepository.findByLeadIdAndVisitId(leadId, byModel) } returns null
+        val saved = slot<VisitMatchFeedbackEntity>()
+        every { feedbackRepository.save(capture(saved)) } answers { firstArg() }
 
-        val items = handler.findFor(studioId, leadId).items
+        handler.dismiss(studioId, leadId, byModel, UserId(UUID.randomUUID()), "Anna")
 
-        assertTrue(items.all { it.feedback == null })
-        verify { feedbackRepository.findByLeadId(leadId) }
+        assertEquals(leadId, saved.captured.leadId)
+        assertEquals(byModel, saved.captured.visitId)
+        assertEquals(studioId.value, saved.captured.studioId)
     }
 
     private fun lead() = LeadEntity(
@@ -448,11 +464,11 @@ class SimilarVisitsFeedbackTest {
         stagnantAlertSentAt = null
     )
 
-    private fun feedback(visitId: UUID, verdict: VisitMatchVerdict) = VisitMatchFeedbackEntity(
+    private fun dismissal(visitId: UUID) = VisitMatchFeedbackEntity(
         studioId = studioId.value,
         leadId = leadId,
         visitId = visitId,
-        verdict = verdict.name,
+        verdict = VisitMatchVerdict.IRRELEVANT.name,
         createdBy = UUID.randomUUID(),
         createdByName = "Anna"
     )
