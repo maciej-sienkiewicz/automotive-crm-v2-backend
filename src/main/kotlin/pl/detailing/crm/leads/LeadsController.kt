@@ -32,6 +32,9 @@ import pl.detailing.crm.leads.notes.LeadNoteService
 import pl.detailing.crm.leads.callback.RecordLeadCallbackCommand
 import pl.detailing.crm.leads.callback.RecordLeadCallbackHandler
 import pl.detailing.crm.leads.query.LeadTimelineEntryDto
+import pl.detailing.crm.leads.similar.SimilarVisitsDto
+import pl.detailing.crm.leads.similar.SimilarVisitsHandler
+import pl.detailing.crm.leads.similar.VisitMatchVerdict
 import pl.detailing.crm.leads.query.leadDictionaries
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
@@ -67,6 +70,9 @@ data class MarkThreadAsLeadRequest(
     val tags: List<String> = emptyList(),
     val services: List<LeadServiceItemRequest> = emptyList()
 )
+
+/** RELEVANT albo IRRELEVANT — ocena trafności podobnego zlecenia. */
+data class RateSimilarVisitRequest(val verdict: String)
 
 /** Notatka jest opcjonalna — sam fakt telefonu bywa całą informacją. */
 data class RecordCallbackRequest(val note: String? = null)
@@ -125,7 +131,8 @@ class LeadsController(
     private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler,
     private val noteService: LeadNoteService,
-    private val callbackHandler: RecordLeadCallbackHandler
+    private val callbackHandler: RecordLeadCallbackHandler,
+    private val similarVisitsHandler: SimilarVisitsHandler
 ) {
 
     @GetMapping
@@ -206,6 +213,48 @@ class LeadsController(
     fun timeline(@PathVariable id: String): ResponseEntity<List<LeadTimelineEntryDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(queryHandlers.timeline(principal.studioId, UUID.fromString(id)))
+    }
+
+    // ── Podobne zlecenia ───────────────────────────────────────────────────
+
+    /**
+     * „Co robiliśmy dla takiego auta i takiej roboty".
+     *
+     * Liczone NA ŻĄDANIE, a nie przy tworzeniu leada: większości leadów nikt nigdy
+     * nie otworzy, a osadzenie i przesiew dla każdego byłyby płaceniem za odpowiedź,
+     * o którą nikt nie zapytał. Odpowiedź potrafi zająć sekundy — po to jest przycisk.
+     */
+    @GetMapping("/{id}/similar-visits")
+    fun similarVisits(@PathVariable id: String): ResponseEntity<SimilarVisitsDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            similarVisitsHandler.findFor(principal.studioId, UUID.fromString(id))
+        )
+    }
+
+    /**
+     * Ocena trafności dopasowania. Odrzucona para nie wraca przy tym leadzie, a całość
+     * zbiera się w materiał do strojenia progu i promptu.
+     */
+    @PutMapping("/{id}/similar-visits/{visitId}")
+    fun rateSimilarVisit(
+        @PathVariable id: String,
+        @PathVariable visitId: String,
+        @RequestBody request: RateSimilarVisitRequest
+    ): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val verdict = runCatching { VisitMatchVerdict.valueOf(request.verdict.uppercase()) }
+            .getOrElse { throw ValidationException("Nieznana ocena: ${request.verdict}") }
+
+        similarVisitsHandler.recordFeedback(
+            studioId = principal.studioId,
+            leadId = UUID.fromString(id),
+            visitId = UUID.fromString(visitId),
+            verdict = verdict,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+        return ResponseEntity.noContent().build()
     }
 
     // ── Telefon do klienta ─────────────────────────────────────────────────
