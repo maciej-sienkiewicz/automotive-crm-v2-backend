@@ -5,7 +5,6 @@ import pl.detailing.crm.leads.conversation.LeadConversationState
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
-import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryEntity
 import java.time.Instant
 
 /** Full lead row — the shape the list, the detail panel and WebSocket updates share. */
@@ -64,12 +63,38 @@ data class LeadServiceItemDto(
     val totalGross: Long
 )
 
-data class LeadStatusHistoryDto(
-    val fromStatus: String?,
-    val toStatus: String,
-    val lostReasonLabel: String?,
-    val changedByName: String?,
-    val createdAt: Instant
+/**
+ * Jedno zdarzenie na osi czasu leada.
+ *
+ * Do tej pory „Historia" pokazywała wyłącznie zmiany statusu, więc lead po wymianie
+ * trzech maili opisany był dwiema linijkami — „Nowy", „W kontakcie" — i nie dało się
+ * z niego odczytać ani tego, o co klient pytał, ani kiedy odpisaliśmy, ani co
+ * odpowiedział. Najważniejsze fakty leżały w wątku poczty, czyli gdzie indziej.
+ *
+ * Typ jest sumą kilku rodzajów zdarzeń, więc pola poza [kind], [at] i [actorName]
+ * są opcjonalne z definicji: wypełnia się ta garść, która ma sens dla danego rodzaju.
+ * Alternatywą byłyby cztery osobne listy do posortowania po stronie przeglądarki —
+ * czyli przeniesienie tam decyzji o kolejności, która jest decyzją serwera.
+ */
+data class LeadTimelineEntryDto(
+    val id: String,
+    /** STATUS | INBOUND_MESSAGE | OUTBOUND_MESSAGE | CALLBACK */
+    val kind: String,
+    val at: Instant,
+    /** Kto: użytkownik studia, klient albo null dla zmian automatycznych. */
+    val actorName: String?,
+    val toStatus: String? = null,
+    val fromStatus: String? = null,
+    val lostReasonLabel: String? = null,
+    val subject: String? = null,
+    /**
+     * Treść wiadomości bez cytatów i stopek — „pokaż wiadomość" ma co wyświetlić
+     * bez drugiego żądania. Wątek leada to kilka wiadomości, więc koszt jest znikomy,
+     * a osobny endpoint na każdą z nich oznaczałby zapytanie na kliknięcie.
+     */
+    val body: String? = null,
+    /** Notatka przy odnotowanym telefonie — opcjonalna, jak samo pole. */
+    val note: String? = null
 )
 
 data class LeadPageDto(
@@ -137,14 +162,6 @@ fun LeadServiceItemEntity.toDto(): LeadServiceItemDto = LeadServiceItemDto(
     note = note,
     quantity = quantity,
     totalGross = priceGross * quantity
-)
-
-fun LeadStatusHistoryEntity.toDto(): LeadStatusHistoryDto = LeadStatusHistoryDto(
-    fromStatus = fromStatus?.name,
-    toStatus = toStatus.name,
-    lostReasonLabel = lostReasonCode?.label,
-    changedByName = changedByName,
-    createdAt = createdAt
 )
 
 /**

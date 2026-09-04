@@ -178,6 +178,7 @@ class StudioDataPurger(
             deleteByStudio("LeadServiceItemEntity", ctx)
             deleteByStudio("LeadStatusHistoryEntity", ctx)
             deleteByStudio("LeadNoteEntity", ctx)
+            deleteByStudio("LeadCallbackEntity", ctx)
             deleteByStudio("LeadTagDefinitionEntity", ctx)
             deleteByStudio("LeadIntakeDeliveryEntity", ctx)
             deleteByStudio("LeadIntakeWebhookEntity", ctx)

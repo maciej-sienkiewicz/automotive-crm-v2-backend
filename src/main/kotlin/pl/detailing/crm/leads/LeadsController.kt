@@ -29,7 +29,9 @@ import pl.detailing.crm.leads.query.LeadPageDto
 import pl.detailing.crm.leads.query.LeadQueryHandlers
 import pl.detailing.crm.leads.notes.LeadNoteItem
 import pl.detailing.crm.leads.notes.LeadNoteService
-import pl.detailing.crm.leads.query.LeadStatusHistoryDto
+import pl.detailing.crm.leads.callback.RecordLeadCallbackCommand
+import pl.detailing.crm.leads.callback.RecordLeadCallbackHandler
+import pl.detailing.crm.leads.query.LeadTimelineEntryDto
 import pl.detailing.crm.leads.query.leadDictionaries
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
@@ -64,6 +66,16 @@ data class MarkThreadAsLeadRequest(
     /** Kody ze słownika tagów studia — wiele na leada, bo jedno zapytanie potrafi dotyczyć kilku usług. */
     val tags: List<String> = emptyList(),
     val services: List<LeadServiceItemRequest> = emptyList()
+)
+
+/** Notatka jest opcjonalna — sam fakt telefonu bywa całą informacją. */
+data class RecordCallbackRequest(val note: String? = null)
+
+data class LeadCallbackResponse(
+    val id: String,
+    val note: String?,
+    val calledByName: String?,
+    val createdAt: Instant
 )
 
 data class ChangeLeadStatusRequest(
@@ -112,7 +124,8 @@ class LeadsController(
     private val deleteLeadHandler: DeleteLeadHandler,
     private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler,
-    private val noteService: LeadNoteService
+    private val noteService: LeadNoteService,
+    private val callbackHandler: RecordLeadCallbackHandler
 ) {
 
     @GetMapping
@@ -184,10 +197,47 @@ class LeadsController(
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
     }
 
-    @GetMapping("/{id}/history")
-    fun history(@PathVariable id: String): ResponseEntity<List<LeadStatusHistoryDto>> {
+    /**
+     * Przebieg sprawy: zmiany statusu, korespondencja i odnotowane telefony w jednej,
+     * chronologicznej liście. Zastąpiło `/history`, które pokazywało same statusy —
+     * czyli milczało o wszystkim, co w leadzie naprawdę się wydarzyło.
+     */
+    @GetMapping("/{id}/timeline")
+    fun timeline(@PathVariable id: String): ResponseEntity<List<LeadTimelineEntryDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
-        return ResponseEntity.ok(queryHandlers.statusHistory(principal.studioId, UUID.fromString(id)))
+        return ResponseEntity.ok(queryHandlers.timeline(principal.studioId, UUID.fromString(id)))
+    }
+
+    // ── Telefon do klienta ─────────────────────────────────────────────────
+
+    /**
+     * „Oddzwoniłem": rozmowa telefoniczna zapisana jako kontakt, nie jako notatka.
+     * Skutki są te same co przy odpowiedzi mailem — stempel czasu pierwszej reakcji
+     * i przejście „Nowy" → „W kontakcie" — bo dla klienta to ta sama rzecz.
+     */
+    @PostMapping("/{id}/callbacks")
+    fun recordCallback(
+        @PathVariable id: String,
+        @RequestBody request: RecordCallbackRequest
+    ): ResponseEntity<LeadCallbackResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val callback = callbackHandler.handle(
+            RecordLeadCallbackCommand(
+                studioId = principal.studioId,
+                leadId = UUID.fromString(id),
+                userId = principal.userId,
+                userName = principal.fullName,
+                note = request.note
+            )
+        )
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+            LeadCallbackResponse(
+                id = callback.id.toString(),
+                note = callback.note,
+                calledByName = callback.calledByName,
+                createdAt = callback.createdAt
+            )
+        )
     }
 
     // ── Notatki ────────────────────────────────────────────────────────────
