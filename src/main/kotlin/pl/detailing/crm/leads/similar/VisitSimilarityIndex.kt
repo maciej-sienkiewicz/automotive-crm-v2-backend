@@ -152,14 +152,23 @@ interface SimilarVisitReadRepository : org.springframework.data.repository.Repos
     ): List<VisitEntity>
 }
 
-/** Werdykt człowieka o trafności dopasowania. */
+/**
+ * Werdykt zapisany przy parze lead↔zlecenie.
+ *
+ * Produkcja zapisuje dziś wyłącznie IRRELEVANT — jedyną akcją człowieka jest
+ * zdjęcie podpowiedzi z listy. RELEVANT zostaje w enumie, bo w bazie leżą wiersze
+ * z okresu, gdy sekcja miała kciuk w górę; kolumna nie ma ograniczenia CHECK,
+ * więc usunięcie wartości nie wywróciłoby odczytu, ale zamieniłoby istniejące
+ * wiersze w dane, których kod nie umie nazwać.
+ */
 enum class VisitMatchVerdict { RELEVANT, IRRELEVANT }
 
 /**
- * Ocena pary (lead, zlecenie) — patrz V111__visit_similarity.sql.
+ * Zdjęta podpowiedź — patrz V111__visit_similarity.sql.
  *
- * Odrzucona para nigdy nie wraca przy tym leadzie: pokazanie jej drugi raz po tym,
- * jak człowiek powiedział „nie", jest gorsze niż niepokazanie niczego.
+ * Zapis jest per PARA, nie per zlecenie: „to zlecenie nie pasuje do pytania o mycie"
+ * nie znaczy „to zlecenie jest złe". Przy innym leadzie może być najlepszą
+ * odpowiedzią, jaką mamy.
  */
 @Entity
 @Table(
