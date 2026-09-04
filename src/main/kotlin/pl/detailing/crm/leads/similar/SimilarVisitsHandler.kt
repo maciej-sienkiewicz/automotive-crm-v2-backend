@@ -102,7 +102,14 @@ class SimilarVisitsHandler(
             ?: rank(studioId, lead.vehicleBrand, lead.vehicleModel, buildQuery(studioId, leadId, lead.initialMessage))
                 .also { cacheRanking(leadId, it) }
 
-        val visible = ranked.filterNot { it.visitId in rejected }.take(maxResults)
+        // Potwierdzone dopasowanie idzie na górę i NIE może wypaść z listy przy
+        // kolejnym doborze — inaczej kciuk w górę byłby przyciskiem bez skutku.
+        // Sortowanie jest stabilne, więc wewnątrz obu grup zostaje kolejność po aucie.
+        val confirmed = feedback.filterValues { it == VisitMatchVerdict.RELEVANT.name }.keys
+        val visible = ranked
+            .filterNot { it.visitId in rejected }
+            .sortedByDescending { it.visitId in confirmed }
+            .take(maxResults)
         if (visible.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
 
         val visits = visitRepository
