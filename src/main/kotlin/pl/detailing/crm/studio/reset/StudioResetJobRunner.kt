@@ -47,13 +47,19 @@ class StudioResetJobRunner(
     }
 
     /**
-     * Pliki S3 na końcu: krok jest wolny (paginacja po prefiksie), idempotentny
-     * i nietransakcyjny, a jego powtórka po awarii nic nie kosztuje.
+     * Pliki S3 po bazie, ale PRZED finalizacją. Finalizacja zasiewa domyślne
+     * protokoły przyjęcia i wydania — wgrywa ich PDF-y do S3 i zapisuje wiersze —
+     * a czyszczenie S3 kasuje cały prefiks studia. Gdy szło na końcu, zjadało
+     * właśnie wgrane szablony: baza wskazywała na klucze, których już nie było,
+     * i każde przyjęcie pojazdu kończyło się NoSuchKey.
+     *
+     * Krok S3 jest wolny (paginacja po prefiksie), idempotentny i nietransakcyjny,
+     * a jego powtórka po awarii nic nie kosztuje.
      */
     fun plan(): List<StudioResetStep> =
-        purger.steps() + finalizer.steps() + StudioResetStep("Pliki (S3)") { ctx ->
-            s3StudioPurger.purge(ctx.studioId)
-        }
+        purger.steps() +
+            StudioResetStep("Pliki (S3)") { ctx -> s3StudioPurger.purge(ctx.studioId) } +
+            finalizer.steps()
 
     @Scheduled(fixedDelay = 5_000)
     fun run() {

@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
@@ -227,6 +229,14 @@ class S3ProtocolStorageService(
             .contentType(contentType)
             .build()
         s3Client.putObject(putObjectRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data))
+    }
+
+    /** True when the object is present; false on a clean 404. Other S3 errors propagate. */
+    fun objectExists(s3Key: String): Boolean = try {
+        s3Client.headObject(HeadObjectRequest.builder().bucket(bucketName).key(s3Key).build())
+        true
+    } catch (e: NoSuchKeyException) {
+        false
     }
 
     /**
