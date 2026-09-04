@@ -152,11 +152,41 @@ class LeadTimelineTest {
 
         val timeline = handlers.timeline(studioId, leadId)
 
+        // „Nowy" i „W kontakcie" są echem sąsiednich wiadomości — nie zajmują wiersza.
         assertEquals(
-            listOf("INBOUND_MESSAGE", "STATUS", "OUTBOUND_MESSAGE", "STATUS", "INBOUND_MESSAGE"),
+            listOf("INBOUND_MESSAGE", "OUTBOUND_MESSAGE", "INBOUND_MESSAGE"),
             timeline.map { it.kind }
         )
         assertEquals("za drogo. 800 dam", timeline.last().body)
+    }
+
+    @Test
+    fun `status bedacy echem wiadomosci nie zajmuje wiersza`() {
+        // „Nowy" powstaje w tej samej sekundzie co pierwsza wiadomość, a „W kontakcie"
+        // stempluje nasza odpowiedź. Dwa wiersze na jedno wydarzenie rozciągają oś
+        // i każą czytelnikowi rozstrzygać, czy nie przeoczył czegoś nowego.
+        every { historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId) } returns listOf(
+            statusChange(start, LeadStatus.NEW, null),
+            statusChange(start.plusSeconds(105), LeadStatus.IN_PROGRESS, LeadStatus.NEW)
+        )
+
+        assertTrue(handlers.timeline(studioId, leadId).isEmpty())
+    }
+
+    @Test
+    fun `statusy bedace decyzja czlowieka zostaja`() {
+        // Rezerwacja i przegrana z powodem to fakty, których korespondencja nie widzi.
+        every { historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId) } returns listOf(
+            statusChange(start, LeadStatus.NEW, null),
+            statusChange(start.plusSeconds(60), LeadStatus.IN_PROGRESS, LeadStatus.NEW),
+            statusChange(start.plusSeconds(120), LeadStatus.CONFIRMED, LeadStatus.IN_PROGRESS),
+            statusChange(start.plusSeconds(180), LeadStatus.LOST, LeadStatus.CONFIRMED)
+        )
+
+        val timeline = handlers.timeline(studioId, leadId)
+
+        assertEquals(listOf("STATUS", "STATUS"), timeline.map { it.kind })
+        assertEquals(listOf("CONFIRMED", "LOST"), timeline.map { it.toStatus })
     }
 
     @Test
@@ -168,7 +198,7 @@ class LeadTimelineTest {
         every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns
             listOf(message(CommDirection.OUTBOUND, at, "1200 dla Ciebie"))
         every { historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId) } returns
-            listOf(statusChange(at, LeadStatus.IN_PROGRESS, LeadStatus.NEW))
+            listOf(statusChange(at, LeadStatus.CONFIRMED, LeadStatus.IN_PROGRESS))
 
         val timeline = handlers.timeline(studioId, leadId)
 
@@ -236,7 +266,7 @@ class LeadTimelineTest {
         // żeby jej szukać.
         every { leadRepository.findByIdAndStudioId(leadId, studioId.value) } returns lead(thread = null)
         every { historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId) } returns
-            listOf(statusChange(start, LeadStatus.NEW, null))
+            listOf(statusChange(start, LeadStatus.CONFIRMED, LeadStatus.IN_PROGRESS))
 
         val timeline = handlers.timeline(studioId, leadId)
 

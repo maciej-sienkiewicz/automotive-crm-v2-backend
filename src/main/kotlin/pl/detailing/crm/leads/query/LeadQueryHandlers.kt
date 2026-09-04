@@ -108,13 +108,18 @@ class LeadQueryHandlers(
      * Remisy (mail i zmiana statusu w tej samej sekundzie — odpowiedź STEMPLUJE
      * status, więc dzieje się to przy każdej pierwszej odpowiedzi) rozstrzygamy na
      * korzyść wiadomości: to ona jest przyczyną, status skutkiem.
+     *
+     * NIE KAŻDY STATUS ZASŁUGUJE NA WIERSZ — patrz [ECHOED_STATUSES]. Oś czasu ma
+     * opowiadać, co się w sprawie wydarzyło, a nie protokołować każdy zapis w bazie.
      */
     @Transactional(readOnly = true)
     fun timeline(studioId: StudioId, leadId: UUID): List<LeadTimelineEntryDto> {
         val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
             ?: throw NotFoundException("Nie znaleziono leada")
 
-        val statuses = historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId).map { it.toTimelineEntry() }
+        val statuses = historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId)
+            .filterNot { it.toStatus in ECHOED_STATUSES }
+            .map { it.toTimelineEntry() }
         val callbacks = callbackRepository.findByLeadIdOrderByCreatedAtAsc(leadId).map { it.toTimelineEntry() }
         val messages = lead.threadId
             ?.let { messageRepository.findByThreadIdOrderBySentAtAsc(it) }
@@ -172,6 +177,25 @@ class LeadQueryHandlers(
          * bo to odpowiedź powoduje przejście na „W kontakcie", a nie odwrotnie.
          */
         private val KIND_ORDER = listOf("INBOUND_MESSAGE", "OUTBOUND_MESSAGE", "CALLBACK", "STATUS")
+
+        /**
+         * Statusy, które na osi czasu są ECHEM zdarzenia stojącego tuż obok, więc nie
+         * niosą nic własnego.
+         *
+         * „Nowy" powstaje razem z leadem, czyli w tej samej sekundzie co pierwsza
+         * wiadomość albo pierwszy telefon — a te już otwierają oś czasu. „W kontakcie"
+         * jest stemplowane przez naszą odpowiedź (patrz LeadFirstResponseListener
+         * i RecordLeadCallbackHandler), więc powtarza wiersz wyżej innymi słowami.
+         * Dwa wiersze na jedno wydarzenie rozciągają oś i każą czytelnikowi za każdym
+         * razem rozstrzygać, czy właśnie nie przeoczył czegoś nowego.
+         *
+         * Reszta statusów zostaje, bo każdy z nich jest decyzją, której korespondencja
+         * nie widzi: rezerwacja, przegrana z powodem, wizyta zrealizowana, nieodbyta.
+         *
+         * Filtrujemy WIDOK, nie dane — tabela lead_status_history zostaje nietknięta
+         * i analityka lejka liczy dalej wszystkie przejścia.
+         */
+        private val ECHOED_STATUSES = setOf(LeadStatus.NEW, LeadStatus.IN_PROGRESS)
 
         /**
          * Sufit treści w podglądzie. Cała korespondencja jedzie w jednej odpowiedzi,
