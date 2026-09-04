@@ -90,7 +90,7 @@ class SimilarVisitsHandler(
         val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
             ?: throw NotFoundException("Nie znaleziono leada")
 
-        val indexed = indexStateRepository.count()
+        val indexed = indexStateRepository.countByStudioId(studioId.value)
         if (!enabled) return SimilarVisitsDto(emptyList(), indexed)
 
         // Odrzucone pary nie wracają: pokazanie zlecenia drugi raz po tym, jak człowiek

@@ -91,6 +91,12 @@ class VisitIndexStateEntity(
 interface VisitIndexStateRepository : JpaRepository<VisitIndexStateEntity, UUID> {
     fun findByVisitIdIn(visitIds: Collection<UUID>): List<VisitIndexStateEntity>
     fun deleteByVisitId(visitId: UUID)
+
+    /**
+     * Ile zleceń TEGO studia jest w indeksie. Licznik globalny mówiłby studiu,
+     * które dopiero zaczyna, że jego historia jest pełna — bo cudza jest.
+     */
+    fun countByStudioId(studioId: UUID): Long
 }
 
 /**
