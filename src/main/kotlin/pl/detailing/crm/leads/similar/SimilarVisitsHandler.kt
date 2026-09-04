@@ -12,6 +12,7 @@ import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -206,6 +207,12 @@ class SimilarVisitsHandler(
 
     private fun toDto(visit: VisitEntity, tier: MatchTier): SimilarVisitDto {
         val provisional = visit.status == VisitStatus.IN_PROGRESS
+        // Kwota LICZONA TAK, JAK LICZY JĄ SAMA WIZYTA. Naiwna suma pozycji wciąga
+        // usługi ODRZUCONE przez klienta i te, które dopiero czekają na jego zgodę —
+        // czyli pieniądze, których nikt nigdy nie zapłacił. Handlowiec dostaje tę
+        // liczbę po to, żeby na niej oprzeć wycenę, więc jedyne dopuszczalne źródło
+        // to metoda domeny (Visit.calculateTotalGross), a nie druga, własna reguła.
+        val domain = visit.toDomain()
         return SimilarVisitDto(
             visitId = visit.id.toString(),
             visitNumber = visit.visitNumber,
@@ -214,8 +221,12 @@ class SimilarVisitsHandler(
                 visit.modelSnapshot.trim().takeIf { it.isNotEmpty() },
                 visit.yearOfProductionSnapshot?.toString()
             ).joinToString(" "),
-            services = visit.serviceItems.map { it.serviceName }.filter { it.isNotBlank() }.distinct(),
-            totalGross = visit.serviceItems.sumOf { it.finalPriceGross },
+            services = domain.serviceItems
+                .filter { it.status != VisitServiceStatus.REJECTED }
+                .map { it.serviceName }
+                .filter { it.isNotBlank() }
+                .distinct(),
+            totalGross = domain.calculateTotalGross().amountInCents,
             date = visit.actualCompletionDate ?: visit.scheduledDate,
             status = visit.status.name,
             priceProvisional = provisional,

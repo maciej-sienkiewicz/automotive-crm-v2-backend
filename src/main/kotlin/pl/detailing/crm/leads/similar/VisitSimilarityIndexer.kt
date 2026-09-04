@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import org.springframework.data.domain.PageRequest
@@ -48,7 +49,12 @@ object VisitDocumentFactory {
 
         // Usługi w kolejności zapisu i bez powtórzeń: dwie identyczne pozycje to
         // szczegół rozliczeniowy, nie druga usługa.
+        //
+        // ODRZUCONE POZYCJE WYPADAJĄ. Usługa, której klient nie chciał, nie opisuje
+        // roboty, którą wykonaliśmy — a wciągnięta do wektora przyciągałaby to
+        // zlecenie do zapytań o pracę, której tam nigdy nie było.
         val services = visit.serviceItems
+            .filter { it.status != VisitServiceStatus.REJECTED }
             .map { it.serviceName.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
