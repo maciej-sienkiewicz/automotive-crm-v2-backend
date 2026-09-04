@@ -119,5 +119,17 @@ data class CommInboundMessageStoredEvent(
     val threadId: UUID,
     val messageId: UUID,
     val fromEmail: String,
-    val sentAt: Instant
+    val sentAt: Instant,
+    /**
+     * Wiadomość przedstawiła się nagłówkami jako automat — newsletter, autoresponder,
+     * powiadomienie systemowe (patrz [AutomatedMailDetector]).
+     *
+     * Werdykt jedzie w zdarzeniu, bo nagłówki są dostępne WYŁĄCZNIE w chwili parsowania
+     * MIME: baza przechowuje treść i adresy, nie `List-Id` ani `Precedence`. Listener,
+     * który chciałby je sprawdzić później, musiałby po nie wrócić na serwer IMAP.
+     *
+     * Klasyfikacja leadów używa tego jako darmowego pre-filtra: newsletter i tak nigdy
+     * nie jest zapytaniem o wycenę, więc nie ma po co płacić za jego przeczytanie modelem.
+     */
+    val automated: Boolean = false
 )

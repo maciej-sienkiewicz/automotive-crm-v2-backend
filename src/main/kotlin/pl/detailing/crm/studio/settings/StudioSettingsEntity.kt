@@ -70,6 +70,22 @@ class StudioSettingsEntity(
     @Column(name = "ksef_auto_send_default", nullable = false, columnDefinition = "boolean not null default true")
     var ksefAutoSendDefault: Boolean = true,
 
+    /**
+     * Automatyczne tworzenie leadów: każda nowa wiadomość przychodząca idzie do
+     * klasyfikacji LLM-em (LEAD / NIE-LEAD), a z zapytań klientów powstają leady
+     * bez udziału człowieka. Wyłączona = system zachowuje się dokładnie jak dawniej.
+     */
+    @Column(name = "auto_lead_classification_enabled", nullable = false, columnDefinition = "boolean not null default false")
+    var autoLeadClassificationEnabled: Boolean = false,
+
+    /**
+     * Kiedy flagę włączono — próg „od kiedy klasyfikujemy". Poczta starsza niż ten
+     * moment jest pomijana, żeby doczytanie starego folderu przez IMAP nie wsypało
+     * do tabeli leadów lat zaległych zgłoszeń (ta sama ochrona co w form-mailu).
+     */
+    @Column(name = "auto_lead_classification_enabled_at")
+    var autoLeadClassificationEnabledAt: Instant? = null,
+
     /** 0 = disabled; positive value = lock screen after N seconds of inactivity (client-side enforcement). */
     @Column(name = "idle_timeout_seconds", nullable = false)
     var idleTimeoutSeconds: Int = 0,
