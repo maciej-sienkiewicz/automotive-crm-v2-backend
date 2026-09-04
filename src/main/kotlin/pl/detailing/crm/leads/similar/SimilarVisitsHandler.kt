@@ -1,6 +1,5 @@
 package pl.detailing.crm.leads.similar
 
-import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -31,7 +30,6 @@ data class SimilarVisitDto(
     val totalGross: Long,
     /** Data zakończenia, a gdy zlecenie trwa — planowana. */
     val date: Instant,
-    val status: String,
     /**
      * Kwota nie jest jeszcze ostateczna: zlecenie w toku dobiera usługi do samego
      * wydania auta. Bez tego oznaczenia liczba na ekranie udawałaby fakt.
@@ -85,8 +83,6 @@ class SimilarVisitsHandler(
     @Value("\${crm.ai.similar-visits.max-results:6}") private val maxResults: Int,
     @Value("\${crm.ai.similar-visits.max-candidates:400}") private val maxCandidates: Int
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
-
     @Transactional(readOnly = true)
     fun findFor(studioId: StudioId, leadId: UUID): SimilarVisitsDto {
         val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
@@ -221,7 +217,6 @@ class SimilarVisitsHandler(
                 .distinct(),
             totalGross = domain.calculateTotalGross().amountInCents,
             date = visit.actualCompletionDate ?: visit.scheduledDate,
-            status = visit.status.name,
             priceProvisional = provisional,
             matchTier = tier.name
         )
