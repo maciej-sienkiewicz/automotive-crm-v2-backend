@@ -37,6 +37,7 @@ import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import pl.detailing.crm.visit.domain.VisitFixtures
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -472,6 +473,38 @@ class SimilarVisitsDismissalTest {
         createdBy = UUID.randomUUID(),
         createdByName = "Anna"
     )
+
+    /**
+     * Sedno: pozycja ODRZUCONA przez klienta nie ma prawa wejść ani do kwoty, ani do
+     * wykazu usług. Handlowiec dostaje tę liczbę po to, żeby na niej oprzeć wycenę —
+     * doliczenie roboty, której klient nie chciał, to podanie ceny, której nikt nigdy
+     * nie zapłacił. Regułę liczy domena (Visit.calculateTotalGross); ten test pilnuje,
+     * żeby sekcja nie dorobiła sobie drugiej, własnej.
+     */
+    @Test
+    fun `odrzucona pozycja nie wchodzi ani do kwoty, ani do wykazu uslug`() {
+        every { feedbackRepository.findByLeadId(leadId) } returns emptyList()
+        every { visitRepository.findByStudioIdAndIdIn(studioId.value, any()) } answers {
+            secondArg<Collection<UUID>>().map { id ->
+                VisitEntity.fromDomain(
+                    VisitFixtures.visit(
+                        studioId = studioId,
+                        items = listOf(
+                            VisitFixtures.serviceItem(finalPriceGross = 100_000, status = VisitServiceStatus.CONFIRMED)
+                                .copy(serviceName = "Oklejenie przodu PPF"),
+                            VisitFixtures.serviceItem(finalPriceGross = 900_000, status = VisitServiceStatus.REJECTED)
+                                .copy(serviceName = "Oklejenie całego auta")
+                        )
+                    ).copy(id = VisitId(id))
+                )
+            }
+        }
+
+        val item = handler.findFor(studioId, leadId).items.first()
+
+        assertEquals(100_000L, item.totalGross)
+        assertEquals(listOf("Oklejenie przodu PPF"), item.services)
+    }
 
     private fun visitEntity(visitId: UUID) = VisitEntity.fromDomain(
         VisitFixtures.visit(studioId = studioId).copy(id = VisitId(visitId))
