@@ -75,9 +75,11 @@ class StudioResetJobRunnerTest {
     }
 
     @Test
-    fun `plan konczy sie czyszczeniem S3 po krokach bazodanowych i finalizacji`() {
+    fun `plan czysci S3 po bazie, ale przed finalizacja, ktora zasiewa nowe pliki`() {
         val plan = runner.plan()
-        assertEquals(listOf("Klienci", "Wizyty", "Ustawienia domyślne", "Pliki (S3)"), plan.map { it.name })
+        // Regresja: S3 na samym końcu kasowało domyślne protokoły wgrane chwilę wcześniej
+        // przez finalizację — baza wskazywała na klucze, których już nie było.
+        assertEquals(listOf("Klienci", "Wizyty", "Pliki (S3)", "Ustawienia domyślne"), plan.map { it.name })
     }
 
     @Test
@@ -88,7 +90,7 @@ class StudioResetJobRunnerTest {
 
         runner.run()
 
-        assertEquals(listOf("Klienci", "Wizyty", "Ustawienia domyślne", "S3"), executed)
+        assertEquals(listOf("Klienci", "Wizyty", "S3", "Ustawienia domyślne"), executed)
         assertEquals(StudioResetJobStatus.COMPLETED, job.status)
         assertEquals(4, job.currentStep)
         assertEquals(4, job.totalSteps)
@@ -129,7 +131,7 @@ class StudioResetJobRunnerTest {
         runner.run()
 
         // Kroki 0 i 1 ("Klienci", "Wizyty") były już zatwierdzone przed padem instancji.
-        assertEquals(listOf("Ustawienia domyślne", "S3"), executed)
+        assertEquals(listOf("S3", "Ustawienia domyślne"), executed)
         assertEquals(StudioResetJobStatus.COMPLETED, job.status)
     }
 

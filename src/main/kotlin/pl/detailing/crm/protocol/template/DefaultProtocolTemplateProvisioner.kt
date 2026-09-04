@@ -226,6 +226,40 @@ class DefaultProtocolTemplateProvisioner(
     }
 
     /**
+     * Re-uploads the bundled file for every system-seeded template whose S3 object is
+     * gone while its row is still active.
+     *
+     * A row pointing at a missing object is the worst state: the studio sees a
+     * template in its settings, the check-in pipeline picks it, and generation fails
+     * with NoSuchKey on every visit. It happened after an account reset that purged S3
+     * after seeding. The bundled bytes are known-good, so putting them back is safe;
+     * studio-uploaded templates are not touched — we have nothing to restore them from.
+     *
+     * @return number of files restored
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun healMissingSystemTemplateFiles(studioId: StudioId): Int {
+        var restored = 0
+        protocolTemplateRepository.findAllByStudioId(studioId.value)
+            .filter { it.isActive }
+            .forEach { template ->
+                val resource = when {
+                    template.isDefault -> DEFAULT_TEMPLATE_RESOURCE
+                    template.name == CHECK_OUT_TEMPLATE_NAME && template.createdBy == SYSTEM_USER_ID -> CHECK_OUT_TEMPLATE_RESOURCE
+                    else -> return@forEach
+                }
+                if (s3StorageService.objectExists(template.s3Key)) return@forEach
+                logger.warn(
+                    "Default template provisioning: studio={} template={} ('{}') has no file at {} — restoring bundled copy",
+                    studioId, template.id, template.name, template.s3Key
+                )
+                s3StorageService.uploadBytes(template.s3Key, loadBundledResource(resource), ProtocolTemplateFormat.PDF.contentType)
+                restored++
+            }
+        return restored
+    }
+
+    /**
      * Reads the bundled default template from the classpath. Shared with the startup
      * refresh so both paths upload byte-identical content.
      */

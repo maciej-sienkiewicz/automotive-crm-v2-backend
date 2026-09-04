@@ -45,6 +45,7 @@ class DefaultProtocolTemplateBackfillRunner(
                 val studioId = StudioId(studio.id)
                 if (provisioner.ensureDefaultCheckInTemplate(studioId)) seeded++
                 if (provisioner.ensureDefaultCheckOutTemplate(studioId)) seeded++
+                seeded += provisioner.healMissingSystemTemplateFiles(studioId)
             } catch (e: Exception) {
                 failed++
                 logger.error(
