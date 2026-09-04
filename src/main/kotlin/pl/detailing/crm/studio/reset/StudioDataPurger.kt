@@ -181,6 +181,7 @@ class StudioDataPurger(
             deleteByStudio("LeadTagDefinitionEntity", ctx)
             deleteByStudio("LeadIntakeDeliveryEntity", ctx)
             deleteByStudio("LeadIntakeWebhookEntity", ctx)
+            deleteByStudio("LeadMessageClassificationEntity", ctx)
             deleteByStudio("FormMailExtractionEntity", ctx)
             deleteByStudio("FormMailSourceEntity", ctx)
             deleteByStudio("LeadEntity", ctx)

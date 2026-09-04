@@ -201,7 +201,11 @@ class CommsIngestService(
                     threadId = thread.id,
                     messageId = message.id,
                     fromEmail = parsed.fromEmail,
-                    sentAt = parsed.sentAt
+                    sentAt = parsed.sentAt,
+                    // Ostatni moment, w którym nagłówki jeszcze istnieją — dalej zostaje
+                    // po nich tylko ten boolean. Automatyczna klasyfikacja leadów odsiewa
+                    // po nim newslettery, zanim zapłaci za nie modelowi.
+                    automated = AutomatedMailDetector.isAutomated(parsed.headers)
                 )
             )
         }

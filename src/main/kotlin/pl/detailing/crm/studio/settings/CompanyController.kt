@@ -318,6 +318,64 @@ class CompanyController(
         )
     }
 
+    @GetMapping("/auto-lead-config")
+    fun getAutoLeadConfig(): ResponseEntity<AutoLeadConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        ResponseEntity.ok(
+            AutoLeadConfigResponse(
+                enabled = settings?.autoLeadClassificationEnabled ?: false,
+                enabledAt = settings?.autoLeadClassificationEnabledAt?.toString()
+            )
+        )
+    }
+
+    /**
+     * Przełącznik „Automatyczne tworzenie leadów".
+     *
+     * Włączenie stempluje moment — od niego liczy się próg „klasyfikujemy tylko nowe
+     * wiadomości". Bez stempla doczytanie starego folderu przez IMAP wsypałoby do
+     * modelu lata zaległej poczty. Wyłączenie stempel czyści, więc ponowne włączenie
+     * NIE sięga wstecz po korespondencję z przerwy: poczta z czasu, gdy funkcja była
+     * wyłączona, została pominięta świadomie, a nie przez awarię.
+     */
+    @PatchMapping("/auto-lead-config")
+    @RequiresOwner
+    fun updateAutoLeadConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateAutoLeadConfigRequest
+    ): ResponseEntity<AutoLeadConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+
+        // Ponowne wysłanie tej samej wartości nie przesuwa stempla — inaczej odświeżenie
+        // ekranu ustawień cofałoby próg i gubiło pocztę z ostatnich minut.
+        if (request.enabled != settings.autoLeadClassificationEnabled) {
+            settings.autoLeadClassificationEnabled = request.enabled
+            settings.autoLeadClassificationEnabledAt = if (request.enabled) Instant.now() else null
+            settings.updatedAt = Instant.now()
+        }
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+        logger.info(
+            "Auto-lead classification for studio={} set to {}",
+            studioId, saved.autoLeadClassificationEnabled
+        )
+
+        ResponseEntity.ok(
+            AutoLeadConfigResponse(
+                enabled = saved.autoLeadClassificationEnabled,
+                enabledAt = saved.autoLeadClassificationEnabledAt?.toString()
+            )
+        )
+    }
+
     @GetMapping("/idle-timeout")
     fun getIdleTimeout(): ResponseEntity<IdleTimeoutResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -488,6 +546,14 @@ data class SmsSenderConfigResponse(
     val smsApiNameConfirmed: Boolean,
     val effectiveSenderName: String?
 )
+
+data class AutoLeadConfigResponse(
+    val enabled: Boolean,
+    /** Od kiedy klasyfikujemy — null, gdy funkcja jest wyłączona. */
+    val enabledAt: String?
+)
+
+data class UpdateAutoLeadConfigRequest(val enabled: Boolean)
 
 data class IdleTimeoutResponse(val idleTimeoutSeconds: Int)
 
