@@ -117,14 +117,18 @@ class StudioDataPurger(
         },
 
         StudioResetStep("Wizyty") { ctx ->
-            // Indeks „podobnych zleceń" idzie razem z wizytami, i to W OBU miejscach:
-            // stan indeksowania (tabela) oraz same wektory. Wektory nie są encją JPA
-            // i nie zniknęłyby kaskadą — a zostawione opisywałyby po resecie zlecenia,
-            // których już nie ma. Wyszukiwanie by ich nie pokazało (odczyt i tak pyta
-            // o wizytę), ale trzymanie opisu cudzej roboty po wyczyszczeniu konta jest
-            // dokładnie tym, czego ten reset obiecuje nie robić.
+            // Indeks „podobnych zleceń" idzie razem z wizytami: stemple i sygnatury
+            // opisują roboty, których po resecie już nie ma. Wyszukiwanie by ich nie
+            // pokazało (odczyt i tak pyta o wizytę), ale trzymanie opisu cudzej roboty
+            // po wyczyszczeniu konta jest dokładnie tym, czego ten reset obiecuje
+            // nie robić. Globalne wiersze service_families zostają — klasyfikacja
+            // NAZWY nie jest daną studia, tak jak vehicle_segments.
+            deleteByStudio("VisitServiceSignatureEntity", ctx)
+            // Kasuje wyłącznie RĘCZNE poprawki tego studia — wiersze globalne mają
+            // studio_id-sentinel, więc warunek po studiu ich nie dotyka. Klasyfikacja
+            // NAZWY jest wiedzą o świecie, jak vehicle_segments; poprawka jest daną studia.
+            deleteByStudio("ServiceFamilyEntity", ctx)
             deleteByStudio("VisitIndexStateEntity", ctx)
-            deleteVisitSimilarityVectors(ctx)
             deleteByStudio("VisitEntity", ctx)
         },
 
@@ -188,6 +192,7 @@ class StudioDataPurger(
             deleteByStudio("LeadNoteEntity", ctx)
             deleteByStudio("LeadCallbackEntity", ctx)
             deleteByStudio("VisitMatchFeedbackEntity", ctx)
+            deleteByStudio("LeadServiceIntentEntity", ctx)
             deleteByStudio("LeadTagDefinitionEntity", ctx)
             deleteByStudio("LeadIntakeDeliveryEntity", ctx)
             deleteByStudio("LeadIntakeWebhookEntity", ctx)
@@ -370,22 +375,6 @@ class StudioDataPurger(
         entityManager.createQuery("DELETE FROM $entityName e WHERE e.studioId = :studioId")
             .setParameter("studioId", ctx.studioId)
             .executeUpdate()
-    }
-
-    /**
-     * Wektory zleceń studia. Zapytanie natywne, bo tabelę tworzy Spring AI i nie ma
-     * jej wśród encji; `runCatching`, bo funkcja jest opcjonalna — reset konta nie może
-     * paść przez to, że indeks podobnych zleceń nie został jeszcze utworzony.
-     */
-    private fun deleteVisitSimilarityVectors(ctx: StudioResetContext) {
-        runCatching {
-            entityManager
-                .createNativeQuery(
-                    "DELETE FROM visit_similarity_vectors WHERE metadata::jsonb->>'studio_id' = :studioId"
-                )
-                .setParameter("studioId", ctx.studioId.toString())
-                .executeUpdate()
-        }
     }
 
     private fun deleteWhere(entityWithAlias: String, condition: String, ctx: StudioResetContext) {

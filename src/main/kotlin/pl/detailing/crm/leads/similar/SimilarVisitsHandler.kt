@@ -1,14 +1,12 @@
 package pl.detailing.crm.leads.similar
 
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.tags.LeadTagCatalogService
-import pl.detailing.crm.leads.update.LeadTagService
+import pl.detailing.crm.service.taxonomy.ServiceScope
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -16,7 +14,6 @@ import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.vehicle.segment.VehicleSegmentService
 import pl.detailing.crm.visit.infrastructure.VisitEntity
-import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -26,6 +23,11 @@ data class SimilarVisitDto(
     val visitNumber: String,
     val vehicle: String,
     val services: List<String>,
+    /**
+     * PEŁNA kwota zlecenia (decyzja właściciela produktu), liczona tak, jak liczy
+     * ją sama wizyta — bez pozycji odrzuconych i czekających na zgodę klienta.
+     * Przy zleceniu wielousługowym wykaz usług obok mówi, co ta kwota obejmuje.
+     */
     val totalGross: Long,
     /** Data zakończenia, a gdy zlecenie trwa — planowana. */
     val date: Instant,
@@ -35,35 +37,40 @@ data class SimilarVisitDto(
      * wydania auta. Bez tego oznaczenia liczba na ekranie udawałaby fakt.
      */
     val priceProvisional: Boolean,
-    /** SAME_MODEL | SAME_BRAND | SAME_CLASS | ANY — jak blisko trafiliśmy w pojazd. */
+    /** Ranga z [MatchTier] — auto × usługa. */
     val matchTier: String
 )
 
 data class SimilarVisitsDto(
     val items: List<SimilarVisitDto>,
     /** Ile zleceń studio ma w ogóle w indeksie — odróżnia „nic nie pasuje" od „nie ma czego szukać". */
-    val indexedVisits: Long
+    val indexedVisits: Long,
+    /**
+     * Powód pustki, gdy nie wynika ona z ubóstwa historii:
+     * SERVICE_NOT_IN_CATALOG — klient pyta o robotę spoza cennika (nie podpowiadamy cen),
+     * VEHICLE_UNKNOWN — lead nie ma rozpoznanego auta.
+     * Null, gdy lista nie jest pusta albo pustka znaczy po prostu „brak trafień".
+     */
+    val emptyReason: String? = null
 )
 
 /**
  * Odpowiada na pytanie „co robiliśmy dla takiego auta i takiej roboty".
  *
- * Trzy kroki, każdy z inną rolą:
- *  1. ZAPYTANIE — składane z tego, co o leadzie JUŻ wiemy: auto rozpoznane przy
- *     tworzeniu, tagi usług nadane automatem, treść pierwszej wiadomości. Żadnego
- *     nowego wywołania modelu; te dane i tak powstają.
- *  2. DOBÓR — [SimilarVisitFinder]: kaskada po aucie, podobieństwo tekstu wewnątrz kroku.
- *  3. PRZESIEW — [SimilarVisitReranker]: który z kandydatów odpowiada na to samo pytanie.
+ * ŚCIEŻKA KLIKNIĘCIA NIE WOŁA MODELU I NICZEGO NIE OSADZA. Cała inteligencja
+ * pracuje wcześniej i zapisuje wyniki:
+ *  - rodzina każdej nazwy usługi — raz na nazwę (service_families),
+ *  - segment każdego modelu auta — raz na model (vehicle_segments),
+ *  - stempel każdego zlecenia — uzgadniaczem (visit_index_state + sygnatury),
+ *  - intencja leada — raz na leada, przy PIERWSZYM otwarciu sekcji (jedyne
+ *    wywołanie modelu, na jakie kliknięcie może jeszcze trafić).
+ * W czasie zapytania zostaje SQL po kolumnach i krata w [SimilarVisitMatcher].
  *
- * LICZONE NA ŻĄDANIE, nie przy tworzeniu leada. Większości leadów nikt nigdy nie
- * otworzy, a policzenie tego dla każdego byłoby płaceniem za odpowiedź, o którą nikt
- * nie zapytał. Stąd też nie ma tu limitu dziennego, jaki ma klasyfikator leadów:
- * tam automat uruchamiała przychodząca poczta i nikt nie trzymał ręki na wydatku,
- * tutaj każde wywołanie to czyjeś świadome kliknięcie.
- *
- * Pamięć podręczna trzyma SAME IDENTYFIKATORY, nie gotowe wiersze: kwoty i statusy
- * doczytujemy z bazy przy każdym odczycie, więc zlecenie, które w międzyczasie
- * dostało kolejną usługę, nie pokazuje wczorajszej ceny.
+ * Dlaczego nie bliskość wektorowa: baza wektorowa bez progu nie odrzuca niczego,
+ * a z progiem odrzuca w poprzek — „mycie", „pranie tapicerki" i „detailing wnętrza"
+ * są sobie tekstowo bliższe niż „PPF przód" i „Full front", które są tą samą robotą.
+ * Zamknięta taksonomia rodzin rozstrzyga to raz, przy indeksowaniu, i jest
+ * testowalna bez wołania modelu.
  */
 @Service
 class SimilarVisitsHandler(
@@ -71,16 +78,12 @@ class SimilarVisitsHandler(
     private val visitRepository: SimilarVisitReadRepository,
     private val feedbackRepository: VisitMatchFeedbackRepository,
     private val indexStateRepository: VisitIndexStateRepository,
-    private val tagService: LeadTagService,
-    private val tagCatalog: LeadTagCatalogService,
+    private val signatureRepository: VisitServiceSignatureRepository,
+    private val intentService: LeadServiceIntentService,
     private val segmentService: VehicleSegmentService,
-    private val finder: SimilarVisitFinder,
-    private val reranker: SimilarVisitReranker,
-    private val redisTemplate: StringRedisTemplate,
     @Value("\${crm.ai.similar-visits.enabled:true}") private val enabled: Boolean,
-    @Value("\${crm.ai.similar-visits.min-confidence:0.5}") private val minConfidence: Double,
     @Value("\${crm.ai.similar-visits.max-results:6}") private val maxResults: Int,
-    @Value("\${crm.ai.similar-visits.cache-minutes:60}") private val cacheMinutes: Long
+    @Value("\${crm.ai.similar-visits.max-candidates:400}") private val maxCandidates: Int
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -90,88 +93,78 @@ class SimilarVisitsHandler(
             ?: throw NotFoundException("Nie znaleziono leada")
 
         val indexed = indexStateRepository.countByStudioId(studioId.value)
-        if (!enabled) return SimilarVisitsDto(emptyList(), indexed)
+        if (!enabled || indexed == 0L) return SimilarVisitsDto(emptyList(), indexed)
 
-        // Usunięta podpowiedź nie wraca: pokazanie zlecenia drugi raz po tym, jak
-        // człowiek je stąd zdjął, jest gorsze niż niepokazanie niczego. Zapis jest
-        // per para lead↔zlecenie, więc przy innym leadzie to samo zlecenie wróci.
+        val brandKey = lead.vehicleBrand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val modelKey = lead.vehicleModel?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val segment = runCatching { segmentService.classify(lead.vehicleBrand, lead.vehicleModel) }
+            .getOrNull()?.sizeSegment?.name?.takeIf { it != "UNKNOWN" }
+
+        // Krata zaczyna się od auta: bez modelu i bez segmentu żadna ranga nie
+        // istnieje. Pokazanie „czegokolwiek" byłoby udawaniem podobieństwa.
+        if ((brandKey == null || modelKey == null) && segment == null) {
+            return SimilarVisitsDto(emptyList(), indexed, emptyReason = REASON_VEHICLE_UNKNOWN)
+        }
+
+        // Jedyne miejsce, gdzie kliknięcie może jeszcze trafić na model językowy —
+        // pierwszy raz dla tego leada; potem intencja wraca z dziennika. Awaria
+        // modelu degraduje do samej historii auta zamiast wywracać sekcję.
+        val intent = intentService.intentFor(studioId, leadId, lead.initialMessage)
+            ?: LeadServiceIntent(ServiceIntentStatus.NO_SERVICE, emptySet(), emptySet(), ServiceScope.UNKNOWN)
+
+        // Decyzja właściciela produktu: robota spoza cennika = ŻADNYCH cen.
+        // Cena innej roboty podana pewnym głosem jest gorsza niż brak podpowiedzi.
+        if (intent.status == ServiceIntentStatus.NOT_IN_CATALOG) {
+            return SimilarVisitsDto(emptyList(), indexed, emptyReason = REASON_SERVICE_NOT_IN_CATALOG)
+        }
+
+        val candidates = indexStateRepository.findCandidates(
+            studioId = studioId.value,
+            brandKey = brandKey ?: NO_MATCH_KEY,
+            modelKey = modelKey ?: NO_MATCH_KEY,
+            sizeSegment = segment,
+            version = VisitSimilarityIndexer.CURRENT_SIGNATURE_VERSION,
+            pageable = PageRequest.of(0, maxCandidates)
+        )
+        if (candidates.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
+
+        val signatures = signatureRepository.findByVisitIdIn(candidates.map { it.visitId })
+            .groupBy { it.visitId }
+
+        // Zdjęta podpowiedź nie wraca; odsiew idzie PRZED przycięciem, żeby na
+        // zwolnione miejsce weszło następne zlecenie zamiast luki.
         val dismissed = feedbackRepository.findByLeadId(leadId).map { it.visitId }.toSet()
 
-        val ranked = cachedRanking(leadId)
-            ?: rank(studioId, lead.vehicleBrand, lead.vehicleModel, buildQuery(studioId, leadId, lead.initialMessage))
-                .also { cacheRanking(leadId, it) }
+        val graded = candidates.mapNotNull { candidate ->
+            if (candidate.visitId in dismissed) return@mapNotNull null
+            SimilarVisitMatcher.grade(
+                candidate = candidate,
+                signatures = signatures[candidate.visitId].orEmpty(),
+                intent = intent,
+                leadBrandKey = brandKey,
+                leadModelKey = modelKey,
+                leadSegment = segment
+            )?.let { tier -> Triple(candidate.visitId, tier, candidate.happenedAt) }
+        }
+            // Ranga przed świeżością: bliższe dopasowanie bije nowsze zlecenie.
+            .sortedWith(
+                compareBy<Triple<UUID, MatchTier, Instant?>> { it.second.ordinal }
+                    .thenByDescending { it.third ?: Instant.EPOCH }
+            )
+            .take(maxResults)
 
-        val visible = ranked.filterNot { it.visitId in dismissed }.take(maxResults)
-        if (visible.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
+        if (graded.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
 
         val visits = visitRepository
-            .findByStudioIdAndIdIn(studioId.value, visible.map { it.visitId })
+            .findByStudioIdAndIdIn(studioId.value, graded.map { it.first })
             .associateBy { it.id }
 
         return SimilarVisitsDto(
-            items = visible.mapNotNull { match ->
-                visits[match.visitId]?.let { toDto(it, match.tier) }
+            items = graded.mapNotNull { (visitId, tier, _) ->
+                visits[visitId]?.let { toDto(it, tier) }
             },
             indexedVisits = indexed
         )
-    }
-
-    /**
-     * Zapytanie do wyszukiwarki: treść pierwszej wiadomości uzupełniona o to, co
-     * automat już z niej odczytał.
-     *
-     * Same tagi byłyby za ubogie („PPF_WRAP" nie niesie tego, że chodzi o cały przód),
-     * a sama treść bywa jednym zdaniem bez nazwy usługi. Razem opisują robotę tak,
-     * jak opisano ją w indeksie.
-     */
-    private fun buildQuery(studioId: StudioId, leadId: UUID, initialMessage: String?): String {
-        val labels = tagCatalog.labelsByCode(studioId)
-        val services = tagService.tagsOf(leadId).mapNotNull { labels[it] }
-        return listOfNotNull(
-            initialMessage?.trim()?.takeIf { it.isNotEmpty() },
-            services.takeIf { it.isNotEmpty() }?.joinToString(", ")
-        ).joinToString("\n")
-    }
-
-    private fun rank(studioId: StudioId, brand: String?, model: String?, query: String): List<RankedMatch> {
-        if (query.isBlank()) return emptyList()
-
-        val segment = runCatching { segmentService.classify(brand, model) }.getOrNull()
-        val candidates = finder.find(
-            studioId = studioId,
-            query = query,
-            brand = brand,
-            model = model,
-            sizeSegment = segment?.sizeSegment?.name,
-            marketTier = segment?.marketTier?.name
-        )
-        if (candidates.isEmpty()) return emptyList()
-
-        val verdicts = runBlocking { reranker.rerank(query, candidates) }.associateBy { it.visitId }
-
-        // Awaria modelu nie ma zamieniać sekcji w pustkę: kandydaci są już zawężeni
-        // po aucie, więc bez przesiewu lista jest gorsza, ale wciąż na temat.
-        // Zapisujemy to w logu, bo cicha zmiana jakości doboru jest nie do wyśledzenia.
-        if (verdicts.isEmpty()) {
-            log.info("[SIMILAR_VISITS] Brak przesiewu LLM — pokazuję {} kandydatów po samej kaskadzie", candidates.size)
-            return candidates.map { RankedMatch(it.visitId, it.tier) }.sortedBy { it.tier.ordinal }
-        }
-
-        return candidates
-            .mapNotNull { candidate ->
-                val verdict = verdicts[candidate.visitId.toString()] ?: return@mapNotNull null
-                if (!verdict.comparable || verdict.confidence < minConfidence) {
-                    log.debug(
-                        "[SIMILAR_VISITS] Odrzucono {} (pewność {}): {}",
-                        candidate.visitId, verdict.confidence, verdict.reasoning ?: "-"
-                    )
-                    return@mapNotNull null
-                }
-                RankedMatch(candidate.visitId, candidate.tier)
-            }
-            // Bliskość auta przed pewnością modelu: „mieliśmy dokładnie taką Panamerę"
-            // jest mocniejszą odpowiedzią niż pewniejsze dopasowanie na innym aucie.
-            .sortedBy { it.tier.ordinal }
     }
 
     /**
@@ -234,37 +227,11 @@ class SimilarVisitsHandler(
         )
     }
 
-    // ── Pamięć podręczna ─────────────────────────────────────────────────────
-    //
-    // Trzyma wyłącznie identyfikatory z krokiem kaskady. Ponowne otwarcie leada nie
-    // płaci za osadzenie i przesiew, a kwoty i tak doczytują się z bazy — więc wynik
-    // nie zestarzeje się razem z ceną.
+    companion object {
+        const val REASON_SERVICE_NOT_IN_CATALOG = "SERVICE_NOT_IN_CATALOG"
+        const val REASON_VEHICLE_UNKNOWN = "VEHICLE_UNKNOWN"
 
-    private fun cacheKey(leadId: UUID) = "similar-visits:$leadId"
-
-    private fun cachedRanking(leadId: UUID): List<RankedMatch>? =
-        runCatching {
-            redisTemplate.opsForValue().get(cacheKey(leadId))?.let { raw ->
-                if (raw.isEmpty()) return@let emptyList()
-                raw.split('|').mapNotNull { entry ->
-                    val (id, tier) = entry.split(';').takeIf { it.size == 2 } ?: return@mapNotNull null
-                    RankedMatch(UUID.fromString(id), MatchTier.valueOf(tier))
-                }
-            }
-        }.getOrNull()
-
-    private fun cacheRanking(leadId: UUID, ranking: List<RankedMatch>) {
-        runCatching {
-            redisTemplate.opsForValue().set(
-                cacheKey(leadId),
-                ranking.joinToString("|") { "${it.visitId};${it.tier.name}" },
-                Duration.ofMinutes(cacheMinutes)
-            )
-        }.onFailure {
-            // Redis niedostępny znaczy tylko tyle, że policzymy drugi raz.
-            log.debug("[SIMILAR_VISITS] Nie udało się zapisać w pamięci podręcznej: {}", it.message)
-        }
+        /** Wartość, której żaden brand_key/model_key nie przyjmie — wyłącza gałąź modelu w SQL. */
+        private const val NO_MATCH_KEY = " "
     }
-
-    private data class RankedMatch(val visitId: UUID, val tier: MatchTier)
 }

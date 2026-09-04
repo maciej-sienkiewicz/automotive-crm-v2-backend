@@ -5,17 +5,10 @@ import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
-import org.springframework.ai.embedding.EmbeddingModel
-import org.springframework.ai.vectorstore.VectorStore
-import org.springframework.ai.vectorstore.pgvector.PgVectorStore
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -23,46 +16,24 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Druga baza wektorowa aplikacji — obok tej, z której korzysta moduł Instagrama.
+ * Relacyjny indeks wyszukiwania „podobnych zleceń" — patrz V111 i V112.
  *
- * Osobna tabela, a nie wspólna z metadaną „rodzaj dokumentu": zapytanie o podobne
- * zlecenie i zapytanie o inspirację do posta nie mają ze sobą nic wspólnego poza
- * technologią, a jeden zbiór wektorów znaczyłby, że każde wyszukiwanie po jednej
- * stronie musi pamiętać o odfiltrowaniu drugiej. Pierwsze zapomniane filtrowanie
- * pokazywałoby handlowcowi cudze posty jako „podobne zlecenia".
+ * Do V111 ta tabela była tylko stanem indeksowania WEKTORÓW, a auto zlecenia żyło
+ * w metadanych dokumentu w bazie wektorowej. V112 przenosi auto do kolumn i na tym
+ * kończy rolę wektorów: dopasowanie auta zawsze było metadanymi, a dopasowanie
+ * usługi przejęły rodziny ([pl.detailing.crm.service.taxonomy.ServiceFamily]).
+ * W czasie kliknięcia zostaje zwykłe zapytanie relacyjne.
  *
- * Bean jest nazwany, bo autokonfiguracja Spring AI wystawia własny [VectorStore]
- * wskazujący na tabelę Instagrama — bez kwalifikatora wstrzyknięcie byłoby loterią.
- * Schemat tworzy sama biblioteka (initializeSchema), tak jak dla tamtej tabeli:
- * kształt należy do Spring AI i przy jego podniesieniu potrafi się zmienić, więc
- * opisanie go w migracji znaczyłoby utrzymywanie kopii cudzego kontraktu.
- */
-@Configuration
-class VisitSimilarityVectorConfig {
-
-    @Bean(VISIT_SIMILARITY_VECTOR_STORE)
-    fun visitSimilarityVectorStore(
-        jdbcTemplate: JdbcTemplate,
-        embeddingModel: EmbeddingModel,
-        @Value("\${crm.ai.similar-visits.vector-table:visit_similarity_vectors}") table: String
-    ): VectorStore =
-        PgVectorStore.builder(jdbcTemplate, embeddingModel)
-            .vectorTableName(table)
-            .initializeSchema(true)
-            .build()
-
-    companion object {
-        const val VISIT_SIMILARITY_VECTOR_STORE = "visitSimilarityVectorStore"
-    }
-}
-
-/**
- * Co i kiedy trafiło do indeksu — patrz V111__visit_similarity.sql.
+ * [fingerprint] to skrót treści, która poszła do ostemplowania. Dzięki niemu
+ * uzgadniacz odróżnia zmianę ISTOTNĄ (doszła usługa, zmieniło się auto) od dowolnej
+ * innej (notatka techniczna, zdjęcia, przesunięcie terminu) i nie płaci za
+ * klasyfikacje, które wyszłyby identyczne.
  *
- * [fingerprint] to skrót opisu, który poszedł do osadzenia. Dzięki niemu uzgadniacz
- * odróżnia zmianę ISTOTNĄ (doszła usługa, zmieniło się auto) od dowolnej innej
- * (notatka techniczna, zdjęcia, przesunięcie terminu) i nie płaci za wektor,
- * który wyszedłby identyczny.
+ * [signatureVersion] rozwiązuje problem, którego fingerprint nie widzi: zmiana
+ * FORMATU stempla (nowe kolumny, nowa taksonomia) nie rusza żadnej wizyty, więc
+ * uzgadniacz kluczowany po updated_at nigdy by jej nie podniósł. Podbicie stałej
+ * [VisitSimilarityIndexer.CURRENT_SIGNATURE_VERSION] wymusza przejście całej
+ * historii — porcjami, w tempie uzgadniacza.
  */
 @Entity
 @Table(
@@ -79,6 +50,25 @@ class VisitIndexStateEntity(
 
     @Column(name = "fingerprint", nullable = false, length = 64)
     var fingerprint: String,
+
+    @Column(name = "brand_key", length = 120)
+    var brandKey: String? = null,
+
+    @Column(name = "model_key", length = 160)
+    var modelKey: String? = null,
+
+    @Column(name = "size_segment", length = 20)
+    var sizeSegment: String? = null,
+
+    @Column(name = "market_tier", length = 20)
+    var marketTier: String? = null,
+
+    /** Data zakończenia, a gdy zlecenie trwa — planowana. Po niej sortujemy w obrębie rangi. */
+    @Column(name = "happened_at")
+    var happenedAt: Instant? = null,
+
+    @Column(name = "signature_version", nullable = false)
+    var signatureVersion: Int = 0,
 
     @Column(name = "indexed_at", nullable = false)
     var indexedAt: Instant = Instant.now(),
@@ -97,14 +87,87 @@ interface VisitIndexStateRepository : JpaRepository<VisitIndexStateEntity, UUID>
      * które dopiero zaczyna, że jego historia jest pełna — bo cudza jest.
      */
     fun countByStudioId(studioId: UUID): Long
+
+    /**
+     * Kandydaci pod dopasowanie: zlecenia tego studia na TYM aucie albo w TEJ klasie
+     * wielkości. Półka rynkowa celowo NIE zawęża (decyzja właściciela produktu:
+     * SUV VW kosztuje przy tej samej folii tyle, co SUV Porsche — pracę wyznacza
+     * powierzchnia, nie logo). Najświeższe naprzód, bo świeża cena jest przy
+     * wycenie najcenniejsza, a kandydatów bywa więcej niż limit.
+     */
+    @Query(
+        """
+        SELECT s FROM VisitIndexStateEntity s
+        WHERE s.studioId = :studioId
+          AND s.signatureVersion >= :version
+          AND (
+              (s.brandKey = :brandKey AND s.modelKey = :modelKey)
+              OR (:sizeSegment IS NOT NULL AND s.sizeSegment = :sizeSegment)
+          )
+        ORDER BY s.happenedAt DESC NULLS LAST
+        """
+    )
+    fun findCandidates(
+        @Param("studioId") studioId: UUID,
+        @Param("brandKey") brandKey: String,
+        @Param("modelKey") modelKey: String,
+        @Param("sizeSegment") sizeSegment: String?,
+        @Param("version") version: Int,
+        pageable: Pageable
+    ): List<VisitIndexStateEntity>
 }
 
 /**
- * Zlecenia zaległe wobec indeksu — nieindeksowane albo ruszone po ostatnim osadzeniu.
+ * Sygnatura jednej POZYCJI zlecenia: rodzina i zakres roboty. Wiersz per pozycja,
+ * nie per zlecenie — zlecenie wielousługowe pasuje do zapytania, jeśli pasuje
+ * którakolwiek jego pozycja. Pozycje ODRZUCONE przez klienta nie mają sygnatur:
+ * robota, której nie wykonaliśmy, nie opisuje zlecenia.
+ */
+@Entity
+@Table(
+    name = "visit_service_signatures",
+    indexes = [
+        Index(name = "ix_visit_service_signatures_visit", columnList = "visit_id"),
+        Index(name = "ix_visit_service_signatures_studio", columnList = "studio_id")
+    ]
+)
+class VisitServiceSignatureEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID = UUID.randomUUID(),
+
+    @Column(name = "visit_id", nullable = false, columnDefinition = "uuid")
+    val visitId: UUID,
+
+    @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
+    val studioId: UUID,
+
+    @Column(name = "name_key", nullable = false, length = 220)
+    val nameKey: String,
+
+    @Column(name = "family", nullable = false, length = 30)
+    val family: String,
+
+    @Column(name = "scope", nullable = false, length = 20)
+    val scope: String,
+
+    @Column(name = "created_at", nullable = false)
+    val createdAt: Instant = Instant.now()
+)
+
+@Repository
+interface VisitServiceSignatureRepository : JpaRepository<VisitServiceSignatureEntity, UUID> {
+    fun findByVisitIdIn(visitIds: Collection<UUID>): List<VisitServiceSignatureEntity>
+    fun deleteByVisitId(visitId: UUID)
+}
+
+/**
+ * Zlecenia zaległe wobec indeksu — nieostemplowane, ruszone po ostatnim stemplu
+ * albo ostemplowane STARSZĄ wersją formatu.
  *
  * Zapytanie siedzi TUTAJ, a nie w VisitRepository, świadomie: wiąże wizyty z tabelą
  * należącą do tej funkcji, a moduł wizyt nie ma powodu wiedzieć, że ktoś obok robi
- * z nich indeks wektorowy. Zależność idzie w jedną stronę — od funkcji do wizyt.
+ * z nich indeks wyszukiwania. Zależność idzie w jedną stronę — od funkcji do wizyt.
  */
 @Repository
 interface VisitIndexCandidateRepository : org.springframework.data.repository.Repository<VisitEntity, UUID> {
@@ -116,24 +179,27 @@ interface VisitIndexCandidateRepository : org.springframework.data.repository.Re
           AND v.deletedAt IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM VisitIndexStateEntity s
-              WHERE s.visitId = v.id AND s.sourceUpdatedAt >= v.updatedAt
+              WHERE s.visitId = v.id
+                AND s.sourceUpdatedAt >= v.updatedAt
+                AND s.signatureVersion >= :version
           )
         ORDER BY v.updatedAt ASC
         """
     )
     fun findPending(
         @Param("statuses") statuses: Collection<VisitStatus>,
+        @Param("version") version: Int,
         pageable: Pageable
     ): List<VisitEntity>
 }
 
 /**
- * Odczyt zleceń wskazanych przez dobór — z filtrem studia w samym zapytaniu.
+ * Odczyt zleceń wskazanych przez dopasowanie — z filtrem studia w samym zapytaniu.
  *
- * Identyfikatory przychodzą z bazy wektorowej, czyli ze zbioru wspólnego dla
- * wszystkich studiów. Gdyby ten odczyt ufał, że są już przefiltrowane, jeden błąd
- * w budowaniu filtra metadanych zamieniłby się w cudze ceny na ekranie. Warunek
- * `studio_id` stoi tu jako druga, niezależna bariera.
+ * Identyfikatory przychodzą z indeksu, który jest per studio już na poziomie
+ * zapytania, ale warunek `studio_id` stoi tu jako druga, niezależna bariera:
+ * jeden błąd w budowaniu tamtego zapytania nie może zamienić się w cudze ceny
+ * na ekranie handlowca.
  */
 @Repository
 interface SimilarVisitReadRepository : org.springframework.data.repository.Repository<VisitEntity, UUID> {
