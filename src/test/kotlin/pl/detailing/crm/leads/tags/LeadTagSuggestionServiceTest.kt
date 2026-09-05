@@ -132,10 +132,29 @@ class LeadTagSuggestionServiceTest {
         service.suggest("Ile kosztuje?", options)
 
         assertTrue(
-            "zwróć pustą listę" in systemMessages.single(),
+            "Pustą listę zwracasz" in systemMessages.single(),
             "Bez wyraźnej zgody na pustą odpowiedź model zawsze coś wybierze — a zmyśloną " +
                 "etykietę zestawienie policzy jako fakt"
         )
+    }
+
+    /**
+     * Regresja z produkcji: „zniszczyła mi się kierownica w s klasie, ile weźmiecie
+     * za renowację?" nie dostało ŻADNEGO tagu. Klient wskazał konkretną robotę,
+     * a lead wyglądał w zestawieniach jak „proszę o kontakt". Prompt musi mówić
+     * wprost: elementy wnętrza czyta się po znaczeniu, a robota spoza słownika
+     * idzie do etykiety-worka — pustka jest tylko dla zapytań bez usługi.
+     */
+    @Test
+    fun `prompt kaze czytac etykiety po znaczeniu i zostawia worek na roboty spoza slownika`() = runBlocking {
+        stub("INTERIOR")
+        service.suggest("Zniszczyła mi się kierownica, ile za renowację?", options)
+
+        val prompt = systemMessages.single()
+        assertTrue("kierownica" in prompt, "Bez przykładu elementów wnętrza model nie łączy renowacji kierownicy z wnętrzem")
+        assertTrue("po ZNACZENIU" in prompt)
+        assertTrue("etykiety-worka" in prompt, "Robota spoza słownika ma iść do „Inne”, nie w pustkę")
+        assertTrue("TYLKO wtedy, gdy klient nie wskazuje żadnej usługi" in prompt)
     }
 
     @Test

@@ -97,9 +97,19 @@ ZASADY:
   potrafi dotyczyć folii z przodu, korekty reszty lakieru i powłoki na koniec — wciśnięte
   w jedną kategorię policzyłoby się raz i nie tam, gdzie trzeba.
 - Nie zgaduj po marce auta ani po zamożności klienta. Podstawą jest to, o co pyta.
-- Gdy klient pyta ogólnie („ile kosztuje?", „proszę o kontakt") i nie wskazuje usługi,
-  zwróć pustą listę. Zmyślona etykieta psuje zestawienie „o co klienci pytają
-  najczęściej" mocniej niż brak etykiety — bo brak widać, a zmyśloną liczy się jako fakt.
+- Etykiety czytaj po ZNACZENIU, nie po dosłownym brzmieniu. Prace przy elementach
+  wnętrza — kierownica, fotele, boczki, podsufitka, skóra, tapicerka — w tym ich
+  czyszczenie, renowacja i naprawa, opisuje etykieta dotycząca wnętrza, jeśli studio
+  taką ma. „Renowacja kierownicy" to robota przy wnętrzu, choć słowo „detailing"
+  w niej nie pada.
+- Gdy klient wskazuje KONKRETNĄ robotę, ale żadna etykieta jej nie nazywa nawet
+  po znaczeniu, użyj etykiety-worka (np. „Inne"), o ile jest na liście. Lead
+  z pytaniem o realną usługę nie może wyglądać w zestawieniach identycznie jak
+  „proszę o kontakt".
+- Pustą listę zwracasz TYLKO wtedy, gdy klient nie wskazuje żadnej usługi
+  („ile kosztuje?", „proszę o kontakt"). Zmyślona etykieta psuje zestawienie
+  „o co klienci pytają najczęściej" mocniej niż brak etykiety — bo brak widać,
+  a zmyśloną liczy się jako fakt.
 - Najwyżej $MAX_TAGS etykiet. Zwracasz same kody, dokładnie w formie z listy powyżej.
 """.trim()
 

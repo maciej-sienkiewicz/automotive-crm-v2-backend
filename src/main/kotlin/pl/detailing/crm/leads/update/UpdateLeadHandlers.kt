@@ -8,6 +8,7 @@ import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.domain.LeadLostReason
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.similar.LeadVehicleResolvedEvent
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
@@ -165,6 +166,9 @@ class UpdateLeadHandlers(
         lead.updatedAt = Instant.now()
         leadRepository.save(lead)
         publishChanged(lead.studioId, lead.id)
+        // Zmiana auta unieważnia zapisany dobór podobnych zleceń — przeliczenie
+        // idzie w tle, żeby poprawione auto od razu dało poprawione podpowiedzi.
+        eventPublisher.publishEvent(LeadVehicleResolvedEvent(studioId = lead.studioId, leadId = lead.id))
     }
 
     private fun publishChanged(studioId: UUID, leadId: UUID) {

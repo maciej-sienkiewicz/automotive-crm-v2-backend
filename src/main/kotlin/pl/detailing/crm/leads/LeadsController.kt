@@ -229,6 +229,19 @@ class LeadsController(
     }
 
     /**
+     * „Sprawdź ponownie": przeliczenie doboru na wyraźne życzenie — np. gdy
+     * indeks urósł albo do cennika doszła brakująca usługa. POST, bo zmienia
+     * zapisany stan; zwraca świeży wynik, żeby interfejs nie robił drugiego kursu.
+     */
+    @PostMapping("/{id}/similar-visits/refresh")
+    fun refreshSimilarVisits(@PathVariable id: String): ResponseEntity<SimilarVisitsDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            similarVisitsHandler.refresh(principal.studioId, UUID.fromString(id))
+        )
+    }
+
+    /**
      * Usunięcie jednej podpowiedzi z tego leada.
      *
      * DELETE, bo to jest usunięcie, a nie ocena: nie zbieramy opinii o zleceniu,
