@@ -8,6 +8,9 @@ import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
+import pl.detailing.crm.leads.infrastructure.LeadServiceItemSource
+import pl.detailing.crm.leads.infrastructure.LeadServiceItemStatus
+import pl.detailing.crm.leads.infrastructure.LeadServicePriceSource
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
@@ -48,12 +51,17 @@ class LeadServiceItemsService(
     private val eventPublisher: ApplicationEventPublisher
 ) {
 
-    /** Replaces the whole list; returns the new total (grosze). */
+    /**
+     * Replaces the human-managed list; returns the new total (grosze).
+     *
+     * Dotyka WYŁĄCZNIE pozycji NIE-sugerowanych. Żywe sugestie AI (status=SUGGESTED)
+     * mają własny cykl życia (accept/reject/refresh) i ludzki zapis edytora nie ma
+     * prawa ich skasować przy okazji.
+     */
     @Transactional
     fun replaceItems(lead: LeadEntity, inputs: List<LeadServiceItemInput>): Long {
-        itemRepository.deleteByLeadId(lead.id)
+        itemRepository.deleteByLeadIdAndStatusNot(lead.id, LeadServiceItemStatus.SUGGESTED)
 
-        var total = 0L
         inputs.forEach { input ->
             if (input.quantity < 1) throw ValidationException("Ilość musi być większa od zera")
 
@@ -80,15 +88,15 @@ class LeadServiceItemsService(
                     priceNet = input.priceNet?.takeIf { it >= 0 },
                     vatRate = input.vatRate,
                     note = input.note?.trim()?.takeIf { it.isNotBlank() }?.take(500),
-                    quantity = input.quantity
+                    quantity = input.quantity,
+                    status = LeadServiceItemStatus.ACCEPTED,
+                    source = LeadServiceItemSource.MANUAL,
+                    priceSource = if (input.priceGross != null) LeadServicePriceSource.MANUAL else LeadServicePriceSource.CATALOG
                 )
             )
-            total += price * input.quantity
         }
 
-        lead.estimatedValue = total
-        lead.updatedAt = Instant.now()
-        leadRepository.save(lead)
+        val total = recomputeEstimatedValue(lead)
 
         // Lead z terminem ma tę samą listę usług w kalendarzu — poprawka wyceny,
         // która tam nie dojdzie, to kwota uzgodniona z klientem i niewidoczna dla
@@ -102,6 +110,24 @@ class LeadServiceItemsService(
                 leadId = LeadId(lead.id)
             )
         )
+        return total
+    }
+
+    /**
+     * Przelicza i zapisuje potencjał leada: suma brutto WSZYSTKICH pozycji —
+     * ręcznych i sugerowanych naraz. Sugestia bez ceny (czeka na kwotę) liczy się
+     * jako zero, żeby nie zawyżać potencjału liczbą, której jeszcze nie ma.
+     *
+     * To jest jedyne miejsce liczące estimated_value — analityka czyta wyłącznie tę
+     * zdenormalizowaną kolumnę, więc „wliczaj ręczne I sugerowane" domyka się tutaj.
+     */
+    @Transactional
+    fun recomputeEstimatedValue(lead: LeadEntity): Long {
+        val total = itemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id)
+            .sumOf { (it.priceGross ?: 0L) * it.quantity }
+        lead.estimatedValue = total
+        lead.updatedAt = Instant.now()
+        leadRepository.save(lead)
         return total
     }
 }

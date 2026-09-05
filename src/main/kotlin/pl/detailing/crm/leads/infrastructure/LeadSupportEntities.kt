@@ -12,9 +12,21 @@ import pl.detailing.crm.shared.LeadStatus
 import java.time.Instant
 import java.util.UUID
 
+/** Cykl życia pozycji na leadzie. Odrzucenie kasuje wiersz twardo, więc nie ma REJECTED. */
+enum class LeadServiceItemStatus { SUGGESTED, ACCEPTED }
+
+/** Kto dodał pozycję: człowiek czy AI. Steruje badge i zakresem pełnej podmiany. */
+enum class LeadServiceItemSource { MANUAL, AI }
+
+/** Skąd wzięła się cena — patrz V114__lead_suggested_services.sql. */
+enum class LeadServicePriceSource { CATALOG, HISTORY, MANUAL, PENDING }
+
 /**
  * One priced service assigned to a lead. Price is a frozen copy from the catalogue at
  * assignment time — later cennik edits must never change a quoted lead's value.
+ *
+ * Sugestie AI mieszkają w tej samej tabeli (status=SUGGESTED, source=AI) — patrz V114.
+ * Cena bywa NULL: usługa z wyceną niestandardową bez trafienia w historii czeka na kwotę.
  */
 @Entity
 @Table(
@@ -41,9 +53,12 @@ class LeadServiceItemEntity(
     @Column(name = "name", nullable = false, length = 200)
     val name: String,
 
-    /** Cena brutto w groszach, zamrożona w momencie przypisania. Wartość wiodąca. */
-    @Column(name = "price_gross", nullable = false)
-    val priceGross: Long,
+    /**
+     * Cena brutto w groszach, zamrożona w momencie przypisania. NULL wyłącznie dla
+     * sugestii usługi z wyceną niestandardową, która czeka na kwotę od człowieka.
+     */
+    @Column(name = "price_gross")
+    var priceGross: Long?,
 
     /**
      * Netto w groszach i stawka VAT — null dla pozycji sprzed V75, które znały
@@ -63,6 +78,18 @@ class LeadServiceItemEntity(
 
     @Column(name = "quantity", nullable = false)
     val quantity: Int,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: LeadServiceItemStatus = LeadServiceItemStatus.ACCEPTED,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20)
+    val source: LeadServiceItemSource = LeadServiceItemSource.MANUAL,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "price_source", nullable = false, length = 20)
+    var priceSource: LeadServicePriceSource = LeadServicePriceSource.MANUAL,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now()

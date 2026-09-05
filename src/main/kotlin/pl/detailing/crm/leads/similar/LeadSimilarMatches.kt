@@ -92,7 +92,8 @@ interface LeadSimilarMatchesRepository : JpaRepository<LeadSimilarMatchesEntity,
  */
 @Component
 class LeadSimilarPrecomputeListener(
-    private val handler: SimilarVisitsHandler
+    private val handler: SimilarVisitsHandler,
+    private val suggestionService: LeadServiceSuggestionService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -100,10 +101,12 @@ class LeadSimilarPrecomputeListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onVehicleResolved(event: LeadVehicleResolvedEvent) {
-        runCatching {
-            handler.computeAndStore(pl.detailing.crm.shared.StudioId(event.studioId), event.leadId)
-        }.onFailure {
-            log.warn("[SIMILAR_VISITS] Doliczenie w tle dla leada {} nie powiodło się: {}", event.leadId, it.message)
-        }
+        val studioId = pl.detailing.crm.shared.StudioId(event.studioId)
+        // Kolejność jest istotna: sugestie czerpią ceny „wyceny niestandardowej"
+        // z podobnych zleceń, więc te muszą być policzone pierwsze.
+        runCatching { handler.computeAndStore(studioId, event.leadId) }
+            .onFailure { log.warn("[SIMILAR_VISITS] Doliczenie w tle dla leada {} nie powiodło się: {}", event.leadId, it.message) }
+        runCatching { suggestionService.recompute(studioId, event.leadId, force = false) }
+            .onFailure { log.warn("[LEAD_SUGGEST] Sugestie w tle dla leada {} nie powiodły się: {}", event.leadId, it.message) }
     }
 }

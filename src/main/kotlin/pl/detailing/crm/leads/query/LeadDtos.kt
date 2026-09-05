@@ -54,13 +54,20 @@ data class LeadServiceItemDto(
     val id: String,
     val serviceId: String?,
     val name: String,
-    val priceGross: Long,
+    /** NULL dla sugestii z wyceną niestandardową, która czeka na kwotę. */
+    val priceGross: Long?,
     /** Netto i stawka VAT — null dla pozycji wycenionych przed wprowadzeniem tych pól. */
     val priceNet: Long?,
     val vatRate: Int?,
     val note: String?,
     val quantity: Int,
-    val totalGross: Long
+    val totalGross: Long,
+    /** SUGGESTED (podsunięte przez AI) | ACCEPTED (część wyceny). */
+    val status: String,
+    /** MANUAL | AI — źródło pozycji; AI + SUGGESTED daje badge „Sugerowane". */
+    val source: String,
+    /** CATALOG | HISTORY | MANUAL | PENDING — skąd cena; PENDING = trzeba podać kwotę. */
+    val priceSource: String
 )
 
 /**
@@ -161,7 +168,10 @@ fun LeadServiceItemEntity.toDto(): LeadServiceItemDto = LeadServiceItemDto(
     vatRate = vatRate,
     note = note,
     quantity = quantity,
-    totalGross = priceGross * quantity
+    totalGross = (priceGross ?: 0L) * quantity,
+    status = status.name,
+    source = source.name,
+    priceSource = priceSource.name
 )
 
 /**

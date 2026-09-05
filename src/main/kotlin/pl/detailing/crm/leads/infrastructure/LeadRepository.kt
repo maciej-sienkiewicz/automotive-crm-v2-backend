@@ -143,9 +143,26 @@ interface LeadServiceItemRepository : JpaRepository<LeadServiceItemEntity, UUID>
 
     fun findByLeadIdIn(leadIds: Collection<UUID>): List<LeadServiceItemEntity>
 
+    fun findByLeadIdAndStatus(leadId: UUID, status: LeadServiceItemStatus): List<LeadServiceItemEntity>
+
+    fun findByLeadIdAndIdAndStatus(leadId: UUID, id: UUID, status: LeadServiceItemStatus): LeadServiceItemEntity?
+
     @Modifying
     @Query("DELETE FROM LeadServiceItemEntity i WHERE i.leadId = :leadId")
     fun deleteByLeadId(@Param("leadId") leadId: UUID)
+
+    /** Pełna podmiana ludzkiego edytora rusza tylko NIE-sugestie — sugestie AI żyją osobno. */
+    @Modifying
+    @Query("DELETE FROM LeadServiceItemEntity i WHERE i.leadId = :leadId AND i.status <> :status")
+    fun deleteByLeadIdAndStatusNot(@Param("leadId") leadId: UUID, @Param("status") status: LeadServiceItemStatus)
+
+    @Modifying
+    @Query("DELETE FROM LeadServiceItemEntity i WHERE i.leadId = :leadId AND i.status = :status AND i.source = :source")
+    fun deleteByLeadIdAndStatusAndSource(
+        @Param("leadId") leadId: UUID,
+        @Param("status") status: LeadServiceItemStatus,
+        @Param("source") source: LeadServiceItemSource
+    )
 }
 
 @Repository

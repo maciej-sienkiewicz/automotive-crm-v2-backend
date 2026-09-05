@@ -347,6 +347,9 @@ class LeadServiceIntentTest {
     private fun catalogService(name: String) =
         mockk<pl.detailing.crm.service.infrastructure.ServiceEntity> {
             every { this@mockk.name } returns name
+            every { this@mockk.id } returns UUID.randomUUID()
+            every { this@mockk.isActive } returns true
+            every { this@mockk.isPackage } returns false
         }
 
     private fun stub(raw: LeadServiceIntentService.RawIntent) {

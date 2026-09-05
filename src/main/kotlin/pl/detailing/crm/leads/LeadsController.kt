@@ -34,6 +34,7 @@ import pl.detailing.crm.leads.callback.RecordLeadCallbackHandler
 import pl.detailing.crm.leads.query.LeadTimelineEntryDto
 import pl.detailing.crm.leads.similar.SimilarVisitsDto
 import pl.detailing.crm.leads.similar.SimilarVisitsHandler
+import pl.detailing.crm.leads.similar.LeadServiceSuggestionService
 import pl.detailing.crm.leads.query.leadDictionaries
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadServiceItemInput
@@ -88,6 +89,9 @@ data class ChangeLeadStatusRequest(
 
 data class UpdateLeadServicesRequest(val services: List<LeadServiceItemRequest>)
 
+/** Kwota brutto (grosze) dla akceptowanej sugestii z wyceną niestandardową; null dla usług o stałej cenie. */
+data class AcceptSuggestionRequest(val priceGross: Long? = null)
+
 data class UpdateLeadRequest(
     val category: String?,
     val customerName: String?,
@@ -128,7 +132,8 @@ class LeadsController(
     private val analyticsHandler: GetLeadAnalyticsHandler,
     private val noteService: LeadNoteService,
     private val callbackHandler: RecordLeadCallbackHandler,
-    private val similarVisitsHandler: SimilarVisitsHandler
+    private val similarVisitsHandler: SimilarVisitsHandler,
+    private val suggestionService: LeadServiceSuggestionService
 ) {
 
     @GetMapping
@@ -441,6 +446,54 @@ class LeadsController(
         updateHandlers.updateServices(
             principal.studioId, UUID.fromString(id), request.services.map { it.toInput() }
         )
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
+    }
+
+    /**
+     * [Akceptuj] jedną sugestię AI. Dla usługi z wyceną niestandardową bez ceny
+     * kwota MUSI przyjść w ciele — inaczej odmowa (interfejs wymusza ją inline).
+     */
+    @PostMapping("/{id}/services/suggestions/{itemId}/accept")
+    fun acceptSuggestion(
+        @PathVariable id: String,
+        @PathVariable itemId: String,
+        @RequestBody(required = false) request: AcceptSuggestionRequest?
+    ): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        suggestionService.accept(
+            principal.studioId, UUID.fromString(id), UUID.fromString(itemId),
+            request?.priceGross, principal.fullName
+        )
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
+    }
+
+    /** [Odrzuć] — kasuje sugestię twardo. */
+    @DeleteMapping("/{id}/services/suggestions/{itemId}")
+    fun rejectSuggestion(
+        @PathVariable id: String,
+        @PathVariable itemId: String
+    ): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        suggestionService.reject(principal.studioId, UUID.fromString(id), UUID.fromString(itemId))
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
+    }
+
+    /**
+     * „Stwórz rezerwację" traktuje wszystkie nieodrzucone sugestie jako zaakceptowane.
+     * 409 z nazwami, gdy któraś czeka na kwotę — wtedy interfejs wymusza kwoty najpierw.
+     */
+    @PostMapping("/{id}/services/suggestions/accept-all")
+    fun acceptAllSuggestions(@PathVariable id: String): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        suggestionService.acceptAllForBooking(principal.studioId, UUID.fromString(id))
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
+    }
+
+    /** „Sprawdź ponownie" dla sugestii — przepytuje model z pominięciem dziennika. */
+    @PostMapping("/{id}/services/suggestions/refresh")
+    fun refreshSuggestions(@PathVariable id: String): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        suggestionService.recompute(principal.studioId, UUID.fromString(id), force = true)
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
     }
 
