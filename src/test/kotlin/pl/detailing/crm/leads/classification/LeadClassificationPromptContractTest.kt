@@ -158,4 +158,67 @@ class LeadClassificationPromptContractTest {
                 "dublowałby leady na każdej wiadomości obsługowej"
         )
     }
+
+    /**
+     * REGRESJA Z PRODUKCJI: „zniszczyla mi sie kierownica w mojej s klasie, ile
+     * wezmiecie za renowacje?" zostało ODRZUCONE z uzasadnieniem „nie dotyczy usług
+     * detailingu samochodowego". Klient chciał zapłacić, a automat wyrzucił go
+     * w milczeniu — to najdroższa pomyłka tego filtra, bo nikt jej nigdy nie zobaczy.
+     *
+     * Przyczyną nie był brak reguły (była, w liście LEAD), tylko dwie silniejsze
+     * rzeczy: zamknięta lista usług w PIERWSZYM zdaniu promptu i blankietowa zasada
+     * nadrzędna „w razie wątpliwości NIE_LEAD", która objęła też wątpliwość co do
+     * zakresu oferty. Te testy pilnują obu.
+     */
+    @Test
+    fun `prompt nie zamyka listy uslug studia`() {
+        assertTrue(
+            "powłoki ceramiczne, folie PPF" !in prompt,
+            "Wyliczenie usług w pierwszym zdaniu model czyta jako TEST ZAKRESU i odrzuca " +
+                "wszystko spoza listy — dokładnie tak wypadła renowacja kierownicy"
+        )
+    }
+
+    @Test
+    fun `ocena zakresu uslug jest wprost odebrana modelowi`() {
+        assertTrue(
+            "NIE OCENIASZ ZAKRESU USŁUG" in prompt,
+            "Reguła musi być nagłówkiem obok pytania o kierunek, a nie punktem listy"
+        )
+        assertTrue(
+            "decyduje jego WŁAŚCICIEL" in prompt,
+            "Model ma wiedzieć, KTO podejmuje tę decyzję zamiast niego"
+        )
+        assertTrue(
+            "renowacja\nkierownicy" in prompt || "renowacja kierownicy" in prompt,
+            "Przykład z produkcji ma stać w prompcie wprost"
+        )
+        assertTrue(
+            "NIE JEST powodem odrzucenia" in prompt,
+            "Samo wymienienie usług nie wystarcza — trzeba zakazać użycia zakresu jako powodu"
+        )
+    }
+
+    @Test
+    fun `watpliwosc co do zakresu prowadzi do LEAD, nie do NIE_LEAD`() {
+        val rule = prompt.substringAfter("ZASADA NADRZĘDNA")
+        assertTrue(
+            "WĄTPLIWOŚĆ CO DO ZAKRESU" in rule && "Wybierasz LEAD" in rule,
+            "Zasada nadrzędna musi rozdzielić dwa rodzaje wątpliwości; blankietowe " +
+                "„w razie wątpliwości NIE_LEAD” wyrzuca płacących klientów"
+        )
+        assertTrue(
+            rule.indexOf("WĄTPLIWOŚĆ CO DO KIERUNKU") < rule.indexOf("WĄTPLIWOŚĆ CO DO ZAKRESU"),
+            "Kierunek najpierw — to on broni przed ofertami B2B"
+        )
+    }
+
+    @Test
+    fun `prompt ma przyklad LEAD opisujacy problem, nie nazwe uslugi`() {
+        // Klient rzadko mówi „korekta lakieru" — mówi „zmatowiały mi reflektory".
+        assertTrue(
+            "opisuje problem" in prompt,
+            "Bez tej reguły model wymaga branżowej nazwy usługi, żeby uznać zapytanie"
+        )
+    }
 }
