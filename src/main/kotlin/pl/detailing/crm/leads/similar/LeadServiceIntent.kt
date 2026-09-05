@@ -77,6 +77,14 @@ class LeadServiceIntentEntity(
     @Column(name = "matched_name_keys", nullable = false, columnDefinition = "text")
     var matchedNameKeys: String,
 
+    /**
+     * ID aktywnych, niepakietowych usług cennika wskazanych przez model, rozdzielone |.
+     * To są pozycje do ZASUGEROWANIA na leadzie — podzbiór matchedNameKeys rozwiązany
+     * do identyfikatorów (nazwa nieaktywna albo pakiet nie daje ID).
+     */
+    @Column(name = "matched_service_ids", nullable = false, columnDefinition = "text")
+    var matchedServiceIds: String = "",
+
     @Column(name = "scope", nullable = false, length = 20)
     var scope: String,
 
@@ -93,12 +101,14 @@ class LeadServiceIntentEntity(
 @Repository
 interface LeadServiceIntentRepository : JpaRepository<LeadServiceIntentEntity, UUID>
 
-/** Rozstrzygnięta intencja — to, co czyta dopasowanie. */
+/** Rozstrzygnięta intencja — to, co czyta dopasowanie i sugestie. */
 data class LeadServiceIntent(
     val status: ServiceIntentStatus,
     val families: Set<ServiceFamily>,
     val matchedNameKeys: Set<String>,
-    val scope: ServiceScope
+    val scope: ServiceScope,
+    /** ID aktywnych usług cennika do zasugerowania — patrz [LeadServiceIntentEntity.matchedServiceIds]. */
+    val matchedServiceIds: List<UUID> = emptyList()
 )
 
 @Configuration
@@ -164,19 +174,27 @@ class LeadServiceIntentService(
         }
 
         // Cały cennik, także pozycje nieaktywne: historia zleceń zawiera roboty
-        // sprzedawane pod nazwami, których dziś już nie ma w ofercie.
-        val catalog = serviceRepository.findByStudioId(studioId.value)
-            .map { it.name.trim() }
-            .filter { it.isNotEmpty() }
-            .distinctBy { serviceNameKey(it) }
+        // sprzedawane pod nazwami, których dziś już nie ma w ofercie. Encje trzymamy,
+        // nie same nazwy: pozycja modelu → encja daje i name_key (do dopasowania),
+        // i ID (do sugestii). Aktywne, niepakietowe reprezentują name_key, więc gdy
+        // ta sama nazwa ma wersję żywą i archiwalną, sugestia trafia w żywą.
+        val catalogEntities = serviceRepository.findByStudioId(studioId.value)
+            .filter { it.name.isNotBlank() }
+            .sortedByDescending { it.isActive && !it.isPackage }
+            .distinctBy { serviceNameKey(it.name) }
             .take(MAX_CATALOG)
+        val catalog = catalogEntities.map { it.name.trim() }
 
         val answer = ask(query, catalog) ?: return null
 
-        val matchedKeys = answer.matchedServices.orEmpty()
-            .mapNotNull { number -> catalog.getOrNull(number - 1) }
-            .map { serviceNameKey(it) }
-            .toSet()
+        val matchedEntities = answer.matchedServices.orEmpty()
+            .mapNotNull { number -> catalogEntities.getOrNull(number - 1) }
+        val matchedKeys = matchedEntities.map { serviceNameKey(it.name) }.toSet()
+        // Do sugestii tylko pozycje, które da się dziś zaoferować i wycenić.
+        val matchedServiceIds = matchedEntities
+            .filter { it.isActive && !it.isPackage }
+            .map { it.id }
+            .distinct()
         val families = answer.families.orEmpty()
             .map { ServiceFamily.from(it) }
             .filter { it != ServiceFamily.UNKNOWN }
@@ -197,6 +215,7 @@ class LeadServiceIntentService(
             intent = status.name,
             families = families.joinToString(",") { it.name }.take(300),
             matchedNameKeys = matchedKeys.joinToString("|"),
+            matchedServiceIds = matchedServiceIds.joinToString("|") { it.toString() },
             scope = ServiceScope.from(answer.scope).name,
             queryFingerprint = fingerprint,
             model = modelName.take(60)
@@ -214,7 +233,10 @@ class LeadServiceIntentService(
         status = ServiceIntentStatus.entries.firstOrNull { it.name == row.intent } ?: ServiceIntentStatus.NO_SERVICE,
         families = row.families.split(',').map { ServiceFamily.from(it) }.filter { it != ServiceFamily.UNKNOWN }.toSet(),
         matchedNameKeys = row.matchedNameKeys.split('|').filter { it.isNotEmpty() }.toSet(),
-        scope = ServiceScope.from(row.scope)
+        scope = ServiceScope.from(row.scope),
+        matchedServiceIds = row.matchedServiceIds.split('|')
+            .filter { it.isNotEmpty() }
+            .mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
     )
 
     private fun ask(query: String, catalog: List<String>): RawIntent? =

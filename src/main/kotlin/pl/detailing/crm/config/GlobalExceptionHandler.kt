@@ -21,6 +21,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.gus.exception.CompanyNotFoundException
 import pl.detailing.crm.gus.exception.GusServiceUnavailableException
 import pl.detailing.crm.gus.exception.InvalidNipException
+import pl.detailing.crm.leads.similar.PendingSuggestionPriceException
 import pl.detailing.crm.security.TenantIsolationAuditService
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.IllegalStateTransitionException
@@ -267,6 +268,21 @@ class GlobalExceptionHandler(
                 error = "Konflikt danych",
                 message = ex.message ?: "Operacja jest sprzeczna z aktualnym stanem zasobu",
                 timestamp = Instant.now().toString()
+            ))
+    }
+
+    /**
+     * Rezerwacji nie wolno założyć z sugestiami czekającymi na kwotę. 409 niesie ICH
+     * NAZWY, żeby interfejs wymusił kwoty na tych konkretnych pozycjach.
+     */
+    @ExceptionHandler(PendingSuggestionPriceException::class)
+    fun handlePendingSuggestionPrice(ex: PendingSuggestionPriceException): ResponseEntity<PendingSuggestionPriceResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(PendingSuggestionPriceResponse(
+                error = "Sugestie bez ceny",
+                serviceNames = ex.serviceNames,
+                message = "Podaj kwotę dla: ${ex.serviceNames.joinToString(", ")}"
             ))
     }
 
@@ -522,6 +538,12 @@ data class AlreadyLinkedResponse(
  * Carries enough of the existing vehicle for the frontend to render the collision
  * card (link as co-owner / transfer / it's a different vehicle) without a second request.
  */
+data class PendingSuggestionPriceResponse(
+    val error: String,
+    val serviceNames: List<String>,
+    val message: String
+)
+
 data class VehiclePlateExistsResponse(
     val code: String = "VEHICLE_PLATE_EXISTS",
     val vehicleId: String,

@@ -13,6 +13,7 @@ import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemEntity
+import pl.detailing.crm.leads.infrastructure.LeadServiceItemStatus
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
@@ -99,7 +100,10 @@ class LeadQuoteSyncService(
         // wycena leada nie ma prawa ruszać listy, po której ktoś wydał auto.
         if (appointment.status == AppointmentStatus.CONVERTED || appointment.status == AppointmentStatus.CANCELLED) return
 
+        // Tylko pozycje wyceny: sugestie (SUGGESTED) i te bez ceny nie mają czego
+        // synchronizować do rezerwacji — trafią tam dopiero po zaakceptowaniu z kwotą.
         val items = leadItemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id)
+            .filter { it.status != LeadServiceItemStatus.SUGGESTED && it.priceGross != null }
         // Stawka spoza słownika nie ma jak trafić do wiersza rezerwacji. Przerywamy
         // całą synchronizację, zamiast podmieniać ją na domyślną: rezerwacja z cichaczem
         // zmienioną stawką VAT to gorszy błąd niż rezerwacja niezsynchronizowana.
@@ -114,7 +118,7 @@ class LeadQuoteSyncService(
 
         val lineItems = items.flatMap { item ->
             val vatRate = rates.getValue(item.id)!!
-            val net = resolveNet(vatRate, item.priceGross, item.priceNet)
+            val net = resolveNet(vatRate, item.priceGross!!, item.priceNet)
             // Pozycja leada zna ilość, wiersz rezerwacji nie — rozwijamy ją na wiersze.
             // Suma zostaje ta sama co do grosza, a każdy wiersz da się osobno opisać.
             List(item.quantity.coerceIn(1, MAX_EXPANDED_ROWS)) { _ ->
@@ -130,7 +134,7 @@ class LeadQuoteSyncService(
                     adjustmentType = AdjustmentType.PERCENT,
                     adjustmentValue = 0L,
                     customNote = item.note,
-                    basePriceGross = Money(item.priceGross)
+                    basePriceGross = Money(item.priceGross!!)
                 )
             }
         }
