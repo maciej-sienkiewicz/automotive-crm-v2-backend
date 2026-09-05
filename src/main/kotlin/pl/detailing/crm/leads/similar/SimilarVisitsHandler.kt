@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.service.taxonomy.ServiceScope
 import pl.detailing.crm.shared.NotFoundException
@@ -55,14 +56,18 @@ data class SimilarVisitsDto(
 /**
  * Odpowiada na pytanie „co robiliśmy dla takiego auta i takiej roboty".
  *
- * ŚCIEŻKA KLIKNIĘCIA NIE WOŁA MODELU I NICZEGO NIE OSADZA. Cała inteligencja
- * pracuje wcześniej i zapisuje wyniki:
+ * WYNIK JEST LICZONY RAZ I ZAPISYWANY (lead_similar_matches) — w tle, gdy tylko
+ * auto leada jest rozstrzygnięte ([LeadSimilarPrecomputeListener]), a leniwie
+ * przy pierwszym otwarciu, gdy tła nie było (lead sprzed wdrożenia, awaria).
+ * Otwarcie leada CZYTA zapisany dobór; „Sprawdź ponownie" ([refresh]) przelicza
+ * na wyraźne życzenie — np. gdy indeks urósł albo cennik się zmienił.
+ *
+ * Sama inteligencja pracuje jeszcze wcześniej i też zapisuje wyniki:
  *  - rodzina każdej nazwy usługi — raz na nazwę (service_families),
  *  - segment każdego modelu auta — raz na model (vehicle_segments),
  *  - stempel każdego zlecenia — uzgadniaczem (visit_index_state + sygnatury),
- *  - intencja leada — raz na leada, przy PIERWSZYM otwarciu sekcji (jedyne
- *    wywołanie modelu, na jakie kliknięcie może jeszcze trafić).
- * W czasie zapytania zostaje SQL po kolumnach i krata w [SimilarVisitMatcher].
+ *  - intencja leada — raz na leada (lead_service_intents).
+ * Samo przeliczenie doboru to SQL po kolumnach i krata w [SimilarVisitMatcher].
  *
  * Dlaczego nie bliskość wektorowa: baza wektorowa bez progu nie odrzuca niczego,
  * a z progiem odrzuca w poprzek — „mycie", „pranie tapicerki" i „detailing wnętrza"
@@ -77,13 +82,15 @@ class SimilarVisitsHandler(
     private val feedbackRepository: VisitMatchFeedbackRepository,
     private val indexStateRepository: VisitIndexStateRepository,
     private val signatureRepository: VisitServiceSignatureRepository,
+    private val matchesRepository: LeadSimilarMatchesRepository,
     private val intentService: LeadServiceIntentService,
     private val segmentService: VehicleSegmentService,
     @Value("\${crm.ai.similar-visits.enabled:true}") private val enabled: Boolean,
     @Value("\${crm.ai.similar-visits.max-results:6}") private val maxResults: Int,
     @Value("\${crm.ai.similar-visits.max-candidates:400}") private val maxCandidates: Int
 ) {
-    @Transactional(readOnly = true)
+
+    @Transactional
     fun findFor(studioId: StudioId, leadId: UUID): SimilarVisitsDto {
         val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
             ?: throw NotFoundException("Nie znaleziono leada")
@@ -91,6 +98,49 @@ class SimilarVisitsHandler(
         val indexed = indexStateRepository.countByStudioId(studioId.value)
         if (!enabled || indexed == 0L) return SimilarVisitsDto(emptyList(), indexed)
 
+        // Zapisany dobór wygrywa; liczymy tylko, gdy go nie ma (lead sprzed wdrożenia
+        // albo tło zawiodło) — i wtedy od razu zapisujemy, żeby drugie otwarcie
+        // zastało wynik gotowy. Celowo bez backfillu: stare leady płacą raz, leniwie.
+        val stored = matchesRepository.findById(leadId).orElse(null)
+            ?: compute(lead, forceIntent = false)?.also { matchesRepository.save(it) }
+            ?: return SimilarVisitsDto(emptyList(), indexed)
+
+        return hydrate(studioId, leadId, stored, indexed)
+    }
+
+    /**
+     * „Sprawdź ponownie": przeliczenie na wyraźne życzenie. Intencja idzie do modelu
+     * OD NOWA, z pominięciem dziennika — odcisk treści nie widzi zmian CENNIKA,
+     * a to właśnie po dopisaniu brakującej usługi ten przycisk ma sens.
+     */
+    @Transactional
+    fun refresh(studioId: StudioId, leadId: UUID): SimilarVisitsDto {
+        val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
+            ?: throw NotFoundException("Nie znaleziono leada")
+
+        val indexed = indexStateRepository.countByStudioId(studioId.value)
+        if (!enabled) return SimilarVisitsDto(emptyList(), indexed)
+
+        val stored = compute(lead, forceIntent = true)?.also { matchesRepository.save(it) }
+            ?: return SimilarVisitsDto(emptyList(), indexed)
+
+        return hydrate(studioId, leadId, stored, indexed)
+    }
+
+    /** Liczenie w tle po rozstrzygnięciu auta — patrz [LeadSimilarPrecomputeListener]. */
+    @Transactional
+    fun computeAndStore(studioId: StudioId, leadId: UUID) {
+        if (!enabled) return
+        val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value) ?: return
+        compute(lead, forceIntent = false)?.let { matchesRepository.save(it) }
+    }
+
+    /**
+     * Właściwy dobór. Zwraca wiersz do zapisania albo null, gdy wyniku NIE WOLNO
+     * utrwalić: odczyt intencji zawiódł, więc zapis zamroziłby chwilową awarię
+     * modelu jako wieczne „nie rozpoznaliśmy usługi".
+     */
+    private fun compute(lead: LeadEntity, forceIntent: Boolean): LeadSimilarMatchesEntity? {
         val brandKey = lead.vehicleBrand?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         val modelKey = lead.vehicleModel?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         val segment = runCatching { segmentService.classify(lead.vehicleBrand, lead.vehicleModel) }
@@ -99,40 +149,30 @@ class SimilarVisitsHandler(
         // Krata zaczyna się od auta: bez modelu i bez segmentu żadna ranga nie
         // istnieje. Pokazanie „czegokolwiek" byłoby udawaniem podobieństwa.
         if ((brandKey == null || modelKey == null) && segment == null) {
-            return SimilarVisitsDto(emptyList(), indexed, emptyReason = REASON_VEHICLE_UNKNOWN)
+            return row(lead, REASON_VEHICLE_UNKNOWN, emptyList())
         }
 
-        // Jedyne miejsce, gdzie kliknięcie może jeszcze trafić na model językowy —
-        // pierwszy raz dla tego leada; potem intencja wraca z dziennika. Awaria
-        // modelu degraduje do samej historii auta zamiast wywracać sekcję.
-        val intent = intentService.intentFor(studioId, leadId, lead.initialMessage)
-            ?: LeadServiceIntent(ServiceIntentStatus.NO_SERVICE, emptySet(), emptySet(), ServiceScope.UNKNOWN)
+        val intent = intentService.intentFor(StudioId(lead.studioId), lead.id, lead.initialMessage, forceIntent)
+            ?: return null
 
         // Decyzja właściciela produktu: robota spoza cennika = ŻADNYCH cen.
         // Cena innej roboty podana pewnym głosem jest gorsza niż brak podpowiedzi.
         if (intent.status == ServiceIntentStatus.NOT_IN_CATALOG) {
-            return SimilarVisitsDto(emptyList(), indexed, emptyReason = REASON_SERVICE_NOT_IN_CATALOG)
+            return row(lead, REASON_SERVICE_NOT_IN_CATALOG, emptyList())
         }
 
         val candidates = indexStateRepository.findCandidates(
-            studioId = studioId.value,
+            studioId = lead.studioId,
             brandKey = brandKey ?: NO_MATCH_KEY,
             modelKey = modelKey ?: NO_MATCH_KEY,
             sizeSegment = segment,
             version = VisitSimilarityIndexer.CURRENT_SIGNATURE_VERSION,
             pageable = PageRequest.of(0, maxCandidates)
         )
-        if (candidates.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
-
         val signatures = signatureRepository.findByVisitIdIn(candidates.map { it.visitId })
             .groupBy { it.visitId }
 
-        // Zdjęta podpowiedź nie wraca; odsiew idzie PRZED przycięciem, żeby na
-        // zwolnione miejsce weszło następne zlecenie zamiast luki.
-        val dismissed = feedbackRepository.findByLeadId(leadId).map { it.visitId }.toSet()
-
         val graded = candidates.mapNotNull { candidate ->
-            if (candidate.visitId in dismissed) return@mapNotNull null
             SimilarVisitMatcher.grade(
                 candidate = candidate,
                 signatures = signatures[candidate.visitId].orEmpty(),
@@ -147,21 +187,54 @@ class SimilarVisitsHandler(
                 compareBy<Triple<UUID, MatchTier, Instant?>> { it.second.ordinal }
                     .thenByDescending { it.third ?: Instant.EPOCH }
             )
+            // Zapas ponad ekran: zdjęcie podpowiedzi „X-em" dosuwa następną
+            // z zapisanych, zamiast skracać listę do czasu ręcznego odświeżenia.
+            .take(maxResults * STORE_FACTOR)
+            .map { it.first to it.second }
+
+        return row(lead, null, graded)
+    }
+
+    /** Zapisany dobór → wiersze na ekran: odsiew zdjętych, przycięcie, kwoty z bazy. */
+    private fun hydrate(
+        studioId: StudioId,
+        leadId: UUID,
+        stored: LeadSimilarMatchesEntity,
+        indexed: Long
+    ): SimilarVisitsDto {
+        stored.emptyReason?.let { return SimilarVisitsDto(emptyList(), indexed, emptyReason = it) }
+
+        // Zdjęta podpowiedź nie wraca; odsiew idzie PRZED przycięciem, żeby na
+        // zwolnione miejsce weszła następna pozycja z zapasu zamiast luki.
+        val dismissed = feedbackRepository.findByLeadId(leadId).map { it.visitId }.toSet()
+        val visible = stored.parsed()
+            .filterNot { (visitId, _) -> visitId in dismissed }
             .take(maxResults)
+        if (visible.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
 
-        if (graded.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
-
+        // Druga bariera studia: identyfikatory są z zapisu per lead, ale odczyt
+        // wizyt i tak filtruje po studiu — jeden błąd nie może zamienić się
+        // w cudze ceny na ekranie.
         val visits = visitRepository
-            .findByStudioIdAndIdIn(studioId.value, graded.map { it.first })
+            .findByStudioIdAndIdIn(studioId.value, visible.map { it.first })
             .associateBy { it.id }
 
         return SimilarVisitsDto(
-            items = graded.mapNotNull { (visitId, tier, _) ->
+            items = visible.mapNotNull { (visitId, tier) ->
                 visits[visitId]?.let { toDto(it, tier) }
             },
             indexedVisits = indexed
         )
     }
+
+    private fun row(lead: LeadEntity, emptyReason: String?, matches: List<Pair<UUID, MatchTier>>) =
+        LeadSimilarMatchesEntity(
+            leadId = lead.id,
+            studioId = lead.studioId,
+            emptyReason = emptyReason,
+            matches = LeadSimilarMatchesEntity.serialize(matches),
+            computedAt = Instant.now()
+        )
 
     /**
      * Zdejmuje jedną podpowiedź z tego leada.
@@ -225,6 +298,9 @@ class SimilarVisitsHandler(
     companion object {
         const val REASON_SERVICE_NOT_IN_CATALOG = "SERVICE_NOT_IN_CATALOG"
         const val REASON_VEHICLE_UNKNOWN = "VEHICLE_UNKNOWN"
+
+        /** Ile ekranów zapasu trzyma zapisany dobór — na dosuwanie po zdjęciach „X-em". */
+        private const val STORE_FACTOR = 2
 
         /** Wartość, której żaden brand_key/model_key nie przyjmie — wyłącza gałąź modelu w SQL. */
         private const val NO_MATCH_KEY = " "

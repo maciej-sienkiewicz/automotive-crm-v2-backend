@@ -193,6 +193,7 @@ class StudioDataPurger(
             deleteByStudio("LeadCallbackEntity", ctx)
             deleteByStudio("VisitMatchFeedbackEntity", ctx)
             deleteByStudio("LeadServiceIntentEntity", ctx)
+            deleteByStudio("LeadSimilarMatchesEntity", ctx)
             deleteByStudio("LeadTagDefinitionEntity", ctx)
             deleteByStudio("LeadIntakeDeliveryEntity", ctx)
             deleteByStudio("LeadIntakeWebhookEntity", ctx)

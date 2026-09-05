@@ -144,18 +144,24 @@ class LeadServiceIntentService(
 
     /**
      * Intencja z dziennika albo świeżo policzona. Null wyłącznie przy awarii modelu —
-     * wtedy NIC nie zapisujemy, żeby kolejne kliknięcie spróbowało ponownie;
-     * wywołujący degraduje się do samej historii auta.
+     * wtedy NIC nie zapisujemy, żeby kolejna próba poszła ponownie; wywołujący
+     * degraduje się do samej historii auta.
+     *
+     * [force] pomija dziennik i pyta model od nowa, nadpisując wiersz. Potrzebne
+     * przy „Sprawdź ponownie": odcisk treści nie widzi zmian CENNIKA, a to właśnie
+     * po dopisaniu brakującej usługi ktoś klika ten przycisk.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun intentFor(studioId: StudioId, leadId: UUID, initialMessage: String?): LeadServiceIntent? {
+    fun intentFor(studioId: StudioId, leadId: UUID, initialMessage: String?, force: Boolean = false): LeadServiceIntent? {
         val query = initialMessage?.trim()?.take(MAX_QUERY_LENGTH).orEmpty()
         if (query.isEmpty()) return LeadServiceIntent(ServiceIntentStatus.NO_SERVICE, emptySet(), emptySet(), ServiceScope.UNKNOWN)
 
         val fingerprint = fingerprint(query)
-        intentRepository.findById(leadId).orElse(null)
-            ?.takeIf { it.queryFingerprint == fingerprint }
-            ?.let { return toIntent(it) }
+        if (!force) {
+            intentRepository.findById(leadId).orElse(null)
+                ?.takeIf { it.queryFingerprint == fingerprint }
+                ?.let { return toIntent(it) }
+        }
 
         // Cały cennik, także pozycje nieaktywne: historia zleceń zawiera roboty
         // sprzedawane pod nazwami, których dziś już nie ma w ofercie.

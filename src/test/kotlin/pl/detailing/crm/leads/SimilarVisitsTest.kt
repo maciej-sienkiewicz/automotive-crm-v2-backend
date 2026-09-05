@@ -16,6 +16,8 @@ import pl.detailing.crm.leads.similar.LeadServiceIntent
 import pl.detailing.crm.leads.similar.LeadServiceIntentEntity
 import pl.detailing.crm.leads.similar.LeadServiceIntentRepository
 import pl.detailing.crm.leads.similar.LeadServiceIntentService
+import pl.detailing.crm.leads.similar.LeadSimilarMatchesEntity
+import pl.detailing.crm.leads.similar.LeadSimilarMatchesRepository
 import pl.detailing.crm.leads.similar.MatchTier
 import pl.detailing.crm.leads.similar.ServiceIntentStatus
 import pl.detailing.crm.leads.similar.SimilarVisitMatcher
@@ -486,6 +488,7 @@ class SimilarVisitsDismissalTest {
     private val feedbackRepository = mockk<VisitMatchFeedbackRepository>()
     private val indexStateRepository = mockk<VisitIndexStateRepository>()
     private val signatureRepository = mockk<VisitServiceSignatureRepository>()
+    private val matchesRepository = mockk<LeadSimilarMatchesRepository>()
     private val intentService = mockk<LeadServiceIntentService>()
     private val segmentService = mockk<VehicleSegmentService>()
 
@@ -499,7 +502,7 @@ class SimilarVisitsDismissalTest {
 
     private val handler = SimilarVisitsHandler(
         leadRepository, visitRepository, feedbackRepository, indexStateRepository,
-        signatureRepository, intentService, segmentService,
+        signatureRepository, matchesRepository, intentService, segmentService,
         enabled = true, maxResults = 2, maxCandidates = 400
     )
 
@@ -507,8 +510,11 @@ class SimilarVisitsDismissalTest {
     fun setUp() {
         every { leadRepository.findByIdAndStudioId(leadId, studioId.value) } returns lead()
         every { indexStateRepository.countByStudioId(studioId.value) } returns 42
+        // Domyślnie brak zapisanego doboru — ścieżka leniwa liczy i zapisuje.
+        every { matchesRepository.findById(leadId) } returns java.util.Optional.empty()
+        every { matchesRepository.save(any()) } answers { firstArg() }
         every { segmentService.classify(any(), any()) } returns segmentRow()
-        every { intentService.intentFor(studioId, leadId, any()) } returns LeadServiceIntent(
+        every { intentService.intentFor(studioId, leadId, any(), any()) } returns LeadServiceIntent(
             ServiceIntentStatus.MATCHED,
             setOf(ServiceFamily.PPF),
             setOf("oklejenie przodu ppf"),
@@ -579,15 +585,60 @@ class SimilarVisitsDismissalTest {
         assertEquals(SimilarVisitsHandler.REASON_VEHICLE_UNKNOWN, result.emptyReason)
     }
 
+    /**
+     * Awaria odczytu intencji NICZEGO nie utrwala: zapisany wynik zamroziłby
+     * chwilową awarię modelu jako wieczne „nie rozpoznaliśmy usługi". Sekcja
+     * wychodzi pusta, a następne otwarcie próbuje od nowa.
+     */
     @Test
-    fun `awaria odczytu intencji degraduje do historii tego auta`() {
-        every { intentService.intentFor(studioId, leadId, any()) } returns null
+    fun `awaria intencji niczego nie utrwala`() {
+        every { intentService.intentFor(studioId, leadId, any(), any()) } returns null
+
+        val result = handler.findFor(studioId, leadId)
+
+        assertTrue(result.items.isEmpty())
+        verify(exactly = 0) { matchesRepository.save(any()) }
+    }
+
+    /**
+     * SEDNO ZMIANY: drugie otwarcie tego samego leada czyta zapisany dobór
+     * i nie liczy niczego od nowa — ani intencji, ani kandydatów.
+     */
+    @Test
+    fun `zapisany dobor nie liczy sie drugi raz`() {
+        every { matchesRepository.findById(leadId) } returns java.util.Optional.of(
+            LeadSimilarMatchesEntity(
+                leadId = leadId,
+                studioId = studioId.value,
+                matches = LeadSimilarMatchesEntity.serialize(
+                    listOf(byModelFresh to MatchTier.SAME_MODEL_SAME_SERVICE, bySegment to MatchTier.SAME_SEGMENT_SAME_SERVICE)
+                )
+            )
+        )
 
         val items = handler.findFor(studioId, leadId).items
 
-        assertTrue(items.isNotEmpty())
-        assertTrue(items.all { it.matchTier == MatchTier.MODEL_HISTORY.name })
-        assertTrue(items.none { it.visitId == bySegment.toString() })
+        assertEquals(listOf(byModelFresh.toString(), bySegment.toString()), items.map { it.visitId })
+        verify(exactly = 0) { intentService.intentFor(any(), any(), any(), any()) }
+        verify(exactly = 0) { indexStateRepository.findCandidates(any(), any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * „Sprawdź ponownie" liczy od nowa mimo zapisanego wyniku i pyta model
+     * z pominięciem dziennika intencji — odcisk treści nie widzi zmian cennika,
+     * a to właśnie po dopisaniu brakującej usługi ktoś klika ten przycisk.
+     */
+    @Test
+    fun `sprawdz ponownie liczy od nowa i pomija dziennik intencji`() {
+        every { matchesRepository.findById(leadId) } returns java.util.Optional.of(
+            LeadSimilarMatchesEntity(leadId = leadId, studioId = studioId.value, emptyReason = "SERVICE_NOT_IN_CATALOG")
+        )
+
+        val items = handler.refresh(studioId, leadId).items
+
+        assertTrue(items.isNotEmpty(), "Świeży dobór ma zastąpić zapisaną pustkę")
+        verify(exactly = 1) { intentService.intentFor(studioId, leadId, any(), true) }
+        verify(exactly = 1) { matchesRepository.save(any()) }
     }
 
     @Test

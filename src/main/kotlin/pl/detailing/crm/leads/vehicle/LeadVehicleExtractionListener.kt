@@ -14,6 +14,7 @@ import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.similar.LeadVehicleResolvedEvent
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.StudioId
@@ -146,5 +147,9 @@ class LeadVehicleExtractionListener(
         eventPublisher.publishEvent(
             LeadChangedEvent(source = this, studioId = StudioId(lead.studioId), leadId = LeadId(lead.id))
         )
+        // Auto rozstrzygnięte (także jako „nierozpoznane") — dopiero TERAZ warto
+        // liczyć podobne zlecenia; chwilę wcześniej wynik brzmiałby zawsze
+        // „nie znamy auta".
+        eventPublisher.publishEvent(LeadVehicleResolvedEvent(studioId = lead.studioId, leadId = lead.id))
     }
 }
