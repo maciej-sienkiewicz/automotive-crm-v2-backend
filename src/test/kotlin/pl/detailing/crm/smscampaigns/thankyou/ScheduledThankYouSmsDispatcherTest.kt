@@ -42,6 +42,11 @@ class ScheduledThankYouSmsDispatcherTest {
         every {
             communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
         } returns SmsDeliveryResult.success("provider-42")
+        // JpaRepository<T, ID>.save() jest generyczne - relaxed mock nie potrafi sam
+        // odtworzyć zwracanej wartości i rzuca ClassCastException zamiast cichego no-opu,
+        // więc trzeba ją ustalić jawnie (tak jak dla appointmentRepository w testach
+        // handlerów rezerwacji).
+        every { smsLogRepository.save(any()) } answers { firstArg() }
     }
 
     @Test

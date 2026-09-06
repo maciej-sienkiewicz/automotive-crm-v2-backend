@@ -98,6 +98,14 @@ data class ServiceLineItemCommand(
     val serviceId: ServiceId?,
     val serviceName: String?,
     val basePriceNet: Long,  // Base price in cents
+    /**
+     * Exact gross (cents) the user typed, when known. Only meaningful for a custom
+     * service (serviceId == null) — a catalog service's gross comes from its own stored
+     * record, not from this request. Without it a custom service's gross is re-derived
+     * from net at save time, which rounds some values wrong (1900.00 → 1544.72 net →
+     * 1900.01 re-derived, at 23% VAT) — see AppointmentLineItem.calculateFinalGross.
+     */
+    val basePriceGross: Long? = null,
     val vatRate: Int,  // VAT rate percentage
     val adjustmentType: AdjustmentType,
     val adjustmentValue: Double,  // Double to support decimal percentages

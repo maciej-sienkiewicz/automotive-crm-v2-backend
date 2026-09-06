@@ -272,6 +272,7 @@ class StudioDataPurger(
             deleteByStudio("SmsAutomationConfigEntity", ctx)
             deleteByStudio("SmsConsentRequestEntity", ctx)
             deleteByStudio("ScheduledSmsReminderEntity", ctx)
+            deleteByStudio("ScheduledThankYouSmsEntity", ctx)
             deleteByStudio("EmailAutomationConfigEntity", ctx)
             deleteByStudio("CommunicationRedirectEntity", ctx)
         },

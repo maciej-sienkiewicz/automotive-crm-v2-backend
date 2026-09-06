@@ -122,7 +122,8 @@ class SendReservationCardLinkHandlerTest {
 
         val result = handler.handle(SendReservationCardLinkCommand(appointmentId, studioId))
 
-        assertEquals("Pojazd:  (). Link: https://detailboost.pl/vc/tok123", bodySlot.captured)
+        // MessageTemplateRenderer scala biegi spacji do jednej (patrz HORIZONTAL_RUN) - puste {{pojazd}}/{{rejestracja}} nie zostawiają podwójnych spacji w treści.
+        assertEquals("Pojazd: (). Link: https://detailboost.pl/vc/tok123", bodySlot.captured)
         assertEquals(true, result.emailSent)
     }
 
