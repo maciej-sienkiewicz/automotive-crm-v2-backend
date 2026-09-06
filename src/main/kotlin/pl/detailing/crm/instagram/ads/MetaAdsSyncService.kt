@@ -2,7 +2,6 @@ package pl.detailing.crm.instagram.ads
 
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import java.time.Instant
 import java.util.UUID
@@ -38,8 +37,12 @@ class MetaAdsSyncService(
     /**
      * Jeden przebieg dla wszystkich profili z powiązaną stroną na Facebooku.
      * Profile bez powiązania są pomijane — nie ma po czym ich szukać.
+     *
+     * Świadomie BEZ wspólnej transakcji: w środku siedzi wywołanie HTTP do Meta,
+     * a transakcja obejmująca sieć trzyma połączenie z bazą przez cały czas
+     * odpowiedzi obcego serwera. Zapisy są idempotentne (klucz naturalny to
+     * `ad_archive_id`), więc przerwany przebieg dokończy się nazajutrz.
      */
-    @Transactional
     fun syncAll(): SyncResult {
         if (!client.enabled) {
             log.debug("Meta Ad Library: pominięte, brak tokena")
