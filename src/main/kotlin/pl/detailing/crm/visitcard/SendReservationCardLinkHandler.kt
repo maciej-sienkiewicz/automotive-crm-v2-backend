@@ -21,6 +21,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
+import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
@@ -52,7 +53,8 @@ class SendReservationCardLinkHandler(
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val emailAutomationConfigRepository: EmailAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val vehicleRepository: VehicleRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -101,11 +103,19 @@ class SendReservationCardLinkHandler(
             return@withContext SendVisitCardLinkResult(false, false, "Klient nie ma adresu e-mail ani numeru telefonu")
         }
 
+        // Pojazd bywa nieznany na etapie rezerwacji - w przeciwieństwie do wizyty, która
+        // ma go zawsze zapisanego migawką. Brak numeru wizyty nie jest tu przeoczeniem:
+        // wizyta powstaje dopiero przy przyjęciu pojazdu, więc rezerwacja go po prostu
+        // jeszcze nie ma.
+        val vehicle = appointment.vehicleId?.let { vehicleId -> vehicleRepository.findByIdAndStudioId(vehicleId, command.studioId.value) }
+
         val scheduled = appointment.startDateTime.atZone(WARSAW)
         val templateValues = mapOf(
             "imie" to customer.firstName.orEmpty(),
             "nazwisko" to customer.lastName.orEmpty(),
             "imie_nazwisko" to listOfNotNull(customer.firstName, customer.lastName).joinToString(" "),
+            "pojazd" to vehicle?.let { "${it.brand} ${it.model}" }.orEmpty(),
+            "rejestracja" to vehicle?.licensePlate.orEmpty(),
             "data" to DATE_FORMAT.format(scheduled),
             "godzina" to TIME_FORMAT.format(scheduled),
             "link" to cardUrl
