@@ -232,6 +232,7 @@ class AppointmentController(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = service.serviceName,
                     basePriceNet = service.basePriceNet,
+                    basePriceGross = service.basePriceGross,
                     vatRate = service.vatRate,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
@@ -462,6 +463,7 @@ class AppointmentController(
                     serviceId = service.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = service.serviceName,
                     basePriceNet = service.basePriceNet,
+                    basePriceGross = service.basePriceGross,
                     vatRate = service.vatRate,
                     adjustmentType = service.adjustment.type,
                     adjustmentValue = service.adjustment.value,
@@ -761,7 +763,16 @@ class AppointmentController(
         },
         vehicle = mapVehicleIdentity(request.vehicle),
         services = request.services.map {
-            ServiceLineItemCommand(it.serviceId?.let { sid -> ServiceId.fromString(sid) }, it.serviceName, it.basePriceNet, it.vatRate, it.adjustment.type, it.adjustment.value, it.note)
+            ServiceLineItemCommand(
+                serviceId = it.serviceId?.let { sid -> ServiceId.fromString(sid) },
+                serviceName = it.serviceName,
+                basePriceNet = it.basePriceNet,
+                basePriceGross = it.basePriceGross,
+                vatRate = it.vatRate,
+                adjustmentType = it.adjustment.type,
+                adjustmentValue = it.adjustment.value,
+                customNote = it.note
+            )
         },
         schedule = ScheduleCommand(request.schedule.isAllDay, request.schedule.startDateTime, request.schedule.endDateTime),
         appointmentTitle = request.appointmentTitle,
