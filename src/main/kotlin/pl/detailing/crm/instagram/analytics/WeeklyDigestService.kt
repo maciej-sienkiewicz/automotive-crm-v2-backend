@@ -8,6 +8,8 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import pl.detailing.crm.instagram.ads.DigestAdDto
+import pl.detailing.crm.instagram.ads.MetaAdsActivityService
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramPostTopicRepository
@@ -78,7 +80,13 @@ data class ProfileDigestDto(
     /** Post wart otwarcia — przy werdykcie STANDOUT ten, który wystrzelił. */
     val highlight: DigestPostDto?,
     /** Pozostałe posty tygodnia, malejąco po reakcjach (bez [highlight]). */
-    val posts: List<DigestPostDto>
+    val posts: List<DigestPostDto>,
+    /**
+     * Kampanie reklamowe tego profilu w tym tygodniu. Doklejane przy ODCZYCIE,
+     * nie zapisywane w cache'u — wartość domyślna pozwala odczytać payloady
+     * zapisane, zanim to pole istniało.
+     */
+    val ads: List<DigestAdDto> = emptyList()
 )
 
 /** Jedna sugestia na tydzień — co właściciel ma z tym zrobić. */
@@ -214,7 +222,8 @@ class WeeklyDigestService(
     private val reportRepository: InstagramReportRepository,
     private val objectMapper: ObjectMapper,
     @Qualifier("instagramChatClient") private val chatClient: ObjectProvider<ChatClient>,
-    @Value("\${instagram.digest.ai.enabled:true}") private val aiEnabled: Boolean
+    @Value("\${instagram.digest.ai.enabled:true}") private val aiEnabled: Boolean,
+    private val adsActivityService: MetaAdsActivityService
 ) {
     private val log = LoggerFactory.getLogger(WeeklyDigestService::class.java)
 
@@ -262,9 +271,41 @@ class WeeklyDigestService(
             ?.let { readPayload(it) }
             // Nieczytelny cache (np. po zmianie kształtu DTO) nie może zostawić
             // pustego ekranu — przechodzimy wtedy do generacji, która go nadpisze.
-            ?.let { return it }
+            ?.let { return withAds(it, links, weekStart) }
 
-        return generate(studioId, weekStart, links)
+        return withAds(generate(studioId, weekStart, links), links, weekStart)
+    }
+
+    /**
+     * Kampanie reklamowe doklejamy przy ODCZYCIE, a nie przy generowaniu digestu.
+     *
+     * Digest jest cache'owany na cały tydzień, a kampania potrafi ruszyć we wtorek:
+     * wpisana do cache'u pokazałaby się dopiero po jego unieważnieniu, czyli
+     * najczęściej wtedy, gdy przestałaby być nowiną. Liczenie jest tanie — to
+     * jedno zapytanie po migawkach, bez wywołania modelu.
+     */
+    private fun withAds(
+        digest: WeeklyDigestDto,
+        links: List<StudioInstagramProfileEntity>,
+        weekStart: LocalDate
+    ): WeeklyDigestDto {
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val activity = adsActivityService.weekActivity(
+            profileIds = links.map { it.profileId },
+            weekStart = weekStart,
+            weekEnd = minOf(weekStart.plusDays(6), today),
+            today = today
+        )
+        if (activity.isEmpty()) return digest
+
+        return digest.copy(
+            profiles = digest.profiles.map { profile ->
+                val ads = runCatching { UUID.fromString(profile.profileId) }.getOrNull()
+                    ?.let { activity[it] }
+                    .orEmpty()
+                if (ads.isEmpty()) profile else profile.copy(ads = ads)
+            }
+        )
     }
 
     /**

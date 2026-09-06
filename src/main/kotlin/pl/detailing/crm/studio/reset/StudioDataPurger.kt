@@ -336,6 +336,7 @@ class StudioDataPurger(
                     deleteByProfile("InstagramProfileMetricsSnapshotEntity", link.profileId)
                     deleteByProfile("InstagramProfileStatsWeeklyEntity", link.profileId)
                     deleteByProfile("InstagramProfileSuggestionEntity", link.profileId)
+                    deleteByProfile("MetaAdSnapshotEntity", link.profileId)
                     entityManager.createQuery(
                         "DELETE FROM InstagramProfileEntity p WHERE p.id = :profileId"
                     ).setParameter("profileId", link.profileId).executeUpdate()
