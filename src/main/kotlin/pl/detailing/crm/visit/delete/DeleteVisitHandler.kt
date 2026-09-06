@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 
@@ -17,6 +18,7 @@ import java.time.Instant
 @Service
 class DeleteVisitHandler(
     private val visitRepository: VisitRepository,
+    private val thankYouSmsRepository: ScheduledThankYouSmsRepository,
     private val auditService: AuditService
 ) {
 
@@ -33,6 +35,10 @@ class DeleteVisitHandler(
         visitEntity.updatedAt = now
 
         visitRepository.save(visitEntity)
+
+        // Wizyty już nie ma, więc nie ma za co dziękować. Zaplanowane podziękowanie
+        // przeżyłoby usunięcie i wyszłoby do klienta o umówionej godzinie.
+        thankYouSmsRepository.cancelPendingForVisit(command.visitId.value)
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

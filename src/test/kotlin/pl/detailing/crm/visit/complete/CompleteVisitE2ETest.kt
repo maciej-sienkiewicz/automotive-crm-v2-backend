@@ -4,6 +4,8 @@ import io.mockk.*
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
@@ -29,6 +31,8 @@ import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.transitions.archive.ArchiveVisitHandler
+import pl.detailing.crm.smscampaigns.thankyou.ScheduleThankYouSmsCommand
+import pl.detailing.crm.smscampaigns.thankyou.ScheduleThankYouSmsHandler
 import pl.detailing.crm.visit.transitions.complete.CompleteVisitHandler
 import pl.detailing.crm.visit.transitions.markready.MarkVisitReadyForPickupHandler
 import pl.detailing.crm.visit.transitions.reject.RejectVisitHandler
@@ -54,6 +58,7 @@ class CompleteVisitE2ETest {
     private val customerRepository = mockk<CustomerRepository>()
     private val auditService = mockk<AuditService>(relaxed = true)
     private val createFinancialDocumentHandler = mockk<CreateFinancialDocumentHandler>()
+    private val scheduleThankYouSmsHandler = mockk<ScheduleThankYouSmsHandler>(relaxed = true)
 
     private lateinit var mockMvc: MockMvc
 
@@ -83,6 +88,7 @@ class CompleteVisitE2ETest {
             completeVisitInvoiceOrchestrator = mockk(relaxed = true),
             rejectVisitHandler = mockk(relaxed = true),
             archiveVisitHandler = mockk(relaxed = true),
+            scheduleThankYouSmsHandler = scheduleThankYouSmsHandler,
             capabilityService = capabilityService
         )
 
@@ -163,6 +169,66 @@ class CompleteVisitE2ETest {
         mockMvc.perform(completeRequest())
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.financialDocumentId").value(org.hamcrest.Matchers.nullValue()))
+    }
+
+    // ─── Podziękowanie po wizycie ────────────────────────────────────────────
+    //
+    // Klienci dostawali „dziękujemy za wizytę" o 20:50, bo automat liczył od chwili
+    // zamknięcia wizyty w systemie, a zamyka się je po godzinach. Decyzja z ekranu
+    // wydania (godzina albo rezygnacja) musi więc dojść do handlera — a jej brak
+    // musi zostawić starą automatykę w spokoju.
+
+    @Test
+    fun `wybrana godzina podziekowania dochodzi do handlera`() {
+        coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity()
+        coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
+        val command = slot<ScheduleThankYouSmsCommand>()
+        every { scheduleThankYouSmsHandler.handle(capture(command)) } returns null
+
+        mockMvc.perform(
+            completeRequest(""","thankYouSms":{"send":true,"scheduledAt":"2026-09-15T14:30:00Z"}""")
+        ).andExpect(status().isOk)
+
+        assertTrue(command.captured.send)
+        assertEquals(Instant.parse("2026-09-15T14:30:00Z"), command.captured.scheduledAt)
+        assertEquals(visitId, command.captured.visitId)
+    }
+
+    @Test
+    fun `rezygnacja z podziekowania tez dochodzi do handlera`() {
+        // „Nie wysyłaj" musi zostać zapisane, inaczej automat wyśle SMS-a mimo odmowy.
+        coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity()
+        coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
+        val command = slot<ScheduleThankYouSmsCommand>()
+        every { scheduleThankYouSmsHandler.handle(capture(command)) } returns null
+
+        mockMvc.perform(completeRequest(""","thankYouSms":{"send":false}"""))
+            .andExpect(status().isOk)
+
+        assertFalse(command.captured.send)
+    }
+
+    @Test
+    fun `zadanie bez pola nie podejmuje zadnej decyzji za studio`() {
+        // Starszy klient albo wyłączony szablon: automatyka z ustawień działa jak dotąd.
+        coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity()
+        coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
+
+        mockMvc.perform(completeRequest()).andExpect(status().isOk)
+
+        verify(exactly = 0) { scheduleThankYouSmsHandler.handle(any()) }
+    }
+
+    @Test
+    fun `nieudane zaplanowanie SMS-a nie cofa wydania pojazdu`() {
+        // Pojazd już odjechał — 500 z powodu SMS-a zostawiłby użytkownika bez
+        // informacji, czy wizyta w ogóle została zakończona.
+        coEvery { visitRepository.findByIdAndStudioIdWithPhotos(visitId.value, studioId.value) } returns readyForPickupEntity()
+        coEvery { visitRepository.save(any()) } returns mockk(relaxed = true)
+        every { scheduleThankYouSmsHandler.handle(any()) } throws IllegalStateException("baza padła")
+
+        mockMvc.perform(completeRequest(""","thankYouSms":{"send":true}"""))
+            .andExpect(status().isOk)
     }
 
     // ─── Photo preservation through the full HTTP cycle ──────────────────────
@@ -281,9 +347,9 @@ class CompleteVisitE2ETest {
         SecurityContextHolder.setContext(SecurityContextImpl(principal))
     }
 
-    private fun completeRequest() = post("/api/visits/${visitId.value}/complete")
+    private fun completeRequest(thankYouSms: String = "") = post("/api/visits/${visitId.value}/complete")
         .contentType(MediaType.APPLICATION_JSON)
-        .content("""{"signatureObtained":false,"payment":{"method":"CASH"}}""")
+        .content("""{"signatureObtained":false,"payment":{"method":"CASH"}$thankYouSms}""")
 
     private fun readyForPickupEntity(
         photoCount: Int = 0,
