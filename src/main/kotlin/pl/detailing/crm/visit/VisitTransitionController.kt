@@ -1,6 +1,7 @@
 package pl.detailing.crm.visit
 
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -13,8 +14,11 @@ import pl.detailing.crm.visit.transitions.reject.*
 import pl.detailing.crm.visit.transitions.archive.*
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.smscampaigns.thankyou.ScheduleThankYouSmsCommand
+import pl.detailing.crm.smscampaigns.thankyou.ScheduleThankYouSmsHandler
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -35,8 +39,10 @@ class VisitTransitionController(
     private val completeVisitInvoiceOrchestrator: CompleteVisitInvoiceOrchestrator,
     private val rejectVisitHandler: RejectVisitHandler,
     private val archiveVisitHandler: ArchiveVisitHandler,
+    private val scheduleThankYouSmsHandler: ScheduleThankYouSmsHandler,
     private val capabilityService: CapabilityService
 ) {
+    private val log = LoggerFactory.getLogger(VisitTransitionController::class.java)
 
     /**
      * Mark visit as ready for pickup
@@ -104,10 +110,19 @@ class VisitTransitionController(
             ?.let { parseDocumentType(it) }
             ?: DocumentType.RECEIPT
 
+        // Wysyłka podziękowania to moduł komunikacji. Sprawdzamy PRZED wydaniem, bo po
+        // wydaniu jest już za późno, żeby cokolwiek z tym zrobić: pojazd wyjechał,
+        // a odmowa 402 unieważniłaby zakończoną wizytę.
+        if (request.thankYouSms?.send == true) {
+            capabilityService.requireCapability(principal.studioId, CapabilityKey.COMM_SEND_TRANSACTIONAL)
+        }
+
+        val visitIdValue = VisitId.fromString(visitId)
+
         val command = CompleteVisitCommand(
             studioId          = principal.studioId,
             userId            = principal.userId,
-            visitId           = VisitId.fromString(visitId),
+            visitId           = visitIdValue,
             userName          = principal.fullName,
             signatureObtained = request.signatureObtained,
             paymentMethod     = paymentMethod,
@@ -144,6 +159,8 @@ class VisitTransitionController(
                     sendToKsef          = invoiceDetails.sendToKsef
                 )
             )
+            scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
+
             return@runBlocking ResponseEntity.ok(
                 CompleteVisitResponse(
                     visitId                 = result.completion.visitId.value.toString(),
@@ -161,6 +178,8 @@ class VisitTransitionController(
         }
 
         val result = completeVisitHandler.handle(command)
+
+        scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
 
         ResponseEntity.ok(
             CompleteVisitResponse(
@@ -241,6 +260,42 @@ class VisitTransitionController(
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Zapisuje decyzję o podziękowaniu po wizycie — już po wydaniu pojazdu.
+     *
+     * Kolejność jest celowa: pojazd wydaje się niezależnie od tego, czy SMS-a da się
+     * zaplanować. Nieudany zapis decyzji zostaje w logach i najwyżej oznacza, że
+     * podziękowanie wyśle automat na starych zasadach; przewrócenie całego wydania
+     * byłoby lekarstwem gorszym od choroby.
+     *
+     * Brak pola w żądaniu (stary klient, wyłączony szablon) nie jest decyzją: nie
+     * zapisujemy wtedy nic i automat POST_VISIT działa jak dotąd.
+     */
+    private fun scheduleThankYouSms(
+        request: CompleteVisitRequest,
+        studioId: StudioId,
+        visitId: VisitId,
+        userId: UserId
+    ) {
+        val thankYouSms = request.thankYouSms ?: return
+        runCatching {
+            scheduleThankYouSmsHandler.handle(
+                ScheduleThankYouSmsCommand(
+                    studioId    = studioId,
+                    visitId     = visitId,
+                    userId      = userId,
+                    send        = thankYouSms.send,
+                    scheduledAt = thankYouSms.scheduledAt
+                )
+            )
+        }.onFailure { ex ->
+            log.error(
+                "Nie udało się zapisać decyzji o SMS-ie z podziękowaniem dla wizyty {}: {}",
+                visitId, ex.message, ex
+            )
+        }
+    }
+
     private fun mapVisitStatus(status: VisitStatus): String = when (status) {
         VisitStatus.IN_PROGRESS       -> "in_progress"
         VisitStatus.READY_FOR_PICKUP  -> "ready_for_pickup"
@@ -305,7 +360,25 @@ data class CompleteVisitRequest(
      * kwota wizyty, wymagane [CompleteInvoiceRequestDto.remainderPaymentMethod] —
      * reszta zostaje udokumentowana paragonem (osobnym dokumentem przychodowym).
      */
-    val invoice: CompleteInvoiceRequestDto? = null
+    val invoice: CompleteInvoiceRequestDto? = null,
+
+    /**
+     * Decyzja z pola „Wyślij SMS-a z podziękowaniem". Pominięcie pola oznacza „nie było
+     * takiego wyboru" (szablon wyłączony albo starszy klient), a nie „nie wysyłaj" —
+     * wtedy o podziękowaniu decyduje wyłącznie automatyka z ustawień.
+     */
+    val thankYouSms: ThankYouSmsRequest? = null
+)
+
+/**
+ * @property send        czy podziękowanie ma pójść do klienta
+ * @property scheduledAt proponowany termin wysyłki; serwer dociąga go do dozwolonych
+ *                       godzin ([pl.detailing.crm.smscampaigns.thankyou.domain.ThankYouSmsWindow]),
+ *                       a brak wartości oznacza „najbliższy dozwolony termin"
+ */
+data class ThankYouSmsRequest(
+    val send: Boolean = true,
+    val scheduledAt: Instant? = null
 )
 
 data class CompleteInvoiceItemDto(
