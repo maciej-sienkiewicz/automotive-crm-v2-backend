@@ -143,11 +143,11 @@ Szablony nie są tabelą, tylko kolumnami dwóch rekordów per studio
 | SMS | SMS_PRE_VISIT, SMS_POST_VISIT, SMS_DELAYED_REMINDER, SMS_BOOKING_CONFIRMATION, SMS_RESCHEDULE_CONFIRMATION | imie, nazwisko, data, godzina |
 | SMS | SMS_VISIT_READY_FOR_PICKUP | + pojazd, rejestracja, numer_wizyty |
 | SMS | SMS_VISIT_CARD_LINK | + data, godzina, link |
-| SMS | SMS_RESERVATION_CARD_LINK | imie, nazwisko, data, godzina, link |
+| SMS | SMS_RESERVATION_CARD_LINK | imie, nazwisko, pojazd, rejestracja, data, godzina, link |
 | SMS | SMS_UPSELL_CONSENT | imie, nazwisko, uslugi, kwota |
 | SMS | SMS_SIGNATURE_REQUEST | imie, nazwisko, link, dokument |
 | E-mail | EMAIL_VISIT_WELCOME, EMAIL_VISIT_READY_FOR_PICKUP, EMAIL_VISIT_CARD_LINK | imie, nazwisko, imie_nazwisko, pojazd, rejestracja, numer_wizyty, data, godzina (+ link) |
-| E-mail | EMAIL_RESERVATION_CARD_LINK | imie, nazwisko, imie_nazwisko, data, godzina, link |
+| E-mail | EMAIL_RESERVATION_CARD_LINK | imie, nazwisko, imie_nazwisko, pojazd, rejestracja, data, godzina, link |
 | E-mail | EMAIL_BATCH_ORDER_CLOSE | kontrahent, okres, kwota_brutto, liczba_wpisow |
 | Kampanie | CAMPAIGN | imie, nazwisko, marka, model, ostatnia_usluga, data_ostatniej_wizyty, dni_od_wizyty |
 

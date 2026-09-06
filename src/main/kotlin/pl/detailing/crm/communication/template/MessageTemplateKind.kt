@@ -34,7 +34,7 @@ enum class MessageTemplateKind(val allowedPlaceholders: Set<String>) {
     SMS_RESCHEDULE_CONFIRMATION(APPOINTMENT),
     SMS_VISIT_READY_FOR_PICKUP(CUSTOMER + VEHICLE + VISIT),
     SMS_VISIT_CARD_LINK(CUSTOMER + VEHICLE + VISIT + SCHEDULE + LINK),
-    SMS_RESERVATION_CARD_LINK(CUSTOMER + SCHEDULE + LINK),
+    SMS_RESERVATION_CARD_LINK(CUSTOMER + VEHICLE + SCHEDULE + LINK),
     SMS_UPSELL_CONSENT(CUSTOMER + setOf("uslugi", "kwota")),
     SMS_SIGNATURE_REQUEST(CUSTOMER + LINK + setOf("dokument")),
 
@@ -43,7 +43,7 @@ enum class MessageTemplateKind(val allowedPlaceholders: Set<String>) {
     EMAIL_VISIT_WELCOME(CUSTOMER_FULL + VEHICLE + VISIT + SCHEDULE),
     EMAIL_VISIT_READY_FOR_PICKUP(CUSTOMER_FULL + VEHICLE + VISIT + SCHEDULE),
     EMAIL_VISIT_CARD_LINK(CUSTOMER_FULL + VEHICLE + VISIT + SCHEDULE + LINK),
-    EMAIL_RESERVATION_CARD_LINK(CUSTOMER_FULL + SCHEDULE + LINK),
+    EMAIL_RESERVATION_CARD_LINK(CUSTOMER_FULL + VEHICLE + SCHEDULE + LINK),
     EMAIL_BATCH_ORDER_CLOSE(setOf("kontrahent", "okres", "kwota_brutto", "liczba_wpisow")),
 
     // ── Campaigns ───────────────────────────────────────────────────────────────
