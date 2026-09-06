@@ -25,4 +25,19 @@ interface InstagramProfileRepository : JpaRepository<InstagramProfileEntity, UUI
         )
     """)
     fun findAllActiveDistinct(): List<InstagramProfileEntity>
+
+    /**
+     * Profile obserwowane przez kogokolwiek i mające wskazaną stronę na Facebooku —
+     * tylko te da się sprawdzić w Bibliotece reklam Meta.
+     */
+    @Query("""
+        SELECT ip FROM InstagramProfileEntity ip
+        WHERE ip.facebookPageId IS NOT NULL
+        AND EXISTS (
+            SELECT sip.id FROM StudioInstagramProfileEntity sip
+            WHERE sip.profileId = ip.id
+            AND sip.status = pl.detailing.crm.shared.InstagramProfileStatus.ACTIVE
+        )
+    """)
+    fun findAllWithFacebookPage(): List<InstagramProfileEntity>
 }

@@ -88,6 +88,23 @@ class InstagramProfileEntity(
     @Column(name = "is_private", nullable = false)
     var isPrivate: Boolean = false,
 
+    // ── Powiązanie ze stroną na Facebooku (Biblioteka reklam Meta) ──
+
+    /**
+     * Strona na Facebooku, po której Biblioteka reklam indeksuje reklamy tego
+     * studia. Wskazywana ręcznie — Meta nie udostępnia mostu profil IG → strona FB,
+     * a wyszukiwanie po nazwie trafia na zbieżności i wymaga potwierdzenia człowieka.
+     * NULL = profilu nie da się sprawdzić pod kątem reklam.
+     */
+    @Column(name = "facebook_page_id", nullable = true, length = 40)
+    var facebookPageId: String? = null,
+
+    @Column(name = "facebook_page_name", nullable = true, length = 200)
+    var facebookPageName: String? = null,
+
+    @Column(name = "facebook_page_linked_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var facebookPageLinkedAt: Instant? = null,
+
     /** Czas ostatniej aktualizacji szczegółów profilu przez InstagramProfileDetailsSyncService. */
     @Column(name = "details_last_synced_at", nullable = true, columnDefinition = "timestamp with time zone")
     var detailsLastSyncedAt: Instant? = null,

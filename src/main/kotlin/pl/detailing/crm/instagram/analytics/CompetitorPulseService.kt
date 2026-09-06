@@ -2,6 +2,10 @@ package pl.detailing.crm.instagram.analytics
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.instagram.ads.AdCalendarMath
+import pl.detailing.crm.instagram.ads.MetaAdCodec
+import pl.detailing.crm.instagram.ads.MetaAdSnapshotEntity
+import pl.detailing.crm.instagram.ads.MetaAdsActivityService
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramPostTopicEntity
@@ -77,7 +81,8 @@ class CompetitorPulseService(
     private val postRepository: InstagramPostSnapshotRepository,
     private val topicRepository: InstagramPostTopicRepository,
     private val statsRepository: InstagramProfileStatsWeeklyRepository,
-    private val metricsRepository: InstagramProfileMetricsSnapshotRepository
+    private val metricsRepository: InstagramProfileMetricsSnapshotRepository,
+    private val adsActivityService: MetaAdsActivityService
 ) {
 
     companion object {
@@ -118,8 +123,16 @@ class CompetitorPulseService(
 
         /** Kolejność wyświetlania: najpierw Ty, potem to, co u konkurencji najgłośniejsze. */
         private val KIND_ORDER = listOf(
-            "YOUR_POST", "YOUR_SILENCE", "ACCELERATION", "STANDOUT_POST",
-            "FOLLOWER_SPIKE", "NEW_TOPIC", "FOLLOWER_DROP", "SLOWDOWN"
+            "YOUR_POST", "YOUR_SILENCE", "AD_STARTED", "ACCELERATION", "STANDOUT_POST",
+            "AD_ENDED", "FOLLOWER_SPIKE", "NEW_TOPIC", "FOLLOWER_DROP", "SLOWDOWN"
+        )
+
+        private val PLATFORM_LABELS = mapOf(
+            "FACEBOOK" to "Facebook",
+            "INSTAGRAM" to "Instagram",
+            "MESSENGER" to "Messenger",
+            "AUDIENCE_NETWORK" to "Audience Network",
+            "THREADS" to "Threads"
         )
     }
 
@@ -211,6 +224,14 @@ class CompetitorPulseService(
             )
         }
 
+        events += adEvents(
+            profileIds = profileIds,
+            usernames = profiles.mapValues { (_, profile) -> profile.username },
+            selfIds = links.filter { it.isSelf }.map { it.profileId }.toSet(),
+            windowStart = windowStart,
+            today = today
+        )
+
         val ordered = events
             .sortedWith(
                 compareBy<PulseEventDto> { KIND_ORDER.indexOf(it.kind).takeIf { i -> i >= 0 } ?: KIND_ORDER.size }
@@ -227,6 +248,102 @@ class CompetitorPulseService(
             profilesWatched = links.size
         )
     }
+
+    // ── Reklamy ───────────────────────────────────────────────────────────────
+
+    /**
+     * Kampania reklamowa trwa tygodniami, więc zdarzeniem są wyłącznie jej dwa
+     * końce: uruchomienie i zakończenie. Gdyby zdarzeniem było „trwa", jedna
+     * kampania wypełniłaby Puls przez dwa miesiące i wypchnęła z niego wszystko,
+     * co się w tym czasie faktycznie wydarzyło.
+     *
+     * Zakończenie raportujemy z datą NASZEGO odczytu, nie z daty wpisanej przez
+     * Meta: bibliotece zdarza się uzupełnić ją z opóźnieniem, a zdarzenie ma się
+     * pojawić raz, w tygodniu, w którym je zobaczyliśmy.
+     */
+    private fun adEvents(
+        profileIds: List<UUID>,
+        usernames: Map<UUID, String>,
+        selfIds: Set<UUID>,
+        windowStart: LocalDate,
+        today: LocalDate
+    ): List<PulseEventDto> {
+        val started = adsActivityService.startedSince(profileIds, windowStart, today)
+        val ended = adsActivityService.endedSince(
+            profileIds,
+            windowStart.atStartOfDay(ZoneOffset.UTC).toInstant()
+        )
+        if (started.isEmpty() && ended.isEmpty()) return emptyList()
+
+        val allAds = adsActivityService.allFor(profileIds)
+        val events = mutableListOf<PulseEventDto>()
+
+        started.forEach { (profileId, ads) ->
+            val username = usernames[profileId] ?: return@forEach
+            val isSelf = profileId in selfIds
+            ads.forEach { ad ->
+                val parallel = adsActivityService.concurrentOn(allAds[profileId].orEmpty(), ad.deliveryStart)
+                events += PulseEventDto(
+                    kind = "AD_STARTED",
+                    isSelf = isSelf,
+                    username = username,
+                    headline = if (isSelf) "Uruchomiłeś reklamę" else "@$username uruchomił reklamę",
+                    detail = listOfNotNull(
+                        ad.title?.takeIf { it.isNotBlank() },
+                        platformsOf(ad),
+                        if (parallel > 1) "$parallel ${campaignWord(parallel)} równolegle" else null
+                    ).joinToString(" · "),
+                    permalink = ad.snapshotUrl,
+                    occurredAt = DATE_FMT.format(ad.deliveryStart)
+                )
+            }
+        }
+
+        ended.forEach { (profileId, ads) ->
+            val username = usernames[profileId] ?: return@forEach
+            val isSelf = profileId in selfIds
+            ads.forEach { ad ->
+                val detectedOn = ad.endedDetectedAt?.atZone(ZoneOffset.UTC)?.toLocalDate() ?: today
+                val days = AdCalendarMath.daysInWindow(
+                    ad.deliveryStart, ad.deliveryStop, ad.deliveryStart, ad.deliveryStop ?: detectedOn
+                )
+                events += PulseEventDto(
+                    kind = "AD_ENDED",
+                    isSelf = isSelf,
+                    username = username,
+                    headline = if (isSelf) "Zakończyłeś reklamę" else "@$username zakończył reklamę",
+                    detail = listOfNotNull(
+                        ad.title?.takeIf { it.isNotBlank() },
+                        "$days ${dayWord(days)} emisji",
+                        (ad.reachPl ?: ad.reachEu)?.let { "zasięg ${groupDigits(it)}" }
+                    ).joinToString(" · "),
+                    permalink = ad.snapshotUrl,
+                    occurredAt = DATE_FMT.format(detectedOn)
+                )
+            }
+        }
+
+        return events
+    }
+
+    /** „Facebook, Instagram" — skróty FB/IG nic nikomu nie mówią. */
+    private fun platformsOf(ad: MetaAdSnapshotEntity): String? =
+        MetaAdCodec.decodePlatforms(ad.platforms)
+            .mapNotNull { PLATFORM_LABELS[it] }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(", ")
+
+    private fun campaignWord(count: Int): String = when {
+        count == 1 -> "kampania"
+        count % 10 in 2..4 && count % 100 !in 12..14 -> "kampanie"
+        else -> "kampanii"
+    }
+
+    private fun dayWord(count: Int): String = if (count == 1) "dzień" else "dni"
+
+    /** 41200 → „41 200". Liczby zasięgu czyta się w setkach tysięcy. */
+    private fun groupDigits(value: Int): String =
+        value.toString().reversed().chunked(3).joinToString("\u00A0").reversed()
 
     // ── Twój profil ───────────────────────────────────────────────────────────
 
