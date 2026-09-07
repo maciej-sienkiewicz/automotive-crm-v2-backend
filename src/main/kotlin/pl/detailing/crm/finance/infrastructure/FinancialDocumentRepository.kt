@@ -63,11 +63,19 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     ): Page<FinancialDocumentEntity>
 
     /**
-     * Suma brutto dokumentów finansowych. Dokumenty powiązane z fakturą w ledgerze
-     * KSeF (ksefRevenueInvoiceId) są pomijane — reprezentuje je tam już rekord
-     * faktury, a to on niesie korekty. Liczenie obu stron dawałoby podwójny
-     * przychód i ignorowałoby korekty. Kolumna dotyczy wyłącznie kierunku INCOME,
-     * więc dla EXPENSE warunek jest bezskutkowy.
+     * Suma netto dokumentów finansowych — podstawa kafli podsumowania finansów.
+     *
+     * Netto, a nie brutto: VAT jest pieniądzem urzędu skarbowego, tylko
+     * przechodzącym przez konto studia. Przychód, koszt i zysk liczone brutto
+     * zawyżały wynik o stawkę VAT i nie dawały się porównać z kosztami, w których
+     * VAT jest odliczany. Kolumna `total_net` jest wiarygodna: domena
+     * FinancialDocument pilnuje niezmiennika netto + VAT = brutto przy zapisie.
+     *
+     * Dokumenty powiązane z fakturą w ledgerze KSeF (ksefRevenueInvoiceId) są
+     * pomijane — reprezentuje je tam już rekord faktury, a to on niesie korekty.
+     * Liczenie obu stron dawałoby podwójny przychód i ignorowałoby korekty.
+     * Kolumna dotyczy wyłącznie kierunku INCOME, więc dla EXPENSE warunek jest
+     * bezskutkowy.
      *
      * Dokumenty ukryte ręcznie (excludedAt) nie wchodzą do sum — o to chodzi
      * w ukrywaniu: pozycja znika ze statystyk, zostając w bazie.
@@ -78,7 +86,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
      * przeterminowany był wart zero złotych po obu stronach raportu.
      */
     @Query("""
-        SELECT COALESCE(SUM(d.totalGross), 0) FROM FinancialDocumentEntity d
+        SELECT COALESCE(SUM(d.totalNet), 0) FROM FinancialDocumentEntity d
         WHERE d.studioId  = :studioId
           AND d.direction = :direction
           AND d.status    IN :statuses
@@ -88,7 +96,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
           AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
     """)
-    fun sumGross(
+    fun sumNet(
         studioId: UUID,
         direction: DocumentDirection,
         statuses: Collection<DocumentStatus>,

@@ -25,7 +25,11 @@ data class FinanceReportQuery(
 /**
  * High-level financial summary for a studio.
  *
- * All monetary values are in grosz (1/100 PLN).
+ * Wszystkie kwoty są w groszach (1/100 PLN) i **netto** — VAT nie jest pieniądzem
+ * studia, tylko kwotą przechowywaną dla urzędu skarbowego. Kafle liczone brutto
+ * zawyżały przychód o stawkę VAT, a zysk brutto minus koszty brutto porównywał
+ * dwie kwoty, z których każda niosła cudzy podatek.
+ *
  * "Revenue" = opłacone dokumenty przychodowe: paragony i dokumenty „inne"
  *             z modułu finansowego oraz faktury z ledgera KSeF. Korekty niosą
  *             kwoty ze znakiem, więc pomniejszają przychód.
@@ -37,16 +41,16 @@ data class FinanceSummaryResult(
     val dateFrom: LocalDate?,
     val dateTo: LocalDate?,
 
-    // ── Settled amounts ────────────────────────────────────────────────────
+    // ── Settled amounts (netto) ────────────────────────────────────────────
     // Grosze jako Long, nie Money: Money zabrania kwot ujemnych, a te sumy niosą
     // korekty ze znakiem. Korekta wystawiona w okresie bez faktur (np. do faktury
     // z poprzedniego roku) daje ujemny przychód — to prawdziwa informacja,
     // a nie błąd, i nie może wywracać całego widoku finansów wyjątkiem.
-    val totalRevenue: Long,           // INCOME + PAID (po korektach)
-    val totalCosts: Long,             // EXPENSE + PAID
-    val profit: Long,                 // revenue − costs
+    val totalRevenue: Long,           // netto, INCOME + PAID (po korektach)
+    val totalCosts: Long,             // netto, EXPENSE + PAID
+    val profit: Long,                 // revenue − costs, obie strony netto
 
-    // ── Outstanding amounts ────────────────────────────────────────────────
+    // ── Outstanding amounts (netto) ────────────────────────────────────────
     /** Sum of INCOME PENDING documents – money we expect to receive (po korektach). */
     val pendingReceivables: Long,
 
@@ -93,21 +97,24 @@ class FinanceReportingHandler(
         // Przychód pochodzi z dwóch źródeł, tak samo jak lista dokumentów przychodowych:
         // paragony i dokumenty „inne" z modułu finansowego oraz faktury (i korekty)
         // z ledgera KSeF. Dokumenty finansowe powiązane z fakturą KSeF są po stronie
-        // sumGross pomijane, więc nic nie liczy się dwa razy.
-        val financialDocRevenueCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, SETTLED, from, to)
-        val ksefRevenueCents = revenueInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to)
+        // sumNet pomijane, więc nic nie liczy się dwa razy.
+        //
+        // Obie strony sumują kwoty netto: przychód, koszt i zysk mają mówić
+        // o pieniądzach studia, a nie o VAT przechodzącym do urzędu skarbowego.
+        val financialDocRevenueCents = documentRepository.sumNet(sid, DocumentDirection.INCOME, SETTLED, from, to)
+        val ksefRevenueCents = revenueInvoiceRepository.sumNetByPaymentStatus(sid, "PAID", from, to)
         val totalRevenueCents = financialDocRevenueCents + ksefRevenueCents
 
-        val financialDocCostsCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, SETTLED, from, to)
-        val ksefCostsCents = ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PAID", from, to)
+        val financialDocCostsCents = documentRepository.sumNet(sid, DocumentDirection.EXPENSE, SETTLED, from, to)
+        val ksefCostsCents = ksefInvoiceRepository.sumNetByPaymentStatus(sid, "PAID", from, to)
         val totalCostsCents = financialDocCostsCents + ksefCostsCents
 
-        val financialDocReceivablesCents = documentRepository.sumGross(sid, DocumentDirection.INCOME, OUTSTANDING, from, to)
-        val ksefReceivablesCents = revenueInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
+        val financialDocReceivablesCents = documentRepository.sumNet(sid, DocumentDirection.INCOME, OUTSTANDING, from, to)
+        val ksefReceivablesCents = revenueInvoiceRepository.sumNetByPaymentStatus(sid, "PENDING", from, to)
         val pendingReceivablesCents = financialDocReceivablesCents + ksefReceivablesCents
 
-        val financialDocPendingPayablesCents = documentRepository.sumGross(sid, DocumentDirection.EXPENSE, OUTSTANDING, from, to)
-        val ksefPendingPayablesCents = ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
+        val financialDocPendingPayablesCents = documentRepository.sumNet(sid, DocumentDirection.EXPENSE, OUTSTANDING, from, to)
+        val ksefPendingPayablesCents = ksefInvoiceRepository.sumNetByPaymentStatus(sid, "PENDING", from, to)
         val pendingPayablesCents = financialDocPendingPayablesCents + ksefPendingPayablesCents
 
         val overdueReceivables = documentRepository.countOverdue(sid, DocumentDirection.INCOME)
