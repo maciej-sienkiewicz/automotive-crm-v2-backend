@@ -28,6 +28,7 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitQueryService
 import pl.detailing.crm.smscampaigns.infrastructure.SmsVisitView
 import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
+import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
 import java.util.UUID
@@ -62,7 +63,8 @@ class SmsAutomationScheduler(
     private val communicationGateway: OutboundCommunicationGateway,
     private val templateProcessor: SmsTemplateProcessor,
     private val visitRepository: VisitRepository,
-    private val communicationLogService: CommunicationLogService
+    private val communicationLogService: CommunicationLogService,
+    private val thankYouSmsRepository: ScheduledThankYouSmsRepository
 ) {
 
     companion object {
@@ -323,6 +325,20 @@ class SmsAutomationScheduler(
             logger.debug(
                 "Skipping {} SMS for visit={}: already sent",
                 triggerType, visit.visitId
+            )
+            return
+        }
+
+        // Podziękowanie zaplanowane przy wydaniu pojazdu wygrywa z automatem — także wtedy,
+        // gdy człowiek przy ladzie wybrał „nie wysyłaj". Automat liczy od odbioru pojazdu,
+        // a odbiór odnotowuje się w systemie wtedy, kiedy jest chwila: stąd „dziękujemy za
+        // wizytę" o 20:50. Wybrany termin (albo brak wysyłki) nie może przez to przepaść.
+        if (triggerType == SmsTriggerType.POST_VISIT &&
+            thankYouSmsRepository.existsByAppointmentId(visit.appointmentId)
+        ) {
+            logger.debug(
+                "Skipping POST_VISIT SMS for visit={}: handover already decided when to thank the customer",
+                visit.visitId
             )
             return
         }

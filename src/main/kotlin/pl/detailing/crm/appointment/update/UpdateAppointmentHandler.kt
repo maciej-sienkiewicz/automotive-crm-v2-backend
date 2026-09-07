@@ -115,7 +115,11 @@ class UpdateAppointmentHandler(
                     basePriceGross = service.basePriceGross
                 )
             } else {
-                // Custom service without serviceId - use provided data directly
+                // Custom service without serviceId - use provided data directly.
+                // basePriceGross, when the frontend sent it, is the exact price the user
+                // typed - passing it through lets calculateFinalGross keep it exactly
+                // instead of re-deriving from net (which rounds some values wrong, e.g.
+                // 1900.00 -> 1544.72 net -> 1900.01 re-derived, at 23% VAT).
                 AppointmentLineItem.create(
                     serviceId = null,
                     serviceName = serviceLineItem.serviceName ?: "Custom Service",
@@ -123,7 +127,8 @@ class UpdateAppointmentHandler(
                     vatRate = VatRate.fromInt(serviceLineItem.vatRate),
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
-                    customNote = serviceLineItem.customNote
+                    customNote = serviceLineItem.customNote,
+                    basePriceGross = serviceLineItem.basePriceGross?.let { Money.fromCents(it) }
                 )
             }
         }
