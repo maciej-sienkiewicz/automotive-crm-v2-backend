@@ -77,9 +77,10 @@ class MetaAdsController(
     }
 
     /**
-     * Podpowiedzi stron do powiązania. Fraza idzie do biblioteki reklam, a z jej
-     * odpowiedzi bierzemy `page_id` — ten sam numer, którego panel Meta nie pokazuje
-     * przy stronach mających nazwę użytkownika.
+     * Podpowiedzi stron do powiązania. Przyjmuje wszystko, co człowiek ma pod ręką:
+     * wklejony adres strony (z numerem albo z aliasem), sam numer albo nazwę firmy.
+     * Rozpoznanie postaci jest po naszej stronie — Facebook pokazuje tę samą stronę
+     * raz jako `profile.php?id=…`, raz jako `facebook.com/CarArtDetailing`.
      */
     @GetMapping("/page-search")
     fun searchPages(@RequestParam q: String): ResponseEntity<Map<String, List<PageCandidateDto>>> {

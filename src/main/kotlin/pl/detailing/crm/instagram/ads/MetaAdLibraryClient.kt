@@ -150,6 +150,66 @@ class MetaAdLibraryClient(
             .take(MAX_SEARCH_RESULTS)
     }
 
+    /**
+     * Kandydat zbudowany z SAMEGO numeru strony — po to, żeby dało się potwierdzić,
+     * czyj on jest, zanim ktokolwiek go zapisze.
+     *
+     * Pusta lista reklam nie znaczy „zły numer": biblioteka zna wyłącznie
+     * reklamodawców, więc strona, która nic nie reklamowała, wygląda tak samo jak
+     * numer wzięty z sufitu. Zwracamy wtedy kandydata bez nazwy i to wołający
+     * decyduje, co z tym zrobić.
+     */
+    fun describePage(pageId: String): MetaPageCandidate? {
+        if (!enabled) return null
+
+        val ads = try {
+            fetchAdsForPages(listOf(pageId)).filter { it.pageId == pageId }
+        } catch (e: MetaAdsException) {
+            log.warn("Meta Ad Library: sprawdzenie strony {} nie powiodło się — {}", pageId, e.message)
+            return null
+        }
+
+        return MetaPageCandidate(
+            pageId = pageId,
+            pageName = ads.firstNotNullOfOrNull { it.pageName?.trim()?.takeIf(String::isNotBlank) }.orEmpty(),
+            ads = ads.size,
+            lastStart = ads.maxOfOrNull { it.deliveryStart }
+        )
+    }
+
+    /**
+     * Alias (facebook.com/CarArtDetailing) → numer strony, najkrótszą drogą.
+     *
+     * Odczyt węzła strony po nazwie użytkownika wymaga uprawnienia Page Public
+     * Content Access, przechodzącego App Review — bez niego Meta odpowiada błędem.
+     * Próbujemy mimo to, bo gdy uprawnienie jest, odpowiedź jest DOKŁADNA: numer
+     * tej i tylko tej strony. Gdy go nie ma, wołający ma drogę zapasową przez
+     * wyszukiwanie po nazwie, więc ta próba nic nie kosztuje poza jednym wywołaniem.
+     */
+    fun resolveAlias(alias: String): MetaPageCandidate? {
+        if (!enabled || alias.isBlank()) return null
+
+        return try {
+            val body = callGate.call("page_lookup") {
+                get(
+                    "https://graph.facebook.com/$apiVersion/${encode(alias)}" +
+                        "?access_token=${encode(accessToken)}&fields=id,name"
+                )
+            }
+            val node = objectMapper.readTree(body)
+            val id = node.path("id").textOrNull()?.takeIf { it.all(Char::isDigit) } ?: return null
+            MetaPageCandidate(
+                pageId = id,
+                pageName = node.path("name").textOrNull()?.trim().orEmpty(),
+                ads = 0,
+                lastStart = null
+            )
+        } catch (e: MetaAdsException) {
+            log.debug("Meta: odczyt strony po aliasie „{}” niedostępny — {}", alias, e.message)
+            null
+        }
+    }
+
     private fun buildSearchUrl(term: String): String {
         val since = LocalDate.now().minusDays(RETENTION_DAYS)
         return buildString {
