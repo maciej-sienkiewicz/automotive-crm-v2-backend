@@ -63,6 +63,49 @@ class MetaAdsSyncService(
             return SyncResult(profileByPage.size, 0, 0, 0)
         }
 
+        val result = persist(ads, profileByPage, pagesChecked = profileByPage.size)
+        log.info(
+            "Meta Ad Library: {} stron, {} reklam ({} nowych, {} zakończonych)",
+            result.pagesChecked, result.adsSeen, result.adsNew, result.adsEnded
+        )
+        return result
+    }
+
+    /**
+     * Jedna strona, natychmiast — wołane zaraz po wskazaniu strony na Facebooku.
+     *
+     * Bez tego powiązanie profilu było ruchem bez skutku: właściciel wpisywał
+     * identyfikator, wiersz pojawiał się w kalendarzu pusty i nic więcej się nie
+     * działo aż do nocnego przebiegu. Skoro człowiek właśnie powiedział nam, gdzie
+     * patrzeć, patrzymy od razu.
+     */
+    fun syncProfile(profileId: UUID, pageId: String): SyncResult {
+        if (!client.enabled) {
+            log.info("Meta Ad Library: profil {} bez pobrania — brak tokena (meta.ads.token)", profileId)
+            return SyncResult(0, 0, 0, 0)
+        }
+
+        val ads = try {
+            client.fetchAdsForPages(listOf(pageId))
+        } catch (e: MetaAdsException) {
+            log.warn("Meta Ad Library: pobranie dla strony {} nie powiodło się — {}", pageId, e.message)
+            return SyncResult(1, 0, 0, 0)
+        }
+
+        val result = persist(ads.filter { it.pageId == pageId }, mapOf(pageId to profileId), pagesChecked = 1)
+        log.info(
+            "Meta Ad Library: strona {} → {} reklam ({} nowych) dla profilu {}",
+            pageId, result.adsSeen, result.adsNew, profileId
+        )
+        return result
+    }
+
+    /** Wspólny zapis migawek — ta sama arytmetyka dla przebiegu nocnego i pojedynczej strony. */
+    private fun persist(
+        ads: List<RawMetaAd>,
+        profileByPage: Map<String, UUID>,
+        pagesChecked: Int
+    ): SyncResult {
         var created = 0
         var ended = 0
         val now = Instant.now()
@@ -83,17 +126,7 @@ class MetaAdsSyncService(
             }
         }
 
-        val result = SyncResult(
-            pagesChecked = profileByPage.size,
-            adsSeen = ads.size,
-            adsNew = created,
-            adsEnded = ended
-        )
-        log.info(
-            "Meta Ad Library: {} stron, {} reklam ({} nowych, {} zakończonych)",
-            result.pagesChecked, result.adsSeen, result.adsNew, result.adsEnded
-        )
-        return result
+        return SyncResult(pagesChecked = pagesChecked, adsSeen = ads.size, adsNew = created, adsEnded = ended)
     }
 
     private fun toEntity(ad: RawMetaAd, profileId: UUID, now: Instant) = MetaAdSnapshotEntity(

@@ -136,6 +136,37 @@ class MetaAdsSyncServiceTest {
         assertEquals(41_200, saved.captured.reachEu)
     }
 
+    /**
+     * Powiązanie strony bez natychmiastowego pobrania było ruchem bez skutku:
+     * wiersz pojawiał się w kalendarzu pusty i tak zostawał do nocnego przebiegu.
+     */
+    @Test
+    fun `pojedyncza strona pobiera sie od razu, bez czekania na nocny przebieg`() {
+        every { client.enabled } returns true
+        every { client.fetchAdsForPages(listOf(pageId)) } returns listOf(ad(stop = null))
+        every { snapshotRepository.findByAdArchiveIdIn(any()) } returns emptyList()
+
+        val result = service.syncProfile(profileId, pageId)
+
+        assertEquals(1, result.pagesChecked)
+        assertEquals(1, result.adsSeen)
+        assertEquals(1, result.adsNew)
+        verify(exactly = 0) { profileRepository.findAllWithFacebookPage() }
+    }
+
+    /** Meta bywa hojna w dopasowaniu — cudza reklama nie ma się gdzie przypiąć. */
+    @Test
+    fun `pobranie pojedynczej strony odrzuca reklamy innych stron`() {
+        every { client.enabled } returns true
+        every { client.fetchAdsForPages(listOf(pageId)) } returns listOf(ad(stop = null).copy(pageId = "999"))
+        every { snapshotRepository.findByAdArchiveIdIn(any()) } returns emptyList()
+
+        val result = service.syncProfile(profileId, pageId)
+
+        assertEquals(0, result.adsSeen)
+        verify(exactly = 0) { snapshotRepository.save(any<MetaAdSnapshotEntity>()) }
+    }
+
     @Test
     fun `bez tokena nie odpytujemy Meta w ogole`() {
         every { client.enabled } returns false

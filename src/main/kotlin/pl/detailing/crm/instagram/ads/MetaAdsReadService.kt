@@ -1,11 +1,13 @@
 package pl.detailing.crm.instagram.ads
 
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
 import pl.detailing.crm.shared.InstagramProfileStatus
 import pl.detailing.crm.shared.StudioId
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
@@ -23,6 +25,8 @@ class MetaAdsReadService(
     private val snapshotRepository: MetaAdSnapshotRepository,
     private val client: MetaAdLibraryClient
 ) {
+    private val log = LoggerFactory.getLogger(MetaAdsReadService::class.java)
+
 
     @Transactional(readOnly = true)
     fun calendar(studioId: StudioId, year: Int): AdCalendarResponse {
@@ -59,6 +63,7 @@ class MetaAdsReadService(
                 profileId = link.profileId,
                 username = profile.username,
                 isSelf = link.isSelf,
+                facebookPageId = profile.facebookPageId,
                 ads = byProfile[link.profileId].orEmpty(),
                 windowStart = windowStart,
                 windowEnd = windowEnd,
@@ -80,6 +85,7 @@ class MetaAdsReadService(
         profileId: UUID,
         username: String,
         isSelf: Boolean,
+        facebookPageId: String?,
         ads: List<MetaAdSnapshotEntity>,
         windowStart: LocalDate,
         windowEnd: LocalDate,
@@ -108,6 +114,7 @@ class MetaAdsReadService(
             profileId = profileId.toString(),
             username = username,
             isSelf = isSelf,
+            facebookPageId = facebookPageId,
             campaigns = bars.size,
             activeNow = ordered.count { it.deliveryStop == null && !it.deliveryStart.isAfter(today) },
             sponsoredDays = bars.sumOf { it.days },
@@ -175,22 +182,60 @@ class MetaAdsReadService(
      * Powiązanie profilu ze stroną na Facebooku. Robi to człowiek, bo Meta nie
      * udostępnia mostu profil IG → strona FB, a wyszukiwanie po nazwie trafia
      * na zbieżności („Auto Spa" jest w każdym mieście).
+     *
+     * Zwraca znormalizowany identyfikator strony (null = odmowa), bo wołający
+     * ma zaraz po tym pobrać reklamy tej strony — powiązanie bez pobrania jest
+     * ruchem bez skutku: wiersz pojawia się w kalendarzu pusty i nic więcej.
+     *
+     * Wskazanie INNEJ strony kasuje migawki poprzedniej. To reklamy innej firmy —
+     * zostawione w bazie zmieszałyby w kalendarzu dwa różne studia pod jedną nazwą.
      */
     @Transactional
-    fun linkFacebookPage(studioId: StudioId, profileId: UUID, request: LinkFacebookPageRequest): Boolean {
-        val watched = studioProfileRepository
-            .findByStudioId(studioId.value)
-            .any { it.profileId == profileId }
-        if (!watched) return false
+    fun linkFacebookPage(studioId: StudioId, profileId: UUID, request: LinkFacebookPageRequest): String? {
+        if (!watches(studioId, profileId)) return null
 
         val pageId = request.pageId.trim()
-        if (pageId.isEmpty() || !pageId.all { it.isDigit() } || pageId.length > 40) return false
+        if (pageId.isEmpty() || !pageId.all { it.isDigit() } || pageId.length > 40) return null
 
-        val profile = profileRepository.findById(profileId).orElse(null) ?: return false
+        val profile = profileRepository.findById(profileId).orElse(null) ?: return null
+        val previous = profile.facebookPageId
+        if (previous != null && previous != pageId) {
+            snapshotRepository.deleteByProfileId(profileId)
+            log.info("Meta Ad Library: profil {} zmienia stronę {} → {}, migawki skasowane", profileId, previous, pageId)
+        }
+
         profile.facebookPageId = pageId
         profile.facebookPageName = request.pageName?.trim()?.take(200)?.takeIf { it.isNotBlank() }
-        profile.facebookPageLinkedAt = java.time.Instant.now()
+        profile.facebookPageLinkedAt = Instant.now()
+        profileRepository.save(profile)
+        log.info("Meta Ad Library: profil {} (@{}) powiązany ze stroną {}", profileId, profile.username, pageId)
+        return pageId
+    }
+
+    /**
+     * Odpięcie strony. Migawki idą razem z nią: opisują reklamy strony, której
+     * już nie śledzimy, a zostawione udawałyby historię tego profilu.
+     *
+     * Powiązanie jest własnością profilu, nie studia — tak samo jak reszta danych
+     * profilu w tym module. Odpięcie działa więc dla wszystkich, którzy go obserwują;
+     * to ta sama zasada, na której działa wskazanie strony.
+     */
+    @Transactional
+    fun unlinkFacebookPage(studioId: StudioId, profileId: UUID): Boolean {
+        if (!watches(studioId, profileId)) return false
+
+        val profile = profileRepository.findById(profileId).orElse(null) ?: return false
+        if (profile.facebookPageId == null) return false
+
+        snapshotRepository.deleteByProfileId(profileId)
+        log.info("Meta Ad Library: profil {} (@{}) odpięty od strony {}", profileId, profile.username, profile.facebookPageId)
+        profile.facebookPageId = null
+        profile.facebookPageName = null
+        profile.facebookPageLinkedAt = null
         profileRepository.save(profile)
         return true
     }
+
+    private fun watches(studioId: StudioId, profileId: UUID): Boolean =
+        studioProfileRepository.findByStudioId(studioId.value).any { it.profileId == profileId }
 }
