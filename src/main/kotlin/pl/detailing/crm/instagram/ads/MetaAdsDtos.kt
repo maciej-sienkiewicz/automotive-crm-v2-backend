@@ -24,6 +24,8 @@ data class AdCalendarRowDto(
     val profileId: String,
     val username: String,
     val isSelf: Boolean,
+    /** Strona na Facebooku, po której pytamy o reklamy — do podglądu i zmiany. */
+    val facebookPageId: String?,
     val campaigns: Int,
     val activeNow: Int,
     /** Suma dni każdej kampanii osobno: 4 kampanie po 3 dni = 12. */

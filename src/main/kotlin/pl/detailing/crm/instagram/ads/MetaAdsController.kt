@@ -22,7 +22,8 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/v1/instagram/ads")
 class MetaAdsController(
-    private val readService: MetaAdsReadService
+    private val readService: MetaAdsReadService,
+    private val syncService: MetaAdsSyncService
 ) {
 
     /** Kalendarz roku: kto, kiedy i jak długo się reklamował. */
@@ -46,15 +47,36 @@ class MetaAdsController(
     /**
      * Wskazanie strony na Facebooku dla obserwowanego profilu — bez niej nie da
      * się sprawdzić, czy ten profil się reklamuje.
+     *
+     * Reklamy pobieramy OD RAZU, w tym samym żądaniu. Powiązanie samo w sobie jest
+     * ruchem bez skutku: właściciel wpisywał identyfikator, wiersz pojawiał się
+     * w kalendarzu pusty i tak zostawało do nocnego przebiegu. Skoro człowiek
+     * właśnie powiedział nam, gdzie patrzeć, patrzymy od razu — jedno wywołanie
+     * do Meta, a odpowiedź mówi, ile reklam znaleźliśmy.
+     *
+     * Pobranie stoi POZA transakcją zapisu (osobny serwis): transakcja rozpięta
+     * wokół wywołania HTTP trzymałaby połączenie z bazą przez cały czas odpowiedzi
+     * obcego serwera.
      */
     @PutMapping("/profiles/{profileId}/page")
     fun linkPage(
         @PathVariable profileId: UUID,
         @RequestBody request: LinkFacebookPageRequest
-    ): ResponseEntity<Map<String, Boolean>> {
+    ): ResponseEntity<Map<String, Any>> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val linked = readService.linkFacebookPage(principal.studioId, profileId, request)
-        return if (linked) ResponseEntity.ok(mapOf("linked" to true))
-        else ResponseEntity.badRequest().body(mapOf("linked" to false))
+        val pageId = readService.linkFacebookPage(principal.studioId, profileId, request)
+            ?: return ResponseEntity.badRequest().body(mapOf("linked" to false))
+
+        val sync = syncService.syncProfile(profileId, pageId)
+        return ResponseEntity.ok(mapOf("linked" to true, "adsFound" to sync.adsSeen))
+    }
+
+    /** Odpięcie strony — razem z migawkami reklam, bo opisują już cudzą firmę. */
+    @DeleteMapping("/profiles/{profileId}/page")
+    fun unlinkPage(@PathVariable profileId: UUID): ResponseEntity<Map<String, Boolean>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val unlinked = readService.unlinkFacebookPage(principal.studioId, profileId)
+        return if (unlinked) ResponseEntity.ok(mapOf("unlinked" to true))
+        else ResponseEntity.badRequest().body(mapOf("unlinked" to false))
     }
 }
