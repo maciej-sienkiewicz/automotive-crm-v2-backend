@@ -236,6 +236,27 @@ class MetaAdsReadService(
         return true
     }
 
+    /**
+     * Szukanie strony po nazwie — zamiast kazać komuś polować na numer.
+     *
+     * Biblioteka reklam pokazuje w panelu albo numer strony, albo jej nazwę
+     * użytkownika, więc połowa reklamodawców jest nie do wpisania z ręki.
+     * Każda odpowiedź `ads_archive` niesie za to `page_id` obok `page_name`.
+     */
+    fun searchPages(term: String): List<PageCandidateDto> =
+        runCatching { client.searchPages(term) }
+            // Cudzysłów zamykający musi być typograficzny: zwykły " zamknąłby literał.
+            .onFailure { log.warn("Meta Ad Library: szukanie strony „{}” nie powiodło się — {}", term, it.message) }
+            .getOrDefault(emptyList())
+            .map {
+                PageCandidateDto(
+                    pageId = it.pageId,
+                    pageName = it.pageName,
+                    ads = it.ads,
+                    lastStart = it.lastStart?.toString()
+                )
+            }
+
     private fun watches(studioId: StudioId, profileId: UUID): Boolean =
         studioProfileRepository.findByStudioId(studioId.value).any { it.profileId == profileId }
 }

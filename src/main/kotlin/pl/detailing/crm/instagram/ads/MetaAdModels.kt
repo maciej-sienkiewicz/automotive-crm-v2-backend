@@ -62,3 +62,16 @@ class MetaAdsException(
     val errorSubcode: Int?,
     message: String
 ) : RuntimeException(message)
+
+/**
+ * Strona reklamodawcy znaleziona po frazie — kandydat do powiązania z profilem.
+ *
+ * Liczba reklam i data ostatniego startu są tu po to, żeby człowiek odróżnił
+ * właściwe studio od zbieżnej nazwy: „Auto Spa" jest w każdym mieście.
+ */
+data class MetaPageCandidate(
+    val pageId: String,
+    val pageName: String,
+    val ads: Int,
+    val lastStart: java.time.LocalDate?
+)

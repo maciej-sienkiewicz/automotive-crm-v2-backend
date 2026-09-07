@@ -116,3 +116,13 @@ data class DigestAdDto(
     /** ISO, data rozpoczęcia emisji. */
     val startedOn: String
 )
+
+/** Kandydat na stronę reklamodawcy — wynik szukania po nazwie. */
+data class PageCandidateDto(
+    val pageId: String,
+    val pageName: String,
+    /** Ile reklam tej strony trafiło w zapytanie — pomaga odróżnić firmę od zbieżnej nazwy. */
+    val ads: Int,
+    /** ISO. Ostatni znany start emisji. */
+    val lastStart: String?
+)
