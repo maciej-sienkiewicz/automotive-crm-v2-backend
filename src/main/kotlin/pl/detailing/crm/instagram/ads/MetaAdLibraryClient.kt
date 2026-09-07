@@ -143,9 +143,10 @@ class MetaAdLibraryClient(
                     lastStart = hits.mapNotNull { it.third }.maxOrNull()
                 )
             }
-            // Najpierw ci, którzy reklamują się najintensywniej — przy zbieżnych
-            // nazwach to zwykle ten, o którego chodzi.
-            .sortedWith(compareByDescending<MetaPageCandidate> { it.ads }.thenByDescending { it.lastStart })
+            // Treść reklamy była sitem po stronie Meta; o tym, co zobaczy człowiek,
+            // decyduje nazwa strony — inaczej lista to firmy z przypadkowo zbieżnym
+            // słowem w tekście reklamy.
+            .let { MetaPageSearch.rank(query, it) }
             .take(MAX_SEARCH_RESULTS)
     }
 
