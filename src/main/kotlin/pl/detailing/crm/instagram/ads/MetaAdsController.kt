@@ -71,6 +71,17 @@ class MetaAdsController(
         return ResponseEntity.ok(mapOf("linked" to true, "adsFound" to sync.adsSeen))
     }
 
+    /**
+     * Podpowiedzi stron do powiązania. Fraza idzie do biblioteki reklam, a z jej
+     * odpowiedzi bierzemy `page_id` — ten sam numer, którego panel Meta nie pokazuje
+     * przy stronach mających nazwę użytkownika.
+     */
+    @GetMapping("/page-search")
+    fun searchPages(@RequestParam q: String): ResponseEntity<Map<String, List<PageCandidateDto>>> {
+        SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(mapOf("candidates" to readService.searchPages(q)))
+    }
+
     /** Odpięcie strony — razem z migawkami reklam, bo opisują już cudzą firmę. */
     @DeleteMapping("/profiles/{profileId}/page")
     fun unlinkPage(@PathVariable profileId: UUID): ResponseEntity<Map<String, Boolean>> {

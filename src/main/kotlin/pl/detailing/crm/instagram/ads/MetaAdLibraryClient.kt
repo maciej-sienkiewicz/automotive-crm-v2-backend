@@ -56,6 +56,15 @@ class MetaAdLibraryClient(
 
         /** Ile stron paginacji maksymalnie przejdziemy — zapora przed pętlą kursorów. */
         private const val MAX_PAGES = 20
+
+        /** Krótsza fraza to wyszukiwanie połowy biblioteki — i tak nikt by tego nie przeczytał. */
+        private const val MIN_SEARCH_LENGTH = 3
+
+        /** Jedno wywołanie na wyszukanie: bierzemy szeroko i grupujemy po stronie u siebie. */
+        private const val SEARCH_PAGE_SIZE = 300
+
+        /** Tyle kandydatów da się przejrzeć wzrokiem; więcej znaczy „doprecyzuj frazę". */
+        private const val MAX_SEARCH_RESULTS = 12
     }
 
     /** Token jest jedyną rzeczą do podmiany w dniu aktywacji konta. */
@@ -95,6 +104,64 @@ class MetaAdLibraryClient(
         } while (after != null && root.path("data").size() > 0 && page < MAX_PAGES)
 
         return ads
+    }
+
+    /**
+     * Strony reklamodawców pasujące do frazy — po to, żeby nikt nie musiał
+     * polować na numeryczny identyfikator strony.
+     *
+     * Biblioteka reklam pokazuje w panelu ALBO numer strony, ALBO jej nazwę
+     * użytkownika (@carartdetailing) — nigdy obu naraz. Kto trafi na tę drugą
+     * postać, nie ma skąd wziąć numeru, a `search_page_ids` przyjmuje wyłącznie
+     * numer. Za to KAŻDA odpowiedź z `ads_archive` niesie `page_id` obok
+     * `page_name`, więc wystarczy zapytać o cokolwiek tej strony i odczytać numer.
+     *
+     * Ograniczenie wynikające z samej biblioteki: znajdziemy tylko te strony,
+     * które w ostatnim roku cokolwiek reklamowały. Dla nas to nie jest strata —
+     * strona, która się nie reklamuje, nie ma czego pokazać w kalendarzu.
+     */
+    fun searchPages(term: String): List<MetaPageCandidate> {
+        if (!enabled) return emptyList()
+        val query = term.trim().takeIf { it.length >= MIN_SEARCH_LENGTH } ?: return emptyList()
+
+        val body = callGate.call("ads_archive_search") { get(buildSearchUrl(query)) }
+        val root = objectMapper.readTree(body)
+
+        return root.path("data")
+            .mapNotNull { node ->
+                val pageId = node.path("page_id").textOrNull() ?: return@mapNotNull null
+                val pageName = node.path("page_name").textOrNull()?.trim().orEmpty()
+                val start = MetaAdParser.parseDate(node.path("ad_delivery_start_time").textOrNull())
+                Triple(pageId, pageName, start)
+            }
+            .groupBy { it.first }
+            .map { (pageId, hits) ->
+                MetaPageCandidate(
+                    pageId = pageId,
+                    pageName = hits.firstNotNullOfOrNull { it.second.takeIf(String::isNotBlank) } ?: pageId,
+                    ads = hits.size,
+                    lastStart = hits.mapNotNull { it.third }.maxOrNull()
+                )
+            }
+            // Najpierw ci, którzy reklamują się najintensywniej — przy zbieżnych
+            // nazwach to zwykle ten, o którego chodzi.
+            .sortedWith(compareByDescending<MetaPageCandidate> { it.ads }.thenByDescending { it.lastStart })
+            .take(MAX_SEARCH_RESULTS)
+    }
+
+    private fun buildSearchUrl(term: String): String {
+        val since = LocalDate.now().minusDays(RETENTION_DAYS)
+        return buildString {
+            append("https://graph.facebook.com/$apiVersion/ads_archive")
+            append("?access_token=").append(encode(accessToken))
+            append("&ad_reached_countries=").append(encode("[\"PL\"]"))
+            append("&search_terms=").append(encode(term))
+            append("&ad_type=ALL")
+            append("&ad_active_status=ALL")
+            append("&ad_delivery_date_min=").append(since)
+            append("&fields=").append(encode("page_id,page_name,ad_delivery_start_time"))
+            append("&limit=").append(SEARCH_PAGE_SIZE)
+        }
     }
 
     private fun buildUrl(pageIds: List<String>, after: String?): String {
