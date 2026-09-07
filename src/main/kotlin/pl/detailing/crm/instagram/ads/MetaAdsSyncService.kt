@@ -31,7 +31,13 @@ class MetaAdsSyncService(
         val pagesChecked: Int,
         val adsSeen: Int,
         val adsNew: Int,
-        val adsEnded: Int
+        val adsEnded: Int,
+        /**
+         * Nazwa strony tak, jak zwróciła ją Meta. Jedyne potwierdzenie, że wskazany
+         * numer należy do tej firmy, o którą chodziło — sam numer nic nie mówi,
+         * a pomyłka wciąga do kalendarza reklamy zupełnie obcego przedsiębiorstwa.
+         */
+        val pageName: String? = null
     )
 
     /**
@@ -126,7 +132,13 @@ class MetaAdsSyncService(
             }
         }
 
-        return SyncResult(pagesChecked = pagesChecked, adsSeen = ads.size, adsNew = created, adsEnded = ended)
+        return SyncResult(
+            pagesChecked = pagesChecked,
+            adsSeen = ads.size,
+            adsNew = created,
+            adsEnded = ended,
+            pageName = ads.firstNotNullOfOrNull { it.pageName?.trim()?.takeIf(String::isNotBlank) }
+        )
     }
 
     private fun toEntity(ad: RawMetaAd, profileId: UUID, now: Instant) = MetaAdSnapshotEntity(

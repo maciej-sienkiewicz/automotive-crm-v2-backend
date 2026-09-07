@@ -68,7 +68,12 @@ class MetaAdsController(
             ?: return ResponseEntity.badRequest().body(mapOf("linked" to false))
 
         val sync = syncService.syncProfile(profileId, pageId)
-        return ResponseEntity.ok(mapOf("linked" to true, "adsFound" to sync.adsSeen))
+        // Nazwa strony wraca na ekran: to jedyne potwierdzenie, że numer należy do
+        // tej firmy, o którą chodziło. Sam numer nic nie mówi, a pomyłka wciąga do
+        // kalendarza reklamy obcego przedsiębiorstwa pod nazwą konkurenta.
+        return ResponseEntity.ok(
+            mapOf("linked" to true, "adsFound" to sync.adsSeen, "pageName" to (sync.pageName ?: ""))
+        )
     }
 
     /**
