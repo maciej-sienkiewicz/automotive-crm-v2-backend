@@ -36,7 +36,7 @@ class MetaAdLibraryClient(
     private val objectMapper: ObjectMapper,
     private val callGate: MetaAdsCallGate,
     @Value("\${meta.ads.token:}") private val accessToken: String,
-    @Value("\${meta.ads.api-version:v21.0}") private val apiVersion: String,
+    @Value("\${meta.ads.api-version:v26.0}") private val apiVersion: String,
     @Value("\${meta.ads.timeout-seconds:30}") private val timeoutSeconds: Long,
     @Value("\${meta.ads.page-size:200}") private val pageSize: Int
 ) {
@@ -87,7 +87,7 @@ class MetaAdLibraryClient(
             val root = objectMapper.readTree(body)
 
             root.path("data").forEach { node ->
-                parseAd(node)?.let { ads += it }
+                MetaAdParser.parseAd(node)?.let { ads += it }
             }
 
             after = root.path("paging").path("cursors").path("after").textOrNull()
@@ -153,78 +153,9 @@ class MetaAdLibraryClient(
         return MetaAdsException(status, code, subcode, message)
     }
 
-    // ── Parsowanie ────────────────────────────────────────────────────────────
-
-    private fun parseAd(node: JsonNode): RawMetaAd? {
-        val id = node.path("id").textOrNull() ?: return null
-        val pageId = node.path("page_id").textOrNull() ?: return null
-        val start = parseDate(node.path("ad_delivery_start_time").textOrNull()) ?: return null
-
-        val payers = node.path("beneficiary_payers").firstOrNull()
-
-        return RawMetaAd(
-            adArchiveId = id,
-            pageId = pageId,
-            pageName = node.path("page_name").textOrNull(),
-            title = node.path("ad_creative_link_titles").firstOrNull()?.textOrNull()?.trim()?.take(200),
-            deliveryStart = start,
-            deliveryStop = parseDate(node.path("ad_delivery_stop_time").textOrNull()),
-            reachEu = node.path("eu_total_reach").asIntOrNull(),
-            platforms = node.path("publisher_platforms").mapNotNull { it.textOrNull()?.uppercase() },
-            targetAges = parseAges(node.path("target_ages")),
-            targetGender = node.path("target_gender").textOrNull(),
-            targetLocations = parseLocations(node.path("target_locations")),
-            payer = payers?.path("payer")?.textOrNull(),
-            beneficiary = payers?.path("beneficiary")?.textOrNull(),
-            polandBreakdown = parsePolandBreakdown(node.path("age_country_gender_reach_breakdown")),
-            snapshotUrl = node.path("ad_snapshot_url").textOrNull()
-        )
-    }
-
-    /** Meta bywa niekonsekwentna: raz `"2026-07-12"`, raz pełny znacznik czasu. */
-    private fun parseDate(raw: String?): LocalDate? =
-        raw?.takeIf { it.length >= 10 }?.let { runCatching { LocalDate.parse(it.substring(0, 10)) }.getOrNull() }
-
-    /** `["25","54"]` → `25-54`; pojedyncza wartość zostaje jak jest. */
-    private fun parseAges(node: JsonNode): String? = when {
-        node.isArray && node.size() >= 2 ->
-            "${node[0].textOrNull()}-${node[node.size() - 1].textOrNull()}"
-        node.isArray && node.size() == 1 -> node[0].textOrNull()
-        else -> node.textOrNull()
-    }?.takeIf { it.isNotBlank() && !it.contains("null") }
-
-    private fun parseLocations(node: JsonNode): List<RawAdLocation> =
-        node.mapNotNull { item ->
-            val name = item.path("name").textOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            RawAdLocation(
-                name = name,
-                type = item.path("type").textOrNull()?.lowercase() ?: "location",
-                excluded = item.path("excluded").asBoolean(false)
-            )
-        }
-
-    /**
-     * Z całego rozbicia bierzemy wyłącznie Polskę: właściciel studia w Krakowie
-     * nie ma pożytku z tego, ilu Niemców zobaczyło reklamę konkurenta, a wybór
-     * kraju na ekranie byłby wyborem, którego nikt nigdy nie zmieni.
-     */
-    private fun parsePolandBreakdown(node: JsonNode): List<RawAgeGenderReach> =
-        node.filter { it.path("country").textOrNull()?.uppercase() == "PL" }
-            .flatMap { country -> country.path("age_gender_breakdowns") }
-            .mapNotNull { bucket ->
-                val age = bucket.path("age_range").textOrNull() ?: return@mapNotNull null
-                RawAgeGenderReach(
-                    ageRange = age,
-                    male = bucket.path("male").asIntOrNull() ?: 0,
-                    female = bucket.path("female").asIntOrNull() ?: 0,
-                    unknown = bucket.path("unknown").asIntOrNull() ?: 0
-                )
-            }
-
     private fun encode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 
     private fun JsonNode.textOrNull(): String? = if (isTextual || isNumber) asText() else null
     private fun JsonNode.asIntOrNull(): Int? =
         if (isNumber || (isTextual && asText().toIntOrNull() != null)) asInt() else null
-    private fun JsonNode.firstOrNull(): JsonNode? = if (isArray && size() > 0) get(0) else null
 }
