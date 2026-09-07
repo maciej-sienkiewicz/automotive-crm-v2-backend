@@ -312,6 +312,17 @@ PPF i WRAP to DWIE RÓŻNE rodziny. „Oklejenie przodu folią ochronną" to PPF
   intent:          MATCHED | NOT_IN_CATALOG | NO_SERVICE
   matchedServices: numery pozycji cennika, o które klient pyta (albo ich bliskie
                    warianty). Tylko numery z listy. Pusta lista, gdy żadna nie pasuje.
+                   JEDNA POZYCJA NA JEDNĄ POTRZEBĘ: klient wymienia N robót, więc
+                   numerów ma być najwyżej N. Gdy kilka pozycji cennika opisuje tę
+                   samą robotę — pakiet i jego składnik, dwa warianty tego samego —
+                   wskaż JEDNĄ, tę bliższą zakresowi z zapytania. Przykład: przy
+                   „lekka jednoetapowa korekta" wybierz albo „Korekta lakieru", albo
+                   „Pakiet odświeżenia lakieru", nie obie: to jedna robota, a dwie
+                   pozycje w wycenie policzyłyby ją klientowi dwa razy.
+                   Wymień za to KAŻDĄ osobną robotę z zapytania — mycie, korekta,
+                   wosk i wnętrze to cztery potrzeby, nie jedna. Po tej liście
+                   system szuka w historii zleceń o zbliżonym ZAKRESIE, więc pominięta
+                   robota zawęża wyszukiwanie, a doklejona — rozmywa je.
   families:        kody rodzin roboty, o którą pyta klient (zwykle jedna).
   scope:           FULL | PARTIAL | UNKNOWN — czy pyta o całe auto, czy o fragment.
 

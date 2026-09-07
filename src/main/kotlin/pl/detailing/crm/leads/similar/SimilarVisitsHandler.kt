@@ -207,22 +207,26 @@ class SimilarVisitsHandler(
         // Zdjęta podpowiedź nie wraca; odsiew idzie PRZED przycięciem, żeby na
         // zwolnione miejsce weszła następna pozycja z zapasu zamiast luki.
         val dismissed = feedbackRepository.findByLeadId(leadId).map { it.visitId }.toSet()
-        val visible = stored.parsed()
-            .filterNot { (visitId, _) -> visitId in dismissed }
-            .take(maxResults)
-        if (visible.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
+        val candidates = stored.parsed().filterNot { (visitId, _) -> visitId in dismissed }
+        if (candidates.isEmpty()) return SimilarVisitsDto(emptyList(), indexed)
 
         // Druga bariera studia: identyfikatory są z zapisu per lead, ale odczyt
         // wizyt i tak filtruje po studiu — jeden błąd nie może zamienić się
         // w cudze ceny na ekranie.
         val visits = visitRepository
-            .findByStudioIdAndIdIn(studioId.value, visible.map { it.first })
+            .findByStudioIdAndIdIn(studioId.value, candidates.map { it.first })
             .associateBy { it.id }
 
         return SimilarVisitsDto(
-            items = visible.mapNotNull { (visitId, tier) ->
-                visits[visitId]?.let { toDto(it, tier) }
-            },
+            items = candidates
+                .mapNotNull { (visitId, tier) -> visits[visitId]?.let { toDto(it, tier) } }
+                // Zlecenie bez kwoty nie odpowiada na pytanie, po które ktoś tu przyszedł.
+                // „Pierwsze mycie" za 0 zł jest formalnie podobne i informacyjnie puste —
+                // a przy okazji podpowiada handlowcowi, że taką robotę robimy za darmo.
+                // Odsiew stoi PO wyliczeniu kwot i PRZED przycięciem, więc na zwolnione
+                // miejsce wchodzi następne zlecenie z zapasu, a nie luka.
+                .filter { it.totalGross > 0 }
+                .take(maxResults),
             indexedVisits = indexed
         )
     }

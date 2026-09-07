@@ -265,6 +265,138 @@ class SimilarVisitMatcherTest {
             )
         )
     }
+
+    // ── Pokrycie zakresu ──────────────────────────────────────────────────────
+    //
+    // Przypadki wprost z produkcji: klient pyta o przygotowanie auta do sprzedaży
+    // (mycie, lekka korekta, wosk, wnętrze), a sekcja podsuwała mu zlecenie na
+    // 18 819 zł za folię PPF i myjnie za 270 zł. Oba dopasowania były formalnie
+    // poprawne — jedna pozycja się zgadzała — i oba były bezużyteczne jako
+    // odpowiedź na pytanie „ile wzięliśmy za taką robotę".
+
+    /** Cztery roboty w zapytaniu, jedna z siedmiu pozycji zlecenia — to nie jest ta robota. */
+    @Test
+    fun `duze zlecenie z jedna pasujaca pozycja nie jest podpowiedzia`() {
+        val ppfJob = listOf(
+            signature("pakiet czyszczenia wnetrza optimum", ServiceFamily.INTERIOR),
+            signature("calosciowe zabezpieczenie folia ppf", ServiceFamily.PPF),
+            signature("zabezpieczenie progow folia ppf", ServiceFamily.PPF),
+            signature("oklejenie tunelu folia ppf", ServiceFamily.PPF),
+            signature("przyciemnienie przednich lamp", ServiceFamily.GLASS),
+            signature("czyszczenie komory silnika", ServiceFamily.ENGINE_BAY),
+            signature("impregnacja wnetrza standard", ServiceFamily.INTERIOR)
+        )
+        assertNull(
+            grade(
+                candidate(brandKey = "bmw", modelKey = "x3"),
+                ppfJob,
+                intent(
+                    families = setOf(ServiceFamily.WASH, ServiceFamily.CORRECTION_POLISH, ServiceFamily.INTERIOR),
+                    matched = setOf(
+                        "korekta lakieru",
+                        "woskowanie lakieru",
+                        "pakiet czyszczenia wnetrza optimum",
+                        "pakiet odswiezenia lakieru"
+                    )
+                ),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
+
+    /** Samo mycie nie odpowiada na pytanie o przygotowanie auta do sprzedaży. */
+    @Test
+    fun `pojedyncze mycie nie jest podpowiedzia do wielouslugowego zapytania`() {
+        assertNull(
+            grade(
+                candidate(brandKey = "volkswagen", modelKey = "t-roc"),
+                listOf(signature("myjnia pakiet standardowy", ServiceFamily.WASH)),
+                intent(
+                    families = setOf(ServiceFamily.WASH, ServiceFamily.CORRECTION_POLISH, ServiceFamily.INTERIOR),
+                    matched = setOf("korekta lakieru", "woskowanie lakieru", "pakiet czyszczenia wnetrza optimum")
+                ),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
+
+    /** Za to zlecenie, które robi to samo co zapytanie, jest dopasowaniem pełnym. */
+    @Test
+    fun `zlecenie pokrywajace wiekszosc zapytania to ta sama robota`() {
+        assertEquals(
+            MatchTier.SAME_SEGMENT_SAME_SERVICE,
+            grade(
+                candidate(brandKey = "mazda", modelKey = "cx-5"),
+                listOf(
+                    signature("korekta lakieru", ServiceFamily.CORRECTION_POLISH),
+                    signature("woskowanie lakieru", ServiceFamily.WASH),
+                    signature("pakiet czyszczenia wnetrza optimum", ServiceFamily.INTERIOR)
+                ),
+                intent(
+                    families = setOf(ServiceFamily.WASH, ServiceFamily.CORRECTION_POLISH, ServiceFamily.INTERIOR),
+                    matched = setOf(
+                        "korekta lakieru",
+                        "woskowanie lakieru",
+                        "pakiet czyszczenia wnetrza optimum",
+                        "pakiet odswiezenia lakieru"
+                    )
+                ),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
+
+    /**
+     * Pełne pokrycie nie wystarcza, gdy ta robota jest dodatkiem do czegoś większego:
+     * kwota zlecenia opisuje CAŁE zlecenie, więc odpowiadałaby na inne pytanie.
+     */
+    @Test
+    fun `robota utopiona w wiekszym zleceniu odpada mimo pelnego pokrycia`() {
+        val bigJob = listOf(signature("korekta lakieru", ServiceFamily.CORRECTION_POLISH)) +
+            List(5) { index -> signature("folia ppf element $index", ServiceFamily.PPF) }
+
+        assertNull(
+            grade(
+                candidate(brandKey = "audi", modelKey = "q5"),
+                bigJob,
+                intent(families = setOf(ServiceFamily.CORRECTION_POLISH), matched = setOf("korekta lakieru")),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
+
+    /** …ale historia DOKŁADNIE tego auta broni się sama, nawet przy innej robocie. */
+    @Test
+    fun `to samo auto zostaje historia auta, gdy robota sie nie pokrywa`() {
+        assertEquals(
+            MatchTier.SAME_MODEL_OTHER_SERVICE,
+            grade(
+                candidate(brandKey = "honda", modelKey = "cr-v"),
+                List(6) { index -> signature("folia ppf element $index", ServiceFamily.PPF) },
+                intent(families = setOf(ServiceFamily.CORRECTION_POLISH), matched = setOf("korekta lakieru")),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
+
+    /** Zlecenie bez ostemplowanych pozycji to brak wiedzy, a nie dopasowanie. */
+    @Test
+    fun `zlecenie bez sygnatur nie jest podobne w klasie`() {
+        assertNull(
+            grade(
+                candidate(brandKey = "mazda", modelKey = "cx-5"),
+                emptyList(),
+                intent(matched = setOf("korekta lakieru")),
+                brandKey = "honda",
+                modelKey = "cr-v"
+            )
+        )
+    }
 }
 
 /**
@@ -472,6 +604,10 @@ class LeadServiceIntentTest {
         assertTrue(prompt.contains("NOT_IN_CATALOG"))
         assertTrue(prompt.contains("NIE pokaże cen"))
         assertTrue(prompt.contains("Nie naciągaj dopasowania"))
+        // Dwie pozycje na jedną robotę liczyły klientowi tę samą usługę dwa razy
+        // i rozmywały wyszukiwanie podobnych zleceń — obie zasady stoją w prompcie.
+        assertTrue(prompt.contains("JEDNA POZYCJA NA JEDNĄ POTRZEBĘ"))
+        assertTrue(prompt.contains("KAŻDĄ osobną robotę"))
     }
 
     private fun fingerprintOf(query: String): String =
@@ -552,6 +688,34 @@ class SimilarVisitsDismissalTest {
 
         assertEquals(listOf(byModelFresh.toString(), byModelOld.toString()), items.map { it.visitId })
         assertEquals(MatchTier.SAME_MODEL_SAME_SERVICE.name, items.first().matchTier)
+    }
+
+    /**
+     * Zlecenie za 0 zł nie odpowiada na pytanie, po które ktoś tu przyszedł —
+     * a przy okazji podpowiada handlowcowi, że taką robotę robimy za darmo.
+     * Na jego miejsce wchodzi następne zlecenie z zapasu, a nie luka.
+     */
+    @Test
+    fun `zlecenie bez kwoty wypada z listy, a na jego miejsce wchodzi nastepne`() {
+        every { visitRepository.findByStudioIdAndIdIn(studioId.value, any()) } answers {
+            secondArg<Collection<UUID>>().map { id ->
+                VisitEntity.fromDomain(
+                    VisitFixtures.visit(
+                        studioId = studioId,
+                        items = listOf(
+                            if (id == byModelFresh) VisitFixtures.serviceItem(finalPriceNet = 0, finalPriceGross = 0)
+                            else VisitFixtures.serviceItem(finalPriceGross = 100_000)
+                        )
+                    ).copy(id = VisitId(id))
+                )
+            }
+        }
+
+        val items = handler.findFor(studioId, leadId).items
+
+        assertEquals(2, items.size)
+        assertEquals(listOf(byModelOld.toString(), bySegment.toString()), items.map { it.visitId })
+        assertTrue(items.all { it.totalGross > 0 })
     }
 
     @Test
