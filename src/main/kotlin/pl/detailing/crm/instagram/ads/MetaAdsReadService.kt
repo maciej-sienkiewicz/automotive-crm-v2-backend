@@ -243,19 +243,56 @@ class MetaAdsReadService(
      * użytkownika, więc połowa reklamodawców jest nie do wpisania z ręki.
      * Każda odpowiedź `ads_archive` niesie za to `page_id` obok `page_name`.
      */
-    fun searchPages(term: String): List<PageCandidateDto> =
-        runCatching { client.searchPages(term) }
-            // Cudzysłów zamykający musi być typograficzny: zwykły " zamknąłby literał.
-            .onFailure { log.warn("Meta Ad Library: szukanie strony „{}” nie powiodło się — {}", term, it.message) }
+    fun searchPages(input: String): List<PageCandidateDto> =
+        // Cudzysłów zamykający musi być typograficzny: zwykły " zamknąłby literał.
+        runCatching { resolve(input) }
+            .onFailure { log.warn("Meta Ad Library: szukanie strony „{}” nie powiodło się — {}", input, it.message) }
             .getOrDefault(emptyList())
-            .map {
-                PageCandidateDto(
-                    pageId = it.pageId,
-                    pageName = it.pageName,
-                    ads = it.ads,
-                    lastStart = it.lastStart?.toString()
+
+    /**
+     * Wklejony adres, alias albo nazwa — jedno pole na wszystko, co człowiek ma
+     * pod ręką. Facebook pokazuje tę samą stronę raz jako numer, raz jako alias,
+     * więc rozpoznawanie postaci jest naszą robotą, nie jego.
+     */
+    private fun resolve(input: String): List<PageCandidateDto> = when (val parsed = MetaPageInput.parse(input)) {
+        is PageInput.Empty -> emptyList()
+
+        // Numer wprost: nie szukamy, tylko sprawdzamy, CZYJ on jest. Gdy Meta milczy,
+        // oddajemy sam numer bez nazwy — zapisać go i tak wolno, ale bez potwierdzenia.
+        is PageInput.Id -> listOf(client.describePage(parsed.pageId)?.toDto() ?: unnamed(parsed.pageId))
+
+        is PageInput.Term -> resolveTerm(parsed.term)
+    }
+
+    /**
+     * Alias najpierw próbujemy odczytać wprost — to jedyna droga dająca numer TEJ
+     * strony, a nie strony o podobnej nazwie. Gdy Meta odmawia (brak Page Public
+     * Content Access), zostaje wyszukiwanie po nazwie: alias rozbity na słowa
+     * („CarArtDetailing" → „Car Art Detailing") idzie do biblioteki reklam.
+     */
+    private fun resolveTerm(term: String): List<PageCandidateDto> {
+        if (!term.contains(' ')) {
+            client.resolveAlias(term)?.let { exact ->
+                val described = client.describePage(exact.pageId)
+                return listOf(
+                    PageCandidateDto(
+                        pageId = exact.pageId,
+                        pageName = exact.pageName.ifBlank { described?.pageName.orEmpty() },
+                        ads = described?.ads ?: 0,
+                        lastStart = described?.lastStart?.toString()
+                    )
                 )
             }
+        }
+        return client.searchPages(MetaPageInput.toSearchTerm(term)).map { it.toDto() }
+    }
+
+    private fun MetaPageCandidate.toDto() =
+        PageCandidateDto(pageId = pageId, pageName = pageName, ads = ads, lastStart = lastStart?.toString())
+
+    /** Numer bez potwierdzonej nazwy: strona nic nie reklamowała albo numer jest cudzy. */
+    private fun unnamed(pageId: String) =
+        PageCandidateDto(pageId = pageId, pageName = "", ads = 0, lastStart = null)
 
     private fun watches(studioId: StudioId, profileId: UUID): Boolean =
         studioProfileRepository.findByStudioId(studioId.value).any { it.profileId == profileId }
