@@ -187,6 +187,7 @@ class StudioDataPurger(
                 "t.leadId IN (SELECT l.id FROM LeadEntity l WHERE l.studioId = :studioId)",
                 ctx
             )
+            deleteByStudio("LeadAttachmentEntity", ctx)
             deleteByStudio("LeadServiceItemEntity", ctx)
             deleteByStudio("LeadStatusHistoryEntity", ctx)
             deleteByStudio("LeadNoteEntity", ctx)

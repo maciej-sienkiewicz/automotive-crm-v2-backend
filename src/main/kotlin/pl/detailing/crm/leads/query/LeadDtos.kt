@@ -101,7 +101,30 @@ data class LeadTimelineEntryDto(
      */
     val body: String? = null,
     /** Notatka przy odnotowanym telefonie — opcjonalna, jak samo pole. */
-    val note: String? = null
+    val note: String? = null,
+
+    /**
+     * Pliki przysłane przez klienta razem z tą wiadomością.
+     *
+     * Zdjęcia lakieru czy skan dowodu należą do sprawy, a nie do skrzynki: bez nich
+     * handlowiec musiał wiedzieć, że ma ich szukać w poczcie, i trafić w ten wątek.
+     * Puste dla zdarzeń, które plików nie niosą (statusy, telefony).
+     */
+    val attachments: List<LeadTimelineAttachmentDto> = emptyList()
+)
+
+/**
+ * Załącznik na osi czasu leada.
+ *
+ * [id] jest identyfikatorem załącznika wiadomości — pobiera się go istniejącym
+ * `GET /v1/comms/attachments/{id}`, który sam pilnuje przynależności do studia.
+ * Nie kopiujemy bajtów: plik ma jedno miejsce w bazie.
+ */
+data class LeadTimelineAttachmentDto(
+    val id: String,
+    val fileName: String,
+    val contentType: String,
+    val sizeBytes: Long
 )
 
 data class LeadPageDto(

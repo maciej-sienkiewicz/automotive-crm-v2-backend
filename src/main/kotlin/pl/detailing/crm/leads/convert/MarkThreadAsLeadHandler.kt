@@ -9,6 +9,7 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
+import pl.detailing.crm.leads.attachment.LeadAttachmentLinker
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadTagService
@@ -53,6 +54,7 @@ class MarkThreadAsLeadHandler(
     private val leadRepository: LeadRepository,
     private val customerRepository: CustomerRepository,
     private val messageRepository: CommMessageRepository,
+    private val attachmentLinker: LeadAttachmentLinker,
     private val serviceItems: LeadServiceItemsService,
     private val tagService: LeadTagService,
     private val statusService: LeadStatusService,
@@ -131,6 +133,11 @@ class MarkThreadAsLeadHandler(
             firstResponseAt = ourReply?.sentAt
         )
         leadRepository.save(lead)
+
+        // Ręczne oznaczenie to dla użytkownika to samo zdarzenie co rozpoznanie
+        // automatyczne, więc załączniki pierwszej wiadomości klienta trafiają
+        // na leada tak samo — patrz [LeadAttachmentLinker].
+        firstInbound?.let { attachmentLinker.link(lead.id, it) }
         statusService.recordCreation(lead, command.userId, command.userName)
 
         tagService.replaceTags(lead.id, command.tags)
