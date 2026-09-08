@@ -14,6 +14,7 @@ import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.attachment.LeadAttachmentLinker
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.infrastructure.LeadEntity
@@ -51,9 +52,11 @@ class MarkThreadAsLeadStatusTest {
         every { leadRepository.save(any()) } answers { firstArg() }
     }
 
+    private val attachmentLinker = mockk<LeadAttachmentLinker>(relaxed = true)
+
     private val handler = MarkThreadAsLeadHandler(
         threadRepository, leadRepository, customerRepository, messageRepository,
-        serviceItems, tagService, statusService, eventPublisher
+        attachmentLinker, serviceItems, tagService, statusService, eventPublisher
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -130,5 +133,21 @@ class MarkThreadAsLeadStatusTest {
         val lead = savedLead()
 
         verify { tagService.replaceTags(lead.id, listOf("PPF_WRAP")) }
+    }
+
+    @Test
+    fun `zalaczniki pierwszej wiadomosci trafiaja do leada`() {
+        // Recznie oznaczony watek to dla uzytkownika to samo zdarzenie co lead z
+        // automatu -- zdjecia maja byc przy leadzie tak samo.
+        givenThread()
+        val first = message(CommDirection.INBOUND, Instant.parse("2026-08-15T18:57:33Z"))
+        every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns listOf(
+            first,
+            message(CommDirection.OUTBOUND, Instant.parse("2026-08-17T14:36:51Z"))
+        )
+
+        val lead = savedLead()
+
+        verify { attachmentLinker.link(lead.id, first) }
     }
 }

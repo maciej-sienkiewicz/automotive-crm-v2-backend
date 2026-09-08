@@ -11,7 +11,11 @@ import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommSendStatus
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
+import pl.detailing.crm.comms.infrastructure.CommAttachmentMeta
+import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
+import pl.detailing.crm.leads.attachment.LeadAttachmentEntity
+import pl.detailing.crm.leads.attachment.LeadAttachmentRepository
 import pl.detailing.crm.leads.callback.LeadCallbackEntity
 import pl.detailing.crm.leads.callback.LeadCallbackRepository
 import pl.detailing.crm.leads.conversation.LeadConversationStateService
@@ -48,10 +52,13 @@ class LeadTimelineTest {
     private val conversationStates = mockk<LeadConversationStateService>()
     private val messageRepository = mockk<CommMessageRepository>()
     private val callbackRepository = mockk<LeadCallbackRepository>()
+    private val attachmentRepository = mockk<CommAttachmentRepository>(relaxed = true)
+    private val leadAttachmentRepository = mockk<LeadAttachmentRepository>(relaxed = true)
 
     private val handlers = LeadQueryHandlers(
         leadRepository, itemRepository, historyRepository, tagService, tagCatalog,
-        conversationStates, messageRepository, callbackRepository
+        conversationStates, messageRepository, callbackRepository,
+        attachmentRepository, leadAttachmentRepository
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -273,4 +280,94 @@ class LeadTimelineTest {
         assertEquals(listOf("STATUS"), timeline.map { it.kind })
         assertTrue(timeline.single().body == null)
     }
+
+    private fun meta(
+        messageId: UUID,
+        fileName: String,
+        isInline: Boolean = false
+    ) = CommAttachmentMeta(
+        id = UUID.randomUUID(),
+        messageId = messageId,
+        fileName = fileName,
+        contentType = "image/jpeg",
+        contentId = if (isInline) "logo@studio" else null,
+        isInline = isInline,
+        sizeBytes = 2048
+    )
+
+    @Test
+    fun `zalaczniki wisza pod wiadomoscia, ktora je przyniosla`() {
+        val withPhotos = message(CommDirection.INBOUND, start, "zdjęcia w załączniku")
+        val plain = message(CommDirection.OUTBOUND, start.plusSeconds(60), "wycena 1200")
+        every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns listOf(withPhotos, plain)
+        every { attachmentRepository.findMetaByMessageIdIn(listOf(withPhotos.id, plain.id)) } returns
+            listOf(meta(withPhotos.id, "lakier-przod.jpg"), meta(withPhotos.id, "lakier-tyl.jpg"))
+
+        val timeline = handlers.timeline(studioId, leadId)
+
+        assertEquals(
+            listOf("lakier-przod.jpg", "lakier-tyl.jpg"),
+            timeline.first().attachments.map { it.fileName }
+        )
+        assertTrue(timeline.last().attachments.isEmpty())
+    }
+
+    @Test
+    fun `logo ze stopki nie jest zalacznikiem klienta`() {
+        // `cid:` to element układu maila, a nie plik przysłany do obejrzenia.
+        val msg = message(CommDirection.INBOUND, start, "pytanie")
+        every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns listOf(msg)
+        every { attachmentRepository.findMetaByMessageIdIn(listOf(msg.id)) } returns
+            listOf(meta(msg.id, "logo.png", isInline = true), meta(msg.id, "umowa.pdf"))
+
+        assertEquals(listOf("umowa.pdf"), handlers.timeline(studioId, leadId).single().attachments.map { it.fileName })
+    }
+
+    @Test
+    fun `pliki z leada bez watku dostaja wlasny wpis na osi`() {
+        // Zgłoszenie z formularza WWW: wątek należy do robota, więc lead nie ma
+        // korespondencji — ale zdjęcia klienta muszą być widoczne w „Przebiegu sprawy".
+        every { leadRepository.findByIdAndStudioId(leadId, studioId.value) } returns lead(thread = null)
+        val sourceMessage = UUID.randomUUID()
+        every { leadAttachmentRepository.findByLeadIdOrderByReceivedAtAsc(leadId) } returns listOf(
+            leadAttachment(sourceMessage, "formularz-1.jpg", start),
+            leadAttachment(sourceMessage, "formularz-2.jpg", start)
+        )
+
+        val timeline = handlers.timeline(studioId, leadId)
+
+        assertEquals(listOf("ATTACHMENTS"), timeline.map { it.kind })
+        assertEquals(start, timeline.single().at)
+        assertEquals(
+            listOf("formularz-1.jpg", "formularz-2.jpg"),
+            timeline.single().attachments.map { it.fileName }
+        )
+    }
+
+    @Test
+    fun `plik podpiety do leada nie dubluje sie z wiadomoscia z watku`() {
+        // Wiadomość jest na osi — plik ma wisieć pod nią, a nie drugi raz osobno.
+        val msg = message(CommDirection.INBOUND, start, "zdjęcia w załączniku")
+        every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns listOf(msg)
+        every { attachmentRepository.findMetaByMessageIdIn(listOf(msg.id)) } returns
+            listOf(meta(msg.id, "lakier.jpg"))
+        every { leadAttachmentRepository.findByLeadIdOrderByReceivedAtAsc(leadId) } returns
+            listOf(leadAttachment(msg.id, "lakier.jpg", start))
+
+        val timeline = handlers.timeline(studioId, leadId)
+
+        assertEquals(listOf("INBOUND_MESSAGE"), timeline.map { it.kind })
+        assertEquals(listOf("lakier.jpg"), timeline.single().attachments.map { it.fileName })
+    }
+
+    private fun leadAttachment(messageId: UUID, fileName: String, at: Instant) = LeadAttachmentEntity(
+        studioId = studioId.value,
+        leadId = leadId,
+        messageId = messageId,
+        attachmentId = UUID.randomUUID(),
+        fileName = fileName,
+        contentType = "image/jpeg",
+        sizeBytes = 2048,
+        receivedAt = at
+    )
 }
