@@ -31,6 +31,7 @@ import pl.detailing.crm.smscampaigns.template.SmsTemplateContext
 import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 
@@ -65,7 +66,9 @@ class SmsAutomationScheduler(
     private val templateProcessor: SmsTemplateProcessor,
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService,
-    private val thankYouSmsRepository: ScheduledThankYouSmsRepository
+    private val thankYouSmsRepository: ScheduledThankYouSmsRepository,
+    /** Podmieniany w testach; produkcyjnie zegar systemowy (Spring bierze wartość domyślną). */
+    private val clock: Clock = Clock.systemUTC()
 ) {
 
     companion object {
@@ -81,7 +84,7 @@ class SmsAutomationScheduler(
     @Scheduled(cron = "0 * * * * *")
     @Transactional
     fun processPendingAutomations() {
-        val now = Instant.now()
+        val now = clock.instant()
         val activeConfigs = configRepository.findAllWithAnyRuleEnabled()
 
         if (activeConfigs.isNotEmpty()) {
@@ -208,6 +211,19 @@ class SmsAutomationScheduler(
             logger.debug(
                 "Skipping {} SMS for appointment={}: already sent",
                 triggerType, appointment.appointmentId
+            )
+            return
+        }
+
+        // Twarda granica, niezależna od tego, jakie okno wybrało zapytanie: przypomnienie
+        // o wizycie, która już trwa (albo minęła), jest gorsze niż żadne. Broni przed
+        // offsetem ustawionym na 0, spóźnionym tickiem schedulera i każdą przyszłą zmianą
+        // zapytania — zapytanie wybiera kandydatów, o wysyłce rozstrzyga ten warunek.
+        val now = clock.instant()
+        if (!appointment.appointmentStart.isAfter(now)) {
+            logger.warn(
+                "Skipping {} SMS for appointment={}: appointment started at {} (now={})",
+                triggerType, appointment.appointmentId, appointment.appointmentStart, now
             )
             return
         }

@@ -219,6 +219,76 @@ class OutboundCommunicationGatewaySendWindowTest {
     }
 
     @Test
+    fun `zgoda cofnieta miedzy odlozeniem a wysylka blokuje kampanie z kolejki`() {
+        every { consentChecker.canSend(any(), any(), any(), any()) } returns false
+        val entity = OutboundMessageEntity(
+            id = UUID.randomUUID(), studioId = studioId, customerId = customerId, channel = CommunicationChannel.SMS,
+            category = OutboundMessageCategory.CAMPAIGN, recipient = "+48600700800", subject = null,
+            body = "Promocja", context = "Campaign=1", status = OutboundMessageStatus.SENDING, scheduledFor = warsaw(12, 0)
+        )
+
+        val outcome = gatewayAt(warsaw(12, 0)).deliverQueued(QueuedOutboundMessage(entity, emptyList()))
+
+        assertFalse(outcome.success)
+        assertEquals("Brak zgody na komunikację SMS", outcome.errorMessage)
+        verify(exactly = 0) { smsProvider.send(any(), any(), any()) }
+        verify(exactly = 0) { smsCreditService.tryDeductCredit(any()) }
+    }
+
+    @Test
+    fun `whitelista jest sprawdzana przy wysylce z kolejki i nie kosztuje kredytu`() {
+        val strict = OutboundCommunicationGateway(
+            smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver, capabilityService,
+            SimpleMeterRegistry(), mockk<BusinessEventPublisher>(relaxed = true), redirectService,
+            RecipientWhitelist(RecipientWhitelistProperties(enabled = true, phones = listOf("+48111222333"))),
+            SendWindow.DEFAULT, queue, Clock.fixed(warsaw(12, 0), SendWindow.DEFAULT.zone)
+        )
+        val entity = OutboundMessageEntity(
+            id = UUID.randomUUID(), studioId = studioId, customerId = null, channel = CommunicationChannel.SMS,
+            category = OutboundMessageCategory.TRANSACTIONAL, recipient = "+48600700800", subject = null,
+            body = "Auto gotowe", context = "TRANSACTIONAL", status = OutboundMessageStatus.SENDING, scheduledFor = warsaw(12, 0)
+        )
+
+        val outcome = strict.deliverQueued(QueuedOutboundMessage(entity, emptyList()))
+
+        assertFalse(outcome.success)
+        verify(exactly = 0) { smsCreditService.tryDeductCredit(any()) }
+        verify(exactly = 0) { smsProvider.send(any(), any(), any()) }
+    }
+
+    @Test
+    fun `przekierowanie na numer studia jest stosowane dopiero przy wysylce z kolejki`() {
+        every { redirectService.activeFor(studioId) } returns pl.detailing.crm.communication.redirect.ActiveRedirect("+48500100200", "owner@studio.pl")
+        every { smsProvider.send(any(), any(), any()) } returns SmsDeliveryResult.success("ext-3")
+        val entity = OutboundMessageEntity(
+            id = UUID.randomUUID(), studioId = studioId, customerId = customerId, channel = CommunicationChannel.SMS,
+            category = OutboundMessageCategory.TRANSACTIONAL, recipient = "+48600700800", subject = null,
+            body = "Auto gotowe", context = "ctx", status = OutboundMessageStatus.SENDING, scheduledFor = warsaw(12, 0)
+        )
+
+        gatewayAt(warsaw(12, 0)).deliverQueued(QueuedOutboundMessage(entity, emptyList()))
+
+        verify { smsProvider.send("+48500100200", any(), any()) }
+    }
+
+    @Test
+    fun `odlozona wiadomosc nie pobiera kredytu ani nie liczy sie jako wyslana`() {
+        stubEnqueue()
+        val events: BusinessEventPublisher = mockk(relaxed = true)
+        val gateway = OutboundCommunicationGateway(
+            smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver, capabilityService,
+            SimpleMeterRegistry(), events, redirectService,
+            RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
+            SendWindow.DEFAULT, queue, Clock.fixed(warsaw(21, 0), SendWindow.DEFAULT.zone)
+        )
+
+        gateway.sendSms(customerId, studioId, "+48600700800", "Auto gotowe")
+
+        verify(exactly = 0) { smsCreditService.tryDeductCredit(any()) }
+        verify(exactly = 0) { events.publish(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
     fun `brak kredytow przy wysylce z kolejki nie jest ponawiany`() {
         every { smsCreditService.tryDeductCredit(any()) } returns false
         val entity = OutboundMessageEntity(

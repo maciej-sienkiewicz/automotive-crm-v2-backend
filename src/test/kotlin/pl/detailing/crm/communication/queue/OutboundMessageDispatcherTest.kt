@@ -2,7 +2,9 @@ package pl.detailing.crm.communication.queue
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
@@ -109,6 +111,44 @@ class OutboundMessageDispatcherTest {
         dispatcher.dispatch(warsaw(12, 0))
 
         verify { queue.markSent(second, "ok", any()) }
+    }
+
+    @Test
+    fun `ponowienie tuz przed zamknieciem okna laduje na jutrzejsze poludnie, nie na 18 05`() {
+        val id = UUID.randomUUID()
+        every { queue.dueIds(any(), any()) } returns listOf(id)
+        every { queue.claim(id, any()) } returns message(id)
+        every { gateway.deliverQueued(any()) } returns OutboundCommunicationGateway.QueuedDeliveryOutcome(false, null, "SMSAPI 500", true)
+        val nextAttempt = slot<Instant>()
+        every { queue.markAttemptFailed(id, any(), true, capture(nextAttempt), any()) } returns OutboundMessageStatus.QUEUED
+
+        dispatcher.dispatch(warsaw(17, 58))
+
+        // Termin ponowienia liczy się od zegara systemowego (chwila zakończenia próby),
+        // więc sprawdzamy własność, a nie dokładną minutę: musi mieścić się w oknie.
+        assert(SendWindow.DEFAULT.contains(nextAttempt.captured)) {
+            "ponowienie ma wypadać w oknie wysyłki, było ${nextAttempt.captured}"
+        }
+    }
+
+    @Test
+    fun `jedna partia to najwyzej BATCH_SIZE wiadomosci`() {
+        every { queue.dueIds(any(), any()) } returns emptyList()
+
+        dispatcher.dispatch(warsaw(12, 0))
+
+        verify { queue.dueIds(any(), OutboundMessageDispatcher.BATCH_SIZE) }
+    }
+
+    @Test
+    fun `dokladnie o 18 00 dispatcher jeszcze wysyla, o 18 01 juz nie`() {
+        every { queue.dueIds(any(), any()) } returns emptyList()
+
+        dispatcher.dispatch(warsaw(18, 0))
+        verify(exactly = 1) { queue.dueIds(any(), any()) }
+
+        dispatcher.dispatch(warsaw(18, 1))
+        verify(exactly = 1) { queue.dueIds(any(), any()) }
     }
 
     @Test
