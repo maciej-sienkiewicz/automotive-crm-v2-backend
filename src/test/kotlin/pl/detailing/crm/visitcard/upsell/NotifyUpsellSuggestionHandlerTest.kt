@@ -62,12 +62,14 @@ class NotifyUpsellSuggestionHandlerTest {
     private val appointmentId = AppointmentId(UUID.randomUUID())
     private val customerId = UUID.randomUUID()
 
-    private val suggestion = VisitUpsellSuggestionEntity(
+    private fun suggestionNamed(name: String) = VisitUpsellSuggestionEntity(
         id = UUID.randomUUID(), studioId = studioId.value, visitId = visitId.value, appointmentId = null,
-        serviceId = UUID.randomUUID(), serviceName = "Powłoka ceramiczna", basePriceNet = 100_000, vatRate = 23,
+        serviceId = UUID.randomUUID(), serviceName = name, basePriceNet = 100_000, vatRate = 23,
         adjustmentType = AdjustmentType.PERCENT, adjustmentValue = 0, finalPriceNet = 100_000, finalPriceGross = 123_000,
         note = null, createdBy = UUID.randomUUID()
     )
+
+    private val suggestion = suggestionNamed("Powłoka ceramiczna")
 
     private fun givenRule(enabled: Boolean = true, template: String = "{{imie}}, propozycja: {{uslugi}}. Zobacz: {{link}}") {
         every { configRepository.findByStudioId(studioId) } returns SmsAutomationConfig.defaultFor(studioId).copy(
@@ -95,7 +97,7 @@ class NotifyUpsellSuggestionHandlerTest {
         every { gateway.sendSms(customerId, studioId.value, "+48534920205", capture(message), any(), any(), DeliveryPolicy.SEND_WINDOW) } returns
             SmsDeliveryResult.success("ext-1")
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertTrue(result.sent)
         assertFalse(result.queued)
@@ -114,7 +116,7 @@ class NotifyUpsellSuggestionHandlerTest {
         val queuedId = UUID.randomUUID()
         every { gateway.sendSms(any(), any(), any(), any(), any(), any(), any()) } returns SmsDeliveryResult.queued(queuedId, at)
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertTrue(result.sent)
         assertTrue(result.queued)
@@ -128,7 +130,7 @@ class NotifyUpsellSuggestionHandlerTest {
     fun `wylaczony szablon konczy sie komunikatem, bez wolania bramki`() {
         givenRule(enabled = false); givenVisitAndCustomer()
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertFalse(result.sent)
         assertTrue(result.message.contains("wyłączony"), result.message)
@@ -140,7 +142,7 @@ class NotifyUpsellSuggestionHandlerTest {
     fun `klient bez numeru dostaje czytelny powod`() {
         givenRule(); givenVisitAndCustomer(phone = null)
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertFalse(result.sent)
         assertTrue(result.message.contains("numeru telefonu"), result.message)
@@ -153,7 +155,7 @@ class NotifyUpsellSuggestionHandlerTest {
         every { gateway.sendSms(any(), any(), any(), any(), any(), any(), any()) } returns
             SmsDeliveryResult.failure("Moduł 'Komunikacja' nie jest aktywny w tym studiu — wiadomość zablokowana")
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertFalse(result.sent)
         assertTrue(result.message.contains("nie jest aktywny"), result.message)
@@ -167,13 +169,43 @@ class NotifyUpsellSuggestionHandlerTest {
         givenRule(); givenVisitAndCustomer()
         every { gateway.sendSms(any(), any(), any(), any(), any(), any(), any()) } throws InsufficientSmsCreditsException("Brak kredytów SMS")
 
-        val result = handler.notifyForVisit(visitId, studioId, suggestion)
+        val result = handler.notifyForVisit(visitId, studioId, listOf(suggestion))
 
         assertFalse(result.sent)
         assertTrue(result.message.contains("kredytów"), result.message)
         val record = slot<RecordCommunicationCommand>()
         verify { log.record(capture(record)) }
         assertEquals(false, record.captured.success)
+    }
+
+    @Test
+    fun `kilka uslug idzie w JEDNEJ wiadomosci, wymienione po przecinku`() {
+        givenRule(); givenVisitAndCustomer()
+        val powloka = suggestion
+        val korekta = suggestionNamed("Korekta lakieru")
+        val message = slot<String>()
+        every { gateway.sendSms(any(), any(), any(), capture(message), any(), any(), any()) } returns
+            SmsDeliveryResult.success("ext-1")
+
+        val result = handler.notifyForVisit(visitId, studioId, listOf(powloka, korekta))
+
+        assertTrue(result.sent)
+        assertEquals(
+            "Anna, propozycja: Powłoka ceramiczna, Korekta lakieru. Zobacz: https://detailboost.pl/vc/tok123",
+            message.captured
+        )
+        verify(exactly = 1) { gateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { log.record(any()) }
+    }
+
+    @Test
+    fun `pusta lista nie wysyla niczego`() {
+        givenRule(); givenVisitAndCustomer()
+
+        val result = handler.notifyForVisit(visitId, studioId, emptyList())
+
+        assertFalse(result.sent)
+        verify(exactly = 0) { gateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -189,7 +221,7 @@ class NotifyUpsellSuggestionHandlerTest {
         val message = slot<String>()
         every { gateway.sendSms(any(), any(), any(), capture(message), any(), any(), any()) } returns SmsDeliveryResult.success("x")
 
-        val result = handler.notifyForAppointment(appointmentId, studioId, suggestion)
+        val result = handler.notifyForAppointment(appointmentId, studioId, listOf(suggestion))
 
         assertTrue(result.sent)
         assertTrue(message.captured.endsWith("/vc/res456"), message.captured)

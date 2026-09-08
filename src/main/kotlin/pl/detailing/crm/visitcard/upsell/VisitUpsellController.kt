@@ -53,6 +53,24 @@ class VisitUpsellController(
         }
     }
 
+    /**
+     * Kilka propozycji za jednym razem i jedno powiadomienie na wszystkie.
+     * POST /api/visits/{visitId}/upsell-suggestions/batch
+     */
+    @PostMapping("/batch")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun createMany(
+        @PathVariable visitId: String,
+        @RequestBody request: CreateUpsellSuggestionsRequest
+    ): ResponseEntity<CreateUpsellSuggestionsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        withContext(Dispatchers.IO) {
+            ResponseEntity.ok(
+                adminService.createMany(VisitId.fromString(visitId), principal.studioId, principal.userId, request)
+            )
+        }
+    }
+
     @DeleteMapping("/{suggestionId}")
     @RequiresPermission(Permission.VISITS_CREATE)
     fun delete(

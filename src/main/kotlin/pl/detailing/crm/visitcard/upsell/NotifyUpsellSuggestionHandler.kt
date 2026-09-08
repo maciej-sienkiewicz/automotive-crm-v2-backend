@@ -35,8 +35,12 @@ data class UpsellNotificationResult(
 )
 
 /**
- * SMS „Upselling": pracownik dodał propozycję usług na Karcie Wizyty i poprosił,
+ * SMS „Upselling": pracownik dodał propozycje usług na Karcie Wizyty i poprosił,
  * żeby klient się o tym dowiedział.
+ *
+ * Jedna wiadomość na całą listę, nie jedna na usługę: pracownik ogląda auto raz
+ * i widzi kilka rzeczy do zrobienia, a klient ma dostać jednego SMS-a wymieniającego
+ * wszystko, nie trzy pod rząd — każdy za osobny kredyt.
  *
  * To informacja z linkiem do karty, nie prośba o zgodę — zgoda („odpisz TAK") idzie
  * osobną ścieżką dopiero wtedy, gdy klient sam wybierze usługę na karcie. Dlatego
@@ -61,7 +65,12 @@ class NotifyUpsellSuggestionHandler(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    fun notifyForVisit(visitId: VisitId, studioId: StudioId, suggestion: VisitUpsellSuggestionEntity): UpsellNotificationResult {
+    fun notifyForVisit(
+        visitId: VisitId,
+        studioId: StudioId,
+        suggestions: List<VisitUpsellSuggestionEntity>
+    ): UpsellNotificationResult {
+        if (suggestions.isEmpty()) return failed("Brak propozycji do zgłoszenia klientowi")
         val visit = visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: return failed("Nie znaleziono wizyty")
         val token = tokenService.getOrCreateToken(studioId, visitId, AppointmentId(visit.appointmentId))
@@ -71,11 +80,16 @@ class NotifyUpsellSuggestionHandler(
             visitId = visitId,
             appointmentId = AppointmentId(visit.appointmentId),
             token = token,
-            suggestion = suggestion
+            suggestions = suggestions
         )
     }
 
-    fun notifyForAppointment(appointmentId: AppointmentId, studioId: StudioId, suggestion: VisitUpsellSuggestionEntity): UpsellNotificationResult {
+    fun notifyForAppointment(
+        appointmentId: AppointmentId,
+        studioId: StudioId,
+        suggestions: List<VisitUpsellSuggestionEntity>
+    ): UpsellNotificationResult {
+        if (suggestions.isEmpty()) return failed("Brak propozycji do zgłoszenia klientowi")
         val appointment = appointmentRepository.findByIdAndStudioId(appointmentId.value, studioId.value)
             ?: return failed("Nie znaleziono rezerwacji")
         val token = tokenService.getOrCreateTokenForAppointment(studioId, appointmentId)
@@ -85,7 +99,7 @@ class NotifyUpsellSuggestionHandler(
             visitId = null,
             appointmentId = appointmentId,
             token = token,
-            suggestion = suggestion
+            suggestions = suggestions
         )
     }
 
@@ -95,7 +109,7 @@ class NotifyUpsellSuggestionHandler(
         visitId: VisitId?,
         appointmentId: AppointmentId?,
         token: String,
-        suggestion: VisitUpsellSuggestionEntity
+        suggestions: List<VisitUpsellSuggestionEntity>
     ): UpsellNotificationResult {
         val rule = smsAutomationConfigRepository.findByStudioId(studioId)?.upsellSuggestion
         if (rule == null || !rule.enabled || rule.messageTemplate.isBlank()) {
@@ -114,7 +128,7 @@ class NotifyUpsellSuggestionHandler(
             mapOf(
                 "imie" to customer.firstName.orEmpty(),
                 "nazwisko" to customer.lastName.orEmpty(),
-                "uslugi" to suggestion.serviceName,
+                "uslugi" to suggestions.joinToString(", ") { it.serviceName },
                 "link" to cardUrl
             )
         )
@@ -125,10 +139,13 @@ class NotifyUpsellSuggestionHandler(
                 studioId = studioId.value,
                 phoneNumber = phone,
                 message = message,
-                context = "UpsellSuggestion suggestion=${suggestion.id}"
+                context = "UpsellSuggestion suggestions=${suggestions.joinToString(",") { it.id.toString() }}"
             )
         } catch (e: InsufficientSmsCreditsException) {
-            logger.warn("Upsell suggestion SMS blocked — no credits | studio={} suggestion={}", studioId, suggestion.id)
+            logger.warn(
+                "Upsell suggestion SMS blocked — no credits | studio={} suggestions={}",
+                studioId, suggestions.size
+            )
             record(studioId, customerId, visitId, appointmentId, phone, message, success = false, error = "Brak kredytów SMS", queuedMessageId = null)
             return failed("Brak kredytów SMS — klient nie został powiadomiony")
         }
