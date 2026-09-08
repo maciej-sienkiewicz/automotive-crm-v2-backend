@@ -30,6 +30,31 @@ data class UpsellAdjustment(
     val value: Double
 )
 
+/**
+ * Kilka propozycji dodanych za jednym razem — i jedno powiadomienie na wszystkie.
+ *
+ * Pracownik ogląda auto raz i widzi kilka rzeczy do zrobienia. Zapisywanie ich po
+ * jednej wysyłało klientowi tyle SMS-ów, ile usług: trzy osobne „dodaliśmy propozycję"
+ * pod rząd, każdy za kredyt. Jedna lista to jedna wiadomość wymieniająca wszystko.
+ */
+data class CreateUpsellSuggestionsRequest(
+    val suggestions: List<CreateUpsellSuggestionItem>,
+    /** Patrz [CreateUpsellSuggestionRequest.notifyCustomer]. Dotyczy całej listy naraz. */
+    val notifyCustomer: Boolean = false
+)
+
+data class CreateUpsellSuggestionItem(
+    val serviceId: String,
+    val adjustment: UpsellAdjustment? = null,
+    val note: String? = null
+)
+
+data class CreateUpsellSuggestionsResponse(
+    val suggestions: List<UpsellSuggestionResponse>,
+    /** Jeden wynik na całą listę; null, gdy pracownik nie prosił o powiadomienie. */
+    val customerNotification: UpsellNotificationResult? = null
+)
+
 data class UpsellSuggestionResponse(
     val id: String,
     val serviceId: String,
