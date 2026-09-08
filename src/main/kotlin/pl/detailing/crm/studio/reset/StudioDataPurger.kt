@@ -260,6 +260,14 @@ class StudioDataPurger(
             deleteByStudio("ContactNoteEntity", ctx)
             deleteByStudio("CommUserSignatureEntity", ctx)
             deleteByStudio("MailAccountEntity", ctx)
+            // Wiadomości czekające na okno wysyłki: reset ma je wycofać, zanim dispatcher
+            // wyśle o 12:00 coś, czego studio już u siebie nie widzi.
+            deleteWhere(
+                "OutboundMessageAttachmentEntity a",
+                "a.messageId IN (SELECT m.id FROM OutboundMessageEntity m WHERE m.studioId = :studioId)",
+                ctx
+            )
+            deleteByStudio("OutboundMessageEntity", ctx)
             deleteByStudio("CommunicationLogEntity", ctx)
         },
 

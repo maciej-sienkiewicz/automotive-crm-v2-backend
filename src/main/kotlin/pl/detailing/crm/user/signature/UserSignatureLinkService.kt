@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
@@ -71,9 +72,11 @@ class UserSignatureLinkService(
         val fullName = "${entity.firstName} ${entity.lastName}".trim()
         val message = "Cześć $fullName! Kliknij link, aby narysować swój podpis: $signingUrl (ważny 30 min)"
 
+        // IMMEDIATE: odbiorcą jest pracownik studia, nie klient, a link żyje 30 minut.
         val result = communicationGateway.sendTransactionalSms(
             studioId.value, phone, message,
-            category = OutboundMessageCategory.SIGNATURE_ONBOARDING
+            category = OutboundMessageCategory.SIGNATURE_ONBOARDING,
+            delivery = DeliveryPolicy.IMMEDIATE
         )
         if (!result.success) {
             redisTemplate.delete(KEY_PREFIX + token)

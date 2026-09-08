@@ -329,8 +329,10 @@ enum class AuditAction(
     // ── Communication ───────────────────────────────────────────────────────
     SMS_SENT("Wysłanie SMS", "Wysłano SMS", AuditIcon.MESSAGE, AuditSeverity.HIGH),
     SMS_FAILED("Błąd wysyłki SMS", "Nie udało się wysłać SMS", AuditIcon.MESSAGE, AuditSeverity.HIGH),
+    SMS_QUEUED("Zakolejkowanie SMS", "SMS czeka na godziny wysyłki", AuditIcon.MESSAGE),
     EMAIL_SENT("Wysłanie e-maila", "Wysłano e-mail", AuditIcon.MESSAGE, AuditSeverity.HIGH),
     EMAIL_FAILED("Błąd wysyłki e-maila", "Nie udało się wysłać e-maila", AuditIcon.MESSAGE, AuditSeverity.HIGH),
+    EMAIL_QUEUED("Zakolejkowanie e-maila", "E-mail czeka na godziny wysyłki", AuditIcon.MESSAGE),
 
     // ── Visit Card (customer-facing) ────────────────────────────────────────
     VISIT_CARD_LINK_SENT("Wysłanie linku do Karty Wizyty", "Wysłano link do Karty Wizyty", AuditIcon.LINK),

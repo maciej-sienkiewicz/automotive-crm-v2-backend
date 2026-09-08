@@ -101,7 +101,7 @@ class SendReservationCardLinkHandlerTest {
 
         val bodySlot = slot<String>()
         every {
-            communicationGateway.sendEmail(any(), any(), any(), any(), capture(bodySlot), any(), any(), any())
+            communicationGateway.sendEmail(any(), any(), any(), any(), capture(bodySlot), any(), any(), any(), any())
         } returns EmailDeliveryResult.success("msg-1")
 
         handler.handle(SendReservationCardLinkCommand(appointmentId, studioId))
@@ -117,7 +117,7 @@ class SendReservationCardLinkHandlerTest {
 
         val bodySlot = slot<String>()
         every {
-            communicationGateway.sendEmail(any(), any(), any(), any(), capture(bodySlot), any(), any(), any())
+            communicationGateway.sendEmail(any(), any(), any(), any(), capture(bodySlot), any(), any(), any(), any())
         } returns EmailDeliveryResult.success("msg-1")
 
         val result = handler.handle(SendReservationCardLinkCommand(appointmentId, studioId))

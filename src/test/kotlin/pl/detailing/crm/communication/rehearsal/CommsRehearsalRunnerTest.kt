@@ -83,8 +83,8 @@ class CommsRehearsalRunnerTest {
     }
 
     private fun gatewaySucceeds() {
-        every { gateway.sendTransactionalSms(any(), any(), any(), any()) } returns SmsDeliveryResult.success("s")
-        every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
+        every { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) } returns SmsDeliveryResult.success("s")
+        every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
     }
 
     @Nested
@@ -210,8 +210,8 @@ class CommsRehearsalRunnerTest {
         fun `plan never sends anything`() {
             stubConfigs(); every { redirectService.activeFor(studioId.value) } returns redirect
             runner.plan(studioId)
-            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
-            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) }
         }
     }
 
@@ -223,7 +223,7 @@ class CommsRehearsalRunnerTest {
             stubConfigs(); every { redirectService.activeFor(studioId.value) } returns null
             val ex = assertThrows(ValidationException::class.java) { runner.run(studioId) }
             assertTrue("przekierowanie" in ex.message!!.lowercase())
-            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
         }
 
         @Test
@@ -236,8 +236,8 @@ class CommsRehearsalRunnerTest {
 
             assertFalse(report.sent)
             assertTrue(report.hasErrors)
-            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
-            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) }
             assertTrue(report.items.all { it.delivery == null })
         }
 
@@ -251,17 +251,17 @@ class CommsRehearsalRunnerTest {
             assertTrue(report.sent)
             val smsCount = report.items.count { it.channel == RehearsalChannel.SMS }
             val emailCount = report.items.count { it.channel == RehearsalChannel.EMAIL }
-            verify(exactly = smsCount) { gateway.sendTransactionalSms(studioId.value, RehearsalFixture.CUSTOMER_PHONE, any(), any()) }
-            verify(exactly = emailCount) { gateway.sendTransactionalEmail(studioId.value, RehearsalFixture.CUSTOMER_EMAIL, any(), any(), any(), any()) }
+            verify(exactly = smsCount) { gateway.sendTransactionalSms(studioId.value, RehearsalFixture.CUSTOMER_PHONE, any(), any(), any()) }
+            verify(exactly = emailCount) { gateway.sendTransactionalEmail(studioId.value, RehearsalFixture.CUSTOMER_EMAIL, any(), any(), any(), any(), any()) }
             assertTrue(report.items.all { it.delivery?.success == true })
 
             val bodies = mutableListOf<String>()
-            verify { gateway.sendTransactionalSms(studioId.value, RehearsalFixture.CUSTOMER_PHONE, capture(bodies), any()) }
+            verify { gateway.sendTransactionalSms(studioId.value, RehearsalFixture.CUSTOMER_PHONE, capture(bodies), any(), any()) }
             assertEquals(smsCount, bodies.size)
             bodies.forEachIndexed { i, b -> assertTrue(b.startsWith("[R%02d/%d] ".format(i + 1, smsCount)), b) }
 
             val subjects = mutableListOf<String>()
-            verify { gateway.sendTransactionalEmail(studioId.value, RehearsalFixture.CUSTOMER_EMAIL, capture(subjects), any(), any(), any()) }
+            verify { gateway.sendTransactionalEmail(studioId.value, RehearsalFixture.CUSTOMER_EMAIL, capture(subjects), any(), any(), any(), any()) }
             assertEquals(emailCount, subjects.size)
             subjects.forEachIndexed { i, sub -> assertTrue(sub.startsWith("[R%02d/%d] ".format(i + 1, emailCount)), sub) }
         }
@@ -277,14 +277,14 @@ class CommsRehearsalRunnerTest {
             val skipped = report.items.first { it.kind == MessageTemplateKind.SMS_DELAYED_REMINDER }
             assertNull(skipped.delivery)
             val smsWithContent = report.items.count { it.channel == RehearsalChannel.SMS } - 1
-            verify(exactly = smsWithContent) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
+            verify(exactly = smsWithContent) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
         }
 
         @Test
         fun `a provider failure is recorded on the item and does not stop the others`() {
             stubConfigs(); every { redirectService.activeFor(studioId.value) } returns redirect
-            every { gateway.sendTransactionalSms(any(), any(), any(), any()) } returns SmsDeliveryResult.failure("SMSAPI: invalid number")
-            every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
+            every { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) } returns SmsDeliveryResult.failure("SMSAPI: invalid number")
+            every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
 
             val report = runner.run(studioId)
 
@@ -297,8 +297,8 @@ class CommsRehearsalRunnerTest {
         @Test
         fun `running out of credits is recorded as a failed delivery, not an exception`() {
             stubConfigs(); every { redirectService.activeFor(studioId.value) } returns redirect
-            every { gateway.sendTransactionalSms(any(), any(), any(), any()) } throws InsufficientSmsCreditsException("Brak kredytów SMS")
-            every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
+            every { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) } throws InsufficientSmsCreditsException("Brak kredytów SMS")
+            every { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) } returns EmailDeliveryResult.success("m")
 
             val report = runner.run(studioId)
             val sms = report.items.first { it.channel == RehearsalChannel.SMS }
@@ -315,8 +315,8 @@ class CommsRehearsalRunnerTest {
 
             val report = runner.run(studioId)
 
-            verify(exactly = 1) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
-            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any()) }
+            verify(exactly = 1) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
+            verify(exactly = 0) { gateway.sendTransactionalEmail(any(), any(), any(), any(), any(), any(), any()) }
             val second = report.items[1]
             assertEquals(false, second.delivery?.success)
             assertTrue("przerwano" in second.delivery!!.error!!)

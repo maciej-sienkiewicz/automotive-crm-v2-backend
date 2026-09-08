@@ -22,6 +22,7 @@ import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSms
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsStatus
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.smscampaigns.thankyou.domain.ThankYouSmsWindow
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -45,13 +46,15 @@ class ScheduleThankYouSmsHandlerTest {
     private val configRepository: SmsAutomationConfigRepository = mockk()
     private val templateProcessor: SmsTemplateProcessor = mockk()
     private val repository: ScheduledThankYouSmsRepository = mockk()
+    private val window = ThankYouSmsWindow(SendWindow.DEFAULT)
 
     private val handler = ScheduleThankYouSmsHandler(
         visitRepository,
         customerRepository,
         configRepository,
         templateProcessor,
-        repository
+        repository,
+        window
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -90,14 +93,14 @@ class ScheduleThankYouSmsHandlerTest {
     fun `godzina spoza okna wraca na najblizsza dozwolona`() {
         val saved = handler.handle(command(send = true, scheduledAt = at(22, 0)))
 
-        assertTrue(ThankYouSmsWindow.contains(saved!!.scheduledFor!!))
+        assertTrue(window.contains(saved!!.scheduledFor!!))
     }
 
     @Test
     fun `brak godziny w zadaniu daje najblizszy dozwolony termin`() {
         val saved = handler.handle(command(send = true, scheduledAt = null))
 
-        assertTrue(ThankYouSmsWindow.contains(saved!!.scheduledFor!!))
+        assertTrue(window.contains(saved!!.scheduledFor!!))
         assertTrue(saved.scheduledFor!!.isAfter(Instant.now()))
     }
 
@@ -212,7 +215,7 @@ class ScheduleThankYouSmsHandlerTest {
      */
     private fun at(hour: Int, minute: Int): Instant =
         LocalDateTime.of(
-            LocalDate.now(ThankYouSmsWindow.ZONE).plusYears(1),
+            LocalDate.now(window.zone).plusYears(1),
             LocalTime.of(hour, minute)
-        ).atZone(ThankYouSmsWindow.ZONE).toInstant()
+        ).atZone(window.zone).toInstant()
 }

@@ -150,7 +150,8 @@ class SendReservationCardLinkHandler(
                     subject = subject,
                     bodyContent = body,
                     success = result.success,
-                    errorMessage = result.errorMessage
+                    errorMessage = result.errorMessage,
+                    queuedMessageId = result.queuedMessageId
                 )
             )
         }
@@ -174,7 +175,8 @@ class SendReservationCardLinkHandler(
                         subject = null,
                         bodyContent = message,
                         success = result.success,
-                        errorMessage = result.errorMessage
+                        errorMessage = result.errorMessage,
+                        queuedMessageId = result.queuedMessageId
                     )
                 )
             } catch (e: InsufficientSmsCreditsException) {

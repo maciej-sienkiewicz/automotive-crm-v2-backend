@@ -5,6 +5,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.AppointmentId
@@ -221,12 +222,17 @@ class SmsAutomationScheduler(
             )
         )
 
+        // IMMEDIATE: przypomnienie jest zakotwiczone w godzinie wizyty („za godzinę wizyta")
+        // i po niej nie ma już czego przypominać. Odłożone na 12:00 przyszłoby po fakcie
+        // dla każdej porannej rezerwacji. Reguły liczone od odbioru pojazdu (POST_VISIT,
+        // DELAYED_REMINDER) idą domyślną ścieżką i czekają na okno wysyłki.
         val result = communicationGateway.sendSms(
             customerId = appointment.customerId,
             studioId = studioId.value,
             phoneNumber = phoneNumber,
             message = message,
-            context = "SmsAutomation trigger=$triggerType appointment=${appointment.appointmentId}"
+            context = "SmsAutomation trigger=$triggerType appointment=${appointment.appointmentId}",
+            delivery = DeliveryPolicy.IMMEDIATE
         )
 
         smsLogRepository.save(
@@ -269,7 +275,8 @@ class SmsAutomationScheduler(
                 subject = null,
                 bodyContent = message,
                 success = result.success,
-                errorMessage = result.errorMessage
+                errorMessage = result.errorMessage,
+                queuedMessageId = result.queuedMessageId
             )
         )
 
@@ -388,7 +395,8 @@ class SmsAutomationScheduler(
                 subject = null,
                 bodyContent = message,
                 success = result.success,
-                errorMessage = result.errorMessage
+                errorMessage = result.errorMessage,
+                queuedMessageId = result.queuedMessageId
             )
         )
 

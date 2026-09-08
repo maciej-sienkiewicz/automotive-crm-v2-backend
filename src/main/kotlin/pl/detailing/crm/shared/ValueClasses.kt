@@ -976,7 +976,14 @@ enum class CommunicationMessageType(val label: String) {
 enum class CommunicationStatus {
     SENT,
     RECEIVED,
-    FAILED
+    FAILED,
+
+    /**
+     * Przyjęta do wysyłki, ale jeszcze nie wyszła — czeka na godziny, w których wolno
+     * pisać do klienta ([pl.detailing.crm.communication.window.SendWindow]). Dispatcher
+     * kolejki zmienia ten wpis w SENT albo FAILED, gdy faktycznie spróbuje wysłać.
+     */
+    QUEUED
 }
 
 /**

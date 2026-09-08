@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.communication.queue.OutboundMessageQueue
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.communication.redirect.ActiveRedirect
 import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.communication.whitelist.RecipientWhitelist
@@ -52,7 +54,8 @@ class OutboundCommunicationGatewayWhitelistTest {
 
     private fun gateway(whitelist: RecipientWhitelist) = OutboundCommunicationGateway(
         smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver,
-        capabilityService, meterRegistry, mockk<BusinessEventPublisher>(relaxed = true), redirectService, whitelist
+        capabilityService, meterRegistry, mockk<BusinessEventPublisher>(relaxed = true), redirectService, whitelist,
+        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>()
     )
 
     private fun inForce(phones: List<String> = listOf(listedPhone), emails: List<String> = listOf(listedEmail)) =

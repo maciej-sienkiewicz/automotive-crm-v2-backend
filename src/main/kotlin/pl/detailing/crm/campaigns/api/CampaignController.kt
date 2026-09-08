@@ -11,6 +11,7 @@ import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
 import pl.detailing.crm.communication.OutboundCommunicationGateway
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundMessageCategory
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
@@ -503,9 +504,12 @@ class CampaignController(
             RecipientChannel.SMS -> {
                 val body = request.smsTemplate
                     ?: throw ValidationException("Treść SMS nie może być pusta")
+                // IMMEDIATE: wysyłka testowa idzie na adres podany przez użytkownika, który
+                // właśnie siedzi w edytorze i czeka, żeby zobaczyć wiadomość.
                 val r = gateway.sendTransactionalSms(
                     principal.studioId.value, request.address, body,
-                    category = OutboundMessageCategory.CAMPAIGN
+                    category = OutboundMessageCategory.CAMPAIGN,
+                    delivery = DeliveryPolicy.IMMEDIATE
                 )
                 r.success to r.errorMessage
             }
@@ -514,7 +518,8 @@ class CampaignController(
                 val body = request.emailBody ?: throw ValidationException("Treść e-maila nie może być pusta")
                 val r = gateway.sendTransactionalEmail(
                     principal.studioId.value, request.address, subject, body,
-                    category = OutboundMessageCategory.CAMPAIGN
+                    category = OutboundMessageCategory.CAMPAIGN,
+                    delivery = DeliveryPolicy.IMMEDIATE
                 )
                 r.success to r.errorMessage
             }

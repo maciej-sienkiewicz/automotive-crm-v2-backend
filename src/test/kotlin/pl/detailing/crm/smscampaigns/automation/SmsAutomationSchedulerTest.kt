@@ -117,7 +117,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -128,7 +128,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -140,7 +140,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     private fun givenOneCompletedVisit() {
@@ -161,7 +161,7 @@ class SmsAutomationSchedulerTest {
         )
         every { smsLogRepository.existsByAppointmentIdAndTriggerType(any(), any()) } returns false
         every {
-            communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any())
         } returns SmsDeliveryResult.success("msg-1")
     }
 

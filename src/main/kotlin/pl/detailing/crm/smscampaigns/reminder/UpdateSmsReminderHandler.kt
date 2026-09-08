@@ -2,6 +2,7 @@ package pl.detailing.crm.smscampaigns.reminder
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -24,7 +25,8 @@ data class UpdateSmsReminderCommand(
  */
 @Service
 class UpdateSmsReminderHandler(
-    private val reminderRepository: ScheduledSmsReminderRepository
+    private val reminderRepository: ScheduledSmsReminderRepository,
+    private val sendWindow: SendWindow
 ) {
     companion object {
         private const val MAX_MESSAGE_LENGTH = 160
@@ -59,7 +61,8 @@ class UpdateSmsReminderHandler(
         return reminderRepository.save(
             reminder.copy(
                 messageContent = command.messageContent,
-                scheduledFor = command.scheduledFor,
+                // Jak przy tworzeniu: termin dociągnięty do godzin komunikacji z klientem.
+                scheduledFor = sendWindow.nextSlotFrom(command.scheduledFor),
                 updatedAt = Instant.now()
             )
         )

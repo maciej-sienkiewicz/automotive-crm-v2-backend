@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.communication.queue.OutboundMessageQueue
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.communication.whitelist.RecipientWhitelist
 import pl.detailing.crm.communication.whitelist.RecipientWhitelistProperties
@@ -44,7 +46,8 @@ class OutboundCommunicationGatewayConsentTest {
     private val gateway = OutboundCommunicationGateway(
         smsProvider, emailProvider, consentChecker, smsCreditService,
         senderNameResolver, capabilityService, SimpleMeterRegistry(), businessEventPublisher, redirectService,
-        RecipientWhitelist(RecipientWhitelistProperties(enabled = false))
+        RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
+        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>()
     )
 
     private val customerId = UUID.randomUUID()
