@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.template.AppointmentAllDayLookup
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.email.automation.GetEmailTemplateConfigHandler
 import pl.detailing.crm.email.provider.EmailAttachment
@@ -38,7 +39,8 @@ class SendVisitWelcomeEmailHandler(
     private val communicationGateway: OutboundCommunicationGateway,
     private val communicationLogService: CommunicationLogService,
     private val emailTemplateConfigHandler: GetEmailTemplateConfigHandler,
-    private val emailTemplateProcessor: EmailTemplateProcessor
+    private val emailTemplateProcessor: EmailTemplateProcessor,
+    private val allDayLookup: AppointmentAllDayLookup
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -78,7 +80,8 @@ class SendVisitWelcomeEmailHandler(
             vehicleName = "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}",
             licensePlate = visitEntity.licensePlateSnapshot,
             visitNumber = visitEntity.visitNumber,
-            scheduledAt = visitEntity.scheduledDate
+            scheduledAt = visitEntity.scheduledDate,
+            allDay = allDayLookup.isAllDay(visitEntity.appointmentId, command.studioId.value)
         )
 
         val subject = emailTemplateProcessor.process(rule.subjectTemplate, context)

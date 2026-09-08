@@ -24,7 +24,9 @@ data class SmsAppointmentView(
     val customerLastName: String?,
     val customerPhone: String?,
     val studioName: String,
-    val studioId: UUID
+    val studioId: UUID,
+    /** Rezerwacja całodniowa — start to północ, której nie wolno pokazać jako godziny. */
+    val isAllDay: Boolean = false
 )
 
 /**
@@ -86,7 +88,8 @@ class SmsAppointmentQueryService {
                 c.lastName,
                 c.phone,
                 s.name,
-                a.studioId
+                a.studioId,
+                a.isAllDay
             FROM AppointmentEntity a
             JOIN CustomerEntity   c ON c.id = a.customerId
             JOIN StudioEntity     s ON s.id = a.studioId
@@ -115,7 +118,8 @@ class SmsAppointmentQueryService {
                 customerLastName = cols[5] as String?,
                 customerPhone = cols[6] as String?,
                 studioName = cols[7] as String,
-                studioId = cols[8] as UUID
+                studioId = cols[8] as UUID,
+                isAllDay = cols[9] as Boolean
             )
         }
     }
@@ -137,7 +141,8 @@ class SmsAppointmentQueryService {
                 c.lastName,
                 c.phone,
                 s.name,
-                a.studioId
+                a.studioId,
+                a.isAllDay
             FROM AppointmentEntity a
             JOIN CustomerEntity   c ON c.id  = a.customerId
             JOIN StudioEntity     s ON s.id  = a.studioId
@@ -167,7 +172,8 @@ class SmsAppointmentQueryService {
                 customerLastName = cols[5] as String?,
                 customerPhone = cols[6] as String?,
                 studioName = cols[7] as String,
-                studioId = cols[8] as UUID
+                studioId = cols[8] as UUID,
+                isAllDay = cols[9] as Boolean
             )
         }
     }

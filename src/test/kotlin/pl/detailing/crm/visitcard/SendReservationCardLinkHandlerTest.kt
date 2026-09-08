@@ -137,7 +137,30 @@ class SendReservationCardLinkHandlerTest {
         assertEquals(setOf("imie", "nazwisko", "pojazd", "rejestracja", "data", "godzina", "link"), allowed)
     }
 
-    private fun appointmentEntity(vehicleId: UUID?): AppointmentEntity {
+    @Test
+    fun `rezerwacja calodniowa nie wysyla klientowi godziny 00 00`() = runBlocking {
+        setUpCommon()
+        every { emailAutomationConfigRepository.findByStudioId(studioId) } returns EmailAutomationConfig.defaultFor(studioId).copy(
+            reservationCardLink = EmailNotificationRule(
+                enabled = true,
+                subjectTemplate = "Twoja rezerwacja",
+                bodyTemplate = "Czekamy na Ciebie {{data}} o godz. {{godzina}}. Link: {{link}}"
+            )
+        )
+        every { appointmentRepository.findByIdAndStudioId(appointmentId.value, studioId.value) } returns
+            appointmentEntity(vehicleId = null, allDay = true)
+
+        val bodySlot = slot<String>()
+        every {
+            communicationGateway.sendEmail(any(), any(), any(), any(), capture(bodySlot), any(), any(), any(), any())
+        } returns EmailDeliveryResult.success("msg-1")
+
+        handler.handle(SendReservationCardLinkCommand(appointmentId, studioId))
+
+        assertEquals("Czekamy na Ciebie 09.09.2026. Link: https://detailboost.pl/vc/tok123", bodySlot.captured)
+    }
+
+    private fun appointmentEntity(vehicleId: UUID?, allDay: Boolean = false): AppointmentEntity {
         val entity = AppointmentEntity(
             id = appointmentId.value,
             studioId = studioId.value,
@@ -145,9 +168,10 @@ class SendReservationCardLinkHandlerTest {
             vehicleId = vehicleId,
             appointmentTitle = null,
             appointmentColorId = UUID.randomUUID(),
-            isAllDay = false,
-            startDateTime = Instant.parse("2026-09-15T09:00:00Z"),
-            endDateTime = Instant.parse("2026-09-15T10:00:00Z"),
+            isAllDay = allDay,
+            // Rezerwacja całodniowa zaczyna się o północy czasu lokalnego (22:00 UTC dnia poprzedniego).
+            startDateTime = if (allDay) Instant.parse("2026-09-08T22:00:00Z") else Instant.parse("2026-09-15T09:00:00Z"),
+            endDateTime = if (allDay) Instant.parse("2026-09-09T22:00:00Z") else Instant.parse("2026-09-15T10:00:00Z"),
             status = AppointmentStatus.CREATED,
             note = null,
             createdBy = UUID.randomUUID(),

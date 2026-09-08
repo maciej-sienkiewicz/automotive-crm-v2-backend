@@ -78,7 +78,8 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
             SmsTemplateContext(
                 firstName = customer.firstName ?: "Kliencie",
                 lastName = customer.lastName ?: "",
-                appointmentStart = appointment.startDateTime
+                appointmentStart = appointment.startDateTime,
+                allDay = appointment.isAllDay
             )
         )
 

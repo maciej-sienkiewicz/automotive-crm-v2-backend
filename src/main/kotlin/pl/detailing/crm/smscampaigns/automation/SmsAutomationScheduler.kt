@@ -234,7 +234,8 @@ class SmsAutomationScheduler(
             context = SmsTemplateContext(
                 firstName = appointment.customerFirstName ?: "",
                 lastName = appointment.customerLastName ?: "",
-                appointmentStart = appointment.appointmentStart
+                appointmentStart = appointment.appointmentStart,
+                allDay = appointment.isAllDay
             )
         )
 
@@ -374,7 +375,8 @@ class SmsAutomationScheduler(
             context = SmsTemplateContext(
                 firstName = visit.customerFirstName ?: "",
                 lastName = visit.customerLastName ?: "",
-                appointmentStart = visit.scheduledDate
+                appointmentStart = visit.scheduledDate,
+                allDay = visit.isAllDay
             )
         )
 

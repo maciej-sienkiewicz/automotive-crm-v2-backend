@@ -23,6 +23,6 @@ class SmsTemplateProcessor(
         mapOf(
             "imie" to context.firstName,
             "nazwisko" to context.lastName
-        ) + MessageTemplateRenderer.scheduleValues(context.appointmentStart)
+        ) + MessageTemplateRenderer.scheduleValues(context.appointmentStart, context.allDay)
     )
 }

@@ -174,6 +174,31 @@ class SmsAutomationSchedulerPreVisitTest {
         verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), DeliveryPolicy.SEND_WINDOW) }
     }
 
+    @Test
+    fun `rezerwacja calodniowa przekazuje szablonowi, ze nie ma godziny do pokazania`() {
+        givenStudioRule(preVisit = rule(enabled = true, offsetMinutes = 60))
+        givenRuleCandidates(appointment(startsAt = now.plus(Duration.ofMinutes(60)), allDay = true))
+
+        scheduler.processPendingAutomations()
+
+        val context = slot<pl.detailing.crm.smscampaigns.template.SmsTemplateContext>()
+        verify { templateProcessor.process(any(), capture(context)) }
+        assertEquals(true, context.captured.allDay)
+    }
+
+    @Test
+    fun `wizyta zakonczona z rezerwacji calodniowej tez nie dostaje godziny w podziekowaniu`() {
+        givenStudioRule(postVisit = rule(enabled = true, offsetMinutes = 30))
+        every { visitQueryService.findCompletedByStudioIdAndPickupDateBetween(any(), any(), any()) } returns
+            listOf(completedVisit().copy(isAllDay = true))
+
+        scheduler.processPendingAutomations()
+
+        val context = slot<pl.detailing.crm.smscampaigns.template.SmsTemplateContext>()
+        verify { templateProcessor.process(any(), capture(context)) }
+        assertEquals(true, context.captured.allDay)
+    }
+
     // ── Dedupe i braki ───────────────────────────────────────────────────────
 
     @Test
@@ -340,7 +365,7 @@ class SmsAutomationSchedulerPreVisitTest {
         every { appointmentQueryService.findWithSendReminderAndStartTimeBetween(any(), any()) } returns appointments.toList()
     }
 
-    private fun appointment(startsAt: Instant, phone: String? = "534920205") = SmsAppointmentView(
+    private fun appointment(startsAt: Instant, phone: String? = "534920205", allDay: Boolean = false) = SmsAppointmentView(
         appointmentId = UUID.randomUUID(),
         customerId = UUID.randomUUID(),
         appointmentStart = startsAt,
@@ -349,7 +374,8 @@ class SmsAutomationSchedulerPreVisitTest {
         customerLastName = "Kowalska",
         customerPhone = phone,
         studioName = "Studio",
-        studioId = studioId.value
+        studioId = studioId.value,
+        isAllDay = allDay
     )
 
     private fun completedVisit() = SmsVisitView(

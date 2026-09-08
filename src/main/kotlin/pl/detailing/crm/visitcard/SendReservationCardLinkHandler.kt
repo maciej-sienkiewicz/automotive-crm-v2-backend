@@ -22,8 +22,6 @@ import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.livemetrics.domain.VisitCardChannel
@@ -57,12 +55,6 @@ class SendReservationCardLinkHandler(
     private val vehicleRepository: VehicleRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-
-    companion object {
-        private val WARSAW = ZoneId.of("Europe/Warsaw")
-        private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-        private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
-    }
 
     suspend fun handle(command: SendReservationCardLinkCommand): SendVisitCardLinkResult = withContext(Dispatchers.IO) {
         val appointment = appointmentRepository.findByIdAndStudioId(command.appointmentId.value, command.studioId.value)
@@ -109,16 +101,14 @@ class SendReservationCardLinkHandler(
         // jeszcze nie ma.
         val vehicle = appointment.vehicleId?.let { vehicleId -> vehicleRepository.findByIdAndStudioId(vehicleId, command.studioId.value) }
 
-        val scheduled = appointment.startDateTime.atZone(WARSAW)
         val templateValues = mapOf(
             "imie" to customer.firstName.orEmpty(),
             "nazwisko" to customer.lastName.orEmpty(),
             "imie_nazwisko" to listOfNotNull(customer.firstName, customer.lastName).joinToString(" "),
             "pojazd" to vehicle?.let { "${it.brand} ${it.model}" }.orEmpty(),
             "rejestracja" to vehicle?.licensePlate.orEmpty(),
-            "data" to DATE_FORMAT.format(scheduled),
-            "godzina" to TIME_FORMAT.format(scheduled),
             "link" to cardUrl
+        ) + MessageTemplateRenderer.scheduleValues(appointment.startDateTime, allDay = appointment.isAllDay
         )
 
         var emailSent = false

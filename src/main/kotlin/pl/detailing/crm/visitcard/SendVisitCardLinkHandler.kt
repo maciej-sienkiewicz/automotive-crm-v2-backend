@@ -8,6 +8,7 @@ import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.template.AppointmentAllDayLookup
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.email.domain.EmailAutomationConfigRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -22,8 +23,6 @@ import pl.detailing.crm.shared.normalizePolishPhone
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.livemetrics.domain.VisitCardChannel
@@ -74,15 +73,10 @@ class SendVisitCardLinkHandler(
     private val emailAutomationConfigRepository: EmailAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
     private val properties: VisitCardProperties,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val allDayLookup: AppointmentAllDayLookup
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-
-    companion object {
-        private val WARSAW = ZoneId.of("Europe/Warsaw")
-        private val DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-        private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
-    }
 
     suspend fun handle(command: SendVisitCardLinkCommand): SendVisitCardLinkResult = withContext(Dispatchers.IO) {
         val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
@@ -127,7 +121,6 @@ class SendVisitCardLinkHandler(
             return@withContext SendVisitCardLinkResult(false, false, "Klient nie ma adresu e-mail ani numeru telefonu")
         }
 
-        val scheduled = visitEntity.scheduledDate.atZone(WARSAW)
         val templateValues = mapOf(
             "imie" to customer.firstName.orEmpty(),
             "nazwisko" to customer.lastName.orEmpty(),
@@ -135,9 +128,10 @@ class SendVisitCardLinkHandler(
             "pojazd" to "${visitEntity.brandSnapshot} ${visitEntity.modelSnapshot}",
             "rejestracja" to visitEntity.licensePlateSnapshot.orEmpty(),
             "numer_wizyty" to visitEntity.visitNumber,
-            "data" to DATE_FORMAT.format(scheduled),
-            "godzina" to TIME_FORMAT.format(scheduled),
             "link" to cardUrl
+        ) + MessageTemplateRenderer.scheduleValues(
+            visitEntity.scheduledDate,
+            allDay = allDayLookup.isAllDay(visitEntity.appointmentId, command.studioId.value)
         )
 
         var emailSent = false
