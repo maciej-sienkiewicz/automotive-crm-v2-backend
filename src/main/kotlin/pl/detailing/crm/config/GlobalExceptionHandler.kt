@@ -248,15 +248,24 @@ class GlobalExceptionHandler(
     }
 
     /** Domain state-machine refusals (visit transitions, frozen line items) are conflicts, not crashes. */
+    /**
+     * 409 dla przejścia niedozwolonego w bieżącym stanie wizyty.
+     *
+     * Do klienta idzie zdanie po polsku plus `code`, po którym frontend odróżnia „już
+     * zrobione" od „ktoś zmienił wizytę pod tobą" i sam odświeża widok. Nazwy enumów
+     * (`READY_FOR_PICKUP`) zostają w logu: pracownik warsztatu widział je dotąd
+     * w czerwonym toaście i nie miał z nich żadnego pożytku.
+     */
     @ExceptionHandler(IllegalStateTransitionException::class)
     fun handleIllegalStateTransition(ex: IllegalStateTransitionException): ResponseEntity<ErrorResponse> {
-        log.warn("IllegalStateTransition [{}]: {}", resolveContext(), ex.message)
+        log.warn("IllegalStateTransition [{}]: {}", resolveContext(), ex.technicalDetail)
         return ResponseEntity
             .status(HttpStatus.CONFLICT)
             .body(ErrorResponse(
                 error = "Konflikt stanu",
                 message = ex.message ?: "Operacja jest sprzeczna z aktualnym stanem zasobu",
-                timestamp = Instant.now().toString()
+                timestamp = Instant.now().toString(),
+                code = ex.code
             ))
     }
 
@@ -488,7 +497,13 @@ class GlobalExceptionHandler(
 data class ErrorResponse(
     val error: String,
     val message: String,
-    val timestamp: String
+    val timestamp: String,
+    /**
+     * Maszynowy powód błędu, gdy sam komunikat nie wystarcza wywołującemu do podjęcia
+     * decyzji (np. `VISIT_ALREADY_IN_STATE` — cel osiągnięty, nie ma czego naprawiać).
+     * Null tam, gdzie treść odpowiedzi mówi wszystko.
+     */
+    val code: String? = null
 )
 
 /** 400 z listą pól, które nie przeszły walidacji JSR-380. */

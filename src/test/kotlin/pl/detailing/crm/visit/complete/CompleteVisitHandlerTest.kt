@@ -42,7 +42,8 @@ class CompleteVisitHandlerTest {
         auditService,
         createFinancialDocumentHandler,
         capabilityService,
-        eventPublisher = mockk(relaxed = true)
+        eventPublisher = mockk(relaxed = true),
+        financialDocumentRepository = mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()

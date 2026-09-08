@@ -26,6 +26,15 @@ class ArchiveVisitHandler(
 
         val visit = visitEntity.toDomain()
 
+        // Step 1a: Nic do zrobienia — patrz [ArchiveVisitResult.alreadyInTargetState].
+        if (visit.status == VisitStatus.ARCHIVED) {
+            return ArchiveVisitResult(
+                visitId = visit.id,
+                newStatus = visit.status,
+                alreadyInTargetState = true
+            )
+        }
+
         // Step 2: Perform state transition (domain logic with validation)
         val updatedVisit = visit.archive(command.userId)
 
@@ -75,5 +84,15 @@ data class ArchiveVisitCommand(
  */
 data class ArchiveVisitResult(
     val visitId: VisitId,
-    val newStatus: VisitStatus
+    val newStatus: VisitStatus,
+    /**
+     * Powtórzone żądanie na wizycie, która JUŻ jest w docelowym stanie, nie jest błędem:
+     * cel wywołującego został osiągnięty. Do tej pory kończyło się 409 z komunikatem
+     * „Cannot transition from READY_FOR_PICKUP to READY_FOR_PICKUP" — pracownik widział
+     * czerwony błąd za to, że ktoś inny (albo on sam sekundę wcześniej, albo drugie
+     * kliknięcie) zdążył pierwszy. Zwracamy stan bieżący z flagą [alreadyInTargetState],
+     * bez ponownego audytu i BEZ efektów ubocznych: klient nie dostaje drugiego SMS-a,
+     * a księgowość drugiego dokumentu.
+     */
+    val alreadyInTargetState: Boolean = false
 )

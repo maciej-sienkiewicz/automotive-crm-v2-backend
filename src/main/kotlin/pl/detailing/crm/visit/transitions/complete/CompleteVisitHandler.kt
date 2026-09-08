@@ -16,6 +16,7 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
@@ -32,7 +33,8 @@ class CompleteVisitHandler(
     private val auditService: AuditService,
     private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
     private val capabilityService: CapabilityService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val financialDocumentRepository: FinancialDocumentRepository
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -52,6 +54,25 @@ class CompleteVisitHandler(
         visitEntity.serviceItems.size
 
         val visit = visitEntity.toDomain()
+
+        // Nic do zrobienia — patrz [CompleteVisitResult.alreadyInTargetState]. Kluczowe
+        // jest tu pominięcie wystawiania dokumentu: drugie kliknięcie „Wydaj pojazd" nie
+        // ma prawa dołożyć drugiego paragonu do tej samej wizyty. Numer dokumentu
+        // z pierwszego wydania wraca w odpowiedzi, żeby UI nadal miał co pokazać.
+        if (visit.status == VisitStatus.COMPLETED) {
+            val existingDocument = financialDocumentRepository
+                .findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, command.studioId.value)
+                .firstOrNull()
+            return@withContext CompleteVisitResult(
+                visitId                 = visit.id,
+                newStatus               = visit.status,
+                completedAt             = visit.pickupDate ?: visitEntity.updatedAt,
+                financialDocumentId     = existingDocument?.let { FinancialDocumentId(it.id) },
+                financialDocumentNumber = existingDocument?.documentNumber,
+                alreadyInTargetState    = true
+            )
+        }
+
         val updatedVisit = visit.complete(command.userId)
 
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
@@ -253,5 +274,16 @@ data class CompleteVisitResult(
     val financialDocumentId: FinancialDocumentId?,
 
     /** Human-readable document number, e.g. "PAR/2024/0001". Null for INVOICE type. */
-    val financialDocumentNumber: String?
+    val financialDocumentNumber: String?,
+
+    /**
+     * Powtórzone żądanie na wizycie, która JUŻ jest w docelowym stanie, nie jest błędem:
+     * cel wywołującego został osiągnięty. Do tej pory kończyło się 409 z komunikatem
+     * „Cannot transition from READY_FOR_PICKUP to READY_FOR_PICKUP" — pracownik widział
+     * czerwony błąd za to, że ktoś inny (albo on sam sekundę wcześniej, albo drugie
+     * kliknięcie) zdążył pierwszy. Zwracamy stan bieżący z flagą [alreadyInTargetState],
+     * bez ponownego audytu i BEZ efektów ubocznych: klient nie dostaje drugiego SMS-a,
+     * a księgowość drugiego dokumentu.
+     */
+    val alreadyInTargetState: Boolean = false
 )

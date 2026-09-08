@@ -249,7 +249,7 @@ data class Visit(
     private fun requireServicesEditable() {
         if (status in SERVICES_LOCKED_STATUSES) {
             throw IllegalStateTransitionException(
-                "Nie można zmieniać usług wizyty w statusie $status"
+                "Nie można zmieniać usług wizyty o statusie \u201E${VisitStateMachine.label(status)}\u201D."
             )
         }
     }
