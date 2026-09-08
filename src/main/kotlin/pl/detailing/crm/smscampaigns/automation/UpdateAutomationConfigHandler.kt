@@ -20,6 +20,7 @@ data class UpdateAutomationConfigCommand(
     val visitCardLink: UpdateNotificationRuleCommand,
     val reservationCardLink: UpdateNotificationRuleCommand,
     val upsellConsent: UpdateNotificationRuleCommand,
+    val upsellSuggestion: UpdateNotificationRuleCommand,
     val signatureRequest: UpdateNotificationRuleCommand
 )
 
@@ -88,6 +89,10 @@ class UpdateAutomationConfigHandler(
             upsellConsent = SmsNotificationRule(
                 enabled = command.upsellConsent.enabled,
                 messageTemplate = command.upsellConsent.messageTemplate
+            ),
+            upsellSuggestion = SmsNotificationRule(
+                enabled = command.upsellSuggestion.enabled,
+                messageTemplate = command.upsellSuggestion.messageTemplate
             ),
             signatureRequest = SmsNotificationRule(
                 enabled = command.signatureRequest.enabled,

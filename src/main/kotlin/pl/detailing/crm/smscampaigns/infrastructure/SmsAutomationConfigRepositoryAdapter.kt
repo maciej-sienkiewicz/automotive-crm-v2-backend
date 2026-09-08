@@ -42,6 +42,8 @@ class SmsAutomationConfigRepositoryAdapter(
             existing.reservationCardLinkMessageTemplate = config.reservationCardLink.messageTemplate
             existing.upsellConsentEnabled = config.upsellConsent.enabled
             existing.upsellConsentMessageTemplate = config.upsellConsent.messageTemplate
+            existing.upsellSuggestionEnabled = config.upsellSuggestion.enabled
+            existing.upsellSuggestionMessageTemplate = config.upsellSuggestion.messageTemplate
             existing.signatureRequestEnabled = config.signatureRequest.enabled
             existing.signatureRequestMessageTemplate = config.signatureRequest.messageTemplate
             existing.updatedAt = java.time.Instant.now()

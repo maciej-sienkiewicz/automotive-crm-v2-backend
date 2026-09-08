@@ -16,7 +16,13 @@ import java.time.Instant
 data class CreateUpsellSuggestionRequest(
     val serviceId: String,
     val adjustment: UpsellAdjustment? = null,
-    val note: String? = null
+    val note: String? = null,
+    /**
+     * „Czy powiadomić klienta o edycji upsellingu?" — po zapisaniu sugestii idzie SMS
+     * z linkiem do karty (szablon „Propozycja dodatkowych usług"). Wynik wraca w
+     * [UpsellSuggestionResponse.customerNotification]; blokada nie cofa sugestii.
+     */
+    val notifyCustomer: Boolean = false
 )
 
 data class UpsellAdjustment(
@@ -41,7 +47,9 @@ data class UpsellSuggestionResponse(
     val status: UpsellSuggestionStatus,
     val createdAt: Instant,
     val requestedAt: Instant?,
-    val confirmedAt: Instant?
+    val confirmedAt: Instant?,
+    /** Tylko w odpowiedzi na utworzenie z `notifyCustomer = true`; null w listowaniu. */
+    val customerNotification: UpsellNotificationResult? = null
 ) {
     companion object {
         fun from(entity: VisitUpsellSuggestionEntity, originalPriceGross: Long): UpsellSuggestionResponse =

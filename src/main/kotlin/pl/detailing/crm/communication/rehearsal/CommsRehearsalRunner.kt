@@ -180,6 +180,7 @@ class CommsRehearsalRunner(
         MessageTemplateKind.SMS_VISIT_CARD_LINK -> visitCardLink.enabled to visitCardLink.messageTemplate
         MessageTemplateKind.SMS_RESERVATION_CARD_LINK -> reservationCardLink.enabled to reservationCardLink.messageTemplate
         MessageTemplateKind.SMS_UPSELL_CONSENT -> upsellConsent.enabled to upsellConsent.messageTemplate
+        MessageTemplateKind.SMS_UPSELL_SUGGESTION -> upsellSuggestion.enabled to upsellSuggestion.messageTemplate
         MessageTemplateKind.SMS_SIGNATURE_REQUEST -> signatureRequest.enabled to signatureRequest.messageTemplate
         else -> error("$kind is not an SMS template")
     }

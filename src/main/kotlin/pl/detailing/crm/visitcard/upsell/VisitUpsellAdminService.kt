@@ -36,7 +36,8 @@ class VisitUpsellAdminService(
     private val visitRepository: VisitRepository,
     private val appointmentRepository: AppointmentRepository,
     private val serviceRepository: ServiceRepository,
-    private val suggestionRepository: VisitUpsellSuggestionRepository
+    private val suggestionRepository: VisitUpsellSuggestionRepository,
+    private val notifyHandler: NotifyUpsellSuggestionHandler
 ) {
 
     @Transactional(readOnly = true)
@@ -65,7 +66,9 @@ class VisitUpsellAdminService(
     ): UpsellSuggestionResponse {
         visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: throw EntityNotFoundException("Visit not found: $visitId")
-        return createSuggestion(studioId, userId, request, visitId = visitId.value, appointmentId = null)
+        val entity = createSuggestion(studioId, userId, request, visitId = visitId.value, appointmentId = null)
+        val notification = if (request.notifyCustomer) notifyHandler.notifyForVisit(visitId, studioId, entity) else null
+        return entity.toResponse().copy(customerNotification = notification)
     }
 
     @Transactional
@@ -76,7 +79,9 @@ class VisitUpsellAdminService(
         request: CreateUpsellSuggestionRequest
     ): UpsellSuggestionResponse {
         requireAppointment(appointmentId, studioId)
-        return createSuggestion(studioId, userId, request, visitId = null, appointmentId = appointmentId.value)
+        val entity = createSuggestion(studioId, userId, request, visitId = null, appointmentId = appointmentId.value)
+        val notification = if (request.notifyCustomer) notifyHandler.notifyForAppointment(appointmentId, studioId, entity) else null
+        return entity.toResponse().copy(customerNotification = notification)
     }
 
     private fun createSuggestion(
@@ -85,7 +90,7 @@ class VisitUpsellAdminService(
         request: CreateUpsellSuggestionRequest,
         visitId: UUID?,
         appointmentId: UUID?
-    ): UpsellSuggestionResponse {
+    ): VisitUpsellSuggestionEntity {
         val serviceId = ServiceId.fromString(request.serviceId)
         val service = serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
             ?: throw EntityNotFoundException("Usługa nie została znaleziona: ${request.serviceId}")
@@ -125,7 +130,7 @@ class VisitUpsellAdminService(
                 createdBy = userId.value
             )
         )
-        return entity.toResponse()
+        return entity
     }
 
     /**
