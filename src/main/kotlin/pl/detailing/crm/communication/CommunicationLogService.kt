@@ -51,6 +51,12 @@ data class RecordCommunicationCommand(
     /** When set, overrides the [success]-based status mapping. */
     val status: CommunicationStatus? = null,
     /**
+     * Set when the gateway queued the message for the send window instead of sending it
+     * (`result.queuedMessageId`). The entry is recorded as [CommunicationStatus.QUEUED] and
+     * later resolved to SENT / FAILED by the queue dispatcher through [CommunicationLogService.recordQueuedOutcome].
+     */
+    val queuedMessageId: UUID? = null,
+    /**
      * The employee who initiated the send. When set, overrides [AuditActorResolver]
      * so the feed shows the person's name instead of "System". Must be captured on the
      * request thread before any coroutine dispatcher switch, because the security context
@@ -109,9 +115,10 @@ class CommunicationLogService(
                     recipientAddress = command.recipientAddress,
                     subject = command.subject,
                     bodyContent = command.bodyContent,
-                    status = command.status ?: if (command.success) CommunicationStatus.SENT else CommunicationStatus.FAILED,
+                    status = resolveStatus(command),
                     errorMessage = command.errorMessage,
-                    sentAt = Instant.now()
+                    sentAt = Instant.now(),
+                    queuedMessageId = command.queuedMessageId
                 )
             )
         } catch (ex: Exception) {
@@ -125,6 +132,65 @@ class CommunicationLogService(
     }
 
     /**
+     * Kolejność: jawny [RecordCommunicationCommand.status] wygrywa zawsze (nadawca wie lepiej),
+     * potem „przyjęta do kolejki", na końcu zwykłe wysłano / nie wysłano.
+     */
+    private fun resolveStatus(command: RecordCommunicationCommand): CommunicationStatus = when {
+        command.status != null -> command.status
+        command.queuedMessageId != null && command.success -> CommunicationStatus.QUEUED
+        command.success -> CommunicationStatus.SENT
+        else -> CommunicationStatus.FAILED
+    }
+
+    /**
+     * Domknięcie wpisu QUEUED przez dispatcher kolejki: wiadomość faktycznie wyszła (albo
+     * ostatecznie nie wyszła). Zmienia status i chwilę wysyłki na istniejącym wpisie —
+     * kartoteka klienta ma pokazywać jedną wiadomość, nie „w kolejce" plus „wysłano".
+     * Aktywność dostaje osobny wpis SMS_SENT / SMS_FAILED, bo dopiero teraz to się stało.
+     *
+     * Własna transakcja z tego samego powodu co [record]: dispatcher nie trzyma żadnej.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordQueuedOutcome(queuedMessageId: UUID, success: Boolean, errorMessage: String?) {
+        val entries = try {
+            repository.findAllByQueuedMessageId(queuedMessageId)
+        } catch (ex: Exception) {
+            logger.error("Failed to load communication log for queued message {}: {}", queuedMessageId, ex.message, ex)
+            return
+        }
+        if (entries.isEmpty()) {
+            logger.warn("No communication log entry for queued message {} — outcome not recorded", queuedMessageId)
+            return
+        }
+        val status = if (success) CommunicationStatus.SENT else CommunicationStatus.FAILED
+        try {
+            repository.resolveQueued(queuedMessageId, CommunicationStatus.QUEUED, status, errorMessage, Instant.now())
+        } catch (ex: Exception) {
+            logger.error("Failed to resolve queued communication log entry {}: {}", queuedMessageId, ex.message, ex)
+            return
+        }
+        entries.filter { it.status == CommunicationStatus.QUEUED }.forEach { entry ->
+            recordAudit(
+                entry.id,
+                RecordCommunicationCommand(
+                    studioId = StudioId(entry.studioId),
+                    customerId = CustomerId(entry.customerId),
+                    visitId = entry.visitId?.let { VisitId(it) },
+                    appointmentId = entry.appointmentId?.let { AppointmentId(it) },
+                    channel = entry.channel,
+                    messageType = entry.messageType,
+                    recipientAddress = entry.recipientAddress,
+                    subject = entry.subject,
+                    bodyContent = entry.bodyContent,
+                    success = success,
+                    errorMessage = errorMessage,
+                    status = status
+                )
+            )
+        }
+    }
+
+    /**
      * Every outbound message in the system passes through [record], so hooking the activity
      * feed in here covers all of them at once — manual sends, automations and campaign
      * dispatch alike — instead of relying on each of the dozens of send paths remembering
@@ -132,7 +198,9 @@ class CommunicationLogService(
      * audit entry is the one line the owner sees in the company feed.
      */
     private fun recordAudit(id: UUID, command: RecordCommunicationCommand) {
-        val succeeded = command.status?.let { it != CommunicationStatus.FAILED } ?: command.success
+        val status = resolveStatus(command)
+        val succeeded = status != CommunicationStatus.FAILED
+        val queued = status == CommunicationStatus.QUEUED
 
         val customer = try {
             customerRepository.findByIdAndStudioId(command.customerId.value, command.studioId.value)
@@ -152,8 +220,10 @@ class CommunicationLogService(
                 actor = command.initiatedBy ?: auditActorResolver.current(),
                 module = AuditModule.COMMUNICATION,
                 action = when {
+                    command.channel == CommunicationChannel.SMS && queued -> AuditAction.SMS_QUEUED
                     command.channel == CommunicationChannel.SMS && succeeded -> AuditAction.SMS_SENT
                     command.channel == CommunicationChannel.SMS -> AuditAction.SMS_FAILED
+                    queued -> AuditAction.EMAIL_QUEUED
                     succeeded -> AuditAction.EMAIL_SENT
                     else -> AuditAction.EMAIL_FAILED
                 },
@@ -167,6 +237,8 @@ class CommunicationLogService(
                 metadata = buildMap {
                     put("messageType", command.messageType.name)
                     put("channel", command.channel.name)
+                    put("status", status.name)
+                    command.queuedMessageId?.let { put("queuedMessageId", it.toString()) }
                     command.errorMessage?.let { put("error", it) }
                 },
                 context = AuditContext(

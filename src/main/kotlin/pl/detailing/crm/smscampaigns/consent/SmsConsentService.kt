@@ -5,6 +5,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.shared.CommunicationChannel
@@ -64,7 +65,9 @@ class SmsConsentService(
      * request is simply recorded as failed with a readable reason.
      */
     private fun dispatch(studioId: StudioId, phone: String, message: String): SmsDeliveryResult = try {
-        gateway.sendTransactionalSms(studioId.value, phone, message)
+        // IMMEDIATE: studio czeka z pracą na odpowiedź klienta o zmianie zakresu usług —
+        // odłożenie pytania na 12:00 zatrzymałoby wizytę na pół dnia.
+        gateway.sendTransactionalSms(studioId.value, phone, message, delivery = DeliveryPolicy.IMMEDIATE)
     } catch (e: InsufficientSmsCreditsException) {
         logger.warn("Service-change SMS blocked — no credits for studio={}", studioId.value)
         SmsDeliveryResult.failure("Brak kredytów SMS")
@@ -227,7 +230,8 @@ class SmsConsentService(
                     subject = null,
                     bodyContent = message,
                     success = result.success,
-                    errorMessage = result.errorMessage
+                    errorMessage = result.errorMessage,
+                    queuedMessageId = result.queuedMessageId
                 )
             )
         }
@@ -279,7 +283,8 @@ class SmsConsentService(
                     subject = null,
                     bodyContent = message,
                     success = result.success,
-                    errorMessage = result.errorMessage
+                    errorMessage = result.errorMessage,
+                    queuedMessageId = result.queuedMessageId
                 )
             )
         }

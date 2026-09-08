@@ -3,6 +3,7 @@ package pl.detailing.crm.communication.rehearsal
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.campaigns.application.SmsSegmentCalculator
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.communication.template.MessageTemplateKind
@@ -114,11 +115,15 @@ class CommsRehearsalRunner(
             }
             item.delivery = try {
                 when (item.channel) {
+                    // IMMEDIATE: próba generalna idzie na telefon i skrzynkę studia (redirect
+                    // jest warunkiem uruchomienia), a osoba, która ją odpaliła, czeka na wynik.
                     RehearsalChannel.SMS -> gateway.sendTransactionalSms(
-                        studioId.value, RehearsalFixture.CUSTOMER_PHONE, item.stamp + item.body
+                        studioId.value, RehearsalFixture.CUSTOMER_PHONE, item.stamp + item.body,
+                        delivery = DeliveryPolicy.IMMEDIATE
                     ).let { RehearsalDelivery(it.success, it.externalMessageId, it.errorMessage) }
                     RehearsalChannel.EMAIL -> gateway.sendTransactionalEmail(
-                        studioId.value, RehearsalFixture.CUSTOMER_EMAIL, item.stamp + item.subject.orEmpty(), item.body
+                        studioId.value, RehearsalFixture.CUSTOMER_EMAIL, item.stamp + item.subject.orEmpty(), item.body,
+                        delivery = DeliveryPolicy.IMMEDIATE
                     ).let { RehearsalDelivery(it.success, it.messageId, it.errorMessage) }
                 }
             } catch (e: InsufficientSmsCreditsException) {

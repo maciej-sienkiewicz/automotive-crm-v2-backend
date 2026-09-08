@@ -15,6 +15,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionEntity
 import pl.detailing.crm.communication.CommunicationLogService
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
@@ -388,7 +389,9 @@ class RequestUpsellServicesHandler(
     /** @return Triple(smsSent, externalMessageId, errorMessage) */
     private fun sendConsentSms(studioId: StudioId, phone: String, message: String): Triple<Boolean, String?, String?> =
         try {
-            val result = gateway.sendTransactionalSms(studioId.value, phone, message)
+            // IMMEDIATE: klient ma zaakceptować dodatkowe usługi, zanim auto wróci na stanowisko —
+            // pytanie odłożone na 12:00 przyszłoby po fakcie.
+            val result = gateway.sendTransactionalSms(studioId.value, phone, message, delivery = DeliveryPolicy.IMMEDIATE)
             Triple(result.success, result.externalMessageId, result.errorMessage)
         } catch (e: InsufficientSmsCreditsException) {
             logger.warn("Upsell consent SMS blocked — no credits")

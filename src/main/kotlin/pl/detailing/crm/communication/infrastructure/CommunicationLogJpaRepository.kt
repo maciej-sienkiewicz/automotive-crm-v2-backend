@@ -12,6 +12,28 @@ import java.util.UUID
 @Repository
 interface CommunicationLogJpaRepository : JpaRepository<CommunicationLogEntity, UUID> {
 
+    /** Wpisy założone przy odłożeniu wiadomości do kolejki wysyłkowej (zwykle jeden). */
+    fun findAllByQueuedMessageId(queuedMessageId: UUID): List<CommunicationLogEntity>
+
+    /**
+     * Domknięcie wpisu QUEUED, gdy dispatcher kolejki faktycznie spróbował wysłać.
+     * Encja jest niemutowalna z założenia (wpis to fakt), więc jedyna dozwolona zmiana —
+     * z „czeka" na „wyszło / nie wyszło" — idzie jednym UPDATE-em, bez kopiowania wiersza.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE CommunicationLogEntity c
+        SET c.status = :status, c.errorMessage = :errorMessage, c.sentAt = :sentAt
+        WHERE c.queuedMessageId = :queuedMessageId AND c.status = :from
+    """)
+    fun resolveQueued(
+        @Param("queuedMessageId") queuedMessageId: UUID,
+        @Param("from") from: CommunicationStatus,
+        @Param("status") status: CommunicationStatus,
+        @Param("errorMessage") errorMessage: String?,
+        @Param("sentAt") sentAt: java.time.Instant
+    ): Int
+
     /**
      * All communication entries for a specific visit, ordered newest-first.
      * Used by the visit detail view.

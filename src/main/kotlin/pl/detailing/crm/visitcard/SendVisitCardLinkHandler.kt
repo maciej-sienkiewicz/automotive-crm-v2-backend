@@ -169,6 +169,7 @@ class SendVisitCardLinkHandler(
                     bodyContent = body,
                     success = result.success,
                     errorMessage = result.errorMessage,
+                    queuedMessageId = result.queuedMessageId,
                     initiatedBy = command.initiatedBy
                 )
             )
@@ -193,6 +194,7 @@ class SendVisitCardLinkHandler(
                         bodyContent = message,
                         success = result.success,
                         errorMessage = result.errorMessage,
+                        queuedMessageId = result.queuedMessageId,
                         initiatedBy = command.initiatedBy
                     )
                 )

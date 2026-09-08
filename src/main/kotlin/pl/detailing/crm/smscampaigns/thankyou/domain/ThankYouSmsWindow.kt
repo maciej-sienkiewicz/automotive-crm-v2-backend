@@ -1,7 +1,8 @@
 package pl.detailing.crm.smscampaigns.thankyou.domain
 
+import org.springframework.stereotype.Component
+import pl.detailing.crm.communication.window.SendWindow
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
@@ -13,47 +14,26 @@ import java.time.temporal.ChronoUnit
  * przez to „dziękujemy za wizytę" o 20:50, czyli o porze, o której nikt nie chce dostać
  * wiadomości od warsztatu.
  *
- * Okno [OPENS_AT]–[CLOSES_AT] jest granicą twardą: wysyłka nigdy nie wypada poza nim,
- * niezależnie od tego, co przyszło z formularza. Poza oknem przesuwamy na najbliższą
- * dozwoloną godzinę, czyli dziś w południe (jeśli jest jeszcze przed) albo jutro
- * w południe (jeśli jest już po).
+ * Granice godzin nie są już własnością podziękowań: to ogólne okno komunikacji z klientem
+ * ([SendWindow], domyślnie 12:00–18:00), które bramka wysyłkowa egzekwuje dla każdej
+ * wiadomości. Tu zostaje to, co jest specyficzne dla podziękowania — zapas po wydaniu
+ * pojazdu i rozstrzyganie propozycji z formularza — a termin liczony w tej klasie zawsze
+ * mieści się w oknie, więc dispatcher podziękowań nigdy nie trafia do kolejki bramki.
  *
- * Godziny są lokalne dla studia ([ZONE]) — klient czyta SMS zegarkiem, nie w UTC.
+ * Godziny są lokalne dla studia ([zone]) — klient czyta SMS zegarkiem, nie w UTC.
  */
-object ThankYouSmsWindow {
+@Component
+class ThankYouSmsWindow(private val window: SendWindow) {
 
-    val ZONE: ZoneId = ZoneId.of("Europe/Warsaw")
+    val zone: ZoneId get() = window.zone
 
-    /** Pierwsza dozwolona godzina wysyłki (włącznie). */
-    val OPENS_AT: LocalTime = LocalTime.of(12, 0)
-
-    /** Ostatnia dozwolona godzina wysyłki (włącznie). */
-    val CLOSES_AT: LocalTime = LocalTime.of(18, 0)
-
-    /**
-     * Zapas między wydaniem pojazdu a wysyłką. Klient ma zdążyć odjechać spod bramy,
-     * zanim dostanie podziękowanie.
-     */
-    const val LEAD_TIME_MINUTES: Long = 15
-
-    fun contains(instant: Instant): Boolean {
-        val time = instant.atZone(ZONE).toLocalTime()
-        return !time.isBefore(OPENS_AT) && !time.isAfter(CLOSES_AT)
-    }
+    fun contains(instant: Instant): Boolean = window.contains(instant)
 
     /**
      * Ten sam moment, jeśli mieści się w oknie; w przeciwnym razie najbliższe otwarcie
-     * okna — dziś albo jutro w [OPENS_AT].
+     * okna — dziś albo jutro.
      */
-    fun nextSlotFrom(instant: Instant): Instant {
-        val local = instant.atZone(ZONE)
-        val time = local.toLocalTime()
-        return when {
-            time.isBefore(OPENS_AT) -> local.with(OPENS_AT)
-            time.isAfter(CLOSES_AT) -> local.plusDays(1).with(OPENS_AT)
-            else -> local
-        }.toInstant()
-    }
+    fun nextSlotFrom(instant: Instant): Instant = window.nextSlotFrom(instant)
 
     /** Propozycja pokazywana użytkownikowi: „teraz + 15 minut", dociągnięta do okna. */
     fun defaultFor(now: Instant): Instant =
@@ -69,5 +49,13 @@ object ThankYouSmsWindow {
     fun resolveSendAt(requested: Instant?, now: Instant): Instant {
         val candidate = requested?.takeIf { it.isAfter(now) } ?: return defaultFor(now)
         return nextSlotFrom(candidate.truncatedTo(ChronoUnit.MINUTES))
+    }
+
+    companion object {
+        /**
+         * Zapas między wydaniem pojazdu a wysyłką. Klient ma zdążyć odjechać spod bramy,
+         * zanim dostanie podziękowanie.
+         */
+        const val LEAD_TIME_MINUTES: Long = 15
     }
 }
