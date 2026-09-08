@@ -12,6 +12,8 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
+import pl.detailing.crm.employee.leave.domain.LeaveType
+import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.StudioId
@@ -40,6 +42,9 @@ import java.util.UUID
  * szare pola (#EDEEEE), ten sam układ „belka + pole" i ta sama typografia —
  * Liberation Sans, czyli font, którym backend wypełnia pola protokołów.
  *
+ * Dzień urlopu dostaje napis zamiast godzin (patrz [leaveLabel]): pusta kratka na
+ * podpisywanym dokumencie znaczyłaby „nieobecny bez powodu", a urlop jest w systemie.
+ *
  * W komórkach stoją godziny z kart czasu pracy pracowników — to samo źródło, które
  * widzi moduł Czasu pracy. Dzień bez wpisu zostaje pusty (nieobecność albo dzień
  * jeszcze nieuzupełniony), a ostatni wiersz sumuje miesiąc per pracownik: bez sumy
@@ -53,7 +58,8 @@ class GenerateAttendanceSheetHandler(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val documentStorageService: DocumentStorageService,
     private val workTimeEntryRepository: WorkTimeEntryRepository,
-    private val workTimePeriodRepository: WorkTimePeriodRepository
+    private val workTimePeriodRepository: WorkTimePeriodRepository,
+    private val employeeLeaveRepository: EmployeeLeaveRepository
 ) {
     companion object {
         /** Tyle kolumn mieści się na stronie, żeby liczby dało się przeczytać. */
@@ -130,13 +136,30 @@ class GenerateAttendanceSheetHandler(
         // Czasu pracy — arkusz jest ich wydrukiem, a nie osobnym źródłem prawdy.
         val from = command.period.atDay(1)
         val to = command.period.atEndOfMonth()
+
+        // Urlopy nakładające się na miesiąc, jednym zapytaniem dla całego studia; urlop
+        // zaczęty w poprzednim miesiącu i tak zostaje przycięty do dni tego arkusza.
+        val leavesByEmployee = employeeLeaveRepository
+            .findOverlappingRange(command.studioId.value, from, to)
+            .groupBy { it.employeeId }
+
         val columns = employees.map { employee ->
             val userId = employee.userId!!  // hasWorkTimeModule() przepuszcza tylko konta z rolą
+            val leaveByDay = mutableMapOf<LocalDate, LeaveType>()
+            leavesByEmployee[employee.id].orEmpty().forEach { leave ->
+                var day = maxOf(leave.startDate, from)
+                val last = minOf(leave.endDate, to)
+                while (!day.isAfter(last)) {
+                    leaveByDay[day] = leave.leaveType
+                    day = day.plusDays(1)
+                }
+            }
             EmployeeColumn(
                 name = "${employee.firstName} ${employee.lastName}",
                 minutesByDay = workTimeEntryRepository
                     .findByUserIdAndStudioIdAndDateBetween(userId, command.studioId.value, from, to)
                     .associate { it.date to it.minutes },
+                leaveByDay = leaveByDay,
                 status = workTimePeriodRepository
                     .findByUserIdAndStudioIdAndPeriod(userId, command.studioId.value, command.period.toString())
                     ?.status
@@ -336,14 +359,23 @@ class GenerateAttendanceSheetHandler(
             drawText(cs, label, if (isWeekend) bold else regular, 8f, left + 6f, textY, INK)
 
             // Godziny z karty czasu pracy. Dzień bez wpisu zostaje pusty — zero
-            // wpisane w każdą kratkę zamieniłoby nieobecność w twierdzenie.
+            // wpisane w każdą kratkę zamieniłoby nieobecność w twierdzenie. Dzień urlopu
+            // dostaje napis zamiast godzin, także wtedy, gdy ktoś wpisał na niego godziny:
+            // urlop jest faktem zapisanym w systemie, a taki wpis to konflikt do wyjaśnienia,
+            // nie coś, co wolno wydrukować pod podpis jako dzień pracy.
             columns.forEachIndexed { index, column ->
-                val minutes = column.minutesByDay[date] ?: return@forEachIndexed
-                val text = formatMinutes(minutes)
+                val leave = column.leaveByDay[date]?.takeUnless { isWeekend }
+                val minutes = column.minutesByDay[date]
+                val text = when {
+                    leave != null -> leaveLabel(leave)
+                    minutes != null -> formatMinutes(minutes)
+                    else -> return@forEachIndexed
+                }
+                val font = if (leave != null) bold else regular
                 val x = left + dayColWidth + index * employeeColWidth
                 drawText(
-                    cs, text, regular, 8f,
-                    x + centeringOffset(text, regular, 8f, employeeColWidth), textY,
+                    cs, text, font, 8f,
+                    x + centeringOffset(text, font, 8f, employeeColWidth), textY,
                     INK, employeeColWidth - 4f
                 )
             }
@@ -470,6 +502,16 @@ class GenerateAttendanceSheetHandler(
      * Nagłówek kolumny łamie się na imię i nazwisko, bo kolumna jest wąska —
      * ucięte nazwisko czyni kolumnę bezużyteczną przy podpisywaniu.
      */
+    /**
+     * Napis w kratce dnia wolnego. Zwolnienie lekarskie nie jest urlopem — na dokumencie
+     * pod podpis ta różnica ma znaczenie (inny płatnik, inne prawo do dnia wolnego).
+     * Weekend nie dostaje napisu: arkusz traktuje go jako dzień wolny sam z siebie.
+     */
+    private fun leaveLabel(type: LeaveType): String = when (type) {
+        LeaveType.SICK -> "L4"
+        LeaveType.ANNUAL, LeaveType.UNPAID, LeaveType.SPECIAL, LeaveType.PARENTAL, LeaveType.CARE -> "URLOP"
+    }
+
     private fun describeStatus(status: PeriodStatus?): String = when (status) {
         PeriodStatus.APPROVED -> "zatwierdzona"
         PeriodStatus.SUBMITTED -> "złożona, niezatwierdzona"
@@ -495,6 +537,8 @@ class GenerateAttendanceSheetHandler(
 private data class EmployeeColumn(
     val name: String,
     val minutesByDay: Map<LocalDate, Int>,
+    /** Dni miesiąca objęte urlopem lub zwolnieniem — z modułu urlopów, nie z karty czasu pracy. */
+    val leaveByDay: Map<LocalDate, LeaveType>,
     val status: PeriodStatus?
 ) {
     val totalMinutes: Int get() = minutesByDay.values.sum()
