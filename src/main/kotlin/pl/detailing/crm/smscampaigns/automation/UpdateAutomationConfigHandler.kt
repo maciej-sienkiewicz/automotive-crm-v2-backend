@@ -3,6 +3,7 @@ package pl.detailing.crm.smscampaigns.automation
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationRule
@@ -43,6 +44,10 @@ class UpdateAutomationConfigHandler(
 ) {
     @Transactional
     fun handle(command: UpdateAutomationConfigCommand): SmsAutomationConfig {
+        validateOffset("przed wizytą", command.preVisit)
+        validateOffset("po wizycie", command.postVisit)
+        validateOffset("przypomnienia po usłudze", command.delayedReminder)
+
         val config = SmsAutomationConfig(
             studioId = command.studioId,
             preVisit = SmsAutomationRule(
@@ -90,5 +95,17 @@ class UpdateAutomationConfigHandler(
             )
         )
         return configRepository.save(config)
+    }
+
+    /**
+     * Offset liczy się od zdarzenia i musi być dodatni. Zero albo wartość ujemna dla reguły
+     * „przed wizytą" oznaczałyby przypomnienie wysłane w trakcie albo po wizycie — automat
+     * ma na to osobną blokadę, ale zła konfiguracja ma nie przejść już tutaj. Reguła
+     * wyłączona nie jest sprawdzana: studio może mieć w niej cokolwiek, dopóki jej nie włączy.
+     */
+    private fun validateOffset(label: String, rule: UpdateAutomationRuleCommand) {
+        if (rule.enabled && rule.offsetMinutes < 1) {
+            throw ValidationException("Wyprzedzenie reguły $label musi wynosić co najmniej 1 minutę")
+        }
     }
 }

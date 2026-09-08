@@ -78,6 +78,40 @@ class SendWindowTest {
         assertFalse(window.contains(utcEvening))
     }
 
+    // ── Zmiana czasu ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `w noc zmiany czasu na zimowy jutrzejsze poludnie to nadal 12 00 lokalnie`() {
+        // 24 X 2026, 22:00 CEST → następnego dnia zegary cofają się o 2:00→1:00.
+        val saturdayNight = LocalDateTime.of(2026, 10, 24, 22, 0).atZone(window.zone).toInstant()
+        val slot = window.nextSlotFrom(saturdayNight)
+        assertEquals(LocalDateTime.of(2026, 10, 25, 12, 0), localOf(slot))
+        assertTrue(window.contains(slot))
+    }
+
+    @Test
+    fun `w noc zmiany czasu na letni jutrzejsze poludnie to nadal 12 00 lokalnie`() {
+        // 28 III 2026, 23:30 CET → następnego dnia zegary skaczą 2:00→3:00.
+        val saturdayNight = LocalDateTime.of(2026, 3, 28, 23, 30).atZone(window.zone).toInstant()
+        val slot = window.nextSlotFrom(saturdayNight)
+        assertEquals(LocalDateTime.of(2026, 3, 29, 12, 0), localOf(slot))
+        assertTrue(window.contains(slot))
+    }
+
+    @Test
+    fun `nextSlotFrom obcina sekundy przy przesuwaniu, a w oknie zostawia moment jak jest`() {
+        assertEquals(localOf(at(12, 0)), localOf(window.nextSlotFrom(at(8, 30, second = 45))))
+        assertEquals(at(14, 7, second = 20), window.nextSlotFrom(at(14, 7, second = 20)))
+    }
+
+    @Test
+    fun `okno jednominutowe tez dziala`() {
+        val tiny = SendWindow(window.zone, LocalTime.of(12, 0), LocalTime.of(12, 0))
+        assertTrue(tiny.contains(at(12, 0, second = 59)))
+        assertFalse(tiny.contains(at(12, 1)))
+        assertEquals(localOf(at(12, 0, day = 16)), localOf(tiny.nextSlotFrom(at(12, 1))))
+    }
+
     // ── enabled = false ──────────────────────────────────────────────────────
 
     @Test
