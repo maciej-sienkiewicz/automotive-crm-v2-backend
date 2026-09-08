@@ -22,6 +22,7 @@ import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSms
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsStatus
+import pl.detailing.crm.communication.template.AppointmentAllDayLookup
 import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.smscampaigns.thankyou.domain.ThankYouSmsWindow
 import pl.detailing.crm.visit.infrastructure.VisitEntity
@@ -47,6 +48,7 @@ class ScheduleThankYouSmsHandlerTest {
     private val templateProcessor: SmsTemplateProcessor = mockk()
     private val repository: ScheduledThankYouSmsRepository = mockk()
     private val window = ThankYouSmsWindow(SendWindow.DEFAULT)
+    private val allDayLookup: AppointmentAllDayLookup = mockk { every { isAllDay(any(), any()) } returns false }
 
     private val handler = ScheduleThankYouSmsHandler(
         visitRepository,
@@ -54,7 +56,8 @@ class ScheduleThankYouSmsHandlerTest {
         configRepository,
         templateProcessor,
         repository,
-        window
+        window,
+        allDayLookup
     )
 
     private val studioId = StudioId(UUID.randomUUID())

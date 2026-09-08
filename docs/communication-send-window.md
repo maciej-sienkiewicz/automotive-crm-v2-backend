@@ -93,3 +93,20 @@ Tabele `outbound_message_queue`, `outbound_message_attachment` i kolumna
 `communication_log.status` wymaga zdjęcia starego CHECK-a — robi to
 `EnumCheckConstraintDropper` przy starcie, migracja ma to samo dla środowisk z wyłączonym
 dropperem.
+
+## Rezerwacje całodniowe i `{{godzina}}`
+
+Rezerwacja całodniowa zaczyna się o północy, więc `{{godzina}}` renderowało „00:00".
+Od teraz `MessageTemplateRenderer.scheduleValues(moment, allDay = true)` zostawia
+`{{godzina}}` pustą, a renderer wycina razem z nią zwrot, który ją zapowiadał
+(„o godz.", „o godzinie", „godz.", „o", także z przecinkiem przed):
+
+| Szablon | Wizyta o 14:30 | Rezerwacja całodniowa |
+|---|---|---|
+| `dnia {{data}} o godz. {{godzina}}.` | `dnia 09.09.2026 o godz. 14:30.` | `dnia 09.09.2026.` |
+| `{{data}}, godz. {{godzina}}` | `09.09.2026, godz. 14:30` | `09.09.2026` |
+
+Flaga pochodzi z rezerwacji (`AppointmentEntity.isAllDay`). Wiadomości renderowane
+z wizyty (e-mail powitalny, gotowość do odbioru, karta wizyty, podziękowanie, automat
+POST_VISIT / DELAYED_REMINDER) czytają ją przez `AppointmentAllDayLookup` albo przez
+JOIN na rezerwację w zapytaniu automatu. Studio nie musi zmieniać szablonów.

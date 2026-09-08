@@ -3,6 +3,7 @@ package pl.detailing.crm.smscampaigns.thankyou
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.template.AppointmentAllDayLookup
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -52,7 +53,8 @@ class ScheduleThankYouSmsHandler(
     private val configRepository: SmsAutomationConfigRepository,
     private val templateProcessor: SmsTemplateProcessor,
     private val repository: ScheduledThankYouSmsRepository,
-    private val window: ThankYouSmsWindow
+    private val window: ThankYouSmsWindow,
+    private val allDayLookup: AppointmentAllDayLookup
 ) {
     private val logger = LoggerFactory.getLogger(ScheduleThankYouSmsHandler::class.java)
 
@@ -110,7 +112,8 @@ class ScheduleThankYouSmsHandler(
             context = SmsTemplateContext(
                 firstName = customer.firstName ?: "",
                 lastName = customer.lastName ?: "",
-                appointmentStart = visit.scheduledDate
+                appointmentStart = visit.scheduledDate,
+                allDay = allDayLookup.isAllDay(visit.appointmentId, command.studioId.value)
             )
         )
 
