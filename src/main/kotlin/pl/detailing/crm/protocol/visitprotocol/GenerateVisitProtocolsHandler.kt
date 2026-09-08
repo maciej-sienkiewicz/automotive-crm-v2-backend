@@ -30,7 +30,8 @@ class GenerateVisitProtocolsHandler(
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
-    private val documentService: DocumentService
+    private val documentService: DocumentService,
+    private val documentRegistrar: VisitProtocolDocumentRegistrar
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -250,31 +251,6 @@ class GenerateVisitProtocolsHandler(
             )
         }
 
-    /** Nazwa dokumentu w wizycie — patrz [ProtocolDocumentNaming]. */
-    private fun protocolDocumentName(
-        visitProtocol: VisitProtocol,
-        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
-        crmData: Map<CrmDataKey, String>,
-        visitNumber: String
-    ): String {
-        val stageLabel = when (visitProtocol.stage) {
-            ProtocolStage.CHECK_IN -> "przyjecie"
-            ProtocolStage.CHECK_OUT -> "wydanie"
-        }
-        val name = ProtocolDocumentNaming.build(
-            LocalDate.now(),
-            visitEntity.brandSnapshot,
-            visitEntity.modelSnapshot,
-            ProtocolDocumentNaming.surnameOf(crmData[CrmDataKey.CUSTOMER_FULL_NAME]),
-            stageLabel
-        )
-
-        // Kolejne wersje tego samego protokołu muszą się różnić, inaczej w liście
-        // dokumentów stoją dwa identyczne wiersze.
-        val suffix = if (visitProtocol.version > 1) "_v${visitProtocol.version}" else ""
-        return name.ifBlank { "protokol_${ProtocolDocumentNaming.slug(visitNumber)}_$stageLabel" } + suffix
-    }
-
     private suspend fun fillProtocolPdf(
         visitProtocol: VisitProtocol,
         studioId: StudioId,
@@ -340,27 +316,11 @@ class GenerateVisitProtocolsHandler(
                 visitProtocol
             }
 
-            val fileExtension = template.fileFormat.fileExtension
-            if (isFirstFill) try {
-                val visitEntity = visitRepository.findById(visitProtocol.visitId.value).orElse(null)
-                if (visitEntity != null) {
-                    val documentName = protocolDocumentName(visitProtocol, visitEntity, crmData, visitNumber)
-                    documentService.registerDocument(
-                        visitId = visitProtocol.visitId.value,
-                        customerId = visitEntity.customerId,
-                        documentType = DocumentType.PROTOCOL,
-                        name = documentName,
-                        s3Key = filledS3Key,
-                        fileName = "$documentName.$fileExtension",
-                        createdBy = visitEntity.createdBy,
-                        createdByName = "System",
-                        category = "protocol"
-                    )
-                } else {
-                    logger.warn("Could not register protocol as document — visit not found: ${visitProtocol.visitId}")
-                }
-            } catch (e: Exception) {
-                logger.error("Failed to register protocol as document: ${e.message}", e)
+            // Protokół wydania staje się dokumentem wizyty dopiero po podpisaniu —
+            // patrz [VisitProtocolDocumentRegistrar]. Samo otwarcie ekranu „Wydaj pojazd"
+            // nie ma prawa zostawić w wizycie pliku, którego nikt nie zamówił.
+            if (isFirstFill && VisitProtocolDocumentRegistrar.becomesDocumentOnGeneration(visitProtocol.stage)) {
+                documentRegistrar.register(updated, filledS3Key, template.fileFormat.fileExtension)
             }
 
             updated
