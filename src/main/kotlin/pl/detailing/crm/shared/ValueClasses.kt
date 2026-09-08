@@ -961,6 +961,7 @@ enum class CommunicationMessageType(val label: String) {
 
     // Visit Card upselling
     VISIT_CARD_UPSELL_SMS("SMS potwierdzenia dodania sugerowanych usług"),
+    VISIT_CARD_UPSELL_SUGGESTION_SMS("SMS o propozycji dodatkowych usług"),
 
     // Remote document signing
     SIGNATURE_LINK_SMS("SMS z linkiem do podpisu dokumentu"),

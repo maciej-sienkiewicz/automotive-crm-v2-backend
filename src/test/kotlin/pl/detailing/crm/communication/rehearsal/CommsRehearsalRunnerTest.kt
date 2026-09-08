@@ -57,6 +57,7 @@ class CommsRehearsalRunnerTest {
             visitCardLink = notif(MessageTemplateKind.SMS_VISIT_CARD_LINK),
             reservationCardLink = notif(MessageTemplateKind.SMS_RESERVATION_CARD_LINK),
             upsellConsent = notif(MessageTemplateKind.SMS_UPSELL_CONSENT),
+            upsellSuggestion = notif(MessageTemplateKind.SMS_UPSELL_SUGGESTION),
             signatureRequest = notif(MessageTemplateKind.SMS_SIGNATURE_REQUEST)
         )
     }

@@ -115,6 +115,15 @@ class SmsAutomationConfigEntity(
     @Column(name = "upsell_consent_message_template", nullable = false, columnDefinition = "TEXT")
     var upsellConsentMessageTemplate: String = "",
 
+    // ── UPSELL SUGGESTION RULE ──────────────────────────────────────────────────
+    // Sent when an employee adds a suggestion on the Visit Card and asks to notify the customer.
+
+    @Column(name = "upsell_suggestion_enabled", nullable = false)
+    var upsellSuggestionEnabled: Boolean = false,
+
+    @Column(name = "upsell_suggestion_message_template", nullable = false, columnDefinition = "TEXT")
+    var upsellSuggestionMessageTemplate: String = "",
+
     // ── SIGNATURE REQUEST RULE ──────────────────────────────────────────────────
     // Sent with the tokenized link to a document awaiting the customer's signature.
 
@@ -189,6 +198,10 @@ class SmsAutomationConfigEntity(
             enabled = upsellConsentEnabled,
             messageTemplate = upsellConsentMessageTemplate
         ),
+        upsellSuggestion = SmsNotificationRule(
+            enabled = upsellSuggestionEnabled,
+            messageTemplate = upsellSuggestionMessageTemplate
+        ),
         signatureRequest = SmsNotificationRule(
             enabled = signatureRequestEnabled,
             messageTemplate = signatureRequestMessageTemplate
@@ -221,6 +234,8 @@ class SmsAutomationConfigEntity(
                 reservationCardLinkMessageTemplate = config.reservationCardLink.messageTemplate,
                 upsellConsentEnabled = config.upsellConsent.enabled,
                 upsellConsentMessageTemplate = config.upsellConsent.messageTemplate,
+                upsellSuggestionEnabled = config.upsellSuggestion.enabled,
+                upsellSuggestionMessageTemplate = config.upsellSuggestion.messageTemplate,
                 signatureRequestEnabled = config.signatureRequest.enabled,
                 signatureRequestMessageTemplate = config.signatureRequest.messageTemplate,
                 updatedAt = Instant.now()

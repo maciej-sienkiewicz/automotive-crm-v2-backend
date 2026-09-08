@@ -40,6 +40,7 @@ data class SmsAutomationConfigDto(
     val visitCardLink: SmsNotificationRuleDto,
     val reservationCardLink: SmsNotificationRuleDto,
     val upsellConsent: SmsNotificationRuleDto,
+    val upsellSuggestion: SmsNotificationRuleDto,
     val signatureRequest: SmsNotificationRuleDto
 )
 
@@ -59,6 +60,7 @@ private fun SmsAutomationConfig.toDto() = SmsAutomationConfigDto(
     visitCardLink = SmsNotificationRuleDto(visitCardLink.enabled, visitCardLink.messageTemplate),
     reservationCardLink = SmsNotificationRuleDto(reservationCardLink.enabled, reservationCardLink.messageTemplate),
     upsellConsent = SmsNotificationRuleDto(upsellConsent.enabled, upsellConsent.messageTemplate),
+    upsellSuggestion = SmsNotificationRuleDto(upsellSuggestion.enabled, upsellSuggestion.messageTemplate),
     signatureRequest = SmsNotificationRuleDto(signatureRequest.enabled, signatureRequest.messageTemplate)
 )
 
@@ -111,6 +113,7 @@ class SmsAutomationController(
             visitCardLink = request.visitCardLink.toCommand(),
             reservationCardLink = request.reservationCardLink.toCommand(),
             upsellConsent = request.upsellConsent.toCommand(),
+            upsellSuggestion = request.upsellSuggestion.toCommand(),
             signatureRequest = request.signatureRequest.toCommand()
         )
 
@@ -152,6 +155,7 @@ class SmsAutomationController(
             request.reservationCardLink.messageTemplate
         )
         check(MessageTemplateKind.SMS_UPSELL_CONSENT, "Zgoda na dodanie usług", request.upsellConsent.messageTemplate)
+        check(MessageTemplateKind.SMS_UPSELL_SUGGESTION, "Propozycja dodatkowych usług", request.upsellSuggestion.messageTemplate)
         check(
             MessageTemplateKind.SMS_SIGNATURE_REQUEST,
             "Link do podpisu dokumentu",

@@ -68,6 +68,7 @@ class UpdateAutomationConfigHandlerTest {
         visitCardLink = notification,
         reservationCardLink = notification,
         upsellConsent = notification,
+        upsellSuggestion = notification,
         signatureRequest = notification
     )
 }
