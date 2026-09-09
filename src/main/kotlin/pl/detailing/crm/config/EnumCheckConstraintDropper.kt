@@ -48,8 +48,16 @@ import org.springframework.stereotype.Component
  *
  * ## Co jest, a co nie jest kasowane
  *
- * Wyłącznie CHECK-i, których treść ma postać `... = ANY (ARRAY['A', 'B', ...])` — tak
- * Postgres normalizuje `IN (lista stałych)`. Ograniczenia biznesowe (`minutes >= 0`,
+ * Wyłącznie CHECK-i, których treść jest znormalizowaną listą stałych enuma. Uwaga na
+ * postać, jaką faktycznie zwraca `pg_get_constraintdef` dla kolumny typu varchar — tablica
+ * jest rzutowana na `text[]`, więc pojawia się PODWÓJNY nawias:
+ *
+ *     ((status)::text = ANY ((ARRAY['SENT'::character varying, ...])::text[]))
+ *
+ * Dlatego wzorzec to `'%= ANY (%ARRAY[%'` (dowolne nawiasy między `= ANY (` a `ARRAY[`),
+ * a nie `'%= ANY (ARRAY[%'`. Ta druga, węższa wersja NIE łapała formy z rzutowaniem i przez
+ * to nie usuwała niczego — CHECK-i zostawały w schemacie mimo tego komponentu, V101 i V117
+ * (patrz V120__drop_stuck_enum_check_constraints.sql). Ograniczenia biznesowe (`minutes >= 0`,
  * `end_date >= start_date`) nie mają tej postaci i zostają nietknięte. Każde usunięte
  * ograniczenie ląduje w logu z nazwą, więc decyzja jest odtwarzalna.
  *
@@ -111,7 +119,7 @@ class EnumCheckConstraintDropper(
             JOIN pg_namespace n ON n.oid = c.connamespace
             WHERE c.contype = 'c'
               AND n.nspname = current_schema()
-              AND pg_get_constraintdef(c.oid) LIKE '%= ANY (ARRAY[%'
+              AND pg_get_constraintdef(c.oid) LIKE '%= ANY (%ARRAY[%'
             ORDER BY 1, 2
         """
     }
