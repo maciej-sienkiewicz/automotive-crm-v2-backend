@@ -50,6 +50,14 @@ class DefaultProtocolTemplateProvisioner(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
+        /**
+         * Szablon systemowy = zasiany przez system, więc z zarezerwowanym, pustym slotem
+         * na logo w nagłówku. Przyjęcie niesie `isDefault`, wydanie celowo nie (patrz
+         * [ensureDefaultCheckOutTemplate]) — wspólnym znakiem obu jest autor [SYSTEM_USER_ID].
+         */
+        fun isSystemTemplate(template: pl.detailing.crm.protocol.domain.ProtocolTemplate): Boolean =
+            template.isDefault || template.createdBy.value == SYSTEM_USER_ID
+
         const val DEFAULT_TEMPLATE_NAME = "Protokół przyjęcia pojazdu"
         const val DEFAULT_TEMPLATE_DESCRIPTION =
             "Systemowy szablon protokołu przyjęcia pojazdu. Przywracany automatycznie, " +

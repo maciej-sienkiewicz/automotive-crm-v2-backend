@@ -485,6 +485,20 @@ class PdfProcessingService(
      * Flattening makes the PDF immutable by merging form fields into the content stream.
      */
     /**
+     * Podgląd szablonu z logo: ten sam stempel co przy wypełnianiu, ale bez dotykania
+     * pól formularza — użytkownik ogląda w ustawieniach dokładnie ten układ, który
+     * dostanie klient, a pusty szablon zostaje pustym szablonem.
+     */
+    fun stampLogoForPreview(pdfBytes: ByteArray, logoPng: ByteArray): ByteArray =
+        Loader.loadPDF(pdfBytes).use { document ->
+            stampLogo(document, logoPng)
+            ByteArrayOutputStream().use { out ->
+                document.save(out)
+                out.toByteArray()
+            }
+        }
+
+    /**
      * Rysuje logo studia w zarezerwowanym slocie nagłówka pierwszej strony, przed
      * spłaszczeniem formularza — po nim logo jest zwykłą treścią strony i jedzie
      * z dokumentem przez podpis, pieczęć i wysyłkę bez żadnej dalszej obsługi.

@@ -48,6 +48,11 @@ data class ProtocolTemplateResponse(
     val name: String,
     val description: String?,
     val templateUrl: String?,
+    /**
+     * Podgląd przez backend — dla szablonów PDF: systemowy dostaje stempel logo studia
+     * (jeśli włączone), więc widać dokładnie to, co dostanie klient. Null dla HTML.
+     */
+    val previewUrl: String?,
     val fileFormat: String,
     val isDefault: Boolean,
     val verificationStatus: String,

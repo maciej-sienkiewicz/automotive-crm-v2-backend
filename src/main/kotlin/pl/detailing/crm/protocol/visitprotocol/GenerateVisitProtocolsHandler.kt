@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
+import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
@@ -154,7 +155,7 @@ class GenerateVisitProtocolsHandler(
             )
             // Logo tylko na zgodzie systemowej — to ona ma zarezerwowany, pusty slot w
             // nagłówku. Własny dokument studia niesie już jego markę tam, gdzie studio chciało.
-            val isSystemConsent = templateEntity.createdBy == DefaultMarketingConsentProvisioner.SYSTEM_USER_ID
+            val isSystemConsent = DefaultMarketingConsentProvisioner.isSystemTemplate(templateEntity)
             val logoPng = if (isSystemConsent) documentLogo(studioId)?.printPng else null
             pdfProcessingService.fillPdfForm(templateEntity.s3Key, companyFieldValues(settings), target, logoPng)
             target
@@ -301,7 +302,11 @@ class GenerateVisitProtocolsHandler(
                     // Stempel tylko w szablonie systemowym: ma zarezerwowany slot w nagłówku.
                     // Własny PDF studia ma logo tam, gdzie studio je narysowało — stemplowanie
                     // w cudzy układ dałoby dwa loga albo logo na tekście.
-                    val logoPng = if (template.isDefault) documentLogo(studioId)?.printPng else null
+                    val logoPng = if (DefaultProtocolTemplateProvisioner.isSystemTemplate(template)) {
+                        documentLogo(studioId)?.printPng
+                    } else {
+                        null
+                    }
                     pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key, logoPng)
                     filledPdfS3Key
                 }

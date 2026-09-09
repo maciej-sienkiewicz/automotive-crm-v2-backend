@@ -57,6 +57,7 @@ class GetConsentsHandler(
                     isActive = t.isActive,
                     requiresResign = t.requiresResign,
                     pdfUrl = s3StorageService.generateDownloadUrl(t.s3Key),
+                    previewUrl = "/api/v1/consents/${def.id}/versions/${t.id}/preview",
                     createdAt = t.createdAt
                 )
             },
@@ -67,6 +68,7 @@ class GetConsentsHandler(
                     isActive = t.isActive,
                     requiresResign = t.requiresResign,
                     pdfUrl = s3StorageService.generateDownloadUrl(t.s3Key),
+                    previewUrl = "/api/v1/consents/${def.id}/versions/${t.id}/preview",
                     createdAt = t.createdAt
                 )
             },
@@ -96,5 +98,7 @@ data class ConsentVersionResponse(
     val isActive: Boolean,
     val requiresResign: Boolean,
     val pdfUrl: String,
+    /** Podgląd przez backend: wersja systemowa dostaje stempel logo studia (jeśli włączone). */
+    val previewUrl: String? = null,
     val createdAt: Instant
 )
