@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import pl.detailing.crm.studio.logo.DocumentLogoPlacement
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
@@ -77,10 +78,15 @@ class PdfProcessingService(
      * @param outputS3Key S3 key where the filled PDF will be stored
      * @return The output S3 key
      */
+    /**
+     * @param logoPng studio logo (PNG, print variant) stamped into the reserved header
+     *        slot of page 1 — see [DocumentLogoPlacement]; null = no logo
+     */
     fun fillPdfForm(
         templateS3Key: String,
         fieldMappings: Map<String, String>,
-        outputS3Key: String
+        outputS3Key: String,
+        logoPng: ByteArray? = null
     ): String {
         // Download template from S3
         val downloadStart = System.currentTimeMillis()
@@ -89,7 +95,7 @@ class PdfProcessingService(
 
         // Fill the form
         val fillStart = System.currentTimeMillis()
-        val filledPdfBytes = fillForm(templateBytes, fieldMappings)
+        val filledPdfBytes = fillForm(templateBytes, fieldMappings, logoPng)
         logger.info("[PERF]     - PDF form filling (PDFBox): ${System.currentTimeMillis() - fillStart}ms (${fieldMappings.size} fields)")
 
         // Upload filled PDF to S3
@@ -151,10 +157,13 @@ class PdfProcessingService(
      * (upoważnienie dla operatora SMS), a gotowy plik trafia w inne miejsce niż
      * dokumenty wizyty. Pole podpisu zostaje interaktywne, tak jak w [fillPdfForm].
      */
-    fun fillFormInMemory(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray =
-        fillForm(pdfBytes, fieldMappings)
+    fun fillFormInMemory(
+        pdfBytes: ByteArray,
+        fieldMappings: Map<String, String>,
+        logoPng: ByteArray? = null
+    ): ByteArray = fillForm(pdfBytes, fieldMappings, logoPng)
 
-    private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>): ByteArray {
+    private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>, logoPng: ByteArray?): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
                 // Pass null fixup to skip AcroFormDefaultFixup, which would otherwise trigger
@@ -206,6 +215,8 @@ class PdfProcessingService(
                     }
                 }
                 logger.info("PDF form fill: $filledCount/${fieldMappings.size} fields set, $missedCount not found in AcroForm")
+
+                if (logoPng != null) stampLogo(document, logoPng)
 
                 // Flatten all fields into static page content so the PDF renders
                 // correctly in every viewer (including pdf.js canvas rendering on
@@ -473,6 +484,28 @@ class PdfProcessingService(
      *
      * Flattening makes the PDF immutable by merging form fields into the content stream.
      */
+    /**
+     * Rysuje logo studia w zarezerwowanym slocie nagłówka pierwszej strony, przed
+     * spłaszczeniem formularza — po nim logo jest zwykłą treścią strony i jedzie
+     * z dokumentem przez podpis, pieczęć i wysyłkę bez żadnej dalszej obsługi.
+     * Nieudany stempel nie może zablokować dokumentu: protokół bez logo to mniejsza
+     * szkoda niż wizyta bez protokołu.
+     */
+    private fun stampLogo(document: PDDocument, logoPng: ByteArray) {
+        if (document.numberOfPages == 0) return
+        try {
+            val page = document.getPage(0)
+            val image = PDImageXObject.createFromByteArray(document, logoPng, "studio-logo")
+            val box = DocumentLogoPlacement.fit(image.width, image.height, page.mediaBox.height)
+            PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
+                cs.drawImage(image, box.x, box.y, box.width, box.height)
+            }
+            logger.info("Studio logo stamped at x=${box.x} y=${box.y} ${box.width}x${box.height}pt")
+        } catch (e: Exception) {
+            logger.warn("Could not stamp studio logo onto the document: ${e.message}", e)
+        }
+    }
+
     private fun addSignatureAndFlatten(
         pdfBytes: ByteArray,
         signatureImageBytes: ByteArray,

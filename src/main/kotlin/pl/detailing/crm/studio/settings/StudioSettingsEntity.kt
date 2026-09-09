@@ -41,8 +41,25 @@ class StudioSettingsEntity(
     @Column(name = "bank_account", length = 40)
     var bankAccount: String? = null,
 
+    /**
+     * Wariant logo do aplikacji (menu boczne, ustawienia) — mały PNG. Ten klucz jest
+     * podpisywany i zwracany jako `logoUrl`. Dla logo wgranego przed wprowadzeniem
+     * wariantów wskazuje surowy plik użytkownika (patrz [pl.detailing.crm.studio.logo.CompanyLogoService]).
+     */
     @Column(name = "logo_s3_key", length = 500)
     var logoS3Key: String? = null,
+
+    /** Wariant logo do dokumentów: PNG w rozdzielczości do druku A4, stemplowany w PDF. */
+    @Column(name = "logo_print_s3_key", length = 500)
+    var logoPrintS3Key: String? = null,
+
+    /** Oczyszczony SVG (tylko gdy użytkownik wgrał wektor) — do szablonów HTML. */
+    @Column(name = "logo_vector_s3_key", length = 500)
+    var logoVectorS3Key: String? = null,
+
+    /** „Czy umieszczać logo na dokumentach?" — nagłówek systemowych protokołów i zgód. */
+    @Column(name = "logo_on_documents", nullable = false, columnDefinition = "boolean not null default true")
+    var logoOnDocuments: Boolean = true,
 
     @Column(name = "lead_stagnant_our_threshold_hours", nullable = false)
     var leadStagnantOurThresholdHours: Int = 48,

@@ -101,6 +101,13 @@ dependencies {
     // EXIF metadata (photo orientation normalization for damage photos)
     implementation("com.drewnoakes:metadata-extractor:2.19.0")
     implementation("net.coobird:thumbnailator:0.4.20")
+    // Logo studia: Batik rasteryzuje SVG (PDFBox nie osadza wektorów), TwelveMonkeys
+    // dokłada do ImageIO czysto-javowy dekoder WebP — obraz w alpine nie ma ImageMagicka.
+    // xml-apis niesie stare javax.xml.stream bez XMLOutputFactory.newFactory() i przykrywa
+    // JDK-owe (KSeF: Fa3XmlBuilder) — wykluczone, JDK 17 ma komplet tych API.
+    implementation("org.apache.xmlgraphics:batik-transcoder:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
+    implementation("org.apache.xmlgraphics:batik-codec:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
+    implementation("com.twelvemonkeys.imageio:imageio-webp:3.10.1")
 
     // jsoup – HTML e-mail denoising (quoted history + signature stripping before storage and LLM calls)
     implementation("org.jsoup:jsoup:1.17.2")

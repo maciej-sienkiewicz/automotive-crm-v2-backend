@@ -6,10 +6,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
+import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.protocol.domain.ProtocolTemplateFormat
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.studio.logo.CompanyLogoService
+import pl.detailing.crm.studio.logo.DocumentLogo
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.DocumentService
@@ -31,9 +34,21 @@ class GenerateVisitProtocolsHandler(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val visitRepository: VisitRepository,
     private val documentService: DocumentService,
-    private val documentRegistrar: VisitProtocolDocumentRegistrar
+    private val documentRegistrar: VisitProtocolDocumentRegistrar,
+    private val companyLogoService: CompanyLogoService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Logo studia do nagłówka dokumentu — `null`, gdy studio go nie ma, wyłączyło je na
+     * dokumentach albo nie dało się go odczytać. Brak logo nigdy nie blokuje dokumentu.
+     */
+    private fun documentLogo(studioId: StudioId): DocumentLogo? = try {
+        companyLogoService.loadDocumentLogo(studioId.value)
+    } catch (e: Exception) {
+        logger.warn("Could not load studio logo for documents (studio ${studioId.value}): ${e.message}")
+        null
+    }
 
     @Transactional
     suspend fun handle(command: GenerateVisitProtocolsCommand): GenerateVisitProtocolsResult =
@@ -137,7 +152,11 @@ class GenerateVisitProtocolsHandler(
             val target = s3StorageService.buildFilledConsentPdfS3Key(
                 studioId.value, visitProtocol.visitId.value, visitNumber, visitProtocol.id.value
             )
-            pdfProcessingService.fillPdfForm(templateEntity.s3Key, companyFieldValues(settings), target)
+            // Logo tylko na zgodzie systemowej — to ona ma zarezerwowany, pusty slot w
+            // nagłówku. Własny dokument studia niesie już jego markę tam, gdzie studio chciało.
+            val isSystemConsent = templateEntity.createdBy == DefaultMarketingConsentProvisioner.SYSTEM_USER_ID
+            val logoPng = if (isSystemConsent) documentLogo(studioId)?.printPng else null
+            pdfProcessingService.fillPdfForm(templateEntity.s3Key, companyFieldValues(settings), target, logoPng)
             target
         } catch (e: Exception) {
             logger.error(
@@ -279,7 +298,11 @@ class GenerateVisitProtocolsHandler(
                         studioId.value, visitProtocol.visitId.value, visitNumber,
                         visitProtocol.version, visitProtocol.id.value
                     )
-                    pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key)
+                    // Stempel tylko w szablonie systemowym: ma zarezerwowany slot w nagłówku.
+                    // Własny PDF studia ma logo tam, gdzie studio je narysowało — stemplowanie
+                    // w cudzy układ dałoby dwa loga albo logo na tekście.
+                    val logoPng = if (template.isDefault) documentLogo(studioId)?.printPng else null
+                    pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key, logoPng)
                     filledPdfS3Key
                 }
                 ProtocolTemplateFormat.HTML -> {
@@ -295,7 +318,12 @@ class GenerateVisitProtocolsHandler(
                         }
                         .map { it.pdfFieldName }
                         .toSet()
-                    val filledHtml = htmlProtocolFillService.fill(templateHtml, fieldValues, checkboxFields)
+                    // W HTML o miejscu na logo decyduje sam szablon (placeholder
+                    // data-field="companylogo") — bez niego wstawka jest pomijana.
+                    val logoMarkup = documentLogo(studioId)
+                        ?.let { mapOf(DocumentLogo.HTML_FIELD_NAME to it.toHtmlImg()) }
+                        ?: emptyMap()
+                    val filledHtml = htmlProtocolFillService.fill(templateHtml, fieldValues, checkboxFields, logoMarkup)
                     s3StorageService.uploadBytes(
                         filledHtmlS3Key, filledHtml.toByteArray(Charsets.UTF_8), "text/html"
                     )

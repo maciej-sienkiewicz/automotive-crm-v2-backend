@@ -123,11 +123,28 @@
   .checkbox { justify-content: center; }
 
   /* ============ Nagłówek: USŁUGODAWCA ============ */
-  /* Lewa strona nagłówka jest celowo pusta — trafi tu logo studia
-     (188.16 x 16.38pt, x=29.30pt od lewej krawędzi strony, top 24.23pt),
-     dokładnie tak jak w protokole przyjęcia. Do czasu wdrożenia loga per
-     studio żaden szablon systemowy nie może nieść cudzej marki. */
+  /* Lewa strona nagłówka to miejsce na logo studia — ten sam slot i mechanizm
+     co w protokole przyjęcia (patrz komentarz tam): backend wstawia <img> w
+     data-field="companylogo", szablon systemowy sam nie niesie żadnej marki. */
   .header { position: relative; height: 68.65pt; }
+  .company-logo {
+    position: absolute;
+    left: -0.94pt;
+    top: 14.42pt;
+    width: 188.16pt;
+    height: 36pt;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .company-logo img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    object-position: left center;
+  }
   .header .provider {
     position: absolute;
     right: 0;
@@ -252,6 +269,7 @@
 
   <!-- Logo + usługodawca -->
   <div class="header">
+    <div class="company-logo" data-field="companylogo"></div>
     <div class="provider">
       <div class="tab">USŁUGODAWCA</div>
       <div class="box" data-field="provider"></div>
