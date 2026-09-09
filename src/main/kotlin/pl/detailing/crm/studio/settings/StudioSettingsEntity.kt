@@ -57,6 +57,17 @@ class StudioSettingsEntity(
     @Column(name = "logo_vector_s3_key", length = 500)
     var logoVectorS3Key: String? = null,
 
+    /**
+     * Czy logo w menu potrzebuje jasnej podkładki (przezroczyste tło + ciemny tusz).
+     * DEFAULT TRUE = zachowanie sprzed analizy dla logo, których jeszcze nie przetworzono.
+     */
+    @Column(name = "logo_needs_light_plate", nullable = false, columnDefinition = "boolean not null default true")
+    var logoNeedsLightPlate: Boolean = true,
+
+    /** Szerokość / wysokość logo — front wybiera układ nagłówka menu, zanim obrazek się wczyta. */
+    @Column(name = "logo_aspect_ratio")
+    var logoAspectRatio: Double? = null,
+
     /** „Czy umieszczać logo na dokumentach?" — nagłówek systemowych protokołów i zgód. */
     @Column(name = "logo_on_documents", nullable = false, columnDefinition = "boolean not null default true")
     var logoOnDocuments: Boolean = true,

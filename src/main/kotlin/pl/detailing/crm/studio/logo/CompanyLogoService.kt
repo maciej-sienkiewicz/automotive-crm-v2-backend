@@ -86,6 +86,8 @@ class CompanyLogoService(
         settings.logoS3Key = appKey
         settings.logoPrintS3Key = printKey
         settings.logoVectorS3Key = vectorKey
+        settings.logoNeedsLightPlate = processed.needsLightPlate
+        settings.logoAspectRatio = processed.aspectRatio
         settings.updatedAt = Instant.now()
         val saved = studioSettingsRepository.save(settings)
 
@@ -105,6 +107,8 @@ class CompanyLogoService(
         settings.logoS3Key = null
         settings.logoPrintS3Key = null
         settings.logoVectorS3Key = null
+        settings.logoNeedsLightPlate = true
+        settings.logoAspectRatio = null
         settings.updatedAt = Instant.now()
         studioSettingsRepository.save(settings)
 

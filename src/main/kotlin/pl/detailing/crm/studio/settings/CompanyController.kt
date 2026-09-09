@@ -78,6 +78,8 @@ class CompanyController(
                 website = settings?.website,
                 bankAccount = settings?.bankAccount,
                 logoUrl = logoUrl,
+                logoNeedsLightPlate = settings?.logoNeedsLightPlate ?: true,
+                logoAspectRatio = settings?.logoAspectRatio,
                 emailAlias = studioEntity?.emailAlias,
                 smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = (settings?.updatedAt ?: Instant.now()).toString()
@@ -146,6 +148,8 @@ class CompanyController(
                 website = saved.website,
                 bankAccount = saved.bankAccount,
                 logoUrl = logoUrl,
+                logoNeedsLightPlate = saved.logoNeedsLightPlate,
+                logoAspectRatio = saved.logoAspectRatio,
                 emailAlias = studioEmailAlias,
                 smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = saved.updatedAt.toString()
@@ -177,7 +181,13 @@ class CompanyController(
         }
 
         val logoUrl = generateLogoPresignedUrl(settings.logoS3Key!!)
-        ResponseEntity.ok(UploadLogoResponse(logoUrl = logoUrl))
+        ResponseEntity.ok(
+            UploadLogoResponse(
+                logoUrl = logoUrl,
+                logoNeedsLightPlate = settings.logoNeedsLightPlate,
+                logoAspectRatio = settings.logoAspectRatio
+            )
+        )
     }
 
     @DeleteMapping("/logo")
@@ -508,6 +518,10 @@ data class CompanySettingsResponse(
     val website: String?,
     val bankAccount: String?,
     val logoUrl: String?,
+    /** Jasna podkładka pod logo w ciemnym menu — tylko dla przezroczystego logo z ciemnym tuszem. */
+    val logoNeedsLightPlate: Boolean,
+    /** Szerokość / wysokość; null dla logo sprzed analizy. */
+    val logoAspectRatio: Double?,
     val emailAlias: String?,
     val smsApiNameConfirmed: Boolean,
     val updatedAt: String
@@ -526,7 +540,11 @@ data class UpdateCompanySettingsRequest(
     val bankAccount: String?
 )
 
-data class UploadLogoResponse(val logoUrl: String)
+data class UploadLogoResponse(
+    val logoUrl: String,
+    val logoNeedsLightPlate: Boolean,
+    val logoAspectRatio: Double?
+)
 
 data class DocumentLogoConfigResponse(
     val showLogoOnDocuments: Boolean,
