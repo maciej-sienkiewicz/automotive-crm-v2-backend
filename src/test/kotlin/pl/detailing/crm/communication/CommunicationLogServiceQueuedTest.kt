@@ -6,6 +6,7 @@ import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.springframework.dao.DataIntegrityViolationException
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditActor
 import pl.detailing.crm.audit.domain.AuditActorResolver
@@ -13,6 +14,7 @@ import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.communication.infrastructure.CommunicationLogEntity
 import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
+import pl.detailing.crm.communication.infrastructure.CommunicationLogWriter
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -30,10 +32,11 @@ import java.util.UUID
 class CommunicationLogServiceQueuedTest {
 
     private val repository: CommunicationLogJpaRepository = mockk(relaxed = true)
+    private val writer: CommunicationLogWriter = mockk(relaxed = true)
     private val auditService: AuditService = mockk(relaxed = true)
     private val auditActorResolver: AuditActorResolver = mockk { every { current(any()) } returns AuditActor.system() }
     private val customerRepository: CustomerRepository = mockk { every { findByIdAndStudioId(any(), any()) } returns null }
-    private val service = CommunicationLogService(repository, auditService, auditActorResolver, customerRepository)
+    private val service = CommunicationLogService(repository, writer, auditService, auditActorResolver, customerRepository)
 
     private val studioId = StudioId(UUID.randomUUID())
     private val customerId = CustomerId(UUID.randomUUID())
@@ -48,7 +51,7 @@ class CommunicationLogServiceQueuedTest {
 
     private fun savedEntity(): CommunicationLogEntity {
         val entity = slot<CommunicationLogEntity>()
-        verify { repository.saveAndFlush(capture(entity)) }
+        verify { writer.persist(capture(entity)) }
         return entity.captured
     }
 
@@ -94,6 +97,19 @@ class CommunicationLogServiceQueuedTest {
         assertEquals(CommunicationStatus.FAILED, savedEntity().status)
     }
 
+    @Test
+    fun `blad zapisu dziennika nie propaguje sie, a slad w Aktywnosci i tak powstaje`() {
+        // Zapis idzie przez CommunicationLogWriter (własna transakcja); tu udajemy naruszenie
+        // ograniczenia. record() ma je połknąć (fire-and-forget) i mimo to zapisać ślad w
+        // Aktywności. Prawdziwą izolację transakcji daje osobny bean writera — to weryfikuje
+        // wywołanie na żywym kontekście; ten test pilnuje kontraktu na poziomie jednostki.
+        every { writer.persist(any()) } throws DataIntegrityViolationException("communication_log_status_check")
+
+        service.record(command(success = true, queuedMessageId = UUID.randomUUID()))
+
+        verify { auditService.recordSync(any()) }
+    }
+
     // ── recordQueuedOutcome ──────────────────────────────────────────────────
 
     private fun queuedEntry(queuedId: UUID) = CommunicationLogEntity(
@@ -110,7 +126,7 @@ class CommunicationLogServiceQueuedTest {
 
         service.recordQueuedOutcome(queuedId, success = true, errorMessage = null)
 
-        verify { repository.resolveQueued(queuedId, CommunicationStatus.QUEUED, CommunicationStatus.SENT, null, any()) }
+        verify { writer.resolveQueued(queuedId, CommunicationStatus.QUEUED, CommunicationStatus.SENT, null, any()) }
         assertEquals(AuditAction.SMS_SENT, auditedAction())
     }
 
@@ -121,7 +137,7 @@ class CommunicationLogServiceQueuedTest {
 
         service.recordQueuedOutcome(queuedId, success = false, errorMessage = "SMSAPI 500")
 
-        verify { repository.resolveQueued(queuedId, CommunicationStatus.QUEUED, CommunicationStatus.FAILED, "SMSAPI 500", any()) }
+        verify { writer.resolveQueued(queuedId, CommunicationStatus.QUEUED, CommunicationStatus.FAILED, "SMSAPI 500", any()) }
         assertEquals(AuditAction.SMS_FAILED, auditedAction())
     }
 
@@ -132,7 +148,7 @@ class CommunicationLogServiceQueuedTest {
 
         service.recordQueuedOutcome(queuedId, success = true, errorMessage = null)
 
-        verify(exactly = 0) { repository.resolveQueued(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { writer.resolveQueued(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { auditService.recordSync(any()) }
     }
 
