@@ -57,7 +57,7 @@ import org.springframework.stereotype.Component
  * Dlatego wzorzec to `'%= ANY (%ARRAY[%'` (dowolne nawiasy między `= ANY (` a `ARRAY[`),
  * a nie `'%= ANY (ARRAY[%'`. Ta druga, węższa wersja NIE łapała formy z rzutowaniem i przez
  * to nie usuwała niczego — CHECK-i zostawały w schemacie mimo tego komponentu, V101 i V117
- * (patrz V120__drop_stuck_enum_check_constraints.sql). Ograniczenia biznesowe (`minutes >= 0`,
+ * (patrz V121__drop_stuck_enum_check_constraints.sql). Ograniczenia biznesowe (`minutes >= 0`,
  * `end_date >= start_date`) nie mają tej postaci i zostają nietknięte. Każde usunięte
  * ograniczenie ląduje w logu z nazwą, więc decyzja jest odtwarzalna.
  *
