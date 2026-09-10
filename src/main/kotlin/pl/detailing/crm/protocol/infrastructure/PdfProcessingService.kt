@@ -22,6 +22,21 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 
 /**
+ * Jak wyglądają wartości wpisywane w pola formularza: font (zasób classpath, TTF),
+ * rozmiar w pt i kolor jako operator DA („0 g" = czerń, „r g b rg" = RGB 0..1).
+ */
+data class FieldTypography(
+    val fontResource: String,
+    val fontSize: Float,
+    val colorOperator: String
+) {
+    companion object {
+        /** Dotychczasowy wygląd: Liberation Sans (metrycznie Arial), 7 pt, czysta czerń. */
+        val DEFAULT = FieldTypography("/fonts/LiberationSans-Regular.ttf", 7f, "0 g")
+    }
+}
+
+/**
  * Service for processing PDFs: form filling, signature application, and flattening.
  *
  * Uses Apache PDFBox for PDF manipulation.
@@ -34,8 +49,6 @@ class PdfProcessingService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        private const val MAX_FIELD_FONT_SIZE = 7f
-
         /**
          * The AcroForm field reserved in protocol templates for the customer's signature.
          * It must survive form filling un-flattened: SignedDocumentComposer reads its widget
@@ -160,10 +173,16 @@ class PdfProcessingService(
     fun fillFormInMemory(
         pdfBytes: ByteArray,
         fieldMappings: Map<String, String>,
-        logoPng: ByteArray? = null
-    ): ByteArray = fillForm(pdfBytes, fieldMappings, logoPng)
+        logoPng: ByteArray? = null,
+        typography: FieldTypography = FieldTypography.DEFAULT
+    ): ByteArray = fillForm(pdfBytes, fieldMappings, logoPng, typography)
 
-    private fun fillForm(pdfBytes: ByteArray, fieldMappings: Map<String, String>, logoPng: ByteArray?): ByteArray {
+    private fun fillForm(
+        pdfBytes: ByteArray,
+        fieldMappings: Map<String, String>,
+        logoPng: ByteArray?,
+        typography: FieldTypography = FieldTypography.DEFAULT
+    ): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
                 // Pass null fixup to skip AcroFormDefaultFixup, which would otherwise trigger
@@ -176,7 +195,8 @@ class PdfProcessingService(
                 }
 
                 // Set up Unicode font to support Polish characters
-                val fontEmbedded = setupUnicodeFontForForm(document, acroForm)
+                val fieldFont = setupUnicodeFontForForm(document, acroForm, typography)
+                val fontEmbedded = fieldFont != null
 
                 // We embed our own font and PDFBox generates the field appearances itself
                 // in setValue(), so the template's NeedAppearances flag (viewer-side
@@ -203,6 +223,15 @@ class PdfProcessingService(
                                     else -> field.setValue("Off")
                                 }
                             } else {
+                                // Rozmiar z typografii jest bazą; wartość, która się nie mieści
+                                // (długa nazwa usługodawcy, cztery linie usług), schodzi w dół
+                                // o 0,5 pt, aż wejdzie w pole. Bez tego tekst jest obcinany.
+                                if (fieldFont != null && field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
+                                    val size = fittingFontSize(field, value, fieldFont.font, typography.fontSize)
+                                    if (size != typography.fontSize) {
+                                        applyDefaultAppearance(field, "${fieldFont.reference} $size Tf ${typography.colorOperator}")
+                                    }
+                                }
                                 field.setValue(value)
                             }
                             filledCount++
@@ -245,11 +274,19 @@ class PdfProcessingService(
      * @return true when a Unicode font was embedded (PDFBox can generate field appearances
      *         itself), false when falling back to Helvetica + needAppearances=true.
      */
-    private fun setupUnicodeFontForForm(document: PDDocument, acroForm: PDAcroForm): Boolean {
+    /** Font osadzony w formularzu i jego nazwa w słowniku zasobów (do składania DA). */
+    private class EmbeddedFieldFont(val font: PDType0Font, val reference: String)
+
+    private fun setupUnicodeFontForForm(
+        document: PDDocument,
+        acroForm: PDAcroForm,
+        typography: FieldTypography = FieldTypography.DEFAULT
+    ): EmbeddedFieldFont? {
         val classpathFonts = listOf(
+            typography.fontResource,
             "/fonts/LiberationSans-Regular.ttf",
             "/fonts/DejaVuSans.ttf"
-        )
+        ).distinct()
         logger.info("PDF font setup: trying classpath fonts first: $classpathFonts")
         for (classpathFont in classpathFonts) {
             val stream = javaClass.getResourceAsStream(classpathFont)
@@ -274,9 +311,9 @@ class PdfProcessingService(
                      * nie tym przełącznikiem.
                      */
                     val font = PDType0Font.load(document, it, false)
-                    applyFontToAcroForm(document, acroForm, font)
+                    val reference = applyFontToAcroForm(document, acroForm, font, typography)
                     logger.info("PDF font setup: SUCCESS — loaded classpath font '$classpathFont'")
-                    return true
+                    return EmbeddedFieldFont(font, reference)
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load classpath font '$classpathFont': ${e.message}")
                 }
@@ -303,9 +340,9 @@ class PdfProcessingService(
                 try {
                     // embedSubset=false — jak wyżej: form-fill nie znosi subsetu.
                     val font = PDType0Font.load(document, java.io.FileInputStream(file), false)
-                    applyFontToAcroForm(document, acroForm, font)
+                    val reference = applyFontToAcroForm(document, acroForm, font, typography)
                     logger.info("PDF font setup: SUCCESS — loaded system font '$path'")
-                    return true
+                    return EmbeddedFieldFont(font, reference)
                 } catch (e: Exception) {
                     logger.warn("PDF font setup: failed to load system font '$path': ${e.message}")
                 }
@@ -315,7 +352,71 @@ class PdfProcessingService(
         logger.warn("PDF font setup: FALLBACK — no Unicode font found. Using Helvetica + needAppearances=true. Polish characters WILL be garbled in flattened PDFs.")
         acroForm.needAppearances = true
         acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
-        return false
+        return null
+    }
+
+    /** Najmniejszy rozmiar, do którego schodzi [fittingFontSize]; poniżej wpis jest nieczytelny na wydruku. */
+    private val minFieldFontSize = 6f
+
+    /**
+     * Największy rozmiar ≤ [base] (krok 0,5 pt), przy którym [value] mieści się w polu.
+     * Liczy tak, jak układa tekst PDFBox: wcięcie 2 pt z każdej strony, interlinia =
+     * wysokość bounding boxu fontu, pola wieloliniowe łamane po słowach.
+     */
+    private fun fittingFontSize(
+        field: org.apache.pdfbox.pdmodel.interactive.form.PDVariableText,
+        value: String,
+        font: PDType0Font,
+        base: Float
+    ): Float {
+        val rect = field.widgets.firstOrNull()?.rectangle ?: return base
+        val inset = 2f
+        val availableWidth = rect.width - 2 * inset
+        val availableHeight = rect.height - 2 * inset
+        if (availableWidth <= 0f || availableHeight <= 0f) return base
+        val multiline = (field as? org.apache.pdfbox.pdmodel.interactive.form.PDTextField)?.isMultiline == true
+
+        var size = base
+        while (size > minFieldFontSize) {
+            if (fits(value, font, size, availableWidth, availableHeight, multiline)) return size
+            size -= 0.5f
+        }
+        return minFieldFontSize
+    }
+
+    private fun fits(value: String, font: PDType0Font, size: Float, width: Float, height: Float, multiline: Boolean): Boolean {
+        val lineHeight = font.boundingBox.height / 1000f * size
+        fun textWidth(text: String): Float = try {
+            font.getStringWidth(text) / 1000f * size
+        } catch (e: Exception) {
+            0f // glif spoza fontu: PDFBox i tak go pominie, nie blokujemy dopasowania
+        }
+        if (!multiline) {
+            return lineHeight <= height && textWidth(value) <= width
+        }
+        var lines = 0
+        for (paragraph in value.split('\n')) {
+            var current = ""
+            for (word in paragraph.split(' ')) {
+                val candidate = if (current.isEmpty()) word else "$current $word"
+                if (textWidth(candidate) <= width || current.isEmpty()) {
+                    current = candidate
+                } else {
+                    lines++
+                    current = word
+                }
+            }
+            lines++
+        }
+        return lines * lineHeight <= height
+    }
+
+    private fun applyDefaultAppearance(field: org.apache.pdfbox.pdmodel.interactive.form.PDVariableText, da: String) {
+        field.defaultAppearance = da
+        for (widget in field.widgets) {
+            val widgetCos = widget.cosObject
+            if (widgetCos.containsKey(COSName.DA)) widgetCos.setString(COSName.DA, da)
+        }
     }
 
     /**
@@ -426,30 +527,38 @@ class PdfProcessingService(
      * Register [font] in the AcroForm's default resources and update every variable-text field
      * and its widget annotations to use it.
      *
-     * Font sizes are capped at [MAX_FIELD_FONT_SIZE] to prevent oversized text when the template
-     * declares large or auto (0) sizes. Auto-size (0) fields are set to the cap explicitly.
+     * Every field gets the size and colour from [typography]; the sizes declared in the
+     * template (including auto = 0) are ignored, so all values share one consistent look.
      *
      * PDF spec priority for Default Appearance: widget /DA > field /DA > AcroForm /DA.
      * We must update all three levels, otherwise the original (non-embedded) font reference
      * wins and Polish characters are garbled.
      */
-    private fun applyFontToAcroForm(document: PDDocument, acroForm: PDAcroForm, font: PDType0Font) {
+    private fun applyFontToAcroForm(
+        document: PDDocument,
+        acroForm: PDAcroForm,
+        font: PDType0Font,
+        typography: FieldTypography = FieldTypography.DEFAULT
+    ): String {
         val resources = acroForm.defaultResources ?: PDResources().also { acroForm.defaultResources = it }
         val fontKey = resources.add(font)
         val fontRef = "/${fontKey.name}"
 
-        acroForm.defaultAppearance = "$fontRef $MAX_FIELD_FONT_SIZE Tf 0 g"
+        // Jeden rozmiar dla wszystkich pól. Rozmiar zapisany w szablonie (DA) to wartość
+        // z edytora formularza, nie decyzja projektowa: „auto" (0) dawał każdemu polu
+        // inną wielkość, a stałe 7 pt było tylko górnym limitem, przez który nigdy nie
+        // dało się wartości powiększyć. O wyglądzie wpisów decyduje [FieldTypography].
+        val da = "$fontRef ${typography.fontSize} Tf ${typography.colorOperator}"
+        acroForm.defaultAppearance = da
 
         for (field in acroForm.fieldTree) {
             if (field is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) {
-                val fieldSize = cappedFontSize(parseFontSize(field.defaultAppearance))
-                field.defaultAppearance = "$fontRef $fieldSize Tf 0 g"
+                field.defaultAppearance = da
 
                 for (widget in field.widgets) {
                     val widgetCos = widget.cosObject
                     if (widgetCos.containsKey(COSName.DA)) {
-                        val widgetSize = cappedFontSize(parseFontSize(widgetCos.getString(COSName.DA)))
-                        widgetCos.setString(COSName.DA, "$fontRef $widgetSize Tf 0 g")
+                        widgetCos.setString(COSName.DA, da)
                     }
                     widgetCos.removeItem(COSName.AP)
                 }
@@ -457,26 +566,7 @@ class PdfProcessingService(
         }
 
         logger.info("PDF font setup: registered font as '${fontKey.name}'")
-    }
-
-    /**
-     * Returns the font size capped at [MAX_FIELD_FONT_SIZE].
-     * Auto-size (0) is replaced with the cap so every field has a consistent, readable size.
-     */
-    private fun cappedFontSize(size: String): String {
-        val pt = size.toFloatOrNull() ?: 0f
-        return if (pt == 0f || pt > MAX_FIELD_FONT_SIZE) MAX_FIELD_FONT_SIZE.toString() else size
-    }
-
-    /**
-     * Extract the font size from a PDF Default Appearance string like "/Helv 10 Tf 0 g".
-     * Returns "0" (auto-size) when the string is absent or unparseable.
-     */
-    private fun parseFontSize(da: String?): String {
-        if (da.isNullOrBlank()) return "0"
-        // DA format: /FontName <size> Tf [color operators]
-        val match = Regex("""/\S+\s+([\d.]+)\s+Tf""").find(da)
-        return match?.groupValues?.get(1) ?: "0"
+        return fontRef
     }
 
     /**
