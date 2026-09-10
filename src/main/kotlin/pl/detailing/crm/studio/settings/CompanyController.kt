@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -22,10 +21,6 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.logo.CompanyLogoService
 import pl.detailing.crm.visit.convert.VisitNumberGenerator
 import java.time.LocalDate
-import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import java.time.Duration
 import java.time.Instant
 
 @RestController
@@ -34,13 +29,10 @@ class CompanyController(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val studioRepository: StudioRepository,
     private val smsAutomationConfigRepository: SmsAutomationConfigJpaRepository,
-    private val companyLogoService: CompanyLogoService,
-    private val s3Presigner: S3Presigner,
-    @Value("\${aws.s3.bucket-name}") private val bucketName: String
+    private val companyLogoService: CompanyLogoService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(CompanyController::class.java)
-        private val LOGO_URL_TTL = Duration.ofHours(24)
         private val ALLOWED_LOGO_CONTENT_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/svg+xml")
         private const val MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024L
     }
@@ -58,7 +50,7 @@ class CompanyController(
             studioRepository.findByStudioId(studioId)
         }
 
-        val logoUrl = settings?.logoS3Key?.let { generateLogoPresignedUrl(it) }
+        val logoUrl = companyLogoService.appLogoUrl(settings)
 
         val senderNameConfirmed = withContext(Dispatchers.IO) {
             smsAutomationConfigRepository.findByStudioId(studioId)?.smsApiNameConfirmed ?: false
@@ -124,7 +116,7 @@ class CompanyController(
         settings.updatedAt = Instant.now()
 
         val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
-        val logoUrl = saved.logoS3Key?.let { generateLogoPresignedUrl(it) }
+        val logoUrl = companyLogoService.appLogoUrl(saved)
 
         val studioEmailAlias = withContext(Dispatchers.IO) {
             studioRepository.findByStudioId(studioId)?.emailAlias
@@ -180,7 +172,7 @@ class CompanyController(
             companyLogoService.replaceLogo(studioId, file.bytes)
         }
 
-        val logoUrl = generateLogoPresignedUrl(settings.logoS3Key!!)
+        val logoUrl = companyLogoService.appLogoUrl(settings)!!
         ResponseEntity.ok(
             UploadLogoResponse(
                 logoUrl = logoUrl,
@@ -490,19 +482,6 @@ class CompanyController(
         NumberingTemplate.Kind.SEQUENTIAL -> template.render(LocalDate.now(), 1)
     }
 
-    private fun generateLogoPresignedUrl(s3Key: String): String {
-        val getObjectRequest = GetObjectRequest.builder()
-            .bucket(bucketName)
-            .key(s3Key)
-            .build()
-
-        val presignRequest = GetObjectPresignRequest.builder()
-            .signatureDuration(LOGO_URL_TTL)
-            .getObjectRequest(getObjectRequest)
-            .build()
-
-        return s3Presigner.presignGetObject(presignRequest).url().toString()
-    }
 }
 
 data class CompanySettingsResponse(

@@ -45,6 +45,7 @@ class AuthorizationSurfaceScanTest {
         "PublicSignatureController" to ALL_METHODS,       // opaque URL token
         "PublicUserSignatureController" to ALL_METHODS,   // opaque URL token
         "PublicVisitCardController" to ALL_METHODS,       // opaque URL token
+        "PublicBrandingController" to ALL_METHODS,        // logo studia pod adresem z hashem treści (permitAll)
         // TOKEN — Redis-token authenticated device flows
         "TabletSignatureController" to ALL_METHODS,       // X-Tablet-Token
         "MobileUploadController" to ALL_METHODS,          // X-Upload-Token
