@@ -31,8 +31,17 @@ data class FieldTypography(
     val colorOperator: String
 ) {
     companion object {
-        /** Dotychczasowy wygląd: Liberation Sans (metrycznie Arial), 7 pt, czysta czerń. */
-        val DEFAULT = FieldTypography("/fonts/LiberationSans-Regular.ttf", 7f, "0 g")
+        /**
+         * Wpisy mają wyglądać jak część dokumentu, nie jak naklejka: ten sam krój co
+         * etykiety i tytuły szablonów (Inter), rozmiar zbliżony do etykiet (9 pt) i
+         * kolor tuszu dokumentu (#080606, `--ink` w szablonach HTML). Poprzednio:
+         * Liberation Sans 7 pt w czystej czerni, przez co użytkownicy mówili o
+         * „sztucznie wklejonej czcionce".
+         */
+        val DEFAULT = FieldTypography("/fonts/Inter-Regular.ttf", 8.5f, "0.031 0.024 0.024 rg")
+
+        /** Wygląd sprzed zmiany, zachowany do porównań i testów regresji. */
+        val LEGACY = FieldTypography("/fonts/LiberationSans-Regular.ttf", 7f, "0 g")
     }
 }
 
@@ -363,7 +372,7 @@ class PdfProcessingService(
      * Liczy tak, jak układa tekst PDFBox: wcięcie 2 pt z każdej strony, interlinia =
      * wysokość bounding boxu fontu, pola wieloliniowe łamane po słowach.
      */
-    private fun fittingFontSize(
+    internal fun fittingFontSize(
         field: org.apache.pdfbox.pdmodel.interactive.form.PDVariableText,
         value: String,
         font: PDType0Font,
@@ -374,7 +383,20 @@ class PdfProcessingService(
         val availableWidth = rect.width - 2 * inset
         val availableHeight = rect.height - 2 * inset
         if (availableWidth <= 0f || availableHeight <= 0f) return base
-        val multiline = (field as? org.apache.pdfbox.pdmodel.interactive.form.PDTextField)?.isMultiline == true
+        val textField = field as? org.apache.pdfbox.pdmodel.interactive.form.PDTextField
+        val multiline = textField?.isMultiline == true
+
+        // Pole jednoliniowe, w którym wartość nie mieści się w bazowym rozmiarze, a jest
+        // dość wysokie na dwie linie (USŁUGODAWCA w protokole wydania: 30 pt): lepiej
+        // złamać tekst niż zmniejszać go do nieczytelności albo obcinać. Flaga zmienia
+        // się na kopii wypełnianej w pamięci, szablony w S3 zostają nietknięte.
+        if (!multiline && textField != null &&
+            !fits(value, font, base, availableWidth, availableHeight, multiline = false) &&
+            2 * lineHeight(font, base) <= availableHeight
+        ) {
+            textField.isMultiline = true
+            return fittingFontSize(field, value, font, base)
+        }
 
         var size = base
         while (size > minFieldFontSize) {
@@ -384,8 +406,10 @@ class PdfProcessingService(
         return minFieldFontSize
     }
 
+    private fun lineHeight(font: PDType0Font, size: Float): Float = font.boundingBox.height / 1000f * size
+
     private fun fits(value: String, font: PDType0Font, size: Float, width: Float, height: Float, multiline: Boolean): Boolean {
-        val lineHeight = font.boundingBox.height / 1000f * size
+        val lineHeight = lineHeight(font, size)
         fun textWidth(text: String): Float = try {
             font.getStringWidth(text) / 1000f * size
         } catch (e: Exception) {

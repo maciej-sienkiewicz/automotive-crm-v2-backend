@@ -586,7 +586,7 @@ enum class CrmDataKey(val description: String) {
 
     // Studio/Company
     STUDIO_NAME("Studio/Company name"),
-    PROVIDER_NAME("Service provider (studio) name — Usługodawca"),
+    PROVIDER_NAME("Service provider (studio) name and address — Usługodawca"),
 
     // Employee context
     RECEIVED_BY_NAME("Full name of the employee who received the vehicle"),
