@@ -631,6 +631,21 @@ enum class VatRate(val rate: Int) {
     }
 
     /**
+     * Netto (w groszach) implikowane przez kwotę brutto — odwrotność
+     * [calculateGrossAmount] dla wyceny od strony brutto (SET_GROSS/FIXED_GROSS).
+     *
+     * `VAT_ZW.rate` to wartownik -1, a nie realna stawka: użyty w „VAT w stu"
+     * `brutto * 100 / (100 + rate)` dawał dzielenie przez 99, czyli NETTO WYŻSZE
+     * NIŻ BRUTTO (np. brutto 250,00 → netto 252,53). Zwolnienie i 0% nie doliczają
+     * VAT-u, więc netto = brutto. Wejście ujemne (np. FIXED_GROSS przewyższający
+     * bazę) przechodzi bez zmiany — walidacja „netto < 0" w PriceCalculator je łapie,
+     * zamiast wysadzać niezmiennik [Money] o nieujemności.
+     */
+    fun netCentsFromGrossCents(grossCents: Long): Long =
+        if (rate <= 0) grossCents
+        else Math.round(grossCents * 100.0 / (100 + rate))
+
+    /**
      * Resolves the stored gross for a (net, user-entered gross) pair.
      *
      * Net→gross rounding on the grosz grid is not surjective — e.g. at 23% VAT

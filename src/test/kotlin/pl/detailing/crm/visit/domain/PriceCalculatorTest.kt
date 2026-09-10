@@ -201,4 +201,59 @@ class PriceCalculatorTest {
         assertEquals(25000, net1.amountInCents + net2.amountInCents)
         assertEquals(30750, gross1.amountInCents + gross2.amountInCents)
     }
+
+    // ── VAT zwolniony (ZW) — regresja: netto nie może przewyższać brutta ─────────
+    //
+    // VAT_ZW.rate to wartownik -1, nie realna stawka. Wzór „w stu"
+    // brutto*100/(100+rate) dawał dla ZW dzielenie przez 99, więc netto WYŻSZE niż
+    // brutto (250,00 → 252,53). Przy zakończeniu wizyty Visit.calculateTotalVat()
+    // = brutto - netto = -253 gr wysadzało niezmiennik Money(>=0) i dokument
+    // finansowy nigdy nie powstawał. Dla zwolnienia netto = brutto.
+
+    @Test
+    fun `SET_GROSS przy ZW daje netto rowne brutto, nie wyzsze`() {
+        // Dokładne dane z produkcji: SET_GROSS 250,00 zł przy stawce ZW.
+        val fNet = PriceCalculator.calculateFinalNet(Money(0), VatRate.VAT_ZW, AdjustmentType.SET_GROSS, 25000)
+        val fGross = PriceCalculator.calculateFinalGross(
+            fNet, Money(0), VatRate.VAT_ZW, AdjustmentType.SET_GROSS, 25000, null
+        )
+        assertEquals(25000, fNet.amountInCents, "ZW: netto = brutto, nie 25253")
+        assertEquals(25000, fGross.amountInCents)
+        // VAT wizyty (brutto - netto) już nie jest ujemny i nie wysadza Money.
+        assertEquals(0, fGross.amountInCents - fNet.amountInCents)
+    }
+
+    @Test
+    fun `FIXED_GROSS przy ZW trzyma netto rowne brutto`() {
+        // B_net = 30000, ZW → B_gross = 30000; rabat gross 5000 → F_gross = 25000, F_net = 25000.
+        val fNet = PriceCalculator.calculateFinalNet(Money(30000), VatRate.VAT_ZW, AdjustmentType.FIXED_GROSS, 5000)
+        val fGross = PriceCalculator.calculateFinalGross(
+            fNet, Money(30000), VatRate.VAT_ZW, AdjustmentType.FIXED_GROSS, 5000, null
+        )
+        assertEquals(25000, fNet.amountInCents)
+        assertEquals(25000, fGross.amountInCents)
+    }
+
+    @Test
+    fun `SET_GROSS przy 0 procent tez daje netto rowne brutto`() {
+        // Stawka 0% (rate 0) — brak VAT-u, więc netto = brutto (bez dzielenia przez 100).
+        val fNet = PriceCalculator.calculateFinalNet(Money(0), VatRate.VAT_0, AdjustmentType.SET_GROSS, 25000)
+        assertEquals(25000, fNet.amountInCents)
+    }
+
+    @Test
+    fun `SET_GROSS przy VAT 23 pozostaje bez zmian po poprawce`() {
+        // Regresja w drugą stronę: realna stawka liczy się jak dotąd (250,00 → netto 203,25).
+        val fNet = PriceCalculator.calculateFinalNet(Money(0), VatRate.VAT_23, AdjustmentType.SET_GROSS, 25000)
+        assertEquals(20325, fNet.amountInCents)
+    }
+
+    @Test
+    fun `netCentsFromGrossCents jest odwrotnoscia calculateGrossAmount dla ZW i realnych stawek`() {
+        assertEquals(25000, VatRate.VAT_ZW.netCentsFromGrossCents(25000))
+        assertEquals(25000, VatRate.VAT_0.netCentsFromGrossCents(25000))
+        assertEquals(20325, VatRate.VAT_23.netCentsFromGrossCents(25000))
+        // Wejście ujemne przechodzi bez zmiany (walidację robi PriceCalculator, nie Money).
+        assertEquals(-100, VatRate.VAT_ZW.netCentsFromGrossCents(-100))
+    }
 }
