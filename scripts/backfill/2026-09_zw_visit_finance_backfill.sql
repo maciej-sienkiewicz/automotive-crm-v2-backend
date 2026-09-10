@@ -36,8 +36,27 @@
 --     globalny (SEKCJA 0), żeby zobaczyć pełną skalę, potem rób per studio.
 --
 -- URUCHOMIENIE
---   psql -v studio_id="'41fe030f-f990-4696-afed-573068fcccd6'" \
---        -f 2026-09_zw_visit_finance_backfill.sql detailing_database
+--   Baza działa w kontenerze (detailing_database_prod), a plik leży na hoście,
+--   więc podajemy go przez stdin (-f -). UWAGA: przy przekierowaniu wejścia
+--   używamy `docker exec -i` (BEZ -t; TTY kłóci się z pipe'em).
+--
+--     docker exec -i detailing_database_prod \
+--       psql -U detailinguserihja54ba34 -d detailing_database \
+--       -v studio_id="'48cf5ba1-e849-46fb-8baf-ae4c463d9de0'" \
+--       -f - < scripts/backfill/2026-09_zw_visit_finance_backfill.sql
+--
+--   Alternatywnie: skopiuj plik do kontenera i uruchom z konkretnej ścieżki:
+--     docker cp scripts/backfill/2026-09_zw_visit_finance_backfill.sql \
+--       detailing_database_prod:/tmp/backfill.sql
+--     docker exec -i detailing_database_prod \
+--       psql -U detailinguserihja54ba34 -d detailing_database \
+--       -v studio_id="'48cf5ba1-e849-46fb-8baf-ae4c463d9de0'" \
+--       -f /tmp/backfill.sql
+--
+--   Bezpośrednio z hosta (gdy masz klienta psql i dostęp sieciowy do bazy):
+--     psql -h <DB_ADDR> -p <DB_PORT> -U <DB_USER> -d detailing_database \
+--       -v studio_id="'48cf5ba1-e849-46fb-8baf-ae4c463d9de0'" \
+--       -f scripts/backfill/2026-09_zw_visit_finance_backfill.sql
 -- ============================================================================
 
 \set ON_ERROR_STOP on
