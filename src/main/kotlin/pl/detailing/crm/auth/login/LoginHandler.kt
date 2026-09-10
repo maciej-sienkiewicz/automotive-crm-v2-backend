@@ -3,11 +3,13 @@ package pl.detailing.crm.auth.login
 import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.pin.pinAttemptsKey
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
@@ -22,7 +24,8 @@ class LoginHandler(
     private val accountLockoutService: AccountLockoutService,
     private val meterRegistry: MeterRegistry,
     private val permissionCheckService: PermissionCheckService,
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val redisTemplate: StringRedisTemplate
 ) {
 
     suspend fun handle(request: LoginRequest): Pair<UnifiedAuthResponse, UserPrincipal> =
@@ -58,6 +61,18 @@ class LoginHandler(
             // Clear failed-attempt counter on successful authentication
             accountLockoutService.clear(email)
             recordAttempt("success")
+
+            // Udane logowanie hasłem to ścieżka odzyskania, na którą przełącznik
+            // profili kieruje zablokowanego użytkownika ("wymagane logowanie hasłem").
+            // Zdejmujemy blokadę PIN i kasujemy licznik prób, żeby na tym samym
+            // (współdzielonym) komputerze mógł znów wejść PIN-em. Zapis tylko, gdy
+            // było co zdejmować — zwykłe logowanie nie generuje dodatkowego UPDATE-a.
+            if (userEntity.pinLocked || userEntity.pinFailedAttempts != 0) {
+                userEntity.pinLocked = false
+                userEntity.pinFailedAttempts = 0
+                userRepository.save(userEntity)
+                redisTemplate.delete(pinAttemptsKey(userEntity.studioId, userEntity.id))
+            }
 
             val user = userEntity.toDomain()
             val subscriptionInfo = subscriptionService.getSubscriptionInfo(user.studioId)
