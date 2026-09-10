@@ -33,11 +33,17 @@ object LogoTestImages {
         return encode(image, "png")
     }
 
-    /** Logo z własnym, nieprzezroczystym tłem (np. biały napis na czarnym prostokącie). */
-    fun inkOnOpaque(width: Int, height: Int, ink: Color, background: Color): ByteArray {
-        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+    /**
+     * Logo z własnym, nieprzezroczystym tłem (np. biały napis na czarnym prostokącie),
+     * opcjonalnie w białej ramce [whiteFrame] px, jaką dokładają narzędzia do eksportu.
+     */
+    fun inkOnOpaque(width: Int, height: Int, ink: Color, background: Color, whiteFrame: Int = 0): ByteArray {
+        val image = BufferedImage(width + 2 * whiteFrame, height + 2 * whiteFrame, BufferedImage.TYPE_INT_RGB)
         val g = image.createGraphics()
         try {
+            g.color = Color.WHITE
+            g.fillRect(0, 0, image.width, image.height)
+            g.translate(whiteFrame, whiteFrame)
             g.color = background
             g.fillRect(0, 0, width, height)
             g.color = ink

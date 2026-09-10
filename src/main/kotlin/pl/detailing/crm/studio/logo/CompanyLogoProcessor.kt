@@ -83,6 +83,8 @@ class CompanyLogoProcessor {
         const val APP_MAX_EDGE_PX = 256
 
         private const val ALPHA_TRANSPARENT_THRESHOLD = 8
+        /** R, G i B powyżej tej wartości = biały margines (papier, ramka z eksportu), nie logo. */
+        private const val WHITE_MARGIN_THRESHOLD = 245
         private const val SNIFF_BYTES = 4096
         /** Poniżej tej części przezroczystych pikseli logo „ma własne tło" (zaokrąglone rogi to ułamek procenta). */
         private const val TRANSPARENT_BACKGROUND_MIN_FRACTION = 0.05
@@ -123,7 +125,7 @@ class CompanyLogoProcessor {
             source = decodeRaster(bytes)
         }
 
-        val normalized = trimTransparentMargins(toArgb(source))
+        val normalized = trimMargins(toArgb(source))
         val longerEdge = maxOf(normalized.width, normalized.height)
         // Wektor rasteryzujemy sami w docelowej rozdzielczości, więc minimum dotyczy tylko rastrów.
         if (format != LogoSourceFormat.SVG && longerEdge < MIN_LONGER_EDGE_PX) {
@@ -337,18 +339,34 @@ class CompanyLogoProcessor {
     }
 
     /**
-     * Ucina przezroczyste marginesy. Eksporty logo zwykle mają ich sporo, a każdy
-     * piksel pustki zmniejsza logo w kafelku menu i w slocie nagłówka dokumentu.
+     * Ucina marginesy, które nie są logiem: przezroczyste, a w pliku bez przezroczystości
+     * (JPEG, nieprzezroczysty PNG) także jednolicie białe. Eksporty logo zwykle mają
+     * sporo pustki dookoła, a białą ramkę dokładają narzędzia do eksportu i skany;
+     * każdy taki piksel zmniejsza logo w kafelku menu i w slocie nagłówka dokumentu,
+     * a biała ramka wokół ciemnego logo wygląda w ciemnym menu jak obwódka.
+     *
+     * Biel jest marginesem tylko w pliku bez przezroczystości: w logo z przezroczystym
+     * tłem białe piksele to zwykle tusz (biały napis), nie papier.
      */
-    private fun trimTransparentMargins(image: BufferedImage): BufferedImage {
+    private fun trimMargins(image: BufferedImage): BufferedImage {
+        val opaqueFile = !hasTransparency(image)
+        fun isMargin(argb: Int): Boolean {
+            val alpha = (argb ushr 24) and 0xFF
+            if (alpha <= ALPHA_TRANSPARENT_THRESHOLD) return true
+            if (!opaqueFile) return false
+            val r = (argb shr 16) and 0xFF
+            val g = (argb shr 8) and 0xFF
+            val b = argb and 0xFF
+            return r >= WHITE_MARGIN_THRESHOLD && g >= WHITE_MARGIN_THRESHOLD && b >= WHITE_MARGIN_THRESHOLD
+        }
+
         var top = image.height
         var bottom = -1
         var left = image.width
         var right = -1
         for (y in 0 until image.height) {
             for (x in 0 until image.width) {
-                val alpha = (image.getRGB(x, y) ushr 24) and 0xFF
-                if (alpha > ALPHA_TRANSPARENT_THRESHOLD) {
+                if (!isMargin(image.getRGB(x, y))) {
                     if (y < top) top = y
                     if (y > bottom) bottom = y
                     if (x < left) left = x
@@ -356,9 +374,18 @@ class CompanyLogoProcessor {
                 }
             }
         }
-        if (bottom < 0) throw ValidationException("Logo jest całkowicie przezroczyste")
+        if (bottom < 0) throw ValidationException("Logo jest puste: plik jest całkowicie przezroczysty albo biały")
         if (top == 0 && left == 0 && bottom == image.height - 1 && right == image.width - 1) return image
         return image.getSubimage(left, top, right - left + 1, bottom - top + 1)
+    }
+
+    private fun hasTransparency(image: BufferedImage): Boolean {
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                if (((image.getRGB(x, y) ushr 24) and 0xFF) < 250) return true
+            }
+        }
+        return false
     }
 
     /** Zmniejsza, nigdy nie powiększa — rozciągnięty raster to rozmyte logo bez zysku. */
