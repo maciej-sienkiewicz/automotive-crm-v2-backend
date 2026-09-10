@@ -22,7 +22,10 @@ import java.util.Properties
 /**
  * [EmailProvider] backed by the Jakarta Mail (JavaMail) API.
  *
- * All outgoing messages use the fixed technical sender ([FROM_ADDRESS]).
+ * The sender is [JavaMailProperties.from], by default the authenticated SMTP account:
+ * a From that differs from that account gets past `Transport.send` (the server accepts
+ * the message) and is bounced later by the provider's sender-inspection filter, so a
+ * hardcoded sender silently loses every e-mail once the SMTP account changes.
  * When [JavaMailProperties.enabled] is false the message is only logged (useful
  * for local development / testing environments).
  *
@@ -55,15 +58,20 @@ class JavaMailProvider(
             val session = buildSession()
             val message = buildMessage(session, to, subject, bodyText, attachments)
             Transport.send(message)
-            logger.info("Email dispatched | to={} subject={}", to, subject)
-            EmailDeliveryResult.success("")
+            // Message-ID pozwala odnaleźć wiadomość w bounce'ach i logach dostawcy;
+            // sam sukces Transport.send mówi tylko, że serwer ją przyjął.
+            logger.info(
+                "Email dispatched | to={} from={} subject={} messageId={}",
+                to, senderAddress(), subject, message.messageID
+            )
+            EmailDeliveryResult.success(message.messageID ?: "")
         } catch (ex: MessagingException) {
             logger.error("Failed to send email to {}: {}", to, ex.message, ex)
             EmailDeliveryResult.failure(ex.message ?: "Unknown SMTP error")
         }
     }
 
-    private fun buildSession(): Session {
+    internal fun buildSession(): Session {
         val props = Properties().apply {
             put("mail.smtp.host", properties.host)
             put("mail.smtp.port", properties.port.toString())
@@ -76,7 +84,9 @@ class JavaMailProvider(
         })
     }
 
-    private fun buildMessage(
+    private fun senderAddress(): String = properties.from.ifBlank { properties.username }
+
+    internal fun buildMessage(
         session: Session,
         to: String,
         subject: String,
@@ -84,7 +94,10 @@ class JavaMailProvider(
         attachments: List<EmailAttachment>
     ): MimeMessage {
         val message = MimeMessage(session)
-        message.setFrom(InternetAddress(FROM_ADDRESS, FROM_DISPLAY_NAME, UTF8))
+        message.setFrom(InternetAddress(senderAddress(), properties.fromName, UTF8))
+        if (properties.replyTo.isNotBlank()) {
+            message.replyTo = arrayOf(InternetAddress(properties.replyTo))
+        }
         message.setRecipient(Message.RecipientType.TO, InternetAddress(to))
         message.subject = MimeUtility.encodeText(subject, UTF8, "B")
 
@@ -113,8 +126,6 @@ class JavaMailProvider(
     }
 
     companion object {
-        private const val FROM_ADDRESS = "kontakt@sienkiewicz-maciej.pl"
-        private const val FROM_DISPLAY_NAME = "DetailBoost"
         private const val UTF8 = "UTF-8"
     }
 }

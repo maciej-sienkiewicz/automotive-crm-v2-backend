@@ -23,5 +23,15 @@ data class JavaMailProperties(
     /** Whether to use STARTTLS for connection encryption. */
     val smtpStarttlsEnable: Boolean = true,
     /** When false the provider only logs; does NOT call the SMTP server. */
-    val enabled: Boolean = false
+    val enabled: Boolean = false,
+    /**
+     * Sender address (`From`). Blank = the SMTP [username]: providers such as OVH and
+     * home.pl bounce a message whose From does not match the authenticated account, and
+     * they do it AFTER accepting the message, so the bounce is the only trace.
+     */
+    val from: String = "",
+    /** Display name shown next to the sender address. */
+    val fromName: String = "DetailBoost",
+    /** Optional `Reply-To` when replies should land in a different mailbox than [from]. */
+    val replyTo: String = ""
 )
