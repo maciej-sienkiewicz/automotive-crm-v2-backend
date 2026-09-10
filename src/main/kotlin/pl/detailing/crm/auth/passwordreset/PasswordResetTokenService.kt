@@ -13,7 +13,8 @@ import java.util.UUID
  *
  * Only a SHA-256 hash of the token is stored, so a leak of the Redis contents
  * does not expose usable reset links. Tokens are single-use and expire after the
- * configured TTL.
+ * configured TTL. The same mechanism carries employee invitation links; they only
+ * differ in TTL (see [issueInvitationToken]).
  */
 @Service
 class PasswordResetTokenService(
@@ -28,14 +29,21 @@ class PasswordResetTokenService(
 
     private val secureRandom = SecureRandom()
 
-    /** Generates a fresh single-use token for [userId] and returns the raw value to embed in the link. */
-    fun issueToken(userId: UUID): String {
+    /** Generates a fresh single-use password reset token for [userId] and returns the raw value to embed in the link. */
+    fun issueToken(userId: UUID): String =
+        issueToken(userId, Duration.ofMinutes(properties.tokenTtlMinutes))
+
+    /**
+     * Generates a fresh single-use account setup token for a newly invited employee.
+     * Consumed by the same endpoint as a reset token, but lives for
+     * [PasswordResetProperties.invitationTokenTtlHours] instead of minutes.
+     */
+    fun issueInvitationToken(userId: UUID): String =
+        issueToken(userId, Duration.ofHours(properties.invitationTokenTtlHours))
+
+    private fun issueToken(userId: UUID, ttl: Duration): String {
         val rawToken = generateRawToken()
-        redisTemplate.opsForValue().set(
-            tokenKey(rawToken),
-            userId.toString(),
-            Duration.ofMinutes(properties.tokenTtlMinutes)
-        )
+        redisTemplate.opsForValue().set(tokenKey(rawToken), userId.toString(), ttl)
         return rawToken
     }
 

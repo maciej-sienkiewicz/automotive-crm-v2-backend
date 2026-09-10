@@ -79,7 +79,7 @@ class ProvisionEmployeeAccountHandler(
             employeeEntity.userId = userId
             employeeRepository.save(employeeEntity)
 
-            tokenService.issueToken(userId)
+            tokenService.issueInvitationToken(userId)
         } ?: error("Transakcja tworzenia konta pracownika nie zwróciła wyniku")
 
         // Delivery is best-effort and deliberately outside the transaction: a bounced
@@ -93,7 +93,7 @@ class ProvisionEmployeeAccountHandler(
                 firstName = employeeEntity.firstName,
                 invitedByName = command.requestedByName,
                 setupLink = setupLink,
-                tokenTtlMinutes = properties.tokenTtlMinutes
+                validFor = hoursInPolish(properties.invitationTokenTtlHours)
             )
         )
 
@@ -128,7 +128,7 @@ class ProvisionEmployeeAccountHandler(
         firstName: String,
         invitedByName: String?,
         setupLink: String,
-        tokenTtlMinutes: Long
+        validFor: String
     ): String {
         val inviter = invitedByName?.let { "Użytkownik $it" } ?: "Administrator"
         return """
@@ -139,12 +139,24 @@ class ProvisionEmployeeAccountHandler(
             Aby aktywować swoje konto i ustawić hasło, kliknij w poniższy link:
             $setupLink
 
-            Link jest aktywny przez $tokenTtlMinutes minut. Po tym czasie wygaśnie i będziesz musiał(-a) poprosić administratora o ponowne wysłanie zaproszenia.
+            Link jest aktywny przez $validFor. Po tym czasie wygaśnie i będziesz musiał(-a) poprosić administratora o ponowne wysłanie zaproszenia.
 
             Jeśli nie spodziewałeś(-aś) się tego zaproszenia, możesz zignorować tę wiadomość.
 
             Pozdrawiamy,
             Zespół DetailBoost
         """.trimIndent()
+    }
+
+    companion object {
+        /** „48 godzin", „24 godziny", „1 godzinę" — odmiana do zdania „aktywny przez …". */
+        internal fun hoursInPolish(hours: Long): String {
+            val unit = when {
+                hours == 1L -> "godzinę"
+                hours % 10 in 2..4 && hours % 100 !in 12..14 -> "godziny"
+                else -> "godzin"
+            }
+            return "$hours $unit"
+        }
     }
 }
