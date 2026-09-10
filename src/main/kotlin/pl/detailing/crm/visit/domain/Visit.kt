@@ -580,18 +580,18 @@ object PriceCalculator {
                 basePriceNet.amountInCents - adjustmentValue
             }
             AdjustmentType.FIXED_GROSS -> {
-                // F_gross = B_gross - v; F_net = round(F_gross * 100 / (100 + r))
+                // F_gross = B_gross - v; F_net wyliczone „w stu" (dla ZW/0% netto = brutto)
                 val baseGross = vatRate.calculateGrossAmount(basePriceNet)
                 val fGross = baseGross.amountInCents - adjustmentValue
-                Math.round(fGross * 100.0 / (100 + vatRate.rate))
+                vatRate.netCentsFromGrossCents(fGross)
             }
             AdjustmentType.SET_NET -> {
                 // adjustmentValue is the target net price in grosz
                 adjustmentValue
             }
             AdjustmentType.SET_GROSS -> {
-                // F_net = round(F_gross * 100 / (100 + r))
-                Math.round(adjustmentValue * 100.0 / (100 + vatRate.rate))
+                // F_net wyliczone „w stu" z docelowego brutto (dla ZW/0% netto = brutto)
+                vatRate.netCentsFromGrossCents(adjustmentValue)
             }
         }
 
