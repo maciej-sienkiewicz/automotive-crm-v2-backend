@@ -10,7 +10,10 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -55,6 +58,7 @@ class DocumentLogo(
 @Service
 class CompanyLogoService(
     private val s3Client: S3Client,
+    private val s3Presigner: S3Presigner,
     private val processor: CompanyLogoProcessor,
     private val studioSettingsRepository: StudioSettingsRepository,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String
@@ -62,6 +66,41 @@ class CompanyLogoService(
     companion object {
         private val logger = LoggerFactory.getLogger(CompanyLogoService::class.java)
         private const val CACHE_CONTROL = "public, max-age=31536000, immutable"
+        /** Prefiks stałego, publicznego adresu wariantu do aplikacji (PublicBrandingController). */
+        const val PUBLIC_LOGO_PATH_PREFIX = "/api/public/branding"
+        /** Podpisany link tylko dla logo sprzed wariantów; nowe logo ma stały adres publiczny. */
+        private val LEGACY_LOGO_URL_TTL = Duration.ofHours(24)
+        private val APP_LOGO_KEY = Regex("""^([0-9a-f-]{36})/logo/([0-9a-f]{16})/app\.png$""")
+        private val CONTENT_HASH = Regex("""^[0-9a-f]{16}$""")
+    }
+
+    /**
+     * Adres wariantu do aplikacji (menu, ustawienia, Karta Wizyty).
+     *
+     * Nowe logo dostaje stały, publiczny adres z hashem treści:
+     * `/api/public/branding/{studioId}/logo/{hash}/app.png`. Adres jest identyczny przy
+     * każdym odświeżeniu, więc przeglądarka rysuje obrazek z pamięci podręcznej od
+     * pierwszej klatki, bez mrugania; nowy plik ma nowy hash, więc nic nie zostaje
+     * nieświeże. Podpisany link S3 (inny przy każdym żądaniu, więc nigdy nie trafiający
+     * w cache) zostaje tylko dla logo sprzed wariantów.
+     */
+    fun appLogoUrl(settings: StudioSettingsEntity?): String? {
+        val key = settings?.logoS3Key ?: return null
+        val match = APP_LOGO_KEY.matchEntire(key) ?: return presign(key)
+        val (studioId, hash) = match.destructured
+        return "$PUBLIC_LOGO_PATH_PREFIX/$studioId/logo/$hash/app.png"
+    }
+
+    /**
+     * Bajty wariantu do aplikacji spod publicznego adresu; `null`, gdy [hash] nie jest
+     * aktualnym logo studia (stary adres po podmianie, zgadywanie).
+     */
+    fun loadAppLogo(studioId: UUID, hash: String): ByteArray? {
+        if (!CONTENT_HASH.matches(hash)) return null
+        val settings = studioSettingsRepository.findById(studioId).orElse(null) ?: return null
+        val expected = "$studioId/logo/$hash/app.png"
+        if (settings.logoS3Key != expected) return null
+        return download(expected)
     }
 
     /**
@@ -165,6 +204,14 @@ class CompanyLogoService(
     private fun download(key: String): ByteArray =
         s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(key).build())
             .use { it.readAllBytes() }
+
+    private fun presign(key: String): String {
+        val request = GetObjectPresignRequest.builder()
+            .signatureDuration(LEGACY_LOGO_URL_TTL)
+            .getObjectRequest(GetObjectRequest.builder().bucket(bucketName).key(key).build())
+            .build()
+        return s3Presigner.presignGetObject(request).url().toString()
+    }
 
     /** Sprzątanie starych obiektów nie może przewrócić zapisu nowego logo. */
     private fun deleteQuietly(keys: Set<String>) {

@@ -130,6 +130,9 @@ class SecurityConfig(
                 auth.requestMatchers("/api/public/carddav-profile/**").permitAll()
                 // Customer Visit Card — authenticated by the unguessable card token in the URL
                 auth.requestMatchers("/api/public/visit-card/**").permitAll()
+                // Logo studia pod stałym adresem z hashem treści: rysowane w menu CRM i na
+                // publicznej Karcie Wizyty, więc publiczne; hash odpowiada tylko aktualnemu logo
+                auth.requestMatchers("/api/public/branding/**").permitAll()
                 // Remote document signing from the customer's phone — authenticated by
                 // the unguessable, TTL-bound link token delivered by SMS
                 auth.requestMatchers("/api/public/signing/**").permitAll()

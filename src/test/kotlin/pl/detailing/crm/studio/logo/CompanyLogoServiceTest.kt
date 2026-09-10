@@ -21,6 +21,10 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
+import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest
+import java.net.URL
 import java.util.Optional
 import java.util.UUID
 
@@ -28,8 +32,9 @@ class CompanyLogoServiceTest {
 
     private val studioId = UUID.randomUUID()
     private val s3Client = mockk<S3Client>()
+    private val s3Presigner = mockk<S3Presigner>()
     private val repository = mockk<StudioSettingsRepository>()
-    private val service = CompanyLogoService(s3Client, CompanyLogoProcessor(), repository, "test-bucket")
+    private val service = CompanyLogoService(s3Client, s3Presigner, CompanyLogoProcessor(), repository, "test-bucket")
 
     private val uploaded = linkedMapOf<String, ByteArray>()
     private val deleted = mutableListOf<String>()
@@ -139,6 +144,40 @@ class CompanyLogoServiceTest {
         assertEquals(LogoSourceFormat.PNG, CompanyLogoProcessor().detectFormat(logo.printPng))
         assertNotNull(settings.logoPrintS3Key, "warianty zostają zapisane — następny dokument nie przetwarza ponownie")
         assertEquals(listOf(legacyKey), deleted)
+    }
+
+    @Test
+    fun `nowe logo ma staly publiczny adres z hashem, stare podpisany link S3`() {
+        val fresh = StudioSettingsEntity(studioId = studioId).apply {
+            logoS3Key = "$studioId/logo/0123456789abcdef/app.png"
+        }
+        assertEquals("/api/public/branding/$studioId/logo/0123456789abcdef/app.png", service.appLogoUrl(fresh))
+        assertNull(service.appLogoUrl(StudioSettingsEntity(studioId = studioId)))
+        assertNull(service.appLogoUrl(null))
+
+        val presigned = mockk<PresignedGetObjectRequest>()
+        every { presigned.url() } returns URL("https://s3.example/legacy?X-Amz-Signature=abc")
+        every { s3Presigner.presignGetObject(any<GetObjectPresignRequest>()) } returns presigned
+        val legacy = StudioSettingsEntity(studioId = studioId).apply { logoS3Key = "$studioId/logo/logo.png" }
+
+        assertEquals("https://s3.example/legacy?X-Amz-Signature=abc", service.appLogoUrl(legacy))
+    }
+
+    @Test
+    fun `publiczny adres odpowiada tylko dla aktualnego hasha logo`() {
+        val settings = StudioSettingsEntity(studioId = studioId).apply {
+            logoS3Key = "$studioId/logo/0123456789abcdef/app.png"
+        }
+        every { repository.findById(studioId) } returns Optional.of(settings)
+        stubDownload("$studioId/logo/0123456789abcdef/app.png", byteArrayOf(1, 2, 3))
+
+        assertEquals(3, service.loadAppLogo(studioId, "0123456789abcdef")!!.size)
+        assertNull(service.loadAppLogo(studioId, "fedcba9876543210"), "stary hash po podmianie logo")
+        assertNull(service.loadAppLogo(studioId, "../etc/passwd"), "hash spoza formatu")
+
+        val otherStudio = UUID.randomUUID()
+        every { repository.findById(otherStudio) } returns Optional.empty()
+        assertNull(service.loadAppLogo(otherStudio, "0123456789abcdef"), "cudze studio")
     }
 
     @Test
