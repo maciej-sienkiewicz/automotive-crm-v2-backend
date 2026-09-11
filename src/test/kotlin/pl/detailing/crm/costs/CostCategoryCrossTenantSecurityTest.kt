@@ -56,7 +56,8 @@ class CostCategoryCrossTenantSecurityTest {
             .standaloneSetup(
                 CostCategoryController(
                     categoryRepository, assignmentRepository, autoRuleRepository,
-                    invoiceRepository, invoiceItemRepository
+                    invoiceRepository, invoiceItemRepository,
+                    SupplierAutoRuleService(autoRuleRepository, invoiceRepository, invoiceItemRepository, assignmentRepository)
                 )
             )
             .setControllerAdvice(GlobalExceptionHandler(mockk<TenantIsolationAuditService>(relaxed = true)))

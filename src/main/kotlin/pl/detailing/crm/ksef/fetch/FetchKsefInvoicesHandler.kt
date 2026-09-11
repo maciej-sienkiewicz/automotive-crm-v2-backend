@@ -10,6 +10,7 @@ import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryDateType
 import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQueryFilters
 import pl.akmf.ksef.sdk.client.model.invoice.InvoiceQuerySubjectType
 import pl.akmf.ksef.sdk.client.model.util.SortOrder
+import pl.detailing.crm.costs.SupplierAutoRuleService
 import pl.detailing.crm.ksef.auth.KsefAuthService
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
@@ -38,7 +39,8 @@ class FetchKsefInvoicesHandler(
     private val ksefClient: KSeFClient,
     private val invoiceRepository: KsefInvoiceRepository,
     private val itemRepository: KsefInvoiceItemRepository,
-    private val xmlFetcher: KsefInvoiceXmlFetcher
+    private val xmlFetcher: KsefInvoiceXmlFetcher,
+    private val supplierAutoRuleService: SupplierAutoRuleService
 ) {
     private val log = LoggerFactory.getLogger(FetchKsefInvoicesHandler::class.java)
 
@@ -80,6 +82,7 @@ class FetchKsefInvoicesHandler(
         var fetched = 0
         var skipped = 0
         var rateLimited = false
+        val newInvoices = mutableListOf<KsefInvoiceEntity>()
 
         for (metadata in allMetadata) {
             val existing = invoiceRepository.findByStudioIdAndKsefNumber(command.studioId.value, metadata.ksefNumber)
@@ -136,8 +139,13 @@ class FetchKsefInvoicesHandler(
                 )
             )
             saveItems(invoice.id, xmlData.lines)
+            newInvoices += invoice
             fetched++
         }
+
+        // Świeżo pobrane faktury przechodzą przez reguły auto-przypisania — reguła
+        // dodana wcześniej ma teraz objąć fakturę, która przyszła później.
+        supplierAutoRuleService.applyRulesForInvoices(command.studioId.value, newInvoices)
 
         log.info("KSeF fetch complete studio={}: fetched={} skipped={}", command.studioId, fetched, skipped)
         return FetchExpensesResult(fetched, skipped)
@@ -165,6 +173,7 @@ class FetchKsefInvoicesHandler(
 
         val accessToken = ksefAuthService.getValidAccessToken(studioId)
         var backfilled = 0
+        val backfilledInvoices = mutableListOf<KsefInvoiceEntity>()
 
         for (invoice in candidates) {
             val xmlData = try {
@@ -179,7 +188,7 @@ class FetchKsefInvoicesHandler(
             if (!itemRepository.existsByInvoiceId(invoice.id)) {
                 saveItems(invoice.id, xmlData.lines)
             }
-            invoiceRepository.save(
+            val saved = invoiceRepository.save(
                 invoice.withBackfilledDetails(
                     sellerNip          = xmlData.seller.nip,
                     sellerName         = xmlData.seller.name,
@@ -196,8 +205,13 @@ class FetchKsefInvoicesHandler(
                     bankAccount        = xmlData.payment.bankAccount
                 )
             )
+            backfilledInvoices += saved
             backfilled++
         }
+
+        // NIP sprzedawcy bywa uzupełniany dopiero tu (faktura zapisana wcześniej z
+        // samych metadanych) — dopiero teraz reguła może się dopasować.
+        supplierAutoRuleService.applyRulesForInvoices(studioId.value, backfilledInvoices)
 
         log.info("KSeF backfill studio={}: candidates={} backfilled={}", studioId, candidates.size, backfilled)
         return backfilled

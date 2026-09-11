@@ -25,6 +25,26 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     ): List<KsefInvoiceEntity>
 
     /**
+     * Faktury dostawcy dopasowane po NIP zredukowanym do samych cyfr, z pominięciem
+     * anulowanych/wykluczonych. Reguła auto-przypisania trzyma NIP jako cyfry, a fetch
+     * zapisuje NIP w formacie z KSeF (może mieć prefiks „PL" albo kreski) — normalizacja
+     * po obu stronach sprawia, że dopasowanie działa niezależnie od formatu zapisu.
+     */
+    @Query(
+        value = """
+            SELECT * FROM ksef_invoices
+            WHERE studio_id = CAST(:studioId AS uuid)
+              AND regexp_replace(COALESCE(seller_nip, ''), '\D', '', 'g') = :sellerNipDigits
+              AND status NOT IN ('CANCELLED', 'EXCLUDED')
+        """,
+        nativeQuery = true
+    )
+    fun findBySellerNipDigits(
+        @Param("studioId") studioId: UUID,
+        @Param("sellerNipDigits") sellerNipDigits: String
+    ): List<KsefInvoiceEntity>
+
+    /**
      * Faktury KSeF bez pełnych danych z XML (details_synced = FALSE) — kandydaci do
      * synchronizacji wstecznej. Paginacja ogranicza liczbę pobrań XML w jednym przebiegu.
      */
