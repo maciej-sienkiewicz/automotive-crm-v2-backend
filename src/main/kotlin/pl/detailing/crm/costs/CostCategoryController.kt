@@ -184,7 +184,8 @@ class CostCategoryController(
     private val assignmentRepository: CostItemAssignmentRepository,
     private val autoRuleRepository: SupplierAutoRuleRepository,
     private val invoiceRepository: KsefInvoiceRepository,
-    private val invoiceItemRepository: KsefInvoiceItemRepository
+    private val invoiceItemRepository: KsefInvoiceItemRepository,
+    private val autoRuleService: SupplierAutoRuleService
 ) {
 
     // ── Categories CRUD ───────────────────────────────────────────────────────
@@ -503,7 +504,7 @@ class CostCategoryController(
             )
         }
 
-        val assigned = if (req.applyNow) applyRule(rule, studioId) else 0
+        val assigned = if (req.applyNow) autoRuleService.applyRule(rule, studioId) else 0
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(CreateAutoRuleResponse(id = rule.id.toString(), assignedItemCount = assigned))
     }
@@ -539,8 +540,7 @@ class CostCategoryController(
     @Transactional
     fun applyAllRules(): ResponseEntity<ApplyAutoRulesResponse> {
         val studioId = SecurityContextHelper.getCurrentUser().studioId.value
-        val rules    = autoRuleRepository.findByStudioId(studioId)
-        val total    = rules.sumOf { applyRule(it, studioId) }
+        val total    = autoRuleService.applyAllRules(studioId)
         return ResponseEntity.ok(ApplyAutoRulesResponse(total))
     }
 
@@ -557,36 +557,6 @@ class CostCategoryController(
         updatedAt        = updatedAt.toString()
     )
 
-    /**
-     * Assigns all unassigned items from invoices matching [rule.sellerNip] to [rule.categoryId].
-     * Already-assigned items are skipped — manual overrides are preserved.
-     */
-    private fun applyRule(rule: SupplierAutoRuleEntity, studioId: UUID): Int {
-        val invoices = invoiceRepository.findByStudioIdAndSellerNipAndStatusNotIn(
-            studioId, rule.sellerNip, listOf("CANCELLED", "EXCLUDED")
-        )
-        if (invoices.isEmpty()) return 0
-
-        val items    = invoiceItemRepository.findByInvoiceIdIn(invoices.map { it.id })
-        if (items.isEmpty()) return 0
-
-        val assigned = assignmentRepository.findByStudioId(studioId).map { it.ksefItemId }.toSet()
-        var count    = 0
-        items.forEach { item ->
-            if (item.id !in assigned) {
-                assignmentRepository.save(
-                    CostItemAssignmentEntity(
-                        categoryId = rule.categoryId,
-                        ksefItemId = item.id,
-                        invoiceId  = item.invoiceId,
-                        studioId   = studioId
-                    )
-                )
-                count++
-            }
-        }
-        return count
-    }
 
     private fun SupplierAutoRuleEntity.toDto(categoryMap: Map<UUID, CostCategoryEntity>) = SupplierAutoRuleDto(
         id            = id.toString(),
