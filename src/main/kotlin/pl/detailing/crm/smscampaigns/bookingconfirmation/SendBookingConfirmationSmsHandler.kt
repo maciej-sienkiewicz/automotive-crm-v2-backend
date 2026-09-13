@@ -110,7 +110,11 @@ class SendBookingConfirmationSmsHandler(
         )
 
         val result = try {
-            communicationGateway.sendTransactionalSms(command.studioId.value, phoneNumber, message)
+            // validUntil = start wizyty: potwierdzenie odłożone przez okno na godzinę po
+            // wizycie (rezerwacja złożona w nocy na poranek) nie ma czego potwierdzać — bramka je pominie.
+            communicationGateway.sendTransactionalSms(
+                command.studioId.value, phoneNumber, message, validUntil = appointment.startDateTime
+            )
         } catch (e: InsufficientSmsCreditsException) {
             logger.warn(
                 "SendBookingConfirmationSms: no SMS credits [studioId={} appointmentId={}]",

@@ -181,6 +181,22 @@ class OutboundCommunicationGateway(
         return scheduledFor
     }
 
+    /**
+     * Wiadomość zakotwiczona w czasie ([validUntil] — np. godzina wizyty), która przez okno
+     * wysyłki wyszłaby dopiero PO tym momencie, jest już nieaktualna: „potwierdzamy rezerwację
+     * na 11:00" dostarczone o 12:00 dezorientuje, a nie pomaga. Zwraca powód, gdy wysyłać już
+     * nie wolno; null, gdy wiadomość zdąży najpóźniej o [validUntil].
+     *
+     * Broni przede wszystkim rezerwacji złożonych tuż przed poranną wizytą, poza oknem: jedyny
+     * slot okna przed wizytą już minął, a najbliższy kolejny wypada po niej. Zamiast wysyłać
+     * „po fakcie", nie wysyłamy nic i zapisujemy powód.
+     */
+    private fun expiredReason(validUntil: Instant?, sendAt: Instant): String? {
+        if (validUntil == null || !sendAt.isAfter(validUntil)) return null
+        meterRegistry.counter("communication.skipped.expired").increment()
+        return "Termin wizyty minął, zanim otworzyło się okno wysyłki — wiadomość nie została wysłana"
+    }
+
 
     /** The address a message actually goes to, what to stamp on it, and whether it was swapped. */
     private data class Recipient(val address: String, val prefix: String, val redirected: Boolean)
@@ -230,7 +246,9 @@ class OutboundCommunicationGateway(
         message: String,
         context: String = "",
         category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL,
-        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW
+        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW,
+        /** Nie wysyłaj, jeśli przez okno wiadomość wyszłaby dopiero po tym momencie (np. godzina wizyty). */
+        validUntil: Instant? = null
     ): SmsDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return SmsDeliveryResult.failure(it) }
 
@@ -242,7 +260,10 @@ class OutboundCommunicationGateway(
         val draft = OutboundMessageDraft(
             studioId, customerId, CommunicationChannel.SMS, category, phoneNumber, null, message, resolvedContext
         )
-        deferOutsideWindow(delivery, draft, clock.instant())?.let { scheduledFor ->
+        val now = clock.instant()
+        val scheduledFor = deferOutsideWindow(delivery, draft, now)
+        expiredReason(validUntil, scheduledFor ?: now)?.let { return SmsDeliveryResult.failure(it) }
+        if (scheduledFor != null) {
             val queued = messageQueue.enqueue(draft, scheduledFor)
             return SmsDeliveryResult.queued(queued.id, scheduledFor)
         }
@@ -254,14 +275,19 @@ class OutboundCommunicationGateway(
         phoneNumber: String,
         message: String,
         category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL,
-        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW
+        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW,
+        /** Nie wysyłaj, jeśli przez okno wiadomość wyszłaby dopiero po tym momencie (np. godzina wizyty). */
+        validUntil: Instant? = null
     ): SmsDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return SmsDeliveryResult.failure(it) }
 
         val draft = OutboundMessageDraft(
             studioId, null, CommunicationChannel.SMS, category, phoneNumber, null, message, category.name
         )
-        deferOutsideWindow(delivery, draft, clock.instant())?.let { scheduledFor ->
+        val now = clock.instant()
+        val scheduledFor = deferOutsideWindow(delivery, draft, now)
+        expiredReason(validUntil, scheduledFor ?: now)?.let { return SmsDeliveryResult.failure(it) }
+        if (scheduledFor != null) {
             val queued = messageQueue.enqueue(draft, scheduledFor)
             return SmsDeliveryResult.queued(queued.id, scheduledFor)
         }
@@ -299,7 +325,9 @@ class OutboundCommunicationGateway(
         attachments: List<EmailAttachment> = emptyList(),
         context: String = "",
         category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL,
-        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW
+        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW,
+        /** Nie wysyłaj, jeśli przez okno wiadomość wyszłaby dopiero po tym momencie (np. godzina wizyty). */
+        validUntil: Instant? = null
     ): EmailDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return EmailDeliveryResult.failure(it) }
 
@@ -311,7 +339,10 @@ class OutboundCommunicationGateway(
         val draft = OutboundMessageDraft(
             studioId, customerId, CommunicationChannel.EMAIL, category, to, subject, bodyText, resolvedContext, attachments
         )
-        deferOutsideWindow(delivery, draft, clock.instant())?.let { scheduledFor ->
+        val now = clock.instant()
+        val scheduledFor = deferOutsideWindow(delivery, draft, now)
+        expiredReason(validUntil, scheduledFor ?: now)?.let { return EmailDeliveryResult.failure(it) }
+        if (scheduledFor != null) {
             val queued = messageQueue.enqueue(draft, scheduledFor)
             return EmailDeliveryResult.queued(queued.id, scheduledFor)
         }
@@ -330,14 +361,19 @@ class OutboundCommunicationGateway(
         bodyText: String,
         attachments: List<EmailAttachment> = emptyList(),
         category: OutboundMessageCategory = OutboundMessageCategory.TRANSACTIONAL,
-        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW
+        delivery: DeliveryPolicy = DeliveryPolicy.SEND_WINDOW,
+        /** Nie wysyłaj, jeśli przez okno wiadomość wyszłaby dopiero po tym momencie (np. godzina wizyty). */
+        validUntil: Instant? = null
     ): EmailDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return EmailDeliveryResult.failure(it) }
 
         val draft = OutboundMessageDraft(
             studioId, null, CommunicationChannel.EMAIL, category, to, subject, bodyText, category.name, attachments
         )
-        deferOutsideWindow(delivery, draft, clock.instant())?.let { scheduledFor ->
+        val now = clock.instant()
+        val scheduledFor = deferOutsideWindow(delivery, draft, now)
+        expiredReason(validUntil, scheduledFor ?: now)?.let { return EmailDeliveryResult.failure(it) }
+        if (scheduledFor != null) {
             val queued = messageQueue.enqueue(draft, scheduledFor)
             return EmailDeliveryResult.queued(queued.id, scheduledFor)
         }
