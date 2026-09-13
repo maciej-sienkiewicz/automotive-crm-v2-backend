@@ -19,16 +19,34 @@ data class DashboardHint(
     val text: String,
     val action: DashboardHintAction?,
     /** true = zamknięcie chowa na zawsze (upselle); false = drzemka 7 dni. */
-    val permanentDismiss: Boolean
+    val permanentDismiss: Boolean,
+    /**
+     * Waga wizualna podpowiedzi. O tym, czy coś jest alarmem, decyduje backend —
+     * bo to ocena danych („klient czeka na naszą odpowiedź"), a nie sposób ich
+     * pokazania. Frontend maluje [CRITICAL] na czerwono, [INFO] zostawia spokojne;
+     * domyślnie [INFO], więc wszystkie dotychczasowe reguły zostają bez zmian.
+     */
+    val severity: DashboardHintSeverity = DashboardHintSeverity.INFO
 )
 
 enum class DashboardHintKind {
+    LEADS_AWAITING,
     WORKTIME_MISSING,
     WORKTIME_UNUSED,
     COMPETITOR_STANDOUT,
     UNREAD_MAIL,
     SELF_IG_SILENT,
     KSEF_UPSELL
+}
+
+/**
+ * Czerwień jest droga: gdyby dostała ją połowa podpowiedzi, przestałaby cokolwiek
+ * znaczyć. [CRITICAL] to wyłącznie zaległość, która kosztuje pieniądze teraz —
+ * zapytanie, na które klient czeka, a piłka jest po naszej stronie.
+ */
+enum class DashboardHintSeverity {
+    INFO,
+    CRITICAL
 }
 
 data class DashboardHintAction(
