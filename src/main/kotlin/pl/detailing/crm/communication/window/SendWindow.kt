@@ -63,6 +63,32 @@ data class SendWindow(
         }.toInstant()
     }
 
+    /**
+     * Ten sam moment, jeśli mieści się w oknie; w przeciwnym razie ostatnia dozwolona
+     * minuta wysyłki NIE PÓŹNIEJSZA niż podany moment — czyli cofnięcie do najbliższego
+     * wcześniejszego slotu okna.
+     *
+     * Odwrotność [nextSlotFrom]: tamta pyta „kiedy najbliżej wolno wysłać, jeśli już po
+     * czasie", ta — „kiedy ostatni raz było wolno przed tym momentem". Używa jej wysyłka
+     * przypomnień o wizycie: przypomnienie zakotwiczone poza oknem (np. na godzinę przed
+     * poranną wizytą) nie ucieka poza okno, tylko schodzi do ostatniego slotu przed nim —
+     * dla wizyt porannych jest to wieczór dnia poprzedniego, a nie cisza nocna.
+     *
+     * - moment po zamknięciu okna → [closesAt] tego samego dnia;
+     * - moment przed otwarciem → [closesAt] dnia poprzedniego;
+     * - moment w oknie → on sam (z dokładnością do minuty).
+     */
+    fun lastSlotOnOrBefore(instant: Instant): Instant {
+        if (!enabled) return instant
+        val local: ZonedDateTime = instant.atZone(zone)
+        val time = local.toLocalTime().truncatedTo(ChronoUnit.MINUTES)
+        return when {
+            time.isAfter(closesAt) -> local.with(closesAt).truncatedTo(ChronoUnit.MINUTES)
+            !time.isBefore(opensAt) -> local.truncatedTo(ChronoUnit.MINUTES)
+            else -> local.minusDays(1).with(closesAt).truncatedTo(ChronoUnit.MINUTES)
+        }.toInstant()
+    }
+
     companion object {
         /** 12:00–18:00 czasu warszawskiego — wartość, od której zaczęły podziękowania po wizycie. */
         val DEFAULT = SendWindow(
