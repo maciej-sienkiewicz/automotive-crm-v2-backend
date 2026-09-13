@@ -156,6 +156,65 @@ class OutboundCommunicationGatewaySendWindowTest {
         verify(exactly = 1) { smsProvider.send(any(), any(), any()) }
     }
 
+    // ── validUntil: nie wysyłaj po terminie wizyty ──────────────────────────────
+
+    @Test
+    fun `poza oknem, gdy slot wypadlby po terminie wizyty, nie wysyla i nie kolejkuje`() {
+        // Dokładny przypadek: rezerwacja złożona o 23:00 (15.) na wizytę 11:00 następnego dnia.
+        // Najbliższy slot okna to 12:00 (16.) — już PO wizycie. Nie potwierdzamy po fakcie.
+        val visitStart = warsaw(11, 0, day = 16)
+
+        val result = gatewayAt(warsaw(23, 0)).sendTransactionalSms(
+            studioId, "+48600700800", "Potwierdzamy rezerwację na jutro 11:00", validUntil = visitStart
+        )
+
+        assertFalse(result.success)
+        assertFalse(result.queued)
+        verify(exactly = 0) { queue.enqueue(any(), any(), any()) }
+        verify(exactly = 0) { smsProvider.send(any(), any(), any()) }
+    }
+
+    @Test
+    fun `poza oknem, gdy slot wypada przed wizyta, kolejkuje normalnie`() {
+        val (queuedId, _) = stubEnqueue()
+        // Rezerwacja o 23:00 (15.) na wizytę za tydzień: slot 12:00 (16.) jest długo przed wizytą.
+        val visitStart = warsaw(15, 0, day = 22)
+
+        val result = gatewayAt(warsaw(23, 0)).sendTransactionalSms(
+            studioId, "+48600700800", "Potwierdzamy rezerwację", validUntil = visitStart
+        )
+
+        assertTrue(result.success)
+        assertTrue(result.queued)
+        assertEquals(queuedId, result.queuedMessageId)
+        verify(exactly = 1) { queue.enqueue(any(), any(), any()) }
+    }
+
+    @Test
+    fun `w oknie z terminem wizyty w przyszlosci wysyla od razu`() {
+        every { smsProvider.send(any(), any(), any()) } returns SmsDeliveryResult.success("ext-9")
+
+        val result = gatewayAt(warsaw(14, 0)).sendTransactionalSms(
+            studioId, "+48600700800", "Potwierdzamy", validUntil = warsaw(17, 0)
+        )
+
+        assertTrue(result.success)
+        assertFalse(result.queued)
+        verify(exactly = 1) { smsProvider.send(any(), any(), any()) }
+    }
+
+    @Test
+    fun `w oknie, ale termin wizyty juz minal, nie wysyla`() {
+        // Obrona także dla wysyłki natychmiastowej: wizyta była o 12:00, a jest 14:00.
+        val result = gatewayAt(warsaw(14, 0)).sendTransactionalSms(
+            studioId, "+48600700800", "Potwierdzamy", validUntil = warsaw(12, 0)
+        )
+
+        assertFalse(result.success)
+        assertFalse(result.queued)
+        verify(exactly = 0) { smsProvider.send(any(), any(), any()) }
+    }
+
     // ── Blokady przed kolejką ────────────────────────────────────────────────
 
     @Test
