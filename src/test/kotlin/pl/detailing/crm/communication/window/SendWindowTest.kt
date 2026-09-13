@@ -68,6 +68,37 @@ class SendWindowTest {
         assertEquals(localOf(at(12, 0, day = 16)), localOf(window.nextSlotFrom(at(18, 1))))
     }
 
+    // ── lastSlotOnOrBefore ─────────────────────────────────────────────────────
+
+    @Test
+    fun `lastSlot w oknie zwraca ten sam moment`() {
+        assertEquals(at(14, 7), window.lastSlotOnOrBefore(at(14, 7)))
+    }
+
+    @Test
+    fun `lastSlot po zamknieciu schodzi na dzisiejsza osiemnasta`() {
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(20, 50))))
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(18, 1))))
+    }
+
+    @Test
+    fun `lastSlot przed otwarciem schodzi na wczorajsza osiemnasta`() {
+        // Przypomnienie porannej wizyty schodzi na wieczór dnia poprzedniego, nie w noc.
+        assertEquals(localOf(at(18, 0, day = 14)), localOf(window.lastSlotOnOrBefore(at(8, 30))))
+        assertEquals(localOf(at(18, 0, day = 14)), localOf(window.lastSlotOnOrBefore(at(11, 59, second = 59))))
+    }
+
+    @Test
+    fun `lastSlot na granicach zwraca sama granice`() {
+        assertEquals(localOf(at(12, 0)), localOf(window.lastSlotOnOrBefore(at(12, 0))))
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(18, 0))))
+    }
+
+    @Test
+    fun `lastSlot przy wylaczonym oknie oddaje ten sam moment`() {
+        assertEquals(at(3, 0), SendWindow.ALWAYS_OPEN.lastSlotOnOrBefore(at(3, 0)))
+    }
+
     @Test
     fun `okno liczy czas lokalny studia, nie UTC`() {
         // 11:30 UTC w polskie lato to 13:30 w Warszawie — czyli w oknie.

@@ -8,6 +8,7 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -32,6 +33,7 @@ import pl.detailing.crm.smscampaigns.template.SmsTemplateProcessor
 import pl.detailing.crm.smscampaigns.thankyou.domain.ScheduledThankYouSmsRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -67,6 +69,7 @@ class SmsAutomationScheduler(
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService,
     private val thankYouSmsRepository: ScheduledThankYouSmsRepository,
+    private val sendWindow: SendWindow,
     /** Podmieniany w testach; produkcyjnie zegar systemowy (Spring bierze wartość domyślną). */
     private val clock: Clock = Clock.systemUTC()
 ) {
@@ -78,7 +81,15 @@ class SmsAutomationScheduler(
         private const val WINDOW_HALF_WIDTH_SECONDS = 60L
 
         /** Offset used for per-appointment on-demand reminders when studio automation is disabled. */
-        private const val ON_DEMAND_PRE_VISIT_OFFSET_MINUTES = 60L
+        private const val ON_DEMAND_PRE_VISIT_OFFSET_MINUTES = 60
+
+        /**
+         * Jak daleko w przód szukamy wizyt dla przypomnień PRE_VISIT. Przypomnienie może
+         * zejść najwyżej o nocną przerwę okna przed moment „offset przed wizytą" (patrz
+         * [reminderSendAt]), więc doba zapasu ponad offset wystarcza, by złapać wizytę,
+         * której slot wysyłki (np. wieczór dnia poprzedniego) wypada właśnie teraz.
+         */
+        private val REMINDER_LOOKAHEAD_SLACK: Duration = Duration.ofHours(24)
     }
 
     @Scheduled(cron = "0 * * * * *")
@@ -115,17 +126,19 @@ class SmsAutomationScheduler(
      * [SmsLogJpaRepository] prevents double-sends when the studio automation already fired.
      */
     private fun processOnDemandPreVisitReminders(now: Instant) {
-        val targetTime = now.plusSeconds(ON_DEMAND_PRE_VISIT_OFFSET_MINUTES * 60)
-        val windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS)
-        val windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
+        // Poza oknem wysyłki nic nie leci — także przypomnienia „na życzenie".
+        if (!sendWindow.contains(now)) return
 
-        val appointments = appointmentQueryService.findWithSendReminderAndStartTimeBetween(windowStart, windowEnd)
+        val candidates = appointmentQueryService.findWithSendReminderAndStartTimeBetween(
+            now, reminderLookaheadEnd(now, ON_DEMAND_PRE_VISIT_OFFSET_MINUTES)
+        )
+        val due = dueReminders(candidates, ON_DEMAND_PRE_VISIT_OFFSET_MINUTES, now)
 
-        if (appointments.isEmpty()) return
+        if (due.isEmpty()) return
 
-        logger.debug("SMS on-demand pre-visit: {} candidate(s)", appointments.size)
+        logger.debug("SMS on-demand pre-visit: {} due candidate(s)", due.size)
 
-        appointments.forEach { appointment ->
+        due.forEach { appointment ->
             val studioId = StudioId(appointment.studioId)
             // The per-appointment opt-in overrides the rule's on/off switch, but never
             // its text: with no template configured there is nothing to send.
@@ -145,13 +158,7 @@ class SmsAutomationScheduler(
 
     private fun processConfig(config: SmsAutomationConfig, now: Instant) {
         if (config.preVisit.sendable) {
-            val targetTime = now.plusSeconds(config.preVisit.offsetMinutes * 60L)
-            processPreVisitRule(
-                studioId = config.studioId,
-                rule = config.preVisit,
-                windowStart = targetTime.minusSeconds(WINDOW_HALF_WIDTH_SECONDS),
-                windowEnd = targetTime.plusSeconds(WINDOW_HALF_WIDTH_SECONDS)
-            )
+            processPreVisitRule(studioId = config.studioId, rule = config.preVisit, now = now)
         }
 
         // POST_VISIT and DELAYED_REMINDER both count from the moment the customer drove
@@ -173,25 +180,75 @@ class SmsAutomationScheduler(
         }
     }
 
-    private fun processPreVisitRule(
-        studioId: StudioId,
-        rule: SmsAutomationRule,
-        windowStart: Instant,
-        windowEnd: Instant
-    ) {
-        val appointments = appointmentQueryService.findByStudioIdAndStartTimeBetween(studioId, windowStart, windowEnd)
+    /**
+     * Przypomnienia PRE_VISIT respektują okno wysyłki 12–18 (patrz [SendWindow]).
+     *
+     * Docelowo idą [SmsAutomationRule.offsetMinutes] przed wizytą, ale jeśli ten moment
+     * wypada poza oknem, [reminderSendAt] schodzi do ostatniego dozwolonego slotu przed
+     * wizytą — dla wizyt porannych jest to wieczór dnia poprzedniego, nie cisza nocna.
+     *
+     * Dlatego nie patrzymy już wąsko na „teraz + offset", tylko szerzej w przód i sami
+     * liczymy moment wysyłki każdego kandydata: wizytę o 10:00 trzeba wypatrzeć już
+     * poprzedniego wieczoru, żeby zdążyć wysłać przypomnienie w oknie.
+     */
+    private fun processPreVisitRule(studioId: StudioId, rule: SmsAutomationRule, now: Instant) {
+        // Poza oknem nic nie wychodzi — to jest cała reguła „furtki". Kandydatów, których
+        // slot wysyłki wypadł w tej chwili, złapiemy przy najbliższym otwarciu okna.
+        if (!sendWindow.contains(now)) return
 
-        if (appointments.isEmpty()) return
+        val candidates = appointmentQueryService.findByStudioIdAndStartTimeBetween(
+            studioId, now, reminderLookaheadEnd(now, rule.offsetMinutes)
+        )
+        val due = dueReminders(candidates, rule.offsetMinutes, now)
+
+        if (due.isEmpty()) return
 
         logger.debug(
-            "SMS automation: {} candidate(s) for PRE_VISIT in studio={}",
-            appointments.size, studioId
+            "SMS automation: {} due candidate(s) for PRE_VISIT in studio={}",
+            due.size, studioId
         )
 
-        appointments.forEach { appointment ->
+        due.forEach { appointment ->
             dispatchSms(appointment, rule, SmsTriggerType.PRE_VISIT, studioId)
         }
     }
+
+    // ── Kiedy wypada przypomnienie o wizycie ───────────────────────────────────
+
+    /**
+     * Kandydaci, których moment wysyłki już nadszedł ([reminderSendAt] ≤ [now]), a sama
+     * wizyta jeszcze nie — porównanie „start po now" zostaje dublowane twardą granicą w
+     * [dispatchSms], ale tutaj odsiewa większość pracy od razu.
+     *
+     * „≤ now", nie „== now": jeśli slot wysyłki minął (późno założona rezerwacja, przerwa
+     * w działaniu schedulera), przypomnienie i tak wyjdzie przy najbliższym ticku w oknie,
+     * dopóki wizyta jest jeszcze przed nami. Deduplikacja w [dispatchSms] pilnuje, żeby
+     * poszło dokładnie raz.
+     */
+    private fun dueReminders(
+        appointments: List<SmsAppointmentView>,
+        offsetMinutes: Int,
+        now: Instant
+    ): List<SmsAppointmentView> =
+        appointments.filter { appointment ->
+            appointment.appointmentStart.isAfter(now) &&
+                !reminderSendAt(appointment.appointmentStart, offsetMinutes).isAfter(now)
+        }
+
+    /**
+     * Moment wysyłki przypomnienia: docelowo [offsetMinutes] przed wizytą, ale nigdy poza
+     * oknem. Gdy moment docelowy wypada poza oknem, schodzimy do ostatniego dozwolonego
+     * slotu przed nim ([SendWindow.lastSlotOnOrBefore]) — stąd „wieczór dnia poprzedniego"
+     * dla porannych wizyt.
+     */
+    private fun reminderSendAt(appointmentStart: Instant, offsetMinutes: Int): Instant {
+        val ideal = appointmentStart.minusSeconds(offsetMinutes * 60L)
+        return if (sendWindow.contains(ideal)) ideal else sendWindow.lastSlotOnOrBefore(ideal)
+    }
+
+    /** Górna granica wyszukiwania wizyt: offset przed wizytą plus doba na nocną przerwę okna. */
+    private fun reminderLookaheadEnd(now: Instant, offsetMinutes: Int): Instant =
+        now.plusSeconds(offsetMinutes * 60L).plus(REMINDER_LOOKAHEAD_SLACK)
 
     private fun dispatchSms(
         appointment: SmsAppointmentView,
@@ -239,17 +296,19 @@ class SmsAutomationScheduler(
             )
         )
 
-        // IMMEDIATE: przypomnienie jest zakotwiczone w godzinie wizyty („za godzinę wizyta")
-        // i po niej nie ma już czego przypominać. Odłożone na 12:00 przyszłoby po fakcie
-        // dla każdej porannej rezerwacji. Reguły liczone od odbioru pojazdu (POST_VISIT,
-        // DELAYED_REMINDER) idą domyślną ścieżką i czekają na okno wysyłki.
+        // SEND_WINDOW: przypomnienie o wizycie też słucha okna wysyłki. Scheduler wypuszcza
+        // je dopiero w slocie policzonym przez reminderSendAt — a ten zawsze mieści się w
+        // oknie — więc bramka wysyła od razu; gdyby jednak coś trafiło tu poza oknem, ma
+        // zostać odłożone, a nie pójść do klienta o 8:59. To była przyczyna zgłoszenia:
+        // wcześniej szło IMMEDIATE i omijało okno. Przypomnienie porannej wizyty schodzi
+        // teraz na wieczór dnia poprzedniego (reminderSendAt), zamiast łamać ciszę.
         val result = communicationGateway.sendSms(
             customerId = appointment.customerId,
             studioId = studioId.value,
             phoneNumber = phoneNumber,
             message = message,
             context = "SmsAutomation trigger=$triggerType appointment=${appointment.appointmentId}",
-            delivery = DeliveryPolicy.IMMEDIATE
+            delivery = DeliveryPolicy.SEND_WINDOW
         )
 
         smsLogRepository.save(

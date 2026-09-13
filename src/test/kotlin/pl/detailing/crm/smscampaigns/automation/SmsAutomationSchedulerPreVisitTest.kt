@@ -10,6 +10,7 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.InsufficientSmsCreditsException
 import pl.detailing.crm.shared.StudioId
@@ -35,13 +36,15 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 /**
- * Przypomnienie o wizycie ma sens tylko PRZED wizytą.
+ * Mechanika wysyłki przypomnień PRE_VISIT: twarda granica „tylko przed wizytą",
+ * deduplikacja, dziennik, odporność na błędy.
  *
- * Zapytanie wybiera kandydatów po oknie „teraz + offset ± 60 s", ale to nie jest gwarancja:
- * offset 0, spóźniony tick schedulera albo zmiana zapytania mogą podać wizytę, która już
- * trwa. Te testy pilnują ostatniej linii obrony w samym automacie, niezależnie od tego,
- * skąd przyszła lista — i tego, że przypomnienie zakotwiczone w godzinie wizyty nigdy nie
- * ląduje w kolejce na 12:00, a reguły liczone od odbioru pojazdu owszem.
+ * Okno wysyłki jest tu WYŁĄCZONE ([SendWindow.ALWAYS_OPEN]), żeby te testy nie zależały
+ * od pory — samą regułę „przypomnienie schodzi do okna 12–18, a dla porannych wizyt na
+ * wieczór dnia poprzedniego" sprawdza [SmsAutomationSchedulerReminderWindowTest].
+ *
+ * Reguła „tylko przed wizytą" jest ostatnią linią obrony w samym automacie, niezależnie
+ * od tego, skąd przyszła lista kandydatów.
  */
 class SmsAutomationSchedulerPreVisitTest {
 
@@ -60,7 +63,7 @@ class SmsAutomationSchedulerPreVisitTest {
     private val scheduler = SmsAutomationScheduler(
         configRepository, appointmentQueryService, visitQueryService, smsLogRepository,
         communicationGateway, templateProcessor, visitRepository, communicationLogService,
-        thankYouSmsRepository, Clock.fixed(now, ZoneOffset.UTC)
+        thankYouSmsRepository, SendWindow.ALWAYS_OPEN, Clock.fixed(now, ZoneOffset.UTC)
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -99,9 +102,10 @@ class SmsAutomationSchedulerPreVisitTest {
     }
 
     @Test
-    fun `offset 0 w konfiguracji nie przepycha przypomnienia po starcie wizyty`() {
-        // Okno zapytania dla offsetu 0 to [now-60s, now+60s) — zapytanie MOŻE zwrócić
-        // wizytę sprzed pół minuty. Automat ma ją odrzucić sam.
+    fun `offset 0 nie wysyla nic - moment wysylki nie wypada przed wizyta`() {
+        // Offset 0 znaczy „wyślij w chwili wizyty": moment wysyłki równy startowi wizyty
+        // nigdy nie jest PRZED wizytą, więc nic nie wychodzi — ani dla wizyty sprzed
+        // chwili, ani dla tej za pół minuty.
         givenStudioRule(preVisit = rule(enabled = true, offsetMinutes = 0))
         givenRuleCandidates(
             appointment(startsAt = now.minusSeconds(30)),
@@ -110,8 +114,7 @@ class SmsAutomationSchedulerPreVisitTest {
 
         scheduler.processPendingAutomations()
 
-        val sent = mutableListOf<UUID>()
-        verify(exactly = 1) { communicationGateway.sendSms(capture(sent), any(), any(), any(), any(), any(), any()) }
+        verifyNothingSent()
     }
 
     @Test
@@ -127,7 +130,7 @@ class SmsAutomationSchedulerPreVisitTest {
     // ── Wizyta w przyszłości: wysyłka od ręki, nigdy przez kolejkę ───────────
 
     @Test
-    fun `przypomnienie o wizycie za godzine wychodzi od razu, z pominieciem okna wysylki`() {
+    fun `przypomnienie o wizycie za godzine idzie z polityka okna wysylki`() {
         givenStudioRule(preVisit = rule(enabled = true, offsetMinutes = 60))
         val appointment = appointment(startsAt = now.plus(Duration.ofMinutes(60)))
         givenRuleCandidates(appointment)
@@ -140,7 +143,8 @@ class SmsAutomationSchedulerPreVisitTest {
                 appointment.customerId, studioId.value, "+48534920205", "Do zobaczenia jutro!", any(), any(), capture(delivery)
             )
         }
-        assertEquals(DeliveryPolicy.IMMEDIATE, delivery.captured)
+        // Nie IMMEDIATE: przypomnienie słucha okna wysyłki jak reszta komunikacji.
+        assertEquals(DeliveryPolicy.SEND_WINDOW, delivery.captured)
     }
 
     @Test
@@ -150,7 +154,7 @@ class SmsAutomationSchedulerPreVisitTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), DeliveryPolicy.IMMEDIATE) }
+        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), DeliveryPolicy.SEND_WINDOW) }
     }
 
     @Test
