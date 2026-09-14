@@ -54,6 +54,18 @@ class MetaAdLibraryClient(
                 "eu_total_reach,age_country_gender_reach_breakdown,target_ages,target_gender," +
                 "target_locations,beneficiary_payers,publisher_platforms,ad_snapshot_url"
 
+        private const val SEARCH_FIELDS = "page_id,page_name,ad_delivery_start_time"
+
+        /**
+         * Domena reklamodawcy — jedyne wskazanie na stronę firmy, jakie niesie reklama.
+         * Trzymana osobno, bo jest DODATKIEM: gdyby Meta kiedyś przestała ją oddawać,
+         * zapytanie ma polecieć bez niej, a nie wysypać kalendarz.
+         */
+        private const val OPTIONAL_FIELD = "ad_creative_link_captions"
+
+        /** Kod Meta dla „nie znam takiego pola”. */
+        private const val ERROR_UNKNOWN_FIELD = 100
+
         /** Ile stron paginacji maksymalnie przejdziemy — zapora przed pętlą kursorów. */
         private const val MAX_PAGES = 20
 
@@ -70,6 +82,34 @@ class MetaAdLibraryClient(
     /** Token jest jedyną rzeczą do podmiany w dniu aktywacji konta. */
     val enabled: Boolean get() = accessToken.isNotBlank()
 
+    /**
+     * Czy Meta nadal zna [OPTIONAL_FIELD]. Zgaszone raz, zostaje zgaszone do restartu:
+     * nie ma sensu dopytywać o pole, które właśnie zostało odrzucone.
+     */
+    @Volatile
+    private var optionalFieldSupported: Boolean = true
+
+    private fun fieldsWithOptional(base: String): String =
+        if (optionalFieldSupported) "$base,$OPTIONAL_FIELD" else base
+
+    /**
+     * Wykonuje zapytanie, a gdy Meta odrzuci je z powodu nieznanego pola — powtarza
+     * je raz bez pola opcjonalnego. Dzięki temu dołożenie domeny reklamodawcy nie
+     * może zepsuć niczego, co działało wcześniej.
+     */
+    private fun <T> withOptionalField(block: () -> T): T =
+        try {
+            block()
+        } catch (e: MetaAdsException) {
+            if (optionalFieldSupported && e.errorCode == ERROR_UNKNOWN_FIELD) {
+                optionalFieldSupported = false
+                log.warn("Biblioteka reklam Meta nie zna pola {} — dalej bez niego ({})", OPTIONAL_FIELD, e.message)
+                block()
+            } else {
+                throw e
+            }
+        }
+
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(timeoutSeconds))
         .build()
@@ -83,7 +123,7 @@ class MetaAdLibraryClient(
 
         return pageIds.distinct()
             .chunked(MAX_PAGES_PER_CALL)
-            .flatMap { batch -> fetchBatch(batch) }
+            .flatMap { batch -> withOptionalField { fetchBatch(batch) } }
     }
 
     private fun fetchBatch(pageIds: List<String>): List<RawMetaAd> {
@@ -124,23 +164,27 @@ class MetaAdLibraryClient(
         if (!enabled) return emptyList()
         val query = term.trim().takeIf { it.length >= MIN_SEARCH_LENGTH } ?: return emptyList()
 
-        val body = callGate.call("ads_archive_search") { get(buildSearchUrl(query)) }
+        val body = withOptionalField { callGate.call("ads_archive_search") { get(buildSearchUrl(query)) } }
         val root = objectMapper.readTree(body)
 
         return root.path("data")
             .mapNotNull { node ->
                 val pageId = node.path("page_id").textOrNull() ?: return@mapNotNull null
-                val pageName = node.path("page_name").textOrNull()?.trim().orEmpty()
-                val start = MetaAdParser.parseDate(node.path("ad_delivery_start_time").textOrNull())
-                Triple(pageId, pageName, start)
+                SearchHit(
+                    pageId = pageId,
+                    pageName = node.path("page_name").textOrNull()?.trim().orEmpty(),
+                    start = MetaAdParser.parseDate(node.path("ad_delivery_start_time").textOrNull()),
+                    caption = node.path("ad_creative_link_captions").firstOrNull()?.textOrNull()
+                )
             }
-            .groupBy { it.first }
+            .groupBy { it.pageId }
             .map { (pageId, hits) ->
                 MetaPageCandidate(
                     pageId = pageId,
-                    pageName = hits.firstNotNullOfOrNull { it.second.takeIf(String::isNotBlank) } ?: pageId,
+                    pageName = hits.firstNotNullOfOrNull { it.pageName.takeIf(String::isNotBlank) } ?: pageId,
                     ads = hits.size,
-                    lastStart = hits.mapNotNull { it.third }.maxOrNull()
+                    lastStart = hits.mapNotNull { it.start }.maxOrNull(),
+                    domain = AdvertiserInstagram.primaryHost(hits.map { it.caption })
                 )
             }
             // Treść reklamy była sitem po stronie Meta; o tym, co zobaczy człowiek,
@@ -173,7 +217,8 @@ class MetaAdLibraryClient(
             pageId = pageId,
             pageName = ads.firstNotNullOfOrNull { it.pageName?.trim()?.takeIf(String::isNotBlank) }.orEmpty(),
             ads = ads.size,
-            lastStart = ads.maxOfOrNull { it.deliveryStart }
+            lastStart = ads.maxOfOrNull { it.deliveryStart },
+            domain = AdvertiserInstagram.primaryHost(ads.map { it.linkCaption })
         )
     }
 
@@ -210,6 +255,14 @@ class MetaAdLibraryClient(
         }
     }
 
+    /** Jedna reklama z wyszukiwania — tylko to, z czego składamy kandydata. */
+    private data class SearchHit(
+        val pageId: String,
+        val pageName: String,
+        val start: LocalDate?,
+        val caption: String?
+    )
+
     private fun buildSearchUrl(term: String): String {
         val since = LocalDate.now().minusDays(RETENTION_DAYS)
         return buildString {
@@ -220,7 +273,7 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ALL")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode("page_id,page_name,ad_delivery_start_time"))
+            append("&fields=").append(encode(fieldsWithOptional(SEARCH_FIELDS)))
             append("&limit=").append(SEARCH_PAGE_SIZE)
         }
     }
@@ -236,7 +289,7 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ALL")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode(FIELDS))
+            append("&fields=").append(encode(fieldsWithOptional(FIELDS)))
             append("&limit=").append(pageSize.coerceIn(1, 500))
             if (after != null) append("&after=").append(encode(after))
         }

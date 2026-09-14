@@ -124,5 +124,10 @@ data class PageCandidateDto(
     /** Ile reklam tej strony trafiło w zapytanie — pomaga odróżnić firmę od zbieżnej nazwy. */
     val ads: Int,
     /** ISO. Ostatni znany start emisji. */
-    val lastStart: String?
+    val lastStart: String?,
+    /**
+     * Nazwa profilu na Instagramie, bez małpy. Meta jej nie podaje — wyprowadzamy
+     * ją z domeny reklamodawcy, więc bywa pusta i to jest normalny wynik.
+     */
+    val instagram: String? = null
 )

@@ -46,6 +46,7 @@ class MetaAdsSyncServiceTest {
         pageId = pageId,
         pageName = "CarsLab Detailing",
         title = "Powłoka ceramiczna",
+        linkCaption = "carslab.pl",
         deliveryStart = LocalDate.of(2026, 7, 12),
         deliveryStop = stop,
         reachEu = 41_200,

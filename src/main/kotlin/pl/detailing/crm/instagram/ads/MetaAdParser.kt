@@ -51,6 +51,8 @@ internal object MetaAdParser {
             pageId = pageId,
             pageName = node.path("page_name").textOrNull(),
             title = parseTitle(node),
+            linkCaption = node.path("ad_creative_link_captions").firstOrNull()?.textOrNull()?.trim()
+                ?.takeIf { it.isNotBlank() },
             deliveryStart = start,
             deliveryStop = parseDate(node.path("ad_delivery_stop_time").textOrNull()),
             reachEu = node.path("eu_total_reach").asIntOrNull(),
