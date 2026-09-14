@@ -36,6 +36,7 @@ enum class MessageTemplateKind(val allowedPlaceholders: Set<String>) {
     SMS_VISIT_CARD_LINK(CUSTOMER + VEHICLE + VISIT + SCHEDULE + LINK),
     SMS_RESERVATION_CARD_LINK(CUSTOMER + VEHICLE + SCHEDULE + LINK),
     SMS_UPSELL_CONSENT(CUSTOMER + setOf("uslugi", "kwota")),
+    SMS_UPSELL_SUGGESTION(CUSTOMER + LINK + setOf("uslugi")),
     SMS_SIGNATURE_REQUEST(CUSTOMER + LINK + setOf("dokument")),
 
     // ── E-mail ──────────────────────────────────────────────────────────────────

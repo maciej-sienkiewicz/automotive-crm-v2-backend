@@ -55,7 +55,7 @@ class SendBookingConfirmationSmsHandlerTest {
         handler.handle(SendBookingConfirmationSmsCommand(appointmentId, studioId, force = true))
 
         verify(exactly = 0) { appointmentRepository.findByIdAndStudioId(any(), any()) }
-        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
+        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { smsLogRepository.save(any()) }
     }
 
@@ -67,7 +67,7 @@ class SendBookingConfirmationSmsHandlerTest {
         handler.handle(SendBookingConfirmationSmsCommand(appointmentId, studioId, force = false))
         handler.handle(SendBookingConfirmationSmsCommand(appointmentId, studioId, force = true))
 
-        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
+        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -79,6 +79,6 @@ class SendBookingConfirmationSmsHandlerTest {
         handler.handle(SendBookingConfirmationSmsCommand(appointmentId, studioId))
 
         verify(exactly = 0) { smsLogRepository.existsByAppointmentIdAndTriggerType(any(), any()) }
-        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any()) }
+        verify(exactly = 0) { gateway.sendTransactionalSms(any(), any(), any(), any(), any()) }
     }
 }

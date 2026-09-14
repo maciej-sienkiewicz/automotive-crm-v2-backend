@@ -48,6 +48,12 @@ data class SmsAutomationConfig(
     val visitCardLink: SmsNotificationRule,
     val reservationCardLink: SmsNotificationRule,
     val upsellConsent: SmsNotificationRule,
+    /**
+     * „Upselling": pracownik dodał propozycję dodatkowych usług na Karcie Wizyty i
+     * zaznaczył „powiadom klienta". Informacja z linkiem do karty — bez „odpisz TAK",
+     * to zgoda ([upsellConsent]) czeka na ruch klienta.
+     */
+    val upsellSuggestion: SmsNotificationRule,
     val signatureRequest: SmsNotificationRule
 ) {
     companion object {
@@ -79,6 +85,8 @@ data class SmsAutomationConfig(
             "Szczegóły Twojej rezerwacji na {{data}} o godz. {{godzina}} znajdziesz tutaj: {{link}}"
         private const val DEFAULT_UPSELL_CONSENT_TEMPLATE =
             "Odpisz TAK, żeby do rezerwacji dodać usługi: {{uslugi}}. Łącznie {{kwota}} PLN brutto."
+        private const val DEFAULT_UPSELL_SUGGESTION_TEMPLATE =
+            "{{imie}}, do Twojej Karty Wizyty dodaliśmy propozycję dodatkowych usług: {{uslugi}}. Szczegóły i decyzja: {{link}}"
         private const val DEFAULT_SIGNATURE_REQUEST_TEMPLATE =
             "Dokument „{{dokument}}” czeka na Twój podpis. Otwórz link, zapoznaj się z treścią i podpisz: {{link}}"
 
@@ -122,6 +130,10 @@ data class SmsAutomationConfig(
             upsellConsent = SmsNotificationRule(
                 enabled = false,
                 messageTemplate = DEFAULT_UPSELL_CONSENT_TEMPLATE
+            ),
+            upsellSuggestion = SmsNotificationRule(
+                enabled = false,
+                messageTemplate = DEFAULT_UPSELL_SUGGESTION_TEMPLATE
             ),
             signatureRequest = SmsNotificationRule(
                 enabled = false,

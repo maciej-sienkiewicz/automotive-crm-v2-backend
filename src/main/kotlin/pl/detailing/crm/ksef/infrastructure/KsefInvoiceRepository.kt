@@ -25,6 +25,26 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     ): List<KsefInvoiceEntity>
 
     /**
+     * Faktury dostawcy dopasowane po NIP zredukowanym do samych cyfr, z pominięciem
+     * anulowanych/wykluczonych. Reguła auto-przypisania trzyma NIP jako cyfry, a fetch
+     * zapisuje NIP w formacie z KSeF (może mieć prefiks „PL" albo kreski) — normalizacja
+     * po obu stronach sprawia, że dopasowanie działa niezależnie od formatu zapisu.
+     */
+    @Query(
+        value = """
+            SELECT * FROM ksef_invoices
+            WHERE studio_id = CAST(:studioId AS uuid)
+              AND regexp_replace(COALESCE(seller_nip, ''), '\D', '', 'g') = :sellerNipDigits
+              AND status NOT IN ('CANCELLED', 'EXCLUDED')
+        """,
+        nativeQuery = true
+    )
+    fun findBySellerNipDigits(
+        @Param("studioId") studioId: UUID,
+        @Param("sellerNipDigits") sellerNipDigits: String
+    ): List<KsefInvoiceEntity>
+
+    /**
      * Faktury KSeF bez pełnych danych z XML (details_synced = FALSE) — kandydaci do
      * synchronizacji wstecznej. Paginacja ogranicza liczbę pobrań XML w jednym przebiegu.
      */
@@ -103,11 +123,25 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     // ── Finance summary aggregates ────────────────────────────────────────────
 
     /**
-     * Suma brutto (w GROSZACH) faktur o danym statusie płatności, z pominięciem
-     * CANCELLED i EXCLUDED. Zakres dat po issue_date; null = bez ograniczenia.
+     * Suma netto (w GROSZACH) faktur kosztowych o danym statusie płatności,
+     * z pominięciem CANCELLED i EXCLUDED. Zakres dat po issue_date;
+     * null = bez ograniczenia.
+     *
+     * Netto, bo VAT naliczony podlega odliczeniu — kosztem studia jest kwota
+     * netto. Zestawienie kosztów brutto z przychodem netto zaniżałoby zysk
+     * o cudzy VAT po obu stronach.
+     *
+     * `net_amount` bywa NULL: metadane z KSeF nie zawsze niosą kwotę netto,
+     * a przy ręcznie dodanym koszcie pole „Kwota netto" jest opcjonalne.
+     * Zwykłe SUM(net_amount) po cichu wyrzuciłoby takie faktury z raportu
+     * i zawyżyło zysk, więc netto jest odtwarzane po kolei: z kolumny netto,
+     * z brutto − VAT, a w ostateczności z samego brutto. Faktura bez żadnej
+     * kwoty wchodzi jako zero, tak jak dotychczas.
      */
     @Query(value = """
-        SELECT COALESCE(SUM(gross_amount), 0)
+        SELECT COALESCE(SUM(
+            COALESCE(net_amount, gross_amount - COALESCE(vat_amount, 0), 0)
+        ), 0)
         FROM ksef_invoices
         WHERE studio_id      = CAST(:studioId AS uuid)
           AND payment_status = :paymentStatus
@@ -115,7 +149,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
           AND (CAST(:dateFrom AS date) IS NULL OR issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR issue_date <= CAST(:dateTo   AS date))
     """, nativeQuery = true)
-    fun sumGrossByPaymentStatus(
+    fun sumNetByPaymentStatus(
         @Param("studioId") studioId: UUID,
         @Param("paymentStatus") paymentStatus: String,
         @Param("dateFrom") dateFrom: java.time.LocalDate?,

@@ -11,6 +11,7 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.smscampaigns.domain.SmsNotificationRule
+import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
@@ -265,7 +266,11 @@ class RequestSignatureHandler(
         )
 
         val result = try {
-            communicationGateway.sendTransactionalSms(request.studioId.value, phone, message)
+            // IMMEDIATE: klient stoi przy ladzie i czeka na link, a token podpisu ma krótką
+            // ważność — odłożenie SMS-a na 12:00 unieważniłoby oba.
+            communicationGateway.sendTransactionalSms(
+                request.studioId.value, phone, message, delivery = DeliveryPolicy.IMMEDIATE
+            )
         } catch (e: InsufficientSmsCreditsException) {
             documentIntegrityService.invalidateChallenge(request.id.value)
             recordSmsLog(request, customerId, phone, message, success = false, error = "Brak kredytów SMS")

@@ -81,7 +81,9 @@ class VisitTransitionController(
         ResponseEntity.ok(VisitStatusChangeResponse(
             visitId = result.visitId.value.toString(),
             newStatus = mapVisitStatus(result.newStatus),
-            message = "Visit marked as ready for pickup"
+            message = if (result.alreadyInTargetState) "Visit was already ready for pickup"
+                      else "Visit marked as ready for pickup",
+            alreadyInTargetState = result.alreadyInTargetState
         ))
     }
 
@@ -179,15 +181,21 @@ class VisitTransitionController(
 
         val result = completeVisitHandler.handle(command)
 
-        scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
+        // Decyzja o podziękowaniu zapadła przy pierwszym wydaniu — powtórka żądania
+        // nie ma jej nadpisywać (a przy okazji przestawiać terminu wysyłki).
+        if (!result.alreadyInTargetState) {
+            scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
+        }
 
         ResponseEntity.ok(
             CompleteVisitResponse(
                 visitId                 = result.visitId.value.toString(),
                 newStatus               = mapVisitStatus(result.newStatus),
-                message                 = "Visit completed successfully",
+                message                 = if (result.alreadyInTargetState) "Visit was already completed"
+                                          else "Visit completed successfully",
                 financialDocumentId     = result.financialDocumentId?.toString(),
-                financialDocumentNumber = result.financialDocumentNumber
+                financialDocumentNumber = result.financialDocumentNumber,
+                alreadyInTargetState    = result.alreadyInTargetState
             )
         )
     }
@@ -219,7 +227,8 @@ class VisitTransitionController(
         ResponseEntity.ok(VisitStatusChangeResponse(
             visitId = result.visitId.value.toString(),
             newStatus = mapVisitStatus(result.newStatus),
-            message = "Visit rejected"
+            message = if (result.alreadyInTargetState) "Visit was already rejected" else "Visit rejected",
+            alreadyInTargetState = result.alreadyInTargetState
         ))
     }
 
@@ -252,7 +261,8 @@ class VisitTransitionController(
         ResponseEntity.ok(VisitStatusChangeResponse(
             visitId = result.visitId.value.toString(),
             newStatus = mapVisitStatus(result.newStatus),
-            message = "Visit archived"
+            message = if (result.alreadyInTargetState) "Visit was already archived" else "Visit archived",
+            alreadyInTargetState = result.alreadyInTargetState
         ))
     }
 
@@ -430,7 +440,15 @@ data class PaymentRequest(
 data class VisitStatusChangeResponse(
     val visitId: String,
     val newStatus: String,
-    val message: String
+    val message: String,
+
+    /**
+     * true, gdy wizyta była już w docelowym stanie i to żądanie niczego nie zmieniło.
+     * Operacja się UDAŁA (200) — cel wywołującego jest osiągnięty — ale nie poszły
+     * żadne efekty uboczne: klient nie dostał drugiego SMS-a, audyt nie ma drugiego
+     * wpisu. Frontend pokazuje wtedy neutralną informację zamiast błędu.
+     */
+    val alreadyInTargetState: Boolean = false
 )
 
 /**
@@ -457,6 +475,13 @@ data class CompleteVisitResponse(
 
     /** Status wysyłki do KSeF: ACCEPTED | SUBMITTED | QUEUED_RETRY | ... */
     val ksefStatus: String? = null,
+
+    /**
+     * true, gdy wizyta była już zakończona i to żądanie niczego nie zmieniło —
+     * patrz [VisitStatusChangeResponse.alreadyInTargetState]. Dokument finansowy
+     * w odpowiedzi pochodzi wtedy z pierwszego wydania, nie został wystawiony ponownie.
+     */
+    val alreadyInTargetState: Boolean = false,
 
     /** Numer paragonu dokumentującego resztę kwoty (gdy faktura była częściowa). */
     val remainderDocumentNumber: String? = null,

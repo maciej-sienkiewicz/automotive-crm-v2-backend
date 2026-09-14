@@ -187,6 +187,7 @@ class StudioDataPurger(
                 "t.leadId IN (SELECT l.id FROM LeadEntity l WHERE l.studioId = :studioId)",
                 ctx
             )
+            deleteByStudio("LeadAttachmentEntity", ctx)
             deleteByStudio("LeadServiceItemEntity", ctx)
             deleteByStudio("LeadStatusHistoryEntity", ctx)
             deleteByStudio("LeadNoteEntity", ctx)
@@ -260,6 +261,14 @@ class StudioDataPurger(
             deleteByStudio("ContactNoteEntity", ctx)
             deleteByStudio("CommUserSignatureEntity", ctx)
             deleteByStudio("MailAccountEntity", ctx)
+            // Wiadomości czekające na okno wysyłki: reset ma je wycofać, zanim dispatcher
+            // wyśle o 12:00 coś, czego studio już u siebie nie widzi.
+            deleteWhere(
+                "OutboundMessageAttachmentEntity a",
+                "a.messageId IN (SELECT m.id FROM OutboundMessageEntity m WHERE m.studioId = :studioId)",
+                ctx
+            )
+            deleteByStudio("OutboundMessageEntity", ctx)
             deleteByStudio("CommunicationLogEntity", ctx)
         },
 
@@ -322,6 +331,10 @@ class StudioDataPurger(
             deleteByStudio("InstagramGeneratedPostEntity", ctx)
             deleteByStudio("InstagramInsightEntity", ctx)
             deleteByStudio("InstagramReportEntity", ctx)
+            // Śledzenia obszaru należą do studia (kto reklamuje się w rejonie X). Wspólny
+            // cache reklam pod frazę (AdDiscoveryPhraseEntity/AdDiscoveryAdEntity) zostaje —
+            // to publiczne dane Meta dzielone między najemcami, nie dane tego studia.
+            deleteByStudio("AdLocationTrackingEntity", ctx)
             deleteByStudio("StudioInstagramProfileEntity", ctx)
             entityManager.flush()
             links.forEach { link ->

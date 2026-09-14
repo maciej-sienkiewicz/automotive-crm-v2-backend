@@ -78,12 +78,17 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
             SmsTemplateContext(
                 firstName = customer.firstName ?: "Kliencie",
                 lastName = customer.lastName ?: "",
-                appointmentStart = appointment.startDateTime
+                appointmentStart = appointment.startDateTime,
+                allDay = appointment.isAllDay
             )
         )
 
         val result = try {
-            communicationGateway.sendTransactionalSms(command.studioId.value, phoneNumber, message)
+            // validUntil = nowy start wizyty: potwierdzenie, które przez okno wyszłoby dopiero
+            // po nowym terminie, jest nieaktualne — bramka je pominie zamiast wysyłać po fakcie.
+            communicationGateway.sendTransactionalSms(
+                command.studioId.value, phoneNumber, message, validUntil = appointment.startDateTime
+            )
         } catch (e: InsufficientSmsCreditsException) {
             logger.warn(
                 "SendAppointmentRescheduleConfirmationSms: no SMS credits [studioId={} appointmentId={}]",
@@ -119,7 +124,8 @@ class SendAppointmentRescheduleConfirmationSmsHandler(
                 subject = null,
                 bodyContent = message,
                 success = result.success,
-                errorMessage = result.errorMessage
+                errorMessage = result.errorMessage,
+                queuedMessageId = result.queuedMessageId
             )
         )
 

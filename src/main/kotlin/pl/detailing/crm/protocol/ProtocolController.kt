@@ -30,6 +30,7 @@ import pl.detailing.crm.protocol.visitprotocol.GetVisitProtocolsHandler
 import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolCommand
 import pl.detailing.crm.protocol.visitprotocol.SignVisitProtocolHandler
 import pl.detailing.crm.service.infrastructure.ServiceRepository
+import pl.detailing.crm.studio.logo.DocumentLogoPreviewService
 import pl.detailing.crm.shared.*
 import java.util.*
 import pl.detailing.crm.role.domain.Permission
@@ -54,7 +55,8 @@ class ProtocolController(
     private val visitProtocolRepository: VisitProtocolRepository,
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val s3StorageService: S3ProtocolStorageService,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val documentLogoPreviewService: DocumentLogoPreviewService
 ) {
 
     // ==================== Protocol Templates ====================
@@ -71,6 +73,24 @@ class ProtocolController(
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getProtocolTemplatesHandler.handleGetById(principal.studioId, id)
         ResponseEntity.ok(toProtocolTemplateResponse(result.template, principal.studioId, result.downloadUrl))
+    }
+
+    /**
+     * Podgląd szablonu tak, jak zobaczy go klient: szablon systemowy z logo studia w
+     * nagłówku (gdy włączone w „Dokumenty i podpisy"). Podpisany link S3 z `templateUrl`
+     * pokazuje surowy plik, bo logo nie jest w nim zapisane — trafia tam dopiero przy
+     * wypełnianiu (patrz GenerateVisitProtocolsHandler).
+     */
+    @GetMapping("/protocol-templates/{id}/preview")
+    fun previewProtocolTemplate(@PathVariable id: String): ResponseEntity<ByteArray> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val template = getProtocolTemplatesHandler.handleGetById(principal.studioId, id).template
+        val bytes = documentLogoPreviewService.protocolTemplatePreview(template)
+        ResponseEntity.ok()
+            .header("Content-Type", template.fileFormat.contentType)
+            .header("Content-Disposition", "inline; filename=\"${template.name}.${template.fileFormat.fileExtension}\"")
+            .header("Cache-Control", "no-store")
+            .body(bytes)
     }
 
     @PostMapping("/protocol-templates")
@@ -323,6 +343,11 @@ class ProtocolController(
             name = template.name,
             description = template.description,
             templateUrl = url,
+            previewUrl = if (template.fileFormat == ProtocolTemplateFormat.PDF) {
+                "/api/v1/protocol-templates/${template.id}/preview"
+            } else {
+                null
+            },
             fileFormat = template.fileFormat.name,
             isDefault = template.isDefault,
             verificationStatus = template.verificationStatus.name,

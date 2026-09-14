@@ -1,6 +1,8 @@
 package pl.detailing.crm.customer.consent
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -17,6 +19,7 @@ import pl.detailing.crm.customer.consent.get.ConsentResponse
 import pl.detailing.crm.customer.consent.get.ConsentVersionResponse
 import pl.detailing.crm.customer.consent.get.GetConsentsHandler
 import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionRepository
+import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.update.UpdateConsentCommand
 import pl.detailing.crm.customer.consent.update.UpdateConsentHandler
 import pl.detailing.crm.shared.ConsentDefinitionId
@@ -24,6 +27,7 @@ import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.MarketingChannel
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.ProtocolStage
+import pl.detailing.crm.studio.logo.DocumentLogoPreviewService
 import java.time.Instant
 import java.util.*
 
@@ -40,7 +44,9 @@ class ConsentController(
     private val addConsentVersionHandler: AddConsentVersionHandler,
     private val getConsentsHandler: GetConsentsHandler,
     private val updateConsentHandler: UpdateConsentHandler,
-    private val consentDefinitionRepository: ConsentDefinitionRepository
+    private val consentDefinitionRepository: ConsentDefinitionRepository,
+    private val consentTemplateRepository: ConsentTemplateRepository,
+    private val documentLogoPreviewService: DocumentLogoPreviewService
 ) {
 
     @GetMapping
@@ -133,6 +139,27 @@ class ConsentController(
         consentDefinitionRepository.save(entity)
 
         ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Podgląd wersji zgody tak, jak zobaczy ją klient: dokument systemowy z logo studia
+     * w nagłówku (gdy włączone). `pdfUrl` prowadzi do surowego pliku w S3, w którym
+     * logo nie jest zapisane — trafia tam dopiero przy wypełnianiu.
+     */
+    @GetMapping("/{id}/versions/{versionId}/preview")
+    fun previewVersion(@PathVariable id: UUID, @PathVariable versionId: UUID): ResponseEntity<ByteArray> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        requireOwnerOrManager(principal)
+        val template = withContext(Dispatchers.IO) {
+            consentTemplateRepository.findByIdAndStudioId(versionId, principal.studioId.value)
+        }?.takeIf { it.definitionId == id }
+            ?: throw NotFoundException("Wersja zgody nie została znaleziona")
+        val bytes = withContext(Dispatchers.IO) { documentLogoPreviewService.consentTemplatePreview(template) }
+        ResponseEntity.ok()
+            .header("Content-Type", "application/pdf")
+            .header("Content-Disposition", "inline; filename=\"zgoda_v${template.version}.pdf\"")
+            .header("Cache-Control", "no-store")
+            .body(bytes)
     }
 
     @GetMapping("/{id}/versions")

@@ -586,7 +586,7 @@ enum class CrmDataKey(val description: String) {
 
     // Studio/Company
     STUDIO_NAME("Studio/Company name"),
-    PROVIDER_NAME("Service provider (studio) name — Usługodawca"),
+    PROVIDER_NAME("Service provider (studio) name and address — Usługodawca"),
 
     // Employee context
     RECEIVED_BY_NAME("Full name of the employee who received the vehicle"),
@@ -629,6 +629,21 @@ enum class VatRate(val rate: Int) {
     fun calculateGrossAmount(netAmount: Money): Money {
         return netAmount.plus(calculateVatAmount(netAmount))
     }
+
+    /**
+     * Netto (w groszach) implikowane przez kwotę brutto — odwrotność
+     * [calculateGrossAmount] dla wyceny od strony brutto (SET_GROSS/FIXED_GROSS).
+     *
+     * `VAT_ZW.rate` to wartownik -1, a nie realna stawka: użyty w „VAT w stu"
+     * `brutto * 100 / (100 + rate)` dawał dzielenie przez 99, czyli NETTO WYŻSZE
+     * NIŻ BRUTTO (np. brutto 250,00 → netto 252,53). Zwolnienie i 0% nie doliczają
+     * VAT-u, więc netto = brutto. Wejście ujemne (np. FIXED_GROSS przewyższający
+     * bazę) przechodzi bez zmiany — walidacja „netto < 0" w PriceCalculator je łapie,
+     * zamiast wysadzać niezmiennik [Money] o nieujemności.
+     */
+    fun netCentsFromGrossCents(grossCents: Long): Long =
+        if (rate <= 0) grossCents
+        else Math.round(grossCents * 100.0 / (100 + rate))
 
     /**
      * Resolves the stored gross for a (net, user-entered gross) pair.
@@ -961,6 +976,7 @@ enum class CommunicationMessageType(val label: String) {
 
     // Visit Card upselling
     VISIT_CARD_UPSELL_SMS("SMS potwierdzenia dodania sugerowanych usług"),
+    VISIT_CARD_UPSELL_SUGGESTION_SMS("SMS o propozycji dodatkowych usług"),
 
     // Remote document signing
     SIGNATURE_LINK_SMS("SMS z linkiem do podpisu dokumentu"),
@@ -976,7 +992,14 @@ enum class CommunicationMessageType(val label: String) {
 enum class CommunicationStatus {
     SENT,
     RECEIVED,
-    FAILED
+    FAILED,
+
+    /**
+     * Przyjęta do wysyłki, ale jeszcze nie wyszła — czeka na godziny, w których wolno
+     * pisać do klienta ([pl.detailing.crm.communication.window.SendWindow]). Dispatcher
+     * kolejki zmienia ten wpis w SENT albo FAILED, gdy faktycznie spróbuje wysłać.
+     */
+    QUEUED
 }
 
 /**

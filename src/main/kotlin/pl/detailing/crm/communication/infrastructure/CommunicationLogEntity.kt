@@ -20,6 +20,7 @@ import java.util.UUID
     name = "communication_log",
     indexes = [
         Index(name = "idx_comm_log_studio_id", columnList = "studio_id"),
+        Index(name = "idx_comm_log_queued_message", columnList = "queued_message_id"),
         Index(name = "idx_comm_log_customer", columnList = "studio_id, customer_id"),
         Index(name = "idx_comm_log_visit", columnList = "visit_id"),
         Index(name = "idx_comm_log_appointment", columnList = "appointment_id"),
@@ -85,6 +86,17 @@ class CommunicationLogEntity(
     @Column(name = "error_message", nullable = true, columnDefinition = "TEXT")
     val errorMessage: String?,
 
+    /**
+     * Moment wysyłki — a dla wpisu [CommunicationStatus.QUEUED] moment przyjęcia do kolejki;
+     * dispatcher nadpisuje go chwilą faktycznej wysyłki.
+     */
     @Column(name = "sent_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val sentAt: Instant
+    val sentAt: Instant,
+
+    /**
+     * Wiersz kolejki wysyłkowej, z którego ten wpis dostanie ostateczny status. Ustawiony
+     * tylko dla wiadomości odłożonych na okno wysyłki; null dla wysłanych od ręki.
+     */
+    @Column(name = "queued_message_id", nullable = true, columnDefinition = "uuid")
+    val queuedMessageId: UUID? = null
 )

@@ -1,0 +1,161 @@
+package pl.detailing.crm.communication.window
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+
+/**
+ * Godziny, w których wolno pisać do klienta — wspólne dla całej komunikacji.
+ *
+ * Granice są włącznie i liczone z dokładnością do minuty: dispatcher odpalany o pełnej
+ * minucie musi jeszcze zdążyć z ostatnim slotem (18:00:xx), a 18:01 to już po godzinach.
+ */
+class SendWindowTest {
+
+    private val window = SendWindow.DEFAULT
+
+    private fun at(hour: Int, minute: Int, second: Int = 0, day: Int = 15): Instant =
+        LocalDateTime.of(LocalDate.of(2026, 9, day), LocalTime.of(hour, minute, second))
+            .atZone(window.zone)
+            .toInstant()
+
+    private fun localOf(instant: Instant) = instant.atZone(window.zone).toLocalDateTime()
+
+    // ── contains ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `poludnie i osiemnasta sa w oknie, granice wlacznie`() {
+        assertTrue(window.contains(at(12, 0)))
+        assertTrue(window.contains(at(15, 30)))
+        assertTrue(window.contains(at(18, 0)))
+    }
+
+    @Test
+    fun `sekundy po osiemnastej nadal licza sie jako osiemnasta`() {
+        assertTrue(window.contains(at(18, 0, second = 45)))
+        assertFalse(window.contains(at(18, 1)))
+    }
+
+    @Test
+    fun `minuta przed poludniem i wieczor sa poza oknem`() {
+        assertFalse(window.contains(at(11, 59, second = 59)))
+        assertFalse(window.contains(at(20, 50)))
+        assertFalse(window.contains(at(7, 0)))
+    }
+
+    // ── nextSlotFrom ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `w oknie zwraca ten sam moment`() {
+        assertEquals(at(14, 7), window.nextSlotFrom(at(14, 7)))
+    }
+
+    @Test
+    fun `przed otwarciem przesuwa na dzisiejsze poludnie`() {
+        assertEquals(localOf(at(12, 0)), localOf(window.nextSlotFrom(at(8, 30))))
+    }
+
+    @Test
+    fun `po zamknieciu przesuwa na jutrzejsze poludnie`() {
+        assertEquals(localOf(at(12, 0, day = 16)), localOf(window.nextSlotFrom(at(20, 50))))
+        assertEquals(localOf(at(12, 0, day = 16)), localOf(window.nextSlotFrom(at(18, 1))))
+    }
+
+    // ── lastSlotOnOrBefore ─────────────────────────────────────────────────────
+
+    @Test
+    fun `lastSlot w oknie zwraca ten sam moment`() {
+        assertEquals(at(14, 7), window.lastSlotOnOrBefore(at(14, 7)))
+    }
+
+    @Test
+    fun `lastSlot po zamknieciu schodzi na dzisiejsza osiemnasta`() {
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(20, 50))))
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(18, 1))))
+    }
+
+    @Test
+    fun `lastSlot przed otwarciem schodzi na wczorajsza osiemnasta`() {
+        // Przypomnienie porannej wizyty schodzi na wieczór dnia poprzedniego, nie w noc.
+        assertEquals(localOf(at(18, 0, day = 14)), localOf(window.lastSlotOnOrBefore(at(8, 30))))
+        assertEquals(localOf(at(18, 0, day = 14)), localOf(window.lastSlotOnOrBefore(at(11, 59, second = 59))))
+    }
+
+    @Test
+    fun `lastSlot na granicach zwraca sama granice`() {
+        assertEquals(localOf(at(12, 0)), localOf(window.lastSlotOnOrBefore(at(12, 0))))
+        assertEquals(localOf(at(18, 0)), localOf(window.lastSlotOnOrBefore(at(18, 0))))
+    }
+
+    @Test
+    fun `lastSlot przy wylaczonym oknie oddaje ten sam moment`() {
+        assertEquals(at(3, 0), SendWindow.ALWAYS_OPEN.lastSlotOnOrBefore(at(3, 0)))
+    }
+
+    @Test
+    fun `okno liczy czas lokalny studia, nie UTC`() {
+        // 11:30 UTC w polskie lato to 13:30 w Warszawie — czyli w oknie.
+        val utc = LocalDateTime.of(2026, 7, 15, 11, 30).atZone(ZoneId.of("UTC")).toInstant()
+        assertTrue(window.contains(utc))
+        // 17:30 UTC = 19:30 w Warszawie — już po godzinach, chociaż w UTC jeszcze „w oknie".
+        val utcEvening = LocalDateTime.of(2026, 7, 15, 17, 30).atZone(ZoneId.of("UTC")).toInstant()
+        assertFalse(window.contains(utcEvening))
+    }
+
+    // ── Zmiana czasu ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `w noc zmiany czasu na zimowy jutrzejsze poludnie to nadal 12 00 lokalnie`() {
+        // 24 X 2026, 22:00 CEST → następnego dnia zegary cofają się o 2:00→1:00.
+        val saturdayNight = LocalDateTime.of(2026, 10, 24, 22, 0).atZone(window.zone).toInstant()
+        val slot = window.nextSlotFrom(saturdayNight)
+        assertEquals(LocalDateTime.of(2026, 10, 25, 12, 0), localOf(slot))
+        assertTrue(window.contains(slot))
+    }
+
+    @Test
+    fun `w noc zmiany czasu na letni jutrzejsze poludnie to nadal 12 00 lokalnie`() {
+        // 28 III 2026, 23:30 CET → następnego dnia zegary skaczą 2:00→3:00.
+        val saturdayNight = LocalDateTime.of(2026, 3, 28, 23, 30).atZone(window.zone).toInstant()
+        val slot = window.nextSlotFrom(saturdayNight)
+        assertEquals(LocalDateTime.of(2026, 3, 29, 12, 0), localOf(slot))
+        assertTrue(window.contains(slot))
+    }
+
+    @Test
+    fun `nextSlotFrom obcina sekundy przy przesuwaniu, a w oknie zostawia moment jak jest`() {
+        assertEquals(localOf(at(12, 0)), localOf(window.nextSlotFrom(at(8, 30, second = 45))))
+        assertEquals(at(14, 7, second = 20), window.nextSlotFrom(at(14, 7, second = 20)))
+    }
+
+    @Test
+    fun `okno jednominutowe tez dziala`() {
+        val tiny = SendWindow(window.zone, LocalTime.of(12, 0), LocalTime.of(12, 0))
+        assertTrue(tiny.contains(at(12, 0, second = 59)))
+        assertFalse(tiny.contains(at(12, 1)))
+        assertEquals(localOf(at(12, 0, day = 16)), localOf(tiny.nextSlotFrom(at(12, 1))))
+    }
+
+    // ── enabled = false ──────────────────────────────────────────────────────
+
+    @Test
+    fun `wylaczone okno przepuszcza wszystko i niczego nie przesuwa`() {
+        val open = SendWindow.ALWAYS_OPEN
+        assertTrue(open.contains(at(3, 0)))
+        assertEquals(at(3, 0), open.nextSlotFrom(at(3, 0)))
+    }
+
+    @Test
+    fun `okno zamykajace sie przed otwarciem jest bledem konfiguracji`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            SendWindow(ZoneId.of("Europe/Warsaw"), LocalTime.of(18, 0), LocalTime.of(12, 0))
+        }
+    }
+}

@@ -24,7 +24,9 @@ data class CustomerCommunicationLogItem(
     val bodyContent: String,
     val status: pl.detailing.crm.shared.CommunicationStatus,
     val errorMessage: String?,
-    val sentAt: Instant
+    val sentAt: Instant,
+    /** Dla QUEUED: kiedy dispatcher kolejki wyśle wiadomość. Null dla pozostałych statusów. */
+    val scheduledFor: Instant? = null
 )
 
 data class GetCustomerCommunicationResult(
@@ -41,15 +43,18 @@ data class GetCustomerCommunicationResult(
 @Service
 class GetCustomerCommunicationHandler(
     private val customerRepository: CustomerRepository,
-    private val communicationLogJpaRepository: CommunicationLogJpaRepository
+    private val communicationLogJpaRepository: CommunicationLogJpaRepository,
+    private val scheduledForResolver: QueuedScheduleResolver
 ) {
 
     fun handle(command: GetCustomerCommunicationCommand): GetCustomerCommunicationResult {
         customerRepository.findByIdAndStudioId(command.customerId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Customer not found [customerId=${command.customerId}]")
 
-        val entries = communicationLogJpaRepository
+        val logs = communicationLogJpaRepository
             .findByCustomerIdAndStudioId(command.customerId.value, command.studioId.value)
+        val scheduledFor = scheduledForResolver.resolve(logs)
+        val entries = logs
             .map { entity ->
                 CustomerCommunicationLogItem(
                     id = entity.id.toString(),
@@ -62,7 +67,8 @@ class GetCustomerCommunicationHandler(
                     bodyContent = entity.bodyContent,
                     status = entity.status,
                     errorMessage = entity.errorMessage,
-                    sentAt = entity.sentAt
+                    sentAt = entity.sentAt,
+                    scheduledFor = scheduledFor[entity.id]
                 )
             }
 

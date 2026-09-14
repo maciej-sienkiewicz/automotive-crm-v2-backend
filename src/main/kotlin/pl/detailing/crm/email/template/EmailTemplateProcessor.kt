@@ -21,6 +21,6 @@ class EmailTemplateProcessor(
             "pojazd" to context.vehicleName,
             "rejestracja" to context.licensePlate.orEmpty(),
             "numer_wizyty" to context.visitNumber
-        ) + MessageTemplateRenderer.scheduleValues(context.scheduledAt)
+        ) + MessageTemplateRenderer.scheduleValues(context.scheduledAt, context.allDay)
     )
 }

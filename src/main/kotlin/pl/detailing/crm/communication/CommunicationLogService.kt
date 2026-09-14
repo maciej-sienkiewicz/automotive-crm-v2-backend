@@ -1,8 +1,6 @@
 package pl.detailing.crm.communication
 
 import org.slf4j.LoggerFactory
-import org.springframework.transaction.annotation.Propagation
-import org.springframework.transaction.annotation.Transactional
 import org.springframework.stereotype.Service
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditActor
@@ -14,6 +12,7 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.communication.infrastructure.CommunicationLogEntity
 import pl.detailing.crm.communication.infrastructure.CommunicationLogJpaRepository
+import pl.detailing.crm.communication.infrastructure.CommunicationLogWriter
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -51,6 +50,12 @@ data class RecordCommunicationCommand(
     /** When set, overrides the [success]-based status mapping. */
     val status: CommunicationStatus? = null,
     /**
+     * Set when the gateway queued the message for the send window instead of sending it
+     * (`result.queuedMessageId`). The entry is recorded as [CommunicationStatus.QUEUED] and
+     * later resolved to SENT / FAILED by the queue dispatcher through [CommunicationLogService.recordQueuedOutcome].
+     */
+    val queuedMessageId: UUID? = null,
+    /**
      * The employee who initiated the send. When set, overrides [AuditActorResolver]
      * so the feed shows the person's name instead of "System". Must be captured on the
      * request thread before any coroutine dispatcher switch, because the security context
@@ -73,6 +78,7 @@ data class RecordCommunicationCommand(
 @Service
 class CommunicationLogService(
     private val repository: CommunicationLogJpaRepository,
+    private val writer: CommunicationLogWriter,
     private val auditService: AuditService,
     private val auditActorResolver: AuditActorResolver,
     private val customerRepository: CustomerRepository
@@ -80,24 +86,27 @@ class CommunicationLogService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Zapis w WŁASNEJ transakcji, z natychmiastowym flushem.
+     * Fire-and-forget: błąd zapisu dziennika NIE MOŻE wywrócić operacji biznesowej, której
+     * ten wpis jest tylko opisem — wiadomość i tak już poszła albo została zakolejkowana,
+     * a tego faktu nie da się cofnąć.
      *
-     * Jedno i drugie jest konieczne, żeby `catch` niżej cokolwiek dawał. Bez nich
-     * `repository.save()` tylko planuje INSERT, a ten wykonuje się przy commicie
-     * transakcji wywołującego — czyli poza tym blokiem. Błąd nie trafiał więc do
-     * `catch`, tylko wywracał operację biznesową, której ten wpis miał być wyłącznie
-     * opisem. Tak właśnie SMS z linkiem do podpisu potrafił dojść do klienta, podczas
-     * gdy żądanie podpisu znikało razem z rollbackiem (patrz V100__sync_enum_check_constraints.sql).
+     * Zapis idzie przez [CommunicationLogWriter.persist] — osobny bean z własną transakcją
+     * (REQUIRES_NEW) — a `catch` obejmuje to wywołanie OD ZEWNĄTRZ. Gdy INSERT narusza
+     * ograniczenie, transakcja writera jest wycofywana i wyjątek łapiemy tutaj: żadnej zatrutej
+     * transakcji ani commitu rollback-only lecącego w górę `UnexpectedRollbackException`.
      *
-     * Wiadomość wysłana jest faktem, którego nie da się cofnąć. Zapis o niej nie ma
-     * prawa ani zniknąć razem z transakcją wywołującego, ani jej przewrócić — to ten
-     * sam układ, który moduł audytu ma od dawna (patrz AuditLogWriter).
+     * Wcześniej `@Transactional(REQUIRES_NEW)` wisiał na TEJ metodzie, a `catch` był w środku —
+     * i to nie izolowało: `catch` połykał błąd, metoda kończyła się „normalnie", a interceptor
+     * i tak próbował scommitować transakcję rollback-only i wywracał całą wysyłkę. Teraz jest to
+     * ten sam układ, który moduł audytu ma od dawna (patrz AuditLogWriter).
+     *
+     * [recordAudit] wykonuje się zawsze — także po nieudanym zapisie — bo wpis do dziennika i
+     * ślad w Aktywności są niezależne, każdy w swojej transakcji.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun record(command: RecordCommunicationCommand) {
         val id = UUID.randomUUID()
         try {
-            repository.saveAndFlush(
+            writer.persist(
                 CommunicationLogEntity(
                     id = id,
                     studioId = command.studioId.value,
@@ -109,9 +118,10 @@ class CommunicationLogService(
                     recipientAddress = command.recipientAddress,
                     subject = command.subject,
                     bodyContent = command.bodyContent,
-                    status = command.status ?: if (command.success) CommunicationStatus.SENT else CommunicationStatus.FAILED,
+                    status = resolveStatus(command),
                     errorMessage = command.errorMessage,
-                    sentAt = Instant.now()
+                    sentAt = Instant.now(),
+                    queuedMessageId = command.queuedMessageId
                 )
             )
         } catch (ex: Exception) {
@@ -125,6 +135,66 @@ class CommunicationLogService(
     }
 
     /**
+     * Kolejność: jawny [RecordCommunicationCommand.status] wygrywa zawsze (nadawca wie lepiej),
+     * potem „przyjęta do kolejki", na końcu zwykłe wysłano / nie wysłano.
+     */
+    private fun resolveStatus(command: RecordCommunicationCommand): CommunicationStatus = when {
+        command.status != null -> command.status
+        command.queuedMessageId != null && command.success -> CommunicationStatus.QUEUED
+        command.success -> CommunicationStatus.SENT
+        else -> CommunicationStatus.FAILED
+    }
+
+    /**
+     * Domknięcie wpisu QUEUED przez dispatcher kolejki: wiadomość faktycznie wyszła (albo
+     * ostatecznie nie wyszła). Zmienia status i chwilę wysyłki na istniejącym wpisie —
+     * kartoteka klienta ma pokazywać jedną wiadomość, nie „w kolejce" plus „wysłano".
+     * Aktywność dostaje osobny wpis SMS_SENT / SMS_FAILED, bo dopiero teraz to się stało.
+     *
+     * Aktualizacja idzie przez [CommunicationLogWriter.resolveQueued] (własna transakcja),
+     * a `catch` obejmuje ją od zewnątrz — z tego samego powodu co w [record]: błąd domknięcia
+     * dziennika nie może wywrócić pracy dispatchera kolejki.
+     */
+    fun recordQueuedOutcome(queuedMessageId: UUID, success: Boolean, errorMessage: String?) {
+        val entries = try {
+            repository.findAllByQueuedMessageId(queuedMessageId)
+        } catch (ex: Exception) {
+            logger.error("Failed to load communication log for queued message {}: {}", queuedMessageId, ex.message, ex)
+            return
+        }
+        if (entries.isEmpty()) {
+            logger.warn("No communication log entry for queued message {} — outcome not recorded", queuedMessageId)
+            return
+        }
+        val status = if (success) CommunicationStatus.SENT else CommunicationStatus.FAILED
+        try {
+            writer.resolveQueued(queuedMessageId, CommunicationStatus.QUEUED, status, errorMessage, Instant.now())
+        } catch (ex: Exception) {
+            logger.error("Failed to resolve queued communication log entry {}: {}", queuedMessageId, ex.message, ex)
+            return
+        }
+        entries.filter { it.status == CommunicationStatus.QUEUED }.forEach { entry ->
+            recordAudit(
+                entry.id,
+                RecordCommunicationCommand(
+                    studioId = StudioId(entry.studioId),
+                    customerId = CustomerId(entry.customerId),
+                    visitId = entry.visitId?.let { VisitId(it) },
+                    appointmentId = entry.appointmentId?.let { AppointmentId(it) },
+                    channel = entry.channel,
+                    messageType = entry.messageType,
+                    recipientAddress = entry.recipientAddress,
+                    subject = entry.subject,
+                    bodyContent = entry.bodyContent,
+                    success = success,
+                    errorMessage = errorMessage,
+                    status = status
+                )
+            )
+        }
+    }
+
+    /**
      * Every outbound message in the system passes through [record], so hooking the activity
      * feed in here covers all of them at once — manual sends, automations and campaign
      * dispatch alike — instead of relying on each of the dozens of send paths remembering
@@ -132,7 +202,9 @@ class CommunicationLogService(
      * audit entry is the one line the owner sees in the company feed.
      */
     private fun recordAudit(id: UUID, command: RecordCommunicationCommand) {
-        val succeeded = command.status?.let { it != CommunicationStatus.FAILED } ?: command.success
+        val status = resolveStatus(command)
+        val succeeded = status != CommunicationStatus.FAILED
+        val queued = status == CommunicationStatus.QUEUED
 
         val customer = try {
             customerRepository.findByIdAndStudioId(command.customerId.value, command.studioId.value)
@@ -152,8 +224,10 @@ class CommunicationLogService(
                 actor = command.initiatedBy ?: auditActorResolver.current(),
                 module = AuditModule.COMMUNICATION,
                 action = when {
+                    command.channel == CommunicationChannel.SMS && queued -> AuditAction.SMS_QUEUED
                     command.channel == CommunicationChannel.SMS && succeeded -> AuditAction.SMS_SENT
                     command.channel == CommunicationChannel.SMS -> AuditAction.SMS_FAILED
+                    queued -> AuditAction.EMAIL_QUEUED
                     succeeded -> AuditAction.EMAIL_SENT
                     else -> AuditAction.EMAIL_FAILED
                 },
@@ -167,6 +241,8 @@ class CommunicationLogService(
                 metadata = buildMap {
                     put("messageType", command.messageType.name)
                     put("channel", command.channel.name)
+                    put("status", status.name)
+                    command.queuedMessageId?.let { put("queuedMessageId", it.toString()) }
                     command.errorMessage?.let { put("error", it) }
                 },
                 context = AuditContext(

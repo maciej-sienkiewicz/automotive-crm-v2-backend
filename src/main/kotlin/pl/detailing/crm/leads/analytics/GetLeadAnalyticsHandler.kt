@@ -4,8 +4,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
-import pl.detailing.crm.leads.conversation.LeadConversationStateService
-import pl.detailing.crm.leads.conversation.LeadReplyState
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
 import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadTagService
@@ -38,7 +36,7 @@ class GetLeadAnalyticsHandler(
     private val historyRepository: LeadStatusHistoryRepository,
     private val tagService: LeadTagService,
     private val tagCatalog: LeadTagCatalogService,
-    private val conversationStates: LeadConversationStateService,
+    private val awaitingWorkService: AwaitingWorkService,
     private val vehicleSegments: VehicleSegmentRepository
 ) {
 
@@ -105,7 +103,10 @@ class GetLeadAnalyticsHandler(
             byMarketTier = byMarketTier(leads, vehicleSegmentsOf),
             leadFacts = leadFacts(leads, tagsByLead, vehicleSegmentsOf),
             bySource = bySource(leads),
-            awaiting = awaiting(studioId),
+            // Rachunek „ile pieniędzy czeka na naszą odpowiedź" żyje w osobnej usłudze:
+            // ten sam wynik napędza też priorytetową podpowiedź na Tablicy i nie może
+            // się między tymi ekranami rozjechać.
+            awaiting = awaitingWorkService.awaitingWork(studioId),
             leaks = leaks(leads, now),
             // Poprzednie okno tej samej długości — jedyny punkt odniesienia, jaki
             // właściciel ma bez wychodzenia z ekranu. Bez niego kwota wygranych jest
@@ -531,48 +532,6 @@ class GetLeadAnalyticsHandler(
     private fun periodStart(date: LocalDate, monthly: Boolean): LocalDate =
         if (monthly) date.withDayOfMonth(1)
         else date.minusDays((date.dayOfWeek.value - 1).toLong())
-
-    // ── Pieniądze czekające na odpowiedź ───────────────────────────────────
-
-    /**
-     * Stan bieżący całego studia, nie okno raportu — patrz [AwaitingWorkDto].
-     *
-     * Liczy się tylko to, w czym ostatnie słowo należy do klienta. Lead, w którym
-     * to my napisaliśmy ostatni, nie jest zaległością, tylko czekaniem na decyzję —
-     * mieszanie tych dwóch rzeczy zamieniłoby listę zadań w listę wszystkiego.
-     */
-    private fun awaiting(studioId: StudioId): AwaitingWorkDto {
-        val open = leadRepository.findByStudioIdAndStatusIn(studioId.value, OPEN_STATUSES)
-        if (open.isEmpty()) return AwaitingWorkDto(0, 0, null)
-
-        val states = conversationStates.statesOf(studioId.value, open)
-        val waiting = open.mapNotNull { lead ->
-            val state = states[lead.id] ?: return@mapNotNull null
-            if (state.replyState != LeadReplyState.AWAITING_OUR_REPLY) return@mapNotNull null
-            val since = state.waitingSince ?: return@mapNotNull null
-            lead to since
-        }
-        if (waiting.isEmpty()) return AwaitingWorkDto(0, 0, null)
-
-        val now = Instant.now()
-        val oldest = waiting.minByOrNull { it.second }
-        return AwaitingWorkDto(
-            value = waiting.sumOf { it.first.estimatedValue },
-            count = waiting.size,
-            oldest = oldest?.let { (lead, since) ->
-                AwaitingLeadDto(
-                    leadId = lead.id.toString(),
-                    // Nazwisko, jeśli je znamy; adres albo numer, jeśli nie. Byle nie „Lead #4".
-                    name = lead.customerName?.takeIf { it.isNotBlank() } ?: lead.contactIdentifier,
-                    vehicle = listOfNotNull(lead.vehicleBrand, lead.vehicleModel)
-                        .joinToString(" ")
-                        .takeIf { it.isNotBlank() },
-                    value = lead.estimatedValue,
-                    waitingDays = ChronoUnit.DAYS.between(since, now).coerceAtLeast(0).toInt()
-                )
-            }
-        )
-    }
 
     // ── Wyciek pieniędzy ───────────────────────────────────────────────────
 

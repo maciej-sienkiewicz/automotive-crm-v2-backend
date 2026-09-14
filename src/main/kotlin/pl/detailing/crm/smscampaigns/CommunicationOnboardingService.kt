@@ -93,6 +93,10 @@ class CommunicationOnboardingService(
                 enabled = true,
                 messageTemplate = current.upsellConsent.messageTemplate.ifBlank { defaults.upsellConsent.messageTemplate }
             ),
+            upsellSuggestion = current.upsellSuggestion.copy(
+                enabled = true,
+                messageTemplate = current.upsellSuggestion.messageTemplate.ifBlank { defaults.upsellSuggestion.messageTemplate }
+            ),
             signatureRequest = current.signatureRequest.copy(
                 enabled = true,
                 messageTemplate = current.signatureRequest.messageTemplate.ifBlank { defaults.signatureRequest.messageTemplate }

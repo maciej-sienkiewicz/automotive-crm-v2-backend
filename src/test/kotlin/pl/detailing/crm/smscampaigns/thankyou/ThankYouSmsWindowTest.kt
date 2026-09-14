@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.smscampaigns.thankyou.domain.ThankYouSmsWindow
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -18,62 +19,64 @@ import java.time.LocalTime
  */
 class ThankYouSmsWindowTest {
 
+    private val window = ThankYouSmsWindow(SendWindow.DEFAULT)
+
     private fun at(hour: Int, minute: Int, day: Int = 15) =
         LocalDateTime.of(LocalDate.of(2026, 9, day), LocalTime.of(hour, minute))
-            .atZone(ThankYouSmsWindow.ZONE)
+            .atZone(window.zone)
             .toInstant()
 
     private fun localOf(instant: java.time.Instant) =
-        instant.atZone(ThankYouSmsWindow.ZONE).toLocalDateTime()
+        instant.atZone(window.zone).toLocalDateTime()
 
     // ── Propozycja pokazywana w formularzu ───────────────────────────────────
 
     @Test
     fun `w srodku dnia proponuje kwadrans od teraz`() {
-        assertEquals(localOf(at(15, 15)), localOf(ThankYouSmsWindow.defaultFor(at(15, 0))))
+        assertEquals(localOf(at(15, 15)), localOf(window.defaultFor(at(15, 0))))
     }
 
     @Test
     fun `kwadrans po 17 45 nadal miesci sie w oknie`() {
-        assertEquals(localOf(at(18, 0)), localOf(ThankYouSmsWindow.defaultFor(at(17, 45))))
+        assertEquals(localOf(at(18, 0)), localOf(window.defaultFor(at(17, 45))))
     }
 
     @Test
     fun `kwadrans po 17 50 wypada za oknem, wiec przechodzi na jutrzejsze poludnie`() {
-        assertEquals(localOf(at(12, 0, day = 16)), localOf(ThankYouSmsWindow.defaultFor(at(17, 50))))
+        assertEquals(localOf(at(12, 0, day = 16)), localOf(window.defaultFor(at(17, 50))))
     }
 
     @Test
     fun `wydanie o 20 50 nie budzi klienta wieczorem`() {
-        val proposal = ThankYouSmsWindow.defaultFor(at(20, 50))
+        val proposal = window.defaultFor(at(20, 50))
 
         assertEquals(localOf(at(12, 0, day = 16)), localOf(proposal))
-        assertTrue(ThankYouSmsWindow.contains(proposal))
+        assertTrue(window.contains(proposal))
     }
 
     @Test
     fun `przed poludniem czeka do otwarcia okna tego samego dnia`() {
-        assertEquals(localOf(at(12, 0)), localOf(ThankYouSmsWindow.defaultFor(at(8, 30))))
+        assertEquals(localOf(at(12, 0)), localOf(window.defaultFor(at(8, 30))))
     }
 
     @Test
     fun `kwadrans przed poludniem jeszcze nie otwiera okna`() {
         // 11:50 + 15 min = 12:05 — mieści się, więc nie ma czego przesuwać.
-        assertEquals(localOf(at(12, 5)), localOf(ThankYouSmsWindow.defaultFor(at(11, 50))))
+        assertEquals(localOf(at(12, 5)), localOf(window.defaultFor(at(11, 50))))
     }
 
     // ── Granice okna ─────────────────────────────────────────────────────────
 
     @Test
     fun `granice okna naleza do okna`() {
-        assertTrue(ThankYouSmsWindow.contains(at(12, 0)))
-        assertTrue(ThankYouSmsWindow.contains(at(18, 0)))
+        assertTrue(window.contains(at(12, 0)))
+        assertTrue(window.contains(at(18, 0)))
     }
 
     @Test
     fun `minuta przed i minuta po granicy juz nie`() {
-        assertFalse(ThankYouSmsWindow.contains(at(11, 59)))
-        assertFalse(ThankYouSmsWindow.contains(at(18, 1)))
+        assertFalse(window.contains(at(11, 59)))
+        assertFalse(window.contains(at(18, 1)))
     }
 
     // ── Termin rozstrzygany po stronie serwera ───────────────────────────────
@@ -82,7 +85,7 @@ class ThankYouSmsWindowTest {
     fun `termin z formularza mieszczacy sie w oknie zostaje przyjety`() {
         assertEquals(
             localOf(at(16, 30)),
-            localOf(ThankYouSmsWindow.resolveSendAt(requested = at(16, 30), now = at(13, 0)))
+            localOf(window.resolveSendAt(requested = at(16, 30), now = at(13, 0)))
         )
     }
 
@@ -90,7 +93,7 @@ class ThankYouSmsWindowTest {
     fun `termin recznie ustawiony na 22 00 wraca na najblizsze poludnie`() {
         assertEquals(
             localOf(at(12, 0, day = 16)),
-            localOf(ThankYouSmsWindow.resolveSendAt(requested = at(22, 0), now = at(13, 0)))
+            localOf(window.resolveSendAt(requested = at(22, 0), now = at(13, 0)))
         )
     }
 
@@ -99,7 +102,7 @@ class ThankYouSmsWindowTest {
         // Okno wydania stało otwarte pół dnia: godzina z formularza dawno minęła.
         assertEquals(
             localOf(at(16, 15)),
-            localOf(ThankYouSmsWindow.resolveSendAt(requested = at(13, 0), now = at(16, 0)))
+            localOf(window.resolveSendAt(requested = at(13, 0), now = at(16, 0)))
         )
     }
 
@@ -107,7 +110,7 @@ class ThankYouSmsWindowTest {
     fun `brak terminu w zadaniu oznacza najblizszy dozwolony`() {
         assertEquals(
             localOf(at(12, 0, day = 16)),
-            localOf(ThankYouSmsWindow.resolveSendAt(requested = null, now = at(19, 30)))
+            localOf(window.resolveSendAt(requested = null, now = at(19, 30)))
         )
     }
 
@@ -117,11 +120,11 @@ class ThankYouSmsWindowTest {
 
         everyQuarterOfADay.forEach { now ->
             assertTrue(
-                ThankYouSmsWindow.contains(ThankYouSmsWindow.defaultFor(now)),
+                window.contains(window.defaultFor(now)),
                 "propozycja dla $now wypadła poza oknem"
             )
             assertTrue(
-                ThankYouSmsWindow.contains(ThankYouSmsWindow.resolveSendAt(now.plusSeconds(3600), now)),
+                window.contains(window.resolveSendAt(now.plusSeconds(3600), now)),
                 "termin z formularza dla $now wypadł poza oknem"
             )
         }

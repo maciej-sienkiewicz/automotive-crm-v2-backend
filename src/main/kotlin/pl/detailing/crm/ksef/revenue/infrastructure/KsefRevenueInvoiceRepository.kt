@@ -249,8 +249,17 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
     ): Array<Any?>
 
     /**
-     * Suma brutto faktur przychodowych o danym statusie płatności — podstawa kafla
+     * Suma netto faktur przychodowych o danym statusie płatności — podstawa kafla
      * „Przychody" i „Należności" w module finansów.
+     *
+     * Netto, bo VAT jest tylko przechowywany dla urzędu skarbowego; przychód
+     * liczony brutto zawyżał kafel o stawkę VAT i nie zestawiał się z kosztami,
+     * w których VAT podlega odliczeniu.
+     *
+     * `total_net` bywa zerowe dla faktur zaciągniętych z KSeF bez kwoty netto
+     * w metadanych — wtedy zamiast pomijać fakturę (co po cichu zaniżałoby
+     * przychód) netto jest odtwarzane jako brutto − VAT. Gdy i VAT jest zerowy,
+     * zostaje brutto: lepsze przybliżenie niż zniknięcie dokumentu z raportu.
      *
      * Korekty (KOR) niosą kwoty ze znakiem, więc korekta do zera realnie zeruje
      * przychód z faktury pierwotnej. Filtry są te same co w statystykach: odpada
@@ -258,12 +267,14 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
      * ręcznie. To wywołanie zawęża dodatkowo po [paymentStatus], bo przychodem są
      * pieniądze, które wpłynęły — nie sam fakt wystawienia dokumentu.
      *
-     * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumGross],
+     * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumNet],
      * żeby obie strony sumy mówiły o tym samym okresie.
      */
     @Query(
         value = """
-        SELECT COALESCE(SUM(i.total_gross), 0)
+        SELECT COALESCE(SUM(
+            CASE WHEN i.total_net <> 0 THEN i.total_net ELSE i.total_gross - i.total_vat END
+        ), 0)
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
           AND i.payment_status = CAST(:paymentStatus AS text)
@@ -274,7 +285,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
           AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
     """, nativeQuery = true
     )
-    fun sumGrossByPaymentStatus(
+    fun sumNetByPaymentStatus(
         @Param("studioId") studioId: UUID,
         @Param("paymentStatus") paymentStatus: String,
         @Param("dateFrom") dateFrom: LocalDate?,

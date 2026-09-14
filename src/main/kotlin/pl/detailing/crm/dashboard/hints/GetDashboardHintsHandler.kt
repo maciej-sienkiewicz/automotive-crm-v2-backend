@@ -12,6 +12,8 @@ import pl.detailing.crm.instagram.analytics.MetricsCalculator
 import pl.detailing.crm.instagram.analytics.WeeklyDigestDto
 import pl.detailing.crm.instagram.infrastructure.InstagramReportRepository
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
+import pl.detailing.crm.leads.analytics.AwaitingWorkDto
+import pl.detailing.crm.leads.analytics.AwaitingWorkService
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.role.permission.PermissionCheckService
@@ -42,6 +44,7 @@ class GetDashboardHintsHandler(
     private val instagramReportRepository: InstagramReportRepository,
     private val commThreadRepository: CommThreadRepository,
     private val ksefCredentialsRepository: KsefCredentialsRepository,
+    private val awaitingWorkService: AwaitingWorkService,
     private val visitRepository: VisitRepository,
     private val dismissalRepository: DashboardHintDismissalRepository,
     private val permissionCheckService: PermissionCheckService,
@@ -81,9 +84,13 @@ class GetDashboardHintsHandler(
                 .onFailure { logger.warn("Podpowiedź worktime pominięta: {}", it.message) }
                 .getOrNull()
 
-            // Kolejność na liście = ważność: najpierw sprawy operacyjne z terminem,
-            // potem sygnały zewnętrzne, na końcu upselle (w tym pytanie o nieużywaną
-            // funkcję kart — to rozmowa o konfiguracji, nie zaległość).
+            // Kolejność na liście = ważność. Na samej górze pieniądze, które właśnie
+            // wychodzą za drzwi: klient napisał, piłka jest po naszej stronie, a każdy
+            // dzień ciszy to rosnące ryzyko, że pójdzie gdzie indziej. Dopiero potem
+            // sprawy operacyjne z terminem, sygnały zewnętrzne i na końcu upselle
+            // (w tym pytanie o nieużywaną funkcję kart — to rozmowa o konfiguracji,
+            // nie zaległość).
+            safely("leads-awaiting") { leadsAwaitingHint(principal) }
             safely("worktime-missing") { worktime?.takeIf { it.kind == DashboardHintKind.WORKTIME_MISSING } }
             safely("competitor") { competitorStandoutHint(principal, digest) }
             safely("unread-mail") { unreadMailHint(principal) }
@@ -93,6 +100,88 @@ class GetDashboardHintsHandler(
 
             filterDismissed(principal, hints)
         }
+
+    // ── Leady: pieniądze czekające na naszą odpowiedź ──────────────────────────
+
+    /**
+     * Zaległe odpowiedzi na leady — jedyna podpowiedź z wagą [DashboardHintSeverity.CRITICAL].
+     *
+     * Pojawia się dokładnie wtedy, gdy jest lead, w którym klient napisał ostatni,
+     * a my jeszcze nie odpisaliśmy (piłka po naszej stronie). To nie jest sygnał
+     * „na przyszłość" ani upsell: to pieniądze, które wyjdą za drzwi, jeśli nikt
+     * nie odpowie — dlatego stoi na górze listy i świeci na czerwono.
+     *
+     * „Aktywny moduł leadów" = uprawnienie LEADS_MANAGE. Ten sam warunek trzyma
+     * zakładkę „Leady" i całe API analityki leadów; bez modułu nie ma czego liczyć.
+     * Sam rachunek dzielimy z pasmem „Czeka na Ciebie" w analityce ([AwaitingWorkService]),
+     * żeby pasek Tablicy i ekran analityki nigdy nie pokazały dwóch różnych kwot.
+     */
+    private fun leadsAwaitingHint(principal: UserPrincipal): DashboardHint? {
+        if (!hasPermission(principal, Permission.LEADS_MANAGE)) return null
+
+        val awaiting = awaitingWorkService.awaitingWork(principal.studioId)
+        if (awaiting.count == 0) return null
+
+        return DashboardHint(
+            // Klucz bez kwoty i bez liczby: sześć czy siedem zaległych rozmów to wciąż
+            // ta sama zaległość, a zamknięcie ma ją uciszyć na tydzień, nie wracać po
+            // każdej nowej wiadomości.
+            key = "LEADS_AWAITING",
+            kind = DashboardHintKind.LEADS_AWAITING,
+            text = awaitingText(awaiting),
+            action = DashboardHintAction(
+                label = "Odpisz im",
+                type = DashboardHintActionType.NAVIGATE,
+                // Ten sam deep-link, co przycisk „Odpisz im" w analityce leadów:
+                // kolejka „Twój ruch", czyli rozmowy z piłką po naszej stronie.
+                url = "/leads?awaiting=1"
+            ),
+            permanentDismiss = false,
+            severity = DashboardHintSeverity.CRITICAL
+        )
+    }
+
+    /**
+     * Zdanie budowane dokładnie tak, jak brzmi pasmo „Czeka na Ciebie" w analityce
+     * leadów — te same słowa i formaty, żeby użytkownik nie zobaczył dwóch wersji
+     * tej samej informacji. Kwotę okrągłą części leada pomijamy: na pasku liczy
+     * się jedno konkretne nazwisko i to, jak długo czeka.
+     */
+    private fun awaitingText(awaiting: AwaitingWorkDto): String {
+        // Miejscownik: zdanie brzmi „w N rozmowach" / „w 1 rozmowie".
+        val conversationWord = if (awaiting.count == 1) "rozmowie" else "rozmowach"
+        val sentence = StringBuilder(
+            "Czeka na Ciebie ${formatMoney(awaiting.value)} w ${awaiting.count} $conversationWord, " +
+                "w których piłka jest po Twojej stronie."
+        )
+        awaiting.oldest?.let { oldest ->
+            val vehicle = oldest.vehicle?.let { " - $it" } ?: ""
+            sentence.append(" Najdłużej czeka ${oldest.name}$vehicle, ${dayPhrase(oldest.waitingDays)}.")
+        }
+        return sentence.toString()
+    }
+
+    /**
+     * „17 283 zł": pełne złote, bez groszy, spacja co trzy cyfry. Ten sam format,
+     * co `formatMoney` w interfejsie leadów — kwota-hasło do przeczytania jednym
+     * spojrzeniem. Wartości leadów są nieujemne, więc nie ma tu obsługi minusa.
+     */
+    private fun formatMoney(grosze: Long): String {
+        val zloty = Math.round(grosze / 100.0)
+        val grouped = zloty.toString()
+            .reversed()
+            .chunked(3)
+            .joinToString(" ")
+            .reversed()
+        return "$grouped zł"
+    }
+
+    /** „czeka 1 dzień", „czeka 8 dni", „od dziś" — jak `dayWord` w analityce leadów. */
+    private fun dayPhrase(days: Int): String = when {
+        days <= 0 -> "od dziś"
+        days == 1 -> "czeka 1 dzień"
+        else -> "czeka $days dni"
+    }
 
     // ── Karty Czasu Pracy ────────────────────────────────────────────────────
 

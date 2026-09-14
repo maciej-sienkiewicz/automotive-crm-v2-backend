@@ -16,6 +16,7 @@ import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentEntity
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.ProtocolDocumentNaming
+import pl.detailing.crm.protocol.visitprotocol.VisitProtocolDocumentRegistrar
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolEntity
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
@@ -58,7 +59,8 @@ class SubmitSignatureHandler(
     private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val customerConsentRepository: CustomerConsentRepository,
     private val auditService: AuditService,
-    private val userSignatureService: UserSignatureService
+    private val userSignatureService: UserSignatureService,
+    private val protocolDocumentRegistrar: VisitProtocolDocumentRegistrar
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -225,13 +227,16 @@ class SubmitSignatureHandler(
 
                 // Dokument wizyty: podmieniamy plik na wersję podpisaną.
                 //
-                // Zgoda idzie inaczej — jej wiersz w dokumentach wizyty powstaje DOPIERO
-                // TERAZ. Klient, który zgody nie podpisał, nie zostawia po sobie pustego
-                // formularza udającego dokument sprawy.
-                if (protocol.consentDefinitionId == null) {
-                    documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
-                } else {
-                    registerSignedConsentDocument(protocol, visitEntity, signedPdfS3Key)
+                // Zgoda i protokół WYDANIA idą inaczej — ich wiersz w dokumentach wizyty
+                // powstaje DOPIERO TERAZ. Klient, który zgody nie podpisał, nie zostawia
+                // po sobie pustego formularza udającego dokument sprawy; tak samo pracownik,
+                // który otworzył ekran wydania i go zamknął (patrz VisitProtocolDocumentRegistrar).
+                when {
+                    protocol.consentDefinitionId != null ->
+                        registerSignedConsentDocument(protocol, visitEntity, signedPdfS3Key)
+                    !VisitProtocolDocumentRegistrar.becomesDocumentOnGeneration(protocol.stage) ->
+                        protocolDocumentRegistrar.register(protocol, signedPdfS3Key, "pdf")
+                    else -> documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
                 }
 
                 val signedProtocol = protocol.sign(

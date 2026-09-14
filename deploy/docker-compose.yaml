@@ -39,6 +39,7 @@ services:
       VAPID_PUBLIC_KEY: ${ENV_VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${ENV_VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${ENV_VAPID_SUBJECT}
+      META_ADS_LIBRARY_TOKEN: ${ENV_META_ADS_LIBRARY_TOKEN}
     depends_on:
       - redis
     networks:

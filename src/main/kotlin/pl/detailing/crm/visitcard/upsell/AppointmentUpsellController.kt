@@ -55,6 +55,23 @@ class AppointmentUpsellController(
         }
     }
 
+    /** Kilka propozycji za jednym razem — patrz [VisitUpsellController.createMany]. */
+    @PostMapping("/batch")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun createMany(
+        @PathVariable appointmentId: String,
+        @RequestBody request: CreateUpsellSuggestionsRequest
+    ): ResponseEntity<CreateUpsellSuggestionsResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        withContext(Dispatchers.IO) {
+            ResponseEntity.ok(
+                adminService.createManyForAppointment(
+                    AppointmentId.fromString(appointmentId), principal.studioId, principal.userId, request
+                )
+            )
+        }
+    }
+
     @DeleteMapping("/{suggestionId}")
     @RequiresPermission(Permission.VISITS_CREATE)
     fun delete(

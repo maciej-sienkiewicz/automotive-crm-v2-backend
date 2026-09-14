@@ -17,5 +17,7 @@ data class SmsTemplateContext(
     /** Customer's last name — replaces {{nazwisko}} */
     val lastName: String,
     /** UTC instant of the appointment start — replaces {{data}} and {{godzina}} */
-    val appointmentStart: Instant
+    val appointmentStart: Instant,
+    /** Rezerwacja całodniowa: {{godzina}} jest pusta, bo północ nie jest godziną wizyty. */
+    val allDay: Boolean = false
 )

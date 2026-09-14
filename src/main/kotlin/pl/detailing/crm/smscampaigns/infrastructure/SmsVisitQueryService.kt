@@ -27,7 +27,9 @@ data class SmsVisitView(
     val customerFirstName: String?,
     val customerLastName: String?,
     val customerPhone: String?,
-    val studioName: String
+    val studioName: String,
+    /** Z rezerwacji, z której powstała wizyta: całodniowa nie ma godziny do pokazania. */
+    val isAllDay: Boolean = false
 )
 
 /**
@@ -65,10 +67,12 @@ class SmsVisitQueryService {
                 c.firstName,
                 c.lastName,
                 c.phone,
-                s.name
+                s.name,
+                a.isAllDay
             FROM VisitEntity v
-            JOIN CustomerEntity c ON c.id = v.customerId
-            JOIN StudioEntity   s ON s.id = v.studioId
+            JOIN CustomerEntity    c ON c.id = v.customerId
+            JOIN StudioEntity      s ON s.id = v.studioId
+            JOIN AppointmentEntity a ON a.id = v.appointmentId
             WHERE v.studioId              = :studioId
             AND   v.status                = :completed
             AND   v.deletedAt            IS NULL
@@ -96,7 +100,8 @@ class SmsVisitQueryService {
                 customerFirstName = cols[5] as String?,
                 customerLastName = cols[6] as String?,
                 customerPhone = cols[7] as String?,
-                studioName = cols[8] as String
+                studioName = cols[8] as String,
+                isAllDay = cols[9] as Boolean
             )
         }
     }

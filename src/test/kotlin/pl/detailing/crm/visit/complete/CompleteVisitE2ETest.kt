@@ -79,7 +79,8 @@ class CompleteVisitE2ETest {
             auditService,
             createFinancialDocumentHandler,
             capabilityService,
-            eventPublisher = mockk(relaxed = true)
+            eventPublisher = mockk(relaxed = true),
+            financialDocumentRepository = mockk(relaxed = true)
         )
 
         val controller = VisitTransitionController(

@@ -36,7 +36,8 @@ class VisitUpsellAdminService(
     private val visitRepository: VisitRepository,
     private val appointmentRepository: AppointmentRepository,
     private val serviceRepository: ServiceRepository,
-    private val suggestionRepository: VisitUpsellSuggestionRepository
+    private val suggestionRepository: VisitUpsellSuggestionRepository,
+    private val notifyHandler: NotifyUpsellSuggestionHandler
 ) {
 
     @Transactional(readOnly = true)
@@ -62,10 +63,22 @@ class VisitUpsellAdminService(
         studioId: StudioId,
         userId: UserId,
         request: CreateUpsellSuggestionRequest
-    ): UpsellSuggestionResponse {
+    ): UpsellSuggestionResponse = createMany(visitId, studioId, userId, request.asBatch()).single()
+
+    /** Kilka propozycji naraz — patrz [CreateUpsellSuggestionsRequest]. */
+    @Transactional
+    fun createMany(
+        visitId: VisitId,
+        studioId: StudioId,
+        userId: UserId,
+        request: CreateUpsellSuggestionsRequest
+    ): CreateUpsellSuggestionsResponse {
         visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
             ?: throw EntityNotFoundException("Visit not found: $visitId")
-        return createSuggestion(studioId, userId, request, visitId = visitId.value, appointmentId = null)
+        val entities = createSuggestions(studioId, userId, request, visitId = visitId.value, appointmentId = null)
+        val notification =
+            if (request.notifyCustomer) notifyHandler.notifyForVisit(visitId, studioId, entities) else null
+        return CreateUpsellSuggestionsResponse(entities.map { it.toResponse() }, notification)
     }
 
     @Transactional
@@ -74,9 +87,52 @@ class VisitUpsellAdminService(
         studioId: StudioId,
         userId: UserId,
         request: CreateUpsellSuggestionRequest
-    ): UpsellSuggestionResponse {
+    ): UpsellSuggestionResponse =
+        createManyForAppointment(appointmentId, studioId, userId, request.asBatch()).single()
+
+    /** Kilka propozycji naraz — patrz [CreateUpsellSuggestionsRequest]. */
+    @Transactional
+    fun createManyForAppointment(
+        appointmentId: AppointmentId,
+        studioId: StudioId,
+        userId: UserId,
+        request: CreateUpsellSuggestionsRequest
+    ): CreateUpsellSuggestionsResponse {
         requireAppointment(appointmentId, studioId)
-        return createSuggestion(studioId, userId, request, visitId = null, appointmentId = appointmentId.value)
+        val entities =
+            createSuggestions(studioId, userId, request, visitId = null, appointmentId = appointmentId.value)
+        val notification =
+            if (request.notifyCustomer) notifyHandler.notifyForAppointment(appointmentId, studioId, entities) else null
+        return CreateUpsellSuggestionsResponse(entities.map { it.toResponse() }, notification)
+    }
+
+    /**
+     * Zapisuje całą listę w jednej transakcji: albo wszystkie propozycje trafiają na
+     * kartę, albo żadna. Klient nie ma zobaczyć połowy tego, o czym za chwilę przeczyta
+     * w SMS-ie, bo trzecia usługa okazała się nieaktywna.
+     */
+    private fun createSuggestions(
+        studioId: StudioId,
+        userId: UserId,
+        request: CreateUpsellSuggestionsRequest,
+        visitId: UUID?,
+        appointmentId: UUID?
+    ): List<VisitUpsellSuggestionEntity> {
+        if (request.suggestions.isEmpty()) {
+            throw ValidationException("Nie wybrano żadnej usługi do zasugerowania")
+        }
+        if (request.suggestions.size > MAX_SUGGESTIONS_PER_REQUEST) {
+            throw ValidationException(
+                "Jednorazowo można dodać najwyżej $MAX_SUGGESTIONS_PER_REQUEST propozycji"
+            )
+        }
+        return request.suggestions.map { item ->
+            createSuggestion(
+                studioId, userId,
+                CreateUpsellSuggestionRequest(item.serviceId, item.adjustment, item.note),
+                visitId, appointmentId
+            )
+        }
     }
 
     private fun createSuggestion(
@@ -85,7 +141,7 @@ class VisitUpsellAdminService(
         request: CreateUpsellSuggestionRequest,
         visitId: UUID?,
         appointmentId: UUID?
-    ): UpsellSuggestionResponse {
+    ): VisitUpsellSuggestionEntity {
         val serviceId = ServiceId.fromString(request.serviceId)
         val service = serviceRepository.findByIdAndStudioId(serviceId.value, studioId.value)
             ?: throw EntityNotFoundException("Usługa nie została znaleziona: ${request.serviceId}")
@@ -125,7 +181,7 @@ class VisitUpsellAdminService(
                 createdBy = userId.value
             )
         )
-        return entity.toResponse()
+        return entity
     }
 
     /**
@@ -156,6 +212,20 @@ class VisitUpsellAdminService(
             throw ValidationException("Nie można usunąć sugestii, na którą klient już odpowiedział")
         }
         suggestionRepository.delete(suggestion)
+    }
+
+    /** Pojedyncze utworzenie zachowuje dotychczasowy kształt odpowiedzi. */
+    private fun CreateUpsellSuggestionsResponse.single(): UpsellSuggestionResponse =
+        suggestions.single().copy(customerNotification = customerNotification)
+
+    private fun CreateUpsellSuggestionRequest.asBatch() = CreateUpsellSuggestionsRequest(
+        suggestions = listOf(CreateUpsellSuggestionItem(serviceId, adjustment, note)),
+        notifyCustomer = notifyCustomer
+    )
+
+    /** Jedna wiadomość wymieniająca kilkanaście usług przestaje być czytelna — i tania. */
+    private companion object {
+        const val MAX_SUGGESTIONS_PER_REQUEST = 20
     }
 
     private fun requireAppointment(appointmentId: AppointmentId, studioId: StudioId) {

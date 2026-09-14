@@ -5,7 +5,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
+import pl.detailing.crm.comms.infrastructure.CommAttachmentMeta
+import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
+import pl.detailing.crm.leads.attachment.LeadAttachmentEntity
+import pl.detailing.crm.leads.attachment.LeadAttachmentRepository
 import pl.detailing.crm.leads.callback.LeadCallbackEntity
 import pl.detailing.crm.leads.callback.LeadCallbackRepository
 import pl.detailing.crm.leads.conversation.LeadConversationState
@@ -31,7 +35,9 @@ class LeadQueryHandlers(
     private val tagCatalog: LeadTagCatalogService,
     private val conversationStates: LeadConversationStateService,
     private val messageRepository: CommMessageRepository,
-    private val callbackRepository: LeadCallbackRepository
+    private val callbackRepository: LeadCallbackRepository,
+    private val attachmentRepository: CommAttachmentRepository,
+    private val leadAttachmentRepository: LeadAttachmentRepository
 ) {
 
     /**
@@ -121,15 +127,60 @@ class LeadQueryHandlers(
             .filterNot { it.toStatus in ECHOED_STATUSES }
             .map { it.toTimelineEntry() }
         val callbacks = callbackRepository.findByLeadIdOrderByCreatedAtAsc(leadId).map { it.toTimelineEntry() }
-        val messages = lead.threadId
+        val threadMessages = lead.threadId
             ?.let { messageRepository.findByThreadIdOrderBySentAtAsc(it) }
-            ?.map { it.toTimelineEntry(lead) }
             .orEmpty()
 
-        return (messages + callbacks + statuses).sortedWith(
+        // Załączniki wiadomości z wątku czytamy wprost ze skrzynki, jednym zapytaniem:
+        // dzięki temu widać także pliki z DALSZEJ korespondencji, nie tylko te z
+        // wiadomości, która leada założyła. Obrazki osadzone w treści (`cid:`) to
+        // elementy układu maila — logo w stopce — a nie coś, co klient przysłał.
+        val attachmentsByMessage = if (threadMessages.isEmpty()) emptyMap() else
+            attachmentRepository.findMetaByMessageIdIn(threadMessages.map { it.id })
+                .filterNot { it.isInline }
+                .groupBy { it.messageId }
+
+        val messages = threadMessages.map {
+            it.toTimelineEntry(lead, attachmentsByMessage[it.id].orEmpty().map(::toDto))
+        }
+
+        // Pliki podpięte do leada, których wiadomości nie ma na osi — tak wygląda
+        // zgłoszenie z formularza WWW: lead świadomie nie ma wątku (wątek należy do
+        // robota, nie do klienta), a to właśnie tam klient najczęściej dokłada zdjęcia.
+        // Bez tego wpisu jedyny ślad po nich byłby w skrzynce robota.
+        val orphanEntries = leadAttachmentRepository.findByLeadIdOrderByReceivedAtAsc(leadId)
+            .filterNot { link -> threadMessages.any { it.id == link.messageId } }
+            .groupBy { it.messageId }
+            .map { (messageId, links) -> links.toTimelineEntry(messageId) }
+
+        return (messages + orphanEntries + callbacks + statuses).sortedWith(
             compareBy({ it.at }, { KIND_ORDER.indexOf(it.kind) })
         )
     }
+
+    private fun toDto(meta: CommAttachmentMeta) =
+        LeadTimelineAttachmentDto(
+            id = meta.id.toString(),
+            fileName = meta.fileName,
+            contentType = meta.contentType,
+            sizeBytes = meta.sizeBytes
+        )
+
+    /** Jeden wpis na wiadomość spoza wątku — tyle, ile o niej wiemy: pliki i kiedy przyszły. */
+    private fun List<LeadAttachmentEntity>.toTimelineEntry(messageId: UUID) = LeadTimelineEntryDto(
+        id = "attachments-$messageId",
+        kind = "ATTACHMENTS",
+        at = first().receivedAt,
+        actorName = null,
+        attachments = map {
+            LeadTimelineAttachmentDto(
+                id = it.attachmentId.toString(),
+                fileName = it.fileName,
+                contentType = it.contentType,
+                sizeBytes = it.sizeBytes
+            )
+        }
+    )
 
     private fun LeadStatusHistoryEntity.toTimelineEntry() = LeadTimelineEntryDto(
         id = id.toString(),
@@ -149,7 +200,10 @@ class LeadQueryHandlers(
         note = note
     )
 
-    private fun CommMessageEntity.toTimelineEntry(lead: LeadEntity) = LeadTimelineEntryDto(
+    private fun CommMessageEntity.toTimelineEntry(
+        lead: LeadEntity,
+        attachments: List<LeadTimelineAttachmentDto>
+    ) = LeadTimelineEntryDto(
         id = id.toString(),
         kind = if (direction == CommDirection.INBOUND) "INBOUND_MESSAGE" else "OUTBOUND_MESSAGE",
         at = sentAt,
@@ -168,7 +222,8 @@ class LeadQueryHandlers(
         body = (bodyTextClean?.takeIf { it.isNotBlank() } ?: bodyText)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?.take(MAX_TIMELINE_BODY)
+            ?.take(MAX_TIMELINE_BODY),
+        attachments = attachments
     )
 
     companion object {
@@ -176,7 +231,7 @@ class LeadQueryHandlers(
          * Kolejność zdarzeń o tym samym znaczniku czasu. Wiadomość przed statusem,
          * bo to odpowiedź powoduje przejście na „W kontakcie", a nie odwrotnie.
          */
-        private val KIND_ORDER = listOf("INBOUND_MESSAGE", "OUTBOUND_MESSAGE", "CALLBACK", "STATUS")
+        private val KIND_ORDER = listOf("INBOUND_MESSAGE", "ATTACHMENTS", "OUTBOUND_MESSAGE", "CALLBACK", "STATUS")
 
         /**
          * Statusy, które na osi czasu są ECHEM zdarzenia stojącego tuż obok, więc nie

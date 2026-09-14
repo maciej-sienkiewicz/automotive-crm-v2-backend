@@ -124,10 +124,29 @@
 
 
   /* ============ Miejsce na logo studia ============ */
-  /* Ta sama kotwica co w protokołach: 188.16 x 16.38pt, top 24.23pt.
-     Do czasu wdrożenia loga per studio pole zostaje puste — szablon
-     systemowy nie może nieść cudzej marki. */
-  .header { height: 48.00pt; }
+  /* Ta sama kotwica co w protokołach: 188.16 x 16.38pt, top 24.23pt. Szablon
+     systemowy sam nie niesie żadnej marki — logo wstawia backend w
+     data-field="companylogo" (patrz protokol_przyjecia_pojazdu.html). Pasmo ma
+     tylko 48pt, ale slot 36pt (14.42–50.42pt) nadal kończy się nad tytułem. */
+  .header { position: relative; height: 48.00pt; }
+  .company-logo {
+    position: absolute;
+    left: -0.94pt;
+    top: 14.42pt;
+    width: 188.16pt;
+    height: 36pt;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .company-logo img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    object-position: left center;
+  }
 
   /* ============ Tytuł dokumentu ============ */
   .title-row {
@@ -257,7 +276,9 @@
 <div class="page">
 
   <!-- Miejsce na logo studia -->
-  <div class="header"></div>
+  <div class="header">
+    <div class="company-logo" data-field="companylogo"></div>
+  </div>
 
   <!-- Tytuł -->
   <div class="title-row">

@@ -67,11 +67,17 @@ class SendCustomerSmsHandler(
                 subject = null,
                 bodyContent = message,
                 success = result.success,
-                errorMessage = result.errorMessage
+                errorMessage = result.errorMessage,
+                queuedMessageId = result.queuedMessageId
             )
         )
 
-        if (result.success) {
+        if (result.queued) {
+            logger.info(
+                "SendCustomerSms: SMS queued for send window [customerId={} scheduledFor={}]",
+                command.customerId.value, result.scheduledFor
+            )
+        } else if (result.success) {
             logger.info("SendCustomerSms: SMS sent [customerId={}]", command.customerId.value)
         } else {
             logger.warn(
@@ -83,7 +89,9 @@ class SendCustomerSmsHandler(
         SendCustomerSmsResult(
             success = result.success,
             phoneNumber = phoneNumber,
-            errorMessage = result.errorMessage
+            errorMessage = result.errorMessage,
+            queued = result.queued,
+            scheduledFor = result.scheduledFor
         )
     }
 
@@ -99,8 +107,15 @@ data class SendCustomerSmsCommand(
     val message: String
 )
 
+/**
+ * [queued] = true oznacza, że wiadomość jest przyjęta, ale wyjdzie dopiero o [scheduledFor]
+ * — poza godzinami komunikacji z klientem bramka odkłada ją do kolejki. UI ma to powiedzieć
+ * wprost, bo pracownik właśnie kliknął „wyślij" i spodziewa się, że poszło.
+ */
 data class SendCustomerSmsResult(
     val success: Boolean,
     val phoneNumber: String,
-    val errorMessage: String?
+    val errorMessage: String?,
+    val queued: Boolean = false,
+    val scheduledFor: java.time.Instant? = null
 )

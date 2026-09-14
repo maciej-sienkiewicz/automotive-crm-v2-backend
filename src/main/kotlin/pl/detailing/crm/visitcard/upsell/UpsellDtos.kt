@@ -16,12 +16,43 @@ import java.time.Instant
 data class CreateUpsellSuggestionRequest(
     val serviceId: String,
     val adjustment: UpsellAdjustment? = null,
-    val note: String? = null
+    val note: String? = null,
+    /**
+     * „Czy powiadomić klienta o edycji upsellingu?" — po zapisaniu sugestii idzie SMS
+     * z linkiem do karty (szablon „Propozycja dodatkowych usług"). Wynik wraca w
+     * [UpsellSuggestionResponse.customerNotification]; blokada nie cofa sugestii.
+     */
+    val notifyCustomer: Boolean = false
 )
 
 data class UpsellAdjustment(
     val type: AdjustmentType,
     val value: Double
+)
+
+/**
+ * Kilka propozycji dodanych za jednym razem — i jedno powiadomienie na wszystkie.
+ *
+ * Pracownik ogląda auto raz i widzi kilka rzeczy do zrobienia. Zapisywanie ich po
+ * jednej wysyłało klientowi tyle SMS-ów, ile usług: trzy osobne „dodaliśmy propozycję"
+ * pod rząd, każdy za kredyt. Jedna lista to jedna wiadomość wymieniająca wszystko.
+ */
+data class CreateUpsellSuggestionsRequest(
+    val suggestions: List<CreateUpsellSuggestionItem>,
+    /** Patrz [CreateUpsellSuggestionRequest.notifyCustomer]. Dotyczy całej listy naraz. */
+    val notifyCustomer: Boolean = false
+)
+
+data class CreateUpsellSuggestionItem(
+    val serviceId: String,
+    val adjustment: UpsellAdjustment? = null,
+    val note: String? = null
+)
+
+data class CreateUpsellSuggestionsResponse(
+    val suggestions: List<UpsellSuggestionResponse>,
+    /** Jeden wynik na całą listę; null, gdy pracownik nie prosił o powiadomienie. */
+    val customerNotification: UpsellNotificationResult? = null
 )
 
 data class UpsellSuggestionResponse(
@@ -41,7 +72,9 @@ data class UpsellSuggestionResponse(
     val status: UpsellSuggestionStatus,
     val createdAt: Instant,
     val requestedAt: Instant?,
-    val confirmedAt: Instant?
+    val confirmedAt: Instant?,
+    /** Tylko w odpowiedzi na utworzenie z `notifyCustomer = true`; null w listowaniu. */
+    val customerNotification: UpsellNotificationResult? = null
 ) {
     companion object {
         fun from(entity: VisitUpsellSuggestionEntity, originalPriceGross: Long): UpsellSuggestionResponse =

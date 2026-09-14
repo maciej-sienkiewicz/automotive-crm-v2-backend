@@ -3,6 +3,7 @@ package pl.detailing.crm.smscampaigns.thankyou
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.template.AppointmentAllDayLookup
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -51,7 +52,9 @@ class ScheduleThankYouSmsHandler(
     private val customerRepository: CustomerRepository,
     private val configRepository: SmsAutomationConfigRepository,
     private val templateProcessor: SmsTemplateProcessor,
-    private val repository: ScheduledThankYouSmsRepository
+    private val repository: ScheduledThankYouSmsRepository,
+    private val window: ThankYouSmsWindow,
+    private val allDayLookup: AppointmentAllDayLookup
 ) {
     private val logger = LoggerFactory.getLogger(ScheduleThankYouSmsHandler::class.java)
 
@@ -109,7 +112,8 @@ class ScheduleThankYouSmsHandler(
             context = SmsTemplateContext(
                 firstName = customer.firstName ?: "",
                 lastName = customer.lastName ?: "",
-                appointmentStart = visit.scheduledDate
+                appointmentStart = visit.scheduledDate,
+                allDay = allDayLookup.isAllDay(visit.appointmentId, command.studioId.value)
             )
         )
 
@@ -117,7 +121,7 @@ class ScheduleThankYouSmsHandler(
             decision(command, visit.customerId, visit.appointmentId, now).copy(
                 phoneNumber = normalizePolishPhone(phone),
                 messageContent = message,
-                scheduledFor = ThankYouSmsWindow.resolveSendAt(command.scheduledAt, now),
+                scheduledFor = window.resolveSendAt(command.scheduledAt, now),
                 status = ScheduledThankYouSmsStatus.PENDING
             )
         )

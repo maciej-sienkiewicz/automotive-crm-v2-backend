@@ -283,7 +283,7 @@ class CampaignDispatcher(
             return
         }
 
-        val result: Pair<Boolean, String?> = when (recipient.channel) {
+        val result: Triple<Boolean, String?, UUID?> = when (recipient.channel) {
             RecipientChannel.SMS -> {
                 try {
                     val r = gateway.sendSms(
@@ -294,7 +294,7 @@ class CampaignDispatcher(
                         context = "Campaign=${recipient.campaignId}",
                         category = OutboundMessageCategory.CAMPAIGN
                     )
-                    r.success to r.errorMessage
+                    Triple(r.success, r.errorMessage, r.queuedMessageId)
                 } catch (ex: InsufficientSmsCreditsException) {
                     recipients.save(
                         recipient.copy(
@@ -330,11 +330,11 @@ class CampaignDispatcher(
                     context = "Campaign=${recipient.campaignId}",
                     category = OutboundMessageCategory.CAMPAIGN
                 )
-                r.success to r.errorMessage
+                Triple(r.success, r.errorMessage, r.queuedMessageId)
             }
         }
 
-        val (success, error) = result
+        val (success, error, queuedMessageId) = result
         recipients.save(
             recipient.copy(
                 status = if (success) RecipientStatus.SENT else RecipientStatus.FAILED,
@@ -355,7 +355,8 @@ class CampaignDispatcher(
                 subject = recipient.renderedSubject,
                 bodyContent = recipient.renderedBody,
                 success = success,
-                errorMessage = error
+                errorMessage = error,
+                queuedMessageId = queuedMessageId
             )
         )
     }

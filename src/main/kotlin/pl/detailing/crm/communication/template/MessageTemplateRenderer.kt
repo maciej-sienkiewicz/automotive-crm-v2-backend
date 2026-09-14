@@ -34,7 +34,8 @@ class MessageTemplateRenderer {
         val unresolved = placeholdersIn(template) - values.keys
         if (unresolved.isNotEmpty()) throw UnresolvedPlaceholderException(unresolved)
 
-        val rendered = PLACEHOLDER.replace(template) { match -> values.getValue(match.groupValues[1]) }
+        val prepared = if (values[TIME_KEY].isNullOrBlank()) TIME_PHRASE.replace(template, "") else template
+        val rendered = PLACEHOLDER.replace(prepared) { match -> values.getValue(match.groupValues[1]) }
 
         // Empty substitutions (no license plate, no last service) would otherwise
         // leave double spaces and trailing blanks in the delivered text.
@@ -52,14 +53,36 @@ class MessageTemplateRenderer {
         private val DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.forLanguageTag("pl"))
         private val TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.forLanguageTag("pl"))
 
-        /** {{data}} / {{godzina}} — shared by every message that references a moment in time. */
-        fun scheduleValues(moment: Instant): Map<String, String> {
+        private const val TIME_KEY = "godzina"
+
+        /**
+         * {{data}} / {{godzina}} — shared by every message that references a moment in time.
+         *
+         * Rezerwacja całodniowa nie ma godziny: jej `startDateTime` to północ, a „o godz. 00:00"
+         * w SMS-ie do klienta to absurd. Dla [allDay] {{godzina}} jest pusta, a [render] wycina
+         * razem z nią zwrot, który ją zapowiadał (patrz [TIME_PHRASE]) — studio nie musi
+         * utrzymywać dwóch wersji szablonu.
+         */
+        fun scheduleValues(moment: Instant, allDay: Boolean = false): Map<String, String> {
             val zoned = moment.atZone(WARSAW)
             return mapOf(
                 "data" to DATE.format(zoned),
-                "godzina" to TIME.format(zoned)
+                TIME_KEY to if (allDay) "" else TIME.format(zoned)
             )
         }
+
+        /**
+         * Zwrot zapowiadający godzinę, usuwany razem z pustym {{godzina}}:
+         * „o godz. {{godzina}}", „o godzinie {{godzina}}", „godz. {{godzina}}", „o {{godzina}}",
+         * także z przecinkiem przed („{{data}}, godz. {{godzina}}"). Przy pustej godzinie
+         * „dnia 09.09.2026 o godz. {{godzina}}." staje się „dnia 09.09.2026.", a nie
+         * „dnia 09.09.2026 o godz. ." Sam placeholder bez zwrotu też znika (jak każda pusta
+         * wartość); spacje po nim sprząta [HORIZONTAL_RUN].
+         */
+        private val TIME_PHRASE = Regex(
+            """[ \t]*(?:,[ \t]*)?(?:\bo[ \t]+)?(?:godz(?:\.|inie|inę|ina)?[ \t]*)?\{\{\s*godzina\s*}}""",
+            RegexOption.IGNORE_CASE
+        )
 
         private val PLACEHOLDER = Regex("""\{\{\s*([a-zA-Z0-9_]+)\s*}}""")
         private val HORIZONTAL_RUN = Regex("""[ \t]{2,}""")

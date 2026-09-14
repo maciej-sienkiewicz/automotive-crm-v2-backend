@@ -40,7 +40,7 @@ class ScheduledThankYouSmsDispatcherTest {
     fun setUp() {
         every { repository.findDueForDispatch(any()) } returns listOf(pending())
         every {
-            communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any())
         } returns SmsDeliveryResult.success("provider-42")
         // JpaRepository<T, ID>.save() jest generyczne - relaxed mock nie potrafi sam
         // odtworzyć zwracanej wartości i rzuca ClassCastException zamiast cichego no-opu,
@@ -53,7 +53,7 @@ class ScheduledThankYouSmsDispatcherTest {
     fun `wysyla tresc zamrozona w chwili planowania`() {
         val message = slot<String>()
         every {
-            communicationGateway.sendSms(any(), any(), any(), capture(message), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), capture(message), any(), any(), any())
         } returns SmsDeliveryResult.success("provider-42")
 
         dispatcher.dispatch()
@@ -75,7 +75,7 @@ class ScheduledThankYouSmsDispatcherTest {
     @Test
     fun `odmowa operatora konczy sie statusem FAILED, a nie kolejna proba`() {
         every {
-            communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any())
         } returns SmsDeliveryResult.failure("Brak zgody na komunikację SMS")
         val saved = slot<ScheduledThankYouSms>()
         every { repository.save(capture(saved)) } answers { firstArg() }
@@ -89,7 +89,7 @@ class ScheduledThankYouSmsDispatcherTest {
     @Test
     fun `brak kredytow nie wywraca calego przebiegu`() {
         every {
-            communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any())
         } throws InsufficientSmsCreditsException()
         val saved = slot<ScheduledThankYouSms>()
         every { repository.save(capture(saved)) } answers { firstArg() }
@@ -131,7 +131,7 @@ class ScheduledThankYouSmsDispatcherTest {
 
         dispatcher.dispatch()
 
-        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
         assertEquals(ScheduledThankYouSmsStatus.FAILED, saved.captured.status)
     }
 
@@ -141,7 +141,7 @@ class ScheduledThankYouSmsDispatcherTest {
 
         dispatcher.dispatch()
 
-        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     private fun pending() = ScheduledThankYouSms(

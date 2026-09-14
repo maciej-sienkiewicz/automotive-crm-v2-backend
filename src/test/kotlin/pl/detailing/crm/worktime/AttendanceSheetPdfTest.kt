@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import pl.detailing.crm.employee.infrastructure.EmployeeEntity
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
+import pl.detailing.crm.employee.leave.domain.LeaveType
+import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveEntity
+import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
 import pl.detailing.crm.role.infrastructure.RoleEntity
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EmployeeId
@@ -57,10 +60,13 @@ class AttendanceSheetPdfTest {
     private val documentStorageService = mockk<DocumentStorageService>(relaxed = true)
     private val entryRepository = mockk<WorkTimeEntryRepository>()
     private val periodRepository = mockk<WorkTimePeriodRepository>()
+    private val leaveRepository = mockk<EmployeeLeaveRepository> {
+        every { findOverlappingRange(any(), any(), any()) } returns emptyList()
+    }
 
     private val handler = GenerateAttendanceSheetHandler(
         employeeRepository, userRepository, roleRepository, studioSettingsRepository,
-        documentStorageService, entryRepository, periodRepository
+        documentStorageService, entryRepository, periodRepository, leaveRepository
     )
 
     private val studio = StudioId.random()
@@ -120,6 +126,13 @@ class AttendanceSheetPdfTest {
             periodRepository.findByUserIdAndStudioIdAndPeriod(userId, studio.value, any())
         } returns period
     }
+
+    /** Urlop pracownika [entity] w dniach [from]–[to] miesiąca [period] (włącznie). */
+    private fun leave(entity: EmployeeEntity, period: YearMonth, from: Int, to: Int, type: LeaveType = LeaveType.ANNUAL) =
+        EmployeeLeaveEntity(
+            id = UUID.randomUUID(), studioId = studio.value, employeeId = entity.id, leaveType = type,
+            startDate = period.atDay(from), endDate = period.atDay(to), note = null, createdBy = UUID.randomUUID()
+        )
 
     private fun stubSettings(name: String? = "Studio Blask") {
         val settings = mockk<StudioSettingsEntity>()
@@ -188,6 +201,102 @@ class AttendanceSheetPdfTest {
         )
 
         assertTrue(!text.contains("0:00"), "Nieobecność to puste pole, nie wpisane zero")
+    }
+
+    // ── Urlopy ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `dni urlopu dostaja napis URLOP zamiast pustej kratki`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        // 2 marca 2026 to poniedziałek; urlop pn–śr, w czwartek wraca do pracy.
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(5 to 480))
+        every { leaveRepository.findOverlappingRange(studio.value, march.atDay(1), march.atEndOfMonth()) } returns
+            listOf(leave(anna, march, from = 2, to = 4))
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertEquals(3, Regex("URLOP").findAll(text).count(), "Trzy dni urlopu, trzy napisy: $text")
+        assertTrue(text.contains("8:00"), "Dzień po urlopie ma nadal godziny")
+    }
+
+    @Test
+    fun `urlop obejmujacy weekend nie stawia napisu w sobote i niedziele`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        // 6 marca (pt) – 9 marca (pn): cztery dni kalendarzowe, dwa robocze.
+        register(anna, tracksWorkTime = true)
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns listOf(leave(anna, march, from = 6, to = 9))
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertEquals(2, Regex("URLOP").findAll(text).count(), "Weekend to dzień wolny sam z siebie: $text")
+    }
+
+    @Test
+    fun `urlop zaczety w poprzednim miesiacu jest przyciety do dni arkusza`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        register(anna, tracksWorkTime = true)
+        // 25 lutego – 3 marca (wt): w marcu tylko 2 i 3 są robocze (1 marca to niedziela).
+        val spanning = EmployeeLeaveEntity(
+            id = UUID.randomUUID(), studioId = studio.value, employeeId = anna.id, leaveType = LeaveType.ANNUAL,
+            startDate = java.time.LocalDate.of(2026, 2, 25), endDate = march.atDay(3), note = null, createdBy = UUID.randomUUID()
+        )
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns listOf(spanning)
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertEquals(2, Regex("URLOP").findAll(text).count(), text)
+    }
+
+    @Test
+    fun `zwolnienie lekarskie to L4, nie URLOP`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        register(anna, tracksWorkTime = true)
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns
+            listOf(leave(anna, march, from = 10, to = 11, type = LeaveType.SICK))
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertEquals(2, Regex("\\bL4\\b").findAll(text).count(), text)
+        assertTrue(!text.contains("URLOP"), "Zwolnienie nie jest urlopem")
+    }
+
+    @Test
+    fun `urlop jednego pracownika nie trafia do kolumny drugiego`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val piotr = employee("Piotr", "Zieliński", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        register(anna, tracksWorkTime = true)
+        register(piotr, tracksWorkTime = true)
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns listOf(leave(anna, march, from = 2, to = 2))
+
+        val text = textOf(
+            handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id), EmployeeId(piotr.id))))
+        )
+
+        assertEquals(1, Regex("URLOP").findAll(text).count(), text)
+    }
+
+    @Test
+    fun `godziny wpisane w dzien urlopu nie przykrywaja napisu, ale zostaja w sumie`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(2 to 480, 3 to 480))
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns listOf(leave(anna, march, from = 2, to = 2))
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertEquals(1, Regex("URLOP").findAll(text).count(), text)
+        assertTrue(text.contains("16:00"), "Suma nadal liczy wpisane godziny — konflikt ma być widoczny, nie ukryty: $text")
     }
 
     @Test

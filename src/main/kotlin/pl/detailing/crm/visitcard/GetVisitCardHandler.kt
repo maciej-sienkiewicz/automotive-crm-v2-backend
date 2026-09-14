@@ -21,10 +21,10 @@ import pl.detailing.crm.shared.VisitProtocolStatus
 import pl.detailing.crm.shared.VisitServiceStatus
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.studio.logo.CompanyLogoService
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.DocumentService
-import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -59,7 +59,7 @@ class GetVisitCardHandler(
     private val consentDefinitionRepository: ConsentDefinitionRepository,
     private val financialDocumentRepository: FinancialDocumentRepository,
     private val documentService: DocumentService,
-    private val documentStorageService: DocumentStorageService,
+    private val companyLogoService: CompanyLogoService,
     private val photoSessionService: PhotoSessionService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val s3ProtocolStorageService: S3ProtocolStorageService,
@@ -223,9 +223,8 @@ class GetVisitCardHandler(
         val studioName = settings?.name?.takeIf { it.isNotBlank() }
             ?: studioRepository.findByStudioId(studioId)?.name
             ?: ""
-        val logoUrl = settings?.logoS3Key?.let {
-            runCatching { documentStorageService.generateDownloadUrl(it) }.getOrNull()
-        }
+        // Ten sam stały adres co w menu CRM: karta jest publiczna, adres też.
+        val logoUrl = runCatching { companyLogoService.appLogoUrl(settings) }.getOrNull()
         return VisitCardCompany(
             name = studioName,
             street = settings?.street,

@@ -45,6 +45,7 @@ class AuthorizationSurfaceScanTest {
         "PublicSignatureController" to ALL_METHODS,       // opaque URL token
         "PublicUserSignatureController" to ALL_METHODS,   // opaque URL token
         "PublicVisitCardController" to ALL_METHODS,       // opaque URL token
+        "PublicBrandingController" to ALL_METHODS,        // logo studia pod adresem z hashem treści (permitAll)
         // TOKEN — Redis-token authenticated device flows
         "TabletSignatureController" to ALL_METHODS,       // X-Tablet-Token
         "MobileUploadController" to ALL_METHODS,          // X-Upload-Token
@@ -73,7 +74,7 @@ class AuthorizationSurfaceScanTest {
         "EmployeeLeaveController" to setOf("leaveCalendar"), // per-day on-leave counts for the shared calendar
         "CompanyController" to setOf(                     // read-only studio branding/config
             "getCompanySettings", "getEmailAlias", "getLeadAlertConfig", "getIdleTimeout",
-            "getVisitNumberingConfig", "getAutoLeadConfig"
+            "getVisitNumberingConfig", "getAutoLeadConfig", "getDocumentLogoConfig"
         ),
         "SubscriptionController" to ALL_METHODS,          // status for gates; mutations owner-checked inline
         "EntitlementsController" to ALL_METHODS,          // entitlements drive the UI gates; mutations owner-checked inline

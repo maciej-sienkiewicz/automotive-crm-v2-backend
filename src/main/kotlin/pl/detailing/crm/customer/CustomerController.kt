@@ -617,7 +617,12 @@ class CustomerController(
         )
 
         if (result.success) {
-            ResponseEntity.ok(SendCustomerSmsResponse(success = true, errorMessage = null))
+            ResponseEntity.ok(
+                SendCustomerSmsResponse(
+                    success = true, errorMessage = null,
+                    queued = result.queued, scheduledFor = result.scheduledFor
+                )
+            )
         } else {
             ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(SendCustomerSmsResponse(success = false, errorMessage = result.errorMessage))
@@ -655,9 +660,15 @@ data class SendCustomerSmsRequest(
     val message: String
 )
 
+/**
+ * @property queued       wiadomość przyjęta, ale czeka na godziny wysyłki (patrz SendWindow)
+ * @property scheduledFor kiedy wyjdzie — tylko gdy [queued]
+ */
 data class SendCustomerSmsResponse(
     val success: Boolean,
-    val errorMessage: String?
+    val errorMessage: String?,
+    val queued: Boolean = false,
+    val scheduledFor: java.time.Instant? = null
 )
 
 data class NoteItemResponse(

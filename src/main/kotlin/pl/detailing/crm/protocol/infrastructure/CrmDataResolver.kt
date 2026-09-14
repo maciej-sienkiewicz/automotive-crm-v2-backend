@@ -37,6 +37,22 @@ class CrmDataResolver(
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+        /**
+         * Ramka USŁUGODAWCA to wizytówka wystawcy, więc obok nazwy idzie adres siedziby
+         * z danych firmy: „Nazwa, ul. Ulica 1, 00-000 Miasto". Przecinki, nie nowe
+         * linie: pole ma 30 pt wysokości i samo łamie tekst po słowach, a brakujące
+         * części adresu po prostu wypadają z listy zamiast zostawiać puste linie.
+         */
+        fun providerLine(name: String, street: String?, postalCode: String?, city: String?): String {
+            val cityLine = listOfNotNull(
+                postalCode?.trim()?.takeIf { it.isNotBlank() },
+                city?.trim()?.takeIf { it.isNotBlank() }
+            ).joinToString(" ")
+            return listOf(name.trim(), street?.trim().orEmpty(), cityLine)
+                .filter { it.isNotBlank() }
+                .joinToString(", ")
+        }
     }
 
     /**
@@ -139,7 +155,10 @@ class CrmDataResolver(
                 val providerName = studioSettings?.name?.takeIf { it.isNotBlank() }
                     ?: studio?.name
                     ?: ""
-                put(CrmDataKey.PROVIDER_NAME, providerName)
+                put(
+                    CrmDataKey.PROVIDER_NAME,
+                    providerLine(providerName, studioSettings?.street, studioSettings?.postalCode, studioSettings?.city)
+                )
 
                 // Employee who registered the visit (Osoba przyjmująca pojazd)
                 val receivedBy = visit.createdBy?.let { userId ->

@@ -317,6 +317,15 @@ class FinanceController(
 
     // ── Reporting ─────────────────────────────────────────────────────────────
 
+    /**
+     * Podsumowanie finansowe studia — kafle „Przychody", „Koszty", „Zysk",
+     * „Należności".
+     *
+     * Kwoty są w groszach i **netto**. VAT tylko przechodzi przez konto studia
+     * do urzędu skarbowego, więc kafel liczony brutto zawyżał przychód o stawkę
+     * podatku, a zysk zestawiał dwie kwoty, z których każda niosła cudzy VAT.
+     * `overdueReceivables` i `overduePayables` to liczby dokumentów, nie kwoty.
+     */
     @GetMapping("/summary")
     @RequiresPermission(Permission.FINANCE_VIEW_REPORTS)
     fun getSummary(
@@ -493,6 +502,7 @@ data class CashHistoryResponse(
     val totalOut: Long
 )
 
+/** Kwoty w groszach, netto. Pola `overdue*` to liczniki dokumentów, nie kwoty. */
 data class FinanceSummaryResponse(
     val dateFrom: String?,
     val dateTo: String?,

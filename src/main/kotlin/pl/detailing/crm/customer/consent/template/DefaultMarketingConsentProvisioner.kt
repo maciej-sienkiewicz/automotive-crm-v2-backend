@@ -43,6 +43,10 @@ class DefaultMarketingConsentProvisioner(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
+        /** Wersja zgody zasiana przez system — ma zarezerwowany slot na logo w nagłówku. */
+        fun isSystemTemplate(template: pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateEntity): Boolean =
+            template.createdBy == SYSTEM_USER_ID
+
         const val DEFAULT_CONSENT_NAME = "Zgody marketingowe"
         const val DEFAULT_CONSENT_DESCRIPTION =
             "Systemowy dokument zgód marketingowych (SMS, e-mail, kontakt telefoniczny). " +

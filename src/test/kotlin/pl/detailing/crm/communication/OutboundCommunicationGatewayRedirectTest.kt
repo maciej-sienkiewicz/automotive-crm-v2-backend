@@ -6,6 +6,8 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.communication.queue.OutboundMessageQueue
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.communication.redirect.ActiveRedirect
 import pl.detailing.crm.communication.redirect.CommunicationRedirectService
 import pl.detailing.crm.communication.whitelist.RecipientWhitelist
@@ -37,7 +39,8 @@ class OutboundCommunicationGatewayRedirectTest {
     private val gateway = OutboundCommunicationGateway(
         smsProvider, emailProvider, mockk<MarketingConsentChecker>(), smsCreditService,
         senderNameResolver, capabilityService, SimpleMeterRegistry(), mockk<BusinessEventPublisher>(relaxed = true),
-        redirectService, RecipientWhitelist(RecipientWhitelistProperties(enabled = false))
+        redirectService, RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
+        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>()
     )
 
     private val studioId = UUID.randomUUID()

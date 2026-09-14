@@ -27,7 +27,9 @@ data class CommunicationLogItem(
     val bodyContent: String,
     val status: CommunicationStatus,
     val errorMessage: String?,
-    val sentAt: Instant
+    val sentAt: Instant,
+    /** Dla QUEUED: kiedy dispatcher kolejki wyśle wiadomość. Null dla pozostałych statusów. */
+    val scheduledFor: Instant? = null
 )
 
 data class GetVisitCommunicationResult(
@@ -42,16 +44,18 @@ data class GetVisitCommunicationResult(
 @Service
 class GetVisitCommunicationHandler(
     private val visitRepository: VisitRepository,
-    private val communicationLogJpaRepository: CommunicationLogJpaRepository
+    private val communicationLogJpaRepository: CommunicationLogJpaRepository,
+    private val scheduledForResolver: QueuedScheduleResolver
 ) {
 
     fun handle(command: GetVisitCommunicationCommand): GetVisitCommunicationResult {
         visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit not found [visitId=${command.visitId}]")
 
-        val entries = communicationLogJpaRepository
+        val logs = communicationLogJpaRepository
             .findByVisitIdAndStudioId(command.visitId.value, command.studioId.value)
-            .map { it.toItem() }
+        val scheduledFor = scheduledForResolver.resolve(logs)
+        val entries = logs.map { it.toItem(scheduledFor[it.id]) }
 
         return GetVisitCommunicationResult(
             visitId = command.visitId.toString(),
@@ -60,7 +64,7 @@ class GetVisitCommunicationHandler(
     }
 }
 
-internal fun CommunicationLogEntity.toItem() = CommunicationLogItem(
+internal fun CommunicationLogEntity.toItem(scheduledFor: Instant? = null) = CommunicationLogItem(
     id = id.toString(),
     channel = channel,
     messageType = messageType,
@@ -70,5 +74,6 @@ internal fun CommunicationLogEntity.toItem() = CommunicationLogItem(
     bodyContent = bodyContent,
     status = status,
     errorMessage = errorMessage,
-    sentAt = sentAt
+    sentAt = sentAt,
+    scheduledFor = scheduledFor
 )

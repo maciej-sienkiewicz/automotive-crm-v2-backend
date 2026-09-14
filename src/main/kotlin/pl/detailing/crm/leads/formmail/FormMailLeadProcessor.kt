@@ -10,6 +10,7 @@ import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
+import pl.detailing.crm.leads.attachment.LeadAttachmentLinker
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.intake.normalizeFieldName
@@ -51,6 +52,7 @@ sealed interface FormMailProcessResult {
 class FormMailLeadProcessor(
     private val extractionService: FormMailExtractionService,
     private val extractionRepository: FormMailExtractionRepository,
+    private val attachmentLinker: LeadAttachmentLinker,
     private val sourceRepository: FormMailSourceRepository,
     private val leadRepository: LeadRepository,
     private val customerRepository: CustomerRepository,
@@ -138,6 +140,10 @@ class FormMailLeadProcessor(
                     firstResponseAt = null
                 )
                 leadRepository.save(lead)
+                // Zgłoszenie z formularza to najczęstsze miejsce, w którym klient
+                // dokłada zdjęcia — a ten lead świadomie nie ma wątku, więc bez
+                // podpięcia pliki nie miałyby jak trafić do „Przebiegu sprawy".
+                attachmentLinker.link(lead.id, message)
                 statusService.recordCreation(lead, assignee?.id, assignee?.name ?: "Formularz ze strony")
 
                 val tags = resolveTags(StudioId(source.studioId), extracted.service)

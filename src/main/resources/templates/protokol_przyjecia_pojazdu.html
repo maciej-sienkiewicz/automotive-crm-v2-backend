@@ -127,11 +127,32 @@
   }
 
   /* ============ Nagłówek: USŁUGODAWCA ============ */
-  /* Lewa strona nagłówka jest celowo pusta. Docelowo trafi tu logo studia
-     (188.16 x 16.38pt, x=29.30pt od lewej krawędzi strony, top 24.23pt) —
-     tak samo jak w bundlowanym PDF-ie. Do czasu wdrożenia loga per studio
-     żaden szablon systemowy nie może nieść cudzej marki. */
+  /* Lewa strona nagłówka to miejsce na logo studia. Szablon systemowy nie niesie
+     żadnej marki — logo wstawia backend przy wypełnianiu dokumentu
+     (HtmlProtocolFillService → data-field="companylogo" → <img> z data URI;
+     w PDF ten sam slot stempluje PdfProcessingService wg DocumentLogoPlacement).
+     Kotwica oryginału: 188.16 x 16.38pt, x=29.30pt od krawędzi strony, top 24.23pt.
+     Slot jest wyższy (36pt, wyśrodkowany na kotwicy: 32.42pt), bo logo klientów
+     ma dowolne proporcje — sygnet 1:1 też musi się zmieścić. */
   .header { position: relative; height: 68.65pt; }
+  .company-logo {
+    position: absolute;
+    left: -0.94pt;               /* 29.30pt od krawędzi strony (padding .page = 30.24pt) */
+    top: 14.42pt;                /* 32.42 - 36/2 */
+    width: 188.16pt;
+    height: 36pt;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .company-logo img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;         /* nigdy nie deformuj: sygnet ogranicza wysokość, logotyp szerokość */
+    object-position: left center;
+  }
   .header .provider {
     position: absolute;
     right: 0;                /* x=439.20..565.68pt */
@@ -276,6 +297,7 @@
 
   <!-- Logo + usługodawca -->
   <div class="header">
+    <div class="company-logo" data-field="companylogo"></div>
     <div class="provider">
       <div class="tab">USŁUGODAWCA</div>
       <div class="box" data-field="provider"></div>

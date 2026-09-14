@@ -2,6 +2,7 @@ package pl.detailing.crm.finance.reporting
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import pl.detailing.crm.finance.domain.DocumentDirection
@@ -17,6 +18,9 @@ import java.util.UUID
  * moduł finansowy (paragony, dokumenty „inne") plus ledger KSeF (faktury i korekty).
  * Wcześniej przychód brał wyłącznie moduł finansowy, więc korekta w KSeF nie
  * zmieniała kafla „Przychody", a faktura wystawiona poza wizytą nie liczyła się wcale.
+ *
+ * Sumowane są kwoty netto — repozytoria zwracają netto, a handler nie ma prawa
+ * dokładać ani odejmować VAT-u po drodze.
  */
 class FinanceReportingHandlerTest {
 
@@ -30,6 +34,7 @@ class FinanceReportingHandlerTest {
 
     private val studioId = StudioId(UUID.randomUUID())
 
+    /** Wszystkie kwoty w groszach, netto — tak jak zwracają je repozytoria. */
     private fun stub(
         docsIncomePaid: Long = 0,
         docsIncomePending: Long = 0,
@@ -45,21 +50,21 @@ class FinanceReportingHandlerTest {
         val settled = listOf(DocumentStatus.PAID)
         val outstanding = listOf(DocumentStatus.PENDING, DocumentStatus.OVERDUE)
         every {
-            documentRepository.sumGross(any(), DocumentDirection.INCOME, settled, any(), any())
+            documentRepository.sumNet(any(), DocumentDirection.INCOME, settled, any(), any())
         } returns docsIncomePaid
         every {
-            documentRepository.sumGross(any(), DocumentDirection.INCOME, outstanding, any(), any())
+            documentRepository.sumNet(any(), DocumentDirection.INCOME, outstanding, any(), any())
         } returns docsIncomePending
         every {
-            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, settled, any(), any())
+            documentRepository.sumNet(any(), DocumentDirection.EXPENSE, settled, any(), any())
         } returns docsExpensePaid
         every {
-            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, outstanding, any(), any())
+            documentRepository.sumNet(any(), DocumentDirection.EXPENSE, outstanding, any(), any())
         } returns docsExpensePending
-        every { revenueInvoiceRepository.sumGrossByPaymentStatus(any(), "PAID", any(), any()) } returns revenuePaid
-        every { revenueInvoiceRepository.sumGrossByPaymentStatus(any(), "PENDING", any(), any()) } returns revenuePending
-        every { ksefInvoiceRepository.sumGrossByPaymentStatus(any(), "PAID", any(), any()) } returns ksefCostsPaid
-        every { ksefInvoiceRepository.sumGrossByPaymentStatus(any(), "PENDING", any(), any()) } returns ksefCostsPending
+        every { revenueInvoiceRepository.sumNetByPaymentStatus(any(), "PAID", any(), any()) } returns revenuePaid
+        every { revenueInvoiceRepository.sumNetByPaymentStatus(any(), "PENDING", any(), any()) } returns revenuePending
+        every { ksefInvoiceRepository.sumNetByPaymentStatus(any(), "PAID", any(), any()) } returns ksefCostsPaid
+        every { ksefInvoiceRepository.sumNetByPaymentStatus(any(), "PENDING", any(), any()) } returns ksefCostsPending
         every { documentRepository.countOverdue(any(), any()) } returns 0
     }
 
@@ -105,5 +110,37 @@ class FinanceReportingHandlerTest {
     fun `koszty nadal sumuja modul finansowy i faktury kosztowe KSeF`() {
         stub(docsExpensePaid = 10_000, ksefCostsPaid = 25_000)   // ledger zwraca grosze
         assertEquals(35_000, summary().totalCosts)
+    }
+
+    @Test
+    fun `kafle pokazuja netto, VAT nie wchodzi do zadnej z sum`() {
+        // Faktura 1000 zł netto + 230 zł VAT = 1230 zł brutto. Kafel ma pokazać
+        // 1000 zł: VAT jest pieniądzem urzędu skarbowego, nie przychodem studia.
+        stub(
+            revenuePaid        = 100_000,   // netto z ledgera KSeF
+            docsExpensePaid    = 40_000,    // netto dokumentu kosztowego
+            docsIncomePending  = 20_000,
+            ksefCostsPending   = 15_000
+        )
+        val result = summary()
+
+        assertEquals(100_000, result.totalRevenue)
+        assertEquals(40_000,  result.totalCosts)
+        assertEquals(60_000,  result.profit)
+        assertEquals(20_000,  result.pendingReceivables)
+        assertEquals(15_000,  result.pendingPayables)
+    }
+
+    @Test
+    fun `handler pyta repozytoria o netto, a nie o brutto`() {
+        // Strażnik regresji: podmiana wywołania na sumGross przeszłaby testy kwotowe
+        // (mocki i tak zwracają ustawioną liczbę), więc sprawdzamy samo wywołanie.
+        stub(docsIncomePaid = 1_000, revenuePaid = 2_000, docsExpensePaid = 500, ksefCostsPaid = 300)
+        summary()
+
+        verify(exactly = 2) { documentRepository.sumNet(any(), DocumentDirection.INCOME, any(), any(), any()) }
+        verify(exactly = 2) { documentRepository.sumNet(any(), DocumentDirection.EXPENSE, any(), any(), any()) }
+        verify(exactly = 2) { revenueInvoiceRepository.sumNetByPaymentStatus(any(), any(), any(), any()) }
+        verify(exactly = 2) { ksefInvoiceRepository.sumNetByPaymentStatus(any(), any(), any(), any()) }
     }
 }

@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -19,16 +18,9 @@ import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigJpaReposi
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.numbering.NumberingTemplate
 import pl.detailing.crm.studio.infrastructure.StudioRepository
+import pl.detailing.crm.studio.logo.CompanyLogoService
 import pl.detailing.crm.visit.convert.VisitNumberGenerator
 import java.time.LocalDate
-import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
-import software.amazon.awssdk.services.s3.model.PutObjectRequest
-import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import java.time.Duration
 import java.time.Instant
 
 @RestController
@@ -37,13 +29,10 @@ class CompanyController(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val studioRepository: StudioRepository,
     private val smsAutomationConfigRepository: SmsAutomationConfigJpaRepository,
-    private val s3Client: S3Client,
-    private val s3Presigner: S3Presigner,
-    @Value("\${aws.s3.bucket-name}") private val bucketName: String
+    private val companyLogoService: CompanyLogoService
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(CompanyController::class.java)
-        private val LOGO_URL_TTL = Duration.ofHours(24)
         private val ALLOWED_LOGO_CONTENT_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/svg+xml")
         private const val MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024L
     }
@@ -61,7 +50,7 @@ class CompanyController(
             studioRepository.findByStudioId(studioId)
         }
 
-        val logoUrl = settings?.logoS3Key?.let { generateLogoPresignedUrl(it) }
+        val logoUrl = companyLogoService.appLogoUrl(settings)
 
         val senderNameConfirmed = withContext(Dispatchers.IO) {
             smsAutomationConfigRepository.findByStudioId(studioId)?.smsApiNameConfirmed ?: false
@@ -81,6 +70,8 @@ class CompanyController(
                 website = settings?.website,
                 bankAccount = settings?.bankAccount,
                 logoUrl = logoUrl,
+                logoNeedsLightPlate = settings?.logoNeedsLightPlate ?: true,
+                logoAspectRatio = settings?.logoAspectRatio,
                 emailAlias = studioEntity?.emailAlias,
                 smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = (settings?.updatedAt ?: Instant.now()).toString()
@@ -125,7 +116,7 @@ class CompanyController(
         settings.updatedAt = Instant.now()
 
         val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
-        val logoUrl = saved.logoS3Key?.let { generateLogoPresignedUrl(it) }
+        val logoUrl = companyLogoService.appLogoUrl(saved)
 
         val studioEmailAlias = withContext(Dispatchers.IO) {
             studioRepository.findByStudioId(studioId)?.emailAlias
@@ -149,6 +140,8 @@ class CompanyController(
                 website = saved.website,
                 bankAccount = saved.bankAccount,
                 logoUrl = logoUrl,
+                logoNeedsLightPlate = saved.logoNeedsLightPlate,
+                logoAspectRatio = saved.logoAspectRatio,
                 emailAlias = studioEmailAlias,
                 smsApiNameConfirmed = senderNameConfirmed,
                 updatedAt = saved.updatedAt.toString()
@@ -156,76 +149,87 @@ class CompanyController(
         )
     }
 
+    /**
+     * Jeden plik od użytkownika → warianty do menu i do druku ([CompanyLogoService]).
+     * Content-Type z przeglądarki to tylko wstępne sito — o formacie decyduje sygnatura
+     * bajtów w [pl.detailing.crm.studio.logo.CompanyLogoProcessor].
+     */
     @PostMapping("/logo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     @RequiresOwner
     fun uploadLogo(@RequestPart("file") file: MultipartFile): ResponseEntity<UploadLogoResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
-
         val contentType = file.contentType ?: "application/octet-stream"
         if (contentType !in ALLOWED_LOGO_CONTENT_TYPES) {
-            throw IllegalArgumentException("Unsupported logo format. Allowed: JPEG, PNG, WebP, SVG")
+            throw ValidationException("Nieobsługiwany format logo. Dozwolone: SVG, PNG, WebP, JPEG")
         }
         if (file.size > MAX_LOGO_SIZE_BYTES) {
-            throw IllegalArgumentException("Logo file exceeds the 5 MB size limit")
+            throw ValidationException("Logo nie może przekraczać 5 MB")
         }
 
         val studioId = principal.studioId.value
-        val extension = contentType.substringAfter("/").replace("svg+xml", "svg")
-        val s3Key = "$studioId/logo/logo.$extension"
-
-        withContext(Dispatchers.IO) {
-            val putRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(s3Key)
-                .contentType(contentType)
-                .contentLength(file.size)
-                .build()
-            s3Client.putObject(putRequest, RequestBody.fromBytes(file.bytes))
-            logger.info("Uploaded logo for studio $studioId to S3: $s3Key")
-        }
-
         val settings = withContext(Dispatchers.IO) {
-            val entity = studioSettingsRepository.findById(studioId).orElse(null)
-                ?: StudioSettingsEntity(studioId = studioId)
-            entity.logoS3Key = s3Key
-            entity.updatedAt = Instant.now()
-            studioSettingsRepository.save(entity)
+            companyLogoService.replaceLogo(studioId, file.bytes)
         }
 
-        val logoUrl = generateLogoPresignedUrl(settings.logoS3Key!!)
-        ResponseEntity.ok(UploadLogoResponse(logoUrl = logoUrl))
+        val logoUrl = companyLogoService.appLogoUrl(settings)!!
+        ResponseEntity.ok(
+            UploadLogoResponse(
+                logoUrl = logoUrl,
+                logoNeedsLightPlate = settings.logoNeedsLightPlate,
+                logoAspectRatio = settings.logoAspectRatio
+            )
+        )
     }
 
     @DeleteMapping("/logo")
     @RequiresOwner
     fun deleteLogo(): ResponseEntity<Void> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
+        withContext(Dispatchers.IO) {
+            companyLogoService.deleteLogo(principal.studioId.value)
+        }
+        ResponseEntity.noContent().build()
+    }
 
+    @GetMapping("/document-logo-config")
+    fun getDocumentLogoConfig(): ResponseEntity<DocumentLogoConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        ResponseEntity.ok(documentLogoConfigOf(settings))
+    }
 
+    /**
+     * Przełącznik „Czy umieszczać logo na dokumentach?". Steruje wyłącznie stemplem
+     * w nagłówku systemowych protokołów i zgód generowanych OD TEJ CHWILI — dokumenty
+     * już wypełnione (a tym bardziej podpisane) zostają, jakie były.
+     */
+    @PatchMapping("/document-logo-config")
+    @RequiresOwner
+    fun updateDocumentLogoConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateDocumentLogoConfigRequest
+    ): ResponseEntity<DocumentLogoConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
         val studioId = principal.studioId.value
 
         val settings = withContext(Dispatchers.IO) {
             studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
         }
+        settings.logoOnDocuments = request.showLogoOnDocuments
+        settings.updatedAt = Instant.now()
 
-        if (settings?.logoS3Key != null) {
-            withContext(Dispatchers.IO) {
-                val deleteRequest = DeleteObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(settings.logoS3Key!!)
-                    .build()
-                s3Client.deleteObject(deleteRequest)
-                logger.info("Deleted logo for studio $studioId from S3: ${settings.logoS3Key}")
-
-                settings.logoS3Key = null
-                settings.updatedAt = Instant.now()
-                studioSettingsRepository.save(settings)
-            }
-        }
-
-        ResponseEntity.noContent().build()
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+        logger.info("Logo on documents for studio={} set to {}", studioId, saved.logoOnDocuments)
+        ResponseEntity.ok(documentLogoConfigOf(saved))
     }
+
+    private fun documentLogoConfigOf(settings: StudioSettingsEntity?) = DocumentLogoConfigResponse(
+        showLogoOnDocuments = settings?.logoOnDocuments ?: true,
+        hasLogo = settings?.logoS3Key != null
+    )
 
     @GetMapping("/lead-alert-config")
     fun getLeadAlertConfig(): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
@@ -478,19 +482,6 @@ class CompanyController(
         NumberingTemplate.Kind.SEQUENTIAL -> template.render(LocalDate.now(), 1)
     }
 
-    private fun generateLogoPresignedUrl(s3Key: String): String {
-        val getObjectRequest = GetObjectRequest.builder()
-            .bucket(bucketName)
-            .key(s3Key)
-            .build()
-
-        val presignRequest = GetObjectPresignRequest.builder()
-            .signatureDuration(LOGO_URL_TTL)
-            .getObjectRequest(getObjectRequest)
-            .build()
-
-        return s3Presigner.presignGetObject(presignRequest).url().toString()
-    }
 }
 
 data class CompanySettingsResponse(
@@ -506,6 +497,10 @@ data class CompanySettingsResponse(
     val website: String?,
     val bankAccount: String?,
     val logoUrl: String?,
+    /** Jasna podkładka pod logo w ciemnym menu — tylko dla przezroczystego logo z ciemnym tuszem. */
+    val logoNeedsLightPlate: Boolean,
+    /** Szerokość / wysokość; null dla logo sprzed analizy. */
+    val logoAspectRatio: Double?,
     val emailAlias: String?,
     val smsApiNameConfirmed: Boolean,
     val updatedAt: String
@@ -524,7 +519,19 @@ data class UpdateCompanySettingsRequest(
     val bankAccount: String?
 )
 
-data class UploadLogoResponse(val logoUrl: String)
+data class UploadLogoResponse(
+    val logoUrl: String,
+    val logoNeedsLightPlate: Boolean,
+    val logoAspectRatio: Double?
+)
+
+data class DocumentLogoConfigResponse(
+    val showLogoOnDocuments: Boolean,
+    /** Czy studio ma w ogóle wgrane logo — bez niego przełącznik nic nie zmienia. */
+    val hasLogo: Boolean
+)
+
+data class UpdateDocumentLogoConfigRequest(val showLogoOnDocuments: Boolean)
 
 data class EmailAliasResponse(val emailAlias: String?)
 

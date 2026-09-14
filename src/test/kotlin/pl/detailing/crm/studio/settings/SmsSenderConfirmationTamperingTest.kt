@@ -23,8 +23,7 @@ import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigEntity
 import pl.detailing.crm.smscampaigns.infrastructure.SmsAutomationConfigJpaRepository
 import pl.detailing.crm.studio.infrastructure.StudioRepository
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import pl.detailing.crm.studio.logo.CompanyLogoService
 
 /**
  * Mass Assignment / Parameter Tampering — flaga `smsApiNameConfirmed`.
@@ -48,7 +47,7 @@ class SmsSenderConfirmationTamperingTest {
             .standaloneSetup(
                 CompanyController(
                     mockk<StudioSettingsRepository>(relaxed = true), studioRepository, smsConfigRepository,
-                    mockk<S3Client>(relaxed = true), mockk<S3Presigner>(relaxed = true), "bucket"
+                    mockk<CompanyLogoService>(relaxed = true)
                 ),
                 PlatformStudioAdminController(studioRepository, smsConfigRepository)
             )

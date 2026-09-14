@@ -61,6 +61,45 @@ class HtmlProtocolFillServiceTest {
     }
 
     @Test
+    fun `trusted markup is inserted verbatim while ordinary values stay escaped`() {
+        val html = """<html><div class="company-logo" data-field="companylogo"></div><div data-field="remarks"></div></html>"""
+        val img = """<img class="company-logo-img" alt="" src="data:image/png;base64,AAAA">"""
+
+        val filled = service.fill(
+            html,
+            mapOf("remarks" to "<b>x</b>"),
+            trustedMarkup = mapOf("companylogo" to img)
+        )
+
+        assertTrue("""<div class="company-logo" data-field="companylogo">$img</div>""" in filled)
+        assertTrue("&lt;b&gt;x&lt;/b&gt;" in filled)
+    }
+
+    @Test
+    fun `trusted markup for a placeholder the template lacks is skipped`() {
+        val html = """<html><div data-field="brand"></div></html>"""
+
+        val filled = service.fill(html, mapOf("brand" to "Audi"), trustedMarkup = mapOf("companylogo" to "<img>"))
+
+        assertFalse("<img>" in filled)
+        assertTrue("Audi" in filled)
+    }
+
+    @Test
+    fun `bundled html templates carry the logo placeholder`() {
+        listOf(
+            "/templates/protokol_przyjecia_pojazdu.html",
+            "/templates/protokol_wydania_pojazdu.html",
+            "/templates/oswiadczenie_rodo.html",
+            "/templates/zgody_marketingowe.html"
+        ).forEach { resource ->
+            val html = javaClass.getResourceAsStream(resource)!!.use { String(it.readBytes(), Charsets.UTF_8) }
+            val filled = service.fill(html, emptyMap(), trustedMarkup = mapOf("companylogo" to "<img src=\"data:x\">"))
+            assertTrue("""data-field="companylogo"><img src="data:x"></div>""" in filled, "brak placeholdera logo w $resource")
+        }
+    }
+
+    @Test
     fun `fields absent from template are ignored`() {
         val html = """<html><div data-field="brand"></div></html>"""
 

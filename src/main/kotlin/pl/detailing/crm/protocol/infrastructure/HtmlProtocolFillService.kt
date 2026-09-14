@@ -26,32 +26,47 @@ class HtmlProtocolFillService {
      * @param checkboxFields field names to render as checkbox marks (✕ / empty)
      *        instead of literal text — the caller derives them from the CRM data
      *        keys of the field mappings, so a mileage of "1" never turns into a mark.
+     * @param trustedMarkup field name → markup inserted VERBATIM, without escaping.
+     *        Only for HTML the server built itself (the studio logo as an `<img>`
+     *        with a data URI — see [pl.detailing.crm.studio.logo.DocumentLogo]);
+     *        never for anything that came from a user or the CRM data.
      */
     fun fill(
         templateHtml: String,
         fieldValues: Map<String, String>,
-        checkboxFields: Set<String> = emptySet()
+        checkboxFields: Set<String> = emptySet(),
+        trustedMarkup: Map<String, String> = emptyMap()
     ): String {
         var html = templateHtml
         var filled = 0
         var missing = 0
 
         fieldValues.forEach { (fieldName, rawValue) ->
-            val regex = Regex(
-                """(<([a-zA-Z0-9]+)([^>]*\bdata-field\s*=\s*["']${Regex.escape(fieldName)}["'][^>]*)>)\s*(</\2>)""",
-                RegexOption.IGNORE_CASE
-            )
             val value = renderValue(rawValue, isCheckbox = fieldName in checkboxFields)
-            var replaced = false
-            html = regex.replace(html) { match ->
-                replaced = true
-                "${match.groupValues[1]}$value${match.groupValues[4]}"
-            }
-            if (replaced) filled++ else missing++
+            html = replaceField(html, fieldName, value) { filled++ } ?: html.also { missing++ }
+        }
+        trustedMarkup.forEach { (fieldName, markup) ->
+            html = replaceField(html, fieldName, markup) { filled++ } ?: html.also { missing++ }
         }
 
         logger.info("HTML protocol fill: $filled field(s) filled, $missing not present in template")
         return html
+    }
+
+    /** Returns the html with the field's content replaced, or null when the template has no such field. */
+    private fun replaceField(html: String, fieldName: String, content: String, onReplaced: () -> Unit): String? {
+        val regex = Regex(
+            """(<([a-zA-Z0-9]+)([^>]*\bdata-field\s*=\s*["']${Regex.escape(fieldName)}["'][^>]*)>)\s*(</\2>)""",
+            RegexOption.IGNORE_CASE
+        )
+        var replaced = false
+        val result = regex.replace(html) { match ->
+            replaced = true
+            "${match.groupValues[1]}$content${match.groupValues[4]}"
+        }
+        if (!replaced) return null
+        onReplaced()
+        return result
     }
 
     private fun renderValue(rawValue: String, isCheckbox: Boolean): String {

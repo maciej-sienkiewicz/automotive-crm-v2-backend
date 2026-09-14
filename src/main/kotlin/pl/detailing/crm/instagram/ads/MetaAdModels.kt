@@ -60,6 +60,17 @@ data class RawAgeGenderReach(
     val unknown: Int
 )
 
+/**
+ * Wynik odkrywania po frazie: reklamy plus informacja, czy biblioteka miała ich
+ * więcej, niż zdążyliśmy przejść (limit stron). [truncated] = true znaczy „fraza
+ * zbyt ogólna, tabela niepełna" — sygnał dla ekranu, by poprosić o doprecyzowanie,
+ * nie cichy błąd.
+ */
+data class DiscoveryAdsResult(
+    val ads: List<RawMetaAd>,
+    val truncated: Boolean
+)
+
 /** Błąd wywołania Biblioteki reklam — z kodem, bo po nim rozpoznajemy brak weryfikacji konta. */
 class MetaAdsException(
     val statusCode: Int?,

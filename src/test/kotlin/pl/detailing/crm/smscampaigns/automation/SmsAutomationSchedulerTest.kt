@@ -6,6 +6,7 @@ import io.mockk.verify
 import org.junit.jupiter.api.Test
 import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.OutboundCommunicationGateway
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
@@ -49,7 +50,10 @@ class SmsAutomationSchedulerTest {
         templateProcessor,
         visitRepository,
         communicationLogService,
-        thankYouSmsRepository
+        thankYouSmsRepository,
+        // Okno wysyłki nie ma znaczenia dla tych testów (sprawdzają, którą tabelę pyta
+        // scheduler) — wyłączamy je, żeby zegar systemowy nie decydował o wyniku.
+        SendWindow.ALWAYS_OPEN
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -117,7 +121,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -128,7 +132,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -140,7 +144,7 @@ class SmsAutomationSchedulerTest {
 
         scheduler.processPendingAutomations()
 
-        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     private fun givenOneCompletedVisit() {
@@ -161,7 +165,7 @@ class SmsAutomationSchedulerTest {
         )
         every { smsLogRepository.existsByAppointmentIdAndTriggerType(any(), any()) } returns false
         every {
-            communicationGateway.sendSms(any(), any(), any(), any(), any(), any())
+            communicationGateway.sendSms(any(), any(), any(), any(), any(), any(), any())
         } returns SmsDeliveryResult.success("msg-1")
     }
 

@@ -1,6 +1,7 @@
 package pl.detailing.crm.visit.domain
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.shared.*
@@ -191,5 +192,30 @@ class VisitTotalCostTest {
         val visit = makeVisit(items)
         assertEquals(25000, visit.calculateTotalNet().amountInCents)
         assertEquals(30750, visit.calculateTotalGross().amountInCents)
+    }
+
+    // ── Regresja incydentu: pozycja ZW wyceniona od brutta ──────────────────────
+    //
+    // Wizyta ad1b4efc… zakończyła się bez dokumentu finansowego, bo pozycja ZW
+    // wyceniona przez SET_GROSS miała netto (252,53) > brutto (250,00) i
+    // calculateTotalVat() = brutto - netto = -253 gr wysadzało Money(>=0).
+    @Test
+    fun `wizyta z pozycja ZW wyceniona od brutta ma VAT zero i nie wysadza Money`() {
+        val zwItem = VisitServiceItem.createPending(
+            serviceId = null,
+            serviceName = "Mycie - komplet",
+            basePriceNet = Money(0),
+            vatRate = VatRate.VAT_ZW,
+            adjustmentType = AdjustmentType.SET_GROSS,
+            adjustmentValue = 25000,
+            customNote = null
+        ).approve()!!  // PENDING/ADD → CONFIRMED
+
+        val visit = makeVisit(listOf(zwItem))
+
+        assertEquals(25000, visit.calculateTotalNet().amountInCents)
+        assertEquals(25000, visit.calculateTotalGross().amountInCents)
+        assertEquals(0, visit.calculateTotalVat().amountInCents) // wcześniej: wyjątek na -253
+        assertFalse(visit.isFreeVisit())
     }
 }

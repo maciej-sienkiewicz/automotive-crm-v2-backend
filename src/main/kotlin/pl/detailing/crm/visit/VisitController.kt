@@ -34,6 +34,8 @@ import pl.detailing.crm.visit.photos.DeleteVisitPhotoHandler
 import pl.detailing.crm.visit.photos.DeleteVisitPhotoCommand
 import pl.detailing.crm.visit.customeremail.UpdateVisitCustomerEmailCommand
 import pl.detailing.crm.visit.customeremail.UpdateVisitCustomerEmailHandler
+import pl.detailing.crm.visit.arrival.UpdateArrivalStateCommand
+import pl.detailing.crm.visit.arrival.UpdateArrivalStateHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleHandler
 import pl.detailing.crm.visit.title.UpdateVisitTitleCommand
 import pl.detailing.crm.visit.schedule.UpdateEstimatedCompletionDateHandler
@@ -73,6 +75,7 @@ class VisitController(
     private val cancelDraftVisitHandler: CancelDraftVisitHandler,
     private val deleteVisitHandler: DeleteVisitHandler,
     private val updateVisitTitleHandler: UpdateVisitTitleHandler,
+    private val updateArrivalStateHandler: UpdateArrivalStateHandler,
     private val updateVisitCustomerEmailHandler: UpdateVisitCustomerEmailHandler,
     private val updateEstimatedCompletionDateHandler: UpdateEstimatedCompletionDateHandler,
     private val updateTechnicalNoteHandler: UpdateTechnicalNoteHandler,
@@ -454,6 +457,35 @@ class VisitController(
         )
 
         updateVisitTitleHandler.handle(command)
+
+        ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Poprawka „Stanu przy przyjęciu": przebieg, kluczyki, dokumenty.
+     * PATCH /api/visits/{visitId}/arrival-state
+     *
+     * Każde pole jest opcjonalne — pominięte zostaje bez zmian.
+     */
+    @PatchMapping("/{visitId}/arrival-state")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun updateArrivalState(
+        @PathVariable visitId: String,
+        @RequestBody request: UpdateArrivalStateRequest
+    ): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        updateArrivalStateHandler.handle(
+            UpdateArrivalStateCommand(
+                visitId = VisitId.fromString(visitId),
+                studioId = principal.studioId,
+                userId = principal.userId,
+                userName = principal.fullName,
+                mileageAtArrival = request.mileageAtArrival,
+                keysHandedOver = request.keysHandedOver,
+                documentsHandedOver = request.documentsHandedOver
+            )
+        )
 
         ResponseEntity.noContent().build()
     }
@@ -1004,6 +1036,12 @@ data class VisitPhotoResponse(
 
 data class UpdateVisitTitleRequest(
     val title: String?
+)
+
+data class UpdateArrivalStateRequest(
+    val mileageAtArrival: Long? = null,
+    val keysHandedOver: Boolean? = null,
+    val documentsHandedOver: Boolean? = null
 )
 
 data class UpdateVisitCustomerEmailRequest(

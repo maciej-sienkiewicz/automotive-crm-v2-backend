@@ -11,6 +11,7 @@ import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.leads.attachment.LeadAttachmentLinker
 import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.formmail.FormMailLeadProcessor
@@ -81,6 +82,7 @@ class AutoLeadProcessor(
     private val customerRepository: CustomerRepository,
     private val statusService: LeadStatusService,
     private val soleUserResolver: SoleUserResolver,
+    private val attachmentLinker: LeadAttachmentLinker,
     private val eventPublisher: ApplicationEventPublisher,
     private val transactionTemplate: TransactionTemplate,
     @Value("\${crm.ai.lead-classification.min-confidence:0.7}") private val minConfidence: Double
@@ -194,6 +196,10 @@ class AutoLeadProcessor(
             )
             leadRepository.save(lead)
             statusService.recordCreation(lead, assignee?.id, assignee?.name ?: AUTOMAT_NAME)
+
+            // Zdjęcia lakieru albo skan dowodu przysłane razem z zapytaniem należą
+            // do sprawy, nie do skrzynki — patrz [LeadAttachmentLinker].
+            attachmentLinker.link(lead.id, message)
 
             fresh?.let {
                 it.leadId = lead.id

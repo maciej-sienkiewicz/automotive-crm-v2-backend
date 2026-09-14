@@ -2,6 +2,7 @@ package pl.detailing.crm.smscampaigns.reminder
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.communication.window.SendWindow
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.shared.normalizePolishPhone
@@ -32,7 +33,8 @@ data class ScheduleVisitSmsReminderCommand(
 class ScheduleVisitSmsReminderHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val reminderRepository: ScheduledSmsReminderRepository
+    private val reminderRepository: ScheduledSmsReminderRepository,
+    private val sendWindow: SendWindow
 ) {
     companion object {
         private const val DEFAULT_DELAY_DAYS = 90L
@@ -68,12 +70,15 @@ class ScheduleVisitSmsReminderHandler(
             ?: throw ValidationException("Klient nie ma zapisanego numeru telefonu")
 
         val normalizedPhone = normalizePolishPhone(phone)
-        val scheduledFor = command.scheduledFor
+        val requestedFor = command.scheduledFor
             ?: Instant.now().plus(DEFAULT_DELAY_DAYS, ChronoUnit.DAYS)
 
-        if (scheduledFor.isBefore(Instant.now())) {
+        if (requestedFor.isBefore(Instant.now())) {
             throw ValidationException("Data wysyłki musi być w przyszłości")
         }
+        // Termin dociągnięty do godzin komunikacji z klientem już tutaj, a nie dopiero przy
+        // wysyłce: użytkownik ma zobaczyć w UI prawdziwą godzinę, o której SMS wyjdzie.
+        val scheduledFor = sendWindow.nextSlotFrom(requestedFor)
 
         val reminder = ScheduledSmsReminder(
             id = UUID.randomUUID(),

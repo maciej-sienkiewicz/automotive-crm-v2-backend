@@ -32,7 +32,8 @@ class SignVisitProtocolHandler(
     private val pdfProcessingService: PdfProcessingService,
     private val s3StorageService: S3ProtocolStorageService,
     private val consentTemplateRepository: ConsentTemplateRepository,
-    private val customerConsentRepository: CustomerConsentRepository
+    private val customerConsentRepository: CustomerConsentRepository,
+    private val documentRegistrar: VisitProtocolDocumentRegistrar
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -79,6 +80,16 @@ class SignVisitProtocolHandler(
             )
 
             visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
+
+            // Protokół, który przy generowaniu NIE stał się dokumentem wizyty (wydanie —
+            // patrz [VisitProtocolDocumentRegistrar]), staje się nim teraz: z podpisem,
+            // czyli wtedy, gdy w ogóle zaczyna coś dokumentować. Przyjęcie ma swój wiersz
+            // od początku i zostaje bez zmian.
+            if (!VisitProtocolDocumentRegistrar.becomesDocumentOnGeneration(protocol.stage)
+                && protocol.consentDefinitionId == null
+            ) {
+                documentRegistrar.register(signedProtocol, signedPdfS3Key, "pdf")
+            }
 
             // For consent protocols: record the customer's consent so future visits skip this consent
             val consentDefinitionId = protocol.consentDefinitionId

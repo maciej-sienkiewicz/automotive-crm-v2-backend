@@ -25,5 +25,7 @@ data class EmailTemplateContext(
     val vehicleName: String,
     val licensePlate: String?,
     val visitNumber: String,
-    val scheduledAt: Instant
+    val scheduledAt: Instant,
+    /** Rezerwacja całodniowa: {{godzina}} jest pusta, bo północ nie jest godziną wizyty. */
+    val allDay: Boolean = false
 )
