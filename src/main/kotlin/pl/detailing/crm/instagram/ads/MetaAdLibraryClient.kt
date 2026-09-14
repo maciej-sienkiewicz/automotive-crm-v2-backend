@@ -38,7 +38,11 @@ class MetaAdLibraryClient(
     @Value("\${meta.ads.token:}") private val accessToken: String,
     @Value("\${meta.ads.api-version:v26.0}") private val apiVersion: String,
     @Value("\${meta.ads.timeout-seconds:30}") private val timeoutSeconds: Long,
-    @Value("\${meta.ads.page-size:200}") private val pageSize: Int
+    @Value("\${meta.ads.page-size:200}") private val pageSize: Int,
+    // Odkrywanie po frazie ma własny, większy rozmiar strony: fraza jak „ceramika"
+    // zwraca setki reklam, a większa strona to mniej wywołań na tę samą liczbę wyników
+    // — taniej dla wspólnego limitu tokena niż dokładanie kolejnych stron.
+    @Value("\${meta.ads.discovery.page-size:500}") private val discoveryPageSize: Int
 ) {
     private val log = LoggerFactory.getLogger(MetaAdLibraryClient::class.java)
 
@@ -54,6 +58,23 @@ class MetaAdLibraryClient(
                 "eu_total_reach,age_country_gender_reach_breakdown,target_ages,target_gender," +
                 "target_locations,beneficiary_payers,publisher_platforms,ad_snapshot_url"
 
+        /**
+         * LEKKI zestaw pól dla odkrywania po frazie — świadomie BEZ
+         * `age_country_gender_reach_breakdown`.
+         *
+         * To pole (rozbicie wiek/płeć/kraj) jest ciężkie: przy szerokiej frazie jak
+         * „detailing" (~kilka tysięcy reklam) i sensownym `limit` Meta odrzuca zapytanie
+         * błędem code=1 / HTTP 500 „Please reduce the amount of data you're asking for".
+         * Nocny sync profili może brać pełne pola, bo pyta o pojedyncze strony (mały
+         * wynik); skan po treści zwraca tysiące reklam, więc payload musi być chudy.
+         *
+         * Zasięg bierzemy z lekkiego `eu_total_reach` (jedna liczba) zamiast liczyć go
+         * z rozbicia PL — rozbicia i tak nie da się pobrać hurtowo dla szerokiej frazy.
+         */
+        private const val DISCOVERY_FIELDS =
+            "id,page_id,page_name,ad_delivery_start_time,ad_delivery_stop_time," +
+                "eu_total_reach,target_locations,ad_snapshot_url"
+
         private const val SEARCH_FIELDS = "page_id,page_name,ad_delivery_start_time"
 
         /**
@@ -65,6 +86,12 @@ class MetaAdLibraryClient(
 
         /** Kod Meta dla „nie znam takiego pola”. */
         private const val ERROR_UNKNOWN_FIELD = 100
+
+        /**
+         * Meta tak skarży się na zbyt duży payload. Dla odkrywania to realne ryzyko
+         * (tysiące reklam na frazę), więc pole opcjonalne odpada także po tym błędzie.
+         */
+        private const val TOO_MUCH_DATA = "reduce the amount of data"
 
         /** Ile stron paginacji maksymalnie przejdziemy — zapora przed pętlą kursorów. */
         private const val MAX_PAGES = 20
@@ -101,7 +128,9 @@ class MetaAdLibraryClient(
         try {
             block()
         } catch (e: MetaAdsException) {
-            if (optionalFieldSupported && e.errorCode == ERROR_UNKNOWN_FIELD) {
+            val rejectsField = e.errorCode == ERROR_UNKNOWN_FIELD ||
+                e.message?.contains(TOO_MUCH_DATA, ignoreCase = true) == true
+            if (optionalFieldSupported && rejectsField) {
                 optionalFieldSupported = false
                 log.warn("Biblioteka reklam Meta nie zna pola {} — dalej bez niego ({})", OPTIONAL_FIELD, e.message)
                 block()
@@ -151,8 +180,9 @@ class MetaAdLibraryClient(
      * strony. Serce odkrywania obszaru: nie znamy stron z góry, więc pytamy po
      * treści (`search_terms`) i dopiero u siebie filtrujemy po lokalizacji.
      *
-     * Pobieramy PEŁNE pola (z rozbiciem zasięgu i lokalizacjami), bo filtr obszaru
-     * i kolumna zasięgu żywią się właśnie nimi. Paginację ucinamy po [maxPages] —
+     * Pola bierzemy LEKKIE ([DISCOVERY_FIELDS]) — szeroka fraza zwraca tysiące
+     * reklam, a pełny zestaw wywraca zapytanie na rozmiarze odpowiedzi.
+     * Paginację ucinamy po [maxPages] —
      * fraza tak ogólna, że nie mieści się w tylu stronach, i tak jest bezużyteczna
      * w tabeli, a każda strona to wywołanie z jednego, wspólnego limitu Meta.
      */
@@ -322,7 +352,7 @@ class MetaAdLibraryClient(
     }
 
     /**
-     * Odkrywanie: aktywne reklamy dla frazy w Polsce, pełne pola.
+     * Odkrywanie: aktywne reklamy dla frazy w Polsce, lekkie pola.
      *
      * `ad_active_status=ACTIVE` — bo tabela mówi „ile AKTYWNYCH reklam". `search_terms`
      * przeszukuje treść reklamy; filtr po lokalizacji robimy u siebie, bo `ads_archive`
@@ -338,8 +368,8 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ACTIVE")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode(fieldsWithOptional(FIELDS)))
-            append("&limit=").append(pageSize.coerceIn(1, 500))
+            append("&fields=").append(encode(fieldsWithOptional(DISCOVERY_FIELDS)))
+            append("&limit=").append(discoveryPageSize.coerceIn(1, 500))
             if (after != null) append("&after=").append(encode(after))
         }
     }
