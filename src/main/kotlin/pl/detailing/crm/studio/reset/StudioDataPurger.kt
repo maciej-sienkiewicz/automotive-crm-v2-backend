@@ -331,6 +331,10 @@ class StudioDataPurger(
             deleteByStudio("InstagramGeneratedPostEntity", ctx)
             deleteByStudio("InstagramInsightEntity", ctx)
             deleteByStudio("InstagramReportEntity", ctx)
+            // Śledzenia obszaru należą do studia (kto reklamuje się w rejonie X). Wspólny
+            // cache reklam pod frazę (AdDiscoveryPhraseEntity/AdDiscoveryAdEntity) zostaje —
+            // to publiczne dane Meta dzielone między najemcami, nie dane tego studia.
+            deleteByStudio("AdLocationTrackingEntity", ctx)
             deleteByStudio("StudioInstagramProfileEntity", ctx)
             entityManager.flush()
             links.forEach { link ->

@@ -45,6 +45,12 @@ class StudioResetCoverageTest {
         "AddOnEntity" to "globalny katalog dodatków",
         "SmsCreditPackageEntity" to "globalny cennik pakietów SMS",
         "VehicleSegmentEntity" to "globalne dane referencyjne segmentów pojazdów",
+        // Wspólny cache odkrywania reklam: publiczne dane Meta kluczowane po frazie,
+        // dzielone między wszystkimi najemcami — nie należą do żadnego studia. Reset
+        // studia usuwa jego śledzenia obszaru (AdLocationTrackingEntity w StudioDataPurger),
+        // ale nie ten cache; osierocone frazy same wypadają z odświeżania.
+        "AdDiscoveryPhraseEntity" to "wspólny cache reklam pod frazę, współdzielony między studiami",
+        "AdDiscoveryAdEntity" to "wspólny cache reklam pod frazę, współdzielony między studiami",
         // Infrastruktura samego resetu i kont demo.
         "DemoAccountEntity" to "rejestr kont demo prowadzi DemoCleanupJob",
         "StudioResetJobEntity" to "przebieg resetu musi przeżyć własne wykonanie"
