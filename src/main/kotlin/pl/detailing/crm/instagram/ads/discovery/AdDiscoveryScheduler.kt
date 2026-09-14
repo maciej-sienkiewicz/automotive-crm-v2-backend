@@ -30,7 +30,7 @@ import java.time.Instant
  */
 @Component
 class AdDiscoveryScheduler(
-    private val trackingRepository: AdLocationTrackingRepository,
+    private val settingsRepository: AdAreaSettingsRepository,
     private val phraseRepository: AdDiscoveryPhraseRepository,
     private val fetchService: AdDiscoveryFetchService,
     @Value("\${meta.ads.discovery.enabled:true}") private val enabled: Boolean,
@@ -77,8 +77,8 @@ class AdDiscoveryScheduler(
      * bo jest starsza niż cokolwiek pobranego.
      */
     private fun stalestDue(): List<String> {
-        val inUse = trackingRepository.findByActiveTrue()
-            .flatMap { AdDiscoveryCatalog.phrasesExcept(TrackingLists.decode(it.excludedPhraseIds)) }
+        val inUse = settingsRepository.findAllConfigured()
+            .flatMap { AdDiscoveryCatalog.phrasesExcept(AreaLists.decode(it.excludedPhraseIds)) }
             .mapNotNull(AdDiscoveryPhrase::normalizeValid)
             .distinct()
         if (inUse.isEmpty()) return emptyList()

@@ -26,8 +26,14 @@ class AdDiscoveryReadService(
     private val adRepository: AdDiscoveryAdRepository,
     private val client: MetaAdLibraryClient,
     private val instagramResolver: AdvertiserInstagramResolver,
-    private val blockService: AdvertiserBlockService
+    private val blockService: AdvertiserBlockService,
+    private val settingsService: AdAreaSettingsService,
+    @Value("\${meta.ads.discovery.results-page-size:10}") private val defaultPageSize: Int
 ) {
+
+    private companion object {
+        const val MAX_PAGE_SIZE = 50
+    }
 
     /**
      * Tabela dla jednego studia.
@@ -36,18 +42,18 @@ class AdDiscoveryReadService(
      * użytkownika. Dzięki temu liczba unikalnych fraz w całej instalacji jest z góry
      * znana i równa katalogowi, a nie rośnie z liczbą najemców.
      */
-    fun results(
-        studioId: StudioId,
-        excludedPhraseIds: List<String>,
-        locations: List<String>,
-        mode: AreaMatchMode
-    ): AreaResultsDto {
-        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(excludedPhraseIds)
+    fun results(studioId: StudioId, page: Int = 0, pageSize: Int? = null): AreaResultsDto {
+        val settings = settingsService.get(studioId)
+        val size = (pageSize ?: defaultPageSize).coerceIn(1, MAX_PAGE_SIZE)
+        val wanted = page.coerceAtLeast(0)
+
+        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(settings.excludedPhraseIds)
             .mapNotNull(AdDiscoveryPhrase::normalizeValid)
             .distinct()
-        val cleanLocations = locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val cleanLocations = settings.locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val mode = settings.matchMode
 
-        if (normalizedPhrases.isEmpty()) {
+        if (normalizedPhrases.isEmpty() || cleanLocations.isEmpty()) {
             return AreaResultsDto(
                 phrases = emptyList(),
                 locations = cleanLocations,
@@ -55,6 +61,9 @@ class AdDiscoveryReadService(
                 configured = client.enabled,
                 generatedAt = Instant.now().toString(),
                 advertisers = emptyList(),
+                page = 0,
+                pageSize = size,
+                totalAdvertisers = 0,
                 totalActiveAds = 0,
                 hiddenAdvertisers = 0,
                 phraseStatuses = emptyList()
@@ -77,7 +86,12 @@ class AdDiscoveryReadService(
         val visible = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode)
         val blocked = blockService.blockedPageIds(studioId)
         val shown = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode, blocked)
-        val rows = withInstagram(shown).map { it.toDto() }
+        // Nazwy IG dociągamy TYLKO dla widocznej strony: każda nieznana domena to
+        // pobranie cudzej strony WWW, a nikt nie ogląda czterystu wierszy naraz.
+        val pages = if (shown.isEmpty()) 1 else (shown.size + size - 1) / size
+        val safePage = wanted.coerceAtMost(pages - 1)
+        val slice = shown.drop(safePage * size).take(size)
+        val rows = withInstagram(slice).map { it.toDto() }
 
         return AreaResultsDto(
             phrases = normalizedPhrases,
@@ -86,7 +100,10 @@ class AdDiscoveryReadService(
             configured = client.enabled,
             generatedAt = Instant.now().toString(),
             advertisers = rows,
-            totalActiveAds = rows.sumOf { it.activeAds },
+            page = safePage,
+            pageSize = size,
+            totalAdvertisers = shown.size,
+            totalActiveAds = shown.sumOf { it.activeAds },
             hiddenAdvertisers = visible.size - shown.size,
             phraseStatuses = normalizedPhrases.map { phrase -> phraseStatus(phrase, phraseEntities[phrase]) }
         )

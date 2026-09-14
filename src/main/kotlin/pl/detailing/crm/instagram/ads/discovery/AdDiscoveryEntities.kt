@@ -138,42 +138,22 @@ class AdDiscoveryAdEntity(
 )
 
 /**
- * Trwałe śledzenie obszaru należące do jednego studia.
+ * Ustawienia rejonu jednego studia — jeden wiersz, nie zbiór.
  *
- * Gdy istnieje i jest [active], jego frazy wchodzą do cyklicznego odświeżania —
- * to jest różnica między „pokaż raz" a „śledź na stałe", której chciał właściciel.
- * Frazy i lokalizacje trzymamy jako listy rozdzielone `|` (jak reszta modułu list
- * krótkich wartości), bo odczytujemy je zawsze w całości.
+ * Wiele nazwanych śledzeń miało sens, dopóki studio wpisywało własne frazy.
+ * Po przejściu na wspólny katalog każde śledzenie miało już dokładnie te same
+ * frazy i różniło się wyłącznie listą miejscowości — czyli było tym samym
+ * pytaniem zadanym drugi raz, z nazwą do wymyślenia i formularzem do wypełnienia.
+ *
+ * Zostało jedno pytanie, na które studio faktycznie odpowiada: gdzie patrzeć.
  */
 @Entity
-@Table(
-    name = "meta_ad_location_trackings",
-    indexes = [
-        Index(name = "ix_ad_location_trackings_studio", columnList = "studio_id"),
-        Index(name = "ix_ad_location_trackings_active", columnList = "active")
-    ]
-)
-class AdLocationTrackingEntity(
+@Table(name = "meta_ad_area_settings")
+class AdAreaSettingsEntity(
+    /** Studio jest kluczem głównym: jedno ustawienie, nie zbiór. */
     @Id
-    @Column(name = "id", columnDefinition = "uuid")
-    val id: UUID,
-
-    @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
+    @Column(name = "studio_id", columnDefinition = "uuid")
     val studioId: UUID,
-
-    /** Nazwa własna nadana przez studio, np. „Detailing — aglomeracja poznańska". */
-    @Column(name = "label", nullable = false, length = 120)
-    var label: String,
-
-    /**
-     * Identyfikatory fraz z katalogu, których to studio NIE chce śledzić, rozdzielone `|`.
-     *
-     * Odwrotnie niż wcześniej: nie trzymamy listy fraz, tylko listę odjęć od
-     * [AdDiscoveryCatalog]. Dzięki temu fraza dołożona do katalogu włącza się
-     * wszystkim sama, bez migracji czyichkolwiek ustawień.
-     */
-    @Column(name = "excluded_phrase_ids", nullable = false, columnDefinition = "text")
-    var excludedPhraseIds: String = "",
 
     /** Miejscowości rejonu rozdzielone `|`, tak jak wpisał je człowiek. */
     @Column(name = "locations", nullable = false, columnDefinition = "text")
@@ -183,12 +163,17 @@ class AdLocationTrackingEntity(
     @Column(name = "match_mode", nullable = false, length = 20)
     var matchMode: AreaMatchMode = AreaMatchMode.INCLUDE_BROADER,
 
-    /** false = śledzenie wstrzymane: frazy wypadają z cyklicznego odświeżania. */
-    @Column(name = "active", nullable = false)
-    var active: Boolean = true,
+    /**
+     * Identyfikatory fraz z katalogu, których to studio NIE chce śledzić, rozdzielone `|`.
+     *
+     * Trzymamy odjęcia od [AdDiscoveryCatalog], nie listę fraz — dzięki temu fraza
+     * dołożona do katalogu włącza się wszystkim sama, bez migracji czyichkolwiek ustawień.
+     */
+    @Column(name = "excluded_phrase_ids", nullable = false, columnDefinition = "text")
+    var excludedPhraseIds: String = "",
 
-    @Column(name = "created_by_user_id", nullable = false, columnDefinition = "uuid")
-    val createdByUserId: UUID,
+    @Column(name = "updated_by_user_id", nullable = true, columnDefinition = "uuid")
+    var updatedByUserId: UUID? = null,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
@@ -196,7 +181,6 @@ class AdLocationTrackingEntity(
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )
-
 
 /**
  * Wykluczony reklamodawca — jedna tabela na dwa poziomy.
