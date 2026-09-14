@@ -147,6 +147,49 @@ class MetaAdLibraryClient(
     }
 
     /**
+     * Aktywne reklamy pasujące treścią do frazy — z całej Polski, niezależnie od
+     * strony. Serce odkrywania obszaru: nie znamy stron z góry, więc pytamy po
+     * treści (`search_terms`) i dopiero u siebie filtrujemy po lokalizacji.
+     *
+     * Pobieramy PEŁNE pola (z rozbiciem zasięgu i lokalizacjami), bo filtr obszaru
+     * i kolumna zasięgu żywią się właśnie nimi. Paginację ucinamy po [maxPages] —
+     * fraza tak ogólna, że nie mieści się w tylu stronach, i tak jest bezużyteczna
+     * w tabeli, a każda strona to wywołanie z jednego, wspólnego limitu Meta.
+     */
+    fun fetchActiveAdsByTerm(term: String, maxPages: Int): DiscoveryAdsResult {
+        if (!enabled) return DiscoveryAdsResult(emptyList(), false)
+        val query = term.trim().takeIf { it.length >= MIN_SEARCH_LENGTH }
+            ?: return DiscoveryAdsResult(emptyList(), false)
+
+        return withOptionalField { discoveryPages(query, maxPages) }
+    }
+
+    private fun discoveryPages(query: String, maxPages: Int): DiscoveryAdsResult {
+        val ads = mutableListOf<RawMetaAd>()
+        var after: String? = null
+        var page = 0
+        var truncated = false
+        val cap = maxPages.coerceIn(1, MAX_PAGES)
+
+        do {
+            val body = callGate.call("ads_archive_discovery") { get(buildDiscoveryUrl(query, after)) }
+            val root = objectMapper.readTree(body)
+
+            root.path("data").forEach { node -> MetaAdParser.parseAd(node)?.let { ads += it } }
+
+            after = root.path("paging").path("cursors").path("after").textOrNull()
+            page++
+            val hasMore = after != null && root.path("data").size() > 0
+            if (hasMore && page >= cap) {
+                truncated = true
+                break
+            }
+        } while (after != null && root.path("data").size() > 0 && page < cap)
+
+        return DiscoveryAdsResult(ads, truncated)
+    }
+
+    /**
      * Strony reklamodawców pasujące do frazy — po to, żeby nikt nie musiał
      * polować na numeryczny identyfikator strony.
      *
@@ -275,6 +318,29 @@ class MetaAdLibraryClient(
             append("&ad_delivery_date_min=").append(since)
             append("&fields=").append(encode(fieldsWithOptional(SEARCH_FIELDS)))
             append("&limit=").append(SEARCH_PAGE_SIZE)
+        }
+    }
+
+    /**
+     * Odkrywanie: aktywne reklamy dla frazy w Polsce, pełne pola.
+     *
+     * `ad_active_status=ACTIVE` — bo tabela mówi „ile AKTYWNYCH reklam". `search_terms`
+     * przeszukuje treść reklamy; filtr po lokalizacji robimy u siebie, bo `ads_archive`
+     * nie przyjmuje targetu miejscowości jako parametru zapytania.
+     */
+    private fun buildDiscoveryUrl(term: String, after: String?): String {
+        val since = LocalDate.now().minusDays(RETENTION_DAYS)
+        return buildString {
+            append("https://graph.facebook.com/$apiVersion/ads_archive")
+            append("?access_token=").append(encode(accessToken))
+            append("&ad_reached_countries=").append(encode("[\"PL\"]"))
+            append("&search_terms=").append(encode(term))
+            append("&ad_type=ALL")
+            append("&ad_active_status=ACTIVE")
+            append("&ad_delivery_date_min=").append(since)
+            append("&fields=").append(encode(fieldsWithOptional(FIELDS)))
+            append("&limit=").append(pageSize.coerceIn(1, 500))
+            if (after != null) append("&after=").append(encode(after))
         }
     }
 
