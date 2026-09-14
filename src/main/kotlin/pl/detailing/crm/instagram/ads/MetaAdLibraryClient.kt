@@ -38,11 +38,7 @@ class MetaAdLibraryClient(
     @Value("\${meta.ads.token:}") private val accessToken: String,
     @Value("\${meta.ads.api-version:v26.0}") private val apiVersion: String,
     @Value("\${meta.ads.timeout-seconds:30}") private val timeoutSeconds: Long,
-    @Value("\${meta.ads.page-size:200}") private val pageSize: Int,
-    // Odkrywanie po frazie ma własny, większy rozmiar strony: fraza jak „ceramika"
-    // zwraca setki reklam, a większa strona to mniej wywołań na tę samą liczbę wyników
-    // — taniej dla wspólnego limitu tokena niż dokładanie kolejnych stron.
-    @Value("\${meta.ads.discovery.page-size:500}") private val discoveryPageSize: Int
+    @Value("\${meta.ads.page-size:200}") private val pageSize: Int
 ) {
     private val log = LoggerFactory.getLogger(MetaAdLibraryClient::class.java)
 
@@ -58,22 +54,17 @@ class MetaAdLibraryClient(
                 "eu_total_reach,age_country_gender_reach_breakdown,target_ages,target_gender," +
                 "target_locations,beneficiary_payers,publisher_platforms,ad_snapshot_url"
 
+        private const val SEARCH_FIELDS = "page_id,page_name,ad_delivery_start_time"
+
         /**
-         * LEKKI zestaw pól dla odkrywania po frazie — świadomie BEZ
-         * `age_country_gender_reach_breakdown`.
-         *
-         * To pole (rozbicie wiek/płeć/kraj) jest ciężkie: przy szerokiej frazie jak
-         * „detailing" (~kilka tysięcy reklam) i sensownym `limit` Meta odrzuca zapytanie
-         * błędem code=1 / HTTP 500 „Please reduce the amount of data you're asking for".
-         * Nocny sync profili może brać pełne pola, bo pyta o pojedyncze strony (mały
-         * wynik); skan po treści zwraca tysiące reklam, więc payload musi być chudy.
-         *
-         * Zasięg bierzemy z lekkiego `eu_total_reach` (jedna liczba) zamiast liczyć go
-         * z rozbicia PL — rozbicia i tak nie da się pobrać hurtowo dla szerokiej frazy.
+         * Domena reklamodawcy — jedyne wskazanie na stronę firmy, jakie niesie reklama.
+         * Trzymana osobno, bo jest DODATKIEM: gdyby Meta kiedyś przestała ją oddawać,
+         * zapytanie ma polecieć bez niej, a nie wysypać kalendarz.
          */
-        private const val DISCOVERY_FIELDS =
-            "id,page_id,page_name,ad_delivery_start_time,ad_delivery_stop_time," +
-                "eu_total_reach,target_locations,ad_snapshot_url"
+        private const val OPTIONAL_FIELD = "ad_creative_link_captions"
+
+        /** Kod Meta dla „nie znam takiego pola”. */
+        private const val ERROR_UNKNOWN_FIELD = 100
 
         /** Ile stron paginacji maksymalnie przejdziemy — zapora przed pętlą kursorów. */
         private const val MAX_PAGES = 20
@@ -91,6 +82,34 @@ class MetaAdLibraryClient(
     /** Token jest jedyną rzeczą do podmiany w dniu aktywacji konta. */
     val enabled: Boolean get() = accessToken.isNotBlank()
 
+    /**
+     * Czy Meta nadal zna [OPTIONAL_FIELD]. Zgaszone raz, zostaje zgaszone do restartu:
+     * nie ma sensu dopytywać o pole, które właśnie zostało odrzucone.
+     */
+    @Volatile
+    private var optionalFieldSupported: Boolean = true
+
+    private fun fieldsWithOptional(base: String): String =
+        if (optionalFieldSupported) "$base,$OPTIONAL_FIELD" else base
+
+    /**
+     * Wykonuje zapytanie, a gdy Meta odrzuci je z powodu nieznanego pola — powtarza
+     * je raz bez pola opcjonalnego. Dzięki temu dołożenie domeny reklamodawcy nie
+     * może zepsuć niczego, co działało wcześniej.
+     */
+    private fun <T> withOptionalField(block: () -> T): T =
+        try {
+            block()
+        } catch (e: MetaAdsException) {
+            if (optionalFieldSupported && e.errorCode == ERROR_UNKNOWN_FIELD) {
+                optionalFieldSupported = false
+                log.warn("Biblioteka reklam Meta nie zna pola {} — dalej bez niego ({})", OPTIONAL_FIELD, e.message)
+                block()
+            } else {
+                throw e
+            }
+        }
+
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(timeoutSeconds))
         .build()
@@ -104,7 +123,7 @@ class MetaAdLibraryClient(
 
         return pageIds.distinct()
             .chunked(MAX_PAGES_PER_CALL)
-            .flatMap { batch -> fetchBatch(batch) }
+            .flatMap { batch -> withOptionalField { fetchBatch(batch) } }
     }
 
     private fun fetchBatch(pageIds: List<String>): List<RawMetaAd> {
@@ -128,45 +147,6 @@ class MetaAdLibraryClient(
     }
 
     /**
-     * Aktywne reklamy pasujące treścią do frazy — z całej Polski, niezależnie od
-     * strony. Serce odkrywania obszaru: nie znamy stron z góry, więc pytamy po
-     * treści (`search_terms`) i dopiero u siebie filtrujemy po lokalizacji.
-     *
-     * Pobieramy PEŁNE pola (z rozbiciem zasięgu i lokalizacjami), bo filtr obszaru
-     * i kolumna zasięgu żywią się właśnie nimi. Paginację ucinamy po [maxPages] —
-     * fraza tak ogólna, że nie mieści się w tylu stronach, i tak jest bezużyteczna
-     * w tabeli, a każda strona to wywołanie z jednego, wspólnego limitu Meta.
-     */
-    fun fetchActiveAdsByTerm(term: String, maxPages: Int): DiscoveryAdsResult {
-        if (!enabled) return DiscoveryAdsResult(emptyList(), false)
-        val query = term.trim().takeIf { it.length >= MIN_SEARCH_LENGTH }
-            ?: return DiscoveryAdsResult(emptyList(), false)
-
-        val ads = mutableListOf<RawMetaAd>()
-        var after: String? = null
-        var page = 0
-        var truncated = false
-        val cap = maxPages.coerceIn(1, MAX_PAGES)
-
-        do {
-            val body = callGate.call("ads_archive_discovery") { get(buildDiscoveryUrl(query, after)) }
-            val root = objectMapper.readTree(body)
-
-            root.path("data").forEach { node -> MetaAdParser.parseAd(node)?.let { ads += it } }
-
-            after = root.path("paging").path("cursors").path("after").textOrNull()
-            page++
-            val hasMore = after != null && root.path("data").size() > 0
-            if (hasMore && page >= cap) {
-                truncated = true
-                break
-            }
-        } while (after != null && root.path("data").size() > 0 && page < cap)
-
-        return DiscoveryAdsResult(ads, truncated)
-    }
-
-    /**
      * Strony reklamodawców pasujące do frazy — po to, żeby nikt nie musiał
      * polować na numeryczny identyfikator strony.
      *
@@ -184,23 +164,27 @@ class MetaAdLibraryClient(
         if (!enabled) return emptyList()
         val query = term.trim().takeIf { it.length >= MIN_SEARCH_LENGTH } ?: return emptyList()
 
-        val body = callGate.call("ads_archive_search") { get(buildSearchUrl(query)) }
+        val body = withOptionalField { callGate.call("ads_archive_search") { get(buildSearchUrl(query)) } }
         val root = objectMapper.readTree(body)
 
         return root.path("data")
             .mapNotNull { node ->
                 val pageId = node.path("page_id").textOrNull() ?: return@mapNotNull null
-                val pageName = node.path("page_name").textOrNull()?.trim().orEmpty()
-                val start = MetaAdParser.parseDate(node.path("ad_delivery_start_time").textOrNull())
-                Triple(pageId, pageName, start)
+                SearchHit(
+                    pageId = pageId,
+                    pageName = node.path("page_name").textOrNull()?.trim().orEmpty(),
+                    start = MetaAdParser.parseDate(node.path("ad_delivery_start_time").textOrNull()),
+                    caption = node.path("ad_creative_link_captions").firstOrNull()?.textOrNull()
+                )
             }
-            .groupBy { it.first }
+            .groupBy { it.pageId }
             .map { (pageId, hits) ->
                 MetaPageCandidate(
                     pageId = pageId,
-                    pageName = hits.firstNotNullOfOrNull { it.second.takeIf(String::isNotBlank) } ?: pageId,
+                    pageName = hits.firstNotNullOfOrNull { it.pageName.takeIf(String::isNotBlank) } ?: pageId,
                     ads = hits.size,
-                    lastStart = hits.mapNotNull { it.third }.maxOrNull()
+                    lastStart = hits.mapNotNull { it.start }.maxOrNull(),
+                    domain = AdvertiserInstagram.primaryHost(hits.map { it.caption })
                 )
             }
             // Treść reklamy była sitem po stronie Meta; o tym, co zobaczy człowiek,
@@ -233,7 +217,8 @@ class MetaAdLibraryClient(
             pageId = pageId,
             pageName = ads.firstNotNullOfOrNull { it.pageName?.trim()?.takeIf(String::isNotBlank) }.orEmpty(),
             ads = ads.size,
-            lastStart = ads.maxOfOrNull { it.deliveryStart }
+            lastStart = ads.maxOfOrNull { it.deliveryStart },
+            domain = AdvertiserInstagram.primaryHost(ads.map { it.linkCaption })
         )
     }
 
@@ -270,6 +255,14 @@ class MetaAdLibraryClient(
         }
     }
 
+    /** Jedna reklama z wyszukiwania — tylko to, z czego składamy kandydata. */
+    private data class SearchHit(
+        val pageId: String,
+        val pageName: String,
+        val start: LocalDate?,
+        val caption: String?
+    )
+
     private fun buildSearchUrl(term: String): String {
         val since = LocalDate.now().minusDays(RETENTION_DAYS)
         return buildString {
@@ -280,31 +273,8 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ALL")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode("page_id,page_name,ad_delivery_start_time"))
+            append("&fields=").append(encode(fieldsWithOptional(SEARCH_FIELDS)))
             append("&limit=").append(SEARCH_PAGE_SIZE)
-        }
-    }
-
-    /**
-     * Odkrywanie: aktywne reklamy dla frazy w Polsce, pełne pola.
-     *
-     * `ad_active_status=ACTIVE` — bo tabela mówi „ile AKTYWNYCH reklam". `search_terms`
-     * przeszukuje treść reklamy; filtr po lokalizacji robimy u siebie, bo `ads_archive`
-     * nie przyjmuje targetu miejscowości jako parametru zapytania.
-     */
-    private fun buildDiscoveryUrl(term: String, after: String?): String {
-        val since = LocalDate.now().minusDays(RETENTION_DAYS)
-        return buildString {
-            append("https://graph.facebook.com/$apiVersion/ads_archive")
-            append("?access_token=").append(encode(accessToken))
-            append("&ad_reached_countries=").append(encode("[\"PL\"]"))
-            append("&search_terms=").append(encode(term))
-            append("&ad_type=ALL")
-            append("&ad_active_status=ACTIVE")
-            append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode(DISCOVERY_FIELDS))
-            append("&limit=").append(discoveryPageSize.coerceIn(1, 500))
-            if (after != null) append("&after=").append(encode(after))
         }
     }
 
@@ -319,7 +289,7 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ALL")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode(FIELDS))
+            append("&fields=").append(encode(fieldsWithOptional(FIELDS)))
             append("&limit=").append(pageSize.coerceIn(1, 500))
             if (after != null) append("&after=").append(encode(after))
         }

@@ -23,7 +23,8 @@ class MetaAdsReadService(
     private val studioProfileRepository: StudioInstagramProfileRepository,
     private val profileRepository: InstagramProfileRepository,
     private val snapshotRepository: MetaAdSnapshotRepository,
-    private val client: MetaAdLibraryClient
+    private val client: MetaAdLibraryClient,
+    private val instagramResolver: AdvertiserInstagramResolver
 ) {
     private val log = LoggerFactory.getLogger(MetaAdsReadService::class.java)
 
@@ -245,21 +246,40 @@ class MetaAdsReadService(
      */
     fun searchPages(input: String): List<PageCandidateDto> =
         // Cudzysłów zamykający musi być typograficzny: zwykły " zamknąłby literał.
-        runCatching { resolve(input) }
+        runCatching { withInstagram(resolve(input)).map { it.toDto() } }
             .onFailure { log.warn("Meta Ad Library: szukanie strony „{}” nie powiodło się — {}", input, it.message) }
             .getOrDefault(emptyList())
+
+    /**
+     * Dokleja nazwę profilu na Instagramie tam, gdzie da się ją ustalić z domeny
+     * reklamodawcy. Krok w całości ozdobny: gdy cokolwiek pójdzie nie tak, lista
+     * wraca nietknięta, bo bez nazwy IG kandydat nadal jest użyteczny, a bez listy
+     * nie ma czego kliknąć.
+     */
+    private fun withInstagram(candidates: List<MetaPageCandidate>): List<MetaPageCandidate> {
+        if (candidates.none { it.domain != null }) return candidates
+
+        val handles = runCatching { instagramResolver.resolve(candidates.map { it.domain }) }
+            .onFailure { log.debug("Instagram reklamodawcy: ustalanie nazw nie powiodło się — {}", it.message) }
+            .getOrDefault(emptyMap())
+        if (handles.isEmpty()) return candidates
+
+        return candidates.map { candidate ->
+            handles[candidate.domain]?.let { candidate.copy(instagram = it) } ?: candidate
+        }
+    }
 
     /**
      * Wklejony adres, alias albo nazwa — jedno pole na wszystko, co człowiek ma
      * pod ręką. Facebook pokazuje tę samą stronę raz jako numer, raz jako alias,
      * więc rozpoznawanie postaci jest naszą robotą, nie jego.
      */
-    private fun resolve(input: String): List<PageCandidateDto> = when (val parsed = MetaPageInput.parse(input)) {
+    private fun resolve(input: String): List<MetaPageCandidate> = when (val parsed = MetaPageInput.parse(input)) {
         is PageInput.Empty -> emptyList()
 
         // Numer wprost: nie szukamy, tylko sprawdzamy, CZYJ on jest. Gdy Meta milczy,
         // oddajemy sam numer bez nazwy — zapisać go i tak wolno, ale bez potwierdzenia.
-        is PageInput.Id -> listOf(client.describePage(parsed.pageId)?.toDto() ?: unnamed(parsed.pageId))
+        is PageInput.Id -> listOf(client.describePage(parsed.pageId) ?: unnamed(parsed.pageId))
 
         is PageInput.Term -> resolveTerm(parsed.term)
     }
@@ -270,29 +290,33 @@ class MetaAdsReadService(
      * Content Access), zostaje wyszukiwanie po nazwie: alias rozbity na słowa
      * („CarArtDetailing" → „Car Art Detailing") idzie do biblioteki reklam.
      */
-    private fun resolveTerm(term: String): List<PageCandidateDto> {
+    private fun resolveTerm(term: String): List<MetaPageCandidate> {
         if (!term.contains(' ')) {
             client.resolveAlias(term)?.let { exact ->
                 val described = client.describePage(exact.pageId)
                 return listOf(
-                    PageCandidateDto(
-                        pageId = exact.pageId,
+                    exact.copy(
                         pageName = exact.pageName.ifBlank { described?.pageName.orEmpty() },
                         ads = described?.ads ?: 0,
-                        lastStart = described?.lastStart?.toString()
+                        lastStart = described?.lastStart,
+                        domain = described?.domain
                     )
                 )
             }
         }
-        return client.searchPages(MetaPageInput.toSearchTerm(term)).map { it.toDto() }
+        return client.searchPages(MetaPageInput.toSearchTerm(term))
     }
 
-    private fun MetaPageCandidate.toDto() =
-        PageCandidateDto(pageId = pageId, pageName = pageName, ads = ads, lastStart = lastStart?.toString())
+    private fun MetaPageCandidate.toDto() = PageCandidateDto(
+        pageId = pageId,
+        pageName = pageName,
+        ads = ads,
+        lastStart = lastStart?.toString(),
+        instagram = instagram
+    )
 
     /** Numer bez potwierdzonej nazwy: strona nic nie reklamowała albo numer jest cudzy. */
-    private fun unnamed(pageId: String) =
-        PageCandidateDto(pageId = pageId, pageName = "", ads = 0, lastStart = null)
+    private fun unnamed(pageId: String) = MetaPageCandidate(pageId = pageId, pageName = "", ads = 0, lastStart = null)
 
     private fun watches(studioId: StudioId, profileId: UUID): Boolean =
         studioProfileRepository.findByStudioId(studioId.value).any { it.profileId == profileId }

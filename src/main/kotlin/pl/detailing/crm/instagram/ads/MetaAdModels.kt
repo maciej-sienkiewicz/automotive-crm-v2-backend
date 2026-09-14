@@ -16,6 +16,11 @@ data class RawMetaAd(
     val pageName: String?,
     /** Pierwszy tytuł kreacji — służy do odróżnienia reklam, nie do czytania treści. */
     val title: String?,
+    /**
+     * Podpis odnośnika, czyli domena, na którą reklama kieruje („folia-samochodowa.pl”).
+     * Jedyne wskazanie na własną stronę reklamodawcy, jakie niesie `ads_archive`.
+     */
+    val linkCaption: String?,
     val deliveryStart: LocalDate,
     /** null = emisja trwa. */
     val deliveryStop: LocalDate?,
@@ -84,5 +89,9 @@ data class MetaPageCandidate(
     val pageId: String,
     val pageName: String,
     val ads: Int,
-    val lastStart: java.time.LocalDate?
+    val lastStart: java.time.LocalDate?,
+    /** Domena, na którą reklamodawca kieruje ruch — punkt zaczepienia dla nazwy IG. */
+    val domain: String? = null,
+    /** Nazwa profilu na Instagramie, bez małpy. Null, gdy nie udało się jej ustalić. */
+    val instagram: String? = null
 )

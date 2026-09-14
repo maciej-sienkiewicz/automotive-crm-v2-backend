@@ -2,6 +2,7 @@ package pl.detailing.crm.instagram.infrastructure
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.util.*
 
@@ -40,4 +41,15 @@ interface InstagramProfileRepository : JpaRepository<InstagramProfileEntity, UUI
         )
     """)
     fun findAllWithFacebookPage(): List<InstagramProfileEntity>
+
+    /**
+     * Profile, których link w bio zawiera podaną domenę — zgrubne sito po stronie bazy.
+     * Dokładne porównanie hostów robi wołający: LIKE trafi też w „niecarslab.pl”.
+     */
+    @Query("""
+        SELECT ip FROM InstagramProfileEntity ip
+        WHERE ip.externalUrl IS NOT NULL
+        AND LOWER(ip.externalUrl) LIKE CONCAT('%', LOWER(:domain), '%')
+    """)
+    fun findByExternalUrlLike(@Param("domain") domain: String): List<InstagramProfileEntity>
 }
