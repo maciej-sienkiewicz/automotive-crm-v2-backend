@@ -118,7 +118,9 @@ class AdDiscoveryCacheWriter(
         val now = Instant.now()
         // Ta sama reklama bywa na kilku stronach paginacji — bez odsiewu dubel łamie unikalność.
         val deduped = ads.distinctBy { it.adArchiveId }
-        deduped.forEach { adRepository.save(toEntity(phrase, it, now)) }
+        // saveAll (a nie save w pętli): fraza jak „ceramika" to tysiące reklam, więc
+        // pozwalamy Hibernate wsadzić je paczką zamiast wiersz po wierszu.
+        adRepository.saveAll(deduped.map { toEntity(phrase, it, now) })
 
         val entity = phraseRepository.findByPhrase(phrase)
         if (entity == null) {
