@@ -1,0 +1,13 @@
+-- Odkrywanie obszaru pokazuje teraz zasięg z lekkiego pola `eu_total_reach`, a nie
+-- z rozbicia PL (`age_country_gender_reach_breakdown`).
+--
+-- Powód: rozbicia nie da się pobrać hurtowo dla szerokiej frazy jak „detailing"
+-- (~kilka tysięcy aktywnych reklam) — Meta odrzuca zbyt duży payload błędem
+-- „Please reduce the amount of data you're asking for". Skan po treści bierze więc
+-- chude pola, a zasięg to jedna liczba z `eu_total_reach`. (Kalendarz obserwowanych
+-- profili dalej liczy zasięg PL, bo pyta o pojedyncze strony i bierze pełne pola.)
+--
+-- Kolumna trzymała dotąd zasięg PL; zmieniamy nazwę, żeby nie kłamała. Cache i tak
+-- odbuduje się z Meta przy najbliższym odświeżeniu, więc dotychczasowe wartości nie
+-- mają znaczenia.
+ALTER TABLE meta_ad_discovery_ads RENAME COLUMN reach_pl TO reach_eu;

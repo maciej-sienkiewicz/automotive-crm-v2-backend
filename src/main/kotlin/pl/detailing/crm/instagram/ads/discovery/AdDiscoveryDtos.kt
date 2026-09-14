@@ -6,8 +6,8 @@ data class AdvertiserRowDto(
     val companyName: String,
     /** Ile aktywnych reklam tej firmy trafia w obszar. */
     val activeAds: Int,
-    /** Łączny zasięg tych reklam w Polsce; null, gdy Meta nie podała rozbicia. */
-    val reachPl: Int?,
+    /** Łączny zasięg tych reklam w UE (eu_total_reach); null, gdy Meta nie podała liczby. */
+    val reach: Int?,
     /** Link do strony firmy w Bibliotece reklam Meta (aktywne reklamy, PL). */
     val adLibraryUrl: String,
     /** Podgląd pojedynczej reklamy — null, gdy żadna nie ma migawki. */

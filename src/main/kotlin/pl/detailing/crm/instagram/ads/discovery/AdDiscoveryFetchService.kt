@@ -176,7 +176,8 @@ class AdDiscoveryCacheWriter(
         pageName = ad.pageName?.trim()?.take(200)?.takeIf { it.isNotBlank() },
         deliveryStart = ad.deliveryStart,
         deliveryStop = ad.deliveryStop,
-        reachPl = ad.reachPoland,
+        // Zasięg z lekkiego eu_total_reach — rozbicia PL nie pobieramy przy odkrywaniu (zbyt ciężkie).
+        reachEu = ad.reachEu,
         targetLocations = MetaAdCodec.encodeLocations(ad.targetLocations),
         snapshotUrl = ad.snapshotUrl,
         fetchedAt = now

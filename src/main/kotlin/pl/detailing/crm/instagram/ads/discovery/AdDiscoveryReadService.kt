@@ -75,7 +75,7 @@ class AdDiscoveryReadService(
         pageId = pageId,
         pageName = pageName,
         active = deliveryStop == null,
-        reachPl = reachPl,
+        reach = reachEu,
         snapshotUrl = snapshotUrl,
         locations = MetaAdCodec.decodeLocations(targetLocations)
     )
@@ -84,7 +84,7 @@ class AdDiscoveryReadService(
         pageId = pageId,
         companyName = companyName,
         activeAds = activeAds,
-        reachPl = reachPl,
+        reach = reach,
         adLibraryUrl = adLibraryUrl,
         sampleSnapshotUrl = sampleSnapshotUrl
     )
