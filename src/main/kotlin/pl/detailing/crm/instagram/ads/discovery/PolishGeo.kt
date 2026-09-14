@@ -39,6 +39,13 @@ object PolishGeo {
     private val COUNTRY_TOKENS = setOf("polska", "poland", "pl", "rzeczpospolita polska")
 
     /**
+     * Słowa-ozdobniki w nazwie województwa, które Meta dokleja niekonsekwentnie:
+     * „Greater Poland Voivodeship", „Województwo wielkopolskie". Zdejmujemy je przed
+     * dopasowaniem, żeby trafiać w sam rdzeń nazwy.
+     */
+    private val REGION_NOISE = setOf("voivodeship", "wojewodztwo", "province")
+
+    /**
      * Województwo → jego znormalizowane nazwy (polska, angielska Meta, potoczna).
      * Klucz jest kanoniczny i sam też należy do zbioru aliasów.
      */
@@ -97,6 +104,16 @@ object PolishGeo {
     /** Województwo, w którym leży miejscowość — null, gdy poza słownikiem. */
     fun voivodeshipOf(cityNormalized: String): String? = CITY_TO_VOIVODESHIP[cityNormalized]
 
-    /** Kanoniczne województwo dla nazwy obszaru z Meta — null, gdy to nie województwo. */
-    fun voivodeshipFromName(name: String): String? = ALIAS_TO_VOIVODESHIP[normalize(name)]
+    /**
+     * Kanoniczne województwo dla nazwy obszaru z Meta — null, gdy to nie województwo.
+     * Radzi sobie z sufiksem „Voivodeship"/„Województwo": „Greater Poland Voivodeship"
+     * i „Województwo wielkopolskie" trafiają w to samo co samo „wielkopolskie".
+     */
+    fun voivodeshipFromName(name: String): String? {
+        val normalized = normalize(name)
+        ALIAS_TO_VOIVODESHIP[normalized]?.let { return it }
+
+        val core = normalized.split(' ').filter { it.isNotBlank() && it !in REGION_NOISE }.joinToString(" ")
+        return ALIAS_TO_VOIVODESHIP[core]
+    }
 }
