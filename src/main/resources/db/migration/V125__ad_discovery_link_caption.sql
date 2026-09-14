@@ -1,0 +1,12 @@
+-- Domena reklamodawcy przy reklamach z odkrywania obszaru.
+--
+-- Biblioteka reklam Meta nie oddaje nazwy profilu na Instagramie: `ads_archive`
+-- zna wyłącznie `page_id` i `page_name`, a panel z tą nazwą stoi za bramką
+-- antybotową. Nazwę wyprowadzamy więc z adresu, na który reklama kieruje
+-- (`ad_creative_link_captions`), i to właśnie ten adres tu trzymamy.
+--
+-- Kolumna jest opcjonalna na każdym poziomie: reklamodawca kierujący na fb.me
+-- albo do systemu rezerwacji nie ma własnej domeny i zostaje bez nazwy IG.
+-- Cache odkrywania i tak odbudowuje się z Meta przy najbliższym odświeżeniu,
+-- więc istniejące wiersze uzupełnią się same.
+ALTER TABLE meta_ad_discovery_ads ADD COLUMN IF NOT EXISTS link_caption VARCHAR(300);

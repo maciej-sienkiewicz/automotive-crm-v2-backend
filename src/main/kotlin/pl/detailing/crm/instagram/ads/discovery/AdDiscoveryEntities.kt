@@ -125,6 +125,14 @@ class AdDiscoveryAdEntity(
     @Column(name = "snapshot_url", nullable = true, columnDefinition = "text")
     val snapshotUrl: String? = null,
 
+    /**
+     * Adres, na który reklama kieruje („folia-samochodowa.pl”) — jedyne wskazanie
+     * na własną stronę reklamodawcy, jakie niesie `ads_archive`. Z niego wyprowadzamy
+     * nazwę profilu na Instagramie, bo tej Meta nie udostępnia.
+     */
+    @Column(name = "link_caption", nullable = true, length = 300)
+    val linkCaption: String? = null,
+
     @Column(name = "fetched_at", nullable = false, columnDefinition = "timestamp with time zone")
     val fetchedAt: Instant = Instant.now()
 )

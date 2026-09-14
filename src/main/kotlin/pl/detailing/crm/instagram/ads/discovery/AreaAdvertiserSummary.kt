@@ -1,5 +1,7 @@
 package pl.detailing.crm.instagram.ads.discovery
 
+import pl.detailing.crm.instagram.ads.AdvertiserInstagram
+
 /**
  * Reklamy odfiltrowane po obszarze → tabela reklamodawców.
  *
@@ -38,7 +40,10 @@ object AreaAdvertiserSummary {
             activeAds = group.size,
             reach = reachValues.takeIf { it.isNotEmpty() }?.sum(),
             adLibraryUrl = MetaAdLibraryUrl.forPage(pageId),
-            sampleSnapshotUrl = group.firstNotNullOfOrNull { it.snapshotUrl?.takeIf { url -> url.isNotBlank() } }
+            sampleSnapshotUrl = group.firstNotNullOfOrNull { it.snapshotUrl?.takeIf { url -> url.isNotBlank() } },
+            // Adresy WSZYSTKICH reklam firmy, nie pojedynczej: jedna kampania potrafi
+            // kierować na fb.me, druga na sklep — o domenie decyduje większość.
+            domain = AdvertiserInstagram.primaryHost(group.map { it.linkCaption })
         )
     }
 }

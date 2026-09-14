@@ -52,7 +52,9 @@ data class DiscoveredAd(
     val reach: Int?,
     val snapshotUrl: String?,
     /** Targetowanie reklamodawcy — po nim decydujemy, czy reklama obejmuje wskazany teren. */
-    val locations: List<RawAdLocation>
+    val locations: List<RawAdLocation>,
+    /** Adres z reklamy — punkt zaczepienia dla nazwy profilu na Instagramie. */
+    val linkCaption: String? = null
 )
 
 /** Jeden wiersz tabeli wyników: jeden reklamodawca (strona na Facebooku). */
@@ -65,5 +67,9 @@ data class AdvertiserRow(
     /** Strona reklamodawcy w Bibliotece reklam Meta, zawężona do aktywnych reklam w PL. */
     val adLibraryUrl: String,
     /** Podgląd pojedynczej reklamy — pierwsza z migawką, gdy Meta ją udostępniła. */
-    val sampleSnapshotUrl: String?
+    val sampleSnapshotUrl: String?,
+    /** Domena firmy złożona z adresów jej reklam; null, gdy kieruje tylko na pośredników. */
+    val domain: String? = null,
+    /** Nazwa profilu na Instagramie, bez małpy. Null, gdy nie udało się jej ustalić. */
+    val instagram: String? = null
 )

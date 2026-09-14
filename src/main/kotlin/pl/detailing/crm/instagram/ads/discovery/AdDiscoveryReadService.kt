@@ -2,6 +2,7 @@ package pl.detailing.crm.instagram.ads.discovery
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import pl.detailing.crm.instagram.ads.AdvertiserInstagramResolver
 import pl.detailing.crm.instagram.ads.MetaAdCodec
 import pl.detailing.crm.instagram.ads.MetaAdLibraryClient
 import java.time.Instant
@@ -23,6 +24,7 @@ class AdDiscoveryReadService(
     private val phraseRepository: AdDiscoveryPhraseRepository,
     private val adRepository: AdDiscoveryAdRepository,
     private val client: MetaAdLibraryClient,
+    private val instagramResolver: AdvertiserInstagramResolver,
     @Value("\${meta.ads.discovery.max-phrases-per-tracking:10}") private val maxPhrases: Int
 ) {
 
@@ -56,7 +58,8 @@ class AdDiscoveryReadService(
             .distinctBy { it.adArchiveId }
             .map { it.toDiscovered() }
 
-        val rows = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode).map { it.toDto() }
+        val rows = withInstagram(AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode))
+            .map { it.toDto() }
 
         return AreaResultsDto(
             phrases = normalizedPhrases,
@@ -70,6 +73,23 @@ class AdDiscoveryReadService(
         )
     }
 
+    /**
+     * Dokleja nazwy profili na Instagramie — wszystkie domeny tabeli jednym
+     * wywołaniem, bo resolver i tak trzyma wyniki w pamięci i zna własny budżet czasu.
+     *
+     * Krok ozdobny: gdy cokolwiek pójdzie nie tak, tabela wraca nietknięta. Bez nazwy
+     * IG wiersz nadal mówi, kto się reklamuje i z jakim zasięgiem — a to jest sedno ekranu.
+     */
+    private fun withInstagram(rows: List<AdvertiserRow>): List<AdvertiserRow> {
+        if (rows.none { it.domain != null }) return rows
+
+        val handles = runCatching { instagramResolver.resolve(rows.map { it.domain }) }
+            .getOrDefault(emptyMap())
+        if (handles.isEmpty()) return rows
+
+        return rows.map { row -> handles[row.domain]?.let { row.copy(instagram = it) } ?: row }
+    }
+
     private fun AdDiscoveryAdEntity.toDiscovered() = DiscoveredAd(
         adArchiveId = adArchiveId,
         pageId = pageId,
@@ -77,7 +97,8 @@ class AdDiscoveryReadService(
         active = deliveryStop == null,
         reach = reachEu,
         snapshotUrl = snapshotUrl,
-        locations = MetaAdCodec.decodeLocations(targetLocations)
+        locations = MetaAdCodec.decodeLocations(targetLocations),
+        linkCaption = linkCaption
     )
 
     private fun AdvertiserRow.toDto() = AdvertiserRowDto(
@@ -86,7 +107,8 @@ class AdDiscoveryReadService(
         activeAds = activeAds,
         reach = reach,
         adLibraryUrl = adLibraryUrl,
-        sampleSnapshotUrl = sampleSnapshotUrl
+        sampleSnapshotUrl = sampleSnapshotUrl,
+        instagram = instagram
     )
 
     private fun phraseStatus(phrase: String, entity: AdDiscoveryPhraseEntity?) = PhraseStatusDto(
