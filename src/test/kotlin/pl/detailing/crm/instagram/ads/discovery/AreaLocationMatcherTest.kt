@@ -51,6 +51,48 @@ class AreaLocationMatcherTest {
         )
     }
 
+    // ── Format nazw z Meta: miasto z doklejonym krajem, czasem kilka miejsc ──────
+
+    @Test
+    fun `miasto z doklejonym krajem lapie - Meta zwraca Poznań, Polska`() {
+        // Regresja: Meta zwraca nazwę miasta jako „Poznań, Polska", a nie samo „Poznań".
+        assertTrue(
+            AreaLocationMatcher.matches(listOf(loc("Poznań, Polska")), listOf("Poznań"), AreaMatchMode.CITIES_ONLY)
+        )
+    }
+
+    @Test
+    fun `kilka miejsc w jednej nazwie - miasto jako segment po przecinku`() {
+        assertTrue(
+            AreaLocationMatcher.matches(
+                listOf(loc("Kleszczewo, Poznań, Poland, Polska")),
+                listOf("Poznań"),
+                AreaMatchMode.CITIES_ONLY
+            )
+        )
+    }
+
+    @Test
+    fun `wielowyrazowa miejscowosc z krajem - Suchy Las, Polska`() {
+        assertTrue(
+            AreaLocationMatcher.matches(listOf(loc("Suchy Las, Polska")), listOf("Suchy Las"), AreaMatchMode.CITIES_ONLY)
+        )
+    }
+
+    @Test
+    fun `wykluczone Poznań, Polska blokuje mimo formatu z krajem`() {
+        val ad = listOf(loc("Polska", type = "country"), loc("Poznań, Polska", excluded = true))
+        assertFalse(AreaLocationMatcher.matches(ad, listOf("Poznań"), AreaMatchMode.INCLUDE_BROADER))
+    }
+
+    @Test
+    fun `segment kraju w nazwie nie myli sie z miastem`() {
+        // „Poznań, Polska" nie może zaliczyć zapytania o „Polska" jako miasto.
+        assertFalse(
+            AreaLocationMatcher.matches(listOf(loc("Warszawa, Polska")), listOf("Poznań"), AreaMatchMode.CITIES_ONLY)
+        )
+    }
+
     // ── Tryb: szersze obszary ────────────────────────────────────────────────
 
     @Test
