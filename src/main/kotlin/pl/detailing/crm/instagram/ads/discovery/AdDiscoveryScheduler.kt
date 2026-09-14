@@ -4,72 +4,79 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.Duration
+import java.time.Instant
 
 /**
- * Cykliczne odświeżanie wspólnego cache odkrywania — dwa razy na dobę, 10:00 i 18:00.
+ * Odświeżanie wspólnego cache odkrywania — **strumieniem przez całą dobę**, nie zrywami.
  *
- * Odświeżamy WYŁĄCZNIE frazy z aktywnych śledzeń obszaru (dowolnego studia), zebrane
- * i odduplikowane. Fraza, którą ktoś podejrzał raz i nie zapisał, nie obciąża tego
- * przebiegu — wygasa z cache po TTL. To trzyma liczbę wywołań Meta w ryzach: rośnie
- * z liczbą UNIKALNYCH śledzonych fraz, nie z liczbą studiów ani odsłon ekranu.
+ * Limit Meta jest GODZINOWY (180 wywołań/godz. na całą instalację), a nie dobowy.
+ * Dwa duże przebiegi o 10:00 i 18:00 były więc najgorszym możliwym kształtem: każdy
+ * próbował zmieścić cały katalog w jednej godzinie, wyczerpywał limit w kilka minut,
+ * zabierał go nocnemu syncowi i interaktywnym zapytaniom, a i tak nie kończył listy.
  *
- * Dwa razy dziennie, bo reklamy trwają tygodniami — częściej nie przyniosłoby
- * nowych danych, a zjadałoby wspólny limit tokena. Ten sam token obsługuje nocny
- * sync obserwowanych profili (5:45), więc rozkładamy się w czasie i nie kolidujemy.
+ * Teraz budzimy się co kilka minut i bierzemy garść najbardziej zwietrzałych fraz.
+ * Ten sam katalog odświeża się w całości, tylko rozłożony równo — a limit godzinowy
+ * przestaje być klifem i staje się czymś, czego nigdy nie dotykamy.
+ *
+ * Arytmetyka przy ustawieniach domyślnych: co 10 minut jedna fraza po najwyżej
+ * 8 stron to ~48 wywołań na godzinę. Zostaje ponad 70% budżetu na nocny sync
+ * obserwowanych profili i na to, co ktoś akurat kliknie na ekranie.
+ *
+ * [minRefreshInterval] jest drugą połową tego pomysłu: gdy fraz w użyciu jest mało,
+ * tykanie co 10 minut zamieniłoby się w odpytywanie tej samej frazy bez końca.
+ * Frazę świeższą niż ten próg pomijamy, a gdy nie ma czego brać — przebieg jest
+ * po prostu pusty i cichy.
  */
 @Component
 class AdDiscoveryScheduler(
     private val trackingRepository: AdLocationTrackingRepository,
     private val phraseRepository: AdDiscoveryPhraseRepository,
     private val fetchService: AdDiscoveryFetchService,
-    @Value("\${meta.ads.discovery.enabled:true}") private val enabled: Boolean
+    @Value("\${meta.ads.discovery.enabled:true}") private val enabled: Boolean,
+    @Value("\${meta.ads.discovery.phrases-per-tick:1}") private val phrasesPerTick: Int,
+    @Value("\${meta.ads.discovery.min-refresh-hours:6}") minRefreshHours: Long
 ) {
     private val log = LoggerFactory.getLogger(AdDiscoveryScheduler::class.java)
 
-    @Scheduled(cron = "\${meta.ads.discovery.cron:0 0 10,18 * * *}")
+    /** Nie ruszamy frazy, która i tak jest świeższa niż ten próg. */
+    private val minRefreshInterval: Duration = Duration.ofHours(minRefreshHours)
+
+    @Scheduled(cron = "\${meta.ads.discovery.cron:0 */10 * * * *}")
     fun refresh() {
         if (!enabled) return
 
         try {
-            val phrases = phrasesInUse()
+            val due = stalestDue()
+            if (due.isEmpty()) return
 
-            if (phrases.isEmpty()) {
-                log.debug("Odkrywanie reklam: brak aktywnych śledzeń — nic do odświeżenia")
-                return
-            }
-
-            log.info("Odkrywanie reklam: odświeżam {} fraz w użyciu, od najdawniej pobranej", phrases.size)
-            var refreshed = 0
-            for (phrase in phrases) {
+            for (phrase in due) {
                 val status = fetchService.fetchPhrase(phrase)
                 if (status == PhraseFetchStatus.RATE_LIMITED) {
-                    // Wspólny limit tokena wyczerpany — reszta poczeka na kolejny przebieg,
-                    // tak samo jak nocny sync przerywa się i dokańcza nazajutrz.
-                    log.warn("Odkrywanie reklam: limit wywołań wyczerpany po {} frazach — przerwane", refreshed)
-                    break
+                    // Przy strumieniu to nie powinno się zdarzać — jeśli się zdarza,
+                    // znaczy że budżet zjada coś innego. Kończymy tykanie bez hałasu:
+                    // za kilka minut spróbujemy znowu, a fraza zostaje najstarsza,
+                    // więc wróci na początek kolejki sama.
+                    log.info("Odkrywanie reklam: limit wywołań zajęty, fraza „{}” poczeka na kolejne tyknięcie", phrase)
+                    return
                 }
-                refreshed++
             }
-            log.info("Odkrywanie reklam: odświeżono {}/{} fraz", refreshed, phrases.size)
+            log.debug("Odkrywanie reklam: odświeżono {} fraz(y)", due.size)
         } catch (e: Exception) {
             log.error("Odkrywanie reklam: nieoczekiwany błąd odświeżania: {}", e.message, e)
         }
     }
 
     /**
-     * Frazy do odświeżenia, w kolejności OD NAJDAWNIEJ POBRANEJ.
+     * Najbardziej zwietrzałe frazy w użyciu, najwyżej [phrasesPerTick] sztuk.
      *
-     * Kolejność jest tu funkcją, nie kosmetyką. Katalog ma kilkadziesiąt fraz, a
-     * każda potrafi zająć kilka stron z limitu 180 wywołań/godz. na całą instalację;
-     * przy stałej kolejności koniec listy nie odświeżyłby się nigdy, bo limit
-     * wyczerpywałby się zawsze na tych samych pozycjach. Sortowanie po
-     * `lastFetchedAt` sprawia, że każdy przebieg bierze to, co najbardziej zwietrzało,
-     * a przez kilka przebiegów katalog nadrabia się w całości.
+     * „W użyciu" to katalog pomniejszony o odznaczenia każdego aktywnego śledzenia:
+     * frazy, których nie śledzi nikt, nie kosztują ani jednego wywołania.
      *
-     * Fraza nigdy niepobrana nie ma wpisu w tabeli fraz — i właśnie dlatego idzie
-     * na sam początek: jest starsza niż cokolwiek pobranego.
+     * Fraza nigdy niepobrana nie ma wpisu w tabeli fraz — idzie na sam początek,
+     * bo jest starsza niż cokolwiek pobranego.
      */
-    private fun phrasesInUse(): List<String> {
+    private fun stalestDue(): List<String> {
         val inUse = trackingRepository.findByActiveTrue()
             .flatMap { AdDiscoveryCatalog.phrasesExcept(TrackingLists.decode(it.excludedPhraseIds)) }
             .mapNotNull(AdDiscoveryPhrase::normalizeValid)
@@ -77,6 +84,11 @@ class AdDiscoveryScheduler(
         if (inUse.isEmpty()) return emptyList()
 
         val fetchedAt = phraseRepository.findByPhraseIn(inUse).associate { it.phrase to it.lastFetchedAt }
-        return inUse.sortedWith(compareBy(nullsFirst()) { fetchedAt[it] })
+        val cutoff = Instant.now().minus(minRefreshInterval)
+
+        return inUse
+            .filter { phrase -> fetchedAt[phrase]?.isAfter(cutoff) != true }
+            .sortedWith(compareBy(nullsFirst()) { fetchedAt[it] })
+            .take(phrasesPerTick.coerceAtLeast(1))
     }
 }
