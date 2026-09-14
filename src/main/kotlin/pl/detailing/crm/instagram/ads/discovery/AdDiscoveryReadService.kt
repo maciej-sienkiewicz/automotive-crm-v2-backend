@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.ads.AdvertiserInstagramResolver
 import pl.detailing.crm.instagram.ads.MetaAdCodec
 import pl.detailing.crm.instagram.ads.MetaAdLibraryClient
+import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 
 /**
@@ -25,13 +26,25 @@ class AdDiscoveryReadService(
     private val adRepository: AdDiscoveryAdRepository,
     private val client: MetaAdLibraryClient,
     private val instagramResolver: AdvertiserInstagramResolver,
-    @Value("\${meta.ads.discovery.max-phrases-per-tracking:10}") private val maxPhrases: Int
+    private val blockService: AdvertiserBlockService
 ) {
 
-    fun results(phrases: List<String>, locations: List<String>, mode: AreaMatchMode): AreaResultsDto {
-        // Ten sam limit fraz co przy zapisie śledzenia — także podgląd na żywo nie
-        // może rozjechać wspólnego budżetu wywołań Meta jednym żądaniem.
-        val normalizedPhrases = phrases.mapNotNull(AdDiscoveryPhrase::normalizeValid).distinct().take(maxPhrases)
+    /**
+     * Tabela dla jednego studia.
+     *
+     * Frazy biorą się z KATALOGU pomniejszonego o odznaczenia studia — nie z wejścia
+     * użytkownika. Dzięki temu liczba unikalnych fraz w całej instalacji jest z góry
+     * znana i równa katalogowi, a nie rośnie z liczbą najemców.
+     */
+    fun results(
+        studioId: StudioId,
+        excludedPhraseIds: List<String>,
+        locations: List<String>,
+        mode: AreaMatchMode
+    ): AreaResultsDto {
+        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(excludedPhraseIds)
+            .mapNotNull(AdDiscoveryPhrase::normalizeValid)
+            .distinct()
         val cleanLocations = locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
 
         if (normalizedPhrases.isEmpty()) {
@@ -43,6 +56,7 @@ class AdDiscoveryReadService(
                 generatedAt = Instant.now().toString(),
                 advertisers = emptyList(),
                 totalActiveAds = 0,
+                hiddenAdvertisers = 0,
                 phraseStatuses = emptyList()
             )
         }
@@ -58,8 +72,12 @@ class AdDiscoveryReadService(
             .distinctBy { it.adArchiveId }
             .map { it.toDiscovered() }
 
-        val rows = withInstagram(AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode))
-            .map { it.toDto() }
+        // Bez filtra i z filtrem, żeby dało się powiedzieć „ukryto N" — sama krótsza
+        // tabela nie odróżnia „nikt się nie reklamuje" od „wszystkich ukryłeś".
+        val visible = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode)
+        val blocked = blockService.blockedPageIds(studioId)
+        val shown = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode, blocked)
+        val rows = withInstagram(shown).map { it.toDto() }
 
         return AreaResultsDto(
             phrases = normalizedPhrases,
@@ -69,6 +87,7 @@ class AdDiscoveryReadService(
             generatedAt = Instant.now().toString(),
             advertisers = rows,
             totalActiveAds = rows.sumOf { it.activeAds },
+            hiddenAdvertisers = visible.size - shown.size,
             phraseStatuses = normalizedPhrases.map { phrase -> phraseStatus(phrase, phraseEntities[phrase]) }
         )
     }

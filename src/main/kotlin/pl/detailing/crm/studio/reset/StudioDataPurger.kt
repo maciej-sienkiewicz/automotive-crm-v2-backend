@@ -335,6 +335,11 @@ class StudioDataPurger(
             // cache reklam pod frazę (AdDiscoveryPhraseEntity/AdDiscoveryAdEntity) zostaje —
             // to publiczne dane Meta dzielone między najemcami, nie dane tego studia.
             deleteByStudio("AdLocationTrackingEntity", ctx)
+            // Czarna lista reklamodawców tego studia — czyja jest, temu znika. Wpisy
+            // GLOBALNE (boty, hurtownie, profile zza granicy) mają studio_id NULL, więc
+            // warunek po studiu ich nie dotyka i zostają: to wiedza administratora
+            // o świecie, nie dana studia — tak samo jak przy ServiceFamilyEntity.
+            deleteByStudio("AdvertiserBlockEntity", ctx)
             deleteByStudio("StudioInstagramProfileEntity", ctx)
             entityManager.flush()
             links.forEach { link ->

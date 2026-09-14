@@ -26,7 +26,6 @@ import java.util.UUID
 class AdLocationTrackingService(
     private val trackingRepository: AdLocationTrackingRepository,
     @Value("\${meta.ads.discovery.max-trackings-per-studio:25}") private val maxTrackingsPerStudio: Int,
-    @Value("\${meta.ads.discovery.max-phrases-per-tracking:10}") private val maxPhrasesPerTracking: Int,
     @Value("\${meta.ads.discovery.max-locations-per-tracking:20}") private val maxLocationsPerTracking: Int
 ) {
 
@@ -41,7 +40,7 @@ class AdLocationTrackingService(
     @Transactional
     fun create(studioId: StudioId, userId: UserId, request: SaveLocationTrackingRequest): LocationTrackingDto {
         val label = cleanLabel(request.label)
-        val phrases = cleanPhrases(request.phrases)
+        val excluded = cleanExcluded(request.excludedPhraseIds)
         val locations = cleanLocations(request.locations)
 
         if (trackingRepository.countByStudioId(studioId.value) >= maxTrackingsPerStudio) {
@@ -56,7 +55,7 @@ class AdLocationTrackingService(
                 id = UUID.randomUUID(),
                 studioId = studioId.value,
                 label = label,
-                phrases = TrackingLists.encode(phrases),
+                excludedPhraseIds = TrackingLists.encode(excluded),
                 locations = TrackingLists.encode(locations),
                 matchMode = request.matchMode ?: AreaMatchMode.INCLUDE_BROADER,
                 active = request.active ?: true,
@@ -73,7 +72,7 @@ class AdLocationTrackingService(
         val entity = trackingRepository.findByIdAndStudioId(id, studioId.value) ?: return null
 
         entity.label = cleanLabel(request.label)
-        entity.phrases = TrackingLists.encode(cleanPhrases(request.phrases))
+        entity.excludedPhraseIds = TrackingLists.encode(cleanExcluded(request.excludedPhraseIds))
         entity.locations = TrackingLists.encode(cleanLocations(request.locations))
         request.matchMode?.let { entity.matchMode = it }
         request.active?.let { entity.active = it }
@@ -92,17 +91,22 @@ class AdLocationTrackingService(
         raw.trim().take(120).takeIf { it.isNotBlank() }
             ?: throw ValidationException("Nazwa śledzenia jest wymagana.")
 
-    private fun cleanPhrases(raw: List<String>): List<String> {
-        val phrases = raw.mapNotNull(AdDiscoveryPhrase::normalizeValid).distinct()
-        if (phrases.isEmpty()) {
-            throw ValidationException(
-                "Podaj co najmniej jedną frazę (min. ${AdDiscoveryPhrase.MIN_LENGTH} znaki)."
-            )
+    /**
+     * Odznaczone frazy sprowadzone do identyfikatorów, które KATALOG faktycznie zna.
+     *
+     * Nieznane identyfikatory milcząco odpadają zamiast wywracać zapis: po usunięciu
+     * frazy z katalogu czyjeś stare wykluczenie wskazuje na nic, a to nie jest błąd
+     * użytkownika ani powód, żeby nie dało mu się zapisać rejonu.
+     *
+     * Odznaczenie WSZYSTKIEGO jest niedozwolone — to śledzenie, które nigdy niczego
+     * nie pokaże, a w koszcie odświeżania wygląda jak każde inne.
+     */
+    private fun cleanExcluded(raw: List<String>): List<String> {
+        val excluded = raw.map { it.trim() }.filter(AdDiscoveryCatalog::exists).distinct()
+        if (excluded.size >= AdDiscoveryCatalog.ALL.size) {
+            throw ValidationException("Zostaw zaznaczoną przynajmniej jedną frazę — inaczej nie ma czego śledzić.")
         }
-        if (phrases.size > maxPhrasesPerTracking) {
-            throw ValidationException("Maksymalnie $maxPhrasesPerTracking fraz na jedno śledzenie.")
-        }
-        return phrases
+        return excluded
     }
 
     private fun cleanLocations(raw: List<String>): List<String> {
@@ -119,7 +123,8 @@ class AdLocationTrackingService(
     private fun AdLocationTrackingEntity.toDto() = LocationTrackingDto(
         id = id.toString(),
         label = label,
-        phrases = TrackingLists.decode(phrases),
+        excludedPhraseIds = TrackingLists.decode(excludedPhraseIds),
+        trackedPhraseCount = AdDiscoveryCatalog.ALL.size - TrackingLists.decode(excludedPhraseIds).size,
         locations = TrackingLists.decode(locations),
         matchMode = matchMode,
         active = active,

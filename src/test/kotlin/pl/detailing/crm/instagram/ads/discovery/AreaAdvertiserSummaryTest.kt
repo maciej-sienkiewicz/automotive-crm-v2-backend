@@ -144,4 +144,27 @@ class AreaAdvertiserSummaryTest {
 
         assertNull(rows.single().domain)
     }
+
+    @Test
+    fun `wykluczony reklamodawca nie trafia do tabeli`() {
+        val ads = listOf(
+            ad("1", pageId = "bot-1"),
+            ad("2", pageId = "konkurent"),
+            ad("3", pageId = "konkurent")
+        )
+
+        val rows = AreaAdvertiserSummary.summarize(
+            ads, cities, AreaMatchMode.CITIES_ONLY, blockedPageIds = setOf("bot-1")
+        )
+
+        assertEquals(1, rows.size)
+        assertEquals("konkurent", rows.single().pageId)
+        assertEquals(2, rows.single().activeAds)
+    }
+
+    @Test
+    fun `bez wykluczen tabela jest pelna`() {
+        val ads = listOf(ad("1", pageId = "bot-1"), ad("2", pageId = "konkurent"))
+        assertEquals(2, AreaAdvertiserSummary.summarize(ads, cities, AreaMatchMode.CITIES_ONLY).size)
+    }
 }

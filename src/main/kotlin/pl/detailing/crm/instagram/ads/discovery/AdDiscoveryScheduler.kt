@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component
 @Component
 class AdDiscoveryScheduler(
     private val trackingRepository: AdLocationTrackingRepository,
+    private val phraseRepository: AdDiscoveryPhraseRepository,
     private val fetchService: AdDiscoveryFetchService,
     @Value("\${meta.ads.discovery.enabled:true}") private val enabled: Boolean
 ) {
@@ -30,17 +31,14 @@ class AdDiscoveryScheduler(
         if (!enabled) return
 
         try {
-            val phrases = trackingRepository.findByActiveTrue()
-                .flatMap { TrackingLists.decode(it.phrases) }
-                .mapNotNull(AdDiscoveryPhrase::normalizeValid)
-                .distinct()
+            val phrases = phrasesInUse()
 
             if (phrases.isEmpty()) {
                 log.debug("Odkrywanie reklam: brak aktywnych śledzeń — nic do odświeżenia")
                 return
             }
 
-            log.info("Odkrywanie reklam: odświeżam {} unikalnych fraz z aktywnych śledzeń", phrases.size)
+            log.info("Odkrywanie reklam: odświeżam {} fraz w użyciu, od najdawniej pobranej", phrases.size)
             var refreshed = 0
             for (phrase in phrases) {
                 val status = fetchService.fetchPhrase(phrase)
@@ -56,5 +54,29 @@ class AdDiscoveryScheduler(
         } catch (e: Exception) {
             log.error("Odkrywanie reklam: nieoczekiwany błąd odświeżania: {}", e.message, e)
         }
+    }
+
+    /**
+     * Frazy do odświeżenia, w kolejności OD NAJDAWNIEJ POBRANEJ.
+     *
+     * Kolejność jest tu funkcją, nie kosmetyką. Katalog ma kilkadziesiąt fraz, a
+     * każda potrafi zająć kilka stron z limitu 180 wywołań/godz. na całą instalację;
+     * przy stałej kolejności koniec listy nie odświeżyłby się nigdy, bo limit
+     * wyczerpywałby się zawsze na tych samych pozycjach. Sortowanie po
+     * `lastFetchedAt` sprawia, że każdy przebieg bierze to, co najbardziej zwietrzało,
+     * a przez kilka przebiegów katalog nadrabia się w całości.
+     *
+     * Fraza nigdy niepobrana nie ma wpisu w tabeli fraz — i właśnie dlatego idzie
+     * na sam początek: jest starsza niż cokolwiek pobranego.
+     */
+    private fun phrasesInUse(): List<String> {
+        val inUse = trackingRepository.findByActiveTrue()
+            .flatMap { AdDiscoveryCatalog.phrasesExcept(TrackingLists.decode(it.excludedPhraseIds)) }
+            .mapNotNull(AdDiscoveryPhrase::normalizeValid)
+            .distinct()
+        if (inUse.isEmpty()) return emptyList()
+
+        val fetchedAt = phraseRepository.findByPhraseIn(inUse).associate { it.phrase to it.lastFetchedAt }
+        return inUse.sortedWith(compareBy(nullsFirst()) { fetchedAt[it] })
     }
 }

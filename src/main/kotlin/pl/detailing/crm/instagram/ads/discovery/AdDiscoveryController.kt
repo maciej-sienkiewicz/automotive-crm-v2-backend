@@ -29,15 +29,40 @@ import java.util.UUID
 @RequestMapping("/api/v1/instagram/ads/discovery")
 class AdDiscoveryController(
     private val readService: AdDiscoveryReadService,
-    private val trackingService: AdLocationTrackingService
+    private val trackingService: AdLocationTrackingService,
+    private val blockService: AdvertiserBlockService
 ) {
 
-    /** Podgląd na żywo: frazy + rejon → tabela firm. Może dociągnąć nowe frazy do wspólnego cache. */
+    /**
+     * Katalog fraz w całości — zamknięta lista ustalona przez administratora aplikacji.
+     *
+     * Ekran ustawień dostaje katalog, a nie „co śledzisz": studio zaznacza odjęcia,
+     * więc fraza dołożona przez administratora włącza się wszystkim sama.
+     */
+    @GetMapping("/phrases")
+    fun phraseCatalog(): ResponseEntity<PhraseCatalogDto> {
+        SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            PhraseCatalogDto(
+                phrases = AdDiscoveryCatalog.ALL.map {
+                    CatalogPhraseDto(
+                        id = it.id,
+                        text = it.text,
+                        group = it.group.name,
+                        groupLabel = it.group.label
+                    )
+                }
+            )
+        )
+    }
+
+    /** Podgląd na żywo: rejon + odznaczenia → tabela firm. Może dociągnąć frazy do wspólnego cache. */
     @PostMapping("/preview")
     fun preview(@RequestBody request: AreaPreviewRequest): ResponseEntity<AreaResultsDto> {
-        SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
         val results = readService.results(
-            phrases = request.phrases,
+            studioId = principal.studioId,
+            excludedPhraseIds = request.excludedPhraseIds,
             locations = request.locations,
             mode = request.matchMode ?: AreaMatchMode.INCLUDE_BROADER
         )
@@ -86,7 +111,44 @@ class AdDiscoveryController(
     fun trackingResults(@PathVariable id: UUID): ResponseEntity<AreaResultsDto> {
         val principal = SecurityContextHelper.getCurrentUser()
         val tracking = trackingService.get(principal.studioId, id) ?: return ResponseEntity.notFound().build()
-        val results = readService.results(tracking.phrases, tracking.locations, tracking.matchMode)
+        val results = readService.results(
+            studioId = principal.studioId,
+            excludedPhraseIds = tracking.excludedPhraseIds,
+            locations = tracking.locations,
+            mode = tracking.matchMode
+        )
         return ResponseEntity.ok(results)
+    }
+
+    // ── Wykluczeni reklamodawcy ──────────────────────────────────────────────
+    //
+    // Wyłącznie czarna lista TEGO studia. Wykluczeń globalnych (boty, hurtownie,
+    // profile zza granicy) nie da się stąd ani obejrzeć, ani cofnąć — zakłada je
+    // administrator aplikacji wprost w bazie i mają obowiązywać wszystkich.
+
+    /** Reklamodawcy ukryci przez to studio — z możliwością przywrócenia. */
+    @GetMapping("/blocks")
+    fun listBlocks(): ResponseEntity<List<BlockedAdvertiserDto>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(blockService.listOwn(principal.studioId))
+    }
+
+    /** Ukrycie reklamodawcy w tabelach tego studia. */
+    @PostMapping("/blocks")
+    fun block(@RequestBody request: BlockAdvertiserRequest): ResponseEntity<BlockedAdvertiserDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val blocked = blockService.block(principal.studioId, principal.userId, request)
+        return ResponseEntity.status(HttpStatus.CREATED).body(blocked)
+    }
+
+    /** Przywrócenie reklamodawcy. Wykluczenia globalnego to nie ruszy. */
+    @DeleteMapping("/blocks/{pageId}")
+    fun unblock(@PathVariable pageId: String): ResponseEntity<Map<String, Boolean>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return if (blockService.unblock(principal.studioId, pageId)) {
+            ResponseEntity.ok(mapOf("restored" to true))
+        } else {
+            ResponseEntity.notFound().build()
+        }
     }
 }

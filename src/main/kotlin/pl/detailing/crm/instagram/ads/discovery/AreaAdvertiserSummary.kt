@@ -13,13 +13,21 @@ import pl.detailing.crm.instagram.ads.AdvertiserInstagram
  */
 object AreaAdvertiserSummary {
 
+    /**
+     * @param blockedPageIds strony wykluczone dla tego studia — globalne wykluczenia
+     *   administratora plus własna czarna lista. Odsiewamy je TU, a nie przy pobraniu:
+     *   cache reklam jest wspólny dla wszystkich najemców, więc usunięcie z niego
+     *   czegokolwiek na życzenie jednego studia zabrałoby to wszystkim.
+     */
     fun summarize(
         ads: List<DiscoveredAd>,
         requestedCities: List<String>,
-        mode: AreaMatchMode
+        mode: AreaMatchMode,
+        blockedPageIds: Set<String> = emptySet()
     ): List<AdvertiserRow> =
         ads.asSequence()
             .filter { it.active }
+            .filterNot { it.pageId in blockedPageIds }
             .filter { AreaLocationMatcher.matches(it.locations, requestedCities, mode) }
             .groupBy { it.pageId }
             .map { (pageId, group) -> toRow(pageId, group) }
