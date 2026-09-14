@@ -331,10 +331,10 @@ class StudioDataPurger(
             deleteByStudio("InstagramGeneratedPostEntity", ctx)
             deleteByStudio("InstagramInsightEntity", ctx)
             deleteByStudio("InstagramReportEntity", ctx)
-            // Śledzenia obszaru należą do studia (kto reklamuje się w rejonie X). Wspólny
-            // cache reklam pod frazę (AdDiscoveryPhraseEntity/AdDiscoveryAdEntity) zostaje —
-            // to publiczne dane Meta dzielone między najemcami, nie dane tego studia.
-            deleteByStudio("AdLocationTrackingEntity", ctx)
+            // Ustawienia rejonu należą do studia (gdzie patrzeć). Wspólny cache reklam
+            // pod frazę (AdDiscoveryPhraseEntity/AdDiscoveryAdEntity) zostaje — to
+            // publiczne dane Meta dzielone między najemcami, nie dane tego studia.
+            deleteWhere("AdAreaSettingsEntity s", "s.studioId = :studioId", ctx)
             // Czarna lista reklamodawców tego studia — czyja jest, temu znika. Wpisy
             // GLOBALNE (boty, hurtownie, profile zza granicy) mają studio_id NULL, więc
             // warunek po studiu ich nie dotyka i zostają: to wiedza administratora

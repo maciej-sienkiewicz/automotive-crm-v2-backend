@@ -46,51 +46,44 @@ data class AreaResultsDto(
     val configured: Boolean,
     /** ISO. Kiedy złożono te wyniki (dane pochodzą z cache, nie z chwili odczytu). */
     val generatedAt: String,
+    /** STRONA wyników, nie całość — reklamodawców w rejonie potrafi być kilkuset. */
     val advertisers: List<AdvertiserRowDto>,
-    /** Suma aktywnych reklam we wszystkich wierszach — szybka etykieta nad tabelą. */
+    /** Numer strony liczony od zera. */
+    val page: Int,
+    val pageSize: Int,
+    /** Wszyscy widoczni reklamodawcy, nie tylko ta strona — z tego liczy się liczbę stron. */
+    val totalAdvertisers: Int,
+    /** Suma aktywnych reklam WSZYSTKICH widocznych reklamodawców, nie tylko tej strony. */
     val totalActiveAds: Int,
     /** Ilu reklamodawców odpadło przez wykluczenia — bez tego krótka tabela nie mówi dlaczego. */
     val hiddenAdvertisers: Int,
     val phraseStatuses: List<PhraseStatusDto>
 )
 
-/** Zapisane śledzenie obszaru studia. */
-data class LocationTrackingDto(
-    val id: String,
-    val label: String,
+/**
+ * Ustawienia rejonu jednego studia. Jeden zestaw, nie lista — po przejściu na
+ * wspólny katalog fraz nazwane śledzenia różniły się już wyłącznie miejscowościami.
+ */
+data class AreaSettingsDto(
+    val locations: List<String>,
+    val matchMode: AreaMatchMode,
     /** Identyfikatory fraz z katalogu, które to studio odznaczyło. */
     val excludedPhraseIds: List<String>,
     /** Ile fraz katalogu zostaje po odznaczeniach — jedna liczba zamiast liczenia na ekranie. */
     val trackedPhraseCount: Int,
-    val locations: List<String>,
-    val matchMode: AreaMatchMode,
-    val active: Boolean,
-    val createdAt: String,
-    val updatedAt: String
+    /** ISO albo null, gdy studio jeszcze nic nie ustawiło. */
+    val updatedAt: String?
 )
 
-/** Utworzenie/edycja śledzenia obszaru. */
-data class SaveLocationTrackingRequest(
-    val label: String,
+data class SaveAreaSettingsRequest(
+    val locations: List<String>,
+    val matchMode: AreaMatchMode? = null,
     /**
      * Frazy ODZNACZONE przez studio, nie wybrane. Katalog jest zamknięty i ustala go
      * administrator aplikacji; studio może z niego tylko odejmować.
      */
-    val excludedPhraseIds: List<String> = emptyList(),
-    val locations: List<String>,
-    /** Domyślnie [AreaMatchMode.INCLUDE_BROADER] — bo tak intuicyjnie rozumie się „w rejonie". */
-    val matchMode: AreaMatchMode? = null,
-    /** Domyślnie true przy tworzeniu; przy edycji pozwala wstrzymać śledzenie. */
-    val active: Boolean? = null
+    val excludedPhraseIds: List<String> = emptyList()
 )
-
-/** Podgląd na żywo bez zapisu — „pokaż mi, kto się reklamuje", zanim zdecyduję o śledzeniu. */
-data class AreaPreviewRequest(
-    val excludedPhraseIds: List<String> = emptyList(),
-    val locations: List<String>,
-    val matchMode: AreaMatchMode? = null
-)
-
 
 /** Jedna fraza katalogu na ekranie ustawień — z zaznaczeniem, czy studio ją śledzi. */
 data class CatalogPhraseDto(

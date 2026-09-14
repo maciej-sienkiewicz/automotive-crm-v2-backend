@@ -23,22 +23,16 @@ interface AdDiscoveryAdRepository : JpaRepository<AdDiscoveryAdEntity, UUID> {
 }
 
 @Repository
-interface AdLocationTrackingRepository : JpaRepository<AdLocationTrackingEntity, UUID> {
+interface AdAreaSettingsRepository : JpaRepository<AdAreaSettingsEntity, UUID> {
 
-    /** Śledzenia jednego studia — pełna lista dla ekranu, najnowsze na górze. */
-    fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<AdLocationTrackingEntity>
-
-    /** Jedno śledzenie w granicach studia — zapora przed sięganiem po cudze przez samo id. */
-    fun findByIdAndStudioId(id: UUID, studioId: UUID): AdLocationTrackingEntity?
-
-    /** Aktywne śledzenia wszystkich najemców — źródło fraz do cyklicznego odświeżania. */
-    fun findByActiveTrue(): List<AdLocationTrackingEntity>
-
-    fun deleteByIdAndStudioId(id: UUID, studioId: UUID): Long
-
-    fun countByStudioId(studioId: UUID): Long
+    /**
+     * Ustawienia rejonu wszystkich studiów, które go w ogóle wskazały — źródło fraz
+     * do cyklicznego odświeżania. Studio bez miejscowości nie generuje ani jednego
+     * wywołania do Meta, bo i tak nie ma czego filtrować po obszarze.
+     */
+    @Query("SELECT s FROM AdAreaSettingsEntity s WHERE s.locations <> ''")
+    fun findAllConfigured(): List<AdAreaSettingsEntity>
 }
-
 
 @Repository
 interface AdvertiserBlockRepository : JpaRepository<AdvertiserBlockEntity, UUID> {
