@@ -49,6 +49,8 @@ data class AreaResultsDto(
     val advertisers: List<AdvertiserRowDto>,
     /** Suma aktywnych reklam we wszystkich wierszach — szybka etykieta nad tabelą. */
     val totalActiveAds: Int,
+    /** Ilu reklamodawców odpadło przez wykluczenia — bez tego krótka tabela nie mówi dlaczego. */
+    val hiddenAdvertisers: Int,
     val phraseStatuses: List<PhraseStatusDto>
 )
 
@@ -56,7 +58,10 @@ data class AreaResultsDto(
 data class LocationTrackingDto(
     val id: String,
     val label: String,
-    val phrases: List<String>,
+    /** Identyfikatory fraz z katalogu, które to studio odznaczyło. */
+    val excludedPhraseIds: List<String>,
+    /** Ile fraz katalogu zostaje po odznaczeniach — jedna liczba zamiast liczenia na ekranie. */
+    val trackedPhraseCount: Int,
     val locations: List<String>,
     val matchMode: AreaMatchMode,
     val active: Boolean,
@@ -67,7 +72,11 @@ data class LocationTrackingDto(
 /** Utworzenie/edycja śledzenia obszaru. */
 data class SaveLocationTrackingRequest(
     val label: String,
-    val phrases: List<String>,
+    /**
+     * Frazy ODZNACZONE przez studio, nie wybrane. Katalog jest zamknięty i ustala go
+     * administrator aplikacji; studio może z niego tylko odejmować.
+     */
+    val excludedPhraseIds: List<String> = emptyList(),
     val locations: List<String>,
     /** Domyślnie [AreaMatchMode.INCLUDE_BROADER] — bo tak intuicyjnie rozumie się „w rejonie". */
     val matchMode: AreaMatchMode? = null,
@@ -77,7 +86,43 @@ data class SaveLocationTrackingRequest(
 
 /** Podgląd na żywo bez zapisu — „pokaż mi, kto się reklamuje", zanim zdecyduję o śledzeniu. */
 data class AreaPreviewRequest(
-    val phrases: List<String>,
+    val excludedPhraseIds: List<String> = emptyList(),
     val locations: List<String>,
     val matchMode: AreaMatchMode? = null
+)
+
+
+/** Jedna fraza katalogu na ekranie ustawień — z zaznaczeniem, czy studio ją śledzi. */
+data class CatalogPhraseDto(
+    val id: String,
+    val text: String,
+    /** Klucz grupy (np. FOLIE) — do stabilnego układu, niezależnego od tłumaczenia. */
+    val group: String,
+    val groupLabel: String
+)
+
+/**
+ * Katalog fraz podany ekranowi w całości.
+ *
+ * Ekran nie dostaje listy „co śledzisz", tylko pełen katalog i listę odznaczeń —
+ * tak samo jak trzyma to baza. Dzięki temu fraza dołożona przez administratora
+ * pojawia się wszystkim sama, bez migracji czyichkolwiek ustawień.
+ */
+data class PhraseCatalogDto(
+    val phrases: List<CatalogPhraseDto>
+)
+
+/** Ukryty reklamodawca na czarnej liście studia. */
+data class BlockedAdvertiserDto(
+    val pageId: String,
+    val pageName: String?,
+    val reason: String?,
+    val createdAt: String
+)
+
+data class BlockAdvertiserRequest(
+    val pageId: String,
+    /** Nazwa w chwili ukrycia — bez niej lista jest ciągiem numerów. */
+    val pageName: String? = null,
+    val reason: String? = null
 )

@@ -38,3 +38,29 @@ interface AdLocationTrackingRepository : JpaRepository<AdLocationTrackingEntity,
 
     fun countByStudioId(studioId: UUID): Long
 }
+
+
+@Repository
+interface AdvertiserBlockRepository : JpaRepository<AdvertiserBlockEntity, UUID> {
+
+    /**
+     * Wykluczenia obowiązujące dane studio: globalne (administratora) i własne.
+     *
+     * Jedno zapytanie zamiast dwóch, bo filtr tabeli potrzebuje obu naraz i nigdy
+     * osobno — a dwa osobne odczyty dałyby dwa razy tę samą odpowiedź o niczym.
+     */
+    @Query("""
+        SELECT b FROM AdvertiserBlockEntity b
+        WHERE b.studioId IS NULL OR b.studioId = :studioId
+    """)
+    fun findEffectiveFor(@Param("studioId") studioId: UUID): List<AdvertiserBlockEntity>
+
+    /** Sama czarna lista studia — do ekranu, gdzie da się ją cofnąć. */
+    fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<AdvertiserBlockEntity>
+
+    fun findByStudioIdAndPageId(studioId: UUID, pageId: String): AdvertiserBlockEntity?
+
+    fun deleteByStudioIdAndPageId(studioId: UUID, pageId: String): Long
+
+    fun countByStudioId(studioId: UUID): Long
+}

@@ -165,9 +165,15 @@ class AdLocationTrackingEntity(
     @Column(name = "label", nullable = false, length = 120)
     var label: String,
 
-    /** Frazy wyszukiwania (treść reklam) rozdzielone `|`. Klucze do wspólnego cache. */
-    @Column(name = "phrases", nullable = false, columnDefinition = "text")
-    var phrases: String = "",
+    /**
+     * Identyfikatory fraz z katalogu, których to studio NIE chce śledzić, rozdzielone `|`.
+     *
+     * Odwrotnie niż wcześniej: nie trzymamy listy fraz, tylko listę odjęć od
+     * [AdDiscoveryCatalog]. Dzięki temu fraza dołożona do katalogu włącza się
+     * wszystkim sama, bez migracji czyichkolwiek ustawień.
+     */
+    @Column(name = "excluded_phrase_ids", nullable = false, columnDefinition = "text")
+    var excludedPhraseIds: String = "",
 
     /** Miejscowości rejonu rozdzielone `|`, tak jak wpisał je człowiek. */
     @Column(name = "locations", nullable = false, columnDefinition = "text")
@@ -189,4 +195,51 @@ class AdLocationTrackingEntity(
 
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
+)
+
+
+/**
+ * Wykluczony reklamodawca — jedna tabela na dwa poziomy.
+ *
+ * [studioId] `null` znaczy wykluczenie GLOBALNE, ustawione przez administratora
+ * aplikacji: bot, hurtownia, profil zza granicy trafiający w polskie frazy.
+ * Takiego wiersza nie widzi żadne studio.
+ *
+ * [studioId] wypełnione to czarna lista jednego studia: firma bywa legalnym
+ * reklamodawcą, a mimo to nie jest niczyją konkurencją — dostawca chemii, sieć
+ * myjni, sąsiad z innej branży.
+ *
+ * Trzymamy [pageName] obok numeru, bo lista złożona z samych numerów jest nie do
+ * przejrzenia, a nazwy nie da się odtworzyć po wykluczeniu strony z wyników.
+ */
+@Entity
+@Table(
+    name = "meta_ad_advertiser_blocks",
+    indexes = [Index(name = "ix_ad_blocks_studio", columnList = "studio_id")]
+)
+class AdvertiserBlockEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID,
+
+    /** null = wykluczenie globalne (administrator aplikacji). */
+    @Column(name = "studio_id", nullable = true, columnDefinition = "uuid")
+    val studioId: UUID? = null,
+
+    @Column(name = "page_id", nullable = false, length = 40)
+    val pageId: String,
+
+    /** Nazwa strony w chwili wykluczenia — żeby listę dało się przejrzeć po ludzku. */
+    @Column(name = "page_name", nullable = true, length = 200)
+    var pageName: String? = null,
+
+    /** Po co wykluczony: „bot", „hurtownia”, notatka studia. */
+    @Column(name = "reason", nullable = true, length = 300)
+    var reason: String? = null,
+
+    @Column(name = "created_by_user_id", nullable = true, columnDefinition = "uuid")
+    val createdByUserId: UUID? = null,
+
+    @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
+    val createdAt: Instant = Instant.now()
 )
