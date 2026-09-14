@@ -11,7 +11,12 @@ data class AdvertiserRowDto(
     /** Link do strony firmy w Bibliotece reklam Meta (aktywne reklamy, PL). */
     val adLibraryUrl: String,
     /** Podgląd pojedynczej reklamy — null, gdy żadna nie ma migawki. */
-    val sampleSnapshotUrl: String?
+    val sampleSnapshotUrl: String?,
+    /**
+     * Nazwa profilu na Instagramie, bez małpy. Meta jej nie podaje — wyprowadzamy
+     * ją z adresu, na który kieruje reklama, więc bywa pusta i to jest normalny wynik.
+     */
+    val instagram: String? = null
 )
 
 /** Status frazy we wspólnym cache — po nim ekran wie, czemu tabela jest pusta lub niepełna. */

@@ -180,6 +180,7 @@ class AdDiscoveryCacheWriter(
         reachEu = ad.reachEu,
         targetLocations = MetaAdCodec.encodeLocations(ad.targetLocations),
         snapshotUrl = ad.snapshotUrl,
+        linkCaption = ad.linkCaption?.take(300),
         fetchedAt = now
     )
 }

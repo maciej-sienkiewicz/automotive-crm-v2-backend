@@ -19,7 +19,8 @@ class AreaAdvertiserSummaryTest {
         active: Boolean = true,
         reach: Int? = 1000,
         city: String = "Poznań",
-        snapshotUrl: String? = "https://snap/$id"
+        snapshotUrl: String? = "https://snap/$id",
+        linkCaption: String? = null
     ) = DiscoveredAd(
         adArchiveId = id,
         pageId = pageId,
@@ -27,7 +28,8 @@ class AreaAdvertiserSummaryTest {
         active = active,
         reach = reach,
         snapshotUrl = snapshotUrl,
-        locations = listOf(RawAdLocation(name = city, type = "city", excluded = false))
+        locations = listOf(RawAdLocation(name = city, type = "city", excluded = false)),
+        linkCaption = linkCaption
     )
 
     private val cities = listOf("Poznań")
@@ -111,5 +113,35 @@ class AreaAdvertiserSummaryTest {
         assertTrue(url.contains("view_all_page_id=12345"))
         assertTrue(url.contains("active_status=active"))
         assertTrue(url.contains("country=PL"))
+    }
+
+    @Test
+    fun `domena firmy skladana z adresow wszystkich jej reklam`() {
+        val rows = AreaAdvertiserSummary.summarize(
+            listOf(
+                ad("1", pageId = "p1", linkCaption = "fb.me"),
+                ad("2", pageId = "p1", linkCaption = "folia-samochodowa.pl"),
+                ad("3", pageId = "p1", linkCaption = "https://folia-samochodowa.pl/pl/c/Folie")
+            ),
+            cities,
+            AreaMatchMode.CITIES_ONLY
+        )
+
+        assertEquals(1, rows.size)
+        // fb.me to formularz kontaktowy Meta, nie strona firmy - nie może wygrać.
+        assertEquals("folia-samochodowa.pl", rows.single().domain)
+        // Nazwę IG dokleja dopiero warstwa odczytu; samo podsumowanie jej nie zna.
+        assertNull(rows.single().instagram)
+    }
+
+    @Test
+    fun `reklamodawca kierujacy tylko na posrednikow nie ma domeny`() {
+        val rows = AreaAdvertiserSummary.summarize(
+            listOf(ad("1", pageId = "p1", linkCaption = "fb.me"), ad("2", pageId = "p1", linkCaption = "booksy.com")),
+            cities,
+            AreaMatchMode.CITIES_ONLY
+        )
+
+        assertNull(rows.single().domain)
     }
 }
