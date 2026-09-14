@@ -87,9 +87,29 @@ class AreaLocationMatcherTest {
 
     @Test
     fun `segment kraju w nazwie nie myli sie z miastem`() {
-        // „Poznań, Polska" nie może zaliczyć zapytania o „Polska" jako miasto.
+        // „Warszawa, Polska" nie może zaliczyć zapytania o „Poznań".
         assertFalse(
             AreaLocationMatcher.matches(listOf(loc("Warszawa, Polska")), listOf("Poznań"), AreaMatchMode.CITIES_ONLY)
+        )
+    }
+
+    @Test
+    fun `contains lapie miasto wtopione w nazwe zlozona - Poznań County`() {
+        assertTrue(
+            AreaLocationMatcher.matches(
+                listOf(loc("Poznań County, Polska", type = "region")),
+                listOf("Poznań"),
+                AreaMatchMode.CITIES_ONLY
+            )
+        )
+    }
+
+    @Test
+    fun `INCLUDE_BROADER - reklama tylko na inne miasto nie wpada przez sufiks kraju`() {
+        // Regresja: „Warszawa, Polska" (miasto) NIE może udawać targetu na cały kraj —
+        // inaczej reklamy obcych miast wpadałyby do każdego zapytania w trybie szerszym.
+        assertFalse(
+            AreaLocationMatcher.matches(listOf(loc("Warszawa, Polska")), listOf("Poznań"), AreaMatchMode.INCLUDE_BROADER)
         )
     }
 
