@@ -17,7 +17,7 @@ class AreaAdvertiserSummaryTest {
         pageId: String,
         pageName: String? = "Firma",
         active: Boolean = true,
-        reachPl: Int? = 1000,
+        reach: Int? = 1000,
         city: String = "Poznań",
         snapshotUrl: String? = "https://snap/$id"
     ) = DiscoveredAd(
@@ -25,7 +25,7 @@ class AreaAdvertiserSummaryTest {
         pageId = pageId,
         pageName = pageName,
         active = active,
-        reachPl = reachPl,
+        reach = reach,
         snapshotUrl = snapshotUrl,
         locations = listOf(RawAdLocation(name = city, type = "city", excluded = false))
     )
@@ -36,8 +36,8 @@ class AreaAdvertiserSummaryTest {
     fun `reklamy tej samej strony sklejaja sie w jeden wiersz z suma zasiegu`() {
         val rows = AreaAdvertiserSummary.summarize(
             listOf(
-                ad("1", pageId = "100", reachPl = 1000),
-                ad("2", pageId = "100", reachPl = 500)
+                ad("1", pageId = "100", reach = 1000),
+                ad("2", pageId = "100", reach = 500)
             ),
             cities,
             AreaMatchMode.CITIES_ONLY
@@ -45,7 +45,7 @@ class AreaAdvertiserSummaryTest {
 
         assertEquals(1, rows.size)
         assertEquals(2, rows.first().activeAds)
-        assertEquals(1500, rows.first().reachPl)
+        assertEquals(1500, rows.first().reach)
     }
 
     @Test
@@ -97,11 +97,11 @@ class AreaAdvertiserSummaryTest {
     @Test
     fun `brak danych o zasiegu daje null, a nie zero`() {
         val rows = AreaAdvertiserSummary.summarize(
-            listOf(ad("1", pageId = "100", reachPl = null)),
+            listOf(ad("1", pageId = "100", reach = null)),
             cities,
             AreaMatchMode.CITIES_ONLY
         )
-        assertNull(rows.first().reachPl)
+        assertNull(rows.first().reach)
     }
 
     @Test

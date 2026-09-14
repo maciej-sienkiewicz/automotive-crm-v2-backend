@@ -58,6 +58,23 @@ class MetaAdLibraryClient(
                 "eu_total_reach,age_country_gender_reach_breakdown,target_ages,target_gender," +
                 "target_locations,beneficiary_payers,publisher_platforms,ad_snapshot_url"
 
+        /**
+         * LEKKI zestaw pól dla odkrywania po frazie — świadomie BEZ
+         * `age_country_gender_reach_breakdown`.
+         *
+         * To pole (rozbicie wiek/płeć/kraj) jest ciężkie: przy szerokiej frazie jak
+         * „detailing" (~kilka tysięcy reklam) i sensownym `limit` Meta odrzuca zapytanie
+         * błędem code=1 / HTTP 500 „Please reduce the amount of data you're asking for".
+         * Nocny sync profili może brać pełne pola, bo pyta o pojedyncze strony (mały
+         * wynik); skan po treści zwraca tysiące reklam, więc payload musi być chudy.
+         *
+         * Zasięg bierzemy z lekkiego `eu_total_reach` (jedna liczba) zamiast liczyć go
+         * z rozbicia PL — rozbicia i tak nie da się pobrać hurtowo dla szerokiej frazy.
+         */
+        private const val DISCOVERY_FIELDS =
+            "id,page_id,page_name,ad_delivery_start_time,ad_delivery_stop_time," +
+                "eu_total_reach,target_locations,ad_snapshot_url"
+
         /** Ile stron paginacji maksymalnie przejdziemy — zapora przed pętlą kursorów. */
         private const val MAX_PAGES = 20
 
@@ -285,7 +302,7 @@ class MetaAdLibraryClient(
             append("&ad_type=ALL")
             append("&ad_active_status=ACTIVE")
             append("&ad_delivery_date_min=").append(since)
-            append("&fields=").append(encode(FIELDS))
+            append("&fields=").append(encode(DISCOVERY_FIELDS))
             append("&limit=").append(discoveryPageSize.coerceIn(1, 500))
             if (after != null) append("&after=").append(encode(after))
         }

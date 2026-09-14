@@ -24,19 +24,19 @@ object AreaAdvertiserSummary {
             // Najpierw najwięksi obecni w tym rejonie: więcej reklam, przy remisie większy zasięg.
             .sortedWith(
                 compareByDescending<AdvertiserRow> { it.activeAds }
-                    .thenByDescending { it.reachPl ?: -1 }
+                    .thenByDescending { it.reach ?: -1 }
                     .thenBy { it.companyName.lowercase() }
             )
 
     private fun toRow(pageId: String, group: List<DiscoveredAd>): AdvertiserRow {
-        val reachValues = group.mapNotNull { it.reachPl }
+        val reachValues = group.mapNotNull { it.reach }
         return AdvertiserRow(
             pageId = pageId,
             // Nazwa strony bywa pusta w części odpowiedzi Meta — bierzemy pierwszą niepustą.
             companyName = group.firstNotNullOfOrNull { it.pageName?.trim()?.takeIf { n -> n.isNotBlank() } }
                 ?: pageId,
             activeAds = group.size,
-            reachPl = reachValues.takeIf { it.isNotEmpty() }?.sum(),
+            reach = reachValues.takeIf { it.isNotEmpty() }?.sum(),
             adLibraryUrl = MetaAdLibraryUrl.forPage(pageId),
             sampleSnapshotUrl = group.firstNotNullOfOrNull { it.snapshotUrl?.takeIf { url -> url.isNotBlank() } }
         )

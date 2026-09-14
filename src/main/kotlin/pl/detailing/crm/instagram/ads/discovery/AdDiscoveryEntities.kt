@@ -107,9 +107,16 @@ class AdDiscoveryAdEntity(
     @Column(name = "delivery_stop", nullable = true)
     val deliveryStop: LocalDate? = null,
 
-    /** Zasięg w Polsce policzony z rozbicia wiek/płeć — liczba pokazywana w tabeli. */
-    @Column(name = "reach_pl", nullable = true)
-    val reachPl: Int? = null,
+    /**
+     * Zasięg w UE (`eu_total_reach`) — liczba pokazywana w tabeli.
+     *
+     * Odkrywanie bierze zasięg z tego lekkiego pola, a NIE z rozbicia PL: rozbicia
+     * (`age_country_gender_reach_breakdown`) nie da się pobrać hurtowo dla szerokiej
+     * frazy — Meta odrzuca zbyt duży payload. Kalendarz obserwowanych profili dalej
+     * pokazuje zasięg PL, bo pyta o pojedyncze strony i może brać pełne pola.
+     */
+    @Column(name = "reach_eu", nullable = true)
+    val reachEu: Int? = null,
 
     /** Trójki `nazwa;typ;wykluczona(0|1)` rozdzielone `|` — kodowane [pl.detailing.crm.instagram.ads.MetaAdCodec]. */
     @Column(name = "target_locations", nullable = false, columnDefinition = "text")

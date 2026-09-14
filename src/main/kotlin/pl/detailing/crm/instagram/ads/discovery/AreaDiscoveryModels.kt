@@ -48,8 +48,8 @@ data class DiscoveredAd(
     val pageName: String?,
     /** Emisja trwa (delivery_stop puste). Odkrywanie pobiera tylko aktywne, ale bronimy się i tu. */
     val active: Boolean,
-    /** Zasięg w Polsce policzony z rozbicia — liczba, którą pokazujemy w kolumnie „zasięg". */
-    val reachPl: Int?,
+    /** Zasięg reklamy w UE (`eu_total_reach`) — liczba pokazywana w kolumnie „zasięg". */
+    val reach: Int?,
     val snapshotUrl: String?,
     /** Targetowanie reklamodawcy — po nim decydujemy, czy reklama obejmuje wskazany teren. */
     val locations: List<RawAdLocation>
@@ -60,8 +60,8 @@ data class AdvertiserRow(
     val pageId: String,
     val companyName: String,
     val activeAds: Int,
-    /** Suma zasięgu w Polsce reklam trafiających w obszar; null, gdy żadna nie ma danych. */
-    val reachPl: Int?,
+    /** Suma zasięgu w UE reklam trafiających w obszar; null, gdy żadna nie ma danych. */
+    val reach: Int?,
     /** Strona reklamodawcy w Bibliotece reklam Meta, zawężona do aktywnych reklam w PL. */
     val adLibraryUrl: String,
     /** Podgląd pojedynczej reklamy — pierwsza z migawką, gdy Meta ją udostępniła. */
