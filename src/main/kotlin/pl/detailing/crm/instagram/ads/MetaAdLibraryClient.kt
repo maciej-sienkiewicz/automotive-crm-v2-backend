@@ -38,7 +38,11 @@ class MetaAdLibraryClient(
     @Value("\${meta.ads.token:}") private val accessToken: String,
     @Value("\${meta.ads.api-version:v26.0}") private val apiVersion: String,
     @Value("\${meta.ads.timeout-seconds:30}") private val timeoutSeconds: Long,
-    @Value("\${meta.ads.page-size:200}") private val pageSize: Int
+    @Value("\${meta.ads.page-size:200}") private val pageSize: Int,
+    // Odkrywanie po frazie ma własny, większy rozmiar strony: fraza jak „ceramika"
+    // zwraca setki reklam, a większa strona to mniej wywołań na tę samą liczbę wyników
+    // — taniej dla wspólnego limitu tokena niż dokładanie kolejnych stron.
+    @Value("\${meta.ads.discovery.page-size:500}") private val discoveryPageSize: Int
 ) {
     private val log = LoggerFactory.getLogger(MetaAdLibraryClient::class.java)
 
@@ -282,7 +286,7 @@ class MetaAdLibraryClient(
             append("&ad_active_status=ACTIVE")
             append("&ad_delivery_date_min=").append(since)
             append("&fields=").append(encode(FIELDS))
-            append("&limit=").append(pageSize.coerceIn(1, 500))
+            append("&limit=").append(discoveryPageSize.coerceIn(1, 500))
             if (after != null) append("&after=").append(encode(after))
         }
     }
