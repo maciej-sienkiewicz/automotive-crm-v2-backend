@@ -122,9 +122,6 @@ class AdDiscoveryAdEntity(
     @Column(name = "target_locations", nullable = false, columnDefinition = "text")
     val targetLocations: String = "",
 
-    @Column(name = "snapshot_url", nullable = true, columnDefinition = "text")
-    val snapshotUrl: String? = null,
-
     /**
      * Adres, na który reklama kieruje („folia-samochodowa.pl”) — jedyne wskazanie
      * na własną stronę reklamodawcy, jakie niesie `ads_archive`. Z niego wyprowadzamy

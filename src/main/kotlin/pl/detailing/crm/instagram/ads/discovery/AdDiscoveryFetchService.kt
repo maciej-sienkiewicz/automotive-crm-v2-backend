@@ -179,7 +179,6 @@ class AdDiscoveryCacheWriter(
         // Zasięg z lekkiego eu_total_reach — rozbicia PL nie pobieramy przy odkrywaniu (zbyt ciężkie).
         reachEu = ad.reachEu,
         targetLocations = MetaAdCodec.encodeLocations(ad.targetLocations),
-        snapshotUrl = ad.snapshotUrl,
         linkCaption = ad.linkCaption?.take(300),
         fetchedAt = now
     )

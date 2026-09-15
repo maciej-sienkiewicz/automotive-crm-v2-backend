@@ -92,6 +92,16 @@ data class AdDetailDto(
     val breakdown: List<AdReachBucketDto>,
     /** Ilu ludzi spoza ustawionego przedziału wieku reklama i tak dosięgła. */
     val outOfTargetAgeReach: Int,
+    /**
+     * Treść reklamy tak, jak widzi ją odbiorca. Razem z [title], [linkDescription]
+     * i [linkCaption] to CAŁA kreacja, jaką Meta udostępnia — grafiki `ads_archive`
+     * nie oddaje w żadnym polu, więc obrazek zostaje w Bibliotece.
+     */
+    val body: String?,
+    val linkDescription: String?,
+    /** Domena z reklamy — „folia-samochodowa.pl". */
+    val linkCaption: String?,
+    /** Publiczny link do reklamy w Bibliotece. Bez tokena — składany z identyfikatora. */
     val snapshotUrl: String?
 )
 

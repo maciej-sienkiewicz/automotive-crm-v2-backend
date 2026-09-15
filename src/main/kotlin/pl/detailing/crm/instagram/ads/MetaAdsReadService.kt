@@ -11,6 +11,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
+import pl.detailing.crm.instagram.ads.discovery.MetaAdLibraryUrl
 
 /**
  * Odczyt zakładki „Reklamy": kalendarz roku, podsumowanie i szczegóły kampanii.
@@ -175,7 +176,10 @@ class MetaAdsReadService(
             beneficiary = ad.beneficiary?.takeIf { it != ad.payer },
             breakdown = buckets,
             outOfTargetAgeReach = outOfTarget,
-            snapshotUrl = ad.snapshotUrl
+            body = ad.creativeBody,
+            linkDescription = ad.linkDescription,
+            linkCaption = ad.linkCaption,
+            snapshotUrl = MetaAdLibraryUrl.forAd(ad.adArchiveId)
         )
     }
 

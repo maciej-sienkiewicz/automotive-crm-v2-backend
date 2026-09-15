@@ -158,7 +158,9 @@ class MetaAdsSyncService(
         payer = ad.payer?.take(200),
         beneficiary = ad.beneficiary?.take(200),
         reachBreakdown = MetaAdCodec.encodeBreakdown(ad.polandBreakdown),
-        snapshotUrl = ad.snapshotUrl,
+        creativeBody = ad.body,
+        linkDescription = ad.linkDescription?.take(500),
+        linkCaption = ad.linkCaption?.take(300),
         firstSeenAt = now,
         lastSeenAt = now,
         // Reklama, którą widzimy PIERWSZY raz już jako zakończoną, nie jest
@@ -182,7 +184,9 @@ class MetaAdsSyncService(
         row.payer = ad.payer?.take(200) ?: row.payer
         row.beneficiary = ad.beneficiary?.take(200) ?: row.beneficiary
         row.reachBreakdown = MetaAdCodec.encodeBreakdown(ad.polandBreakdown).ifBlank { row.reachBreakdown }
-        row.snapshotUrl = ad.snapshotUrl ?: row.snapshotUrl
+        row.creativeBody = ad.body ?: row.creativeBody
+        row.linkDescription = ad.linkDescription?.take(500) ?: row.linkDescription
+        row.linkCaption = ad.linkCaption?.take(300) ?: row.linkCaption
         row.lastSeenAt = now
         row.updatedAt = now
         if (justEnded) row.endedDetectedAt = now

@@ -51,6 +51,8 @@ internal object MetaAdParser {
             pageId = pageId,
             pageName = node.path("page_name").textOrNull(),
             title = parseTitle(node),
+            body = firstText(node.path("ad_creative_bodies"))?.take(2000),
+            linkDescription = firstText(node.path("ad_creative_link_descriptions"))?.take(500),
             linkCaption = node.path("ad_creative_link_captions").firstOrNull()?.textOrNull()?.trim()
                 ?.takeIf { it.isNotBlank() },
             deliveryStart = start,
@@ -62,8 +64,7 @@ internal object MetaAdParser {
             targetLocations = parseLocations(node.path("target_locations")),
             payer = payers?.path("payer")?.textOrNull(),
             beneficiary = payers?.path("beneficiary")?.textOrNull(),
-            polandBreakdown = parsePolandBreakdown(node.path("age_country_gender_reach_breakdown")),
-            snapshotUrl = node.path("ad_snapshot_url").textOrNull()
+            polandBreakdown = parsePolandBreakdown(node.path("age_country_gender_reach_breakdown"))
         )
     }
 
@@ -73,13 +74,29 @@ internal object MetaAdParser {
      * kalendarza podpisany „Kampania" nie mówi nic.
      */
     private fun parseTitle(node: JsonNode): String? =
-        node.path("ad_creative_link_titles").firstOrNull()?.textOrNull()?.trim()?.takeIf { it.isNotBlank() }
-            ?.take(200)
-            ?: node.path("ad_creative_bodies").firstOrNull()?.textOrNull()
+        firstText(node.path("ad_creative_link_titles"))?.take(200)
+            ?: firstText(node.path("ad_creative_bodies"))
                 ?.lineSequence()
                 ?.map { it.trim() }
                 ?.firstOrNull { it.isNotBlank() }
                 ?.take(120)
+
+    /**
+     * Pierwsza niepusta pozycja tablicy tekstów kreacji.
+     *
+     * Meta zwraca te pola jako TABLICE, bo jedna reklama może mieć kilka
+     * wariantów treści (dynamic creative). Bierzemy pierwszy — reszta to ta sama
+     * oferta innymi słowami, a wybór „który wariant jest ten właściwy" nie
+     * należy do nas.
+     *
+     * SZUKAMY, a nie bierzemy zerowego: w tych tablicach trafiają się puste
+     * pozycje i wtedy „pierwszy" oznaczałby brak treści przy reklamie, która
+     * treść ma.
+     */
+    private fun firstText(node: JsonNode): String? =
+        node.asSequence()
+            .mapNotNull { it.textOrNull()?.trim() }
+            .firstOrNull { it.isNotBlank() }
 
     /** Meta bywa niekonsekwentna: raz `"2026-07-12"`, raz pełny znacznik czasu. */
     fun parseDate(raw: String?): LocalDate? =

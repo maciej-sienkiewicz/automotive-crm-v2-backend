@@ -7,15 +7,25 @@ import java.time.LocalDate
  * pokazujemy — reszty nie pobieramy, żeby nie trzymać danych bez zastosowania.
  *
  * Czego w tym modelu NIE MA, bo Meta tego nie udostępnia dla reklam komercyjnych:
- * budżetu, wydatków, CPM, wyświetleń, kliknięć, konwersji ani grafiki reklamy.
- * Jedynym oknem na kreację jest [snapshotUrl] — strona w bibliotece Meta.
+ * budżetu, wydatków, CPM, wyświetleń, kliknięć i konwersji. Nie ma też GRAFIKI —
+ * `ads_archive` nie oddaje adresów zdjęć ani wideo w żadnym polu. Oddaje za to
+ * TEKST kreacji ([title], [body], [linkDescription], [linkCaption]) i to jego
+ * pokazujemy u siebie; obrazek zostaje po stronie Meta.
+ *
+ * Adresu `ad_snapshot_url` świadomie tu nie ma: Meta wkleja w niego token
+ * dostępowy instalacji. Link do reklamy składamy z [adArchiveId] —
+ * `MetaAdLibraryUrl.forAd`.
  */
 data class RawMetaAd(
     val adArchiveId: String,
     val pageId: String,
     val pageName: String?,
-    /** Pierwszy tytuł kreacji — służy do odróżnienia reklam, nie do czytania treści. */
+    /** Pierwszy tytuł kreacji — nagłówek reklamy. */
     val title: String?,
+    /** Treść reklamy — to, co czyta odbiorca. Pierwszy wariant z `ad_creative_bodies`. */
+    val body: String?,
+    /** Zdanie pod nagłówkiem („Umów się na bezpłatną wycenę"). */
+    val linkDescription: String?,
     /**
      * Podpis odnośnika, czyli domena, na którą reklama kieruje („folia-samochodowa.pl”).
      * Jedyne wskazanie na własną stronę reklamodawcy, jakie niesie `ads_archive`.
@@ -35,8 +45,7 @@ data class RawMetaAd(
     val payer: String?,
     val beneficiary: String?,
     /** Rozbicie zasięgu WYŁĄCZNIE dla Polski. */
-    val polandBreakdown: List<RawAgeGenderReach>,
-    val snapshotUrl: String?
+    val polandBreakdown: List<RawAgeGenderReach>
 ) {
     /** Zasięg w Polsce policzony z rozbicia — pozostałe kraje nas nie interesują. */
     val reachPoland: Int?

@@ -26,6 +26,7 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import pl.detailing.crm.instagram.ads.discovery.MetaAdLibraryUrl
 
 // ── DTO ───────────────────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ class CompetitorPulseService(
                         platformsOf(ad),
                         if (parallel > 1) "$parallel ${campaignWord(parallel)} równolegle" else null
                     ).joinToString(" · "),
-                    permalink = ad.snapshotUrl,
+                    permalink = MetaAdLibraryUrl.forAd(ad.adArchiveId),
                     occurredAt = DATE_FMT.format(ad.deliveryStart)
                 )
             }
@@ -317,7 +318,7 @@ class CompetitorPulseService(
                         "$days ${dayWord(days)} emisji",
                         (ad.reachPl ?: ad.reachEu)?.let { "zasięg ${groupDigits(it)}" }
                     ).joinToString(" · "),
-                    permalink = ad.snapshotUrl,
+                    permalink = MetaAdLibraryUrl.forAd(ad.adArchiveId),
                     occurredAt = DATE_FMT.format(detectedOn)
                 )
             }
