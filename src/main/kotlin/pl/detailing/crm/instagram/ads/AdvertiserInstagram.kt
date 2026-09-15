@@ -84,6 +84,32 @@ internal object AdvertiserInstagram {
             .first().key
     }
 
+    /**
+     * Nazwa profilu wzięta WPROST z podpisów reklam, bez pobierania czegokolwiek.
+     *
+     * `instagram.com` jest na liście pośredników i słusznie — nie ma sensu pobierać
+     * Instagrama, żeby szukać na nim linku do Instagrama. Tyle że reklama, która
+     * kieruje na `instagram.com/nazwa_profilu`, niesie odpowiedź w samym adresie:
+     * odsiewając ją jako pośrednika wyrzucaliśmy najkrótszą drogę do celu i szli
+     * okrężną przez stronę firmy, której taki reklamodawca często nie ma.
+     *
+     * Bierzemy nazwę powtarzającą się najczęściej — z tego samego powodu co
+     * w [handleFrom]: pojedyncza kampania potrafi kierować na cudzy profil.
+     */
+    fun handleFromCaptions(captions: Collection<String?>): String? =
+        captions.asSequence()
+            .filterNotNull()
+            .flatMap { LINK.findAll(it).map { m -> m.groupValues[1].trim('.', '_') } }
+            .filter { it.length >= 2 && it.lowercase() !in RESERVED }
+            .toList()
+            .takeIf { it.isNotEmpty() }
+            ?.let { hits ->
+                hits.groupingBy { it }.eachCount()
+                    .entries
+                    .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { hits.indexOf(it.key) })
+                    .first().key
+            }
+
     /** Pobieranie pośrednika to zmarnowane trzy sekundy — firmy tam nie ma. */
     fun isIntermediary(host: String): Boolean =
         host in INTERMEDIARIES || INTERMEDIARIES.any { host.endsWith(".$it") }

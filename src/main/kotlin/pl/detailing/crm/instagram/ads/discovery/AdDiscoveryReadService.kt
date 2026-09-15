@@ -117,13 +117,18 @@ class AdDiscoveryReadService(
      * IG wiersz nadal mówi, kto się reklamuje i z jakim zasięgiem — a to jest sedno ekranu.
      */
     private fun withInstagram(rows: List<AdvertiserRow>): List<AdvertiserRow> {
-        if (rows.none { it.domain != null }) return rows
+        if (rows.none { it.domain != null && it.instagram == null }) return rows
 
         val handles = runCatching { instagramResolver.resolve(rows.map { it.domain }) }
             .getOrDefault(emptyMap())
         if (handles.isEmpty()) return rows
 
-        return rows.map { row -> handles[row.domain]?.let { row.copy(instagram = it) } ?: row }
+        // Nazwa wzięta z podpisu reklamy jest pewniejsza niż zgadnięta ze strony
+        // firmy — pochodzi wprost od reklamodawcy, więc jej nie nadpisujemy.
+        return rows.map { row ->
+            if (row.instagram != null) row
+            else handles[row.domain]?.let { row.copy(instagram = it) } ?: row
+        }
     }
 
     private fun AdDiscoveryAdEntity.toDiscovered() = DiscoveredAd(
