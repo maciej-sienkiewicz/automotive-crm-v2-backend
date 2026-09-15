@@ -68,6 +68,22 @@ class IncomeDocumentsRepository(
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
           AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)
+          AND (CAST(:search AS text) IS NULL
+               OR LOWER(COALESCE(i.invoice_number, '')) LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.ksef_number, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.buyer_name, ''))     LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.buyer_nip, ''))      LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_name, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_nip, ''))     LIKE CAST(:search AS text)
+               OR (CAST(:searchDigits AS text) IS NOT NULL
+                   AND (regexp_replace(COALESCE(i.buyer_nip, ''),  '\D', '', 'g') LIKE CAST(:searchDigits AS text)
+                     OR regexp_replace(COALESCE(i.seller_nip, ''), '\D', '', 'g') LIKE CAST(:searchDigits AS text)))
+               OR (CAST(:searchAmount AS text) IS NOT NULL
+                   AND (TO_CHAR(i.total_gross / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)
+                     OR TO_CHAR(i.total_net   / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)))
+               OR EXISTS (SELECT 1 FROM ksef_revenue_invoice_items it
+                          WHERE it.invoice_id = i.id
+                            AND LOWER(it.name) LIKE CAST(:search AS text)))
 
         UNION ALL
 
@@ -103,6 +119,16 @@ class IncomeDocumentsRepository(
           AND (CAST(:dateTo   AS date) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
           AND (CAST(:includeExcluded AS boolean) = TRUE OR d.excluded_at IS NULL)
           AND CAST(:onlyKsef AS boolean) = FALSE
+          AND (CAST(:search AS text) IS NULL
+               OR LOWER(d.document_number)                    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(d.counterparty_name, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(d.counterparty_nip, ''))     LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(d.description, ''))          LIKE CAST(:search AS text)
+               OR (CAST(:searchDigits AS text) IS NOT NULL
+                   AND regexp_replace(COALESCE(d.counterparty_nip, ''), '\D', '', 'g') LIKE CAST(:searchDigits AS text))
+               OR (CAST(:searchAmount AS text) IS NOT NULL
+                   AND (TO_CHAR(d.total_gross / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)
+                     OR TO_CHAR(d.total_net   / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text))))
     """
 
     fun findPage(filters: IncomeDocumentFilters, limit: Int, offset: Int): List<IncomeDocumentRow> {
@@ -132,6 +158,9 @@ class IncomeDocumentsRepository(
         query.setParameter("dateTo", filters.dateTo)
         query.setParameter("onlyKsef", filters.onlyKsef)
         query.setParameter("includeExcluded", filters.includeExcluded)
+        query.setParameter("search", filters.search)
+        query.setParameter("searchDigits", filters.searchDigits)
+        query.setParameter("searchAmount", filters.searchAmount)
     }
 }
 
@@ -149,5 +178,15 @@ data class IncomeDocumentFilters(
      * true = pokaż także dokumenty ukryte ręcznie ze statystyk. Domyślnie ukryte
      * pozycje nie pojawiają się na liście, tak jak po stronie dokumentów kosztowych.
      */
-    val includeExcluded: Boolean = false
+    val includeExcluded: Boolean = false,
+    /**
+     * Fraza wyszukiwarki jako wzorzec `%…%` małymi literami — szuka po numerze dokumentu,
+     * numerze KSeF, nazwie i NIP-ie kontrahenta, opisie oraz nazwach pozycji faktury.
+     * Buduje ją [pl.detailing.crm.shared.SearchTerm.like]; null = bez wyszukiwania.
+     */
+    val search: String? = null,
+    /** Ta sama fraza zredukowana do cyfr — NIP dopasowany mimo prefiksu „PL" i myślników. */
+    val searchDigits: String? = null,
+    /** Ta sama fraza jako kwota w złotych; null, gdy fraza nie wygląda na kwotę. */
+    val searchAmount: String? = null
 )

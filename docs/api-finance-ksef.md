@@ -323,9 +323,22 @@ faktury, więc nic nie liczy się dwa razy.
 ### GET /finance/income-documents
 
 **Query params:** `page`, `size`, `documentType`, `paymentStatus`, `dateFrom`, `dateTo`,
-`onlyKsef`, `includeExcluded`.
+`onlyKsef`, `includeExcluded`, `search`.
 
 `includeExcluded=true` dokłada dokumenty ukryte ze statystyk; domyślnie ich nie ma.
+
+`search` to jedna fraza wyszukiwarki — dopasowywana do **nazwy i NIP-u kontrahenta,
+nazw pozycji faktury, numeru dokumentu, numeru KSeF oraz kwoty** (netto i brutto).
+Fraza działa jak fragment (`%…%`), wielkość liter nie ma znaczenia, a dwa zapisy są
+normalizowane po obu stronach porównania:
+
+- **NIP** — liczą się same cyfry, więc `1234563218`, `123-456-32-18` i `PL1234563218`
+  dają ten sam wynik,
+- **kwota** — wpis w złotych, przecinek albo kropka, spacje ignorowane
+  (`1 230,50` = `1230.50`); sama część całkowita (`1230`) też trafia w `1230,50`.
+
+Wyszukiwanie obejmuje cały zbiór studia (z uwzględnieniem pozostałych filtrów), nie
+tylko bieżącą stronę — paginacja liczona jest już po dopasowaniu.
 
 Każdy wiersz niesie `sourceKind` (`KSEF` | `FINANCE`) — rozstrzyga, który widok
 szczegółów otworzyć i do której tabeli trafia ukrycie — oraz `excluded`.
@@ -633,8 +646,15 @@ Zunifikowany widok kosztów — zarówno pobranych automatycznie z KSeF (`source
 | `dateFrom` | ISO datetime | — | Filtr po dacie sprzedaży (od) |
 | `dateTo` | ISO datetime | — | Filtr po dacie sprzedaży (do) |
 | `includeExcluded` | boolean | `false` | `true` — pokaż też ukryte dokumenty |
+| `search` | string | — | Fraza szukana po NIP-ie i nazwie sprzedawcy, nazwach pozycji, numerze dokumentu, numerze KSeF i kwocie |
+
+`search` działa jak fragment (`%…%`), bez rozróżniania wielkości liter. NIP porównywany
+jest po samych cyfrach (`123-456-32-18` = `PL1234563218`), a kwota po wartości w złotych
+z przecinkiem albo kropką (`1 230,50` = `1230.50`; sam `1230` też trafia w `1230,50`).
+Wyszukiwanie obejmuje cały zbiór studia, nie tylko bieżącą stronę.
 
 **Przykład:** `GET /api/v1/ksef/expenses?paymentStatus=PENDING&dateFrom=2024-01-01T00:00:00Z`
+**Przykład:** `GET /api/v1/ksef/expenses?search=1234563218`
 
 **Response `200 OK`:**
 ```json

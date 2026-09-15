@@ -206,6 +206,8 @@ class KsefController(
      * source: KSEF | MANUAL | null (all)
      * paymentStatus: PAID | PENDING | null (all)
      * includeExcluded: include hidden documents (default false)
+     * search: jedna fraza szukana po NIP-ie i nazwie sprzedawcy, numerze dokumentu,
+     *         numerze KSeF, nazwach pozycji i kwocie — patrz [SearchTerm]
      */
     @GetMapping("/expenses")
     fun listExpenses(
@@ -213,6 +215,7 @@ class KsefController(
         @RequestParam(defaultValue = "20")   size: Int,
         @RequestParam(required = false)      source: String?,
         @RequestParam(required = false)      paymentStatus: String?,
+        @RequestParam(required = false)      search: String?,
         // LocalDate, not OffsetDateTime: the UI sends `2026-05-21`, which no
         // OffsetDateTime parser accepts — the filter answered 500 for every request that
         // used it. Matches the sibling endpoint /ksef/revenue/invoices, which already
@@ -233,6 +236,12 @@ class KsefController(
             // dateTo names a day the user expects to see in full, so the bound is the
             // start of the next one; the query compares with `<`.
             dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
+            // Jedno pole „szukaj" trafia w kilka kolumn zapisanych inaczej, niż wpisuje je
+            // człowiek (NIP z prefiksem kraju, kwota w groszach), więc frazę rozkłada na
+            // porównywalne warianty SearchTerm, a nie samo zapytanie.
+            search          = SearchTerm.like(search),
+            searchDigits    = SearchTerm.digitsLike(search),
+            searchAmount    = SearchTerm.amountLike(search),
             pageable        = pageable
         )
 

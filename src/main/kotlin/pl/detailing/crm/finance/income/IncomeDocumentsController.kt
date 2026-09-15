@@ -12,6 +12,7 @@ import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.shared.SearchTerm
 import java.util.UUID
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
@@ -50,7 +51,12 @@ class IncomeDocumentsController(
         @RequestParam(required = false) dateFrom: LocalDate?,
         @RequestParam(required = false) dateTo: LocalDate?,
         @RequestParam(defaultValue = "false") onlyKsef: Boolean,
-        @RequestParam(defaultValue = "false") includeExcluded: Boolean
+        @RequestParam(defaultValue = "false") includeExcluded: Boolean,
+        /**
+         * Jedna fraza „szukaj": NIP, nazwa kontrahenta, nazwa pozycji, numer dokumentu,
+         * numer KSeF albo kwota. Rozkład frazy na porównywalne warianty robi [SearchTerm].
+         */
+        @RequestParam(required = false) search: String?
     ): ResponseEntity<IncomeDocumentListResponse> {
         val studioId = SecurityContextHelper.getCurrentUser().studioId.value
 
@@ -74,7 +80,10 @@ class IncomeDocumentsController(
             dateFrom      = dateFrom,
             dateTo        = dateTo,
             onlyKsef      = onlyKsef,
-            includeExcluded = includeExcluded
+            includeExcluded = includeExcluded,
+            search        = SearchTerm.like(search),
+            searchDigits  = SearchTerm.digitsLike(search),
+            searchAmount  = SearchTerm.amountLike(search)
         )
 
         val rows = repository.findPage(filters, limit = pageSize, offset = (pageNumber - 1) * pageSize)
