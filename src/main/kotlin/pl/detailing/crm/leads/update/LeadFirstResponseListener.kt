@@ -3,6 +3,7 @@ package pl.detailing.crm.leads.update
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
@@ -38,6 +39,12 @@ import java.time.Instant
  *
  * `fallbackExecution = true`, bo zdarzenie publikuje też wysyłka z CRM-a, która
  * transakcji nie otwiera.
+ *
+ * REQUIRES_NEW nie jest ozdobnikiem, tylko jedyną propagacją, na jaką Spring tu
+ * pozwala: od 6.1 `RestrictedTransactionalEventListenerFactory` odrzuca gołe
+ * `@Transactional` na nasłuchu transakcyjnym i aplikacja nie wstaje. Rozumowanie
+ * stoi za tym to samo, co wyżej — nasłuch ma otwierać własną transakcję, a nie
+ * dopisywać się do cudzej (przy AFTER_COMMIT: do właśnie zamkniętej).
  */
 @Component
 class LeadFirstResponseListener(
@@ -48,7 +55,7 @@ class LeadFirstResponseListener(
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onOutboundSent(event: CommOutboundSentEvent) {
         // Wątek formularzowego robota zbiera zgłoszenia wielu osób i potrafi mieć
         // kilku leadów; pierwsza reakcja należy do najstarszego z nich. Zapytanie
