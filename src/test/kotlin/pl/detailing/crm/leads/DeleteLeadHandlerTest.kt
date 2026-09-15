@@ -33,7 +33,14 @@ class DeleteLeadHandlerTest {
     private val handler = DeleteLeadHandler(
         leadRepository, itemRepository, tagRepository, historyRepository, threadRepository,
         appointmentRepository = mockk(relaxed = true),
-        auditService = mockk(relaxed = true)
+        auditService = mockk(relaxed = true),
+        attachmentRepository = mockk(relaxed = true),
+        intentRepository = mockk(relaxed = true),
+        matchesRepository = mockk(relaxed = true),
+        feedbackRepository = mockk(relaxed = true),
+        decisionRepository = mockk(relaxed = true),
+        visionFactsRepository = mockk(relaxed = true),
+        anchorOutcomeRepository = mockk(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())

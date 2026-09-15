@@ -46,7 +46,14 @@ class DeleteLeadHandler(
     private val historyRepository: LeadStatusHistoryRepository,
     private val threadRepository: CommThreadRepository,
     private val appointmentRepository: AppointmentRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val attachmentRepository: pl.detailing.crm.leads.attachment.LeadAttachmentRepository,
+    private val intentRepository: pl.detailing.crm.leads.similar.LeadServiceIntentRepository,
+    private val matchesRepository: pl.detailing.crm.leads.similar.LeadSimilarMatchesRepository,
+    private val feedbackRepository: pl.detailing.crm.leads.similar.VisitMatchFeedbackRepository,
+    private val decisionRepository: pl.detailing.crm.leads.similar.pricing.LeadMatchDecisionRepository,
+    private val visionFactsRepository: pl.detailing.crm.leads.similar.vision.LeadAttachmentFactsRepository,
+    private val anchorOutcomeRepository: pl.detailing.crm.leads.similar.feedback.AnchorOutcomeRepository
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -86,6 +93,17 @@ class DeleteLeadHandler(
         historyRepository.deleteAll(historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId))
         itemRepository.deleteByLeadId(leadId)
         tagRepository.deleteByLeadId(leadId)
+        // Warstwa AI leada idzie razem z nim: intencja, dobór, dziennik decyzji,
+        // opinie o dopasowaniach, wskazania załączników i opisy zdjęć klienta.
+        // Zostawienie któregokolwiek z tych wierszy to dane osobowe bez właściciela —
+        // do przebudowy „Podobnych zleceń" wyciekały tu wszystkie cztery pierwsze.
+        attachmentRepository.deleteAll(attachmentRepository.findByLeadIdOrderByReceivedAtAsc(leadId))
+        intentRepository.findById(leadId).ifPresent { intentRepository.delete(it) }
+        matchesRepository.findById(leadId).ifPresent { matchesRepository.delete(it) }
+        feedbackRepository.deleteAll(feedbackRepository.findByLeadId(leadId))
+        decisionRepository.deleteByLeadId(leadId)
+        visionFactsRepository.deleteAll(visionFactsRepository.findByLeadId(leadId))
+        anchorOutcomeRepository.deleteAll(anchorOutcomeRepository.findByLeadId(leadId))
         leadRepository.delete(lead)
 
         log.info(

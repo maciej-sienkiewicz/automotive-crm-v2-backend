@@ -105,7 +105,24 @@ class ServiceFamilyEntity(
     var source: String = "LLM",
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /** Oś operacji — patrz [ServiceOperation] i V131. */
+    @Column(name = "operation", nullable = false, length = 20)
+    var operation: String = ServiceOperation.UNKNOWN.name,
+
+    /** Oś części auta — patrz [ServicePart] i V131. */
+    @Column(name = "part", nullable = false, length = 20)
+    var part: String = ServicePart.UNKNOWN.name,
+
+    /**
+     * Wersja PROMPTU OSI, którym powstał werdykt. Wiersze z bazy sprzed V131 mają 0
+     * (default kolumny) i są przeklasyfikowywane przy najbliższym użyciu — bez tego
+     * cały korpus zostałby z UNKNOWN na zawsze, bo znana nazwa nie dotyka modelu.
+     * Default konstruktora = wersja bieżąca: świeżo zapisany wiersz JEST bieżący.
+     */
+    @Column(name = "axes_version", nullable = false)
+    var axesVersion: Int = ServiceFamilyClassifier.CURRENT_AXES_VERSION
 ) {
     companion object {
         /** Sentinel wiersza globalnego — w indeksie unikalnym NULL nie równa się NULL. */
@@ -144,7 +161,9 @@ class ServiceFamilyAiConfig {
 data class ClassifiedServiceName(
     val nameKey: String,
     val family: ServiceFamily,
-    val scope: ServiceScope
+    val scope: ServiceScope,
+    val operation: ServiceOperation = ServiceOperation.UNKNOWN,
+    val part: ServicePart = ServicePart.UNKNOWN
 )
 
 /**
@@ -187,25 +206,50 @@ class ServiceFamilyClassifier(
             .associateBy { it.nameKey }
             .toMutableMap()
 
-        val missing = samples.keys - known.keys
-        missing.chunked(BATCH_SIZE).forEach { chunk ->
+        // Do modelu idą nazwy NIEZNANE oraz globalne wiersze sklasyfikowane STARYM
+        // promptem (sprzed osi) — bez tego warunku cały korpus zostałby z UNKNOWN
+        // na zawsze, bo znana nazwa nie dotyka modelu. Poprawki człowieka (MANUAL)
+        // i nadpisania per studio są nietykalne: automat ich nie reklasyfikuje.
+        val toClassify = samples.keys.filter { key ->
+            val row = known[key]
+            row == null || (
+                row.studioId == ServiceFamilyEntity.GLOBAL_STUDIO &&
+                    row.source != SOURCE_MANUAL &&
+                    row.axesVersion < CURRENT_AXES_VERSION
+                )
+        }
+        toClassify.chunked(BATCH_SIZE).forEach { chunk ->
             val answers = ask(chunk.map { samples.getValue(it) })
             chunk.forEachIndexed { index, nameKey ->
                 val answer = answers[index] ?: return@forEachIndexed
-                val entity = ServiceFamilyEntity(
-                    studioId = ServiceFamilyEntity.GLOBAL_STUDIO,
-                    nameKey = nameKey,
-                    nameSample = samples.getValue(nameKey).take(220),
-                    family = ServiceFamily.from(answer.family).name,
-                    scope = ServiceScope.from(answer.scope).name
-                )
-                known[nameKey] = try {
-                    repository.save(entity)
-                } catch (e: DataIntegrityViolationException) {
-                    // Dwa uzgadniacze na tej samej nazwie — wygrywa pierwszy zapis.
-                    repository
-                        .findByStudioIdInAndNameKeyIn(listOf(ServiceFamilyEntity.GLOBAL_STUDIO), listOf(nameKey))
-                        .firstOrNull() ?: return@forEachIndexed
+                val existing = known[nameKey]
+                known[nameKey] = if (existing != null) {
+                    // Przeklasyfikowanie starego wiersza globalnego nowym promptem —
+                    // update w miejscu, nie insert: para (studio, name_key) jest unikalna.
+                    existing.family = ServiceFamily.from(answer.family).name
+                    existing.scope = ServiceScope.from(answer.scope).name
+                    existing.operation = ServiceOperation.from(answer.operation).name
+                    existing.part = ServicePart.from(answer.part).name
+                    existing.axesVersion = CURRENT_AXES_VERSION
+                    repository.save(existing)
+                } else {
+                    val entity = ServiceFamilyEntity(
+                        studioId = ServiceFamilyEntity.GLOBAL_STUDIO,
+                        nameKey = nameKey,
+                        nameSample = samples.getValue(nameKey).take(220),
+                        family = ServiceFamily.from(answer.family).name,
+                        scope = ServiceScope.from(answer.scope).name,
+                        operation = ServiceOperation.from(answer.operation).name,
+                        part = ServicePart.from(answer.part).name
+                    )
+                    try {
+                        repository.save(entity)
+                    } catch (e: DataIntegrityViolationException) {
+                        // Dwa uzgadniacze na tej samej nazwie — wygrywa pierwszy zapis.
+                        repository
+                            .findByStudioIdInAndNameKeyIn(listOf(ServiceFamilyEntity.GLOBAL_STUDIO), listOf(nameKey))
+                            .firstOrNull() ?: return@forEachIndexed
+                    }
                 }
             }
         }
@@ -214,7 +258,9 @@ class ServiceFamilyClassifier(
             ClassifiedServiceName(
                 nameKey = key,
                 family = ServiceFamily.from(row.family),
-                scope = ServiceScope.from(row.scope)
+                scope = ServiceScope.from(row.scope),
+                operation = ServiceOperation.from(row.operation),
+                part = ServicePart.from(row.part)
             )
         }
     }
@@ -245,11 +291,23 @@ class ServiceFamilyClassifier(
     internal data class RawAnswer(
         @JsonProperty("position") val position: Int? = null,
         @JsonProperty("family") val family: String? = null,
-        @JsonProperty("scope") val scope: String? = null
+        @JsonProperty("scope") val scope: String? = null,
+        @JsonProperty("operation") val operation: String? = null,
+        @JsonProperty("part") val part: String? = null
     )
 
     companion object {
         const val BATCH_SIZE = 50
+
+        /**
+         * Wersja PROMPTU OSI. Podbicie wymusza przeklasyfikowanie całego korpusu
+         * nazw (poza MANUAL) — porcjami, w tempie wywołań, z globalnym cache jako
+         * amortyzatorem. Wersja 1 = rodzina + zakres + operacja + część (V131).
+         */
+        const val CURRENT_AXES_VERSION = 1
+
+        /** Wiersz poprawiony ręcznie — automat nie ma prawa go tknąć. */
+        const val SOURCE_MANUAL = "MANUAL"
 
         internal val SYSTEM_PROMPT = """
 Klasyfikujesz nazwy usług studia detailingu samochodowego do zamkniętej taksonomii.
@@ -274,6 +332,30 @@ scope — zakres wyczytany z SAMEJ nazwy:
   PARTIAL  nazwa wskazuje fragment („przód", „maska", „zderzak", „1-etapowa" NIE jest fragmentem)
   UNKNOWN  nazwa nie mówi nic o zakresie
 
+operation — RZEMIOSŁO, czyli co się robi (niezależne od rodziny):
+  CLEAN       mycie, czyszczenie, pranie — usuwanie brudu
+  PROTECT     powłoka, wosk — nakładanie warstwy ochronnej (bez folii)
+  CORRECT     korekta lakieru, polerowanie — zdejmowanie defektów
+  REPAIR      NAPRAWA i renowacja substancji: łatanie, szycie, barwienie, uzupełnianie
+  APPLY_FILM  oklejanie folią (ochronną albo zmieniającą wygląd)
+  TINT        przyciemnianie szyb i lamp
+  REMOVE      demontaż, usuwanie starej folii lub kleju
+  MOUNT       montaż elementów
+  SANITIZE    ozonowanie, dezynfekcja, usuwanie zapachów
+  INSPECT     oględziny, przegląd stanu
+  OTHER_OP    robota nazwana, ale spoza powyższych
+  UNKNOWN     nazwa nie mówi, co się robi
+
+KLUCZOWE: CZYSZCZENIE ≠ NAPRAWA. „Pranie tapicerki" to CLEAN, „Naprawa tapicerki"
+to REPAIR — inny fach, inne stanowisko, inna cena. Ta jedna różnica decyduje,
+czy klient pytający o naprawę fotela dostanie cenę mycia.
+
+part — CZĘŚĆ AUTA wyczytana z samej nazwy:
+  FULL_BODY | BODY_FRONT | BODY_PANEL | TRIM_PIECE | LAMPS | GLASS | WHEELS |
+  ENGINE_BAY | CABIN | SEAT | DOOR_PANEL | DASHBOARD | HEADLINER | CARPET | UNKNOWN
+  („próg bagażnika" i „listwa" to TRIM_PIECE; „fotel" to SEAT, „boczek drzwi" to
+  DOOR_PANEL; nazwa o wnętrzu bez wskazania miejsca to CABIN; brak wskazania → UNKNOWN)
+
 ZASADY:
 - PPF i WRAP to DWIE RÓŻNE rodziny. „Oklejanie" bez wskazania ochrony czy koloru → UNKNOWN
   scope i rodzina wg pozostałych słów; gdy nie sposób rozstrzygnąć folii → PPF tylko przy
@@ -283,7 +365,7 @@ ZASADY:
 - Klasyfikujesz NAZWĘ, nie wyobrażenie o studiu. „Ochrona lakieru" bez dalszych słów
   nie rozstrzyga między ceramiką a folią → UNKNOWN.
 
-ODPOWIEDŹ: dla KAŻDEJ pozycji zwróć { position: numer z listy, family, scope }.
+ODPOWIEDŹ: dla KAŻDEJ pozycji zwróć { position: numer z listy, family, scope, operation, part }.
 """.trim()
     }
 }

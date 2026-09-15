@@ -195,6 +195,15 @@ class StudioDataPurger(
             deleteByStudio("VisitMatchFeedbackEntity", ctx)
             deleteByStudio("LeadServiceIntentEntity", ctx)
             deleteByStudio("LeadSimilarMatchesEntity", ctx)
+            // Warstwa kotwic cenowych: dziennik decyzji doboru, opisy zdjęć klienta,
+            // użycia podpowiedzianych cen i mediany cen zrealizowanych. Wszystkie
+            // cztery są danymi wywiedzionymi z korespondencji, zdjęć i cen TEGO
+            // studia — trzymanie ich po resecie jest dokładnie tym, czego „Wyczyść
+            // konto" obiecuje nie robić.
+            deleteByStudio("LeadMatchDecisionEntity", ctx)
+            deleteByStudio("LeadAttachmentFactsEntity", ctx)
+            deleteByStudio("AnchorOutcomeEntity", ctx)
+            deleteByStudio("StudioPriceAnchorEntity", ctx)
             deleteByStudio("LeadTagDefinitionEntity", ctx)
             deleteByStudio("LeadIntakeDeliveryEntity", ctx)
             deleteByStudio("LeadIntakeWebhookEntity", ctx)

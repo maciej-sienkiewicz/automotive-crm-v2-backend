@@ -98,7 +98,12 @@ data class Visit(
         else -> null  // PENDING/ADD or REJECTED — excluded
     }
 
-    private fun effectiveGrossAmount(item: VisitServiceItem): Money? = when {
+    /**
+     * Public deliberately: the similar-visits index stamps per-name line amounts with
+     * THIS rule (visit_service_signatures.line_price_gross), so the sum of signatures
+     * always equals [calculateTotalGross] — one money rule, never a second copy.
+     */
+    fun effectiveGrossAmount(item: VisitServiceItem): Money? = when {
         item.status == VisitServiceStatus.CONFIRMED -> item.finalPriceGross
         item.status == VisitServiceStatus.APPROVED -> item.finalPriceGross
         item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->

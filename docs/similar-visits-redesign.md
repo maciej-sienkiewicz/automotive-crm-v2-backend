@@ -1,8 +1,35 @@
 # Przebudowa dopasowania podobnych zleceń — plan
 
-**Status:** propozycja do decyzji
+**Status:** ZAIMPLEMENTOWANE na gałęzi (backend w całości; frontend osobno)
 **Zakres:** `pl.detailing.crm.leads.similar`, `pl.detailing.crm.service.taxonomy`
 **Punkt wyjścia:** dwa incydenty produkcyjne (PPF BMW G60, tapicerka VW Arteon)
+
+## 0a. Stan implementacji i świadome odchylenia od planu
+
+Etapy 0–7 weszły jako JEDNO wydanie (migracje V129–V132), stąd trzy odchylenia:
+
+1. **`CURRENT_SIGNATURE_VERSION` podbite raz, 1 → 2** — plan zakładał 1 → 2 (Etap 0)
+   i 2 → 3 (Etap 2), bo etapy miały wychodzić osobno. Przy jednym wydaniu jedno
+   podbicie stempluje wszystko naraz; okno przestemplowania obsługuje zasada
+   „brak danych ≠ zero" (wiersze v1 przechodzą przez SQL, a bramki bez danych
+   same się pomijają).
+2. **Prompty zostały w `companion object`, nie w `resources/prompts/*.txt`** —
+   konwencja tego repo (wszystkie osiem istniejących promptów żyje w companion
+   objects i jest przybite testami po treści). Wersjonowanie niesie
+   `PROMPT_VERSION` / `CURRENT_AXES_VERSION`, nie ścieżka pliku.
+3. **`WorkAxisClassifier` nie powstał jako osobna klasa** — `ServiceFamilyClassifier`
+   został rozszerzony w miejscu o osie (operation/part) i `axes_version`;
+   dzięki temu 6 testów taksonomii i wszystkie miejsca wywołań zostały nietknięte.
+   Fasada bez drugiej klasy to mniejszy dyf o identycznym zachowaniu.
+
+Poza zakresem tego wydania (zgodnie z planem): shadow mode jako proces (flaga
+`rules_version` i dziennik decyzji są w kodzie — porównanie wymaga danych
+produkcyjnych), golden set 60–80 leadów (wymaga eksportu z produkcji i werdyktów
+właściciela; oba incydenty weszły jako `ProductionRegressionTest` na czystych
+funkcjach), praca frontendowa (kontrakt API rozszerzony ADDYTYWNIE — stare pola
+`items[]`/`emptyReason` bez zmian, nowe: `verdict`, `abstentionCode`, `band`,
+`vehicleHistory`, a na pozycji `compClass`, `whyItFits`, `whatDiffers`,
+`photoThumbnailUrl`, `agedLabel`).
 
 ---
 

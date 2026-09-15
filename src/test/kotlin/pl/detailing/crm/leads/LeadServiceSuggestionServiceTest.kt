@@ -95,12 +95,18 @@ class LeadServiceSuggestionServiceTest {
         assertEquals(15000L, saved.captured.priceGross)
     }
 
+    /**
+     * ZMIANA Z PRZEBUDOWY (docs/similar-visits-redesign.md §1.10): MEDIANA zamiast
+     * pojedynczej najnowszej obserwacji. Jedna wizyta to przypadek, nie cena —
+     * najnowsza kwota potrafiła być tą jedną nietypową (auto po gradobiciu, rabat
+     * dla znajomego) i szła prosto do wyceny klienta.
+     */
     @Test
-    fun `wycena niestandardowa z historia przepisuje najnowsza cene`() {
+    fun `wycena niestandardowa z historia bierze mediane obserwacji`() {
         matchedIntent(manualServiceId)
         every { serviceRepository.findAllByIdInAndStudioId(any(), studioId.value) } returns
             listOf(catalogService(manualServiceId, "Oklejenie PPF", basePriceGross = 0, manualPrice = true))
-        // Dwie wizyty z tą usługą: starsza 1800, nowsza 2200 — wygrywa nowsza.
+        // Dwie wizyty z tą usługą: 1800 i 2200 — mediana 2000, nie „nowsza wygrywa".
         val old = UUID.randomUUID(); val fresh = UUID.randomUUID()
         every { matchesRepository.findById(leadId) } returns java.util.Optional.of(
             LeadSimilarMatchesEntity(
@@ -120,7 +126,60 @@ class LeadServiceSuggestionServiceTest {
         service.recompute(studioId, leadId, force = false)
 
         assertEquals(LeadServicePriceSource.HISTORY, saved.captured.priceSource)
-        assertEquals(220000L, saved.captured.priceGross)
+        assertEquals(200000L, saved.captured.priceGross)
+    }
+
+    /**
+     * Cena 0 zł nie jest ceną: do przebudowy przechodziła jako legalna do wyceny
+     * i do rezerwacji („taką robotę robimy za darmo"). Pozycja z samym zerem
+     * w historii czeka na kwotę jak przy braku historii.
+     */
+    @Test
+    fun `cena zero z historii nie jest cena`() {
+        matchedIntent(manualServiceId)
+        every { serviceRepository.findAllByIdInAndStudioId(any(), studioId.value) } returns
+            listOf(catalogService(manualServiceId, "Oklejenie PPF", basePriceGross = 0, manualPrice = true))
+        val freeVisit = UUID.randomUUID()
+        every { matchesRepository.findById(leadId) } returns java.util.Optional.of(
+            LeadSimilarMatchesEntity(
+                leadId = leadId, studioId = studioId.value,
+                matches = LeadSimilarMatchesEntity.serialize(
+                    listOf(freeVisit to MatchTier.SAME_MODEL_SAME_SERVICE)
+                )
+            )
+        )
+        every { visitRepository.findByStudioIdAndIdIn(studioId.value, any()) } returns listOf(
+            visitWith(freeVisit, "Oklejenie PPF", 0, java.time.Instant.parse("2025-06-01T00:00:00Z"))
+        )
+        val saved = slot<LeadServiceItemEntity>()
+        every { itemRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.recompute(studioId, leadId, force = false)
+
+        assertEquals(LeadServicePriceSource.PENDING, saved.captured.priceSource)
+        assertNull(saved.captured.priceGross)
+    }
+
+    /**
+     * CATALOG_NEAR_MISS („macie naprawę tapicerki DRZWI, klient pyta o FOTEL"):
+     * zamiast pewnie brzmiącej pozycji CATALOG za 599,99 zł powstaje pozycja
+     * BEZ CENY z notatką — dokładnie ta różnica, na której poległ przypadek 2.
+     */
+    @Test
+    fun `catalog near miss tworzy pozycje bez ceny z notatka, nie pozycje z cennika`() {
+        every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns LeadServiceIntent(
+            ServiceIntentStatus.CATALOG_NEAR_MISS, emptySet(), emptySet(), ServiceScope.UNKNOWN
+        )
+        val saved = slot<LeadServiceItemEntity>()
+        every { itemRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.recompute(studioId, leadId, force = false)
+
+        assertEquals(LeadServiceSuggestionService.NEAR_MISS_ITEM_NAME, saved.captured.name)
+        assertNull(saved.captured.priceGross)
+        assertEquals(LeadServicePriceSource.PENDING, saved.captured.priceSource)
+        assertEquals(LeadServiceSuggestionService.NEAR_MISS_NOTE, saved.captured.note)
+        assertNull(saved.captured.serviceId, "Zaślepka nie może wskazywać pozycji o innej części auta")
     }
 
     @Test
