@@ -66,6 +66,17 @@ services:
   meta-ig-resolver:
     image: ${ENV_META_IG_RESOLVER_IMAGE:-127.0.0.1:5000/meta-ig-resolver:latest}
     container_name: meta-ig-resolver
+    # PROFIL, a nie zwykła usługa — i to nie jest ozdoba.
+    #
+    # `docker compose pull` ciągnie WSZYSTKIE usługi z pliku i przerywa całość,
+    # gdy jednej brakuje w registry. Obraz resolvera buduje się osobno, poza
+    # potokiem backendu, więc dopóki nikt go nie zbudował, jego obecność tutaj
+    # wywracała wdrożenie CAŁEGO backendu. Usługa w nieaktywnym profilu jest dla
+    # compose niewidoczna: nie jest pobierana ani uruchamiana.
+    #
+    # Włączenie, już po zbudowaniu i wypchnięciu obrazu:
+    #   COMPOSE_PROFILES=ig-resolver   (w /opt/apps/prod/.env)
+    profiles: ["ig-resolver"]
     restart: unless-stopped
     mem_limit: 512m
     # Chromium renderuje przez pamięć współdzieloną; domyślne 64 MB Dockera

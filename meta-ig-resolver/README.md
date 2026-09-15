@@ -54,19 +54,33 @@ wynik, pozostałe znaczą „nie udało się sprawdzić".
 
 ## Budowanie i wdrożenie
 
-Nie jest częścią potoku backendu — buduje się osobno, bo zmienia się rzadko:
+Nie jest częścią potoku backendu — buduje się osobno, bo zmienia się rzadko.
+
+Usługa siedzi w compose za **profilem** `ig-resolver` i dopóki profil jest
+nieaktywny, `docker compose` w ogóle jej nie widzi — nie próbuje jej pobrać ani
+uruchomić. Nie jest to drobiazg: `docker compose pull` ciąga wszystkie usługi
+z pliku i **przerywa całe wdrożenie**, gdy jednej brakuje w registry. Bez profilu
+sam fakt istnienia tego wpisu wywracałby wdrożenie backendu u każdego, kto nie
+zbudował wcześniej obrazu.
+
+Kolejność jest więc obowiązkowa — najpierw obraz, potem profil:
 
 ```bash
+# 1. zbuduj i wypchnij obraz
 docker build -t 127.0.0.1:5000/meta-ig-resolver:latest ./meta-ig-resolver
 docker push 127.0.0.1:5000/meta-ig-resolver:latest
-docker compose -f deploy/docker-compose.yaml up -d meta-ig-resolver
-```
 
-Włączenie po stronie backendu (domyślnie **wyłączone**):
-
-```bash
+# 2. dopiero teraz w /opt/apps/prod/.env
+COMPOSE_PROFILES=ig-resolver
 ENV_META_IG_RESOLVER_ENABLED=true
+
+# 3. wdrożenie
+docker compose --env-file /opt/apps/prod/.env up -d
 ```
+
+Wyłączenie: usuń `COMPOSE_PROFILES` z `.env` i zatrzymaj kontener ręcznie
+(`docker rm -f meta-ig-resolver`) — compose przestanie nim zarządzać, więc sam
+go nie usunie.
 
 ## Ograniczenia, o których trzeba wiedzieć
 
