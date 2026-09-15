@@ -121,11 +121,21 @@ class VisitSimilarityIndexer(
 
         // Nazwy z całej porcji klasyfikowane jednym rzutem, per studio: powtórzenia
         // między wizytami są regułą, nie wyjątkiem, a cache trzyma resztę.
+        // Miękki bezpiecznik kosztu zamiast limitera na Redisie: przy globalnym cache
+        // przestemplowanie CAŁEJ historii to zero wywołań modelu, więc jedyny realny
+        // wydatek to import z tysiącami nowych nazw — i ten ma zostać zauważony.
         val familiesByStudio: Map<UUID, Map<String, ClassifiedServiceName>> = candidates
             .groupBy { it.studioId }
             .mapValues { (studioId, visits) ->
+                val batchNames = visits.flatMap { VisitDocumentFactory.serviceNames(it) }.distinct()
+                if (batchNames.size > MAX_NEW_NAMES_PER_RUN) {
+                    log.warn(
+                        "[SIMILAR_VISITS] Studio {} ma {} unikalnych nazw w jednej porcji (limit miękki {}) — sprawdź, czy to nie kosztowny import",
+                        studioId, batchNames.size, MAX_NEW_NAMES_PER_RUN
+                    )
+                }
                 runCatching {
-                    familyClassifier.classify(studioId, visits.flatMap { VisitDocumentFactory.serviceNames(it) })
+                    familyClassifier.classify(studioId, batchNames)
                 }.getOrElse {
                     log.warn("[SIMILAR_VISITS] Klasyfikacja rodzin nie powiodła się: {}", it.message)
                     emptyMap()
@@ -136,10 +146,30 @@ class VisitSimilarityIndexer(
         for (visit in candidates) {
             val segment = runCatching { segmentService.classify(visit.brandSnapshot, visit.modelSnapshot) }
                 .getOrNull()
+            val domain = visit.toDomain()
+
+            // Kwoty liczone JEDNĄ regułą domeny (Visit.effectiveGrossAmount): pozycje
+            // PENDING/ADD i REJECTED wypadają, PENDING/EDIT bierze snapshot — więc
+            // suma sygnatur zawsze równa się kwocie zlecenia na ekranie.
+            val moneyByName: Map<String, Pair<Long, Int>> = domain.serviceItems
+                .filter { it.serviceName.isNotBlank() }
+                .groupBy { serviceNameKey(it.serviceName.trim()) }
+                .mapValues { (_, items) ->
+                    val gross = items.sumOf { domain.effectiveGrossAmount(it)?.amountInCents ?: 0L }
+                    val count = items.count { it.status != pl.detailing.crm.shared.VisitServiceStatus.REJECTED }
+                    gross to count
+                }
+            val totalGross = domain.calculateTotalGross().amountInCents
+
+            // Odcisk obejmuje też pieniądze: edycja samej ceny nie zmienia opisu
+            // roboty, a stempel z wczorajszą kwotą podpowiadałby wczorajszą cenę.
             val description = VisitDocumentFactory.describe(
                 visit, segment?.sizeSegment?.name, segment?.marketTier?.name
             )
-            val fingerprint = VisitDocumentFactory.fingerprint(description)
+            val moneyStamp = moneyByName.entries
+                .sortedBy { it.key }
+                .joinToString(";") { (key, money) -> "$key=${money.first}x${money.second}" }
+            val fingerprint = VisitDocumentFactory.fingerprint("$description\n$moneyStamp|$totalGross")
             val state = known[visit.id]
 
             // Wizyta ruszona, ale treść i format stempla te same — tylko stempel czasu.
@@ -163,13 +193,19 @@ class VisitSimilarityIndexer(
             signatureRepository.deleteByVisitId(visit.id)
             signatureRepository.saveAll(
                 names.map { name ->
-                    val classified = families.getValue(serviceNameKey(name))
+                    val key = serviceNameKey(name)
+                    val classified = families.getValue(key)
+                    val money = moneyByName[key]
                     VisitServiceSignatureEntity(
                         visitId = visit.id,
                         studioId = visit.studioId,
                         nameKey = classified.nameKey,
                         family = classified.family.name,
-                        scope = classified.scope.name
+                        scope = classified.scope.name,
+                        operation = classified.operation.name,
+                        part = classified.part.name,
+                        linePriceGross = money?.first ?: 0,
+                        lineCount = money?.second ?: 1
                     )
                 }
             )
@@ -190,6 +226,7 @@ class VisitSimilarityIndexer(
                     this.signatureVersion = CURRENT_SIGNATURE_VERSION
                     this.indexedAt = Instant.now()
                     this.sourceUpdatedAt = visit.updatedAt
+                    this.totalGross = totalGross
                 }
             )
             indexed++
@@ -204,8 +241,19 @@ class VisitSimilarityIndexer(
          * Wersja FORMATU stempla. Podbicie wymusza ponowne przejście całej historii —
          * fingerprint tego nie umie, bo zmiana formatu nie rusza żadnej wizyty.
          * Wersja 1 = kolumny auta + sygnatury rodzin (V112).
+         * Wersja 2 = osie operacji/części + pieniądze pozycji i zlecenia (V129/V131).
+         *   Przestemplowanie historii kosztuje ZERO wywołań modelu — nazwy siedzą
+         *   w globalnym cache service_families; przeklasyfikowanie NAZW nowym promptem
+         *   osi napędza osobny warunek axes_version w klasyfikatorze.
          */
-        const val CURRENT_SIGNATURE_VERSION = 1
+        const val CURRENT_SIGNATURE_VERSION = 2
+
+        /**
+         * Miękki bezpiecznik: tyle unikalnych nazw w jednej porcji uzgadniacza to już
+         * nie codzienność, tylko import — log.warn zamiast limitera na Redisie,
+         * bo chroniony wydatek jest rzędu centów.
+         */
+        const val MAX_NEW_NAMES_PER_RUN = 200
 
         /**
          * Co jest „historycznym zleceniem": wszystko poza szkicem i odrzuconą.

@@ -115,6 +115,9 @@ data class AddLeadNoteRequest(val content: String)
 
 data class LeadAttentionCountResponse(val count: Long)
 
+/** „Użyj tej ceny" — visitId wskazuje realizację, null = mediana pasma; kwota w groszach. */
+data class UseAnchorPriceRequest(val priceGross: Long, val visitId: String? = null)
+
 /**
  * Lead pipeline API. Every id from the path is re-checked against the caller's studio
  * inside the handlers.
@@ -133,7 +136,8 @@ class LeadsController(
     private val noteService: LeadNoteService,
     private val callbackHandler: RecordLeadCallbackHandler,
     private val similarVisitsHandler: SimilarVisitsHandler,
-    private val suggestionService: LeadServiceSuggestionService
+    private val suggestionService: LeadServiceSuggestionService,
+    private val anchorOutcomeService: pl.detailing.crm.leads.similar.feedback.AnchorOutcomeService
 ) {
 
     @GetMapping
@@ -257,7 +261,11 @@ class LeadsController(
     @DeleteMapping("/{id}/similar-visits/{visitId}")
     fun dismissSimilarVisit(
         @PathVariable id: String,
-        @PathVariable visitId: String
+        @PathVariable visitId: String,
+        /** WRONG_WORK | WRONG_SCALE | OTHER — opcjonalny, samo „X" działa jak dotąd. */
+        @RequestParam(required = false) reason: String?,
+        /** LEAD (domyślnie) | STUDIO — STUDIO wyklucza zlecenie z podpowiedzi całego studia (z TTL). */
+        @RequestParam(required = false) scope: String?
     ): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
         similarVisitsHandler.dismiss(
@@ -265,7 +273,31 @@ class LeadsController(
             leadId = UUID.fromString(id),
             visitId = UUID.fromString(visitId),
             userId = principal.userId,
-            userName = principal.fullName
+            userName = principal.fullName,
+            reason = pl.detailing.crm.leads.similar.feedback.DismissReason.from(reason),
+            scope = scope?.trim()?.uppercase()
+                ?: pl.detailing.crm.leads.similar.VisitMatchFeedbackEntity.SCOPE_LEAD
+        )
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * „Użyj tej ceny": właściciel przenosi podpowiedzianą kwotę do wyceny.
+     * Pierwszy sygnał POZYTYWNY pętli — [visitId] wskazuje konkretną realizację,
+     * null znaczy „wziąłem medianę pasma".
+     */
+    @PostMapping("/{id}/similar-visits/use-price")
+    fun useSimilarVisitPrice(
+        @PathVariable id: String,
+        @RequestBody request: UseAnchorPriceRequest
+    ): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        anchorOutcomeService.recordPriceUsed(
+            studioId = principal.studioId,
+            leadId = UUID.fromString(id),
+            visitId = request.visitId?.let(UUID::fromString),
+            priceUsed = request.priceGross,
+            userId = principal.userId
         )
         return ResponseEntity.noContent().build()
     }

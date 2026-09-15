@@ -2,38 +2,55 @@ package pl.detailing.crm.leads.similar
 
 import pl.detailing.crm.service.taxonomy.ServiceFamily
 import pl.detailing.crm.service.taxonomy.ServiceScope
+import java.util.UUID
 
 /**
- * Ranga dopasowania — porządek zadany przez właściciela produktu, wprost:
+ * Ranga dopasowania — porządek zadany przez właściciela produktu:
  *
  *   1. ten sam model  + TA SAMA usługa
  *   2. ta sama klasa  + TA SAMA usługa
  *   3. ten sam model  + PODOBNA usługa
  *   4. ta sama klasa  + PODOBNA usługa
- *   5. ten sam model  + INNA usługa
  *
- * Wszystko inne ODPADA — w szczególności „ta sama klasa + inna usługa": SUV
- * z myciem nie jest punktem odniesienia dla oklejenia innego SUV-a.
+ * Wszystko inne ODPADA. Dwie rangi z pierwotnej listy zostały skasowane ŚWIADOMIE
+ * (decyzja z przebudowy — docs/similar-visits-redesign.md §1.3):
+ *
+ *  - SAME_MODEL_OTHER_SERVICE wykonywała się DOKŁADNIE wtedy, gdy progi pokrycia
+ *    nie przeszły — jedno ramię `when` anulowało całą bramkę i to ono podsuwało
+ *    „Usunięcie rys" za 400 zł do zapytania o PPF za 18 450 zł. Uzasadnienie
+ *    „historia dokładnie tego auta broni się sama" zawierało błąd kategorialny:
+ *    lead ma ten sam MODEL, nie to samo AUTO.
+ *  - MODEL_HISTORY odwracała logikę niewiedzy: „nie wiemy, o co pyta" dawało pełną
+ *    listę cen, a „wiemy i tego nie sprzedajemy" — pustkę. Historia modelu żyje
+ *    teraz w OSOBNEJ sekcji odpowiedzi (vehicleHistory), jawnie bez roli cenowej.
  *
  * Usługa dominuje nad autem (ranga 2 bije rangę 3): pytanie handlowca brzmi
  * „ile bierzemy za taką robotę", a auto tylko kalibruje rozmiar tej roboty.
- * Klasa = sam segment WIELKOŚCI, bez półki rynkowej — decyzja właściciela:
- * SUV VW kosztuje przy tej samej folii tyle, co SUV Porsche, bo pracę wyznacza
- * powierzchnia, nie logo.
- *
- * Kolejność deklaracji JEST kolejnością rang. [MODEL_HISTORY] stoi poza kratą:
- * to tryb „nie znamy usługi" (intencji nie dało się odczytać), gdzie jedyną
- * uczciwą podpowiedzią jest historia dokładnie tego auta — bez twierdzenia,
- * że robota jest „ta sama" albo „inna".
  */
 enum class MatchTier {
     SAME_MODEL_SAME_SERVICE,
     SAME_SEGMENT_SAME_SERVICE,
     SAME_MODEL_SIMILAR_SERVICE,
-    SAME_SEGMENT_SIMILAR_SERVICE,
-    SAME_MODEL_OTHER_SERVICE,
-    MODEL_HISTORY
+    SAME_SEGMENT_SIMILAR_SERVICE
 }
+
+/**
+ * Wynik kraty dla jednego kandydata — ranga plus metryki, które do tej pory
+ * ginęły wraz z ramką stosu. Metryki zasilają dziennik decyzji (lead_match_decisions)
+ * i bramki ekonomiczne w AnchorGate.
+ *
+ * @property tier ranga albo null (odpada)
+ * @property coverage pokrycie zapytania przez zlecenie (0..1, liczone po licznościach — jak dotąd)
+ * @property focus ile zlecenia to ta robota (0..1, po licznościach; bramka KWOTOWA żyje w AnchorGate)
+ * @property matchingSignatureIds sygnatury, które odpowiadają zapytaniu (oś != DIFFERENT) —
+ *   po nich AnchorGate sumuje pieniądze pozycji
+ */
+data class LatticeResult(
+    val tier: MatchTier?,
+    val coverage: Double,
+    val focus: Double,
+    val matchingSignatureIds: Set<UUID>
+)
 
 /**
  * Krata dopasowania: (oś auta) × (oś usługi) → ranga albo odrzucenie.
@@ -44,15 +61,7 @@ enum class MatchTier {
  *
  * ═══ Oś usługi liczy POKRYCIE ZAKRESU, nie najlepszą pojedynczą pozycję ═══
  *
- * Wcześniej o randze zlecenia decydowała jedna, najlepiej trafiona pozycja. To
- * dawało odpowiedzi bezużyteczne jako punkt odniesienia dla ceny: zlecenie na
- * 18 819 zł (folia PPF na całe auto, przyciemnianie lamp, komora silnika i przy
- * okazji pakiet czyszczenia wnętrza) wygrywało z klientem pytającym o mycie,
- * lekką korektę i odświeżenie wnętrza — bo jedna pozycja z siedmiu się zgadzała.
- * W drugą stronę było tak samo: mycie za 270 zł wchodziło jako podpowiedź do
- * zapytania o przygotowanie auta do sprzedaży.
- *
- * Dlatego liczymy dwie proporcje:
+ * Liczymy dwie proporcje:
  *
  *   POKRYCIE   ile z tego, o co pyta klient, zlecenie faktycznie zawiera
  *   SKUPIENIE  ile z tego zlecenia to ta sama robota, a ile rzeczy obok
@@ -61,18 +70,23 @@ enum class MatchTier {
  * CAŁE zlecenie. Zlecenie, które robi połowę tego, o co pyta klient, albo w
  * którym ta robota jest dodatkiem do czegoś większego, na to pytanie nie
  * odpowiada, tylko wprowadza w błąd. Lepiej nie pokazać nic.
+ *
+ * Krata rozstrzyga TOŻSAMOŚĆ RODZAJU roboty. SKALĘ (850 zł vs 18 450 zł przy tej
+ * samej rodzinie) i RZEMIOSŁO (czyszczenie vs naprawa w tej samej rodzinie)
+ * rozstrzygają bramki w [pricing.AnchorGate] — krata dostaje ich werdykt gotowy,
+ * jako zbiór [axisDisqualified], i traktuje takie pozycje jak DIFFERENT.
  */
 object SimilarVisitMatcher {
 
     /** Oś usługi dla JEDNEJ pozycji zlecenia względem intencji leada. */
     private enum class ServiceAxis { SAME, SIMILAR, DIFFERENT }
 
-    /**
-     * Ile z zapytania pokrywa zlecenie i ile z tego zlecenia to ta robota.
-     * Obie liczby z zakresu 0..1; [exact] mówi, czy pokrycie idzie po pozycjach
-     * cennika (dowód tożsamości), czy tylko po rodzinie roboty.
-     */
-    private data class Overlap(val coverage: Double, val focus: Double, val exact: Boolean)
+    private data class Overlap(
+        val coverage: Double,
+        val focus: Double,
+        val exact: Boolean,
+        val matchingIds: Set<UUID>
+    )
 
     /**
      * Zlecenie musi zawierać PRZYNAJMNIEJ POŁOWĘ tego, o co pyta klient. Próg jest
@@ -88,10 +102,7 @@ object SimilarVisitMatcher {
      */
     private const val MIN_FOCUS = 1.0 / 3.0
 
-    /**
-     * @param leadBrandKey / leadModelKey — auto leada (lower/trim), null gdy nieznane
-     * @param leadSegment — segment wielkości auta leada, null/UNKNOWN gdy nieznany
-     */
+    /** Zgodność wsteczna: ranga bez metryk. Odpowiada [evaluate] bez dyskwalifikacji osiowych. */
     fun grade(
         candidate: VisitIndexStateEntity,
         signatures: List<VisitServiceSignatureEntity>,
@@ -99,34 +110,47 @@ object SimilarVisitMatcher {
         leadBrandKey: String?,
         leadModelKey: String?,
         leadSegment: String?
-    ): MatchTier? {
+    ): MatchTier? = evaluate(candidate, signatures, intent, leadBrandKey, leadModelKey, leadSegment).tier
+
+    /**
+     * @param leadBrandKey / leadModelKey — auto leada (lower/trim), null gdy nieznane
+     * @param leadSegment — segment wielkości auta leada, null/UNKNOWN gdy nieznany
+     * @param axisDisqualified — sygnatury zdyskwalifikowane przez bramki osi
+     *   (operacja/część, [pricing.AnchorGate]); krata traktuje je jak DIFFERENT,
+     *   ale zostają w mianowniku skupienia — dyskwalifikacja nie odchudza zlecenia
+     */
+    fun evaluate(
+        candidate: VisitIndexStateEntity,
+        signatures: List<VisitServiceSignatureEntity>,
+        intent: LeadServiceIntent,
+        leadBrandKey: String?,
+        leadModelKey: String?,
+        leadSegment: String?,
+        axisDisqualified: Set<UUID> = emptySet()
+    ): LatticeResult {
         val sameModel = leadBrandKey != null && leadModelKey != null &&
             candidate.brandKey == leadBrandKey && candidate.modelKey == leadModelKey
         val sameSegment = !leadSegment.isNullOrBlank() && leadSegment != UNKNOWN &&
             candidate.sizeSegment == leadSegment
 
-        if (!sameModel && !sameSegment) return null
+        if (!sameModel && !sameSegment) return NO_MATCH
 
-        // Intencji nie znamy — pokazujemy wyłącznie historię DOKŁADNIE tego auta,
-        // pod uczciwą etykietą. Segmentowe zlecenia bez znanej usługi to już nie
-        // podpowiedź, tylko szum.
-        if (intent.status == ServiceIntentStatus.NO_SERVICE) {
-            return if (sameModel) MatchTier.MODEL_HISTORY else null
-        }
+        // Intencji nie znamy — sekcja CENOWA nie ma prawa niczego pokazać.
+        // Historia dokładnie tego auta żyje w osobnej sekcji, poza kratą.
+        if (intent.status == ServiceIntentStatus.NO_SERVICE) return NO_MATCH
 
-        val overlap = overlap(signatures, intent)
+        val overlap = overlap(signatures, intent, axisDisqualified)
         val enough = overlap.coverage >= MIN_COVERAGE && overlap.focus >= MIN_FOCUS
 
-        return when {
+        val tier = when {
             enough && overlap.exact && sameModel -> MatchTier.SAME_MODEL_SAME_SERVICE
             enough && overlap.exact -> MatchTier.SAME_SEGMENT_SAME_SERVICE
             enough && sameModel -> MatchTier.SAME_MODEL_SIMILAR_SERVICE
             enough -> MatchTier.SAME_SEGMENT_SIMILAR_SERVICE
-            // Historia DOKŁADNIE tego auta broni się sama, nawet przy innej robocie.
-            sameModel -> MatchTier.SAME_MODEL_OTHER_SERVICE
-            // ta sama klasa + inna usługa — poza listą właściciela, odpada
+            // Progi nie przeszły → ODPADA. Nie ma rangi-śmietnika, która by je anulowała.
             else -> null
         }
+        return LatticeResult(tier, overlap.coverage, overlap.focus, overlap.matchingIds)
     }
 
     /**
@@ -138,17 +162,21 @@ object SimilarVisitMatcher {
      * Ale tylko pokrycie po pozycjach daje rangę „TA SAMA usługa": rodzina mówi,
      * że to ten sam rodzaj roboty, nie że ta sama robota.
      */
-    private fun overlap(signatures: List<VisitServiceSignatureEntity>, intent: LeadServiceIntent): Overlap {
+    private fun overlap(
+        signatures: List<VisitServiceSignatureEntity>,
+        intent: LeadServiceIntent,
+        axisDisqualified: Set<UUID>
+    ): Overlap {
         // Zlecenie bez sygnatur — nie wiemy, co w nim było. Brak wiedzy nie jest dopasowaniem.
-        if (signatures.isEmpty()) return Overlap(coverage = 0.0, focus = 0.0, exact = false)
+        if (signatures.isEmpty()) return Overlap(coverage = 0.0, focus = 0.0, exact = false, matchingIds = emptySet())
 
-        val axes = signatures.map { it to serviceAxis(it, intent) }
-        val matching = axes.count { (_, axis) -> axis != ServiceAxis.DIFFERENT }
-        val focus = matching.toDouble() / signatures.size
+        val axes = signatures.map { it to serviceAxis(it, intent, axisDisqualified) }
+        val matching = axes.filter { (_, axis) -> axis != ServiceAxis.DIFFERENT }
+        val focus = matching.size.toDouble() / signatures.size
 
-        val visitKeys = signatures.map { it.nameKey }.toSet()
-        val visitFamilies = signatures
-            .map { ServiceFamily.from(it.family) }
+        val visitKeys = matching.map { (signature, _) -> signature.nameKey }.toSet()
+        val visitFamilies = matching
+            .map { (signature, _) -> ServiceFamily.from(signature.family) }
             .filter { it != ServiceFamily.UNKNOWN && it != ServiceFamily.OTHER }
             .toSet()
         // Rodziny, w których zlecenie zrobiło robotę w TYM SAMYM zakresie co pytanie —
@@ -170,7 +198,8 @@ object SimilarVisitMatcher {
             // „Ta sama robota" wymaga DOWODU tożsamości na przynajmniej połowie
             // zapytania: albo wprost pozycją cennika, albo rodziną z tym samym
             // zakresem. Sama zgodność rodziny to dopiero „podobna".
-            exact = maxOf(keyCoverage, identityCoverage) >= MIN_COVERAGE
+            exact = maxOf(keyCoverage, identityCoverage) >= MIN_COVERAGE,
+            matchingIds = matching.map { (signature, _) -> signature.id }.toSet()
         )
     }
 
@@ -182,11 +211,32 @@ object SimilarVisitMatcher {
      *  - pozycja zlecenia to dokładnie ta pozycja cennika, którą wskazała intencja, albo
      *  - rodzina się zgadza I zakres się zgadza (oba znane).
      *
-     * PODOBNA = ta sama rodzina, ale bez dowodu tożsamości — zakres nieznany albo
-     * jawnie różny („przód" vs „całe auto": ta sama robota, inna skala i inna cena).
+     * PODOBNA = ta sama rodzina, zakres NIEZNANY po którejś stronie.
+     *
+     * Zakres znany po OBU stronach i jawnie sprzeczny („przód" vs „całe auto") to
+     * INNA robota — inna skala i inna cena. Do przebudowy taki konflikt degradował
+     * tylko do „podobnej" i to on wpuścił folię na progu bagażnika za 850 zł jako
+     * odpowiedź na pytanie o full body za 18 450 zł. Konflikt ZNANYCH zakresów
+     * dyskwalifikuje; nieznany zakres jedynie odbiera dowód tożsamości.
      */
-    private fun serviceAxis(signature: VisitServiceSignatureEntity, intent: LeadServiceIntent): ServiceAxis {
-        if (signature.nameKey in intent.matchedNameKeys) return ServiceAxis.SAME
+    private fun serviceAxis(
+        signature: VisitServiceSignatureEntity,
+        intent: LeadServiceIntent,
+        axisDisqualified: Set<UUID>
+    ): ServiceAxis {
+        // Werdykt bramek osi (rzemiosło/część z AnchorGate) jest ostateczny:
+        // czyszczenie nie staje się naprawą przez wspólną rodzinę INTERIOR.
+        if (signature.id in axisDisqualified) return ServiceAxis.DIFFERENT
+
+        val visitScope = ServiceScope.from(signature.scope)
+        val scopesKnown = visitScope != ServiceScope.UNKNOWN && intent.scope != ServiceScope.UNKNOWN
+        val scopeConflict = scopesKnown && visitScope != intent.scope
+
+        if (signature.nameKey in intent.matchedNameKeys) {
+            // Dokładna pozycja cennika, ale zlecenie robiło ją w INNYM zakresie niż
+            // pyta klient — cennik potrafi mieć jedną nazwę na obie skale.
+            return if (scopeConflict) ServiceAxis.DIFFERENT else ServiceAxis.SAME
+        }
 
         val family = ServiceFamily.from(signature.family)
         // UNKNOWN i OTHER nie tworzą wspólnoty: dwie nieodgadnione nazwy nie stają
@@ -195,11 +245,14 @@ object SimilarVisitMatcher {
             family in intent.families
         if (!familyMatch) return ServiceAxis.DIFFERENT
 
-        val visitScope = ServiceScope.from(signature.scope)
-        val sameScope = visitScope != ServiceScope.UNKNOWN && intent.scope != ServiceScope.UNKNOWN &&
-            visitScope == intent.scope
-        return if (sameScope) ServiceAxis.SAME else ServiceAxis.SIMILAR
+        return when {
+            scopeConflict -> ServiceAxis.DIFFERENT
+            scopesKnown -> ServiceAxis.SAME
+            else -> ServiceAxis.SIMILAR
+        }
     }
+
+    private val NO_MATCH = LatticeResult(tier = null, coverage = 0.0, focus = 0.0, matchingSignatureIds = emptySet())
 
     private const val UNKNOWN = "UNKNOWN"
 }

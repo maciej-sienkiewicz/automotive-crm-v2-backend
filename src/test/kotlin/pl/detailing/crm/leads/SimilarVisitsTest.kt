@@ -52,11 +52,13 @@ import java.util.UUID
 /**
  * Krata dopasowania „podobnych zleceń".
  *
- * Porządek pięciu rang zadał właściciel produktu WPROST i to on jest kontraktem:
- * usługa dominuje nad autem (klasa + ta sama usługa bije model + podobną),
- * a „ta sama klasa + inna usługa" w ogóle nie istnieje. Te testy przybijają
- * każde zdanie tej listy — regresja w kracie nie rzuca błędem, tylko po cichu
- * podsuwa handlowcowi złe ceny.
+ * Porządek CZTERECH rang jest kontraktem: usługa dominuje nad autem (klasa +
+ * ta sama usługa bije model + podobną), „ta sama klasa + inna usługa" nie
+ * istnieje, a od przebudowy (docs/similar-visits-redesign.md) nie istnieją też
+ * „ten sam model + inna usługa" ani „historia auta bez intencji" — obie rangi
+ * anulowały progi pokrycia i to one podsuwały handlowcowi absurdalne ceny.
+ * Te testy przybijają każde zdanie tej listy — regresja w kracie nie rzuca
+ * błędem, tylko po cichu podsuwa złe kwoty.
  */
 class SimilarVisitMatcherTest {
 
@@ -107,7 +109,16 @@ class SimilarVisitMatcherTest {
         segment: String? = "F"
     ) = SimilarVisitMatcher.grade(candidate, signatures, intent, brandKey, modelKey, segment)
 
-    /** Kolejność rang JEST listą właściciela produktu — przybita, żeby nie drgnęła. */
+    /**
+     * Kolejność rang JEST listą właściciela produktu — przybita, żeby nie drgnęła.
+     *
+     * Lista ma CZTERY pozycje. Dwie z pierwotnej wersji skasowano decyzją
+     * z przebudowy (docs/similar-visits-redesign.md §1.3): SAME_MODEL_OTHER_SERVICE
+     * wykonywała się dokładnie wtedy, gdy progi pokrycia NIE przeszły — anulowała
+     * całą bramkę i to ona podsuwała polerowanie za 400 zł do zapytania o PPF —
+     * a MODEL_HISTORY dawała pełną listę cen właśnie wtedy, gdy nie wiedzieliśmy,
+     * o co klient pyta. Historia modelu żyje teraz w osobnej sekcji, bez roli cenowej.
+     */
     @Test
     fun `porzadek rang to dokladnie lista wlasciciela produktu`() {
         assertEquals(
@@ -115,9 +126,7 @@ class SimilarVisitMatcherTest {
                 MatchTier.SAME_MODEL_SAME_SERVICE,
                 MatchTier.SAME_SEGMENT_SAME_SERVICE,
                 MatchTier.SAME_MODEL_SIMILAR_SERVICE,
-                MatchTier.SAME_SEGMENT_SIMILAR_SERVICE,
-                MatchTier.SAME_MODEL_OTHER_SERVICE,
-                MatchTier.MODEL_HISTORY
+                MatchTier.SAME_SEGMENT_SIMILAR_SERVICE
             ),
             MatchTier.entries.toList()
         )
@@ -161,25 +170,38 @@ class SimilarVisitMatcherTest {
         assertEquals(MatchTier.SAME_MODEL_SIMILAR_SERVICE, tier)
     }
 
+    /**
+     * ODWRÓCONA DECYZJA (przebudowa, §1.1): „przód" vs „całe auto" to ta sama robota,
+     * ale INNA SKALA i INNA CENA — a skala jest dokładnie tym, o co pyta właściciel.
+     * Konflikt zakresów ZNANYCH po obu stronach dyskwalifikuje; do przebudowy tylko
+     * degradował do „podobnej" i to on wpuścił folię na progu bagażnika za 850 zł
+     * jako odpowiedź na pytanie o full body za 18 450 zł.
+     */
     @Test
-    fun `sprzeczny zakres degraduje do uslugi podobnej`() {
-        // „Przód" vs „całe auto": ta sama robota, inna skala i inna cena.
+    fun `sprzeczny zakres dyskwalifikuje, nie degraduje`() {
         val tier = grade(
             candidate(),
             listOf(signature(family = ServiceFamily.PPF, scope = ServiceScope.FULL)),
             intent(families = setOf(ServiceFamily.PPF), scope = ServiceScope.PARTIAL)
         )
-        assertEquals(MatchTier.SAME_MODEL_SIMILAR_SERVICE, tier)
+        assertNull(tier, "Znany i sprzeczny zakres to inna robota, nie podobna")
     }
 
+    /**
+     * ODWRÓCONA DECYZJA (przebudowa, §1.3): inna robota odpada TAKŻE na tym samym
+     * modelu. Ranga-śmietnik wykonywała się dokładnie wtedy, gdy progi pokrycia nie
+     * przeszły — czyli anulowała bramkę, którą miała uzupełniać. „BMW Serii 5"
+     * z zapytania to ten sam MODEL, nie ten sam EGZEMPLARZ — historia auta klienta
+     * to inna funkcja niż kotwica cenowa.
+     */
     @Test
-    fun `inna robota na tym samym modelu to ostatnia ranga`() {
+    fun `inna robota odpada takze na tym samym modelu`() {
         val tier = grade(
             candidate(),
             listOf(signature(family = ServiceFamily.WASH)),
             intent(families = setOf(ServiceFamily.PPF))
         )
-        assertEquals(MatchTier.SAME_MODEL_OTHER_SERVICE, tier)
+        assertNull(tier)
     }
 
     /** Pozycja listy, której NIE MA: klasa + inna usługa odpada w całości. */
@@ -241,15 +263,19 @@ class SimilarVisitMatcherTest {
         assertEquals(MatchTier.SAME_MODEL_SAME_SERVICE, tier)
     }
 
+    /**
+     * ODWRÓCONA DECYZJA (przebudowa, §1.3): brak intencji = sekcja CENOWA milczy.
+     * Poprzednio „nie wiemy, o co pyta" dawało pełną listę cen historii auta, a
+     * „wiemy i tego nie sprzedajemy" — pustkę: stan ostrzejszy traktowany łagodniej.
+     * Historia dokładnie tego modelu żyje teraz w osobnej sekcji (vehicleHistory),
+     * jawnie bez roli cenowej — poza kratą.
+     */
     @Test
-    fun `bez intencji zostaje wylacznie historia tego auta`() {
+    fun `bez intencji sekcja cenowa milczy`() {
         val noService = intent(status = ServiceIntentStatus.NO_SERVICE, families = emptySet())
 
-        assertEquals(MatchTier.MODEL_HISTORY, grade(candidate(), emptyList(), noService))
-        assertNull(
-            grade(candidate(brandKey = "volkswagen", modelKey = "touareg"), emptyList(), noService),
-            "Segmentowe zlecenia bez znanej usługi to szum, nie podpowiedź"
-        )
+        assertNull(grade(candidate(), emptyList(), noService))
+        assertNull(grade(candidate(brandKey = "volkswagen", modelKey = "touareg"), emptyList(), noService))
     }
 
     @Test
@@ -369,11 +395,15 @@ class SimilarVisitMatcherTest {
         )
     }
 
-    /** …ale historia DOKŁADNIE tego auta broni się sama, nawet przy innej robocie. */
+    /**
+     * ODWRÓCONA DECYZJA (przebudowa, §1.3): robota, która się nie pokrywa, odpada
+     * także na tym samym modelu — folia PPF nie jest kotwicą dla pytania o korektę,
+     * choćby auto się zgadzało co do liter. Poprzednia ranga SAME_MODEL_OTHER_SERVICE
+     * mieszała dwie funkcje: kotwicę cenową i historię auta.
+     */
     @Test
-    fun `to samo auto zostaje historia auta, gdy robota sie nie pokrywa`() {
-        assertEquals(
-            MatchTier.SAME_MODEL_OTHER_SERVICE,
+    fun `robota bez pokrycia odpada takze na tym samym modelu`() {
+        assertNull(
             grade(
                 candidate(brandKey = "honda", modelKey = "cr-v"),
                 List(6) { index -> signature("folia ppf element $index", ServiceFamily.PPF) },
@@ -639,32 +669,45 @@ class SimilarVisitsDismissalTest {
     private val byModelOld = UUID.randomUUID()
     private val bySegment = UUID.randomUUID()
 
+    private val decisionRepository =
+        mockk<pl.detailing.crm.leads.similar.pricing.LeadMatchDecisionRepository>(relaxed = true)
+    private val verifier = mockk<pl.detailing.crm.leads.similar.pricing.AnchorVerifier>(relaxed = true)
+
     private val handler = SimilarVisitsHandler(
         leadRepository, visitRepository, feedbackRepository, indexStateRepository,
         signatureRepository, matchesRepository, intentService, segmentService,
+        decisionRepository, verifier,
         enabled = true, maxResults = 2, maxCandidates = 400
     )
+
+    /** Daty względem "teraz" — bramka wieku (24 mies.) nie może zależeć od dnia uruchomienia testu. */
+    private val now = Instant.now()
+    private fun monthsAgo(months: Long): Instant = now.minus(months * 30, java.time.temporal.ChronoUnit.DAYS)
 
     @BeforeEach
     fun setUp() {
         every { leadRepository.findByIdAndStudioId(leadId, studioId.value) } returns lead()
         every { indexStateRepository.countByStudioId(studioId.value) } returns 42
+        every { decisionRepository.findByLeadIdOrderByCreatedAtDesc(leadId) } returns emptyList()
+        every {
+            feedbackRepository.findByStudioIdAndScope(studioId.value, VisitMatchFeedbackEntity.SCOPE_STUDIO)
+        } returns emptyList()
         // Domyślnie brak zapisanego doboru — ścieżka leniwa liczy i zapisuje.
         every { matchesRepository.findById(leadId) } returns java.util.Optional.empty()
         every { matchesRepository.save(any()) } answers { firstArg() }
         every { segmentService.classify(any(), any()) } returns segmentRow()
-        every { intentService.intentFor(studioId, leadId, any(), any()) } returns LeadServiceIntent(
+        every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns LeadServiceIntent(
             ServiceIntentStatus.MATCHED,
             setOf(ServiceFamily.PPF),
             setOf("oklejenie przodu ppf"),
             ServiceScope.PARTIAL
         )
         every {
-            indexStateRepository.findCandidates(any(), any(), any(), any(), any(), any())
+            indexStateRepository.findCandidates(any(), any(), any(), any(), any(), any(), any(), any())
         } returns listOf(
-            indexRow(byModelFresh, "porsche", "panamera", at = Instant.parse("2025-06-01T10:00:00Z")),
-            indexRow(byModelOld, "porsche", "panamera", at = Instant.parse("2024-06-01T10:00:00Z")),
-            indexRow(bySegment, "mercedes-benz", "klasa s", at = Instant.parse("2025-08-01T10:00:00Z"))
+            indexRow(byModelFresh, "porsche", "panamera", at = monthsAgo(2)),
+            indexRow(byModelOld, "porsche", "panamera", at = monthsAgo(10)),
+            indexRow(bySegment, "mercedes-benz", "klasa s", at = monthsAgo(1))
         )
         every { signatureRepository.findByVisitIdIn(any()) } answers {
             firstArg<Collection<UUID>>().map { id ->
@@ -731,7 +774,7 @@ class SimilarVisitsDismissalTest {
     /** Decyzja właściciela: robota spoza cennika = żadnych cen, z nazwanym powodem. */
     @Test
     fun `robota spoza cennika daje pusta sekcje z powodem`() {
-        every { intentService.intentFor(studioId, leadId, any()) } returns LeadServiceIntent(
+        every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns LeadServiceIntent(
             ServiceIntentStatus.NOT_IN_CATALOG, emptySet(), emptySet(), ServiceScope.UNKNOWN
         )
 
@@ -759,7 +802,7 @@ class SimilarVisitsDismissalTest {
      */
     @Test
     fun `awaria intencji niczego nie utrwala`() {
-        every { intentService.intentFor(studioId, leadId, any(), any()) } returns null
+        every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns null
 
         val result = handler.findFor(studioId, leadId)
 
@@ -786,8 +829,10 @@ class SimilarVisitsDismissalTest {
         val items = handler.findFor(studioId, leadId).items
 
         assertEquals(listOf(byModelFresh.toString(), bySegment.toString()), items.map { it.visitId })
-        verify(exactly = 0) { intentService.intentFor(any(), any(), any(), any()) }
-        verify(exactly = 0) { indexStateRepository.findCandidates(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { intentService.intentFor(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) {
+            indexStateRepository.findCandidates(any(), any(), any(), any(), any(), any(), any(), any())
+        }
     }
 
     /**
@@ -804,7 +849,7 @@ class SimilarVisitsDismissalTest {
         val items = handler.refresh(studioId, leadId).items
 
         assertTrue(items.isNotEmpty(), "Świeży dobór ma zastąpić zapisaną pustkę")
-        verify(exactly = 1) { intentService.intentFor(studioId, leadId, any(), true) }
+        verify(exactly = 1) { intentService.intentFor(studioId, leadId, any(), true, any()) }
         verify(exactly = 1) { matchesRepository.save(any()) }
     }
 

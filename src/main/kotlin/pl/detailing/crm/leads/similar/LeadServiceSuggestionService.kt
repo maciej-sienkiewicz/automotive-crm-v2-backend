@@ -21,7 +21,6 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
-import pl.detailing.crm.shared.VisitServiceStatus
 import java.util.UUID
 
 /**
@@ -49,7 +48,9 @@ class LeadServiceSuggestionService(
     private val visitRepository: SimilarVisitReadRepository,
     private val itemsService: LeadServiceItemsService,
     private val quoteSync: LeadQuoteSyncService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    /** Zdjęte podpowiedzi nie mają prawa podpowiadać cen — patrz [historicalPriceByNameKey]. */
+    private val feedbackRepository: VisitMatchFeedbackRepository? = null
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -68,7 +69,36 @@ class LeadServiceSuggestionService(
             leadId, LeadServiceItemStatus.SUGGESTED, LeadServiceItemSource.AI
         )
 
-        val intent = intentService.intentFor(studioId, leadId, lead.initialMessage, force)
+        val intent = intentService.intentFor(studioId, leadId, lead.initialMessage, force, lead.threadId)
+
+        // „Prawie trafienie": cennik ma tę samą OPERACJĘ na INNEJ CZĘŚCI auta.
+        // Zamiast pewnie brzmiącej pozycji CATALOG (599,99 zł za DRZWI przy pytaniu
+        // o FOTEL) powstaje pozycja BEZ CENY z notatką — interfejs wymusi kwotę,
+        // a właściciel widzi, DLACZEGO automat nie podał liczby.
+        if (intent != null && intent.status == ServiceIntentStatus.CATALOG_NEAR_MISS) {
+            val alreadySuggested = itemRepository.findByLeadIdOrderByCreatedAtAsc(leadId).isNotEmpty()
+            if (!alreadySuggested) {
+                itemRepository.save(
+                    LeadServiceItemEntity(
+                        id = UUID.randomUUID(),
+                        studioId = studioId.value,
+                        leadId = leadId,
+                        serviceId = null,
+                        name = NEAR_MISS_ITEM_NAME,
+                        priceGross = null,
+                        note = NEAR_MISS_NOTE,
+                        quantity = 1,
+                        status = LeadServiceItemStatus.SUGGESTED,
+                        source = LeadServiceItemSource.AI,
+                        priceSource = LeadServicePriceSource.PENDING
+                    )
+                )
+            }
+            itemsService.recomputeEstimatedValue(lead)
+            publishChanged(lead)
+            return
+        }
+
         // Awaria modelu (null) albo robota spoza cennika/brak usługi → bez sugestii.
         // Przy NOT_IN_CATALOG to świadome: nie podsuwamy cen innej roboty.
         if (intent == null || intent.status != ServiceIntentStatus.MATCHED || intent.matchedServiceIds.isEmpty()) {
@@ -191,25 +221,47 @@ class LeadServiceSuggestionService(
     }
 
     /**
-     * Cena TEJ usługi z historii: najnowsza wizyta wśród „Podobnych zleceń" leada,
-     * która zawiera pozycję o tym samym name_key. Czytana na żywo z wizyt (a nie
+     * Cena TEJ usługi z historii: MEDIANA po wizytach z „Podobnych zleceń" leada,
+     * które zawierają pozycję o tym samym name_key. Czytana na żywo z wizyt (a nie
      * z kopii w sygnaturze), więc zawsze prawdziwa i bez okna przestemplowania.
+     *
+     * Cztery poprawki względem pierwotnej wersji (docs/similar-visits-redesign.md §1.10):
+     *  - MEDIANA zamiast pojedynczej najnowszej obserwacji — jedna wizyta nie jest ceną;
+     *  - kwota pozycji liczona regułą [pl.detailing.crm.visit.domain.Visit.effectiveGrossAmount]
+     *    (PENDING/ADD i REJECTED wypadają, PENDING/EDIT bierze snapshot) — kwota
+     *    sugerowana pochodzi z tej samej reguły, co kwota zlecenia na ekranie;
+     *  - cena 0 zł nie jest ceną i nie przechodzi (dotąd szła do wyceny i rezerwacji);
+     *  - podpowiedzi ZDJĘTE „X-em" na tym leadzie nie podpowiadają cen.
      */
     private fun historicalPriceByNameKey(studioId: StudioId, leadId: UUID): Map<String, Long> {
-        val visitIds = matchesRepository.findById(leadId).orElse(null)?.parsed()?.map { it.first } ?: emptyList()
+        val dismissed = feedbackRepository?.findByLeadId(leadId).orEmpty().map { it.visitId }.toSet()
+        val visitIds = matchesRepository.findById(leadId).orElse(null)
+            ?.parsedMatches()
+            ?.map { it.visitId }
+            ?.filterNot { it in dismissed }
+            ?: emptyList()
         if (visitIds.isEmpty()) return emptyMap()
 
         return visitRepository.findByStudioIdAndIdIn(studioId.value, visitIds)
-            // Najnowsza wizyta pierwsza; groupBy zachowuje kolejność, więc pierwsza
-            // cena per name_key pochodzi z najświeższego zlecenia.
-            .sortedByDescending { it.actualCompletionDate ?: it.scheduledDate }
             .flatMap { visit ->
-                visit.serviceItems
-                    .filter { it.status != VisitServiceStatus.REJECTED && it.serviceName.isNotBlank() }
-                    .map { serviceNameKey(it.serviceName) to it.finalPriceGross }
+                val domain = visit.toDomain()
+                domain.serviceItems
+                    .filter { it.serviceName.isNotBlank() }
+                    .mapNotNull { item ->
+                        domain.effectiveGrossAmount(item)?.amountInCents
+                            ?.takeIf { it > 0 }
+                            ?.let { serviceNameKey(item.serviceName) to it }
+                    }
             }
             .groupBy({ it.first }, { it.second })
-            .mapValues { (_, prices) -> prices.first() }
+            .mapValues { (_, prices) -> median(prices) }
+    }
+
+    private fun median(prices: List<Long>): Long {
+        val sorted = prices.sorted()
+        val middle = sorted.size / 2
+        return if (sorted.size % 2 == 1) sorted[middle]
+        else (sorted[middle - 1] + sorted[middle]) / 2
     }
 
     private fun priceFor(
@@ -228,6 +280,14 @@ class LeadServiceSuggestionService(
         eventPublisher.publishEvent(
             LeadChangedEvent(source = this, studioId = StudioId(lead.studioId), leadId = LeadId(lead.id))
         )
+    }
+
+    companion object {
+        /** Pozycja-zaślepka przy CATALOG_NEAR_MISS — interfejs wymusi kwotę przy akceptacji. */
+        const val NEAR_MISS_ITEM_NAME = "Wycena indywidualna"
+        const val NEAR_MISS_NOTE =
+            "Klient pyta o robotę podobną do pozycji cennika, ale na innej części auta — " +
+                "automat nie podał ceny, żeby nie podpowiedzieć kwoty innej roboty."
     }
 }
 

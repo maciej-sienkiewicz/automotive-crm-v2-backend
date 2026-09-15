@@ -74,7 +74,16 @@ class VisitIndexStateEntity(
     var indexedAt: Instant = Instant.now(),
 
     @Column(name = "source_updated_at", nullable = false)
-    var sourceUpdatedAt: Instant
+    var sourceUpdatedAt: Instant,
+
+    /**
+     * Kwota zlecenia regułą [pl.detailing.crm.visit.domain.Visit.calculateTotalGross],
+     * w groszach — W INDEKSIE, żeby bramka skali działała PRZED przycięciem listy,
+     * a nie na zamrożonej dwunastce przy hydratacji. 0 znaczy „jeszcze
+     * nieprzestemplowane", NIE „za darmo": bramka pomija takie wiersze.
+     */
+    @Column(name = "total_gross", nullable = false)
+    var totalGross: Long = 0
 )
 
 @Repository
@@ -94,12 +103,24 @@ interface VisitIndexStateRepository : JpaRepository<VisitIndexStateEntity, UUID>
      * SUV VW kosztuje przy tej samej folii tyle, co SUV Porsche — pracę wyznacza
      * powierzchnia, nie logo). Najświeższe naprzód, bo świeża cena jest przy
      * wycenie najcenniejsza, a kandydatów bywa więcej niż limit.
+     *
+     * Filtr wartościowy i wieku stoją W KLAUZULI WHERE, nie za limitem: rozkład
+     * zleceń jest skrajnie skośny (mycie setki razy, full body kilka razy w roku),
+     * więc limit liczony po samej dacie wycinał okno CZASOWE zamiast okna TRAFNOŚCI
+     * i jedyne prawdziwe „full body" sprzed dwóch lat nigdy nie dochodziło do kraty.
+     *
+     * BRAK DANYCH NIE JEST ZEREM: wiersz z totalGross = 0 (jeszcze nieprzestemplowany
+     * po V129) i wiersz bez happenedAt PRZECHODZĄ — o ich odrzuceniu może zdecydować
+     * wyłącznie bramka, która ma dane. [minTotalGross] = 0 wyłącza filtr wartościowy
+     * (brak kotwicy przy requireManualPrice nie może skasować wszystkich kandydatów).
      */
     @Query(
         """
         SELECT s FROM VisitIndexStateEntity s
         WHERE s.studioId = :studioId
           AND s.signatureVersion >= :version
+          AND (s.totalGross = 0 OR s.totalGross >= :minTotalGross)
+          AND (s.happenedAt IS NULL OR s.happenedAt >= :notOlderThan)
           AND (
               (s.brandKey = :brandKey AND s.modelKey = :modelKey)
               OR (:sizeSegment IS NOT NULL AND s.sizeSegment = :sizeSegment)
@@ -113,6 +134,8 @@ interface VisitIndexStateRepository : JpaRepository<VisitIndexStateEntity, UUID>
         @Param("modelKey") modelKey: String,
         @Param("sizeSegment") sizeSegment: String?,
         @Param("version") version: Int,
+        @Param("minTotalGross") minTotalGross: Long,
+        @Param("notOlderThan") notOlderThan: Instant,
         pageable: Pageable
     ): List<VisitIndexStateEntity>
 }
@@ -152,7 +175,27 @@ class VisitServiceSignatureEntity(
     val scope: String,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /** Oś rzemiosła — patrz [pl.detailing.crm.service.taxonomy.ServiceOperation] i V131. */
+    @Column(name = "operation", nullable = false, length = 20)
+    val operation: String = "UNKNOWN",
+
+    /** Oś części auta — patrz [pl.detailing.crm.service.taxonomy.ServicePart] i V131. */
+    @Column(name = "part", nullable = false, length = 20)
+    val part: String = "UNKNOWN",
+
+    /**
+     * Suma kwot niezodrzuconych pozycji o tej nazwie, licząc TĄ SAMĄ regułą co
+     * [pl.detailing.crm.visit.domain.Visit.calculateTotalGross] — więc suma sygnatur
+     * zgadza się z kwotą zlecenia na ekranie. 0 = jeszcze nieprzestemplowane.
+     */
+    @Column(name = "line_price_gross", nullable = false)
+    val linePriceGross: Long = 0,
+
+    /** Liczba niezodrzuconych pozycji o tej nazwie (wiersz sygnatury to unikalna NAZWA). */
+    @Column(name = "line_count", nullable = false)
+    val lineCount: Int = 1
 )
 
 @Repository
@@ -265,11 +308,56 @@ class VisitMatchFeedbackEntity(
     val createdByName: String? = null,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
-)
+    val createdAt: Instant = Instant.now(),
+
+    /** Powód zdjęcia: WRONG_WORK | WRONG_SCALE | OTHER — patrz [DismissReason]. */
+    @Column(name = "reason_code", length = 30)
+    var reasonCode: String? = null,
+
+    /**
+     * Zakres: LEAD (domyślnie, jak dotąd) albo STUDIO — wizyta wypada z puli compów
+     * CAŁEGO studia, do [expiresAt]. Koniec z odklikiwaniem tej samej absurdalnej
+     * wizyty na pięćdziesiątym kolejnym leadzie.
+     */
+    @Column(name = "scope", nullable = false, length = 10)
+    var scope: String = SCOPE_LEAD,
+
+    /**
+     * TTL dla scope=STUDIO. Rynek jest strukturalnie cienki — nieodwracalne kasowanie
+     * compów jest groźniejsze niż jedno zbędne pokazanie po pół roku.
+     */
+    @Column(name = "expires_at")
+    var expiresAt: Instant? = null,
+
+    // Snapshot osi zrobiony W CHWILI odrzucenia: późniejsze przestemplowanie wizyty
+    // nie może zmienić znaczenia zapisanej opinii. To jest materiał raportu
+    // „najczęściej odrzucane pary osi", który prowadzi do ekranu poprawki klasyfikacji.
+    @Column(name = "need_operation", length = 20)
+    var needOperation: String? = null,
+
+    @Column(name = "need_part", length = 20)
+    var needPart: String? = null,
+
+    @Column(name = "cand_operation", length = 20)
+    var candOperation: String? = null,
+
+    @Column(name = "cand_part", length = 20)
+    var candPart: String? = null,
+
+    @Column(name = "price_ratio", precision = 10, scale = 4)
+    var priceRatio: java.math.BigDecimal? = null
+) {
+    companion object {
+        const val SCOPE_LEAD = "LEAD"
+        const val SCOPE_STUDIO = "STUDIO"
+    }
+}
 
 @Repository
 interface VisitMatchFeedbackRepository : JpaRepository<VisitMatchFeedbackEntity, UUID> {
     fun findByLeadId(leadId: UUID): List<VisitMatchFeedbackEntity>
     fun findByLeadIdAndVisitId(leadId: UUID, visitId: UUID): VisitMatchFeedbackEntity?
+
+    /** Wykluczenia o zasięgu studia — filtr ważności (expiresAt) robi wołający. */
+    fun findByStudioIdAndScope(studioId: UUID, scope: String): List<VisitMatchFeedbackEntity>
 }
