@@ -53,7 +53,10 @@ object AreaAdvertiserSummary {
             sampleSnapshotUrl = group.firstOrNull()?.let { MetaAdLibraryUrl.forAd(it.adArchiveId) },
             // Adresy WSZYSTKICH reklam firmy, nie pojedynczej: jedna kampania potrafi
             // kierować na fb.me, druga na sklep — o domenie decyduje większość.
-            domain = AdvertiserInstagram.primaryHost(group.map { it.linkCaption })
+            domain = AdvertiserInstagram.primaryHost(group.map { it.linkCaption }),
+            // Reklama kierująca wprost na profil niesie nazwę w samym adresie —
+            // wtedy nie ma po co szukać jej okrężnie na stronie firmy.
+            instagram = AdvertiserInstagram.handleFromCaptions(group.map { it.linkCaption })
         )
     }
 }

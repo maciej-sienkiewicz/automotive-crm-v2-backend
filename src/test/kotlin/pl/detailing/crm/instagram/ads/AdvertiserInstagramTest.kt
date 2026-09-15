@@ -131,4 +131,47 @@ class AdvertiserInstagramTest {
         assertFalse(AdvertiserInstagram.sameHost("carslab.pl", "https://niecarslab.pl/"))
         assertFalse(AdvertiserInstagram.sameHost("carslab.pl", null))
     }
+
+    /**
+     * Reklama kierująca WPROST na profil — najkrótsza droga do nazwy, a przez
+     * długi czas jedyna, której nie braliśmy. `instagram.com` jest pośrednikiem
+     * dla POBIERANIA (nie ma sensu pobierać Instagrama, żeby znaleźć na nim
+     * link do Instagrama), ale sam adres niesie odpowiedź.
+     */
+    @Test
+    fun `nazwa profilu wprost z podpisu reklamy, bez pobierania strony`() {
+        assertEquals(
+            "pro_garage_performance",
+            AdvertiserInstagram.handleFromCaptions(
+                listOf("https://www.instagram.com/pro_garage_performance/")
+            )
+        )
+    }
+
+    @Test
+    fun `podpis bez Instagrama nie daje nazwy`() {
+        assertNull(AdvertiserInstagram.handleFromCaptions(listOf("carslab.pl", "fb.me/abc", null)))
+        assertNull(AdvertiserInstagram.handleFromCaptions(emptyList()))
+    }
+
+    /** Link do pojedynczego posta to nie profil — „p" jest ścieżką, nie nazwą. */
+    @Test
+    fun `link do posta nie jest nazwa profilu`() {
+        assertNull(AdvertiserInstagram.handleFromCaptions(listOf("https://instagram.com/p/C3xAbCdEfGh/")))
+    }
+
+    /** Ta sama zasada co przy stronie: wygrywa nazwa powtarzająca się najczęściej. */
+    @Test
+    fun `z kilku profili w podpisach wygrywa najczestszy`() {
+        assertEquals(
+            "carslab.krakow",
+            AdvertiserInstagram.handleFromCaptions(
+                listOf(
+                    "instagram.com/klient_z_realizacji",
+                    "instagram.com/carslab.krakow",
+                    "https://www.instagram.com/carslab.krakow/"
+                )
+            )
+        )
+    }
 }
