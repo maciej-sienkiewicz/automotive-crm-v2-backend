@@ -1,10 +1,8 @@
 package pl.detailing.crm.comms.send
 
 import org.slf4j.LoggerFactory
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import pl.detailing.crm.comms.domain.CommFolderKind
-import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
 import pl.detailing.crm.comms.domain.ParsedAttachment
@@ -67,7 +65,6 @@ class SendMailHandler(
     private val sanitizer: EmailHtmlSanitizer,
     private val ingestService: CommsIngestService,
     private val signatureService: UserMailSignatureService,
-    private val eventPublisher: ApplicationEventPublisher,
     private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -176,9 +173,11 @@ class SendMailHandler(
             )
         )
 
-        eventPublisher.publishEvent(
-            CommOutboundSentEvent(studioId = account.studioId, threadId = saved.threadId, sentAt = sentAt)
-        )
+        // Zdarzenie „odpisaliśmy" publikuje sam import ([CommsIngestService]) — dla
+        // KAŻDEJ wiadomości wychodzącej, bez względu na to, czy napisano ją tutaj,
+        // czy w Outlooku. Powtórzenie go stąd dawało dwa asynchroniczne przebiegi
+        // księgowania tego samego leada, a więc wyścig o jedno przejście statusu
+        // i dwa wiersze w jego historii.
 
         // Live metrics — mail napisany ręcznie przez człowieka, osobny kanał od wysyłki systemowej
         businessEventPublisher.publish(

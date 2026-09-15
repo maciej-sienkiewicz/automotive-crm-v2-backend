@@ -5,6 +5,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
+import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.comms.domain.CommThreadChangedEvent
 import pl.detailing.crm.comms.domain.EmailTextCleaner
 import pl.detailing.crm.comms.domain.ParsedEmail
@@ -239,6 +241,53 @@ class CommsIngestServiceTest {
 
         val changed = events.filterIsInstance<CommThreadChangedEvent>().single()
         assertFalse(changed.newMessage)
+    }
+
+    /**
+     * Odpowiedź wysłana z Outlooka czy telefonu wraca do nas z folderu Wysłane i musi
+     * zgłosić leadowi, że odpisaliśmy — inaczej lead zostaje „Nowy" i bez czasu
+     * pierwszej reakcji, mimo że rozmowa dawno ruszyła.
+     */
+    @Test
+    fun `outbound copy reports the reply to the lead`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(
+            account, CommFolderKind.SENT,
+            parsed(from = account.emailAddress).copy(toEmails = listOf("klient@example.com")),
+            uidValidity = 11L
+        )
+
+        assertEquals(1, events.filterIsInstance<CommOutboundSentEvent>().size)
+    }
+
+    /**
+     * Wiadomość jest ważniejsza niż księgowanie leada: awaria po tamtej stronie nie
+     * może wywrócić importu, bo w kolejnym przebiegu wiadomość i tak zostałaby
+     * pominięta po UID-zie i zniknęłaby ze skrzynki w CRM-ie.
+     */
+    @Test
+    fun `failure of the lead bookkeeping does not sink the imported message`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+        every { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) } returns emptyList()
+        every { eventPublisher.publishEvent(any<Any>()) } answers {
+            if (firstArg<Any>() is CommOutboundSentEvent) throw IllegalStateException("lead padł")
+        }
+
+        val stored = service.ingest(
+            account, CommFolderKind.SENT,
+            parsed(from = account.emailAddress).copy(toEmails = listOf("klient@example.com")),
+            uidValidity = 11L
+        )
+
+        assertTrue(stored)
+        verify { messageRepository.save(any()) }
     }
 
     @Test

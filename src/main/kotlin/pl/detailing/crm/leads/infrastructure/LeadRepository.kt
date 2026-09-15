@@ -42,6 +42,19 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
     fun findByThreadId(threadId: UUID): LeadEntity?
 
     /**
+     * Leady wiszące na jednym wątku, od najstarszego.
+     *
+     * Zwykle jest ich zero albo jeden, ale kolumna `leads.thread_id` nie ma indeksu
+     * unikalnego i mieć go nie może: wątek formularzowego robota skleja zgłoszenia
+     * wielu osób (patrz [pl.detailing.crm.leads.classification.AutoLeadClassificationListener]),
+     * a dwa równoległe oznaczenia rozmowy jako leada też potrafią się przecisnąć.
+     * Wariant zwracający JEDEN wynik wywraca się wtedy na policzalności wyniku,
+     * więc ścieżki, które tylko odnotowują fakt (nie decydują o utworzeniu leada),
+     * pytają tutaj i biorą pierwszego.
+     */
+    fun findByThreadIdOrderByCreatedAtAsc(threadId: UUID): List<LeadEntity>
+
+    /**
      * [awaitingReply] zawęża listę do leadów, w których ostatnie słowo należy do klienta
      * — czyli do tych, gdzie zalegamy z odpowiedzią. Warunek liczy się z wiadomości,
      * a nie z pola na leadzie: pole trzeba by utrzymywać przy każdym mailu w obie strony,

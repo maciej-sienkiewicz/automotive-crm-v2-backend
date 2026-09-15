@@ -173,10 +173,17 @@ class CommsIngestService(
         // Automaty (autorespondery, newslettery) nie są reakcją człowieka i nie
         // mogą stemplować czasu odpowiedzi.
         if (direction == CommDirection.OUTBOUND && !AutomatedMailDetector.isAutomated(parsed.headers)) {
-            // Nasłuch (status leada) biegnie w tej samej transakcji co zapis wiadomości,
-            // a wiadomość jest ważniejsza: jej import nie może paść przez potknięcie
-            // w księgowaniu leada, bo w kolejnym przebiegu i tak zostałaby pominięta
-            // po UID-zie i zniknęła ze skrzynki w CRM-ie.
+            // Wiadomość jest ważniejsza niż księgowanie leada: jej import nie może paść
+            // przez potknięcie po tamtej stronie, bo w kolejnym przebiegu zostałaby
+            // pominięta po UID-zie i zniknęła ze skrzynki w CRM-ie.
+            //
+            // Samo `runCatching` tego NIE zapewniało i nie zapewnia: nasłuch wpięty w tę
+            // samą transakcję oznaczał ją jako rollback-only, a takiej decyzji nie da
+            // się już złapać — zapis wiadomości przepadał przy zatwierdzaniu. Dlatego
+            // rozdzielenie jest po stronie nasłuchu: [pl.detailing.crm.leads.update.LeadFirstResponseListener]
+            // biegnie PO zatwierdzeniu tej transakcji i asynchronicznie, tak jak
+            // automaty leadów karmione pocztą przychodzącą. Tu zostaje tylko tarcza na
+            // awarię samej publikacji.
             runCatching {
                 eventPublisher.publishEvent(
                     CommOutboundSentEvent(
