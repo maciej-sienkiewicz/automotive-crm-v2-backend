@@ -40,6 +40,11 @@ services:
       VAPID_PRIVATE_KEY: ${ENV_VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${ENV_VAPID_SUBJECT}
       META_ADS_LIBRARY_TOKEN: ${ENV_META_ADS_LIBRARY_TOKEN}
+      # Odczyt nazw profili IG reklamodawców przez sidecar z przeglądarką.
+      # Domyślnie wyłączone — bez działającego meta-ig-resolver każde wywołanie
+      # kończyłoby się błędem połączenia.
+      META_IG_RESOLVER_ENABLED: ${ENV_META_IG_RESOLVER_ENABLED:-false}
+      META_IG_RESOLVER_URL: http://meta-ig-resolver:8080
     depends_on:
       - redis
     networks:
@@ -47,6 +52,34 @@ services:
 
   redis:
     image: redis:alpine
+    networks:
+      - network
+
+  # ── Odczyt profili IG reklamodawców ─────────────────────────────────────────
+  #
+  # Osobny kontener, bo niesie Chromium. Backend obsługuje faktury, wizyty
+  # i płatności — nie chcemy w jego obrazie przeglądarki ani jej klasy awarii
+  # (zużycie pamięci, osierocone procesy, /dev/shm).
+  #
+  # Limity nie są ozdobą: ta maszyna hostuje także produkcyjną bazę, a Chromium
+  # bez ograniczenia pamięci potrafi zjeść wszystko, co zastanie.
+  meta-ig-resolver:
+    image: ${ENV_META_IG_RESOLVER_IMAGE:-127.0.0.1:5000/meta-ig-resolver:latest}
+    container_name: meta-ig-resolver
+    restart: unless-stopped
+    mem_limit: 512m
+    # Chromium renderuje przez pamięć współdzieloną; domyślne 64 MB Dockera
+    # kończy się wysypaniem karty przy cięższych stronach.
+    shm_size: 256m
+    environment:
+      RESOLVE_TIMEOUT_MS: "45000"
+    # Bez tego logi kontenera z przeglądarką rosną bez końca — a brak miejsca
+    # na tym dysku potrafi położyć bazę.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
     networks:
       - network
 
