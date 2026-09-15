@@ -50,7 +50,6 @@ data class DiscoveredAd(
     val active: Boolean,
     /** Zasięg reklamy w UE (`eu_total_reach`) — liczba pokazywana w kolumnie „zasięg". */
     val reach: Int?,
-    val snapshotUrl: String?,
     /** Targetowanie reklamodawcy — po nim decydujemy, czy reklama obejmuje wskazany teren. */
     val locations: List<RawAdLocation>,
     /** Adres z reklamy — punkt zaczepienia dla nazwy profilu na Instagramie. */

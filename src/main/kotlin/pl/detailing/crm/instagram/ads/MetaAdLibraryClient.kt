@@ -53,10 +53,22 @@ class MetaAdLibraryClient(
         /** Biblioteka trzyma reklamy rok wstecz — starszych nie ma sensu szukać. */
         const val RETENTION_DAYS = 365L
 
+        /**
+         * Pełne pola dla nocnego synca obserwowanych profili.
+         *
+         * `ad_creative_bodies` i `ad_creative_link_descriptions` to TREŚĆ reklamy —
+         * jedyna część kreacji, jaką `ads_archive` w ogóle oddaje (grafiki nie ma
+         * w żadnym polu). Dzięki nim okno reklamy pokazujemy u siebie, zamiast
+         * wypychać użytkownika do Biblioteki po sam tekst.
+         *
+         * `ad_snapshot_url` świadomie NIE jest pobierane: Meta zwraca je z naszym
+         * tokenem w adresie, a link do reklamy składamy sami z jej identyfikatora.
+         */
         private const val FIELDS =
-            "id,page_id,page_name,ad_creative_link_titles,ad_delivery_start_time,ad_delivery_stop_time," +
+            "id,page_id,page_name,ad_creative_link_titles,ad_creative_bodies," +
+                "ad_creative_link_descriptions,ad_delivery_start_time,ad_delivery_stop_time," +
                 "eu_total_reach,age_country_gender_reach_breakdown,target_ages,target_gender," +
-                "target_locations,beneficiary_payers,publisher_platforms,ad_snapshot_url"
+                "target_locations,beneficiary_payers,publisher_platforms"
 
         /**
          * LEKKI zestaw pól dla odkrywania po frazie — świadomie BEZ
@@ -73,7 +85,7 @@ class MetaAdLibraryClient(
          */
         private const val DISCOVERY_FIELDS =
             "id,page_id,page_name,ad_delivery_start_time,ad_delivery_stop_time," +
-                "eu_total_reach,target_locations,ad_snapshot_url"
+                "eu_total_reach,target_locations"
 
         private const val SEARCH_FIELDS = "page_id,page_name,ad_delivery_start_time"
 

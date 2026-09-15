@@ -81,8 +81,20 @@ class MetaAdSnapshotEntity(
     @Column(name = "reach_breakdown", nullable = false, columnDefinition = "text")
     var reachBreakdown: String = "",
 
-    @Column(name = "snapshot_url", nullable = true, columnDefinition = "text")
-    var snapshotUrl: String? = null,
+    /**
+     * Treść reklamy — to, co czyta odbiorca. Trzymamy ją, bo to jedyna część
+     * kreacji, jaką Meta udostępnia: grafiki `ads_archive` nie oddaje wcale.
+     */
+    @Column(name = "creative_body", nullable = true, columnDefinition = "text")
+    var creativeBody: String? = null,
+
+    /** Zdanie pod nagłówkiem, np. „Umów się na bezpłatną wycenę". */
+    @Column(name = "link_description", nullable = true, length = 500)
+    var linkDescription: String? = null,
+
+    /** Domena, na którą reklama kieruje („folia-samochodowa.pl"). */
+    @Column(name = "link_caption", nullable = true, length = 300)
+    var linkCaption: String? = null,
 
     @Column(name = "first_seen_at", nullable = false, columnDefinition = "timestamp with time zone")
     val firstSeenAt: Instant = Instant.now(),

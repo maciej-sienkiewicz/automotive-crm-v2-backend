@@ -46,6 +46,8 @@ class MetaAdsSyncServiceTest {
         pageId = pageId,
         pageName = "CarsLab Detailing",
         title = "Powłoka ceramiczna",
+        body = "Powłoka ceramiczna z gwarancją 3 lat. Umów termin.",
+        linkDescription = "Bezpłatna wycena",
         linkCaption = "carslab.pl",
         deliveryStart = LocalDate.of(2026, 7, 12),
         deliveryStop = stop,
@@ -56,8 +58,7 @@ class MetaAdsSyncServiceTest {
         targetLocations = listOf(RawAdLocation("Kraków", "city", excluded = false)),
         payer = "CARSLAB SP. Z O.O.",
         beneficiary = "CARSLAB SP. Z O.O.",
-        polandBreakdown = listOf(RawAgeGenderReach("25-34", 10_150, 3_200, 0)),
-        snapshotUrl = "https://facebook.com/ads/library/?id=ad-1"
+        polandBreakdown = listOf(RawAgeGenderReach("25-34", 10_150, 3_200, 0))
     )
 
     private fun existingRunningRow() = MetaAdSnapshotEntity(

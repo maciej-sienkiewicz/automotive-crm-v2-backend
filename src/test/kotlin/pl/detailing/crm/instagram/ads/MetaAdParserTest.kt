@@ -2,6 +2,7 @@ package pl.detailing.crm.instagram.ads
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -180,5 +181,68 @@ class MetaAdParserTest {
     @Test
     fun `reklama bez page_id jest pomijana`() {
         assertNull(parse("""{ "id": "1", "ad_delivery_start_time": "2026-09-07" }"""))
+    }
+
+    /**
+     * Treść kreacji to JEDYNA część reklamy, jaką `ads_archive` w ogóle oddaje —
+     * grafiki nie ma w żadnym polu. Bierzemy ją w całości, bo to ona jest ofertą.
+     */
+    @Test
+    fun `tresc reklamy wraca w calosci, nie tylko jako nazwa`() {
+        val ad = parse(localStudioAd)!!
+
+        assertEquals(
+            "🚗 Jesteś z Kościana lub okolic Poznania? \nChcesz zabezpieczyć lakier?",
+            ad.body
+        )
+    }
+
+    /**
+     * Pola kreacji są TABLICAMI (dynamic creative — kilka wariantów jednej reklamy).
+     * Bierzemy pierwszy niepusty; pusty string to nie jest wariant.
+     */
+    @Test
+    fun `z kilku wariantow kreacji bierzemy pierwszy niepusty`() {
+        val ad = parse(
+            """
+            {
+              "id": "1", "page_id": "2", "ad_delivery_start_time": "2026-09-07",
+              "ad_creative_bodies": ["   ", "Wariant drugi", "Wariant trzeci"],
+              "ad_creative_link_titles": ["Nagłówek"],
+              "ad_creative_link_descriptions": ["Umów się na bezpłatną wycenę"]
+            }
+            """.trimIndent()
+        )!!
+
+        assertEquals("Wariant drugi", ad.body)
+        assertEquals("Nagłówek", ad.title)
+        assertEquals("Umów się na bezpłatną wycenę", ad.linkDescription)
+    }
+
+    /**
+     * ZAPORA NA WYCIEK TOKENA.
+     *
+     * Meta zwraca `ad_snapshot_url` w postaci `…/render_ad/?id=…&access_token=<TOKEN>`
+     * — z tokenem CAŁEJ instalacji w adresie. Przez pewien czas trzymaliśmy go
+     * w bazie i podawali przeglądarce każdego użytkownika CRM-a. Parser ma go
+     * nie przepuszczać nawet wtedy, gdy Meta go przyśle, bo link do reklamy
+     * składamy sami — [MetaAdLibraryUrl.forAd].
+     *
+     * Ten test pilnuje, żeby pole nie wróciło do modelu „przy okazji".
+     */
+    @Test
+    fun `adres z tokenem od Meta nie trafia do modelu reklamy`() {
+        val ad = parse(
+            """
+            {
+              "id": "1", "page_id": "2", "ad_delivery_start_time": "2026-09-07",
+              "ad_snapshot_url": "https://www.facebook.com/ads/archive/render_ad/?id=1&access_token=SEKRET"
+            }
+            """.trimIndent()
+        )!!
+
+        val dump = ad.toString()
+        assertFalse(dump.contains("SEKRET"), "token z ad_snapshot_url wyciekł do modelu: $dump")
+        assertFalse(dump.contains("access_token"), "adres z tokenem wyciekł do modelu: $dump")
     }
 }

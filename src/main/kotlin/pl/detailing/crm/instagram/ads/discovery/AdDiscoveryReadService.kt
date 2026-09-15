@@ -132,7 +132,6 @@ class AdDiscoveryReadService(
         pageName = pageName,
         active = deliveryStop == null,
         reach = reachEu,
-        snapshotUrl = snapshotUrl,
         locations = MetaAdCodec.decodeLocations(targetLocations),
         linkCaption = linkCaption
     )

@@ -48,7 +48,9 @@ object AreaAdvertiserSummary {
             activeAds = group.size,
             reach = reachValues.takeIf { it.isNotEmpty() }?.sum(),
             adLibraryUrl = MetaAdLibraryUrl.forPage(pageId),
-            sampleSnapshotUrl = group.firstNotNullOfOrNull { it.snapshotUrl?.takeIf { url -> url.isNotBlank() } },
+            // Link do POJEDYNCZEJ reklamy składamy z jej identyfikatora — patrz
+            // MetaAdLibraryUrl.forAd: adres z API niósłby token instalacji.
+            sampleSnapshotUrl = group.firstOrNull()?.let { MetaAdLibraryUrl.forAd(it.adArchiveId) },
             // Adresy WSZYSTKICH reklam firmy, nie pojedynczej: jedna kampania potrafi
             // kierować na fb.me, druga na sklep — o domenie decyduje większość.
             domain = AdvertiserInstagram.primaryHost(group.map { it.linkCaption })
@@ -66,4 +68,17 @@ object MetaAdLibraryUrl {
     fun forPage(pageId: String): String =
         "https://www.facebook.com/ads/library/" +
             "?active_status=active&ad_type=all&country=PL&view_all_page_id=$pageId"
+
+    /**
+     * Pojedyncza reklama w Bibliotece — link PUBLICZNY, składany z samego
+     * identyfikatora archiwum.
+     *
+     * Świadomie NIE używamy `ad_snapshot_url` z API. Meta zwraca je w postaci
+     * `…/ads/archive/render_ad/?id=…&access_token=<TOKEN>`, czyli z naszym
+     * tokenem instalacji w adresie. Zapisany w bazie i podany przeglądarce
+     * klienta byłby to wyciek poświadczenia ważnego dla całego konta — a ten
+     * link pokazuje dokładnie to samo i nie niesie niczego tajnego.
+     */
+    fun forAd(adArchiveId: String): String =
+        "https://www.facebook.com/ads/library/?id=$adArchiveId"
 }

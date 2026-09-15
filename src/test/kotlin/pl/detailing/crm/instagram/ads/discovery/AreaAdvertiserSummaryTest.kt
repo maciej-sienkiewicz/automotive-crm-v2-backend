@@ -19,7 +19,6 @@ class AreaAdvertiserSummaryTest {
         active: Boolean = true,
         reach: Int? = 1000,
         city: String = "Poznań",
-        snapshotUrl: String? = "https://snap/$id",
         linkCaption: String? = null
     ) = DiscoveredAd(
         adArchiveId = id,
@@ -27,7 +26,6 @@ class AreaAdvertiserSummaryTest {
         pageName = pageName,
         active = active,
         reach = reach,
-        snapshotUrl = snapshotUrl,
         locations = listOf(RawAdLocation(name = city, type = "city", excluded = false)),
         linkCaption = linkCaption
     )
@@ -166,5 +164,22 @@ class AreaAdvertiserSummaryTest {
     fun `bez wykluczen tabela jest pelna`() {
         val ads = listOf(ad("1", pageId = "bot-1"), ad("2", pageId = "konkurent"))
         assertEquals(2, AreaAdvertiserSummary.summarize(ads, cities, AreaMatchMode.CITIES_ONLY).size)
+    }
+
+    /**
+     * Link do przykładowej reklamy składamy z jej identyfikatora, a nie z
+     * `ad_snapshot_url` od Meta — tamten niesie token dostępowy instalacji
+     * w adresie i trafiłby prosto do przeglądarki klienta.
+     */
+    @Test
+    fun `link do reklamy jest publiczny i nie niesie tokena`() {
+        val rows = AreaAdvertiserSummary.summarize(
+            listOf(ad("998877", pageId = "konkurent")), cities, AreaMatchMode.CITIES_ONLY
+        )
+
+        assertEquals(
+            "https://www.facebook.com/ads/library/?id=998877",
+            rows.single().sampleSnapshotUrl
+        )
     }
 }
