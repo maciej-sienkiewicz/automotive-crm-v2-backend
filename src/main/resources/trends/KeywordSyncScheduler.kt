@@ -40,13 +40,11 @@ class KeywordSyncScheduler(
 
         /** Initial seed keywords for auto-detailing industry (Polish market). */
         val SEED_KEYWORDS = listOf(
-            "auto detailing",
-            "detailing samochodowy",
+            "detailing",
             "myjnia samochodowa",
-            "myjnia bezdotykowa",
             "powłoka ceramiczna",
             "polerowanie lakieru",
-            "folia PPF",
+            "ppf",
             "czyszczenie tapicerki",
             "pranie tapicerki samochodowej",
             "woskowanie samochodu",
@@ -54,22 +52,18 @@ class KeywordSyncScheduler(
             "zabezpieczenie lakieru",
             "ceramika samochodowa",
             "detailing wnętrza",
-            "mycie parowe samochodu",
             "renowacja lakieru",
+            "renowacja tapicerki",
             "folia ochronna na samochód",
             "czyszczenie skóry w samochodzie",
             "polerka samochodowa",
             "pasta polerska",
-            "glinka do lakieru",
-            "odżywka do plastików",
-            "szampon samochodowy",
             "suszenie samochodu",
             "nano powłoka",
             "hydrofobowa powłoka",
             "car wrapping",
             "oklejanie samochodu",
             "przyciemnianie szyb",
-            "detailing Warszawa"
         )
     }
 
