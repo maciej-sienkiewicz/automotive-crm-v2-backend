@@ -28,6 +28,7 @@ class AdDiscoveryReadService(
     private val instagramResolver: AdvertiserInstagramResolver,
     private val blockService: AdvertiserBlockService,
     private val settingsService: AdAreaSettingsService,
+    private val igLookupService: pl.detailing.crm.instagram.ads.discovery.ig.MetaIgLookupService,
     @Value("\${meta.ads.discovery.results-page-size:10}") private val defaultPageSize: Int
 ) {
 
@@ -117,17 +118,38 @@ class AdDiscoveryReadService(
      * IG wiersz nadal mówi, kto się reklamuje i z jakim zasięgiem — a to jest sedno ekranu.
      */
     private fun withInstagram(rows: List<AdvertiserRow>): List<AdvertiserRow> {
-        if (rows.none { it.domain != null && it.instagram == null }) return rows
-
-        val handles = runCatching { instagramResolver.resolve(rows.map { it.domain }) }
+        /*
+         * Trzy źródła nazwy profilu, w kolejności od najpewniejszego:
+         *
+         *   1. PODPIS REKLAMY — reklama kierująca wprost na instagram.com/nazwa.
+         *      Pochodzi od samego reklamodawcy, ustalone już w AreaAdvertiserSummary.
+         *   2. BIBLIOTEKA REKLAM — pole `ig_username` odczytane ze strony
+         *      reklamodawcy przez sidecar. Podaje je Meta, więc jest to nazwa
+         *      z pierwszej ręki; czytamy wyłącznie to, co już zapisane w bazie,
+         *      bo ustalanie trwa kilkanaście sekund i dzieje się w tle.
+         *   3. STRONA FIRMY — link do Instagrama wyłuskany ze stopki. Najsłabsze,
+         *      bo zgadujemy, który z linków na cudzej stronie należy do niej samej.
+         *
+         * Każdy kolejny krok dotyka wyłącznie wierszy, dla których poprzednie
+         * nic nie ustaliły.
+         */
+        val fromLibrary = runCatching { igLookupService.known(rows.map { it.pageId }) }
             .getOrDefault(emptyMap())
-        if (handles.isEmpty()) return rows
 
-        // Nazwa wzięta z podpisu reklamy jest pewniejsza niż zgadnięta ze strony
-        // firmy — pochodzi wprost od reklamodawcy, więc jej nie nadpisujemy.
-        return rows.map { row ->
+        val afterLibrary = rows.map { row ->
             if (row.instagram != null) row
-            else handles[row.domain]?.let { row.copy(instagram = it) } ?: row
+            else fromLibrary[row.pageId]?.let { row.copy(instagram = it) } ?: row
+        }
+
+        if (afterLibrary.none { it.domain != null && it.instagram == null }) return afterLibrary
+
+        val fromSite = runCatching { instagramResolver.resolve(afterLibrary.map { it.domain }) }
+            .getOrDefault(emptyMap())
+        if (fromSite.isEmpty()) return afterLibrary
+
+        return afterLibrary.map { row ->
+            if (row.instagram != null) row
+            else fromSite[row.domain]?.let { row.copy(instagram = it) } ?: row
         }
     }
 

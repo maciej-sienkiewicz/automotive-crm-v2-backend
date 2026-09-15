@@ -134,3 +134,46 @@ groups:
           summary: "Ponad 25% żądań do KSeF studia {{ $labels.studio_id }} kończy się błędem"
           description: >
             Sprawdź ważność tokenu KSeF studia i dostępność API Ministerstwa Finansów.
+
+  # ── Odczyt profili IG reklamodawców ─────────────────────────────────────────
+  - name: meta_ig_resolver
+    interval: 60s
+    rules:
+
+      # Kanarek jest jedynym sposobem wykrycia przebudowy Biblioteki reklam.
+      # Bez niego awaria byłaby niewidoczna: po zmianie strony każdy odczyt
+      # zacząłby wracać jako „reklamodawca nie ma Instagrama" — wynik normalny,
+      # częsty i nie do odróżnienia od prawdy. Miernik pyta codziennie o stronę,
+      # o której wiemy, że profil ma.
+      - alert: MetaIgResolverPadl
+        expr: crm_meta_ig_canary == 0
+        for: 2h
+        labels:
+          severity: warning
+          team: produkt
+        annotations:
+          summary: "Odczyt profili IG reklamodawców przestał działać"
+          description: >
+            Kanarek nie znalazł profilu na stronie, o której wiemy, że go ma.
+            Najpewniej Meta przebudowała Bibliotekę reklam i ścieżka kliknięć
+            w sidecarze meta-ig-resolver przestała pasować. Nazwy zebrane
+            wcześniej są nietknięte, ale nowych nie ustalimy do czasu poprawki.
+            To utrata funkcji pomocniczej, nie awaria CRM-a.
+
+      # Pojedyncze niepowodzenia są normalne (wolna odpowiedź Meta, chwilowa
+      # blokada). Dopiero gdy PRAWIE WSZYSTKO zawodzi przez godzinę, coś jest
+      # nie tak z samym sidecarem — najczęściej nie wstał albo brakuje mu pamięci.
+      - alert: MetaIgResolverGlownieBledy
+        expr: |
+          sum(rate(crm_meta_ig_lookups_total{result=~"blocked|timeout|error"}[1h]))
+            /
+          clamp_min(sum(rate(crm_meta_ig_lookups_total[1h])), 0.0001) > 0.9
+        for: 1h
+        labels:
+          severity: warning
+          team: produkt
+        annotations:
+          summary: "Ponad 90% odczytów profili IG kończy się niepowodzeniem"
+          description: >
+            Sprawdź, czy kontener meta-ig-resolver działa i czy nie jest
+            ubijany przez limit pamięci: docker logs meta-ig-resolver.

@@ -20,6 +20,22 @@ interface AdDiscoveryAdRepository : JpaRepository<AdDiscoveryAdEntity, UUID> {
     @Modifying
     @Query("DELETE FROM AdDiscoveryAdEntity a WHERE a.phrase = :phrase")
     fun deleteByPhrase(@Param("phrase") phrase: String)
+
+    /**
+     * Strony reklamodawców obecne w cache — kandydaci do ustalenia profilu IG.
+     *
+     * Kolejność od najświeższej reklamy: firmy, które reklamują się TERAZ, są
+     * tymi, które użytkownik zobaczy na pierwszej stronie tabeli, więc ich
+     * nazwy warto poznać najpierw.
+     */
+    @Query(
+        """
+        SELECT a.pageId FROM AdDiscoveryAdEntity a
+        GROUP BY a.pageId
+        ORDER BY MAX(a.fetchedAt) DESC
+        """
+    )
+    fun distinctPageIds(pageable: org.springframework.data.domain.Pageable): List<String>
 }
 
 @Repository

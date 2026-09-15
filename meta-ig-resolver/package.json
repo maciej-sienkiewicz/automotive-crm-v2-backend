@@ -1,0 +1,10 @@
+{
+  "name": "meta-ig-resolver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Odczyt nazwy profilu na Instagramie ze strony reklamodawcy w Bibliotece reklam Meta.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "playwright-core": "1.49.1" }
+}
