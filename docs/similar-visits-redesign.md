@@ -483,7 +483,26 @@ ALTER TABLE visit_index_state
 
 ALTER TABLE lead_similar_matches
   ADD COLUMN IF NOT EXISTS rules_version SMALLINT NOT NULL DEFAULT 0;
+
+ALTER TABLE lead_service_intents
+  ADD COLUMN IF NOT EXISTS prompt_version VARCHAR(20) NOT NULL DEFAULT 'v0';
 ```
+
+> **`DEFAULT 0` nie stempluje niczego — i to jest pułapka, która gasi całą sekcję.**
+> `VisitIndexCandidateRepository.findPending` podnosi wizytę tylko wtedy, gdy
+> `sourceUpdatedAt < v.updatedAt` **albo** `signatureVersion < :version`. Dodanie kolumny
+> nie zmienia ani jednego, ani drugiego, więc **cała historia zostaje z `total_gross = 0`**,
+> a bramka `totalGross < anchor × 0.4` odrzuca **każdego** kandydata.
+>
+> Dwa środki, oba obowiązkowe:
+> 1. **`CURRENT_SIGNATURE_VERSION` 1 → 2 już w Etapie 0** (nie w Etapie 2). Przestemplowanie
+>    to **zero wywołań LLM** — nazwy są w globalnym `service_families`, więc klasyfikator
+>    trafia w cache. Tempo: `reconcile-batch = 200` co 5 min ≈ 2 400 wizyt/h, czyli studio
+>    z 5 000 wizyt schodzi w ~2 h.
+> 2. **Brak danych ≠ zero.** Bramka skali nie uruchamia się przy `candidate.totalGross == 0`,
+>    dokładnie tą samą regułą co przy `anchor == 0`. Dzięki temu w oknie przestemplowania
+>    sekcja degraduje się do dzisiejszego zachowania zamiast gasnąć. To zresztą ta sama
+>    pomyłka, którą diagnozujemy w `ratio()` (§1.2): pusty mianownik nie jest pokryciem zerowym.
 
 > **`total_gross` jest konieczne już w Etapie 0.** `compute()` widzi wyłącznie stempel indeksu —
 > kwota kandydata pojawia się dopiero w `hydrate()`, po `.take(maxResults * STORE_FACTOR)`, czyli
@@ -491,12 +510,31 @@ ALTER TABLE lead_similar_matches
 > `VisitEntity` z EAGER `serviceItems` w ścieżce transakcyjnej) to niebudżetowana zmiana
 > wydajnościowa. Dlatego Etap 0 to **2 dni, nie 1**.
 
-> **`rules_version` rozwiązuje problem, o którym łatwo zapomnieć.** `findFor()` robi
-> `matchesRepository.findById(leadId).orElse(null) ?: compute(...)` — zapisany wiersz wygrywa
-> bezwarunkowo. Bez unieważnienia **leady, które wywołały awanturę, po deployu nadal pokażą
-> 850 zł, 400 zł i 900 zł**, dopóki ktoś ręcznie nie kliknie „Sprawdź ponownie". Naprawa, której
-> nie widać na leadach, o które poszła awantura, jest nieodróżnialna od braku naprawy. Stała
-> `CURRENT_RULES_VERSION` rośnie przy **każdej** zmianie bramek.
+### Unieważnianie zapisanych wyników — trzy cache, nie jeden
+
+To jest osobny problem od samego algorytmu i łatwo go przeoczyć: **żadna zmiana reguł nie dotrze
+dziś do leada, który już ma zapisany wynik.** Cache są trzy i każdy trzeba unieważnić inaczej.
+
+| Cache | Warunek użycia dziś | Co go unieważnia | Co unieważnia po zmianie |
+|---|---|---|---|
+| `lead_similar_matches` | `findById(leadId).orElse(null) ?: compute(...)` — zapisany wiersz wygrywa **bezwarunkowo** | tylko `refresh()` | `rules_version < CURRENT_RULES_VERSION` |
+| `lead_service_intents` | `queryFingerprint == SHA-256(treść maila)` — **nic o wersji promptu ani o cenniku** | tylko `intentFor(force = true)` | `prompt_version` dopisane do warunku `takeIf` |
+| Sugestie usług (`lead_service_items` SUGGESTED) | `recompute()` wołane z listenera `LeadVehicleResolvedEvent` (raz w życiu leada) albo ręcznie z `LeadsController.kt:496` | tylko ręczny endpoint | `findFor` po przeliczeniu woła `recompute(force = false)` |
+
+Bez tego połowa Etapu 0 nie dociera do starych leadów: kasacja tierów, bramka skali i reguła
+`UNDERSPECIFIED` propagują się (czyste funkcje w `compute()`), ale **poprawka promptu i naprawa
+ceny z historii już nie** — pierwsza dlatego, że intencja jest czytana z dziennika, druga dlatego,
+że `recompute()` w ogóle nie jest wołane z `findFor`.
+
+Naprawa, której nie widać na leadach, o które poszła awantura, jest dla właściciela nieodróżnialna
+od braku naprawy. `CURRENT_RULES_VERSION` i `prompt_version` rosną przy **każdej** zmianie
+odpowiednio bramek i promptu.
+
+> **Koszt jednorazowej fali przeliczeń.** Podbicie `prompt_version` wymusza świeże wywołanie
+> modelu dla każdego otwieranego starego leada (~0,0007 USD). Przelicza się **leniwie, przy
+> otwarciu** — nie ma backfillu, więc fala rozkłada się na tygodnie i dotyka tylko leadów,
+> które ktoś faktycznie ogląda. Przy 500 zaległych leadach na studio to najwyżej 0,35 USD,
+> rozłożone w czasie.
 
 ### V130 — Etap 1 (dziennik, 11 kolumn, bez schematu pod komponenty, których nie ma)
 
@@ -706,7 +744,7 @@ leads/similar/LeadSimilarMatches.kt            parsed(): size >= 2 (WSTECZNA ZGO
 leads/similar/LeadServiceSuggestionService.kt  4 defekty z §1.10; mediana z ≥2 obserwacji;
                                               CATALOG_NEAR_MISS → pozycja bez ceny + notatka
 leads/similar/VisitSimilarityIndex.kt          nowe kolumny; findCandidates z filtrem w WHERE
-leads/similar/VisitSimilarityIndexer.kt        CURRENT_SIGNATURE_VERSION 1 → 2; osie,
+leads/similar/VisitSimilarityIndexer.kt        CURRENT_SIGNATURE_VERSION 1→2 (Etap 0), 2→3 (Etap 2);
                                               line_price_gross regułą Visit.effectiveGrossAmount,
                                               line_count, total_gross; MAX_NEW_NAMES_PER_RUN
 service/taxonomy/ServiceFamilies.kt            ServiceFamilyClassifier = fasada; +3 kolumny
@@ -751,17 +789,24 @@ sekcja przez chwilę będzie głównie milczeć.
 Zmiany:
 
 1. Usunięcie dwóch ramion `when` w `SimilarVisitMatcher.grade()`.
-2. V129: `visit_index_state.total_gross` + `lead_similar_matches.rules_version`; indekser zaczyna
-   stemplować kwotę regułą `Visit.effectiveGrossAmount()`.
-3. **Bramka skali, jednostronna:** odrzuć, gdy `candidate.totalGross < anchor × 0.4`.
-   Przy `anchor == 0` (`requireManualPrice`) bramka **się nie uruchamia**.
-4. `ORDER BY s.name, s.id` w `ServiceRepository.findByStudioId`.
-5. Usunięcie `(albo ich bliskie warianty)` z promptu; logowanie wybranych **nazw** obok numerów;
+2. V129: `visit_index_state.total_gross`, `lead_similar_matches.rules_version`,
+   `lead_service_intents.prompt_version`; indekser zaczyna stemplować kwotę regułą
+   `Visit.effectiveGrossAmount()`.
+3. **`CURRENT_SIGNATURE_VERSION` 1 → 2** — bez tego `total_gross` zostaje zerem na całej historii
+   (patrz §5). Przestemplowanie kosztuje zero wywołań LLM.
+4. **Bramka skali, jednostronna:** odrzuć, gdy `candidate.totalGross < anchor × 0.4`.
+   **Nie uruchamia się** przy `anchor == 0` (`requireManualPrice`) ani przy
+   `candidate.totalGross == 0` (wizyta jeszcze nieprzestemplowana).
+5. `ORDER BY s.name, s.id` w `ServiceRepository.findByStudioId`.
+6. Usunięcie `(albo ich bliskie warianty)` z promptu; logowanie wybranych **nazw** obok numerów;
    licznik `invalidIndexCount`.
-6. `historicalPriceByNameKey`: odsiew dismissów, odrzucenie ceny 0, pominięcie PENDING/ADD,
+7. `historicalPriceByNameKey`: odsiew dismissów, odrzucenie ceny 0, pominięcie PENDING/ADD,
    **mediana zamiast `prices.first()`**.
-7. Reguła `UNDERSPECIFIED` jedną linijką: lead odsyła do załączników graficznych i `scope == UNKNOWN`
+8. Reguła `UNDERSPECIFIED` jedną linijką: lead odsyła do załączników graficznych i `scope == UNKNOWN`
    → zero podpowiedzi cenowych + komunikat „zapytanie odsyła do zdjęć — wycena po oględzinach".
+9. **Unieważnienie trzech cache** (§5): `rules_version` na doborze, `prompt_version` w warunku
+   `takeIf` intencji, `recompute(force = false)` wołane przez `findFor` po przeliczeniu doboru.
+   Bez tego punkty 5–7 nie dotkną ani jednego istniejącego leada.
 
 **Efekt, uczciwie:**
 
@@ -800,8 +845,8 @@ Flaga: `crm.ai.similar-visits.scale-gate.enabled` (domyślnie `true`).
 - V131, `WorkAxes.kt`, `WorkAxisClassifier`, `ServiceFamilyClassifier` jako **fasada**
   (6 testów taksonomii zostaje zielonych).
 - **Ekran „popraw klasyfikację usługi" (`source=MANUAL`) w tym samym wydaniu.**
-- `CURRENT_SIGNATURE_VERSION` 1 → 2, **dwufazowo**: przez jeden cykl `findCandidates` akceptuje
-  `version >= 1` i dla starych wierszy omija bramki osi, oznaczając wynik flagą `degraded`;
+- `CURRENT_SIGNATURE_VERSION` 2 → 3 (1 → 2 poszło w Etapie 0), **dwufazowo**: przez jeden cykl
+  `findCandidates` akceptuje `version >= 2` i dla starych wierszy omija bramki osi, oznaczając wynik flagą `degraded`;
   UI pokazuje „indeks się przelicza, N z M zleceń". Inaczej pierwsze studio widzi martwą funkcję
   przez kilka godzin i traci do niej zaufanie na zawsze.
 - Backfill **z blokadą między instancjami** (`SELECT … FOR UPDATE SKIP LOCKED` albo istniejący
@@ -915,6 +960,9 @@ i darmowe**, w milisekundach, bez bazy i bez API:
 `case2 CATALOG_NEAR_MISS nie tworzy pozycji SUGGESTED z priceSource CATALOG`
 `case2 lead odsylajacy do nieodczytanych zdjec nie dostaje zadnej ceny` // NEEDS_INSPECTION
 `brak kotwicy przy requireManualPrice NIE kasuje wszystkich compow`     // regresja z Etapu 0
+`wizyta nieprzestemplowana (total_gross = 0) omija bramke, nie odpada`  // okno przestemplowania
+`zapisany dobor ze starsza rules_version jest przeliczany, nie czytany` // unieważnianie cache
+`intencja ze starsza prompt_version nie jest czytana z dziennika`       // unieważnianie cache
 ```
 
 ### 8.3 Trzy metryki
