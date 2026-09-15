@@ -69,6 +69,19 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
           AND (CAST(:dateToExclusive AS timestamptz) IS NULL OR i.invoicing_date < CAST(:dateToExclusive AS timestamptz))
+          AND (CAST(:search AS text) IS NULL
+               OR LOWER(COALESCE(i.invoice_number, '')) LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.ksef_number, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_name, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_nip, ''))     LIKE CAST(:search AS text)
+               OR (CAST(:searchDigits AS text) IS NOT NULL
+                   AND regexp_replace(COALESCE(i.seller_nip, ''), '\D', '', 'g') LIKE CAST(:searchDigits AS text))
+               OR (CAST(:searchAmount AS text) IS NOT NULL
+                   AND (TO_CHAR(COALESCE(i.gross_amount, 0) / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)
+                     OR TO_CHAR(COALESCE(i.net_amount,   0) / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)))
+               OR EXISTS (SELECT 1 FROM ksef_invoice_items it
+                          WHERE it.invoice_id = i.id
+                            AND LOWER(COALESCE(it.name, '')) LIKE CAST(:search AS text)))
         ORDER BY i.invoicing_date DESC NULLS LAST, i.fetched_at DESC
     """, countQuery = """
         SELECT COUNT(*) FROM ksef_invoices i
@@ -78,6 +91,19 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
           AND (CAST(:dateToExclusive AS timestamptz) IS NULL OR i.invoicing_date < CAST(:dateToExclusive AS timestamptz))
+          AND (CAST(:search AS text) IS NULL
+               OR LOWER(COALESCE(i.invoice_number, '')) LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.ksef_number, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_name, ''))    LIKE CAST(:search AS text)
+               OR LOWER(COALESCE(i.seller_nip, ''))     LIKE CAST(:search AS text)
+               OR (CAST(:searchDigits AS text) IS NOT NULL
+                   AND regexp_replace(COALESCE(i.seller_nip, ''), '\D', '', 'g') LIKE CAST(:searchDigits AS text))
+               OR (CAST(:searchAmount AS text) IS NOT NULL
+                   AND (TO_CHAR(COALESCE(i.gross_amount, 0) / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)
+                     OR TO_CHAR(COALESCE(i.net_amount,   0) / 100.0, 'FM9999999990.00') LIKE CAST(:searchAmount AS text)))
+               OR EXISTS (SELECT 1 FROM ksef_invoice_items it
+                          WHERE it.invoice_id = i.id
+                            AND LOWER(COALESCE(it.name, '')) LIKE CAST(:search AS text)))
     """, nativeQuery = true)
     fun findWithFilters(
         @Param("studioId") studioId: UUID,
@@ -93,6 +119,16 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
          * [pl.detailing.crm.shared.DateRangeFilter.startOfNextDay].
          */
         @Param("dateToExclusive") dateToExclusive: OffsetDateTime?,
+        /**
+         * Fraza wyszukiwarki jako wzorzec `%…%` (małymi literami) — dopasowywana do numeru
+         * dokumentu, numeru KSeF, nazwy i NIP-u sprzedawcy oraz nazw pozycji faktury.
+         * Buduje ją [pl.detailing.crm.shared.SearchTerm.like]; `null` = nie szukamy.
+         */
+        @Param("search") search: String?,
+        /** Ta sama fraza zredukowana do cyfr ([pl.detailing.crm.shared.SearchTerm.digitsLike]) — NIP mimo prefiksu „PL" i myślników. */
+        @Param("searchDigits") searchDigits: String?,
+        /** Ta sama fraza jako kwota w złotych ([pl.detailing.crm.shared.SearchTerm.amountLike]); `null`, gdy nie wygląda na kwotę. */
+        @Param("searchAmount") searchAmount: String?,
         pageable: Pageable
     ): Page<KsefInvoiceEntity>
 

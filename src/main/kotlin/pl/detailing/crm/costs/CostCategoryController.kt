@@ -349,6 +349,9 @@ class CostCategoryController(
             includeExcluded = false,
             dateFrom        = DateRangeFilter.startOfDay(dateFrom),
             dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
+            search          = null,
+            searchDigits    = null,
+            searchAmount    = null,
             pageable        = PageRequest.of(0, pageSize.coerceIn(1, MAX_EXPENSE_ITEMS_PAGE_SIZE))
         )
 
