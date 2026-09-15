@@ -1,8 +1,11 @@
 package pl.detailing.crm.leads.update
 
-import org.springframework.context.event.EventListener
+import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.event.TransactionPhase
+import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadStatus
@@ -18,17 +21,39 @@ import java.time.Instant
  * na wcześniejszy etap.
  *
  * Nasłuch zdarzenia, żeby moduł poczty nie musiał wiedzieć, czym jest lead.
+ *
+ * PO ZATWIERDZENIU TRANSAKCJI I ASYNCHRONICZNIE — dokładnie tak, jak pozostałe
+ * automaty leadów karmione pocztą ([pl.detailing.crm.leads.formmail.FormMailAutoLeadListener],
+ * [pl.detailing.crm.leads.classification.AutoLeadClassificationListener]).
+ *
+ * To nie jest kosmetyka, tylko warunek, żeby wiadomość w ogóle trafiła do CRM-a.
+ * Odpowiedź wysłana z Outlooka czy telefonu wpada do nas importem z folderu
+ * Wysłane, a import każdej wiadomości to jedna transakcja ([CommsIngestService]).
+ * Nasłuch wpięty w TĘ SAMĄ transakcję mógł ją zatruć: `@Transactional` bez
+ * własnej propagacji dołącza się do transakcji wywołującego, więc wyjątek w
+ * księgowaniu leada oznaczał ją jako rollback-only. Wyjątek dawał się złapać,
+ * ale decyzji o wycofaniu odwrócić już nie — zapis wiadomości przepadał przy
+ * zatwierdzaniu, a synchronizacja i tak przesuwała znacznik UID, więc wiadomość
+ * nie wracała już nigdy i w CRM-ie nie było jej ani w skrzynce, ani na leadzie.
+ *
+ * `fallbackExecution = true`, bo zdarzenie publikuje też wysyłka z CRM-a, która
+ * transakcji nie otwiera.
  */
 @Component
 class LeadFirstResponseListener(
     private val leadRepository: LeadRepository,
     private val statusService: LeadStatusService
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
 
-    @EventListener
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional
     fun onOutboundSent(event: CommOutboundSentEvent) {
-        val lead = leadRepository.findByThreadId(event.threadId) ?: return
+        // Wątek formularzowego robota zbiera zgłoszenia wielu osób i potrafi mieć
+        // kilku leadów; pierwsza reakcja należy do najstarszego z nich. Zapytanie
+        // o JEDEN wynik wywracałoby się tutaj na policzalności, a nie na sensie.
+        val lead = leadRepository.findByThreadIdOrderByCreatedAtAsc(event.threadId).firstOrNull() ?: return
 
         if (lead.firstResponseAt == null) {
             lead.firstResponseAt = event.sentAt
@@ -39,5 +64,6 @@ class LeadFirstResponseListener(
         if (lead.status == LeadStatus.NEW) {
             statusService.transition(lead, LeadStatus.IN_PROGRESS)
         }
+        log.debug("[LEADS] Odpowiedź w wątku {} odnotowana na leadzie {}", event.threadId, lead.id)
     }
 }

@@ -149,7 +149,7 @@ class ImapSyncEngine(
             val cutoff = Instant.now().minus(BACKFILL_WINDOW_DAYS, ChronoUnit.DAYS)
 
             val messages = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID) ?: emptyArray()
-            var maxUid = savedLastUid?.takeIf { !fullResync } ?: 0L
+            val watermark = UidWatermark(savedLastUid?.takeIf { !fullResync } ?: 0L)
             var ingested = 0
 
             // Pierwszy import zgłasza pasek postępu: interfejs pokazuje wtedy stan
@@ -164,22 +164,34 @@ class ImapSyncEngine(
                 if (uid < startUid) continue
 
                 try {
-                    val mime = message as? MimeMessage ?: continue
+                    val mime = message as? MimeMessage
+                    if (mime == null) {
+                        // Nie-MIME z serwera nie stanie się MIME-em w kolejnym przebiegu —
+                        // to pominięcie trwałe, więc znacznik może iść dalej.
+                        watermark.done(uid)
+                        continue
+                    }
                     val sentAt = (mime.sentDate ?: mime.receivedDate)?.toInstant()
                     if (isBackfill && sentAt != null && sentAt.isBefore(cutoff)) {
-                        if (uid > maxUid) maxUid = uid
+                        watermark.done(uid)
                         continue
                     }
                     val parsed = parser.parse(mime, uid)
                     if (ingestService.ingest(account, folderKind, parsed, uidValidity, backfill = isBackfill)) ingested++
+                    watermark.done(uid)
                 } catch (ex: Exception) {
-                    // A single unparseable message must not block the rest of the folder.
+                    // A single unparseable message must not block the rest of the folder —
+                    // but it must not be written off either. Zatrzymujemy na niej znacznik
+                    // UID, więc kolejny przebieg spróbuje ponownie; wcześniej znacznik
+                    // przeskakiwał także nieudane wiadomości, a to znaczy „przepadła na
+                    // zawsze": po UID-zie już nie wróci, a w skrzynce CRM-a jej nie ma.
+                    // Powtórka jest bezpieczna — ingest odsiewa duplikaty po Message-ID.
+                    watermark.failed(uid)
                     log.warn(
-                        "Pominięto wiadomość uid={} w folderze {} skrzynki {}: {}",
+                        "Nie udało się zaimportować wiadomości uid={} w folderze {} skrzynki {} — ponowię: {}",
                         uid, folderName, account.emailAddress, ex.message
                     )
                 }
-                if (uid > maxUid) maxUid = uid
             }
 
             if (ingested > 0) {
@@ -188,7 +200,7 @@ class ImapSyncEngine(
                     account.emailAddress, ingested, folderName, if (fullResync) "pełny skan" else "delta"
                 )
             }
-            return uidValidity to maxUid
+            return uidValidity to watermark.value()
         } finally {
             runCatching { folder.close(false) }
         }
@@ -230,4 +242,42 @@ class ImapSyncEngine(
         /** Initial import window; older history is intentionally left on the server. */
         const val BACKFILL_WINDOW_DAYS = 90L
     }
+}
+
+/**
+ * Dokąd w folderze doszliśmy „na pewno".
+ *
+ * Znacznik UID to obietnica: wszystko do tej liczby włącznie jest już w CRM-ie i nie
+ * będzie pobierane ponownie. Wiadomość, której nie udało się zaimportować, tej
+ * obietnicy nie spełnia — a skoro delta pobiera tylko UID-y WYŻSZE od znacznika,
+ * przesunięcie go ponad nią kasuje ją z CRM-a na zawsze, mimo że na serwerze leży
+ * dalej. Dlatego znacznik zatrzymuje się TUŻ PRZED pierwszą nieudaną wiadomością,
+ * a pozostałe z tego przebiegu i tak lecą do importu: awaria jednej wiadomości
+ * opóźnia potwierdzenie, nie blokuje folderu.
+ *
+ * Ponowny import tej samej wiadomości jest bezpieczny — ingest deduplikuje po
+ * Message-ID — więc jedynym kosztem powtórki jest jedno zapytanie do bazy.
+ *
+ * Kompromis jest świadomy: wiadomość, której nie da się zaimportować NIGDY, każe
+ * kolejnym przebiegom raz po raz przeglądać ogon folderu. Wolimy ten koszt (widoczny
+ * w logu jako powtarzające się ostrzeżenie z tym samym UID-em, więc dający się
+ * zdiagnozować) niż cichą utratę korespondencji klienta, której nikt nie zauważy.
+ */
+internal class UidWatermark(startingFrom: Long) {
+
+    private var highestDone = startingFrom
+    private var lowestFailed: Long? = null
+
+    /** Wiadomość zamknięta: zapisana, zduplikowana albo świadomie pominięta. */
+    fun done(uid: Long) {
+        if (uid > highestDone) highestDone = uid
+    }
+
+    /** Wiadomość do ponowienia w kolejnym przebiegu. */
+    fun failed(uid: Long) {
+        val current = lowestFailed
+        if (current == null || uid < current) lowestFailed = uid
+    }
+
+    fun value(): Long = lowestFailed?.let { minOf(highestDone, it - 1) } ?: highestDone
 }
