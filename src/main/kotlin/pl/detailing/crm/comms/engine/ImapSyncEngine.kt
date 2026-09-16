@@ -91,9 +91,23 @@ class ImapSyncEngine(
                 account.inboxLastUid = lastUid
             }
 
-            imapSessions.findSentFolderName(store)?.let { sentName ->
+            // Folder Wysłanych to jedyne źródło odpowiedzi wysłanych spoza CRM-a
+            // (webmail, telefon, Outlook). Gdy nie da się go wskazać, takie odpowiedzi
+            // NIGDY nie trafią do rozmowy - a że skan jest niżej niemy przy zerze nowych
+            // wiadomości, dotąd nie było tego widać w logach. Stąd te dwie linie: to one
+            // odpowiadają na pytanie „czy CRM w ogóle patrzy w Wysłane tej skrzynki".
+            val sentFolderName = imapSessions.findSentFolderName(store)
+            if (sentFolderName == null) {
+                log.warn(
+                    "[COMMS] {}: nie rozpoznano folderu Wysłanych — odpowiedzi wysłane spoza CRM-a " +
+                        "nie zostaną dopięte do rozmów (sprawdzane: atrybut SPECIAL-USE \\Sent oraz " +
+                        "typowe nazwy). Zgłoś nazwę folderu wysłanych u tego dostawcy.",
+                    account.emailAddress
+                )
+            } else {
+                log.debug("[COMMS] {}: folder Wysłanych = '{}'", account.emailAddress, sentFolderName)
                 syncFolder(
-                    store, account, sentName, CommFolderKind.SENT,
+                    store, account, sentFolderName, CommFolderKind.SENT,
                     account.sentUidValidity, account.sentLastUid
                 )?.let { (validity, lastUid) ->
                     account.sentUidValidity = validity
@@ -198,6 +212,13 @@ class ImapSyncEngine(
                 log.info(
                     "[COMMS] {}: +{} wiadomości z {} ({})",
                     account.emailAddress, ingested, folderName, if (fullResync) "pełny skan" else "delta"
+                )
+            } else {
+                // Bez tej linii „przeskanowano, nic nowego" jest nieodróżnialne od „w ogóle
+                // nie skanowano" - a to właśnie ta różnica decyduje, gdzie zginęła odpowiedź.
+                log.debug(
+                    "[COMMS] {}: przeskanowano {} ({}), 0 nowych (startUid={})",
+                    account.emailAddress, folderName, if (fullResync) "pełny skan" else "delta", startUid
                 )
             }
             return uidValidity to watermark.value()
