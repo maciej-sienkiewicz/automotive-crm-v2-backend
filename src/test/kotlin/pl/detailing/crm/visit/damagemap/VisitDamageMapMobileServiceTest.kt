@@ -101,7 +101,7 @@ class VisitDamageMapMobileServiceTest {
 
         assertEquals("tok-1", result.token)
         // `checkinId` sesji mobilnej = id wizyty. Na tym stoi cały pomysł: strona
-        // mobilna i endpointy /api/mobile/checkin/* zostają bez zmian.
+        // mobilna i endpointy pod /api/mobile/checkin zostają bez zmian.
         assertEquals(checkinId, result.checkinId)
         verify { tokenService.generateToken(tenantId, checkinId, userId.value.toString(), false) }
     }

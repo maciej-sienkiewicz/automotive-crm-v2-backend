@@ -18,6 +18,8 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.shared.CustomerId
+import pl.detailing.crm.shared.DocumentType
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -33,6 +35,7 @@ import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitDocumentRepository
 import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -161,8 +164,34 @@ class UpdateVisitDamageMapHandlerTest {
             if (suffix == null) CANONICAL_KEY else "$PREFIX/damage-map-$suffix.pdf"
         }
         coEvery { documentService.registerDocument(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns
-            mockk<VisitDocument> { every { id } returns VisitDocumentId(UUID.randomUUID()) }
+            registeredDocument
     }
+
+    /*
+     * PRAWDZIWY [VisitDocument], nie mock. `VisitDocument.id` jest klasą `@JvmInline`,
+     * więc jego getter na JVM zwraca `UUID` (typ jest zerżnięty). Zamockowane
+     * `every { id } returns VisitDocumentId(...)` wkładało tam pudełko klasy wartości
+     * i produkcyjne `document.id.value` wywracało się na `ClassCastException`.
+     *
+     * Wyjątek wpadał wtedy w `catch` w `regenerateDocument`, który zamienia awarię
+     * generowania PDF-a na `documentGenerated = false` — czyli test nie widział
+     * błędu w atrapie, tylko „dokument się nie wygenerował". Trzy inne testy w tej
+     * klasie przechodziły z tym samym wyjątkiem w środku, bo nie sprawdzały, czy
+     * dokument w ogóle powstał; dlatego sprawdzają to teraz.
+     */
+    private val registeredDocument = VisitDocument(
+        id = VisitDocumentId(UUID.randomUUID()),
+        customerId = CustomerId(UUID.randomUUID()),
+        type = DocumentType.DAMAGE_MAP,
+        name = "Mapa uszkodzeń",
+        fileName = "damage-map.pdf",
+        fileId = "studio/visits/v/damage-map.pdf",
+        fileUrl = "https://example.test/damage-map.pdf",
+        uploadedAt = Instant.now(),
+        uploadedBy = UserId(UUID.randomUUID()),
+        uploadedByName = "Anna Kowalska",
+        category = "damage"
+    )
 
     private fun stubCustomer(
         customerEmail: String? = "jan@example.com",
@@ -218,8 +247,9 @@ class UpdateVisitDamageMapHandlerTest {
         seedIntakeMap(documentS3Key = currentKey)
         stubDocumentPipeline()
 
-        handler.handle(command(mode = DamageMapUpdateMode.REPLACE_EXISTING))
+        val result = handler.handle(command(mode = DamageMapUpdateMode.REPLACE_EXISTING))
 
+        assertTrue(result.documentGenerated)
         coVerify { s3.uploadDamageMapToKey(currentKey, pdf) }
         assertTrue(uploadedWithSuffix.isEmpty())
         coVerify(exactly = 0) { s3.uploadDamageMap(any(), any(), any(), any()) }
@@ -256,6 +286,9 @@ class UpdateVisitDamageMapHandlerTest {
         val result = handler.handle(command(notify = false))
 
         assertNull(result.notification)
+        // Dokument POWSTAJE także bez powiadomienia — inaczej ten test przechodziłby
+        // przy zepsutej atrapie rejestracji dokumentu.
+        assertTrue(result.documentGenerated)
         io.mockk.verify(exactly = 0) { notifier.notifyCustomer(any()) }
     }
 
