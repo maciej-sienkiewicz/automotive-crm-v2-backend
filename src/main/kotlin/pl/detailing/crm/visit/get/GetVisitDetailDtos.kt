@@ -70,10 +70,14 @@ data class VisitSettlementResponse(
 
 data class DoorToDoorInfoResponse(
     val id: String,
+    val enabled: Boolean,
     val pickupAddress: DoorToDoorAddressInfo,
     val deliveryAddress: DoorToDoorAddressInfo,
     val notes: String?,
-    val status: String
+    val status: String,
+    val driverId: String?,
+    val driverName: String?,
+    val scheduledAt: Instant?
 )
 
 data class DoorToDoorAddressInfo(
