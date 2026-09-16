@@ -92,20 +92,30 @@ class ImapSyncEngine(
             }
 
             // Folder Wysłanych to jedyne źródło odpowiedzi wysłanych spoza CRM-a
-            // (webmail, telefon, Outlook). Gdy nie da się go wskazać, takie odpowiedzi
-            // NIGDY nie trafią do rozmowy - a że skan jest niżej niemy przy zerze nowych
-            // wiadomości, dotąd nie było tego widać w logach. Stąd te dwie linie: to one
-            // odpowiadają na pytanie „czy CRM w ogóle patrzy w Wysłane tej skrzynki".
-            val sentFolderName = imapSessions.findSentFolderName(store)
+            // (webmail, telefon, Outlook). Kolejność: RĘCZNE nadpisanie (jeśli wciąż
+            // istnieje) -> rozpoznanie generyczne (SPECIAL-USE \Sent, potem nazwy).
+            // Wynik zapamiętujemy przy koncie, a gdy nic nie pasuje - wypisujemy listę
+            // folderów skrzynki, żeby dało się wskazać właściwy ręcznie i świadomie.
+            val inspection = imapSessions.inspectFolders(store)
+            val override = account.sentFolderName?.takeIf { it.isNotBlank() }
+            val sentFolderName = override?.takeIf { it in inspection.allFolderNames }
+                ?: inspection.sentFolderName
+
+            if (sentFolderName != null && sentFolderName != account.sentFolderName) {
+                log.info("[COMMS] {}: folder Wysłanych rozpoznany jako '{}'", account.emailAddress, sentFolderName)
+                account.sentFolderName = sentFolderName
+            }
+
             if (sentFolderName == null) {
+                // Nadpisanie wskazywało na folder, którego już nie ma — czyścimy, żeby
+                // przy następnym przebiegu zadziałało rozpoznanie automatyczne.
+                if (override != null) account.sentFolderName = null
                 log.warn(
                     "[COMMS] {}: nie rozpoznano folderu Wysłanych — odpowiedzi wysłane spoza CRM-a " +
-                        "nie zostaną dopięte do rozmów (sprawdzane: atrybut SPECIAL-USE \\Sent oraz " +
-                        "typowe nazwy). Zgłoś nazwę folderu wysłanych u tego dostawcy.",
-                    account.emailAddress
+                        "nie zostaną dopięte do rozmów. Foldery skrzynki: {}",
+                    account.emailAddress, inspection.allFolderNames
                 )
             } else {
-                log.debug("[COMMS] {}: folder Wysłanych = '{}'", account.emailAddress, sentFolderName)
                 syncFolder(
                     store, account, sentFolderName, CommFolderKind.SENT,
                     account.sentUidValidity, account.sentLastUid
