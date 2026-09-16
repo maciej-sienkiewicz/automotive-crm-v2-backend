@@ -11,6 +11,7 @@ import pl.detailing.crm.doortodoor.upsert.UpsertDoorToDoorCommand
 import pl.detailing.crm.doortodoor.upsert.UpsertDoorToDoorHandler
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.VisitId
 import java.time.Instant
 
@@ -55,11 +56,16 @@ class DoorToDoorController(
                 visitId = VisitId.fromString(visitId),
                 userId = principal.userId,
                 userName = principal.name,
+                /* Brak `enabled` w zadaniu = stare klienty sprzed tej zmiany.
+                   Dla nich wyslanie adresow zawsze oznaczalo zlecenie uslugi. */
+                enabled = request.enabled ?: true,
                 pickupCity = request.pickupAddress.city,
                 pickupStreet = request.pickupAddress.street,
                 deliveryCity = request.deliveryAddress.city,
                 deliveryStreet = request.deliveryAddress.street,
-                notes = request.notes
+                notes = request.notes,
+                driverId = request.driverId?.takeIf { it.isNotBlank() }?.let { EmployeeId.fromString(it) },
+                scheduledAt = request.scheduledAt
             )
         )
         ResponseEntity.ok(result.toResponse())
@@ -69,9 +75,15 @@ class DoorToDoorController(
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
 data class UpsertDoorToDoorRequest(
+    /** null = klient sprzed wprowadzenia przelacznika; patrz mapowanie wyzej. */
+    val enabled: Boolean? = null,
     val pickupAddress: DoorToDoorAddressRequest,
     val deliveryAddress: DoorToDoorAddressRequest,
-    val notes: String?
+    val notes: String?,
+    /** ID pracownika studia; null albo pusty string = kierowca nieprzypisany. */
+    val driverId: String? = null,
+    /** Termin dostarczenia; null = nieustalony. */
+    val scheduledAt: Instant? = null
 )
 
 data class DoorToDoorAddressRequest(
@@ -82,10 +94,14 @@ data class DoorToDoorAddressRequest(
 data class DoorToDoorResponse(
     val id: String,
     val visitId: String,
+    val enabled: Boolean,
     val pickupAddress: DoorToDoorAddressResponse,
     val deliveryAddress: DoorToDoorAddressResponse,
     val notes: String?,
     val status: String,
+    val driverId: String?,
+    val driverName: String?,
+    val scheduledAt: Instant?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -98,10 +114,14 @@ data class DoorToDoorAddressResponse(
 private fun DoorToDoor.toResponse() = DoorToDoorResponse(
     id = id.toString(),
     visitId = visitId.toString(),
+    enabled = enabled,
     pickupAddress = DoorToDoorAddressResponse(pickupAddress.city, pickupAddress.street),
     deliveryAddress = DoorToDoorAddressResponse(deliveryAddress.city, deliveryAddress.street),
     notes = notes,
     status = status.name,
+    driverId = driverId?.value?.toString(),
+    driverName = driverName,
+    scheduledAt = scheduledAt,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

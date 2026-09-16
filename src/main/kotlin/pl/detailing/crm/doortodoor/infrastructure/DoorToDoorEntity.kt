@@ -5,6 +5,7 @@ import pl.detailing.crm.doortodoor.domain.DoorToDoor
 import pl.detailing.crm.doortodoor.domain.DoorToDoorAddress
 import pl.detailing.crm.doortodoor.domain.DoorToDoorStatus
 import pl.detailing.crm.shared.DoorToDoorId
+import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.VisitId
@@ -30,6 +31,9 @@ class DoorToDoorEntity(
     @Column(name = "visit_id", nullable = false, columnDefinition = "uuid")
     val visitId: UUID,
 
+    @Column(name = "enabled", nullable = false)
+    var enabled: Boolean,
+
     @Column(name = "pickup_city", nullable = false, length = 255)
     var pickupCity: String,
 
@@ -49,6 +53,17 @@ class DoorToDoorEntity(
     @Column(name = "status", nullable = false, length = 50)
     var status: DoorToDoorStatus,
 
+    /* Bez klucza obcego do employees, celowo: rekord D2D ma przeżyć usunięcie
+       pracownika, a nazwisko i tak trzymamy w migawce obok. */
+    @Column(name = "driver_id", columnDefinition = "uuid")
+    var driverId: UUID?,
+
+    @Column(name = "driver_name", length = 200)
+    var driverName: String?,
+
+    @Column(name = "scheduled_at")
+    var scheduledAt: Instant?,
+
     @Column(name = "created_by", nullable = false, columnDefinition = "uuid")
     val createdBy: UUID,
 
@@ -65,10 +80,14 @@ class DoorToDoorEntity(
         id = DoorToDoorId(id),
         studioId = StudioId(studioId),
         visitId = VisitId(visitId),
+        enabled = enabled,
         pickupAddress = DoorToDoorAddress(city = pickupCity, street = pickupStreet),
         deliveryAddress = DoorToDoorAddress(city = deliveryCity, street = deliveryStreet),
         notes = notes,
         status = status,
+        driverId = driverId?.let { EmployeeId(it) },
+        driverName = driverName,
+        scheduledAt = scheduledAt,
         createdBy = UserId(createdBy),
         updatedBy = UserId(updatedBy),
         createdAt = createdAt,
@@ -80,12 +99,16 @@ class DoorToDoorEntity(
             id = domain.id.value,
             studioId = domain.studioId.value,
             visitId = domain.visitId.value,
+            enabled = domain.enabled,
             pickupCity = domain.pickupAddress.city,
             pickupStreet = domain.pickupAddress.street,
             deliveryCity = domain.deliveryAddress.city,
             deliveryStreet = domain.deliveryAddress.street,
             notes = domain.notes,
             status = domain.status,
+            driverId = domain.driverId?.value,
+            driverName = domain.driverName,
+            scheduledAt = domain.scheduledAt,
             createdBy = domain.createdBy.value,
             updatedBy = domain.updatedBy.value,
             createdAt = domain.createdAt,

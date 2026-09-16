@@ -1241,10 +1241,17 @@ class CreateVisitFromReservationHandler(
                 id = DoorToDoorId.random(),
                 studioId = studioId,
                 visitId = visitId,
+                /* Przyjecie pojazdu z zaznaczonym Door to Door = usluga zlecona. */
+                enabled = true,
                 pickupAddress = DoorToDoorAddress(city = d2d.pickupCity, street = d2d.pickupStreet),
                 deliveryAddress = DoorToDoorAddress(city = d2d.deliveryCity, street = d2d.deliveryStreet),
                 notes = d2d.notes,
                 status = DoorToDoorStatus.SCHEDULED,
+                /* Kierowce i termin ustala sie pozniej, z karty wizyty:
+                   przy ladzie nikt jeszcze nie wie, kto bedzie wolny. */
+                driverId = null,
+                driverName = null,
+                scheduledAt = null,
                 createdBy = userId,
                 updatedBy = userId,
                 createdAt = now,

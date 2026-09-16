@@ -730,10 +730,14 @@ class VisitController(
             doorToDoor = doorToDoor?.let { d2d ->
                 DoorToDoorInfoResponse(
                     id = d2d.id.toString(),
+                    enabled = d2d.enabled,
                     pickupAddress = DoorToDoorAddressInfo(d2d.pickupAddress.city, d2d.pickupAddress.street),
                     deliveryAddress = DoorToDoorAddressInfo(d2d.deliveryAddress.city, d2d.deliveryAddress.street),
                     notes = d2d.notes,
-                    status = d2d.status.name
+                    status = d2d.status.name,
+                    driverId = d2d.driverId?.value?.toString(),
+                    driverName = d2d.driverName,
+                    scheduledAt = d2d.scheduledAt
                 )
             },
             acceptedByName = acceptedByName,
