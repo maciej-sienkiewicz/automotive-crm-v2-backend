@@ -183,6 +183,37 @@ class CreateAppointmentManualPriceTest {
     }
 
     @Test
+    fun `darmowa usluga - cena 0 jest legalna, nie jest odrzucana ani zamieniana`() = runBlocking {
+        setUp(listOf(manualPriceService()))
+        // Usługa z ceną ustalaną ręcznie bywa darmowa (gratis, gest wobec klienta).
+        // 0 zł to poprawna cena, a nie brak ceny - rezerwacja ma się zapisać z zerem,
+        // a nie zostać odrzucona.
+        val result = handler.handle(command(listOf(
+            lineItem(serviceId = manualServiceId, basePriceNet = 0L, basePriceGross = 0L)
+        )))
+
+        assertEquals(0L, result.totalNet.amountInCents)
+        assertEquals(0L, result.totalGross.amountInCents)
+    }
+
+    @Test
+    fun `darmowa usluga w starszym ksztalcie - SET_NET 0 - tez przechodzi`() = runBlocking {
+        setUp(listOf(manualPriceService()))
+        // Tak wysyła ją przyjęcie pojazdu: zerowa baza plus SET_NET o wartości 0.
+        val result = handler.handle(command(listOf(
+            lineItem(
+                serviceId = manualServiceId,
+                basePriceNet = 0L,
+                adjustmentType = AdjustmentType.SET_NET,
+                adjustmentValue = 0.0
+            )
+        )))
+
+        assertEquals(0L, result.totalNet.amountInCents)
+        assertEquals(0L, result.totalGross.amountInCents)
+    }
+
+    @Test
     fun `zwykla usluga nadal bierze cene z cennika, a nie z zadania`() = runBlocking {
         setUp(listOf(catalogService()))
         // Kwota w żądaniu jest celowo inna: cennik ma tu pierwszeństwo, żeby żaden

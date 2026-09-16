@@ -11,8 +11,7 @@ class CreateAppointmentValidatorComposite(
     private val appointmentColorValidator: AppointmentColorValidator,
     private val newCustomerUniquenessValidator: NewCustomerUniquenessValidator,
     private val customerContactInfoValidator: CustomerContactInfoValidator,
-    private val lineItemVatRateValidator: LineItemVatRateValidator,
-    private val manualPriceRequiredValidator: ManualPriceRequiredValidator
+    private val lineItemVatRateValidator: LineItemVatRateValidator
 ) {
     suspend fun validate(command: CreateAppointmentCommand) {
         val context = contextBuilder.build(command)
@@ -24,8 +23,10 @@ class CreateAppointmentValidatorComposite(
         vehicleExistenceValidator.validate(context)
         newCustomerUniquenessValidator.validate(context)
         lineItemVatRateValidator.validate(context)
-        // Podpięty dopiero teraz. Klasa istniała od dawna, ale nie była wołana z żadnego
-        // miejsca - więc pozycja bez ceny przechodziła bez słowa i zapisywała się jako 0 zł.
-        manualPriceRequiredValidator.validate(context)
+        // Świadomie NIE walidujemy, czy usługa z ceną ustalaną ręcznie ma cenę różną od
+        // zera. Cena 0 jest legalna: część usług bywa darmowa (gratis, gest, dorzucone do
+        // pakietu). Właściwą obroną przed zgubieniem ceny jest to, że handler bierze kwotę
+        // z żądania (catalogBaseNet/catalogBaseGross), a nie zero z cennika - nie walidator,
+        // który nie odróżnia „użytkownik chciał 0" od „użytkownik nie wpisał nic".
     }
 }
