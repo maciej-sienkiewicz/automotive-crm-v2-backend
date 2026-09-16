@@ -92,9 +92,22 @@ zaczynają przeszkadzać, to zmiana jest zła, a nie one.
 
 ---
 
-## 2. Budowanie
+## 2. Budowanie bez PAT-a do GitHub Packages
 
-`ksef-client` mieszka w prywatnym GitHub Packages i wymaga PAT-a
+`ksef-client` mieszka w prywatnym GitHub Packages i wymaga PAT-a z `read:packages`
 (`gpr.user`/`gpr.key` albo `GITHUB_ACTOR`/`GITHUB_TOKEN`). Bez nich `./gradlew`
 przerywa na rozwiązywaniu zależności, zanim cokolwiek skompiluje — to nie jest
-błąd w kodzie. Patrz komentarz w `build.gradle.kts`.
+błąd w kodzie.
+
+**Repo przewiduje dla takich środowisk flagę `-PksefStub`**, która podmienia SDK
+KSeF na źródła z `ksef-stub/`:
+
+```
+./gradlew test -PksefStub
+./gradlew compileKotlin -PksefStub
+```
+
+Nie zgłaszaj „nie da się zbudować backendu" bez wypróbowania tej flagi.
+`bootJar -PksefStub` jest celowo zablokowany — stub służy wyłącznie do
+kompilacji i testów, nigdy do artefaktu produkcyjnego. Patrz komentarz przy
+`useKsefStub` w `build.gradle.kts`.
