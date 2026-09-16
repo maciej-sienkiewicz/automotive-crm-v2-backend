@@ -40,9 +40,19 @@ class UpsertDoorToDoorHandler(
             requireCompleteOrEmpty(command.pickupCity, command.pickupStreet, "odbioru")
             requireCompleteOrEmpty(command.deliveryCity, command.deliveryStreet, "dostarczenia")
 
+            /*
+             * Door to Door to JEDEN LUB DWA odcinki, nie zawsze oba. Klient moze
+             * chciec samego odbioru ("zabierzcie auto sprzed domu, wroce po nie
+             * sam") albo samego dostarczenia ("przywioze rano, odwiezcie do
+             * biura"). Wczesniej wymagany byl adres dostarczenia, co blokowalo
+             * ten pierwszy wariant - dlatego warunek brzmi: co najmniej jeden
+             * kompletny adres przy wlaczonej usludze.
+             */
             if (command.enabled) {
-                require(command.deliveryCity.isNotBlank() && command.deliveryStreet.isNotBlank()) {
-                    "Zlecony Door to Door wymaga adresu dostarczenia"
+                val hasPickup = command.pickupCity.isNotBlank() && command.pickupStreet.isNotBlank()
+                val hasDelivery = command.deliveryCity.isNotBlank() && command.deliveryStreet.isNotBlank()
+                require(hasPickup || hasDelivery) {
+                    "Zlecony Door to Door wymaga adresu odbioru albo dostarczenia"
                 }
             }
 

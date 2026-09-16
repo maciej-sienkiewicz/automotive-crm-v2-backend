@@ -27,6 +27,8 @@ import java.util.UUID
  *
  *  - adres jest albo kompletny, albo pusty — samo miasto nikogo nie dowiezie,
  *    a ulica bez miasta nie nadaje się do nawigacji,
+ *  - włączona usługa potrzebuje co najmniej JEDNEGO kompletnego adresu; sam
+ *    odbiór i sama dostawa to pełnoprawne warianty, nie połowiczne dane,
  *  - kierowca musi należeć do tego samego studia; bez tej kontroli wystarczyło
  *    podać cudze UUID, żeby nazwisko obcego pracownika wróciło w odpowiedzi.
  */
@@ -63,16 +65,48 @@ class UpsertDoorToDoorHandlerTest {
     }
 
     @Test
-    fun `zlecona usluga bez adresu dostarczenia jest odrzucana`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { handler.handle(command(enabled = true, deliveryCity = "", deliveryStreet = "")) }
+    fun `zlecona usluga bez zadnego adresu jest odrzucana`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            runBlocking {
+                handler.handle(command(
+                    enabled = true,
+                    pickupCity = "", pickupStreet = "",
+                    deliveryCity = "", deliveryStreet = ""
+                ))
+            }
         }
+        assertTrue(ex.message!!.contains("odbioru albo dostarczenia"))
+    }
+
+    /* "Odbierzcie sprzed domu, wroce po nie sam" - najczestszy powod, dla ktorego
+       wymuszanie adresu dostarczenia bylo bledem. */
+    @Test
+    fun `sam odbior wystarczy - klient odbierze auto osobiscie`() {
+        val result = runBlocking {
+            handler.handle(command(enabled = true, deliveryCity = "", deliveryStreet = ""))
+        }
+        assertEquals("Warszawa", result.pickupAddress.city)
+        assertEquals("", result.deliveryAddress.city)
+    }
+
+    /* Odwrotnosc: klient przywozi auto sam, ale prosi o odwiezienie. */
+    @Test
+    fun `sama dostawa wystarczy - klient przywozi auto sam`() {
+        val result = runBlocking {
+            handler.handle(command(enabled = true, pickupCity = "", pickupStreet = ""))
+        }
+        assertEquals("", result.pickupAddress.city)
+        assertEquals("Warszawa", result.deliveryAddress.city)
     }
 
     @Test
-    fun `wylaczona usluga moze nie miec adresu dostarczenia`() {
+    fun `wylaczona usluga moze nie miec zadnego adresu`() {
         val result = runBlocking {
-            handler.handle(command(enabled = false, deliveryCity = "", deliveryStreet = ""))
+            handler.handle(command(
+                enabled = false,
+                pickupCity = "", pickupStreet = "",
+                deliveryCity = "", deliveryStreet = ""
+            ))
         }
         assertEquals(false, result.enabled)
     }
