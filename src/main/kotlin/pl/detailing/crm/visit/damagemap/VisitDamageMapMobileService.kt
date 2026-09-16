@@ -1,6 +1,7 @@
 package pl.detailing.crm.visit.damagemap
 
 import org.slf4j.LoggerFactory
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.checkin.qr.AnnotationPointData
@@ -22,6 +23,7 @@ import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import pl.detailing.crm.visit.infrastructure.VisitPhotoEntity
 import pl.detailing.crm.visit.infrastructure.VisitPhotoRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -47,13 +49,23 @@ class VisitDamageMapMobileService(
     private val uploadContextTokenService: UploadContextTokenService,
     private val checkinDamagePointsService: CheckinDamagePointsService,
     private val checkinPhotoService: CheckinPhotoService,
-    private val photoSessionService: PhotoSessionService
+    private val photoSessionService: PhotoSessionService,
+    private val redisTemplate: StringRedisTemplate
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(VisitDamageMapMobileService::class.java)
 
         /** Te same statusy, których nie wpuszcza [UpdateVisitDamageMapHandler]. */
         private val CLOSED_STATUSES = setOf(VisitStatus.COMPLETED, VisitStatus.REJECTED, VisitStatus.ARCHIVED)
+
+        private const val PHOTO_MAP_KEY_PREFIX = "visit-damage-map:photo-map:"
+
+        /**
+         * Mapowanie „zdjęcie tymczasowe → zdjęcie wizyty" żyje DŁUŻEJ niż sesja QR
+         * (3 h). Telefon trzyma własny stan i po zamknięciu sesji nadal potrafi
+         * przysłać stary identyfikator; bez mapowania punkt straciłby zdjęcie.
+         */
+        private val PHOTO_MAP_TTL = Duration.ofHours(48)
     }
 
     /**
@@ -124,67 +136,104 @@ class VisitDamageMapMobileService(
     }
 
     /**
-     * Co telefon zdążył zaznaczyć. `null`, gdy żadnej sesji nie ma — po odświeżeniu
-     * strony okno musi umieć dociągnąć pracę z telefonu, której nie zobaczyło po
-     * WebSockecie.
+     * Uzgadnia stan sesji mobilnej z wizytą i zwraca punkty GOTOWE do wstawienia w
+     * edytor: z identyfikatorami zdjęć WIZYTY i podpisanymi miniaturami.
+     *
+     * Jedno wywołanie robi wszystko, bo rozbicie tego na „przenieś zdjęcia" +
+     * „przetłumacz u siebie" było źródłem obu zgłoszonych błędów. Telefon przy
+     * dodaniu zdjęcia wysyła DWA zdarzenia (wysłano zdjęcie, zapisano punkty), okno
+     * odpalało na każde osobne przeniesienie, a te biegły równolegle:
+     *  - `finalizePhotos` kopiował ten sam obiekt dwa razy i powstawały DWA wiersze
+     *    zdjęcia wizyty — zdjęcie pokazywało się podwójnie na liście „Istniejące",
+     *  - tłumaczenie po stronie okna czytało tablicę mapowań, zanim którekolwiek
+     *    przeniesienie ją wypełniło, więc zdjęcie wypadało z punktu.
+     *
+     * Teraz tłumaczy serwer, z mapowania trzymanego w Redisie. Jest to więc
+     * operacja IDEMPOTENTNA: zdjęcie raz przeniesione ma swój wpis i drugie
+     * wywołanie już go nie dubluje.
+     *
+     * Zwraca null, gdy nie ma sesji ani zapisanych punktów.
      */
-    @Transactional(readOnly = true)
-    fun readSession(visitId: VisitId, studioId: StudioId): MobileSessionState? {
+    @Transactional
+    suspend fun syncSession(
+        visitId: VisitId,
+        studioId: StudioId,
+        userId: UserId,
+        userName: String
+    ): MobileSessionState? {
+        val visitEntity = requireOpenVisit(visitId, studioId)
         val tenantId = studioId.value.toString()
         val checkinId = visitId.value.toString()
 
-        uploadContextTokenService.getTokenForCheckin(tenantId, checkinId) ?: return null
+        // 1. Przenieś nowe zdjęcia z telefonu do galerii wizyty (pomija już przeniesione).
+        claimPendingPhotos(visitEntity, visitId, studioId, userId, userName)
 
-        val result = checkinDamagePointsService.getDamagePoints(tenantId, checkinId)
-        if (result.savedAt == null) return null
+        val stored = checkinDamagePointsService.getDamagePoints(tenantId, checkinId)
+        if (stored.savedAt == null) return null
+
+        // 2. Przetłumacz identyfikatory i dołóż adresy miniatur ze zdjęć wizyty.
+        val photoMap = readPhotoMap(tenantId, checkinId)
+        val visitPhotoKeys = visitRepository
+            .findByIdAndStudioIdWithPhotos(visitId.value, studioId.value)
+            ?.photos
+            ?.associate { it.id.toString() to it.fileId }
+            .orEmpty()
 
         return MobileSessionState(
-            damagePoints = result.damagePoints.map { point ->
+            damagePoints = stored.damagePoints.map { point ->
                 MobileSessionPoint(
                     id = point.id,
                     x = point.x,
                     y = point.y,
                     note = point.note,
-                    photos = point.photos.map { photo ->
+                    photos = point.photos.mapNotNull { photo ->
+                        /*
+                         * Trzy możliwe postaci identyfikatora:
+                         *  - zdjęcie tymczasowe przeniesione do wizyty → z mapowania,
+                         *  - zdjęcie wizyty (punkt zasiany z komputera) → bez zmian,
+                         *  - `local-…`, czyli placeholder telefonu przed zakończeniem
+                         *    wysyłki → pomijamy; kolejne zdarzenie przyniesie je już
+                         *    z prawdziwym identyfikatorem.
+                         */
+                        val resolved = photoMap[photo.photoId]
+                            ?: photo.photoId.takeIf { visitPhotoKeys.containsKey(it) }
+                            ?: return@mapNotNull null
+
                         MobileSessionPhoto(
-                            photoId = photo.photoId,
-                            thumbnailUrl = photo.s3Key?.let { key ->
-                                runCatching { checkinPhotoService.generateDownloadUrl(key) }.getOrNull()
+                            photoId = resolved,
+                            thumbnailUrl = visitPhotoKeys[resolved]?.let { key ->
+                                runCatching { photoSessionService.generateDownloadUrl(key) }.getOrNull()
                             },
                             strokes = photo.strokes
                         )
                     }
                 )
             },
-            vehicleType = result.vehicleType,
-            savedAt = result.savedAt
+            vehicleType = stored.vehicleType,
+            savedAt = stored.savedAt
         )
     }
 
     /**
-     * Przenosi zdjęcia zrobione telefonem do galerii wizyty i zwraca mapowanie
-     * „identyfikator tymczasowy → zdjęcie wizyty".
+     * Przenosi zdjęcia leżące w magazynie tymczasowym sesji do galerii wizyty i
+     * zapisuje mapowanie identyfikatorów.
      *
-     * Dlaczego osobnym krokiem, a nie przy zapisie mapy: punkt uszkodzenia wskazuje
-     * zdjęcie po identyfikatorze, a ten zmienia się w momencie przeniesienia. Gdyby
-     * przeniesienie działo się dopiero przy „Zapisz", okno przez cały czas edycji
-     * trzymałoby wskaźniki na pliki tymczasowe, których obiekt S3 zaraz przestaje
-     * istnieć — i wystarczyłby jeden nieudany zapis, żeby zdjęcia zniknęły razem z
-     * sesją. Tu zdjęcie staje się zdjęciem wizyty od razu po zrobieniu.
+     * Dlaczego zdjęcie staje się zdjęciem wizyty od razu, a nie przy zapisie mapy:
+     * punkt wskazuje zdjęcie po identyfikatorze, a ten zmienia się przy przeniesieniu.
+     * Gdyby przeniesienie czekało na „Zapisz", okno przez całą edycję trzymałoby
+     * wskaźniki na pliki, których obiekt S3 zaraz przestaje istnieć.
      *
      * Skutek uboczny, świadomy: zdjęcie zostaje w galerii wizyty także wtedy, gdy
      * operator porzuci okno bez zapisu. Zdjęcie samochodu w kartotece nikomu nie
-     * szkodzi, a alternatywy — osierocone obiekty w S3 albo kasowanie cudzej pracy —
-     * są wyraźnie gorsze.
+     * szkodzi, a osierocone obiekty w S3 albo kasowanie cudzej pracy szkodzą.
      */
-    @Transactional
-    suspend fun claimPhotos(
+    private suspend fun claimPendingPhotos(
+        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
         visitId: VisitId,
         studioId: StudioId,
         userId: UserId,
         userName: String
-    ): List<ClaimedMobilePhoto> {
-        val visitEntity = requireOpenVisit(visitId, studioId)
+    ) {
         val tenantId = studioId.value.toString()
         val checkinId = visitId.value.toString()
 
@@ -193,18 +242,28 @@ class VisitDamageMapMobileService(
             checkinId = checkinId,
             visitId = visitId
         )
-        if (finalized.isEmpty()) return emptyList()
+        if (finalized.isEmpty()) return
 
+        val mapKey = PHOTO_MAP_KEY_PREFIX + tenantId + ":" + checkinId
+        val alreadyMapped = readPhotoMap(tenantId, checkinId)
         val now = Instant.now()
-        /*
-         * Wiersze wstawiamy przez repozytorium zdjęć, a NIE przez
-         * `visitEntity.photos` + `visitRepository.save(...)`. Kolekcja ma
-         * `orphanRemoval = true`, więc przepisanie jej na częściowo doczytanym
-         * agregacie usuwa zdjęcia, których w niej nie było. Tu dokładamy wiersze i
-         * nic więcej nie może się stać.
-         */
-        val rows = finalized.map { photo ->
-            VisitPhotoEntity(
+
+        val rows = mutableListOf<VisitPhotoEntity>()
+        val newMappings = mutableMapOf<String, String>()
+
+        finalized.forEach { photo ->
+            // Nazwa pliku w magazynie tymczasowym to „{photoId}.{ext}" — i to jest
+            // ten identyfikator, którym punkty uszkodzeń wskazują zdjęcie.
+            val temporaryId = photo.fileName.substringBeforeLast('.')
+            if (alreadyMapped.containsKey(temporaryId)) {
+                logger.warn(
+                    "Zdjęcie {} było już przeniesione — pomijam drugi wiersz [visit={}]",
+                    temporaryId, visitId
+                )
+                return@forEach
+            }
+            newMappings[temporaryId] = photo.photoId.toString()
+            rows += VisitPhotoEntity(
                 id = photo.photoId,
                 visit = visitEntity,
                 fileId = photo.fileId,
@@ -215,21 +274,30 @@ class VisitDamageMapMobileService(
                 uploadedByName = userName
             )
         }
+
+        if (rows.isEmpty()) return
+
+        /*
+         * Wiersze wstawiamy przez repozytorium zdjęć, a NIE przez
+         * `visitEntity.photos` + `visitRepository.save(...)`. Kolekcja ma
+         * `orphanRemoval = true`, więc przepisanie jej na częściowo doczytanym
+         * agregacie usuwa zdjęcia, których w niej nie było.
+         */
         visitPhotoRepository.saveAll(rows)
+        redisTemplate.opsForHash<String, String>().putAll(mapKey, newMappings)
+        redisTemplate.expire(mapKey, PHOTO_MAP_TTL)
 
-        logger.info("Claimed ${rows.size} mobile damage photo(s) into visit={}", visitId)
-
-        return finalized.map { photo ->
-            ClaimedMobilePhoto(
-                // Nazwa pliku w magazynie tymczasowym to „{photoId}.{ext}", a ten
-                // photoId jest tym, którym punkty uszkodzeń wskazują zdjęcie.
-                temporaryPhotoId = photo.fileName.substringBeforeLast('.'),
-                photoId = photo.photoId.toString(),
-                fileName = photo.fileName,
-                thumbnailUrl = runCatching { photoSessionService.generateDownloadUrl(photo.fileId) }.getOrNull()
-            )
-        }
+        logger.info("Przeniesiono {} zdjęcie/a z telefonu do wizyty {}", rows.size, visitId)
     }
+
+    private fun readPhotoMap(tenantId: String, checkinId: String): Map<String, String> =
+        try {
+            redisTemplate.opsForHash<String, String>()
+                .entries(PHOTO_MAP_KEY_PREFIX + tenantId + ":" + checkinId)
+        } catch (e: Exception) {
+            logger.warn("Nie udało się odczytać mapowania zdjęć sesji mobilnej: ${e.message}")
+            emptyMap()
+        }
 
     private fun requireOpenVisit(visitId: VisitId, studioId: StudioId) =
         visitRepository.findByIdAndStudioId(visitId.value, studioId.value)
@@ -294,13 +362,4 @@ data class MobileSessionPhoto(
     val photoId: String,
     val thumbnailUrl: String?,
     val strokes: List<AnnotationStrokeData>
-)
-
-data class ClaimedMobilePhoto(
-    /** Identyfikator, którym punkty wskazywały zdjęcie w sesji mobilnej. */
-    val temporaryPhotoId: String,
-    /** Identyfikator wiersza zdjęcia wizyty, którym mają wskazywać od teraz. */
-    val photoId: String,
-    val fileName: String,
-    val thumbnailUrl: String?
 )

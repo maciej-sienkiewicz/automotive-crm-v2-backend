@@ -15,9 +15,12 @@ import org.junit.jupiter.api.Test
 import pl.detailing.crm.checkin.qr.CheckinDamagePointsService
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.DamagePointData
+import pl.detailing.crm.checkin.qr.DamagePointPhotoData
 import pl.detailing.crm.checkin.qr.DamagePointsResult
 import pl.detailing.crm.checkin.qr.FinalizedCheckinPhoto
 import pl.detailing.crm.checkin.qr.GeneratedUploadToken
+import org.springframework.data.redis.core.HashOperations
+import org.springframework.data.redis.core.StringRedisTemplate
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.checkin.qr.UploadSessionPurpose
 import pl.detailing.crm.shared.StudioId
@@ -53,9 +56,20 @@ class VisitDamageMapMobileServiceTest {
     private val checkinPhotoService: CheckinPhotoService = mockk()
     private val photoSessionService: PhotoSessionService = mockk()
 
+    /** Atrapa Redisa: mapowanie „zdjęcie tymczasowe → zdjęcie wizyty" w zwykłej mapie. */
+    private val photoMap = mutableMapOf<String, String>()
+    private val hashOps: HashOperations<String, String, String> =
+        mockk<HashOperations<String, String, String>>(relaxed = true).also { ops ->
+            every { ops.entries(any()) } answers { HashMap(photoMap) }
+            every { ops.putAll(any(), any()) } answers { photoMap.putAll(secondArg()) }
+        }
+    private val redisTemplate: StringRedisTemplate = mockk<StringRedisTemplate>(relaxed = true).also {
+        every { it.opsForHash<String, String>() } returns hashOps
+    }
+
     private val service = VisitDamageMapMobileService(
         visitRepository, visitPhotoRepository, tokenService,
-        damagePointsService, checkinPhotoService, photoSessionService
+        damagePointsService, checkinPhotoService, photoSessionService, redisTemplate
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -183,91 +197,127 @@ class VisitDamageMapMobileServiceTest {
         verify(exactly = 0) { tokenService.generateToken(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { damagePointsService.saveDamagePoints(any(), any(), any(), any()) }
     }
+    private val tempPhotoId = "3f2a91c4-0000-4000-8000-000000000001"
+    private val newPhotoId = UUID.randomUUID()
+    private val newPhotoKey = "studio/visits/v/photos/checkin_${tempPhotoId}_123.jpg"
 
-    @Test
-    fun `przeniesienie zdjecia oddaje mapowanie identyfikatorow po nazwie pliku tymczasowego`() = runBlocking {
-        visit()
-        val newPhotoId = UUID.randomUUID()
-        val tempPhotoId = "3f2a91c4-0000-4000-8000-000000000001"
-        coEvery { checkinPhotoService.finalizePhotos(tenantId, checkinId, visitId) } returns listOf(
-            FinalizedCheckinPhoto(
-                photoId = newPhotoId,
-                fileId = "studio/visits/v/photos/checkin_${tempPhotoId}_123.jpg",
-                // Nazwa w magazynie tymczasowym: „{photoId}.{ext}" — i to jest ten
-                // identyfikator, którym punkty uszkodzeń wskazywały zdjęcie.
-                fileName = "$tempPhotoId.jpg"
-            )
-        )
-        every { photoSessionService.generateDownloadUrl(any()) } returns "https://example.test/x.jpg"
-
-        val claimed = service.claimPhotos(visitId, studioId, userId, "Anna Kowalska").single()
-
-        assertEquals(tempPhotoId, claimed.temporaryPhotoId)
-        assertEquals(newPhotoId.toString(), claimed.photoId)
-        assertEquals("https://example.test/x.jpg", claimed.thumbnailUrl)
-
-        // Wiersz zdjęcia wizyty powstaje przez repozytorium zdjęć, a nie przez
-        // przepisanie kolekcji agregatu (`orphanRemoval = true` usuwałoby wtedy
-        // zdjęcia, których w kolekcji nie było).
-        val rows = slot<List<VisitPhotoEntity>>()
-        verify { visitPhotoRepository.saveAll(capture(rows)) }
-        assertEquals(newPhotoId, rows.captured.single().id)
-        verify(exactly = 0) { visitRepository.save(any()) }
+    private fun stubFinalize(vararg photos: FinalizedCheckinPhoto) {
+        coEvery { checkinPhotoService.finalizePhotos(tenantId, checkinId, visitId) } returns photos.toList()
     }
 
-    @Test
-    fun `brak zdjec do przeniesienia nie dotyka bazy`() = runBlocking {
-        visit()
-        coEvery { checkinPhotoService.finalizePhotos(tenantId, checkinId, visitId) } returns emptyList()
-
-        assertTrue(service.claimPhotos(visitId, studioId, userId, "Anna Kowalska").isEmpty())
-        verify(exactly = 0) { visitPhotoRepository.saveAll(any<List<VisitPhotoEntity>>()) }
-    }
-
-    @Test
-    fun `brak sesji mobilnej to null, a nie blad`() {
-        // Okno pyta o to przy otwarciu; wyjątek zamieniałby „nikt nie użył telefonu"
-        // w komunikat o awarii.
-        every { tokenService.getTokenForCheckin(tenantId, checkinId) } returns null
-
-        assertNull(service.readSession(visitId, studioId))
-        verify(exactly = 0) { damagePointsService.getDamagePoints(any(), any()) }
-    }
-
-    @Test
-    fun `sesja bez zapisanych punktow tez jest niczym`() {
-        every { tokenService.getTokenForCheckin(tenantId, checkinId) } returns "tok-1"
-        every { damagePointsService.getDamagePoints(tenantId, checkinId) } returns
-            DamagePointsResult(checkinId, emptyList(), null, savedAt = null)
-
-        assertNull(service.readSession(visitId, studioId))
-    }
-
-    @Test
-    fun `odczyt sesji podpisuje adresy miniatur ze zapisanych kluczy`() {
-        every { tokenService.getTokenForCheckin(tenantId, checkinId) } returns "tok-1"
+    private fun stubSessionPoints(vararg photoIds: String) {
         every { damagePointsService.getDamagePoints(tenantId, checkinId) } returns DamagePointsResult(
             checkinId = checkinId,
             damagePoints = listOf(
                 DamagePointData(
-                    id = 1, x = 1.0, y = 2.0, note = "rysa",
-                    photos = listOf(
-                        pl.detailing.crm.checkin.qr.DamagePointPhotoData(
-                            photoId = "temp-1",
-                            s3Key = "temp/uploads/x/temp-1.jpg"
-                        )
-                    )
+                    id = 1, x = 10.0, y = 20.0, note = "rysa",
+                    photos = photoIds.map { DamagePointPhotoData(photoId = it) }
                 )
             ),
-            vehicleType = "kombi",
+            vehicleType = "sedan",
             savedAt = Instant.now()
         )
-        every { checkinPhotoService.generateDownloadUrl("temp/uploads/x/temp-1.jpg") } returns
-            "https://example.test/temp-1.jpg"
+    }
 
-        val state = service.readSession(visitId, studioId)!!
+    private fun visitPhoto(id: UUID, key: String): VisitPhotoEntity =
+        mockk<VisitPhotoEntity>(relaxed = true).also {
+            every { it.id } returns id
+            every { it.fileId } returns key
+        }
 
-        assertEquals("kombi", state.vehicleType)
-        assertEquals("https://example.test/temp-1.jpg", state.damagePoints.single().photos.single().thumbnailUrl)
+    @Test
+    fun `uzgodnienie przenosi zdjecie i oddaje punkt z identyfikatorem zdjecia WIZYTY`() = runBlocking {
+        /*
+         * Sedno zgłoszenia: zdjęcie szło na serwer, ale nie pokazywało się pod
+         * uszkodzeniem. Telefon zna wyłącznie identyfikator tymczasowy — tłumaczenie
+         * musi się wydarzyć tutaj, bo tylko tu jest mapowanie.
+         */
+        val visitEntity = visit()
+        stubFinalize(FinalizedCheckinPhoto(newPhotoId, newPhotoKey, "$tempPhotoId.jpg"))
+        stubSessionPoints(tempPhotoId)
+        every { visitEntity.photos } returns mutableListOf(visitPhoto(newPhotoId, newPhotoKey))
+        every { photoSessionService.generateDownloadUrl(newPhotoKey) } returns "https://example.test/nowe.jpg"
+
+        val state = service.syncSession(visitId, studioId, userId, "Anna Kowalska")!!
+
+        val photo = state.damagePoints.single().photos.single()
+        assertEquals(newPhotoId.toString(), photo.photoId)
+        assertEquals("https://example.test/nowe.jpg", photo.thumbnailUrl)
+    }
+
+    @Test
+    fun `drugie uzgodnienie nie dubluje wiersza zdjecia`() = runBlocking {
+        /*
+         * Telefon przy dodaniu zdjęcia wysyła DWA zdarzenia, więc okno potrafi
+         * wywołać uzgodnienie dwa razy. Wcześniej każde przenosiło ten sam plik i
+         * powstawały dwa wiersze — zdjęcie pokazywało się PODWÓJNIE w „Istniejących".
+         */
+        val visitEntity = visit()
+        stubSessionPoints(tempPhotoId)
+        every { visitEntity.photos } returns mutableListOf(visitPhoto(newPhotoId, newPhotoKey))
+        every { photoSessionService.generateDownloadUrl(any()) } returns "https://example.test/nowe.jpg"
+
+        stubFinalize(FinalizedCheckinPhoto(newPhotoId, newPhotoKey, "$tempPhotoId.jpg"))
+        service.syncSession(visitId, studioId, userId, "Anna Kowalska")
+
+        // Drugie wywołanie: gdyby S3 jednak oddało ten sam plik (wyścig), mapowanie
+        // musi go rozpoznać i NIE wstawiać kolejnego wiersza.
+        stubFinalize(FinalizedCheckinPhoto(UUID.randomUUID(), newPhotoKey, "$tempPhotoId.jpg"))
+        service.syncSession(visitId, studioId, userId, "Anna Kowalska")
+
+        verify(exactly = 1) { visitPhotoRepository.saveAll(any<List<VisitPhotoEntity>>()) }
+        assertEquals(1, photoMap.size)
+    }
+
+    @Test
+    fun `placeholder telefonu sprzed konca wysylki jest pomijany, nie wstawiany martwy`() = runBlocking {
+        // Telefon dopisuje zdjęcie do punktu z identyfikatorem `local-…` jeszcze przed
+        // zakończeniem wysyłki i zapisuje punkty. Taki wskaźnik nie prowadzi nigdzie.
+        visit()
+        stubFinalize()
+        stubSessionPoints("local-1717171717-abc")
+
+        val state = service.syncSession(visitId, studioId, userId, "Anna Kowalska")!!
+
+        assertTrue(state.damagePoints.single().photos.isEmpty())
+    }
+
+    @Test
+    fun `zdjecie przypiete przed sesja zostaje przy punkcie`() = runBlocking {
+        // Punkt zasiany z komputera wraca z telefonu z identyfikatorem zdjęcia WIZYTY;
+        // pominięcie go zrzucałoby zdjęcia z punktów.
+        val visitEntity = visit()
+        stubFinalize()
+        stubSessionPoints(existingPhotoId.toString())
+        every { visitEntity.photos } returns mutableListOf(visitPhoto(existingPhotoId, existingPhotoKey))
+        every { photoSessionService.generateDownloadUrl(existingPhotoKey) } returns "https://example.test/stare.jpg"
+
+        val state = service.syncSession(visitId, studioId, userId, "Anna Kowalska")!!
+
+        val photo = state.damagePoints.single().photos.single()
+        assertEquals(existingPhotoId.toString(), photo.photoId)
+        assertEquals("https://example.test/stare.jpg", photo.thumbnailUrl)
+    }
+
+    @Test
+    fun `brak zapisanych punktow to null, a nie blad`() = runBlocking {
+        // Okno pyta o to przy otwarciu; wyjątek zamieniałby „nikt nie użył telefonu"
+        // w komunikat o awarii.
+        visit()
+        stubFinalize()
+        every { damagePointsService.getDamagePoints(tenantId, checkinId) } returns
+            DamagePointsResult(checkinId, emptyList(), null, savedAt = null)
+
+        assertNull(service.syncSession(visitId, studioId, userId, "Anna Kowalska"))
+    }
+
+    @Test
+    fun `uzgodnienia zamknietej wizyty nie robimy`() {
+        visit(status = VisitStatus.COMPLETED)
+
+        assertThrows(ValidationException::class.java) {
+            runBlocking { service.syncSession(visitId, studioId, userId, "Anna Kowalska") }
+        }
+        verify(exactly = 0) { visitPhotoRepository.saveAll(any<List<VisitPhotoEntity>>()) }
     }
 }
