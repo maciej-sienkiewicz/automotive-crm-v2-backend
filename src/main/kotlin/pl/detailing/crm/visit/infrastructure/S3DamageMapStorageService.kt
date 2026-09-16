@@ -52,9 +52,16 @@ class S3DamageMapStorageService(
     suspend fun uploadDamageMap(
         studioId: UUID,
         visitId: UUID,
-        pdfBytes: ByteArray
+        pdfBytes: ByteArray,
+        /**
+         * null = kanoniczny klucz wizyty (nadpisanie poprzedniego pliku).
+         * Podany = osobny plik obok dotychczasowego, np. `damage-map-r2.pdf`.
+         * Aktualizacja mapy w trakcie wizyty korzysta z obu wariantów, bo to jest
+         * dokładnie różnica między „popraw dokument" i „wystaw nowy".
+         */
+        revisionSuffix: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val s3Key = buildDamageMapS3Key(studioId, visitId)
+        val s3Key = buildDamageMapS3Key(studioId, visitId, revisionSuffix)
 
         try {
             val putObjectRequest = PutObjectRequest.builder()
@@ -77,6 +84,34 @@ class S3DamageMapStorageService(
         } catch (e: Exception) {
             logger.error("Failed to upload damage map PDF to S3: $s3Key", e)
             throw IllegalStateException("Failed to upload damage map to S3: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Nadpisuje mapę uszkodzeń pod KONKRETNYM, już istniejącym kluczem.
+     *
+     * Do opcji „zaktualizuj istniejący plik": aktualną mapą wizyty niekoniecznie
+     * jest kanoniczne `damage-map.pdf` (mogła nią zostać wcześniejsza rewizja),
+     * a podmiana ma dotyczyć tego pliku, na który wizyta faktycznie wskazuje.
+     */
+    suspend fun uploadDamageMapToKey(
+        s3Key: String,
+        pdfBytes: ByteArray
+    ): Unit = withContext(Dispatchers.IO) {
+        try {
+            s3Client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .contentType("application/pdf")
+                    .contentLength(pdfBytes.size.toLong())
+                    .build(),
+                RequestBody.fromBytes(pdfBytes)
+            )
+            logger.info("Overwrote damage map PDF in S3: $s3Key (${pdfBytes.size} bytes)")
+        } catch (e: Exception) {
+            logger.error("Failed to overwrite damage map PDF in S3: $s3Key", e)
+            throw IllegalStateException("Failed to overwrite damage map in S3: ${e.message}", e)
         }
     }
 
@@ -105,9 +140,22 @@ class S3DamageMapStorageService(
      * Build S3 key for a damage map PDF.
      *
      * Pattern: {studioId}/visits/{visitId}/damage-map.pdf
+     *          {studioId}/visits/{visitId}/damage-map-{revisionSuffix}.pdf
      */
-    fun buildDamageMapS3Key(studioId: UUID, visitId: UUID): String {
-        return "$studioId/visits/$visitId/damage-map.pdf"
+    fun buildDamageMapS3Key(studioId: UUID, visitId: UUID, revisionSuffix: String? = null): String {
+        val suffix = revisionSuffix
+            ?.trim()
+            ?.lowercase()
+            // Klucz S3 składa się tu ze stringów, więc sanitacja jest obowiązkowa:
+            // suffix bierze się z numeru rewizji, ale nie ma powodu, żeby ufać temu
+            // w miejscu, gdzie „../" zmieniłoby ścieżkę pliku.
+            ?.replace(Regex("[^a-z0-9-]"), "")
+            ?.takeIf { it.isNotEmpty() }
+        return if (suffix == null) {
+            "$studioId/visits/$visitId/damage-map.pdf"
+        } else {
+            "$studioId/visits/$visitId/damage-map-$suffix.pdf"
+        }
     }
 
     fun downloadBytes(s3Key: String): ByteArray {

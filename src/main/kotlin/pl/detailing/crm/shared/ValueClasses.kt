@@ -981,6 +981,10 @@ enum class CommunicationMessageType(val label: String) {
     // Remote document signing
     SIGNATURE_LINK_SMS("SMS z linkiem do podpisu dokumentu"),
 
+    // Damage map updated mid-visit
+    VISIT_DAMAGE_MAP_UPDATED_EMAIL("E-mail o aktualizacji mapy uszkodzeń"),
+    VISIT_DAMAGE_MAP_UPDATED_SMS("SMS o aktualizacji mapy uszkodzeń"),
+
     // Marketing campaigns
     CAMPAIGN_SMS("SMS kampanii marketingowej"),
     CAMPAIGN_EMAIL("E-mail kampanii marketingowej")

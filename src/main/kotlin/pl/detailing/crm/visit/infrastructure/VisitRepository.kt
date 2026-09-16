@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.*
 
@@ -79,6 +80,35 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     fun scrubContactPersonByCustomer(
         @Param("customerId") customerId: UUID,
         @Param("studioId") studioId: UUID
+    ): Int
+
+    /**
+     * Podmiana wskaźnika na aktualną mapę uszkodzeń wizyty.
+     *
+     * Celowo zapytaniem, a nie `save(entity)`: aktualizacja mapy leci poza wspólną
+     * transakcją (patrz [pl.detailing.crm.visit.damagemap.UpdateVisitDamageMapHandler]),
+     * więc encja jest w tym momencie odłączona, a `save` zrobiłby z niej `merge`
+     * całego agregatu — razem z kolekcjami `photos` i `serviceItems`, które mają
+     * `orphanRemoval = true`. Jedna niedociągnięta kolekcja i merge USUWA usługi
+     * wizyty. Tu zmieniamy jedną kolumnę i nic więcej nie może się stać.
+     */
+    @Modifying
+    @Transactional
+    @Query(
+        """
+        UPDATE VisitEntity v
+        SET v.damageMapFileId = :fileId,
+            v.updatedBy = :userId,
+            v.updatedAt = :now
+        WHERE v.id = :id AND v.studioId = :studioId
+        """
+    )
+    fun updateDamageMapFileId(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("fileId") fileId: String,
+        @Param("userId") userId: UUID,
+        @Param("now") now: Instant
     ): Int
 
     /**

@@ -96,6 +96,16 @@ class AuditFeedRenderer {
      * Specific actions ("Rozpoczęto wizytę") already carry their own noun.
      */
     private fun sentenceOf(log: AuditLog): String {
+        /*
+         * Aktualizacja mapy uszkodzeń jest zwykłym UPDATE-em wizyty, więc bez tego
+         * wyjątku ląduje w kanale jako „Zaktualizowano wizytę" — a to jest wiersz, do
+         * którego wraca się z pytaniem „kto dopisał tę rysę i kiedy". Rozpoznajemy ją
+         * po metadanej [damageMapRevision], którą wystawia wyłącznie
+         * [pl.detailing.crm.visit.damagemap.UpdateVisitDamageMapHandler].
+         */
+        if (log.action == AuditAction.UPDATE && log.metadata.containsKey("damageMapRevision")) {
+            return "Zaktualizowano mapę uszkodzeń"
+        }
         val noun = log.module.objectNoun ?: return log.action.sentence
         return if (log.action in GENERIC_VERBS) "${log.action.sentence} $noun" else log.action.sentence
     }
@@ -144,6 +154,27 @@ class AuditFeedRenderer {
                     else -> "Źródło: $source"
                 }
             }
+        }
+
+        /*
+         * Mapa uszkodzeń zmieniona w trakcie wizyty. Liczba oznaczeń jest tu treścią
+         * wpisu — po niej poznaje się, czy doszło uszkodzenie, czy tylko poprawiono
+         * opis — a informacja o powiadomieniu klienta odpowiada na pytanie, które
+         * przy sporze pada zaraz po „kto to dopisał".
+         */
+        if (log.action == AuditAction.UPDATE && log.metadata.containsKey("damageMapRevision")) {
+            log.metadata["damagePointsCount"]?.toIntOrNull()
+                ?.let { parts += "Oznaczeń na mapie: $it" }
+            parts += when (log.metadata["damageMapMode"]) {
+                "REPLACE_EXISTING" -> "Nadpisano dotychczasowy dokument"
+                "NEW_FILE" -> "Nowy dokument mapy"
+                else -> "Mapa uszkodzeń zaktualizowana"
+            }
+            if (log.metadata["damageMapDocumentGenerated"] == "false") {
+                parts += "Nie udało się wygenerować pliku"
+            }
+            parts += if (log.metadata["customerNotified"] == "true") "Klient powiadomiony"
+                else "Bez powiadomienia klienta"
         }
 
         // A manual cash correction is only auditable if the reason travels with it, and a

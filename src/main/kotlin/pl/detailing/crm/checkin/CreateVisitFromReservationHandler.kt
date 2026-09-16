@@ -69,6 +69,7 @@ class CreateVisitFromReservationHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val damageMapReportService: DamageMapReportService,
+    private val visitDamageMapStore: pl.detailing.crm.visit.damagemap.VisitDamageMapStore,
     private val damageMarkingService: pl.detailing.crm.visit.infrastructure.DamageMarkingService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val documentService: DocumentService,
@@ -420,6 +421,17 @@ class CreateVisitFromReservationHandler(
                 }
             }
 
+            // Step 9.5: Zapisz punkty uszkodzeń jako wersję 1 mapy — patrz seedDamageMap.
+            seedDamageMap(
+                visitId = visitId,
+                studioId = command.studioId,
+                userId = command.userId,
+                userName = command.userName,
+                damagePoints = effectiveDamagePoints,
+                vehicleType = effectiveVehicleType,
+                documentS3Key = visit.damageMapFileId
+            )
+
             // Step 10: DO NOT update appointment status yet
             // Appointment will be marked as CONVERTED only when visit is confirmed (after documents are signed)
             // This allows users to cancel the draft visit and return to reservation
@@ -678,6 +690,17 @@ class CreateVisitFromReservationHandler(
                 }
             }
 
+            // Step 10.3: Zapisz punkty uszkodzeń jako wersję 1 mapy — patrz seedDamageMap.
+            seedDamageMap(
+                visitId = visitId,
+                studioId = command.studioId,
+                userId = command.userId,
+                userName = command.userName,
+                damagePoints = effectiveDamagePoints,
+                vehicleType = effectiveVehicleType,
+                documentS3Key = visit.damageMapFileId
+            )
+
             // Step 11: Persist Door to Door if provided
             command.doorToDoor?.let { d2d ->
                 persistDoorToDoor(visitId, command.studioId, command.userId, d2d)
@@ -685,6 +708,47 @@ class CreateVisitFromReservationHandler(
 
             ReservationToVisitResult(visitId = visitId)
         }
+
+    /**
+     * Zapisuje punkty uszkodzeń z przyjęcia jako wersję 1 mapy wizyty.
+     *
+     * Bez tego kroku z przyjęcia zostaje wyłącznie PDF, a „Zaktualizuj uszkodzenia"
+     * w karcie wizyty nie ma od czego zacząć — dokładnie ten brak zgłosił biznes,
+     * gdy w trakcie prac pojawiało się nowe uszkodzenie. Zapisujemy punkty
+     * ZMERGOWANE z telefonem (`effectiveDamagePoints`), bo to one trafiły do
+     * dokumentu; punkty z samego desktopu nie mają zdjęć z QR.
+     *
+     * Świadomie BEZ `try/catch`, w odróżnieniu od sąsiednich kroków „best effort"
+     * (generowanie PDF-a, rejestracja dokumentu). Dwa powody:
+     *  - wiersz mapy ma klucz obcy do `visits`, więc musi lecieć w TEJ transakcji,
+     *    razem z wizytą; przy takim wpisie nie ma stanu częściowego, który catch
+     *    mógłby ocalić — albo przyjęcie zapisze się z mapą, albo w ogóle,
+     *  - JPA i tak odkłada INSERT do commitu, więc catch tutaj nie zobaczyłby
+     *    błędu bazy, a jedynie zasłonił jego powód. Wyjątek zamieniony na
+     *    `println` w transakcji oznaczonej jako rollback-only kończy się
+     *    `UnexpectedRollbackException` bez żadnej informacji, co pękło.
+     */
+    private fun seedDamageMap(
+        visitId: VisitId,
+        studioId: StudioId,
+        userId: UserId,
+        userName: String,
+        damagePoints: List<pl.detailing.crm.visit.domain.DamagePoint>,
+        vehicleType: String?,
+        documentS3Key: String?
+    ) {
+        if (damagePoints.isEmpty()) return
+        visitDamageMapStore.save(
+            visitId = visitId,
+            studioId = studioId,
+            damagePoints = damagePoints,
+            vehicleType = vehicleType,
+            documentS3Key = documentS3Key,
+            userId = userId,
+            userName = userName,
+            bumpRevision = false
+        )
+    }
 
     /**
      * Merges damage-point photos saved by the mobile QR flow (kept in Redis for the
