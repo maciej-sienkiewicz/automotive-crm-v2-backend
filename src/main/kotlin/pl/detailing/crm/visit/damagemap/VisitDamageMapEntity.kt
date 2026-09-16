@@ -17,7 +17,7 @@ import java.util.UUID
  * Osobna tabela, nie kolumny na `visits`: wizytę zapisuje się miejscami przez
  * `VisitEntity.fromDomain(visit)`, czyli przepisaniem całego agregatu. Kolumna,
  * której nie niesie model domenowy `Visit`, zostałaby wtedy wyzerowana — a punkty
- * uszkodzeń są dowodem w sporze „kto zrobił tę rysę". Patrz V100.
+ * uszkodzeń są dowodem w sporze „kto zrobił tę rysę". Patrz V135.
  */
 @Entity
 @Table(name = "visit_damage_maps")

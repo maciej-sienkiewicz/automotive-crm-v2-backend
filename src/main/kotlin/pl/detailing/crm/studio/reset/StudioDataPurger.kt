@@ -108,6 +108,18 @@ class StudioDataPurger(
             )
             deleteByStudio("PhotoUploadSessionEntity", ctx)
             deleteByStudio("PhotoTagEntity", ctx)
+            /*
+             * Punkty mapy uszkodzeń. Klucz obcy do `visits` ma wprawdzie
+             * ON DELETE CASCADE, ale liczyć na to byłoby błędem: wizyty usuwa niżej
+             * bulkowy DELETE JPQL, a ten kasowania kaskadowego po stronie ORM nie
+             * uruchamia — zostałaby wyłącznie kaskada bazy, czyli szczegół, którego
+             * ten purger nigdzie nie zakłada. Usuwamy jawnie i PRZED wizytami.
+             *
+             * To są dane operacyjne studia (gdzie na czyim samochodzie była rysa),
+             * więc „Wyczyść konto" musi je zabrać — nie ma ich na liście `preserved`
+             * i nie powinno być.
+             */
+            deleteByStudio("VisitDamageMapEntity", ctx)
         },
 
         StudioResetStep("Karty Wizyty") { ctx ->
