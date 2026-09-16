@@ -115,7 +115,8 @@ class MobileUploadController(
         return ResponseEntity.ok(
             MobileContextResponse(
                 checkinId = metadata.checkinId,
-                tenantId = metadata.tenantId
+                tenantId = metadata.tenantId,
+                purpose = metadata.purpose.name
             )
         )
     }
@@ -304,7 +305,13 @@ data class MobileUploadResponse(
 
 data class MobileContextResponse(
     val checkinId: String,
-    val tenantId: String
+    val tenantId: String,
+    /**
+     * CHECKIN albo DAMAGE_MAP. Telefon pokazuje przy przyjęciu dwie zakładki
+     * (zdjęcia + uszkodzenia), a przy aktualizacji mapy otwartej wizyty wyłącznie
+     * uszkodzenia — tam zdjęcie ma sens tylko przypięte do konkretnego punktu.
+     */
+    val purpose: String
 )
 
 data class MobileDamagePointDto(

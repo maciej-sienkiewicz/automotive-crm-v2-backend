@@ -58,7 +58,8 @@ class UploadContextTokenService(
         tenantId: String,
         checkinId: String,
         userId: String,
-        rotate: Boolean = false
+        rotate: Boolean = false,
+        purpose: UploadSessionPurpose = UploadSessionPurpose.CHECKIN
     ): GeneratedUploadToken {
         val contextKey = "$CONTEXT_KEY_PREFIX$tenantId:$checkinId"
         val existingToken = redisTemplate.opsForValue().get(contextKey)
@@ -66,8 +67,13 @@ class UploadContextTokenService(
         if (existingToken != null) {
             if (!rotate && redisTemplate.hasKey(TOKEN_KEY_PREFIX + existingToken) == true) {
                 val expiresAt = renewSession(contextKey, existingToken)
+                // Przeznaczenie może się różnić od zapisanego (ten sam identyfikator
+                // obsłużony raz przyjęciem, raz aktualizacją mapy). Token zostaje —
+                // telefon, który go zeskanował, ma działać dalej — ale metadane
+                // muszą mówić prawdę o tym, co pokazać.
+                refreshPurpose(existingToken, purpose)
                 logger.info(
-                    "Reusing upload token for checkin=$checkinId tenant=$tenantId expires=$expiresAt"
+                    "Reusing upload token for checkin=$checkinId tenant=$tenantId purpose=$purpose expires=$expiresAt"
                 )
                 return GeneratedUploadToken(token = existingToken, expiresAt = expiresAt)
             }
@@ -83,7 +89,8 @@ class UploadContextTokenService(
             tenantId = tenantId,
             checkinId = checkinId,
             userId = userId,
-            createdAt = Instant.now()
+            createdAt = Instant.now(),
+            purpose = purpose
         )
 
         val json = objectMapper.writeValueAsString(metadata)
@@ -100,6 +107,28 @@ class UploadContextTokenService(
 
         logger.info("Generated upload token for checkin=$checkinId tenant=$tenantId expires=$expiresAt")
         return GeneratedUploadToken(token = token, expiresAt = expiresAt)
+    }
+
+    /**
+     * Zapisuje przeznaczenie na istniejącym tokenie, zachowując jego TTL.
+     * Cicho pomija błąd: sesja już działa, a przeznaczenie wpływa tylko na to, ile
+     * zakładek zobaczy telefon.
+     */
+    private fun refreshPurpose(token: String, purpose: UploadSessionPurpose) {
+        try {
+            val key = TOKEN_KEY_PREFIX + token
+            val json = redisTemplate.opsForValue().get(key) ?: return
+            val metadata = objectMapper.readValue(json, UploadContextMetadata::class.java)
+            if (metadata.purpose == purpose) return
+            val ttl = redisTemplate.getExpire(key)
+            redisTemplate.opsForValue().set(
+                key,
+                objectMapper.writeValueAsString(metadata.copy(purpose = purpose)),
+                if (ttl > 0) Duration.ofSeconds(ttl) else Duration.ofHours(ttlHours)
+            )
+        } catch (e: Exception) {
+            logger.warn("Nie udało się zaktualizować przeznaczenia sesji mobilnej: ${e.message}")
+        }
     }
 
     /**
@@ -174,11 +203,28 @@ class UploadContextTokenService(
     }
 }
 
+/**
+ * Po co ta sesja została otwarta. Decyduje o tym, co telefon pokaże po zeskanowaniu
+ * kodu.
+ */
+enum class UploadSessionPurpose {
+    /** Przyjęcie pojazdu: zdjęcia dokumentacji ORAZ mapa uszkodzeń. */
+    CHECKIN,
+
+    /** Aktualizacja mapy uszkodzeń otwartej wizyty: wyłącznie uszkodzenia. */
+    DAMAGE_MAP
+}
+
 data class UploadContextMetadata(
     val tenantId: String,
     val checkinId: String,
     val userId: String,
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+    /**
+     * Domyślnie [UploadSessionPurpose.CHECKIN] — tokeny wydane przed wprowadzeniem
+     * tego pola leżą w Redisie bez niego i muszą dalej działać jak dotąd.
+     */
+    val purpose: UploadSessionPurpose = UploadSessionPurpose.CHECKIN
 )
 
 data class GeneratedUploadToken(

@@ -10,6 +10,7 @@ import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.DamagePointData
 import pl.detailing.crm.checkin.qr.DamagePointPhotoData
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
+import pl.detailing.crm.checkin.qr.UploadSessionPurpose
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -105,7 +106,10 @@ class VisitDamageMapMobileService(
             tenantId = tenantId,
             checkinId = checkinId,
             userId = userId.value.toString(),
-            rotate = rotate
+            rotate = rotate,
+            // Telefon ma pokazać wyłącznie uszkodzenia: przy otwartej wizycie zdjęcie
+            // bez przypisania do punktu nie jest tym, po co ktoś skanuje ten kod.
+            purpose = UploadSessionPurpose.DAMAGE_MAP
         )
 
         logger.info(

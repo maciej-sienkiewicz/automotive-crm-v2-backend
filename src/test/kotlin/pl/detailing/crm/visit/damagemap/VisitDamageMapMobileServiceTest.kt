@@ -19,6 +19,7 @@ import pl.detailing.crm.checkin.qr.DamagePointsResult
 import pl.detailing.crm.checkin.qr.FinalizedCheckinPhoto
 import pl.detailing.crm.checkin.qr.GeneratedUploadToken
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
+import pl.detailing.crm.checkin.qr.UploadSessionPurpose
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -88,7 +89,7 @@ class VisitDamageMapMobileServiceTest {
         every { damagePointsService.saveDamagePoints(tenantId, checkinId, any(), any()) } answers {
             DamagePointsResult(checkinId, thirdArg(), null, Instant.now())
         }
-        every { tokenService.generateToken(tenantId, checkinId, userId.value.toString(), any()) } returns
+        every { tokenService.generateToken(tenantId, checkinId, userId.value.toString(), any(), any()) } returns
             GeneratedUploadToken(token = "tok-1", expiresAt = expiresAt)
     }
 
@@ -103,7 +104,27 @@ class VisitDamageMapMobileServiceTest {
         // `checkinId` sesji mobilnej = id wizyty. Na tym stoi cały pomysł: strona
         // mobilna i endpointy pod /api/mobile/checkin zostają bez zmian.
         assertEquals(checkinId, result.checkinId)
-        verify { tokenService.generateToken(tenantId, checkinId, userId.value.toString(), false) }
+        verify {
+            tokenService.generateToken(
+                tenantId, checkinId, userId.value.toString(), false, UploadSessionPurpose.DAMAGE_MAP
+            )
+        }
+    }
+
+    @Test
+    fun `sesja z karty wizyty jest oznaczona jako mapa uszkodzen, nie jako przyjecie`() {
+        // Po tym oznaczeniu telefon pokazuje wyłącznie zakładkę „Uszkodzenia":
+        // zdjęcie bez przypisania do punktu nie jest tym, po co ktoś skanuje ten kod.
+        visit()
+        stubSeedAndToken()
+        val purpose = slot<UploadSessionPurpose>()
+        every {
+            tokenService.generateToken(tenantId, checkinId, userId.value.toString(), any(), capture(purpose))
+        } returns GeneratedUploadToken("tok-1", Instant.now().plusSeconds(3600))
+
+        service.startSession(visitId, studioId, userId, emptyList(), "sedan", rotate = false)
+
+        assertEquals(UploadSessionPurpose.DAMAGE_MAP, purpose.captured)
     }
 
     @Test
@@ -159,7 +180,7 @@ class VisitDamageMapMobileServiceTest {
         assertThrows(ValidationException::class.java) {
             service.startSession(visitId, studioId, userId, emptyList(), "sedan", rotate = false)
         }
-        verify(exactly = 0) { tokenService.generateToken(any(), any(), any(), any()) }
+        verify(exactly = 0) { tokenService.generateToken(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { damagePointsService.saveDamagePoints(any(), any(), any(), any()) }
     }
 
