@@ -30,7 +30,7 @@ import java.time.Instant
  * widoczna z odległości pół metra. Ten serwis nie buduje drugiego kanału mobilnego,
  * tylko podłącza istniejący (ten od przyjęcia z kodem QR) do wizyty: token sesji jest
  * kluczowany opaque'owym `checkinId`, więc wystarczy podać tam identyfikator WIZYTY.
- * Strona mobilna, endpointy `/api/mobile/checkin/*` i zdarzenia WebSocket zostają bez
+ * Strona mobilna, endpointy pod `/api/mobile/checkin` i zdarzenia WebSocket zostają bez
  * jednej zmiany.
  *
  * Model współpracy jest jednostronny i taki ma być: **telefon jest urządzeniem
