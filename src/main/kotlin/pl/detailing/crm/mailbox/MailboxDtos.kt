@@ -34,7 +34,9 @@ data class MailAccountResponse(
     val providerType: String,
     val status: String,
     val lastError: String?,
-    val lastSyncAt: Instant?
+    val lastSyncAt: Instant?,
+    /** Rozpoznany (albo ręcznie wskazany) folder Wysłanych; null gdy jeszcze nierozpoznany. */
+    val sentFolderName: String?
 )
 
 fun MailAccountEntity.toResponse() = MailAccountResponse(
@@ -43,7 +45,8 @@ fun MailAccountEntity.toResponse() = MailAccountResponse(
     providerType = providerType.name,
     status = status.name,
     lastError = lastError,
-    lastSyncAt = lastSyncAt
+    lastSyncAt = lastSyncAt,
+    sentFolderName = sentFolderName
 )
 
 fun MailProviderDetection.toResponse() = DetectProviderResponse(

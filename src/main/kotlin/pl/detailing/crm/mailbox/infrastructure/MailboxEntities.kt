@@ -79,6 +79,14 @@ class MailAccountEntity(
     @Column(name = "sent_last_uid")
     var sentLastUid: Long?,
 
+    /**
+     * Folder Wysłanych rozpoznany dla tej skrzynki (pełna nazwa IMAP) albo ręczne
+     * nadpisanie. NULL = jeszcze nie rozpoznano. Trzymany, bo nazwa jest różna u każdego
+     * dostawcy, a bez folderu Wysłanych odpowiedzi wysłane spoza CRM-a nie trafią do rozmów.
+     */
+    @Column(name = "sent_folder_name", length = 1000)
+    var sentFolderName: String? = null,
+
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
 
