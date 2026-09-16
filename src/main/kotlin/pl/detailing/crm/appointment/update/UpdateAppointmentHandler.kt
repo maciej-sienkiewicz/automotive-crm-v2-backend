@@ -104,15 +104,22 @@ class UpdateAppointmentHandler(
                 val service = services[serviceLineItem.serviceId]
                     ?: throw EntityNotFoundException("Usługa o ID '${serviceLineItem.serviceId}' nie została znaleziona")
 
+                // Cennik dyktuje cenę usługi katalogowej - z jednym wyjątkiem: usługa
+                // z ceną ustalaną ręcznie nie ma w cenniku żadnej ceny (zapisane jest
+                // przy niej Money.ZERO), więc jedynym jej źródłem jest żądanie.
                 AppointmentLineItem.create(
                     serviceId = service.id,
                     serviceName = service.name,
-                    basePriceNet = service.basePriceNet,
+                    basePriceNet = catalogBaseNet(
+                        service.requireManualPrice, service.basePriceNet, serviceLineItem.basePriceNet
+                    ),
                     vatRate = VatRate.fromInt(serviceLineItem.vatRate),
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote,
-                    basePriceGross = service.basePriceGross
+                    basePriceGross = catalogBaseGross(
+                        service.requireManualPrice, service.basePriceGross, serviceLineItem.basePriceGross
+                    )
                 )
             } else {
                 // Custom service without serviceId - use provided data directly.

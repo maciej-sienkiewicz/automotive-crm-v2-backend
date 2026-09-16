@@ -11,7 +11,8 @@ class CreateAppointmentValidatorComposite(
     private val appointmentColorValidator: AppointmentColorValidator,
     private val newCustomerUniquenessValidator: NewCustomerUniquenessValidator,
     private val customerContactInfoValidator: CustomerContactInfoValidator,
-    private val lineItemVatRateValidator: LineItemVatRateValidator
+    private val lineItemVatRateValidator: LineItemVatRateValidator,
+    private val manualPriceRequiredValidator: ManualPriceRequiredValidator
 ) {
     suspend fun validate(command: CreateAppointmentCommand) {
         val context = contextBuilder.build(command)
@@ -23,5 +24,8 @@ class CreateAppointmentValidatorComposite(
         vehicleExistenceValidator.validate(context)
         newCustomerUniquenessValidator.validate(context)
         lineItemVatRateValidator.validate(context)
+        // Podpięty dopiero teraz. Klasa istniała od dawna, ale nie była wołana z żadnego
+        // miejsca - więc pozycja bez ceny przechodziła bez słowa i zapisywała się jako 0 zł.
+        manualPriceRequiredValidator.validate(context)
     }
 }
