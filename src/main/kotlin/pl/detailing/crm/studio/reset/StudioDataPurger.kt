@@ -49,7 +49,7 @@ data class StudioResetStep(
  *    profile Instagrama — te ostatnie tylko odpinane, z GC osieroconych).
  *
  * Pełną klasyfikację encji utrzymuje test pokrycia w
- * `pl.detailing.crm.studio.reset.StudioResetCoverageTest` — nowa encja bez klasyfikacji
+ * `pl.detailing.crm.studio.reset.StudioResetCoverageTest` — nowa encja bez klasyfikacjii
  * to czerwony build.
  */
 @Component
