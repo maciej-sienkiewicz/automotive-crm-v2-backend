@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -30,7 +31,8 @@ import pl.detailing.crm.visit.domain.DamagePoint
 @RequiresPermission(Permission.VISITS_VIEW)
 class VisitDamageMapController(
     private val getVisitDamageMapHandler: GetVisitDamageMapHandler,
-    private val updateVisitDamageMapHandler: UpdateVisitDamageMapHandler
+    private val updateVisitDamageMapHandler: UpdateVisitDamageMapHandler,
+    private val mobileService: VisitDamageMapMobileService
 ) {
 
     /**
@@ -77,6 +79,116 @@ class VisitDamageMapController(
 
         ResponseEntity.ok(UpdateVisitDamageMapResponse.from(result))
     }
+
+    /**
+     * Otwiera sesję mobilną i zwraca token do kodu QR.
+     * POST /api/visits/{visitId}/damage-map/qr-token
+     *
+     * Ciało niesie AKTUALNE punkty z otwartego edytora, bo telefon ma zacząć od nich,
+     * a nie od pustej mapy — patrz [VisitDamageMapMobileService.startSession].
+     */
+    @PostMapping("/qr-token")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun startMobileSession(
+        @PathVariable visitId: String,
+        @RequestBody request: StartDamageMapMobileSessionRequest
+    ): ResponseEntity<DamageMapMobileTokenResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val token = mobileService.startSession(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            damagePoints = request.damagePoints.map { it.toDomain() },
+            vehicleType = request.vehicleType,
+            rotate = request.rotate
+        )
+
+        return ResponseEntity.ok(
+            DamageMapMobileTokenResponse(
+                token = token.token,
+                checkinId = token.checkinId,
+                expiresAt = token.expiresAt.toString(),
+                uploadEndpoint = "/api/mobile/checkin/photos"
+            )
+        )
+    }
+
+    /**
+     * Co telefon zdążył zaznaczyć w otwartej sesji.
+     * GET /api/visits/{visitId}/damage-map/mobile
+     *
+     * `active = false` znaczy „nie ma sesji", a nie „błąd" — okno pyta o to przy
+     * otwarciu, żeby po odświeżeniu strony nie zgubić pracy z telefonu, której nie
+     * zobaczyło po WebSockecie.
+     */
+    @GetMapping("/mobile")
+    fun getMobileSession(@PathVariable visitId: String): ResponseEntity<DamageMapMobileSessionResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val state = mobileService.readSession(VisitId.fromString(visitId), principal.studioId)
+
+        return ResponseEntity.ok(
+            DamageMapMobileSessionResponse(
+                active = state != null,
+                damagePoints = state?.damagePoints.orEmpty().map { point ->
+                    DamageMapPointDto(
+                        id = point.id,
+                        x = point.x,
+                        y = point.y,
+                        note = point.note,
+                        photos = point.photos.map { photo ->
+                            DamageMapPhotoDto(
+                                photoId = photo.photoId,
+                                thumbnailUrl = photo.thumbnailUrl,
+                                strokes = photo.strokes.map { stroke ->
+                                    DamageMapStrokeDto(
+                                        color = stroke.color,
+                                        width = stroke.width,
+                                        points = stroke.points.map { DamageMapAnnotationPointDto(it.x, it.y) }
+                                    )
+                                }
+                            )
+                        }
+                    )
+                },
+                vehicleType = state?.vehicleType,
+                savedAt = state?.savedAt?.toString()
+            )
+        )
+    }
+
+    /**
+     * Przenosi zdjęcia zrobione telefonem do galerii wizyty.
+     * POST /api/visits/{visitId}/damage-map/qr-photos/claim
+     *
+     * Zwraca mapowanie „identyfikator tymczasowy → zdjęcie wizyty"; okno podmienia po
+     * nim wskaźniki w punktach uszkodzeń.
+     */
+    @PostMapping("/qr-photos/claim")
+    @RequiresPermission(Permission.VISITS_CREATE)
+    fun claimMobilePhotos(@PathVariable visitId: String): ResponseEntity<ClaimMobilePhotosResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val claimed = mobileService.claimPhotos(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName
+        )
+
+        ResponseEntity.ok(
+            ClaimMobilePhotosResponse(
+                photos = claimed.map {
+                    ClaimedMobilePhotoDto(
+                        temporaryPhotoId = it.temporaryPhotoId,
+                        photoId = it.photoId,
+                        fileName = it.fileName,
+                        thumbnailUrl = it.thumbnailUrl
+                    )
+                }
+            )
+        )
+    }
 }
 
 // ─── Request / Response ───────────────────────────────────────────────────────
@@ -120,7 +232,9 @@ data class DamageMapPointDto(
 
 data class DamageMapPhotoDto(
     val photoId: String,
-    val strokes: List<DamageMapStrokeDto>? = null
+    val strokes: List<DamageMapStrokeDto>? = null,
+    /** Tylko do wyświetlenia; nigdy nie jest zapisywana. Wypełniana przy odczycie sesji mobilnej. */
+    val thumbnailUrl: String? = null
 )
 
 data class DamageMapStrokeDto(
@@ -205,4 +319,37 @@ data class DamageMapNotificationDto(
     val emailSent: Boolean,
     val smsSent: Boolean,
     val message: String
+)
+
+data class StartDamageMapMobileSessionRequest(
+    /** Punkty z otwartego edytora — telefon startuje od nich. */
+    val damagePoints: List<DamageMapPointDto> = emptyList(),
+    val vehicleType: String? = null,
+    /** true unieważnia poprzedni kod QR. */
+    val rotate: Boolean = false
+)
+
+data class DamageMapMobileTokenResponse(
+    val token: String,
+    val checkinId: String,
+    val expiresAt: String,
+    val uploadEndpoint: String
+)
+
+data class DamageMapMobileSessionResponse(
+    val active: Boolean,
+    val damagePoints: List<DamageMapPointDto>,
+    val vehicleType: String?,
+    val savedAt: String?
+)
+
+data class ClaimMobilePhotosResponse(
+    val photos: List<ClaimedMobilePhotoDto>
+)
+
+data class ClaimedMobilePhotoDto(
+    val temporaryPhotoId: String,
+    val photoId: String,
+    val fileName: String,
+    val thumbnailUrl: String?
 )
