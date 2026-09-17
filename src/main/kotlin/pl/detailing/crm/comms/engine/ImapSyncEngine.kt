@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import pl.detailing.crm.comms.domain.CommFolderKind
+import pl.detailing.crm.comms.domain.CommOutboxType
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.comms.infrastructure.MimeEmailParser
 import pl.detailing.crm.mailbox.domain.MailAccountStatus
@@ -39,6 +40,7 @@ class ImapSyncEngine(
     private val parser: MimeEmailParser,
     private val ingestService: CommsIngestService,
     private val readService: CommsReadService,
+    private val outboxRepository: pl.detailing.crm.comms.infrastructure.CommOutboxRepository,
     private val progressRegistry: SyncProgressRegistry
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -246,6 +248,10 @@ class ImapSyncEngine(
         val uidValidity = account.inboxUidValidity ?: return
         val unread = messageRepository.findUnreadWithUid(account.id, CommFolderKind.INBOX, uidValidity)
         if (unread.isEmpty()) return
+        // Wiadomości z zaległym MARK_UNSEEN dopiero co oznaczono w CRM jako nieprzeczytane;
+        // serwer może jeszcze mieć na nich \Seen (komenda czyszcząca nie wykonała się),
+        // więc pominięcie ich tutaj chroni przed cofnięciem oznaczenia w wyścigu.
+        val skipUnseen = outboxRepository.findPendingMessageIds(account.id, CommOutboxType.MARK_UNSEEN).toSet()
 
         val folder = runCatching { store.getFolder("INBOX") as IMAPFolder }.getOrNull() ?: return
         runCatching { folder.open(Folder.READ_ONLY) }.getOrElse { return }
@@ -260,6 +266,7 @@ class ImapSyncEngine(
                 if (imapMessage == null) continue
                 val uid = runCatching { folder.getUID(imapMessage) }.getOrDefault(-1L)
                 val entity = byUid[uid] ?: continue
+                if (entity.id in skipUnseen) continue
                 val seen = runCatching { imapMessage.isSet(Flags.Flag.SEEN) }.getOrDefault(false)
                 if (!seen || entity.isRead) continue
                 readService.markReadFromServer(entity)

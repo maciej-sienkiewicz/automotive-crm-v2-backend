@@ -85,6 +85,7 @@ class CommsOutboxProcessor(
         try {
             when (command.commandType) {
                 CommOutboxType.MARK_SEEN -> markSeen(store, message)
+                CommOutboxType.MARK_UNSEEN -> markUnseen(store, message)
                 CommOutboxType.APPEND_SENT -> appendSent(store, account, message)
             }
             command.status = CommOutboxStatus.DONE
@@ -105,6 +106,20 @@ class CommsOutboxProcessor(
             if (message.imapUidValidity != null && folder.uidValidity != message.imapUidValidity) return
             val imapMessage = folder.getMessageByUID(uid) ?: return
             imapMessage.setFlag(Flags.Flag.SEEN, true)
+        } finally {
+            runCatching { folder.close(false) }
+        }
+    }
+
+    /** Odwrotność [markSeen]: czyści \Seen, gdy użytkownik oznaczył wiadomość jako nieprzeczytaną. */
+    private fun markUnseen(store: Store, message: CommMessageEntity) {
+        val uid = message.imapUid ?: return
+        val folder = store.getFolder("INBOX") as IMAPFolder
+        folder.open(Folder.READ_WRITE)
+        try {
+            if (message.imapUidValidity != null && folder.uidValidity != message.imapUidValidity) return
+            val imapMessage = folder.getMessageByUID(uid) ?: return
+            imapMessage.setFlag(Flags.Flag.SEEN, false)
         } finally {
             runCatching { folder.close(false) }
         }

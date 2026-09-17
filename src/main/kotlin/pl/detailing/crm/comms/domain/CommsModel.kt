@@ -38,6 +38,8 @@ enum class CommSendStatus {
 enum class CommOutboxType {
     /** STORE +FLAGS (\Seen) for one message. */
     MARK_SEEN,
+    /** STORE -FLAGS (\Seen) for one message — użytkownik oznaczył ją w CRM jako nieprzeczytaną. */
+    MARK_UNSEEN,
     /** APPEND a copy of a message we sent over SMTP into the server's Sent folder. */
     APPEND_SENT
 }

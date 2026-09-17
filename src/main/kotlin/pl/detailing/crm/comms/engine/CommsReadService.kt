@@ -15,6 +15,7 @@ import pl.detailing.crm.comms.infrastructure.CommOutboxEntity
 import pl.detailing.crm.comms.infrastructure.CommOutboxRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.shared.NotFoundException
+import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
 import java.util.UUID
 
@@ -59,6 +60,61 @@ class CommsReadService(
                 lastError = null
             )
         )
+    }
+
+    /**
+     * Użytkownik oznaczył wiadomość jako NIEPRZECZYTANĄ w CRM. Odwrotność
+     * [markReadFromCrm].
+     *
+     * To jedyne miejsce, w którym łamiemy monotoniczność „przeczytane już nie wraca"
+     * (patrz [markReadFromServer]) — dlatego musi tu paść MARK_UNSEEN: bez wyczyszczenia
+     * flagi \Seen na serwerze najbliższy reconcile zobaczyłby ją i cofnął oznaczenie.
+     */
+    @Transactional
+    fun markUnreadFromCrm(studioId: UUID, messageId: UUID) {
+        val message = messageRepository.findByIdAndStudioId(messageId, studioId)
+            ?: throw NotFoundException("Nie znaleziono wiadomości")
+        // Wiadomość wychodząca jest „przeczytana z definicji" i nie wchodzi do licznika
+        // nieprzeczytanych wątku — oznaczanie jej jako nieprzeczytanej byłoby bez sensu.
+        if (message.direction != CommDirection.INBOUND) {
+            throw ValidationException("Tylko wiadomość przychodzącą można oznaczyć jako nieprzeczytaną")
+        }
+        if (!message.isRead) return
+
+        message.isRead = false
+        message.readSource = null
+        message.readAt = null
+        messageRepository.save(message)
+
+        threadRepository.findById(message.threadId).ifPresent { thread ->
+            thread.unreadCount += 1
+            threadRepository.save(thread)
+        }
+
+        outboxRepository.save(
+            CommOutboxEntity(
+                id = UUID.randomUUID(),
+                studioId = message.studioId,
+                accountId = message.accountId,
+                messageId = message.id,
+                commandType = CommOutboxType.MARK_UNSEEN,
+                status = CommOutboxStatus.PENDING,
+                nextAttemptAt = Instant.now(),
+                lastError = null
+            )
+        )
+
+        // To samo zdarzenie co przy „przeczytano": front i tak tylko odświeża wątek
+        // i listę, a źródłem prawdy jest baza (teraz: nieprzeczytana).
+        eventPublisher.publishEvent(
+            CommMessageReadEvent(
+                studioId = message.studioId,
+                threadId = message.threadId,
+                messageId = message.id,
+                readSource = CommReadSource.CRM
+            )
+        )
+        log.debug("[COMMS] Message {} marked UNREAD (CRM)", message.id)
     }
 
     /** Whole-thread variant used when the user opens a conversation. */
