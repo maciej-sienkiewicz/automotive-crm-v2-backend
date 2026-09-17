@@ -23,7 +23,7 @@ pl.detailing.crm.product/
 ├── adapter/
 │   ├── local/LocalCatalogProvider.kt
 │   ├── ai/BarcodeImageExtractionService.kt  odczyt CYFR kodu ze zdjęcia (zapas)
-│   └── web/OpenAiWebSearchClient.kt         wyszukiwanie w sieci (web_search_options)
+│   └── web/OpenAiWebSearchClient.kt         Responses API + narzędzie web_search
 ├── application/
 │   └── ProductResolutionService.kt   katalog -> sieć, progi, negatywny cache
 ├── create/ update/ list/ get/ archive/    handlery + walidatory (konwencja z `service/`)
@@ -135,12 +135,13 @@ crm.products.lookup.draft-min-confidence=0.0
 crm.products.lookup.negative-cache-ttl-days=7
 
 # ── Wyszukiwanie w sieci ─────────────────────────────────────────────────────
-# Model z web_search_options — taki, który PRZED odpowiedzią naprawdę szuka.
-# Działa na tym samym OPENAI_API_KEY co reszta systemu: bez nowego dostawcy i bez
-# osobnego klucza do wyszukiwarki. Włączone domyślnie.
+# Hostowane narzędzie web_search w Responses API — model PRZED odpowiedzią naprawdę
+# szuka. Działa na tym samym OPENAI_API_KEY co reszta systemu: bez nowego dostawcy
+# i bez osobnego klucza do wyszukiwarki. Włączone domyślnie.
 crm.products.web.search.enabled=true
-# MUSI być model z rodziny wyszukującej — zwykły gpt-4.1 nie szuka.
-crm.products.web.search.model=${PRODUCT_WEB_SEARCH_MODEL:gpt-4o-mini-search-preview}
+# Model NIE musi być specjalny — narzędzie doczepia się do zwykłego modelu.
+# gpt-4.1 jest w dokumentacji wymieniony jako wspierany (kontekst wyszukiwania 128k).
+crm.products.web.search.model=${PRODUCT_WEB_SEARCH_MODEL:gpt-4.1}
 crm.products.web.search.context-size=MEDIUM
 # Oferty tego samego kodu są lokalne — bez tego wyniki przychodzą z innego rynku.
 crm.products.web.search.country=PL
