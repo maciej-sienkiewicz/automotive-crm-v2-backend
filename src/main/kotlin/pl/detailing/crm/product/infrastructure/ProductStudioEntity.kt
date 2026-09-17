@@ -46,8 +46,6 @@ class ProductStudioEntity(
     @Column(name = "vat_rate")
     var vatRate: Int?,             // 23 | 8 | 5 | 0 | -1 (zwolniony)
 
-    @Column(name = "supplier_name", length = 200)
-    var supplierName: String?,
 
     @Column(name = "internal_name", length = 200)
     var internalName: String?,

@@ -89,15 +89,17 @@ class ProductCatalogService(
         req: CreateProductRequest,
         canSeeCosts: Boolean
     ): ProductResponse {
+        // WYMAGANA jest wyłącznie nazwa. Marka i opakowanie bywają nieznane przy dodawaniu
+        // produktu w biegu; brak danej zapisujemy jako brak, a nie blokujemy zapisu.
         val name = req.name.trim()
-        val brand = req.brand.trim()
         if (name.length < 2) throw ValidationException("Nazwa produktu musi mieć co najmniej 2 znaki.")
-        if (brand.isBlank()) throw ValidationException("Marka jest wymagana.")
+        val brand = req.brand?.trim().orEmpty()
 
-        val unit = UnitOfMeasure.fromCode(req.unitOfMeasure)
-            ?: throw ValidationException("Nieznana jednostka miary: ${req.unitOfMeasure}")
+        val unit = UnitOfMeasure.fromCode(req.unitOfMeasure) ?: UnitOfMeasure.PIECE
         val sizeUnit = UnitOfMeasure.fromCode(req.packageSizeUnit) ?: unit
-        val sizeValue = parseSize(req.packageSizeValue)
+        // Kolumna jest NOT NULL z ograniczeniem > 0, więc „nie podano" zapisujemy jako 1 szt.
+        val sizeValue = req.packageSizeValue?.takeIf { it.isNotBlank() }?.let { parseSize(it) }
+            ?: java.math.BigDecimal.ONE
 
         val gtin = req.gtin?.takeIf { it.isNotBlank() }?.let { Gtin.parse(it) }
 
@@ -140,7 +142,6 @@ class ProductCatalogService(
 
         // Nakładka studia od razu, gdy podano coś prywatnego (cena/dostawca/notatka).
         val overlay = upsertOverlay(studioId, userId, product.id, UpdateProductStudioRequest(
-            supplierName = req.supplierName,
             internalName = req.internalName,
             internalNote = req.internalNote,
             price = req.price
@@ -212,8 +213,8 @@ class ProductCatalogService(
         val product = productRepository.findById(productId).orElseThrow {
             EntityNotFoundException("Produkt nie został znaleziony")
         }
-        val unit = UnitOfMeasure.fromCode(req.unitOfMeasure)
-            ?: throw ValidationException("Nieznana jednostka miary: ${req.unitOfMeasure}")
+        // Jak przy tworzeniu: wymagana jest tylko nazwa, reszta ma sensowne domyślne.
+        val unit = UnitOfMeasure.fromCode(req.unitOfMeasure) ?: product.unitOfMeasure
 
         // Governance: wpisu zweryfikowanego NIE edytujemy in-place — powstaje propozycja.
         if (product.verificationLevel.isProtected) {
@@ -229,10 +230,11 @@ class ProductCatalogService(
         }
 
         product.name = req.name.trim()
-        product.brand = req.brand.trim()
+        product.brand = req.brand?.trim().orEmpty()
         product.unitOfMeasure = unit
         product.packageSizeUnit = UnitOfMeasure.fromCode(req.packageSizeUnit) ?: unit
-        product.packageSizeValue = parseSize(req.packageSizeValue)
+        product.packageSizeValue = req.packageSizeValue?.takeIf { it.isNotBlank() }?.let { parseSize(it) }
+            ?: product.packageSizeValue
         product.packageHeightMm = req.packageHeightMm
         product.packageWidthMm = req.packageWidthMm
         product.packageDepthMm = req.packageDepthMm
@@ -307,7 +309,6 @@ class ProductCatalogService(
             unitPriceGrossCents = null,
             priceEnteredAs = null,
             vatRate = null,
-            supplierName = null,
             internalName = null,
             internalNote = null,
             createdBy = userId.value,
@@ -315,7 +316,6 @@ class ProductCatalogService(
             createdAt = now,
             updatedAt = now
         )
-        entity.supplierName = req.supplierName?.trim()?.ifBlank { null }
         entity.internalName = req.internalName?.trim()?.ifBlank { null }
         entity.internalNote = req.internalNote?.trim()?.ifBlank { null }
         entity.isFavourite = req.isFavourite

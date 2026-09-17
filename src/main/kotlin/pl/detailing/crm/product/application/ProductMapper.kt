@@ -46,7 +46,6 @@ class ProductMapper {
             confidence = product.sourceConfidence?.toDouble()
         ),
         internalName = studio?.internalName,
-        supplierName = studio?.supplierName,
         internalNote = studio?.internalNote,
         isFavourite = studio?.isFavourite ?: false,
         isHidden = studio?.isHidden ?: false,

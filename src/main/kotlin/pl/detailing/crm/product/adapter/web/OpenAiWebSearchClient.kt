@@ -57,16 +57,18 @@ class OpenAiWebSearchClient(
         }
 
         val converter = BeanOutputConverter(SearchedCard::class.java)
-        val prompt = """
-            $SYSTEM_PROMPT
-
-            Kod kreskowy EAN: $ean
-
-            ${converter.format}
-        """.trimIndent()
+        // Reguły i format idą w `instructions`, a `input` zostaje KRÓTKI.
+        // To nie jest kosmetyka: gdy cały prompt siedział w `input`, model wysłał go
+        // DOSŁOWNIE jako zapytanie do wyszukiwarki — razem ze schematem JSON. W logu
+        // produkcyjnym `web_search_call.action.query` miał kilkanaście tysięcy znaków,
+        // a samego kodu wyszukiwarka praktycznie nie zobaczyła (17 431 tokenów wejścia
+        // na jeden odczyt kodu).
+        val instructions = "$SYSTEM_PROMPT\n\n${converter.format}"
+        val input = "Znajdź w internecie produkt o kodzie kreskowym EAN $ean."
 
         val body = mapOf(
             "model" to model,
+            "instructions" to instructions,
             "tools" to listOf(
                 mapOf(
                     "type" to "web_search",
@@ -77,12 +79,12 @@ class OpenAiWebSearchClient(
             ),
             // Wyszukiwanie MUSI się wykonać — patrz komentarz klasy.
             "tool_choice" to "required",
-            "input" to prompt
+            "input" to input
         )
 
         return try {
             val json = objectMapper.writeValueAsString(body)
-            log.info("[PRODUCT_WEB] request ean={} model={}\n--- BODY ---\n{}", ean, model, json)
+            log.info("[PRODUCT_WEB] request ean={} model={} input='{}'\n--- BODY ---\n{}", ean, model, input, json)
 
             val headers = HttpHeaders().apply {
                 contentType = MediaType.APPLICATION_JSON
@@ -107,8 +109,8 @@ class OpenAiWebSearchClient(
                 return null
             }
             WebProductCard(
-                brand = card.brand.trim(),
-                name = card.name.trim(),
+                brand = cleanText(card.brand, MAX_BRAND),
+                name = cleanText(card.name, MAX_NAME),
                 packageSizeValue = card.packageSizeValue?.trim()?.ifBlank { null },
                 packageSizeUnit = card.packageSizeUnit?.trim()?.ifBlank { null },
                 description = card.description?.trim()?.ifBlank { null },
@@ -148,6 +150,25 @@ class OpenAiWebSearchClient(
             .firstOrNull { it.path("type").asText() == "url_citation" }
             ?.path("url")?.asText(null)?.ifBlank { null }
 
+    /**
+     * Porządkuje tekst przyniesiony z sieci: obcina białe znaki i cudzysłowy, skleja
+     * wielokrotne spacje, zdejmuje kropkę na końcu i podnosi pierwszą literę. Reszty
+     * NIE ruszamy — nazwy produktów niosą akronimy i wielkie litery marek („Q2M", „pH"),
+     * które `lowercase()` by zniszczył.
+     *
+     * Limit długości jest twardy, bo kolumny w bazie mają VARCHAR(200)/VARCHAR(120):
+     * rozgadany opis zamiast nazwy wywaliłby INSERT zamiast zapisać skróconą nazwę.
+     */
+    private fun cleanText(raw: String, maxLength: Int): String {
+        val collapsed = raw.trim()
+            .trim('"', '\'', '\u201e', '\u201d', '\u00ab', '\u00bb')
+            .replace(Regex("\\s+"), " ")
+            .trimEnd('.', ',', ';', ':')
+            .trim()
+        val capitalised = collapsed.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        return if (capitalised.length <= maxLength) capitalised else capitalised.take(maxLength).trimEnd()
+    }
+
     /** Model lubi dokleić przypisy poza JSON-em — bierzemy blok od `{` do ostatniej `}`. */
     private fun extractJson(raw: String): String {
         val start = raw.indexOf('{')
@@ -166,15 +187,27 @@ class OpenAiWebSearchClient(
     )
 
     companion object {
+        // Limity kolumn w bazie (products.name / products.brand).
+        private const val MAX_NAME = 200
+        private const val MAX_BRAND = 120
+
         private val SYSTEM_PROMPT = """
 Identyfikujesz produkt po kodzie kreskowym, korzystając z WYSZUKIWANIA W INTERNECIE.
 Opierasz się na tym, co znajdziesz — nie na pamięci o kodzie.
 
+JĘZYK: odpowiadasz ZAWSZE PO POLSKU. Jeśli znalezione źródła są w innym języku,
+przetłumacz nazwę i opis na polski. Nazwy własne marek zostawiasz bez tłumaczenia.
+
 ZASADY:
-- "brand": marka/producent (np. "ADBL", "Gyeon", "Koch Chemie").
-- "name": nazwa produktu BEZ marki i BEZ pojemności.
+- "brand": marka/producent, pisana tak jak zapisuje ją producent (np. "ADBL",
+  "Gyeon", "Koch Chemie", "Muszynianka").
+- "name": KRÓTKA nazwa handlowa po polsku, BEZ marki i BEZ pojemności. To ma być
+  NAZWA, a nie zdanie opisowe: kilka słów, pierwsza litera wielka, bez kropki na
+  końcu. DOBRZE: "Woda mineralna gazowana", "Szampon o neutralnym pH".
+  ŹLE: "natural mineral water partially carbonated with magnesium and calcium".
 - "packageSizeValue"/"packageSizeUnit": pojemność lub waga, jeśli wynika z ofert
   (np. "500" + "ML"). Dozwolone jednostki: ML, L, G, KG. Gdy nie wynika — puste.
+- "description": jedno krótkie zdanie po polsku; gdy nie wiadomo — puste.
 - "sourceUrl": adres najlepszego znalezionego źródła.
 - "confidence": 0.0–1.0. Wysoka (0.85+) tylko wtedy, gdy kilka niezależnych źródeł
   zgodnie przypisuje ten kod do tego samego produktu.

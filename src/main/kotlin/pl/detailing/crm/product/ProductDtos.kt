@@ -45,7 +45,6 @@ data class ProductResponse(
     val provenance: ProvenanceDto,
     // ── Nakładka studia ──
     val internalName: String?,
-    val supplierName: String?,
     val internalNote: String?,
     val isFavourite: Boolean,
     val isHidden: Boolean,
@@ -84,16 +83,17 @@ data class ProductRatingDto(
 data class CreateProductRequest(
     val gtin: String?,
     val name: String,
-    val brand: String,
-    val unitOfMeasure: String,
-    val packageSizeValue: String,
-    val packageSizeUnit: String?,
+    // Jedynym wymaganym polem jest nazwa. Reszta bywa nieznana w chwili dodawania
+    // (ktoś wpisuje produkt w biegu) i można ją uzupełnić później.
+    val brand: String? = null,
+    val unitOfMeasure: String? = null,
+    val packageSizeValue: String? = null,
+    val packageSizeUnit: String? = null,
     val packageHeightMm: Int? = null,
     val packageWidthMm: Int? = null,
     val packageDepthMm: Int? = null,
     val description: String? = null,
     // Nakładka studia — opcjonalna przy tworzeniu.
-    val supplierName: String? = null,
     val internalName: String? = null,
     val internalNote: String? = null,
     val price: PriceInput? = null
@@ -108,10 +108,10 @@ data class PriceInput(
 
 data class UpdateProductRequest(
     val name: String,
-    val brand: String,
-    val unitOfMeasure: String,
-    val packageSizeValue: String,
-    val packageSizeUnit: String?,
+    val brand: String? = null,
+    val unitOfMeasure: String? = null,
+    val packageSizeValue: String? = null,
+    val packageSizeUnit: String? = null,
     val packageHeightMm: Int? = null,
     val packageWidthMm: Int? = null,
     val packageDepthMm: Int? = null,
@@ -119,7 +119,6 @@ data class UpdateProductRequest(
 )
 
 data class UpdateProductStudioRequest(
-    val supplierName: String? = null,
     val internalName: String? = null,
     val internalNote: String? = null,
     val isFavourite: Boolean = false,

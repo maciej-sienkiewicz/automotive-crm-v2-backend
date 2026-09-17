@@ -136,7 +136,13 @@ data class ScanSessionResponse(
     val expiresAt: String
 )
 
-private fun ScanSession.toDesktopResponse() = ScanSessionResponse(
+/**
+ * Jedyne miejsce, w którym sesja zamienia się w kształt dla klienta. NIE jest prywatne
+ * celowo: ten sam DTO leci REST-em i WebSocketem. Wysyłanie po WS surowej `ScanSession`
+ * dawało `scannedCodes` jako obiekty `{code, scannedAt}`, podczas gdy REST oddawał same
+ * ciągi — front robił z tego `"[object Object]"` i walidacja kodu odrzucała skan.
+ */
+internal fun ScanSession.toDesktopResponse() = ScanSessionResponse(
     sessionId = sessionId,
     handoffToken = handoffToken,
     handoffPath = "/m/scan?s=$handoffToken",

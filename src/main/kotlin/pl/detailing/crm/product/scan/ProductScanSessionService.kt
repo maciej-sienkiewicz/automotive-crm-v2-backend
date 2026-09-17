@@ -117,7 +117,9 @@ class ProductScanSessionService(
     private fun notifyDesktop(session: ScanSession) {
         try {
             val destination = "/topic/studio.${session.studioId}.product-scan.${session.sessionId}"
-            messagingTemplate.convertAndSend(destination, session)
+            // DTO, nie encja sesji: po WebSocketcie musi przyjść DOKŁADNIE ten sam
+            // kształt co z REST-a (kody jako ciągi) — patrz toDesktopResponse().
+            messagingTemplate.convertAndSend(destination, session.toDesktopResponse())
         } catch (e: Exception) {
             // WebSocket to wygoda; odpytywanie GET jest zapasem. Brak pushu nie może
             // wywrócić dopisania kodu.
