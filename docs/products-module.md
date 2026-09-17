@@ -22,11 +22,10 @@ pl.detailing.crm.product/
 │   └── ProductDataProvider.kt        jeden interfejs na dostawcę danych
 ├── adapter/
 │   ├── local/LocalCatalogProvider.kt
-│   ├── ai/AiProductProvider.kt       + AiProductConfig (ChatClient, temperature = 0.0)
-│   ├── web/WebProductProvider.kt     OpenFacts + wyszukiwarka -> ekstrakcja LLM
-│   └── gs1/Gs1ProductProvider.kt     + GepirFallbackProvider
+│   ├── ai/BarcodeImageExtractionService.kt  odczyt CYFR kodu ze zdjęcia (zapas)
+│   └── web/OpenAiWebSearchClient.kt         wyszukiwanie w sieci (web_search_options)
 ├── application/
-│   └── ProductResolutionService.kt   łańcuch, limity, cache, negatywny cache
+│   └── ProductResolutionService.kt   katalog -> sieć, progi, negatywny cache
 ├── create/ update/ list/ get/ archive/    handlery + walidatory (konwencja z `service/`)
 ├── notes/                            notatki studia
 ├── rating/                           ocena studia
@@ -124,96 +123,77 @@ Pełny DDL: dokument kanoniczny §2.3.
 
 ## 4. Konfiguracja
 
-Nazewnictwo idzie za istniejącą konwencją `crm.ai.*` z `application.properties`.
+Rozpoznanie ma DWA kroki: **nasz katalog → wyszukiwanie w sieci**. Nic więcej.
 
 ```properties
-# ── Rozpoznawanie produktu po kodzie ────────────────────────────────────────
-# Kolejność łańcucha. WEB (dane z sieci) przed AI — model nie ma dostępu do internetu.
-crm.products.resolution.order=LOCAL,WEB,AI,GS1
-# Próg trafienia PEWNEGO (auto-RESOLVED bez zejścia niżej).
-crm.products.resolution.ai-min-confidence=0.90
-# Próg SZKICU: poniżej ai-min-confidence, a ≥ tego progu, odczyt AI wraca jako szkic do
-# ręcznego potwierdzenia zamiast NOT_FOUND (łagodne zejście). 0.0 = pokaż każdą kartę,
-# którą model faktycznie wypisał. Patrz ProductResolutionService.
-crm.products.resolution.ai-draft-min-confidence=0.0
-crm.products.lookup.rate-limit.per-day=100
+# ── Progi ────────────────────────────────────────────────────────────────────
+# Powyżej min-confidence wynik jest trafieniem; poniżej wraca jako SZKIC do
+# ręcznego potwierdzenia zamiast NOT_FOUND. Poniżej draft-min-confidence jest
+# odsiewany (0.0 = nie odsiewaj niczego, co wyszukiwanie naprawdę zwróciło).
+crm.products.lookup.min-confidence=0.90
+crm.products.lookup.draft-min-confidence=0.0
 crm.products.lookup.negative-cache-ttl-days=7
-crm.products.lookup.ai-timeout-ms=8000
-crm.products.lookup.gs1-timeout-ms=5000
 
-# ── Dane z sieci (krok WEB) ─────────────────────────────────────────────────
-# 1) Otwarte bazy kodów — DARMOWE, bez klucza.
-crm.products.web.openfacts.enabled=true
-crm.products.web.openfacts.hosts=world.openfoodfacts.org,world.openbeautyfacts.org,world.openproductsfacts.org
-# 2) Wyszukiwarka — WYMAGA klucza, więc domyślnie NONE. GOOGLE (key+cx) albo BRAVE (key).
-crm.products.web.search.provider=${PRODUCT_WEB_SEARCH_PROVIDER:NONE}
-crm.products.web.search.google.key=${PRODUCT_WEB_SEARCH_GOOGLE_KEY:}
-crm.products.web.search.google.cx=${PRODUCT_WEB_SEARCH_GOOGLE_CX:}
-crm.products.web.search.brave.key=${PRODUCT_WEB_SEARCH_BRAVE_KEY:}
-crm.products.web.search.max-results=8
-crm.products.web.timeout-ms=5000
+# ── Wyszukiwanie w sieci ─────────────────────────────────────────────────────
+# Model z web_search_options — taki, który PRZED odpowiedzią naprawdę szuka.
+# Działa na tym samym OPENAI_API_KEY co reszta systemu: bez nowego dostawcy i bez
+# osobnego klucza do wyszukiwarki. Włączone domyślnie.
+crm.products.web.search.enabled=true
+# MUSI być model z rodziny wyszukującej — zwykły gpt-4.1 nie szuka.
+crm.products.web.search.model=${PRODUCT_WEB_SEARCH_MODEL:gpt-4o-mini-search-preview}
+crm.products.web.search.context-size=MEDIUM
+# Oferty tego samego kodu są lokalne — bez tego wyniki przychodzą z innego rynku.
+crm.products.web.search.country=PL
 
-# Model odczytu: fakt, nie twórczość — temperatura 0 jak w pozostałych odczytach.
-# Odczyt po kodzie to zadanie na WIEDZĘ modelu, więc czytnik jest mocniejszy.
-crm.ai.product-lookup.model=${PRODUCT_LOOKUP_MODEL:gpt-4.1}
-# Model weryfikatora: niezależny, MNIEJSZY krytyk „czy na pewno ta karta należy do tego
-# kodu". Może tylko OBNIŻYĆ zaufanie — jego „nie" spycha wynik poniżej progu pewności.
-crm.ai.product-lookup.verifier-model=${PRODUCT_LOOKUP_VERIFIER_MODEL:gpt-4.1-mini}
-# Model WIZYJNY do odczytu cyfr kodu ze zdjęcia — zapas, gdy dekoder w przeglądarce
-# (natywny BarcodeDetector albo ZXing w JS) nie odczyta kadru. Wzorzec z odczytu VIN.
+# ── Odczyt cyfr kodu ZE ZDJĘCIA (zapas dekodera w przeglądarce) ─────────────
 crm.ai.product-lookup.image-model=${PRODUCT_LOOKUP_IMAGE_MODEL:gpt-4.1}
-
-# ── GS1 ─────────────────────────────────────────────────────────────────────
-# Bez umowy licencyjnej zostaw enabled=false — moduł działa, traci tylko krok 3.
-gs1.enabled=${GS1_ENABLED:false}
-gs1.api.base-url=${GS1_API_BASE_URL:}
-gs1.api.key=${GS1_API_KEY:}
-gs1.gepir.enabled=${GS1_GEPIR_ENABLED:true}
 
 # ── Sesje skanowania telefonem ──────────────────────────────────────────────
 crm.products.scan-session.ttl-minutes=15
 crm.products.scan-session.max-codes-per-minute=60
 ```
 
-**Prompt do LLM dostaje wyłącznie GTIN.** Nigdy nazwy studia, klienta ani kontekstu
-wizyty — to jest wymóg bezpieczeństwa, nie optymalizacja tokenów.
+**Do modelu trafia wyłącznie kod.** Nigdy nazwa studia, klienta ani kontekst wizyty —
+to wymóg bezpieczeństwa, nie optymalizacja tokenów. Dlatego pełne logowanie promptu i
+surowej odpowiedzi (`[PRODUCT_WEB]`) nie niesie danych osobowych.
 
-**Dlaczego doszedł krok WEB (i dlaczego sam model nie wystarczy).** Model językowy
-**nie ma dostępu do internetu** — odpowiada wyłącznie z wag, a tablicy EAN → produkt w
-nich nie ma. Zapytany o `5902806493015` uczciwie zwraca `confidence: 0.0` i puste pola
-(zgodnie z „NIE ZGADUJ”), choć ten sam kod w wyszukiwarce zwraca dziesiątki ofert.
-Brakującym ogniwem nie był mocniejszy model, tylko DOSTĘP DO DANYCH. Stąd krok WEB przed AI:
+### Czego tu nie ma i dlaczego
 
-1. **Otwarte bazy kodów** (Open Food / Beauty / Products Facts) — darmowe, bez klucza,
-   dane gotowe do użycia. Włączone domyślnie.
-2. **Wyszukiwarka + ekstrakcja** — tytuły i fragmenty wyników trafiają do modelu jako
-   KONTEKST, z którego ma wydobyć markę, nazwę i pojemność. To zadanie, w którym model
-   jest mocny i sprawdzalny (fragmenty są w logu obok odpowiedzi). Wymaga klucza
-   (Google Programmable Search albo Brave), więc domyślnie `provider=NONE`.
+Moduł miał pierwotnie łańcuch *baza → LLM z pamięci → GS1*. Produkcja go zweryfikowała:
 
-Krok AI zostaje jako ostatnia szansa dla kodów, których w sieci nie ma.
+- **LLM pytany „z pamięci"** — usunięty. Kod kreskowy to numer nadany przez GS1; nazwa
+  produktu nie jest z niego wyprowadzalna, a model nie ma w wagach tablicy EAN → produkt.
+  Dla realnego kodu zwracał `confidence: 0.0` z pustymi polami — zgodnie z własną regułą
+  „NIE ZGADUJ", więc działał poprawnie i bezużytecznie zarazem. Mocniejszy model tego nie
+  naprawiał: problemem nie była siła modelu, tylko brak dostępu do danych.
+- **GS1** — usunięty. „Verified by GS1" wymaga umowy licencyjnej, której nie ma; adapter
+  zwracał `null` i tylko udawał ogniwo łańcucha.
+- **Otwarte bazy kodów i własne zapytania do wyszukiwarki (Google CSE / Brave)** —
+  usunięte. Dublowały to, co model wyszukujący robi jednym wywołaniem, a wymagały
+  osobnych kluczy i własnego klienta HTTP.
 
-**Kod wychodzi na zewnątrz w postaci DRUKOWANEJ.** Wewnątrz katalog kluczujemy GTIN-em-14
-(inaczej EAN-13 i UPC-A tego samego produktu rozjechałyby się na dwa wiersze), ale do
-wyszukiwarki, do API baz kodów i do promptu modelu idzie `Gtin.displayValue` — bez
-wiodących zer. `05902806493015` nie znajduje niczego; `5902806493015` znajduje produkt.
-Pilnuje tego `GtinDisplayValueTest`.
+### Dwie pułapki, obie obsłużone
 
-**Negatywny cache ma sygnaturę łańcucha** (kolejność dostawców + model + włączone źródła
-sieciowe). Miss jest wnioskiem konkretnej konfiguracji, nie faktem o kodzie: bez tego
-każda poprawka rozpoznawania była niewidoczna przez 7 dni dla wszystkich już zeskanowanych
-kodów, bo `isNegativelyCached` ucinał zapytanie przed wywołaniem dostawców.
+- **`temperature` jest zabroniona** dla modeli `*-search-preview` (błąd 400), więc
+  `WebLookupConfig` jej nie ustawia. Determinizm bierze się z promptu.
+- **Kod wychodzi w postaci DRUKOWANEJ.** Wewnątrz katalog kluczujemy GTIN-em-14, ale
+  `05902806493015` nie znajduje w sieci niczego, a `5902806493015` znajduje produkt.
+  Służy do tego `Gtin.displayValue`; pilnuje go `GtinDisplayValueTest`.
 
-**Zachowanie „łagodne" (decyzja produktowa).** GTIN to numer, którego model nie mapuje
-pewnie na produkt, więc trzymanie sztywnego progu 0,90 przy wyłączonym GS1 dawało w
-praktyce zawsze `NOT_FOUND`. Dlatego odczyt poniżej progu nie jest wyrzucany: łańcuch
-najpierw próbuje kolejnych dostawców, a gdy żaden nie da pewnej karty, oddaje najlepszy
-odczyt AI jako **SZKIC** (`RESOLVED`, poziom `AI_SUGGESTED`, jawnie niska pewność). Front
-pokazuje go w formularzu z banerem „sprawdź z etykietą". To NIE jest wpis do katalogu —
-nic nie zapisuje się samo i nic nie awansuje na „zweryfikowane" bez człowieka; szkic
-znika, jeśli operator go nie zatwierdzi. Czytnik jest mocniejszym modelem, weryfikator
-mniejszym i niezależnym (`ai-draft-min-confidence` odsiewa najmniej pewne odczyty).
+### Negatywny cache niesie sygnaturę źródła
 
+Klucz zawiera nazwę modelu wyszukującego. „Miss" jest wnioskiem konkretnej konfiguracji,
+nie faktem o kodzie — po zmianie modelu kod jest pytany od nowa. Bez tego każda poprawka
+rozpoznawania była niewidoczna przez cały TTL (7 dni) dla wszystkich już zeskanowanych
+kodów, bo `isNegativelyCached` ucinał zapytanie przed wywołaniem dostawcy. Dokładnie taki
+objaw („nadal NOT_FOUND") zgłoszono z produkcji.
+
+### Szkic to nie wpis do katalogu
+
+Wynik poniżej progu wraca jako SZKIC: formularz wstępnie wypełniony, baner „sprawdź z
+etykietą", poziom `AI_SUGGESTED`. Nic nie zapisuje się samo i nic nie awansuje na
+„zweryfikowane" bez człowieka — niezmiennik „nie zmyślamy produktu do katalogu" obowiązuje
+tak samo jak wcześniej, bo katalog jest współdzielony przez wszystkie warsztaty.
 ---
 
 ## 5. Budowanie i testy
@@ -224,7 +204,8 @@ zależności bez tej flagi.
 
 Testy backendowe wymagane przed wydaniem (opis i uzasadnienie — dokument kanoniczny §12):
 
-- `ProductResolutionChainTest` — kolejność łańcucha i próg 0,90,
+- `ProductResolutionChainTest` — katalog przed siecią, próg 0,90 i ścieżka szkicu,
+- `GtinDisplayValueTest` — kod wychodzi na zewnątrz w postaci drukowanej,
 - `ProductTenantIsolationTest` — izolacja danych prywatnych przy wspólnym katalogu,
 - `ProductProvenanceTest` — brak awansu poziomu weryfikacji bez potwierdzenia,
 - `VisitProductsCostTest` — koszt materiału poza `totalCost`, niezmienność snapshotu,

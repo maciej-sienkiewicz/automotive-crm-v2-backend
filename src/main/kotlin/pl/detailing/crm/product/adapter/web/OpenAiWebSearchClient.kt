@@ -9,30 +9,35 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 /**
- * Rozpoznanie kodu przez model, KTÓRY NAPRAWDĘ SZUKA W SIECI (`web_search_options`).
+ * Rozpoznanie produktu po kodzie przez model, KTÓRY NAPRAWDĘ SZUKA W SIECI.
  *
- * To jest odpowiedź na „czy jest model z trybem research": tak — i nie trzeba do niego
- * osobnego klucza do wyszukiwarki ani nowego dostawcy. Ten sam klucz OpenAI, którego
- * używa reszta systemu; różnica jest w modelu (rodzina `*-search-preview`) i w tym, że
- * żądanie niesie `web_search_options`, więc model przed odpowiedzią wykonuje realne
- * wyszukiwanie.
- *
- * Domyślnie WYŁĄCZONY: wyszukiwanie jest droższe od zwykłego wywołania i to decyzja
- * kosztowa właściciela instalacji, nie domyślna.
+ * Model pytany z samej pamięci nie potrafi zmapować EAN-u na produkt — kod kreskowy to
+ * numer nadany przez GS1, nazwa produktu nie jest z niego wyprowadzalna, więc dla realnego
+ * kodu wracało `confidence: 0.0` i puste pola. Wyszukiwarka ten sam kod rozpoznaje bez
+ * problemu, bo indeksuje strony sklepów. Dlatego jedyne zewnętrzne źródło w tym module to
+ * model z `web_search_options`.
  *
  * Format wymuszamy instrukcją w treści promptu ([BeanOutputConverter.getFormat]), a nie
  * `response_format` — modele wyszukujące nie gwarantują structured output, a instrukcja
- * tekstowa działa wszędzie. Surowa odpowiedź trafia do logu przed parsowaniem.
+ * tekstowa działa wszędzie. Surowa odpowiedź trafia do logu PRZED parsowaniem: bez tego
+ * „NOT_FOUND" z produkcji jest nie do zdiagnozowania.
  */
 @Component
 class OpenAiWebSearchClient(
     @Qualifier("productWebSearchChatClient") private val chatClient: ChatClient,
-    @Value("\${crm.products.web.openai-search.enabled:false}") val enabled: Boolean
+    @Value("\${crm.products.web.search.enabled:true}") val enabled: Boolean,
+    @Value("\${crm.products.web.search.model:gpt-4o-mini-search-preview}") private val model: String
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    /** Do sygnatury negatywnego cache — zmiana modelu musi unieważnić stare „miss". */
+    val signature: String get() = if (enabled) model else "off"
+
     fun lookup(ean: String): WebProductCard? {
-        if (!enabled) return null
+        if (!enabled) {
+            log.info("[PRODUCT_WEB] disabled ean={} — wyszukiwanie w sieci jest wyłączone", ean)
+            return null
+        }
         val converter = BeanOutputConverter(SearchedCard::class.java)
         val userPrompt = """
             Wyszukaj w internecie produkt o kodzie kreskowym EAN: $ean
@@ -44,18 +49,18 @@ class OpenAiWebSearchClient(
             ${converter.format}
         """.trimIndent()
 
-        log.info("[PRODUCT_WEB] openai_search_request ean={}\n--- SYSTEM ---\n{}\n--- USER ---\n{}", ean, SYSTEM_PROMPT, userPrompt)
+        log.info("[PRODUCT_WEB] request ean={} model={}\n--- SYSTEM ---\n{}\n--- USER ---\n{}", ean, model, SYSTEM_PROMPT, userPrompt)
         return try {
             val raw = chatClient.prompt().system(SYSTEM_PROMPT).user(userPrompt).call().content()
-            log.info("[PRODUCT_WEB] openai_search_response ean={}\n--- RAW ---\n{}", ean, raw)
+            log.info("[PRODUCT_WEB] response ean={}\n--- RAW ---\n{}", ean, raw)
             if (raw.isNullOrBlank()) return null
-            // Model wyszukujący lubi dokleić przypisy źródeł poza JSON-em — bierzemy
-            // największy blok {...}, zamiast wywracać się na parsowaniu całości.
-            val json = raw.substringAfter('{', "").substringBeforeLast('}', "").let { if (it.isBlank()) null else "{$it}" }
-                ?: raw
-            val card = converter.convert(json)
-            log.info("[PRODUCT_WEB] openai_search_parsed ean={} card={}", ean, card)
-            if (card == null || card.name.isNullOrBlank() || card.brand.isNullOrBlank()) return null
+
+            val card = converter.convert(extractJson(raw))
+            log.info("[PRODUCT_WEB] parsed ean={} card={}", ean, card)
+            if (card == null || card.name.isNullOrBlank() || card.brand.isNullOrBlank()) {
+                log.info("[PRODUCT_WEB] empty ean={} — wyszukiwanie nie wskazało produktu", ean)
+                return null
+            }
             WebProductCard(
                 brand = card.brand.trim(),
                 name = card.name.trim(),
@@ -66,9 +71,20 @@ class OpenAiWebSearchClient(
                 confidence = card.confidence?.coerceIn(0.0, 1.0) ?: 0.0
             )
         } catch (e: Exception) {
-            log.warn("[PRODUCT_WEB] openai_search_failed ean={}: {}", ean, e.toString(), e)
+            // Pełny stack — „nie powiodło się" bez przyczyny nic nie mówi o 401/timeout/JSON.
+            log.warn("[PRODUCT_WEB] failed ean={}: {}", ean, e.toString(), e)
             null
         }
+    }
+
+    /**
+     * Model wyszukujący lubi dokleić przypisy źródeł poza JSON-em. Bierzemy blok od
+     * pierwszej `{` do ostatniej `}` zamiast wywracać się na parsowaniu całości.
+     */
+    private fun extractJson(raw: String): String {
+        val start = raw.indexOf('{')
+        val end = raw.lastIndexOf('}')
+        return if (start >= 0 && end > start) raw.substring(start, end + 1) else raw
     }
 
     internal data class SearchedCard(
@@ -95,7 +111,8 @@ ZASADY:
 - "confidence": 0.0–1.0. Wysoka (0.85+) tylko wtedy, gdy kilka niezależnych źródeł
   zgodnie przypisuje ten kod do tego samego produktu.
 - Jeśli wyszukiwanie nie wskazuje konkretnego produktu — puste pola i confidence 0.0.
-  NIE zgaduj i nie uzupełniaj z własnej wiedzy.
+  NIE zgaduj i nie uzupełniaj z własnej wiedzy. Zmyślona, wiarygodnie brzmiąca karta
+  jest gorsza niż jej brak: katalog jest współdzielony przez wszystkie warsztaty.
 """.trim()
     }
 }

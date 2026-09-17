@@ -31,10 +31,16 @@ enum class UnitOfMeasure(val displayName: String) {
 /** Skąd wzięły się dane w globalnym wierszu katalogu. */
 enum class ProductSource {
     MANUAL,   // wpisał człowiek
-    AI,       // model językowy + weryfikator (sama pamięć modelu, bez sieci)
-    WEB,      // dane z sieci (baza kodów / wyszukiwarka), ustrukturyzowane przez model
-    GS1,      // rejestr GS1 / GEPIR
-    CURATED   // moderacja platformy
+    WEB,      // wyszukiwanie w sieci (model z web_search_options)
+    CURATED,  // moderacja platformy
+
+    // ── Wartości HISTORYCZNE ────────────────────────────────────────────────
+    // Kroki, które te wartości zapisywały, już nie istnieją, ale wiersze zapisane
+    // wcześniej dalej siedzą w bazie (`source` to @Enumerated(STRING)). Usunięcie
+    // tych stałych wywaliłoby odczyt takiego wiersza — zostają jako etykiety
+    // pochodzenia, nie jako dostawcy.
+    AI,       // model pytany z pamięci (nie potrafił rozpoznać kodu — krok usunięty)
+    GS1       // rejestr GS1 / GEPIR (brak umowy licencyjnej — krok usunięty)
 }
 
 /**
@@ -78,7 +84,7 @@ data class PackageDimensions(
 data class Provenance(
     val source: ProductSource,
     val verificationLevel: VerificationLevel,
-    /** 0.0–1.0; wypełnione TYLKO dla [ProductSource.AI], w pozostałych null. */
+    /** 0.0–1.0; wypełnione TYLKO dla [ProductSource.WEB], w pozostałych null. */
     val confidence: Double?
 )
 
