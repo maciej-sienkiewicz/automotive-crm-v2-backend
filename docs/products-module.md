@@ -89,17 +89,33 @@ jest opisane w dokumencie kanonicznym §7 i §9.
 
 ## 3. Schemat bazy
 
-Flyway jest w tym repo **wyłączony** (`spring.flyway.enabled=false`), a schemat powstaje
-z encji (`spring.jpa.hibernate.ddl-auto=update`). Plik
-`src/main/resources/db/migration/V138__products_module.sql` jest więc **skryptem
-przeglądowym uruchamianym ręcznie** i zawiera wyłącznie to, czego Hibernate nie zrobi:
+Repo ma DWA tryby i migracja musi działać w obu:
+
+- **Lokalnie** (`application.properties`): `spring.flyway.enabled=false` +
+  `ddl-auto=update` — schemat tworzy Hibernate z encji, a plik migracji się NIE wykonuje.
+- **Wdrożenie** (`application-docker-props.properties`): `spring.flyway.enabled=true` +
+  `ddl-auto=validate` — **Flyway buduje schemat**, a Hibernate go tylko WERYFIKUJE.
+
+Dlatego `src/main/resources/db/migration/V138__products_module.sql` jest **pełną
+migracją tworzącą tabele** (`CREATE TABLE IF NOT EXISTS` dla products, product_studio,
+product_notes, product_ratings, visit_products, product_correction_proposals) —
+z kolumnami DOKŁADNIE jak w encjach, bo inaczej `validate` wywali start aplikacji.
+Poza tabelami niesie też:
 
 - indeksy częściowe i funkcyjne (`uq_products_gtin WHERE gtin IS NOT NULL`,
-  `uq_products_natural_key`, GIN po `to_tsvector`),
-- ograniczenia `CHECK` (kompletność pary cena/kierunek, zakres oceny, dodatnia ilość),
+  `uq_products_natural_key`, GIN po `to_tsvector`) — w trybie `validate` Hibernate ich
+  nie tworzy, więc muszą być w migracji;
+- ograniczenia `CHECK` (kompletność pary cena/kierunek, zakres oceny 1..5, dodatnia
+  wielkość opakowania, dozwolone stawki VAT z −1);
 - `COMMENT ON TABLE products` — zdanie wyjaśniające brak `studio_id`. To jedyna taka
   tabela w systemie i każdy przyszły przegląd bezpieczeństwa ma trafić na to wyjaśnienie
   w bazie, a nie szukać go w dokumentacji.
+
+**Numer migracji sprawdzaj sortowaniem wersji, nie `ls`** (`ls … | sort -V | tail -1`):
+`ls` stawia „V100" przed „V99", co raz już wygenerowało kolizję. `UniqueMigrationVersionsTest`
+pilnuje unikalności, a `StudioResetCoverageTest` — że każda nowa encja jest objęta
+„Wyczyść konto" (dane prywatne produktów czyści `StudioDataPurger`, globalny katalog jest
+świadomie zachowany).
 
 Pełny DDL: dokument kanoniczny §2.3.
 
