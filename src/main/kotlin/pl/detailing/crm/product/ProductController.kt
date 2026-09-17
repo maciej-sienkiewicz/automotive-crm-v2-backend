@@ -131,7 +131,8 @@ class ProductController(
                     packageSizeValue = r.spec.packageSizeValue.stripTrailingZeros().toPlainString(),
                     packageSizeUnit = r.spec.packageSizeUnit.name,
                     description = r.spec.description,
-                    provenance = ProvenanceDto(prov.source, prov.verificationLevel, prov.confidence)
+                    provenance = ProvenanceDto(prov.source, prov.verificationLevel, prov.confidence),
+                    sourceUrl = r.rawPayload
                 )
                 LookupResponse("RESOLVED", null, draft, draft.provenance)
             }

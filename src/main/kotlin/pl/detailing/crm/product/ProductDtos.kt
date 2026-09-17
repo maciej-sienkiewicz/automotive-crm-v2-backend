@@ -145,5 +145,11 @@ data class ProductDraft(
     val packageSizeValue: String,
     val packageSizeUnit: String,
     val description: String?,
-    val provenance: ProvenanceDto
+    val provenance: ProvenanceDto,
+    /**
+     * Adres źródła, z którego pochodzi rozpoznanie. Dokumentacja OpenAI wymaga, żeby
+     * źródła pokazane użytkownikowi były WIDOCZNE I KLIKALNE — dlatego cytowanie idzie
+     * aż do formularza, a nie kończy się w logu.
+     */
+    val sourceUrl: String? = null
 )

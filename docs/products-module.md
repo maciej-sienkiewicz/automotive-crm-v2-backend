@@ -212,32 +212,35 @@ Testy backendowe wymagane przed wydaniem (opis i uzasadnienie — dokument kanon
 - `ProductCostsVisibilityTest` — brak pól cenowych w JSON bez `PRODUCTS_COSTS`,
 - rozszerzenie istniejącego testu niezmienników katalogu uprawnień.
 
-### Model, który naprawdę szuka w internecie (krok 2 w WEB)
+### Wyszukiwanie: hostowane narzędzie `web_search` w Responses API
 
-Najczęstsze pytanie przy tym module: „czy jest model z trybem research?". Jest —
-i nie wymaga nowego dostawcy. Spring AI 1.0.0 wystawia `web_search_options` z
-Chat Completions (`OpenAiChatOptions.builder().webSearchOptions(...)`), więc wystarczy
-model z rodziny wyszukującej i ten sam `OPENAI_API_KEY`, którego używa reszta systemu:
+Rozpoznanie idzie przez **Responses API** z narzędziem `{"type": "web_search"}`, wołane
+**wprost po HTTP** — Spring AI 1.0.0 zna wyłącznie Chat Completions.
 
-```
-PRODUCT_WEB_OPENAI_SEARCH_ENABLED=true
-```
+Dlaczego nie Chat Completions: wyszukiwanie było tam dostępne tylko przez modele
+`gpt-4o-search-preview` / `gpt-4o-mini-search-preview`, które OpenAI **wycofało
+(shutdown 2026-07-23)**. Produkcja dostała `404 model_not_found`. Gdyby trzeba było
+zostać przy Chat Completions, ścieżką byłby `gpt-5-search-api` — ale wtedy odpadają
+filtry domen, pełna lista źródeł i kontrola dostępu do sieci.
 
-Czym to się różni od `crm.ai.product-lookup.model`: tamten klient odpowiada WYŁĄCZNIE
-z wag i dla realnego EAN-u oddaje pustkę (tablicy kod → produkt w wagach nie ma). Ten
-najpierw wykonuje wyszukiwanie, a potem odpowiada z tego, co znalazł.
+**Model nie musi być specjalny.** Narzędzie doczepia się do zwykłego modelu;
+dokumentacja wymienia `gpt-4.1` jako wspierany (kontekst wyszukiwania 128k), a ten jest
+już używany w tym systemie. To celowe: nie wiążemy się z nazwą modelu o krótkim życiu —
+dokładnie na tym wyłożyła się poprzednia wersja.
 
-Dwie pułapki, obie już obsłużone w `AiProductConfig.productWebSearchChatClient`:
+Trzy rzeczy, które trzeba zrobić dobrze:
 
-- **`temperature` jest zabroniona** dla modeli `*-search-preview` (błąd 400), więc tu jej
-  nie ustawiamy.
-- **`user_location`** ustawiamy na kraj studia (domyślnie `PL`). Oferty tego samego kodu
-  są lokalne; bez tego wyniki potrafią przyjść z innego rynku.
+- **`tool_choice: "required"`.** Przy `auto` wyszukiwanie jest OPCJONALNE i model może
+  odpowiedzieć z pamięci — a z pamięci nie mapuje EAN-u na produkt i oddaje pustkę.
+  `required` wymusza realne wyszukiwanie przed odpowiedzią.
+- **`user_location`** z dwuliterowym kodem kraju (domyślnie `PL`). Oferty tego samego
+  kodu są lokalne.
+- **Cytowania są wymogiem, nie ozdobą.** Dokumentacja: gdy pokazujesz użytkownikowi dane
+  z wyników wyszukiwania, źródła muszą być widoczne i klikalne. Dlatego `url_citation`
+  z adnotacji wędruje przez `ProductDraft.sourceUrl` aż do banera szkicu w formularzu.
 
-Modele wyszukujące nie gwarantują `response_format`, więc JSON wymuszamy instrukcją w
-treści promptu (`BeanOutputConverter.getFormat()`), a surową odpowiedź logujemy przed
-parsowaniem — tak samo jak w pozostałych krokach.
+Odpowiedź to LISTA pozycji: `web_search_call` (ślad wyszukiwania) i `message` z treścią
+w `content[].text` oraz adnotacjami w `content[].annotations`.
 
-**Czego NIE używać do tego zadania:** modeli „deep research". Są agentowe i liczą
-odpowiedź minutami, a tu człowiek stoi z telefonem nad opakowaniem. Do odczytu jednego
-kodu właściwe jest zwykłe wyszukiwanie, nie wielokrokowy research.
+**Czego NIE używamy:** deep research (`gpt-5.5` z wysokim reasoningiem). Liczy minutami
+i jest do wielostronicowych raportów — tu człowiek stoi z telefonem nad opakowaniem.
