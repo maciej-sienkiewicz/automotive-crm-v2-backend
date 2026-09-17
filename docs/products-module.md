@@ -91,7 +91,7 @@ jest opisane w dokumencie kanonicznym §7 i §9.
 
 Flyway jest w tym repo **wyłączony** (`spring.flyway.enabled=false`), a schemat powstaje
 z encji (`spring.jpa.hibernate.ddl-auto=update`). Plik
-`src/main/resources/db/migration/V100__products_module.sql` jest więc **skryptem
+`src/main/resources/db/migration/V138__products_module.sql` jest więc **skryptem
 przeglądowym uruchamianym ręcznie** i zawiera wyłącznie to, czego Hibernate nie zrobi:
 
 - indeksy częściowe i funkcyjne (`uq_products_gtin WHERE gtin IS NOT NULL`,

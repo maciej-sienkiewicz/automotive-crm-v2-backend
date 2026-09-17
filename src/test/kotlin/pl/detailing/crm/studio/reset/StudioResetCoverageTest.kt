@@ -45,6 +45,11 @@ class StudioResetCoverageTest {
         "AddOnEntity" to "globalny katalog dodatków",
         "SmsCreditPackageEntity" to "globalny cennik pakietów SMS",
         "VehicleSegmentEntity" to "globalne dane referencyjne segmentów pojazdów",
+        // Katalog produktów jest WSPÓŁDZIELONY między wszystkimi studiami (brak studio_id).
+        // Reset jednego studia nie może usunąć produktu, z którego korzystają inne — dane
+        // prywatne studia (nakładka, notatki, ocena, powiązania z wizytami) czyści
+        // StudioDataPurger krokiem „Produkty".
+        "ProductEntity" to "globalny katalog produktów współdzielony między studiami",
         // Wspólny cache odkrywania reklam: publiczne dane Meta kluczowane po frazie,
         // dzielone między wszystkimi najemcami — nie należą do żadnego studia. Reset
         // studia usuwa jego śledzenia obszaru (AdLocationTrackingEntity w StudioDataPurger),

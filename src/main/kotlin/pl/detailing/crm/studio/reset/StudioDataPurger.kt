@@ -333,6 +333,20 @@ class StudioDataPurger(
             deleteByStudio("EmployeeEntity", ctx)
         },
 
+        StudioResetStep("Produkty") { ctx ->
+            // Dane PRYWATNE studia w module produktów. Globalny katalog (ProductEntity)
+            // jest współdzielony między studiami i NIE jest tu ruszany — reset jednego
+            // studia nie może usunąć produktu, z którego korzystają inne. Osierocone
+            // wiersze katalogu (utworzone tylko przez to studio) zostają w katalogu jako
+            // dane referencyjne. Sesje skanowania żyją w Redisie z krótkim TTL — nie ma
+            // ich tu, bo nie są encjami JPA.
+            deleteByStudio("ProductCorrectionProposalEntity", ctx)
+            deleteByStudio("VisitProductEntity", ctx)
+            deleteByStudio("ProductNoteEntity", ctx)
+            deleteByStudio("ProductRatingEntity", ctx)
+            deleteByStudio("ProductStudioEntity", ctx)
+        },
+
         StudioResetStep("Pozostałe dane") { ctx ->
             deleteByStudio("DoorToDoorEntity", ctx)
             deleteByStudio("CallLogEntity", ctx)
