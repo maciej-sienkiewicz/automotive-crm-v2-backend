@@ -19,7 +19,7 @@ import java.util.UUID
  * VISITS_VIEW przez katalog uprawnień).
  */
 @RestController
-@RequestMapping("/api/v1/visits/{visitId}/products")
+@RequestMapping("/api/visits/{visitId}/products")
 @RequiresCapability(CapabilityKey.PRODUCTS_ACCESS)
 class VisitProductsController(
     private val visitProductService: VisitProductService
