@@ -189,6 +189,13 @@ class CommsController(
         return ResponseEntity.noContent().build()
     }
 
+    @PostMapping("/messages/{id}/unread")
+    fun markMessageUnread(@PathVariable id: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        readService.markUnreadFromCrm(principal.studioId.value, UUID.fromString(id))
+        return ResponseEntity.noContent().build()
+    }
+
     /** Wysyłka bez załączników — czysty JSON, jak dotychczas. */
     @PostMapping("/send", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun send(@RequestBody request: SendMailRequest): ResponseEntity<SendMailResponse> =

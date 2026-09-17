@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommOutboxStatus
+import pl.detailing.crm.comms.domain.CommOutboxType
 import java.time.Instant
 import java.util.UUID
 
@@ -217,4 +218,14 @@ interface CommOutboxRepository : JpaRepository<CommOutboxEntity, UUID> {
     @Modifying
     @Query("DELETE FROM CommOutboxEntity o WHERE o.status = :status AND o.createdAt < :before")
     fun deleteOldByStatus(@Param("status") status: CommOutboxStatus, @Param("before") before: Instant): Int
+
+    /** Identyfikatory wiadomości z zaległą komendą danego typu — reconcile ich nie rusza. */
+    @Query(
+        """SELECT o.messageId FROM CommOutboxEntity o
+           WHERE o.accountId = :accountId AND o.commandType = :type AND o.status = 'PENDING'"""
+    )
+    fun findPendingMessageIds(
+        @Param("accountId") accountId: UUID,
+        @Param("type") type: CommOutboxType
+    ): List<UUID>
 }
