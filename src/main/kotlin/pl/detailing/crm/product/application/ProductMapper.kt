@@ -45,6 +45,7 @@ class ProductMapper {
             verificationLevel = product.verificationLevel,
             confidence = product.sourceConfidence?.toDouble()
         ),
+        isPrivate = product.ownerStudioId != null,
         internalName = studio?.internalName,
         internalNote = studio?.internalNote,
         isFavourite = studio?.isFavourite ?: false,

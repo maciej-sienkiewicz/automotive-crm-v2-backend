@@ -75,9 +75,18 @@ class ProductVisitsController(
 ) {
     @GetMapping
     @RequiresPermission(Permission.PRODUCTS_VIEW)
-    fun list(@PathVariable productId: String): ResponseEntity<List<VisitProductBackref>> {
+    fun list(
+        @PathVariable productId: String,
+        @RequestParam(required = false, defaultValue = "") search: String,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int
+    ): ResponseEntity<ProductVisitUsagePage> {
         val principal = SecurityContextHelper.getCurrentUser()
-        return ResponseEntity.ok(visitProductService.listVisitIdsForProduct(principal.studioId, UUID.fromString(productId)))
+        return ResponseEntity.ok(
+            visitProductService.listVisitsForProduct(
+                principal.studioId, UUID.fromString(productId), search, page, limit
+            )
+        )
     }
 }
 

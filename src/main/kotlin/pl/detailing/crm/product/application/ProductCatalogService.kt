@@ -48,7 +48,7 @@ class ProductCatalogService(
     // ── Lista ──
     @Transactional(readOnly = true)
     fun list(studioId: StudioId, filter: ProductListFilter, canSeeCosts: Boolean): List<ProductListItem> {
-        val products = productRepository.search(filter.search.trim())
+        val products = productRepository.search(studioId.value, filter.search.trim())
         if (products.isEmpty()) return emptyList()
 
         val overlays = studioRepository
@@ -69,12 +69,30 @@ class ProductCatalogService(
             .toList()
     }
 
-    // ── Karta ──
-    @Transactional(readOnly = true)
-    fun get(studioId: StudioId, productId: UUID, canSeeCosts: Boolean): ProductResponse {
+    /**
+     * Wiersz widoczny dla tego studia: globalny albo prywatny TEGO studia.
+     *
+     * Wszystkie odczyty i edycje po `productId` idą przez tę funkcję. Bez niej znajomość
+     * UUID-a wystarczyłaby, żeby obcy najemca przeczytał cudzy prywatny wpis — filtr na
+     * liście nie broni dostępu po identyfikatorze.
+     */
+    private fun loadVisible(studioId: StudioId, productId: UUID): ProductEntity {
         val product = productRepository.findById(productId).orElseThrow {
             EntityNotFoundException("Produkt nie został znaleziony")
         }
+        val owner = product.ownerStudioId
+        if (owner != null && owner != studioId.value) {
+            // Ten sam komunikat co przy braku wiersza — cudzy prywatny produkt nie ma
+            // prawa zdradzić nawet tego, że istnieje.
+            throw EntityNotFoundException("Produkt nie został znaleziony")
+        }
+        return product
+    }
+
+    // ── Karta ──
+    @Transactional(readOnly = true)
+    fun get(studioId: StudioId, productId: UUID, canSeeCosts: Boolean): ProductResponse {
+        val product = loadVisible(studioId, productId)
         val overlay = studioRepository.findByStudioIdAndProductId(studioId.value, productId)
         val rating = ratingRepository.findByStudioIdAndProductId(studioId.value, productId)
         val noteCount = noteRepository.countActive(studioId.value, productId)
@@ -101,12 +119,17 @@ class ProductCatalogService(
         val sizeValue = req.packageSizeValue?.takeIf { it.isNotBlank() }?.let { parseSize(it) }
             ?: java.math.BigDecimal.ONE
 
-        val gtin = req.gtin?.takeIf { it.isNotBlank() }?.let { Gtin.parse(it) }
+        // Kod NIEPOPRAWNY traktujemy jak jego brak — `parseOrNull`, nie `parse`. Wpisanie
+        // literówki nie ma blokować zapisu produktu, ma tylko odebrać mu tożsamość.
+        val gtin = req.gtin?.takeIf { it.isNotBlank() }?.let { Gtin.parseOrNull(it) }
 
-        // Deduplikacja: kod, a gdy go nie ma — klucz naturalny.
+        // Bez poprawnego kodu wiersz NIE trafia do puli współdzielonej — zostaje prywatny.
+        val ownerStudioId = if (gtin == null) studioId.value else null
+
+        // Deduplikacja: kod, a gdy go nie ma — klucz naturalny w obrębie właściciela.
         val existing = when {
             gtin != null -> productRepository.findByGtin(gtin.value)
-            else -> productRepository.findByNaturalKey(brand, name, sizeValue, sizeUnit)
+            else -> productRepository.findByNaturalKey(studioId.value, brand, name, sizeValue, sizeUnit)
         }
         if (existing != null) {
             throw ConflictException("Produkt już istnieje w katalogu (id=${existing.id}).")
@@ -131,6 +154,7 @@ class ProductCatalogService(
             sourceConfidence = null,
             sourcePayload = null,
             resolvedAt = now,
+            ownerStudioId = ownerStudioId,
             createdByStudioId = studioId.value,
             createdBy = userId.value,
             createdAt = now,
@@ -151,7 +175,8 @@ class ProductCatalogService(
     }
 
     /**
-     * Zapisuje kartę rozpoznaną zewnętrznie (AI/GS1) do KATALOGU GLOBALNEGO i zwraca ją.
+     * Zapisuje kartę rozpoznaną w sieci i zwraca ją. Trafia do katalogu GLOBALNEGO tylko
+     * wtedy, gdy niesie poprawny kod — inaczej zostaje wierszem prywatnym studia.
      * Wywoływane, gdy front zatwierdza wynik lookup-u. Poziom weryfikacji bierze się ze
      * źródła — nic nie awansuje samo (§3.2).
      */
@@ -162,7 +187,8 @@ class ProductCatalogService(
         draft: ProductDraft,
         canSeeCosts: Boolean
     ): ProductResponse {
-        val gtin = draft.gtin?.let { Gtin.parse(it) }
+        // Jak przy tworzeniu ręcznym: bez poprawnego kodu wiersz zostaje PRYWATNY.
+        val gtin = draft.gtin?.let { Gtin.parseOrNull(it) }
         gtin?.let { productRepository.findByGtin(it.value) }?.let {
             // Wyścig: ktoś zapisał ten sam kod w międzyczasie — zwróć istniejący.
             return get(studioId, it.id, canSeeCosts)
@@ -188,6 +214,7 @@ class ProductCatalogService(
             sourceConfidence = draft.provenance.confidence?.let { BigDecimal.valueOf(it) },
             sourcePayload = null,
             resolvedAt = now,
+            ownerStudioId = if (gtin == null) studioId.value else null,
             createdByStudioId = studioId.value,
             createdBy = userId.value,
             createdAt = now,
@@ -210,9 +237,7 @@ class ProductCatalogService(
         req: UpdateProductRequest,
         canSeeCosts: Boolean
     ): UpdateOutcome {
-        val product = productRepository.findById(productId).orElseThrow {
-            EntityNotFoundException("Produkt nie został znaleziony")
-        }
+        val product = loadVisible(studioId, productId)
         // Jak przy tworzeniu: wymagana jest tylko nazwa, reszta ma sensowne domyślne.
         val unit = UnitOfMeasure.fromCode(req.unitOfMeasure) ?: product.unitOfMeasure
 
@@ -258,22 +283,17 @@ class ProductCatalogService(
         req: UpdateProductStudioRequest,
         canSeeCosts: Boolean
     ): ProductResponse {
-        productRepository.findById(productId).orElseThrow {
-            EntityNotFoundException("Produkt nie został znaleziony")
-        }
+        val product = loadVisible(studioId, productId)
         val overlay = upsertOverlay(studioId, userId, productId, req, canSeeCosts)
         val rating = ratingRepository.findByStudioIdAndProductId(studioId.value, productId)
         val noteCount = noteRepository.countActive(studioId.value, productId)
-        val product = productRepository.findById(productId).get()
         return mapper.toResponse(product, overlay, rating, noteCount, canSeeCosts)
     }
 
     // ── Potwierdzenie zgodności z etykietą → STUDIO_CONFIRMED ──
     @Transactional
     fun confirm(studioId: StudioId, userId: UserId, productId: UUID, canSeeCosts: Boolean): ProductResponse {
-        val product = productRepository.findById(productId).orElseThrow {
-            EntityNotFoundException("Produkt nie został znaleziony")
-        }
+        val product = loadVisible(studioId, productId)
         // Awans TYLKO w górę i tylko z akcji człowieka. CURATED/GS1 zostają jak są.
         if (product.verificationLevel == VerificationLevel.UNVERIFIED ||
             product.verificationLevel == VerificationLevel.AI_SUGGESTED

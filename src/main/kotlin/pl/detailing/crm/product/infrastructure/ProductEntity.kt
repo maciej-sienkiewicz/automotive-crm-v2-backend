@@ -12,14 +12,19 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Globalny wiersz katalogu — WSPÓŁDZIELONY między wszystkimi tenantami.
+ * Wiersz katalogu. Widoczność rozstrzyga [ownerStudioId], NIE brak `studio_id`:
  *
- * Brak kolumny `studio_id` jest tu jedynym takim wyjątkiem w całej bazie i jest
- * ZAMIERZONY: specyfikacja produktu (nazwa, marka, opakowanie) jest
- * obiektywna i drugie studio skanujące ten sam kod dostaje ją gotową. Dane prywatne
- * studia — cena, notatki, ocena, powiązania z wizytami — leżą w osobnych tabelach,
- * każda z własnym `studio_id`. Każdy przegląd bezpieczeństwa, który tu trafi, ma
- * przeczytać ten komentarz, zanim uzna brak `studio_id` za błąd.
+ *  - `ownerStudioId == null` — wiersz GLOBALNY, współdzielony między najemcami. Dotyczy
+ *    wyłącznie produktów z POPRAWNYM kodem kreskowym: GTIN jest kluczem tożsamości, więc
+ *    drugie studio skanujące ten sam kod dostaje gotową kartę.
+ *  - `ownerStudioId != null` — wiersz PRYWATNY tego studia. Tak lądują wpisy bez kodu
+ *    albo z kodem, który nie przeszedł sumy kontrolnej: „Pasta polerska" jednego studia
+ *    to nie musi być „Pasta polerska" drugiego, a literówka nie ma prawa rozlać się na
+ *    wszystkich najemców.
+ *
+ * Dane prywatne studia — cena, notatki, ocena, powiązania z wizytami — leżą w osobnych
+ * tabelach, każda z własnym `studio_id`. Każdy przegląd bezpieczeństwa, który tu trafi,
+ * ma przeczytać ten komentarz, zanim uzna brak `studio_id` za błąd.
  */
 @Entity
 @Table(
@@ -89,6 +94,17 @@ class ProductEntity(
 
     @Column(name = "resolved_at", columnDefinition = "timestamp with time zone")
     var resolvedAt: Instant?,
+
+    /**
+     * NULL = wiersz globalny, współdzielony (ma poprawny GTIN). Ustawione = wiersz
+     * PRYWATNY tego studia: bez kodu albo z kodem, który nie przeszedł sumy kontrolnej,
+     * więc bez jednoznacznej tożsamości.
+     *
+     * To NIE to samo co [createdByStudioId]: tamto mówi KTO ZAŁOŻYŁ (audyt), to mówi
+     * KTO WIDZI (dostęp). Każde zapytanie po katalogu musi to filtrować.
+     */
+    @Column(name = "owner_studio_id", columnDefinition = "uuid")
+    var ownerStudioId: UUID? = null,
 
     // Kto fizycznie założył wiersz. Do moderacji i cofania zatruć — NIGDY nie wychodzi
     // na zewnątrz: informacja, czym pracuje konkretne studio, jest wrażliwa.

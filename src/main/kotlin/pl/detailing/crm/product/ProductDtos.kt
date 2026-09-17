@@ -43,6 +43,12 @@ data class ProductResponse(
     val description: String?,
     val imageFileId: String?,
     val provenance: ProvenanceDto,
+    /**
+     * true = wiersz PRYWATNY tego studia (bez poprawnego kodu kreskowego), więc nie widzi
+     * go nikt inny. Front tłumaczy to człowiekowi — inaczej „czemu tego nie ma u kolegi"
+     * jest zagadką.
+     */
+    val isPrivate: Boolean,
     // ── Nakładka studia ──
     val internalName: String?,
     val internalNote: String?,

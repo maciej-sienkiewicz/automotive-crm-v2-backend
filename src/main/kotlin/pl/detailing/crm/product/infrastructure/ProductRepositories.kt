@@ -20,13 +20,14 @@ interface ProductRepository : JpaRepository<ProductEntity, UUID> {
 
     /**
      * Klucz zapasowy dla produktów bez kodu kreskowego (chemia luzem): znormalizowana
-     * (marka, nazwa, wielkość opakowania). Bez tego dziesięć studiów zrobiłoby dziesięć
-     * „Pasta polerska 1kg".
+     * (marka, nazwa, wielkość opakowania) W OBRĘBIE WŁAŚCICIELA. Wiersze bez kodu są
+     * prywatne, więc dwa studia mogą mieć własną „Pastę polerską 1kg" — to nie kolizja.
      */
     @Query(
         """
         SELECT p FROM ProductEntity p
         WHERE p.gtin IS NULL
+          AND p.ownerStudioId = :ownerStudioId
           AND LOWER(p.brand) = LOWER(:brand)
           AND LOWER(p.name) = LOWER(:name)
           AND p.packageSizeValue = :sizeValue
@@ -34,6 +35,7 @@ interface ProductRepository : JpaRepository<ProductEntity, UUID> {
         """
     )
     fun findByNaturalKey(
+        @Param("ownerStudioId") ownerStudioId: UUID,
         @Param("brand") brand: String,
         @Param("name") name: String,
         @Param("sizeValue") sizeValue: java.math.BigDecimal,
@@ -42,20 +44,23 @@ interface ProductRepository : JpaRepository<ProductEntity, UUID> {
 
     /**
      * Lista katalogu: proste, wielkoliterowo-niewrażliwe wyszukiwanie po marce/nazwie/
-     * producencie. Indeks GIN z V100 obsługuje pełnotekst; to zapytanie jest wariantem
-     * `LIKE` używanym, gdy szukajka jest krótka. Wycofane wiersze pomijamy.
+     * nazwie. Widoczność: wiersze globalne + prywatne TEGO studia. Wycofane pomijamy.
      */
     @Query(
         """
         SELECT p FROM ProductEntity p
         WHERE p.isWithdrawn = false
+          AND (p.ownerStudioId IS NULL OR p.ownerStudioId = :studioId)
           AND (:search = '' OR
                LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
                LOWER(p.brand) LIKE LOWER(CONCAT('%', :search, '%')) OR
                p.gtin LIKE CONCAT('%', :search, '%'))
         """
     )
-    fun search(@Param("search") search: String): List<ProductEntity>
+    fun search(@Param("studioId") studioId: UUID, @Param("search") search: String): List<ProductEntity>
+
+    /** Prywatne wiersze studia — kasowane przy „Wyczyść konto". */
+    fun findByOwnerStudioId(ownerStudioId: UUID): List<ProductEntity>
 }
 
 // Alias żeby zapytanie JPQL po enumie było czytelne w sygnaturze repo.
