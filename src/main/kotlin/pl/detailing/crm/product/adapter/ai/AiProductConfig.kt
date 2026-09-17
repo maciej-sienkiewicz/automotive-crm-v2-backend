@@ -25,7 +25,7 @@ class AiProductConfig {
     @Bean("productLookupChatClient")
     fun productLookupChatClient(
         builder: ChatClient.Builder,
-        @Value("\${crm.ai.product-lookup.model:gpt-4o-mini}") model: String
+        @Value("\${crm.ai.product-lookup.model:gpt-4.1}") model: String
     ): ChatClient =
         builder.defaultOptions(
             OpenAiChatOptions.builder().model(model).temperature(0.0).build()
@@ -34,7 +34,7 @@ class AiProductConfig {
     @Bean("productVerifierChatClient")
     fun productVerifierChatClient(
         builder: ChatClient.Builder,
-        @Value("\${crm.ai.product-lookup.verifier-model:gpt-4o-mini}") model: String
+        @Value("\${crm.ai.product-lookup.verifier-model:gpt-4.1-mini}") model: String
     ): ChatClient =
         builder.defaultOptions(
             OpenAiChatOptions.builder().model(model).temperature(0.0).build()

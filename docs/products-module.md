@@ -129,17 +129,23 @@ Nazewnictwo idzie za istniejącą konwencją `crm.ai.*` z `application.propertie
 # ── Rozpoznawanie produktu po kodzie ────────────────────────────────────────
 # Kolejność łańcucha. Zmiana na LOCAL,GS1,AI nie wymaga deployu kodu.
 crm.products.resolution.order=LOCAL,AI,GS1
+# Próg trafienia PEWNEGO (auto-RESOLVED bez zejścia niżej).
 crm.products.resolution.ai-min-confidence=0.90
+# Próg SZKICU: poniżej ai-min-confidence, a ≥ tego progu, odczyt AI wraca jako szkic do
+# ręcznego potwierdzenia zamiast NOT_FOUND (łagodne zejście). 0.0 = pokaż każdą kartę,
+# którą model faktycznie wypisał. Patrz ProductResolutionService.
+crm.products.resolution.ai-draft-min-confidence=0.0
 crm.products.lookup.rate-limit.per-day=100
 crm.products.lookup.negative-cache-ttl-days=7
 crm.products.lookup.ai-timeout-ms=8000
 crm.products.lookup.gs1-timeout-ms=5000
 
 # Model odczytu: fakt, nie twórczość — temperatura 0 jak w pozostałych odczytach.
-crm.ai.product-lookup.model=${PRODUCT_LOOKUP_MODEL:gpt-4o-mini}
-# Model weryfikatora: niezależny krytyk „czy na pewno ta karta należy do tego kodu".
-# Może tylko OBNIŻYĆ zaufanie; „nie" spycha wynik poniżej progu i łańcuch schodzi do GS1.
-crm.ai.product-lookup.verifier-model=${PRODUCT_LOOKUP_VERIFIER_MODEL:gpt-4o-mini}
+# Odczyt po kodzie to zadanie na WIEDZĘ modelu, więc czytnik jest mocniejszy.
+crm.ai.product-lookup.model=${PRODUCT_LOOKUP_MODEL:gpt-4.1}
+# Model weryfikatora: niezależny, MNIEJSZY krytyk „czy na pewno ta karta należy do tego
+# kodu". Może tylko OBNIŻYĆ zaufanie — jego „nie" spycha wynik poniżej progu pewności.
+crm.ai.product-lookup.verifier-model=${PRODUCT_LOOKUP_VERIFIER_MODEL:gpt-4.1-mini}
 
 # ── GS1 ─────────────────────────────────────────────────────────────────────
 # Bez umowy licencyjnej zostaw enabled=false — moduł działa, traci tylko krok 3.
@@ -155,6 +161,16 @@ crm.products.scan-session.max-codes-per-minute=60
 
 **Prompt do LLM dostaje wyłącznie GTIN.** Nigdy nazwy studia, klienta ani kontekstu
 wizyty — to jest wymóg bezpieczeństwa, nie optymalizacja tokenów.
+
+**Zachowanie „łagodne" (decyzja produktowa).** GTIN to numer, którego model nie mapuje
+pewnie na produkt, więc trzymanie sztywnego progu 0,90 przy wyłączonym GS1 dawało w
+praktyce zawsze `NOT_FOUND`. Dlatego odczyt poniżej progu nie jest wyrzucany: łańcuch
+najpierw próbuje kolejnych dostawców, a gdy żaden nie da pewnej karty, oddaje najlepszy
+odczyt AI jako **SZKIC** (`RESOLVED`, poziom `AI_SUGGESTED`, jawnie niska pewność). Front
+pokazuje go w formularzu z banerem „sprawdź z etykietą". To NIE jest wpis do katalogu —
+nic nie zapisuje się samo i nic nie awansuje na „zweryfikowane" bez człowieka; szkic
+znika, jeśli operator go nie zatwierdzi. Czytnik jest mocniejszym modelem, weryfikator
+mniejszym i niezależnym (`ai-draft-min-confidence` odsiewa najmniej pewne odczyty).
 
 ---
 

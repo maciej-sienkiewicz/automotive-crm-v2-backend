@@ -18,13 +18,24 @@ import pl.detailing.crm.product.domain.PackageDimensions
 import pl.detailing.crm.product.domain.ProductSource
 import pl.detailing.crm.product.domain.UnitOfMeasure
 import pl.detailing.crm.product.domain.ProductSpec
+import pl.detailing.crm.product.domain.VerificationLevel
 import pl.detailing.crm.product.port.ProductLookupResult
+import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertNotNull
 import java.math.BigDecimal
 
 /**
- * Łańcuch rozpoznawania: LOCAL → AI (z progiem 0,90) → GS1. Kluczowy niezmiennik
- * punktu 2 wymagania: pewność AI < progu SCHODZI do GS1; nierozpoznany kod NIE zapisuje
- * niczego zmyślonego.
+ * Łańcuch rozpoznawania: LOCAL → AI (próg 0,90) → GS1.
+ *
+ * Niezmienniki:
+ *  - AI ≥ progu to trafienie pewne (RESOLVED),
+ *  - AI < progu najpierw PRÓBUJE kolejnych dostawców; gdy któryś (np. GS1) ma dane, to one
+ *    wygrywają nad szkicem,
+ *  - gdy żaden dostawca nie ma pewnej karty, oddajemy najlepszy odczyt AI jako SZKIC
+ *    (RESOLVED, poziom AI_SUGGESTED, niska pewność) do ręcznego potwierdzenia — łagodne
+ *    zejście zamiast NOT_FOUND. To NIE jest wpis do katalogu: nic się nie zapisuje samo,
+ *    nic nie awansuje na „zweryfikowane". Kod bez żadnego odczytu (puste pola / null) dalej
+ *    daje NOT_FOUND i niczego nie zmyśla.
  */
 class ProductResolutionChainTest {
 
@@ -49,9 +60,10 @@ class ProductResolutionChainTest {
         imageFileId = null
     )
 
-    private fun service() = ProductResolutionService(
+    private fun service(draftFloor: Double = 0.0) = ProductResolutionService(
         local = local, ai = ai, gs1 = gs1, redisTemplate = redis,
-        orderRaw = "LOCAL,AI,GS1", aiMinConfidence = 0.90, negativeCacheTtlDays = 7
+        orderRaw = "LOCAL,AI,GS1", aiMinConfidence = 0.90,
+        aiDraftMinConfidence = draftFloor, negativeCacheTtlDays = 7
     )
 
     private fun baseStubs() {
@@ -105,12 +117,41 @@ class ProductResolutionChainTest {
     }
 
     @Test
-    fun `AI below threshold and no GS1 does not fabricate a product`() = runBlocking {
+    fun `AI below threshold with no GS1 is surfaced as a draft, not fabricated as verified`() = runBlocking {
         baseStubs()
         coEvery { ai.findByGtin(any()) } returns ProductLookupResult(spec("AI"), ProductSource.AI, 0.50, null)
         every { gs1.enabled } returns false
 
         val r = service().resolve(GTIN)
+        // Łagodne zejście: szkic do potwierdzenia — RESOLVED, ale jawnie niepewny.
+        assertEquals(ProductResolution.Status.RESOLVED, r.status)
+        assertNotNull(r.result)
+        assertEquals(ProductSource.AI, r.result!!.source)
+        assertEquals(0.50, r.result!!.confidence)
+        // Kluczowe: to NIE jest trafienie lokalne i NIE awansuje na zweryfikowane.
+        assertEquals(VerificationLevel.AI_SUGGESTED, r.verificationLevel())
+    }
+
+    @Test
+    fun `a returned draft is not negatively cached`() = runBlocking {
+        baseStubs()
+        coEvery { ai.findByGtin(any()) } returns ProductLookupResult(spec("AI"), ProductSource.AI, 0.50, null)
+        every { gs1.enabled } returns false
+
+        service().resolve(GTIN)
+        // Kod, który dał szkic, ma znów pokazać kartę przy kolejnym skanie — nie wpisujemy
+        // go do negatywnego cache jako „miss".
+        verify(exactly = 0) { valueOps.set(any(), any(), any<java.time.Duration>()) }
+    }
+
+    @Test
+    fun `AI below the draft floor is dropped and yields NOT_FOUND`() = runBlocking {
+        baseStubs()
+        coEvery { ai.findByGtin(any()) } returns ProductLookupResult(spec("AI"), ProductSource.AI, 0.30, null)
+        every { gs1.enabled } returns false
+
+        // Z podniesionym progiem szkicu najmniej pewne odczyty są odsiewane.
+        val r = service(draftFloor = 0.40).resolve(GTIN)
         assertEquals(ProductResolution.Status.NOT_FOUND, r.status)
     }
 }

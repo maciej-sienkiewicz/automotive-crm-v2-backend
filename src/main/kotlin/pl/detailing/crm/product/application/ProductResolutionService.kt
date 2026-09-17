@@ -20,12 +20,21 @@ import java.time.Duration
  * Łańcuch rozpoznawania produktu po kodzie: LOKALNY → AI (z weryfikatorem) → GS1.
  *
  * Kolejność i próg pewności są KONFIGURACJĄ, nie kodem (`crm.products.resolution.*`),
- * więc zmiana na LOCAL,GS1,AI to jedna właściwość, bez deployu. Wynik AI schodzi do GS1
- * dopiero poniżej progu (domyślnie 0,90) — dokładnie jak w punkcie 2 wymagania.
+ * więc zmiana na LOCAL,GS1,AI to jedna właściwość, bez deployu. Wynik AI powyżej progu
+ * (domyślnie 0,90) jest trafieniem pewnym; poniżej progu łańcuch najpierw próbuje kolejnych
+ * dostawców (np. GS1), a gdy żaden nie da pewnego trafienia, oddaje najlepszą kartę AI jako
+ * SZKIC do ręcznego potwierdzenia — zamiast NOT_FOUND.
  *
- * Trafienie lokalne jest darmowym cache'em (sam katalog globalny). Nierozpoznane kody
- * lądują w negatywnym cache w Redisie, żeby każdy kolejny skan tego samego śmiecia nie
- * płacił za odpytanie zewnętrzne.
+ * To „łagodniejsze" zachowanie jest świadome: GTIN to numer, którego model nie potrafi
+ * pewnie zmapować na produkt, więc zamiast wyrzucać jego najlepszy odczyt, pokazujemy go
+ * człowiekowi z jawnie niską pewnością (`AI_SUGGESTED`) i banerem „sprawdź z etykietą".
+ * Nic nie zapisuje się samo i nic nie awansuje na „zweryfikowane" bez człowieka —
+ * niezmiennik „nie zmyślamy produktu do katalogu" pozostaje: szkic to nie wpis.
+ *
+ * Trafienie lokalne jest darmowym cache'em (sam katalog globalny). Kody, dla których NIC
+ * nie mamy (nawet szkicu), lądują w negatywnym cache w Redisie, żeby każdy kolejny skan
+ * tego samego śmiecia nie płacił za odpytanie zewnętrzne. Kodu, który dał szkic, NIE
+ * cache'ujemy jako „miss" — kolejny skan ma znów pokazać kartę do potwierdzenia.
  */
 @Service
 class ProductResolutionService(
@@ -35,7 +44,8 @@ class ProductResolutionService(
     private val redisTemplate: StringRedisTemplate,
     @Value("\${crm.products.resolution.order:LOCAL,AI,GS1}") private val orderRaw: String,
     @Value("\${crm.products.resolution.ai-min-confidence:0.90}") private val aiMinConfidence: Double,
-    @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long
+    @Value("\${crm.products.resolution.ai-draft-min-confidence:0.0}") private val aiDraftMinConfidence: Double = 0.0,
+    @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long = 7
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -62,6 +72,10 @@ class ProductResolutionService(
             return ProductResolution.notFound(gtin)
         }
 
+        // Najlepszy kandydat AI poniżej progu — trzymamy go na wypadek, gdyby żaden pewny
+        // dostawca nie odpowiedział; wtedy oddamy go jako szkic zamiast NOT_FOUND.
+        var bestDraft: ProductLookupResult? = null
+
         for (name in order) {
             if (name == "LOCAL") continue // już sprawdzony wyżej
             val result = runProvider(name, gtin) ?: continue
@@ -72,15 +86,27 @@ class ProductResolutionService(
                     return ProductResolution.resolved(result)
                 } else {
                     log.info(
-                        "[PRODUCT_LOOKUP] ai_below_threshold gtin={} confidence={} < {} — schodzę dalej",
+                        "[PRODUCT_LOOKUP] ai_below_threshold gtin={} confidence={} < {} — próbuję dalej, zachowuję jako szkic",
                         gtin, result.confidence, aiMinConfidence
                     )
+                    if (result.confidence >= aiDraftMinConfidence &&
+                        (bestDraft == null || result.confidence > bestDraft!!.confidence)
+                    ) {
+                        bestDraft = result
+                    }
                 }
                 else -> {
                     log.info("[PRODUCT_LOOKUP] {}_hit gtin={}", name.lowercase(), gtin)
                     return ProductResolution.resolved(result)
                 }
             }
+        }
+
+        // Żaden dostawca nie dał pewnego trafienia. Jeśli AI ma sensowny odczyt, oddajemy
+        // go jako SZKIC do potwierdzenia (łagodne zejście) — inaczej dopiero NOT_FOUND.
+        bestDraft?.let {
+            log.info("[PRODUCT_LOOKUP] ai_draft_returned gtin={} confidence={}", gtin, it.confidence)
+            return ProductResolution.resolved(it)
         }
 
         markNegative(gtin)
