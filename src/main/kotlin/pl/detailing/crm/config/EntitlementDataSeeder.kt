@@ -110,33 +110,39 @@ class EntitlementDataSeeder(
     // ─── Catalog sync ─────────────────────────────────────────────────────────
 
     private fun syncFeatures(): Map<FeatureKey, FeatureEntity> {
-        val catalog = mapOf(
-            FeatureKey.CALENDAR             to "Kalendarz wizyt i zarządzanie rezerwacjami",
-            FeatureKey.VISITS               to "Zarządzanie wizytami z pełną historią",
-            FeatureKey.CUSTOMERS            to "Baza danych klientów",
-            FeatureKey.VEHICLES             to "Rejestr pojazdów",
-            FeatureKey.DOCUMENTS            to "Dokumenty i protokoły",
-            FeatureKey.GALLERY              to "Galeria zdjęć",
-            FeatureKey.AI_LEADS             to "Asystent AI przy obsłudze leadów",
-            FeatureKey.INSTAGRAM_MONITORING to "Monitoring konkurencji na Instagramie",
-            FeatureKey.SMS_EMAIL            to "Automatyzacja kontaktu z klientem poprzez SMS oraz e-mail",
-            FeatureKey.CAMPAIGNS            to "Kampanie marketingowe SMS oraz e-mail",
-            FeatureKey.E_SIGNATURES         to "Podpisy elektroniczne dokumentów",
-            FeatureKey.FINANCE              to "Kontrola nad finansami (dokumenty finansowe, kasy)",
-            FeatureKey.STATISTICS           to "Statystyki i raporty"
-        )
-
-        return catalog.map { (key, description) ->
+        // Kluczowane po FeatureKey.values(), NIE ręczną listą: seeder jest źródłem prawdy
+        // dla całego katalogu (plan FULL to features.values.toSet(), każdy dodatek celuje
+        // w jedną cechę). Gdy nowa cecha wpadła do enuma, a nie do ręcznej mapy, aplikacja
+        // wywalała się dopiero przy starcie na features.getValue(...) — deploy, nie build.
+        // Wyczerpujące `when` bez `else` przenosi ten błąd na etap kompilacji.
+        return FeatureKey.values().associateWith { key ->
+            val description = descriptionFor(key)
             val existing = featureRepo.findByKey(key)
-            val entity = if (existing != null) {
+            if (existing != null) {
                 existing.name = key.displayName
                 existing.description = description
                 featureRepo.save(existing)
             } else {
                 featureRepo.save(FeatureEntity(key = key, name = key.displayName, description = description))
             }
-            key to entity
-        }.toMap()
+        }
+    }
+
+    private fun descriptionFor(key: FeatureKey): String = when (key) {
+        FeatureKey.CALENDAR             -> "Kalendarz wizyt i zarządzanie rezerwacjami"
+        FeatureKey.VISITS               -> "Zarządzanie wizytami z pełną historią"
+        FeatureKey.CUSTOMERS            -> "Baza danych klientów"
+        FeatureKey.VEHICLES             -> "Rejestr pojazdów"
+        FeatureKey.DOCUMENTS            -> "Dokumenty i protokoły"
+        FeatureKey.GALLERY              -> "Galeria zdjęć"
+        FeatureKey.AI_LEADS             -> "Asystent AI przy obsłudze leadów"
+        FeatureKey.INSTAGRAM_MONITORING -> "Monitoring konkurencji na Instagramie"
+        FeatureKey.SMS_EMAIL            -> "Automatyzacja kontaktu z klientem poprzez SMS oraz e-mail"
+        FeatureKey.CAMPAIGNS            -> "Kampanie marketingowe SMS oraz e-mail"
+        FeatureKey.E_SIGNATURES         -> "Podpisy elektroniczne dokumentów"
+        FeatureKey.FINANCE              -> "Kontrola nad finansami (dokumenty finansowe, kasy)"
+        FeatureKey.STATISTICS           -> "Statystyki i raporty"
+        FeatureKey.PRODUCTS             -> "Katalog produktów studia z danymi z kodu kreskowego, notatkami i oceną zespołu"
     }
 
     private fun syncPlans(features: Map<FeatureKey, FeatureEntity>) {
