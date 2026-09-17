@@ -39,4 +39,19 @@ class AiProductConfig {
         builder.defaultOptions(
             OpenAiChatOptions.builder().model(model).temperature(0.0).build()
         ).build()
+
+    /**
+     * ODCZYT KODU ZE ZDJĘCIA ([barcodeImageChatClient]) — model wizyjny czyta cyfry
+     * wydrukowane pod kreskami. To zapas na przeglądarki i kadry, których dekoder w
+     * przeglądarce nie odczyta; wzorzec 1:1 z odczytem VIN ze zdjęcia
+     * (`batchorder/vin/VinExtractionAiConfig`). Temperatura 0 — odczyt, nie twórczość.
+     */
+    @Bean("barcodeImageChatClient")
+    fun barcodeImageChatClient(
+        builder: ChatClient.Builder,
+        @Value("\${crm.ai.product-lookup.image-model:gpt-4.1}") model: String
+    ): ChatClient =
+        builder.defaultOptions(
+            OpenAiChatOptions.builder().model(model).temperature(0.0).build()
+        ).build()
 }

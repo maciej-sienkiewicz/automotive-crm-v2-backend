@@ -15,7 +15,7 @@ import java.util.UUID
  * Globalny wiersz katalogu — WSPÓŁDZIELONY między wszystkimi tenantami.
  *
  * Brak kolumny `studio_id` jest tu jedynym takim wyjątkiem w całej bazie i jest
- * ZAMIERZONY: specyfikacja produktu (nazwa, marka, producent, opakowanie) jest
+ * ZAMIERZONY: specyfikacja produktu (nazwa, marka, opakowanie) jest
  * obiektywna i drugie studio skanujące ten sam kod dostaje ją gotową. Dane prywatne
  * studia — cena, notatki, ocena, powiązania z wizytami — leżą w osobnych tabelach,
  * każda z własnym `studio_id`. Każdy przegląd bezpieczeństwa, który tu trafi, ma
@@ -45,9 +45,6 @@ class ProductEntity(
 
     @Column(name = "brand", nullable = false, length = 120)
     var brand: String,
-
-    @Column(name = "manufacturer_name", nullable = false, length = 200)
-    var manufacturerName: String,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "unit_of_measure", nullable = false, length = 10)
@@ -120,7 +117,6 @@ class ProductEntity(
         gtin = gtin,
         name = name,
         brand = brand,
-        manufacturerName = manufacturerName,
         unitOfMeasure = unitOfMeasure,
         packageSizeValue = packageSizeValue,
         packageSizeUnit = packageSizeUnit,

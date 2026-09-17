@@ -51,7 +51,6 @@ class ProductResolutionChainTest {
         gtin = "05901234123457",
         name = "Powłoka $source",
         brand = "TestBrand",
-        manufacturerName = "TestBrand",
         unitOfMeasure = UnitOfMeasure.ML,
         packageSizeValue = BigDecimal("50"),
         packageSizeUnit = UnitOfMeasure.ML,

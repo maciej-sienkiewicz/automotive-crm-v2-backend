@@ -2,9 +2,12 @@ package pl.detailing.crm.product
 
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.product.adapter.ai.BarcodeImageExtractionService
 import pl.detailing.crm.product.application.ProductCatalogService
 import pl.detailing.crm.product.application.ProductListFilter
 import pl.detailing.crm.product.application.ProductResolutionService
@@ -32,6 +35,7 @@ import java.util.UUID
 class ProductController(
     private val catalogService: ProductCatalogService,
     private val resolutionService: ProductResolutionService,
+    private val barcodeImageExtractionService: BarcodeImageExtractionService,
     private val noteService: ProductNoteService,
     private val ratingService: ProductRatingService,
     private val permissionCheckService: PermissionCheckService
@@ -123,7 +127,6 @@ class ProductController(
                     gtin = r.spec.gtin,
                     name = r.spec.name,
                     brand = r.spec.brand,
-                    manufacturerName = r.spec.manufacturerName,
                     unitOfMeasure = r.spec.unitOfMeasure.name,
                     packageSizeValue = r.spec.packageSizeValue.stripTrailingZeros().toPlainString(),
                     packageSizeUnit = r.spec.packageSizeUnit.name,
@@ -145,6 +148,23 @@ class ProductController(
         return catalogService.list(principal.studioId, ProductListFilter(search = gtin), canSeeCosts())
             .firstOrNull { it.gtin == gtin }?.id?.let(UUID::fromString)
             ?: throw pl.detailing.crm.shared.EntityNotFoundException("Produkt zniknął z katalogu")
+    }
+
+    /**
+     * Odczyt cyfr kodu ZE ZDJĘCIA (zapas, gdy dekoder w przeglądarce nie odczyta kadru).
+     * Zwraca sam GTIN — front woła potem zwykły lookup, żeby ścieżka rozpoznania była
+     * jedna. Wzorzec 1:1 z `POST /batch-orders/vin/extract`.
+     */
+    @PostMapping("/barcode/extract", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun extractBarcode(@RequestParam("image") image: MultipartFile): ResponseEntity<BarcodeExtractResponse> = runBlocking {
+        if (image.isEmpty || image.size > MAX_BARCODE_IMAGE_BYTES) {
+            return@runBlocking ResponseEntity.badRequest().body(BarcodeExtractResponse(null))
+        }
+        val contentType = image.contentType?.takeIf { it.startsWith("image/") }
+            ?: return@runBlocking ResponseEntity.badRequest().body(BarcodeExtractResponse(null))
+        val gtin = barcodeImageExtractionService.extractGtin(image.bytes, contentType)
+        ResponseEntity.ok(BarcodeExtractResponse(gtin?.value))
     }
 
     /** Zapis karty rozpoznanej zewnętrznie do katalogu (front zatwierdza wynik lookup-u). */
@@ -263,3 +283,7 @@ data class ProductPaginationInfo(
 
 data class AddNoteRequest(val content: String, val visitId: String? = null)
 data class SetRatingRequest(val rating: Int, val justification: String? = null)
+data class BarcodeExtractResponse(val gtin: String?)
+
+/** Front skaluje zdjęcie do ~1600 px przed wysyłką; 8 MB to zapas na telefon bez skalowania. */
+const val MAX_BARCODE_IMAGE_BYTES: Long = 8L * 1024 * 1024

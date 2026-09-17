@@ -1,10 +1,16 @@
 package pl.detailing.crm.product.scan
 
+import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.product.MAX_BARCODE_IMAGE_BYTES
+import pl.detailing.crm.product.adapter.ai.BarcodeImageExtractionService
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
@@ -46,12 +52,14 @@ class ProductScanController(
 /**
  * Sesja skanowania od strony TELEFONU. Trasa PUBLICZNA (bez logowania), autoryzacja
  * wyłącznie po jednorazowym `handoffToken` z kodu QR. Endpointy przyjmują wyłącznie kody
- * kreskowe — nie ma tu żadnej ścieżki do danych studia poza jego nazwą na ekranie.
+ * kreskowe (albo zdjęcie, z którego czytamy same cyfry kodu) — nie ma tu żadnej ścieżki
+ * do danych studia poza jego nazwą na ekranie.
  */
 @RestController
 @RequestMapping("/api/mobile/products/scan")
 class MobileProductScanController(
-    private val scanSessionService: ProductScanSessionService
+    private val scanSessionService: ProductScanSessionService,
+    private val barcodeImageExtractionService: BarcodeImageExtractionService
 ) {
     @GetMapping("/{handoffToken}")
     fun context(@PathVariable handoffToken: String): ResponseEntity<MobileScanContext> {
@@ -79,7 +87,45 @@ class MobileProductScanController(
             )
         )
     }
+
+    /**
+     * Zapas: telefon nie odczytał kodu dekoderem w przeglądarce, więc wysyła ZDJĘCIE, a
+     * cyfry czyta model wizyjny (jak przy VIN). Kod przechodzi tę samą walidację i ten
+     * sam `submitCodes`, co skan na żywo. Sesja musi być OTWARTA, zanim zapłacimy za
+     * wywołanie modelu — token z wygasłej sesji nie może generować kosztów.
+     */
+    @PostMapping("/{handoffToken}/photo", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun submitPhoto(
+        @PathVariable handoffToken: String,
+        @RequestParam("image") image: MultipartFile
+    ): ResponseEntity<MobilePhotoScanResponse> = runBlocking {
+        val session = scanSessionService.resolveByToken(handoffToken)
+        if (session.status != "OPEN") throw ValidationException("Sesja skanowania jest już zamknięta.")
+        if (image.isEmpty || image.size > MAX_BARCODE_IMAGE_BYTES) {
+            throw ValidationException("Zdjęcie jest puste albo za duże.")
+        }
+        val contentType = image.contentType?.takeIf { it.startsWith("image/") }
+            ?: throw ValidationException("Oczekiwano pliku obrazu.")
+
+        val gtin = barcodeImageExtractionService.extractGtin(image.bytes, contentType)
+        val updated = if (gtin != null) scanSessionService.submitCodes(handoffToken, listOf(gtin.value)) else session
+        ResponseEntity.ok(
+            MobilePhotoScanResponse(
+                gtin = gtin?.value,
+                status = updated.status,
+                scannedCount = updated.scannedCodes.size,
+                expiresAt = updated.expiresAt
+            )
+        )
+    }
 }
+
+data class MobilePhotoScanResponse(
+    val gtin: String?,
+    val status: String,
+    val scannedCount: Int,
+    val expiresAt: String
+)
 
 data class ScanSessionResponse(
     val sessionId: String,

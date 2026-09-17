@@ -116,7 +116,6 @@ class ProductCatalogService(
             gtin = gtin?.value,
             name = name,
             brand = brand,
-            manufacturerName = req.manufacturerName?.trim()?.ifBlank { null } ?: brand,
             unitOfMeasure = unit,
             packageSizeValue = sizeValue,
             packageSizeUnit = sizeUnit,
@@ -175,7 +174,6 @@ class ProductCatalogService(
             gtin = gtin?.value,
             name = draft.name.trim(),
             brand = draft.brand.trim(),
-            manufacturerName = draft.manufacturerName.trim(),
             unitOfMeasure = unit,
             packageSizeValue = parseSize(draft.packageSizeValue),
             packageSizeUnit = sizeUnit,
@@ -232,7 +230,6 @@ class ProductCatalogService(
 
         product.name = req.name.trim()
         product.brand = req.brand.trim()
-        product.manufacturerName = req.manufacturerName?.trim()?.ifBlank { null } ?: product.brand
         product.unitOfMeasure = unit
         product.packageSizeUnit = UnitOfMeasure.fromCode(req.packageSizeUnit) ?: unit
         product.packageSizeValue = parseSize(req.packageSizeValue)

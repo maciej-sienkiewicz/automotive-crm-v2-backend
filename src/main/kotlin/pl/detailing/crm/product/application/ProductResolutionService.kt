@@ -45,7 +45,9 @@ class ProductResolutionService(
     @Value("\${crm.products.resolution.order:LOCAL,AI,GS1}") private val orderRaw: String,
     @Value("\${crm.products.resolution.ai-min-confidence:0.90}") private val aiMinConfidence: Double,
     @Value("\${crm.products.resolution.ai-draft-min-confidence:0.0}") private val aiDraftMinConfidence: Double = 0.0,
-    @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long = 7
+    @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long = 7,
+    // Część klucza negatywnego cache — patrz [negativeKey].
+    @Value("\${crm.ai.product-lookup.model:gpt-4.1}") private val lookupModel: String = "gpt-4.1"
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -59,16 +61,23 @@ class ProductResolutionService(
      */
     suspend fun resolve(barcode: String): ProductResolution {
         val gtin = Gtin.parse(barcode)
+        log.info(
+            "[PRODUCT_LOOKUP] start barcode='{}' gtin={} order={} aiMin={} draftMin={} model={}",
+            barcode, gtin.value, order, aiMinConfidence, aiDraftMinConfidence, lookupModel
+        )
 
         // Krok 0.5: negatywny cache — kod, którego nikt nie zna, nie jest odpytywany
         // ponownie przy każdym skanie. Trafienie lokalne go omija (może się pojawił).
         val localHit = runProvider("LOCAL", gtin)
         if (localHit != null) {
-            log.debug("[PRODUCT_LOOKUP] local_hit gtin={}", gtin)
+            log.info("[PRODUCT_LOOKUP] local_hit gtin={}", gtin.value)
             return ProductResolution.found(localHit, fromLocalCatalog = true)
         }
         if (isNegativelyCached(gtin)) {
-            log.debug("[PRODUCT_LOOKUP] negative_cache gtin={}", gtin)
+            // INFO, nie DEBUG: to jest najczęstsza przyczyna „nadal NOT_FOUND" po zmianie
+            // modelu/progów — bez tej linii w logach produkcyjnych nie widać, że LLM w ogóle
+            // nie został zapytany.
+            log.info("[PRODUCT_LOOKUP] negative_cache_hit gtin={} key={} — pomijam dostawców zewnętrznych", gtin.value, negativeKey(gtin))
             return ProductResolution.notFound(gtin)
         }
 
@@ -109,6 +118,7 @@ class ProductResolutionService(
             return ProductResolution.resolved(it)
         }
 
+        log.info("[PRODUCT_LOOKUP] not_found gtin={} — żaden dostawca nie dał karty ani szkicu; zapisuję negatywny cache", gtin.value)
         markNegative(gtin)
         return ProductResolution.notFound(gtin)
     }
@@ -129,7 +139,14 @@ class ProductResolutionService(
         null
     }
 
-    private fun negativeKey(gtin: Gtin) = "product:lookup:miss:${gtin.value}"
+    /**
+     * Klucz zawiera NAZWĘ MODELU odczytu. „Miss" jest wnioskiem konkretnego modelu, nie
+     * faktem o kodzie: po przejściu na mocniejszy model stare wpisy przestają pasować i
+     * kod jest pytany od nowa. Bez tego zmiana modelu nie miałaby żadnego efektu przez
+     * cały TTL (7 dni) dla wszystkich już zeskanowanych kodów — dokładnie taki objaw
+     * zgłoszono z produkcji.
+     */
+    private fun negativeKey(gtin: Gtin) = "product:lookup:miss:$lookupModel:${gtin.value}"
 
     private fun isNegativelyCached(gtin: Gtin): Boolean = try {
         redisTemplate.hasKey(negativeKey(gtin))

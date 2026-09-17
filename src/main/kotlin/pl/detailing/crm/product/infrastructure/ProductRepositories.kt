@@ -52,7 +52,6 @@ interface ProductRepository : JpaRepository<ProductEntity, UUID> {
           AND (:search = '' OR
                LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
                LOWER(p.brand) LIKE LOWER(CONCAT('%', :search, '%')) OR
-               LOWER(p.manufacturerName) LIKE LOWER(CONCAT('%', :search, '%')) OR
                p.gtin LIKE CONCAT('%', :search, '%'))
         """
     )

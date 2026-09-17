@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.converter.BeanOutputConverter
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import pl.detailing.crm.product.domain.Gtin
@@ -24,11 +25,19 @@ import java.math.BigDecimal
  * Wynikowa pewność jest iloczynem dwóch sygnałów:
  *   1. `confidence` zadeklarowana przez model odczytu,
  *   2. binarny werdykt weryfikatora (`matches`); gdy weryfikator mówi „nie", pewność
- *      spada do 0 i łańcuch schodzi do GS1 — niezależnie od tego, jak pewny był
- *      pierwszy model.
+ *      spada do 0,5 i wynik nie przejdzie progu pewności — może co najwyżej wrócić
+ *      jako szkic do ręcznego potwierdzenia (patrz ProductResolutionService).
  *
  * Do modelu NIE trafia nic poza kodem: ani nazwa studia, ani klient, ani wizyta.
  * To wymóg bezpieczeństwa, nie oszczędność tokenów.
+ *
+ * LOGOWANIE. Każde wywołanie loguje na INFO pod tagiem `[PRODUCT_AI]` DOKŁADNY prompt
+ * (system + user, razem z instrukcją formatu, którą dokleja konwerter) i SUROWĄ odpowiedź
+ * modelu, zanim cokolwiek zostanie sparsowane. Bez tego „NOT_FOUND" z produkcji jest
+ * nie do zdiagnozowania: nie wiadomo, czy model nie zna kodu (puste pola), czy zwrócił
+ * coś nieparsowalnego, czy wywołanie w ogóle nie doszło. Dlatego składamy prompt ręcznie
+ * przez [BeanOutputConverter] zamiast `.entity()` — `.entity()` ukrywa surowy tekst.
+ * W promptcie jest wyłącznie GTIN, więc te logi nie niosą danych osobowych.
  */
 @Component
 class AiProductProvider(
@@ -43,13 +52,23 @@ class AiProductProvider(
 
     override suspend fun findByGtin(gtin: Gtin): ProductLookupResult? = withContext(Dispatchers.IO) {
         val raw = readCard(gtin) ?: return@withContext null
-        if (raw.name.isNullOrBlank() || raw.brand.isNullOrBlank()) return@withContext null
+        if (raw.name.isNullOrBlank() || raw.brand.isNullOrBlank()) {
+            log.info(
+                "[PRODUCT_AI] read_empty gtin={} — model nie zna tego kodu (name='{}', brand='{}', confidence={}); oddaję null",
+                gtin.value, raw.name, raw.brand, raw.confidence
+            )
+            return@withContext null
+        }
 
         val declared = raw.confidence?.coerceIn(0.0, 1.0) ?: 0.0
         val verdict = verify(gtin, raw)
         // Weryfikator zewnętrzny może tylko OBNIŻYĆ zaufanie, nigdy go podnieść:
         // „nie jestem pewny" znaczy „na pewno nie ≥90%".
         val confidence = if (verdict?.matches == true) declared else minOf(declared, 0.5)
+        log.info(
+            "[PRODUCT_AI] result gtin={} declared={} verifierMatches={} finalConfidence={} name='{}' brand='{}'",
+            gtin.value, declared, verdict?.matches, confidence, raw.name, raw.brand
+        )
 
         val unit = UnitOfMeasure.fromCode(raw.unitOfMeasure) ?: UnitOfMeasure.PIECE
         val sizeUnit = UnitOfMeasure.fromCode(raw.packageSizeUnit) ?: unit
@@ -57,7 +76,6 @@ class AiProductProvider(
             gtin = gtin.value,
             name = raw.name.trim(),
             brand = raw.brand.trim(),
-            manufacturerName = raw.manufacturerName?.trim()?.ifBlank { null } ?: raw.brand.trim(),
             unitOfMeasure = unit,
             packageSizeValue = raw.packageSizeValue?.let { runCatching { BigDecimal(it) }.getOrNull() }
                 ?.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE,
@@ -74,42 +92,70 @@ class AiProductProvider(
         ProductLookupResult(spec = spec, source = ProductSource.AI, confidence = confidence, rawPayload = payload)
     }
 
-    private fun readCard(gtin: Gtin): RawCard? = try {
-        lookupClient.prompt()
-            .system(READ_SYSTEM_PROMPT)
-            .user("Kod kreskowy (GTIN-14): ${gtin.value}")
-            .call()
-            .entity(RawCard::class.java)
-    } catch (e: Exception) {
-        log.warn("[PRODUCT_AI] Odczyt karty po GTIN {} nie powiódł się: {}", gtin, e.message)
-        null
+    private fun readCard(gtin: Gtin): RawCard? {
+        val converter = BeanOutputConverter(RawCard::class.java)
+        val userPrompt = "Kod kreskowy (GTIN-14): ${gtin.value}\n\n${converter.format}"
+        log.info(
+            "[PRODUCT_AI] read_request gtin={}\n--- SYSTEM ---\n{}\n--- USER ---\n{}",
+            gtin.value, READ_SYSTEM_PROMPT, userPrompt
+        )
+        return try {
+            val raw = lookupClient.prompt()
+                .system(READ_SYSTEM_PROMPT)
+                .user(userPrompt)
+                .call()
+                .content()
+            log.info("[PRODUCT_AI] read_response gtin={}\n--- RAW ---\n{}", gtin.value, raw)
+            if (raw.isNullOrBlank()) {
+                log.warn("[PRODUCT_AI] read_blank gtin={} — model zwrócił pustą treść", gtin.value)
+                return null
+            }
+            val card = converter.convert(raw)
+            log.info("[PRODUCT_AI] read_parsed gtin={} card={}", gtin.value, card)
+            card
+        } catch (e: Exception) {
+            // Pełny stack — „nie powiodło się" bez przyczyny nic nie mówi o 401/timeout/JSON.
+            log.warn("[PRODUCT_AI] read_failed gtin={}: {}", gtin.value, e.toString(), e)
+            null
+        }
     }
 
-    private fun verify(gtin: Gtin, card: RawCard): Verdict? = try {
-        verifierClient.prompt()
-            .system(VERIFY_SYSTEM_PROMPT)
-            .user(
-                """
-                GTIN: ${gtin.value}
-                Proponowana karta:
-                - marka: ${card.brand}
-                - nazwa: ${card.name}
-                - producent: ${card.manufacturerName ?: "?"}
-                - opakowanie: ${card.packageSizeValue ?: "?"} ${card.packageSizeUnit ?: ""}
-                """.trimIndent()
-            )
-            .call()
-            .entity(Verdict::class.java)
-    } catch (e: Exception) {
-        log.warn("[PRODUCT_AI] Weryfikacja GTIN {} nie powiodła się: {}", gtin, e.message)
-        null
+    private fun verify(gtin: Gtin, card: RawCard): Verdict? {
+        val converter = BeanOutputConverter(Verdict::class.java)
+        val userPrompt = """
+            GTIN: ${gtin.value}
+            Proponowana karta:
+            - marka: ${card.brand}
+            - nazwa: ${card.name}
+            - opakowanie: ${card.packageSizeValue ?: "?"} ${card.packageSizeUnit ?: ""}
+
+            ${converter.format}
+        """.trimIndent()
+        log.info(
+            "[PRODUCT_AI] verify_request gtin={}\n--- SYSTEM ---\n{}\n--- USER ---\n{}",
+            gtin.value, VERIFY_SYSTEM_PROMPT, userPrompt
+        )
+        return try {
+            val raw = verifierClient.prompt()
+                .system(VERIFY_SYSTEM_PROMPT)
+                .user(userPrompt)
+                .call()
+                .content()
+            log.info("[PRODUCT_AI] verify_response gtin={}\n--- RAW ---\n{}", gtin.value, raw)
+            if (raw.isNullOrBlank()) return null
+            val verdict = converter.convert(raw)
+            log.info("[PRODUCT_AI] verify_parsed gtin={} verdict={}", gtin.value, verdict)
+            verdict
+        } catch (e: Exception) {
+            log.warn("[PRODUCT_AI] verify_failed gtin={}: {}", gtin.value, e.toString(), e)
+            null
+        }
     }
 
     /** Surowy odczyt modelu. Structured output gwarantuje kształt. */
     internal data class RawCard(
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("brand") val brand: String? = null,
-        @JsonProperty("manufacturerName") val manufacturerName: String? = null,
         @JsonProperty("unitOfMeasure") val unitOfMeasure: String? = null,
         @JsonProperty("packageSizeValue") val packageSizeValue: String? = null,
         @JsonProperty("packageSizeUnit") val packageSizeUnit: String? = null,

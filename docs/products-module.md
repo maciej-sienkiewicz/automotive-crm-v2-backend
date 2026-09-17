@@ -146,6 +146,9 @@ crm.ai.product-lookup.model=${PRODUCT_LOOKUP_MODEL:gpt-4.1}
 # Model weryfikatora: niezależny, MNIEJSZY krytyk „czy na pewno ta karta należy do tego
 # kodu". Może tylko OBNIŻYĆ zaufanie — jego „nie" spycha wynik poniżej progu pewności.
 crm.ai.product-lookup.verifier-model=${PRODUCT_LOOKUP_VERIFIER_MODEL:gpt-4.1-mini}
+# Model WIZYJNY do odczytu cyfr kodu ze zdjęcia — zapas, gdy dekoder w przeglądarce
+# (natywny BarcodeDetector albo ZXing w JS) nie odczyta kadru. Wzorzec z odczytu VIN.
+crm.ai.product-lookup.image-model=${PRODUCT_LOOKUP_IMAGE_MODEL:gpt-4.1}
 
 # ── GS1 ─────────────────────────────────────────────────────────────────────
 # Bez umowy licencyjnej zostaw enabled=false — moduł działa, traci tylko krok 3.

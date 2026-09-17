@@ -89,7 +89,6 @@ data class ProductSpec(
     val gtin: String?,
     val name: String,
     val brand: String,
-    val manufacturerName: String,
     val unitOfMeasure: UnitOfMeasure,
     val packageSizeValue: java.math.BigDecimal,
     val packageSizeUnit: UnitOfMeasure,
