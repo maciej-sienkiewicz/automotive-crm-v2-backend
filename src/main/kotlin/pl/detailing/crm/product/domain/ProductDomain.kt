@@ -31,7 +31,8 @@ enum class UnitOfMeasure(val displayName: String) {
 /** Skąd wzięły się dane w globalnym wierszu katalogu. */
 enum class ProductSource {
     MANUAL,   // wpisał człowiek
-    AI,       // model językowy + weryfikator
+    AI,       // model językowy + weryfikator (sama pamięć modelu, bez sieci)
+    WEB,      // dane z sieci (baza kodów / wyszukiwarka), ustrukturyzowane przez model
     GS1,      // rejestr GS1 / GEPIR
     CURATED   // moderacja platformy
 }

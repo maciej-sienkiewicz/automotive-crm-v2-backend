@@ -23,6 +23,7 @@ pl.detailing.crm.product/
 ├── adapter/
 │   ├── local/LocalCatalogProvider.kt
 │   ├── ai/AiProductProvider.kt       + AiProductConfig (ChatClient, temperature = 0.0)
+│   ├── web/WebProductProvider.kt     OpenFacts + wyszukiwarka -> ekstrakcja LLM
 │   └── gs1/Gs1ProductProvider.kt     + GepirFallbackProvider
 ├── application/
 │   └── ProductResolutionService.kt   łańcuch, limity, cache, negatywny cache
@@ -127,8 +128,8 @@ Nazewnictwo idzie za istniejącą konwencją `crm.ai.*` z `application.propertie
 
 ```properties
 # ── Rozpoznawanie produktu po kodzie ────────────────────────────────────────
-# Kolejność łańcucha. Zmiana na LOCAL,GS1,AI nie wymaga deployu kodu.
-crm.products.resolution.order=LOCAL,AI,GS1
+# Kolejność łańcucha. WEB (dane z sieci) przed AI — model nie ma dostępu do internetu.
+crm.products.resolution.order=LOCAL,WEB,AI,GS1
 # Próg trafienia PEWNEGO (auto-RESOLVED bez zejścia niżej).
 crm.products.resolution.ai-min-confidence=0.90
 # Próg SZKICU: poniżej ai-min-confidence, a ≥ tego progu, odczyt AI wraca jako szkic do
@@ -139,6 +140,18 @@ crm.products.lookup.rate-limit.per-day=100
 crm.products.lookup.negative-cache-ttl-days=7
 crm.products.lookup.ai-timeout-ms=8000
 crm.products.lookup.gs1-timeout-ms=5000
+
+# ── Dane z sieci (krok WEB) ─────────────────────────────────────────────────
+# 1) Otwarte bazy kodów — DARMOWE, bez klucza.
+crm.products.web.openfacts.enabled=true
+crm.products.web.openfacts.hosts=world.openfoodfacts.org,world.openbeautyfacts.org,world.openproductsfacts.org
+# 2) Wyszukiwarka — WYMAGA klucza, więc domyślnie NONE. GOOGLE (key+cx) albo BRAVE (key).
+crm.products.web.search.provider=${PRODUCT_WEB_SEARCH_PROVIDER:NONE}
+crm.products.web.search.google.key=${PRODUCT_WEB_SEARCH_GOOGLE_KEY:}
+crm.products.web.search.google.cx=${PRODUCT_WEB_SEARCH_GOOGLE_CX:}
+crm.products.web.search.brave.key=${PRODUCT_WEB_SEARCH_BRAVE_KEY:}
+crm.products.web.search.max-results=8
+crm.products.web.timeout-ms=5000
 
 # Model odczytu: fakt, nie twórczość — temperatura 0 jak w pozostałych odczytach.
 # Odczyt po kodzie to zadanie na WIEDZĘ modelu, więc czytnik jest mocniejszy.
@@ -164,6 +177,32 @@ crm.products.scan-session.max-codes-per-minute=60
 
 **Prompt do LLM dostaje wyłącznie GTIN.** Nigdy nazwy studia, klienta ani kontekstu
 wizyty — to jest wymóg bezpieczeństwa, nie optymalizacja tokenów.
+
+**Dlaczego doszedł krok WEB (i dlaczego sam model nie wystarczy).** Model językowy
+**nie ma dostępu do internetu** — odpowiada wyłącznie z wag, a tablicy EAN → produkt w
+nich nie ma. Zapytany o `5902806493015` uczciwie zwraca `confidence: 0.0` i puste pola
+(zgodnie z „NIE ZGADUJ”), choć ten sam kod w wyszukiwarce zwraca dziesiątki ofert.
+Brakującym ogniwem nie był mocniejszy model, tylko DOSTĘP DO DANYCH. Stąd krok WEB przed AI:
+
+1. **Otwarte bazy kodów** (Open Food / Beauty / Products Facts) — darmowe, bez klucza,
+   dane gotowe do użycia. Włączone domyślnie.
+2. **Wyszukiwarka + ekstrakcja** — tytuły i fragmenty wyników trafiają do modelu jako
+   KONTEKST, z którego ma wydobyć markę, nazwę i pojemność. To zadanie, w którym model
+   jest mocny i sprawdzalny (fragmenty są w logu obok odpowiedzi). Wymaga klucza
+   (Google Programmable Search albo Brave), więc domyślnie `provider=NONE`.
+
+Krok AI zostaje jako ostatnia szansa dla kodów, których w sieci nie ma.
+
+**Kod wychodzi na zewnątrz w postaci DRUKOWANEJ.** Wewnątrz katalog kluczujemy GTIN-em-14
+(inaczej EAN-13 i UPC-A tego samego produktu rozjechałyby się na dwa wiersze), ale do
+wyszukiwarki, do API baz kodów i do promptu modelu idzie `Gtin.displayValue` — bez
+wiodących zer. `05902806493015` nie znajduje niczego; `5902806493015` znajduje produkt.
+Pilnuje tego `GtinDisplayValueTest`.
+
+**Negatywny cache ma sygnaturę łańcucha** (kolejność dostawców + model + włączone źródła
+sieciowe). Miss jest wnioskiem konkretnej konfiguracji, nie faktem o kodzie: bez tego
+każda poprawka rozpoznawania była niewidoczna przez 7 dni dla wszystkich już zeskanowanych
+kodów, bo `isNegativelyCached` ucinał zapytanie przed wywołaniem dostawców.
 
 **Zachowanie „łagodne" (decyzja produktowa).** GTIN to numer, którego model nie mapuje
 pewnie na produkt, więc trzymanie sztywnego progu 0,90 przy wyłączonym GS1 dawało w

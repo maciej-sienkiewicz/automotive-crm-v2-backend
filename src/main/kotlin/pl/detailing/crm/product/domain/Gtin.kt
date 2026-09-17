@@ -19,6 +19,27 @@ value class Gtin private constructor(val value: String) {
 
     override fun toString(): String = value
 
+    /**
+     * Postać, w jakiej kod jest DRUKOWANY i w jakiej zna go reszta świata: bez wiodących
+     * zer dopełniających do 14 (EAN-13 / UPC-A / EAN-8).
+     *
+     * To nie kosmetyka. Wewnętrznie kluczujemy katalog GTIN-em-14, bo tylko tak ten sam
+     * produkt z EAN-13 i UPC-A trafia w jeden wiersz. Ale NA ZEWNĄTRZ — do wyszukiwarki,
+     * do sklepowych API i do promptu modelu — trzeba wysłać dokładnie ten ciąg, który
+     * widnieje pod kreskami. „05902806493015" nie znajduje niczego; „5902806493015"
+     * znajduje produkt w każdym sklepie.
+     */
+    val displayValue: String
+        get() {
+            val stripped = value.trimStart('0')
+            return when {
+                stripped.length <= 8 -> value.takeLast(8)
+                stripped.length <= 12 -> value.takeLast(12)
+                stripped.length <= 13 -> value.takeLast(13)
+                else -> value
+            }
+        }
+
     companion object {
         private val DIGITS = Regex("^[0-9]+$")
 

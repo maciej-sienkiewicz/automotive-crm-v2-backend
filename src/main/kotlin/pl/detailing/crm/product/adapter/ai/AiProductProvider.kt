@@ -94,7 +94,7 @@ class AiProductProvider(
 
     private fun readCard(gtin: Gtin): RawCard? {
         val converter = BeanOutputConverter(RawCard::class.java)
-        val userPrompt = "Kod kreskowy (GTIN-14): ${gtin.value}\n\n${converter.format}"
+        val userPrompt = "Kod kreskowy (EAN): ${gtin.displayValue}\n\n${converter.format}"
         log.info(
             "[PRODUCT_AI] read_request gtin={}\n--- SYSTEM ---\n{}\n--- USER ---\n{}",
             gtin.value, READ_SYSTEM_PROMPT, userPrompt
@@ -123,7 +123,7 @@ class AiProductProvider(
     private fun verify(gtin: Gtin, card: RawCard): Verdict? {
         val converter = BeanOutputConverter(Verdict::class.java)
         val userPrompt = """
-            GTIN: ${gtin.value}
+            EAN: ${gtin.displayValue}
             Proponowana karta:
             - marka: ${card.brand}
             - nazwa: ${card.name}

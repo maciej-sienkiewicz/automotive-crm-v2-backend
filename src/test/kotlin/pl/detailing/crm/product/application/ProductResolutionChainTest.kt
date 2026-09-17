@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.ValueOperations
 import pl.detailing.crm.product.adapter.ai.AiProductProvider
 import pl.detailing.crm.product.adapter.gs1.Gs1ProductProvider
 import pl.detailing.crm.product.adapter.local.LocalCatalogProvider
+import pl.detailing.crm.product.adapter.web.WebProductProvider
 import pl.detailing.crm.product.domain.Gtin
 import pl.detailing.crm.product.domain.PackageDimensions
 import pl.detailing.crm.product.domain.ProductSource
@@ -42,6 +43,7 @@ class ProductResolutionChainTest {
     private val local = mockk<LocalCatalogProvider>()
     private val ai = mockk<AiProductProvider>()
     private val gs1 = mockk<Gs1ProductProvider>()
+    private val web = mockk<WebProductProvider>()
     private val redis = mockk<StringRedisTemplate>(relaxed = true)
     private val valueOps = mockk<ValueOperations<String, String>>(relaxed = true)
 
@@ -60,7 +62,7 @@ class ProductResolutionChainTest {
     )
 
     private fun service(draftFloor: Double = 0.0) = ProductResolutionService(
-        local = local, ai = ai, gs1 = gs1, redisTemplate = redis,
+        local = local, ai = ai, web = web, gs1 = gs1, redisTemplate = redis,
         orderRaw = "LOCAL,AI,GS1", aiMinConfidence = 0.90,
         aiDraftMinConfidence = draftFloor, negativeCacheTtlDays = 7
     )
@@ -71,6 +73,9 @@ class ProductResolutionChainTest {
         every { valueOps.set(any(), any(), any<java.time.Duration>()) } just Runs
         every { ai.enabled } returns true
         every { gs1.enabled } returns true
+        // Ten test pilnuje bramek AI/GS1; krok WEB ma własny test.
+        every { web.enabled } returns false
+        every { web.sourcesSignature } returns "of=false|s=NONE"
         coEvery { local.findByGtin(any()) } returns null
     }
 
@@ -141,6 +146,45 @@ class ProductResolutionChainTest {
         // Kod, który dał szkic, ma znów pokazać kartę przy kolejnym skanie — nie wpisujemy
         // go do negatywnego cache jako „miss".
         verify(exactly = 0) { valueOps.set(any(), any(), any<java.time.Duration>()) }
+    }
+
+    @Test
+    fun `WEB is tried before AI and a confident web hit wins`() = runBlocking {
+        baseStubs()
+        every { web.enabled } returns true
+        coEvery { web.findByGtin(any()) } returns ProductLookupResult(spec("WEB"), ProductSource.WEB, 0.95, null)
+        coEvery { ai.findByGtin(any()) } returns ProductLookupResult(spec("AI"), ProductSource.AI, 0.99, null)
+
+        val r = ProductResolutionService(
+            local = local, ai = ai, web = web, gs1 = gs1, redisTemplate = redis,
+            orderRaw = "LOCAL,WEB,AI,GS1", aiMinConfidence = 0.90,
+            aiDraftMinConfidence = 0.0, negativeCacheTtlDays = 7
+        ).resolve(GTIN)
+
+        // Dane z sieci biją pamięć modelu: model nie ma dostępu do internetu i dla realnego
+        // kodu i tak oddałby pustkę — kolejność LOCAL,WEB,AI jest tu istotą naprawy.
+        assertEquals(ProductResolution.Status.RESOLVED, r.status)
+        assertEquals(ProductSource.WEB, r.result!!.source)
+        assertEquals(VerificationLevel.AI_SUGGESTED, r.verificationLevel())
+    }
+
+    @Test
+    fun `WEB below threshold falls through to AI but is kept as a draft`() = runBlocking {
+        baseStubs()
+        every { web.enabled } returns true
+        every { gs1.enabled } returns false
+        coEvery { web.findByGtin(any()) } returns ProductLookupResult(spec("WEB"), ProductSource.WEB, 0.60, null)
+        coEvery { ai.findByGtin(any()) } returns null
+
+        val r = ProductResolutionService(
+            local = local, ai = ai, web = web, gs1 = gs1, redisTemplate = redis,
+            orderRaw = "LOCAL,WEB,AI,GS1", aiMinConfidence = 0.90,
+            aiDraftMinConfidence = 0.0, negativeCacheTtlDays = 7
+        ).resolve(GTIN)
+
+        assertEquals(ProductResolution.Status.RESOLVED, r.status)
+        assertEquals(ProductSource.WEB, r.result!!.source)
+        assertEquals(0.60, r.result!!.confidence)
     }
 
     @Test

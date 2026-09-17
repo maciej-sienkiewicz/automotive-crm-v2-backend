@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.product.adapter.ai.AiProductProvider
 import pl.detailing.crm.product.adapter.gs1.Gs1ProductProvider
 import pl.detailing.crm.product.adapter.local.LocalCatalogProvider
+import pl.detailing.crm.product.adapter.web.WebProductProvider
 import pl.detailing.crm.product.domain.Gtin
 import pl.detailing.crm.product.domain.ProductSource
 import pl.detailing.crm.product.domain.Provenance
@@ -17,7 +18,12 @@ import pl.detailing.crm.shared.ValidationException
 import java.time.Duration
 
 /**
- * Łańcuch rozpoznawania produktu po kodzie: LOKALNY → AI (z weryfikatorem) → GS1.
+ * Łańcuch rozpoznawania produktu po kodzie: LOKALNY → WEB → AI (z weryfikatorem) → GS1.
+ *
+ * WEB jest przed AI świadomie: model językowy NIE MA dostępu do internetu i nie pamięta
+ * tablicy EAN → produkt, więc dla realnego kodu oddaje pustkę. Dane z sieci (otwarte bazy
+ * kodów, wyniki wyszukiwarki) są tym, czego mu brakuje; AI zostaje krokiem ostatniej
+ * szansy dla kodów, których w sieci nie ma.
  *
  * Kolejność i próg pewności są KONFIGURACJĄ, nie kodem (`crm.products.resolution.*`),
  * więc zmiana na LOCAL,GS1,AI to jedna właściwość, bez deployu. Wynik AI powyżej progu
@@ -40,9 +46,10 @@ import java.time.Duration
 class ProductResolutionService(
     private val local: LocalCatalogProvider,
     private val ai: AiProductProvider,
+    private val web: WebProductProvider,
     private val gs1: Gs1ProductProvider,
     private val redisTemplate: StringRedisTemplate,
-    @Value("\${crm.products.resolution.order:LOCAL,AI,GS1}") private val orderRaw: String,
+    @Value("\${crm.products.resolution.order:LOCAL,WEB,AI,GS1}") private val orderRaw: String,
     @Value("\${crm.products.resolution.ai-min-confidence:0.90}") private val aiMinConfidence: Double,
     @Value("\${crm.products.resolution.ai-draft-min-confidence:0.0}") private val aiDraftMinConfidence: Double = 0.0,
     @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long = 7,
@@ -62,8 +69,8 @@ class ProductResolutionService(
     suspend fun resolve(barcode: String): ProductResolution {
         val gtin = Gtin.parse(barcode)
         log.info(
-            "[PRODUCT_LOOKUP] start barcode='{}' gtin={} order={} aiMin={} draftMin={} model={}",
-            barcode, gtin.value, order, aiMinConfidence, aiDraftMinConfidence, lookupModel
+            "[PRODUCT_LOOKUP] start barcode='{}' gtin={} ean={} order={} aiMin={} draftMin={} model={} webSources={}",
+            barcode, gtin.value, gtin.displayValue, order, aiMinConfidence, aiDraftMinConfidence, lookupModel, web.sourcesSignature
         )
 
         // Krok 0.5: negatywny cache — kod, którego nikt nie zna, nie jest odpytywany
@@ -90,13 +97,15 @@ class ProductResolutionService(
             val result = runProvider(name, gtin) ?: continue
 
             when (name) {
-                "AI" -> if (result.confidence >= aiMinConfidence) {
-                    log.info("[PRODUCT_LOOKUP] ai_hit gtin={} confidence={}", gtin, result.confidence)
+                // WEB i AI niosą PEWNOŚĆ, więc podlegają progowi. Rejestry (GS1) nie —
+                // tam trafienie jest trafieniem.
+                "AI", "WEB" -> if (result.confidence >= aiMinConfidence) {
+                    log.info("[PRODUCT_LOOKUP] {}_hit gtin={} confidence={}", name.lowercase(), gtin.value, result.confidence)
                     return ProductResolution.resolved(result)
                 } else {
                     log.info(
-                        "[PRODUCT_LOOKUP] ai_below_threshold gtin={} confidence={} < {} — próbuję dalej, zachowuję jako szkic",
-                        gtin, result.confidence, aiMinConfidence
+                        "[PRODUCT_LOOKUP] {}_below_threshold gtin={} confidence={} < {} — próbuję dalej, zachowuję jako szkic",
+                        name.lowercase(), gtin.value, result.confidence, aiMinConfidence
                     )
                     if (result.confidence >= aiDraftMinConfidence &&
                         (bestDraft == null || result.confidence > bestDraft!!.confidence)
@@ -127,6 +136,7 @@ class ProductResolutionService(
         when (name) {
             "LOCAL" -> local.findByGtin(gtin)
             "AI" -> ai.takeIf { it.enabled }?.findByGtin(gtin)
+            "WEB" -> web.takeIf { it.enabled }?.findByGtin(gtin)
             "GS1" -> gs1.takeIf { it.enabled }?.findByGtin(gtin)
             else -> {
                 log.warn("[PRODUCT_LOOKUP] Nieznany dostawca w konfiguracji kolejności: {}", name)
@@ -140,13 +150,18 @@ class ProductResolutionService(
     }
 
     /**
-     * Klucz zawiera NAZWĘ MODELU odczytu. „Miss" jest wnioskiem konkretnego modelu, nie
-     * faktem o kodzie: po przejściu na mocniejszy model stare wpisy przestają pasować i
-     * kod jest pytany od nowa. Bez tego zmiana modelu nie miałaby żadnego efektu przez
-     * cały TTL (7 dni) dla wszystkich już zeskanowanych kodów — dokładnie taki objaw
+     * Klucz zawiera SYGNATURĘ ŁAŃCUCHA: kolejność dostawców, model odczytu i włączone
+     * źródła sieciowe. „Miss" jest wnioskiem konkretnej konfiguracji, nie faktem o kodzie —
+     * po zmianie modelu albo po włączeniu wyszukiwarki stare wpisy przestają pasować i kod
+     * jest pytany od nowa.
+     *
+     * Bez tego każda poprawka rozpoznawania była niewidoczna przez cały TTL (7 dni) dla
+     * wszystkich już zeskanowanych kodów: `isNegativelyCached` ucinał zapytanie, zanim
+     * którykolwiek dostawca został wywołany. Dokładnie taki objaw („nadal NOT_FOUND")
      * zgłoszono z produkcji.
      */
-    private fun negativeKey(gtin: Gtin) = "product:lookup:miss:$lookupModel:${gtin.value}"
+    private fun negativeKey(gtin: Gtin) =
+        "product:lookup:miss:${order.joinToString("-")}:$lookupModel:${web.sourcesSignature}:${gtin.value}"
 
     private fun isNegativelyCached(gtin: Gtin): Boolean = try {
         redisTemplate.hasKey(negativeKey(gtin))
@@ -183,7 +198,9 @@ data class ProductResolution(
     /** Poziom weryfikacji wynikający ze źródła — nic nie awansuje samo (§3.2 architektury). */
     fun verificationLevel(): VerificationLevel = when (result?.source) {
         ProductSource.GS1 -> VerificationLevel.GS1_VERIFIED
-        ProductSource.AI -> VerificationLevel.AI_SUGGESTED
+        // WEB to dane ze sklepów i baz społecznościowych — lepsze niż pamięć modelu, ale
+        // to NIE jest rejestr GS1: człowiek dalej potwierdza zgodność z etykietą.
+        ProductSource.AI, ProductSource.WEB -> VerificationLevel.AI_SUGGESTED
         ProductSource.CURATED -> VerificationLevel.CURATED
         ProductSource.MANUAL, null -> VerificationLevel.UNVERIFIED
     }
@@ -192,7 +209,7 @@ data class ProductResolution(
         Provenance(
             source = it.source,
             verificationLevel = verificationLevel(),
-            confidence = if (it.source == ProductSource.AI) it.confidence else null
+            confidence = if (it.source == ProductSource.AI || it.source == ProductSource.WEB) it.confidence else null
         )
     }
 
