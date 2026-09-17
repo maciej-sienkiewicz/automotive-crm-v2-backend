@@ -26,7 +26,7 @@ class LeadVehicleAiConfig {
             .defaultOptions(
                 OpenAiChatOptions.builder()
                     .model(model)
-                    .temperature(0.3)
+                    .temperature(0.0)
                     .build()
             )
             .build()
