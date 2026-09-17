@@ -170,23 +170,18 @@ class AiProductProvider(
 
     companion object {
         private val READ_SYSTEM_PROMPT = """
-Rozpoznajesz produkt chemii i akcesoriów detailingowych po kodzie kreskowym (GTIN).
+Jesteś narzędziem służącym do znajdowania danych o produktach na podstawie ich GTIN/EAN. 
 Zwróć dane w ustalonej strukturze.
 
 ZASADY:
 - Jednostki: ML, L, G, KG, PIECE, PAIR, M, M2.
 - packageSizeValue to LICZBA (np. "500"), packageSizeUnit to jednostka tej liczby.
 - confidence: 0.0–1.0, TWOJA szczera pewność, że karta należy do TEGO kodu.
-- NIE ZGADUJ. Jeśli nie znasz tego kodu, ustaw confidence: 0 i zostaw pola puste.
-  Zmyślona, wiarygodnie brzmiąca karta jest gorsza niż jej brak — zatruwa katalog
-  współdzielony przez wszystkie warsztaty.
 """.trim()
 
         private val VERIFY_SYSTEM_PROMPT = """
 Jesteś niezależnym recenzentem. Dostajesz kod kreskowy i proponowaną kartę produktu.
-Twoje jedyne zadanie: ocenić, czy naprawdę jesteś pewny, że ta karta należy do tego
-kodu. Bądź surowy — jeśli masz jakąkolwiek wątpliwość, odpowiedz matches: false.
-Zwróć { "matches": true/false, "reason": "krótko dlaczego" }.
+Twoje jedyne zadanie: ocenić, czy naprawdę istnieje dowolny dowód na to, że produkt został poprawnie rozpoznany na podstawie GTIN/EAN. }.
 """.trim()
     }
 }
