@@ -230,3 +230,33 @@ Testy backendowe wymagane przed wydaniem (opis i uzasadnienie — dokument kanon
 - `VisitProductsCostTest` — koszt materiału poza `totalCost`, niezmienność snapshotu,
 - `ProductCostsVisibilityTest` — brak pól cenowych w JSON bez `PRODUCTS_COSTS`,
 - rozszerzenie istniejącego testu niezmienników katalogu uprawnień.
+
+### Model, który naprawdę szuka w internecie (krok 2 w WEB)
+
+Najczęstsze pytanie przy tym module: „czy jest model z trybem research?". Jest —
+i nie wymaga nowego dostawcy. Spring AI 1.0.0 wystawia `web_search_options` z
+Chat Completions (`OpenAiChatOptions.builder().webSearchOptions(...)`), więc wystarczy
+model z rodziny wyszukującej i ten sam `OPENAI_API_KEY`, którego używa reszta systemu:
+
+```
+PRODUCT_WEB_OPENAI_SEARCH_ENABLED=true
+```
+
+Czym to się różni od `crm.ai.product-lookup.model`: tamten klient odpowiada WYŁĄCZNIE
+z wag i dla realnego EAN-u oddaje pustkę (tablicy kod → produkt w wagach nie ma). Ten
+najpierw wykonuje wyszukiwanie, a potem odpowiada z tego, co znalazł.
+
+Dwie pułapki, obie już obsłużone w `AiProductConfig.productWebSearchChatClient`:
+
+- **`temperature` jest zabroniona** dla modeli `*-search-preview` (błąd 400), więc tu jej
+  nie ustawiamy.
+- **`user_location`** ustawiamy na kraj studia (domyślnie `PL`). Oferty tego samego kodu
+  są lokalne; bez tego wyniki potrafią przyjść z innego rynku.
+
+Modele wyszukujące nie gwarantują `response_format`, więc JSON wymuszamy instrukcją w
+treści promptu (`BeanOutputConverter.getFormat()`), a surową odpowiedź logujemy przed
+parsowaniem — tak samo jak w pozostałych krokach.
+
+**Czego NIE używać do tego zadania:** modeli „deep research". Są agentowe i liczą
+odpowiedź minutami, a tu człowiek stoi z telefonem nad opakowaniem. Do odczytu jednego
+kodu właściwe jest zwykłe wyszukiwanie, nie wielokrokowy research.

@@ -23,14 +23,18 @@ import java.math.BigDecimal
  *
  * Dwa kroki, od najtańszego:
  *  1. [OpenFactsClient] — otwarte bazy kodów, za darmo i bez klucza, dane gotowe.
- *  2. [BarcodeWebSearchClient] + [WebProductExtractionService] — wyniki wyszukiwarki
- *     jako kontekst, z którego model WYDOBYWA kartę (wymaga klucza, domyślnie wyłączone).
+ *  2. [OpenAiWebSearchClient] — model z `web_search_options`, czyli taki, który NAPRAWDĘ
+ *     wychodzi do internetu. Bez nowego dostawcy i bez klucza do wyszukiwarki: ten sam
+ *     klucz OpenAI, co reszta systemu. Domyślnie wyłączony (koszt).
+ *  3. [BarcodeWebSearchClient] + [WebProductExtractionService] — własne zapytanie do
+ *     wyszukiwarki, a model wydobywa kartę z wyników (wymaga klucza Google/Brave).
  *
  * Kod wychodzi w postaci drukowanej (EAN-13, bez wiodących zer) — patrz [Gtin.displayValue].
  */
 @Component
 class WebProductProvider(
     private val openFacts: OpenFactsClient,
+    private val openAiSearch: OpenAiWebSearchClient,
     private val search: BarcodeWebSearchClient,
     private val extraction: WebProductExtractionService
 ) : ProductDataProvider {
@@ -40,17 +44,23 @@ class WebProductProvider(
     override val source = ProductSource.WEB
 
     override val enabled: Boolean
-        get() = openFacts.enabled || search.enabled
+        get() = openFacts.enabled || openAiSearch.enabled || search.enabled
 
     /** Do sygnatury negatywnego cache: zmiana źródeł musi unieważnić stare „miss". */
     val sourcesSignature: String
-        get() = "of=${openFacts.enabled}|s=${search.providerName}"
+        get() = "of=${openFacts.enabled}|oa=${openAiSearch.enabled}|s=${search.providerName}"
 
     override suspend fun findByGtin(gtin: Gtin): ProductLookupResult? = withContext(Dispatchers.IO) {
         val ean = gtin.displayValue
-        log.info("[PRODUCT_WEB] start gtin={} ean={} openFacts={} search={}", gtin.value, ean, openFacts.enabled, search.providerName)
+        log.info(
+            "[PRODUCT_WEB] start gtin={} ean={} openFacts={} openAiSearch={} search={}",
+            gtin.value, ean, openFacts.enabled, openAiSearch.enabled, search.providerName
+        )
 
+        // Kolejność od najtańszego: darmowa baza kodów → model wyszukujący (istniejący
+        // klucz OpenAI, bez nowego dostawcy) → własne zapytanie do wyszukiwarki + ekstrakcja.
         val card = openFacts.lookup(ean)
+            ?: openAiSearch.lookup(ean)
             ?: extraction.extract(ean, search.search(ean))
             ?: run {
                 log.info("[PRODUCT_WEB] no_data ean={}", ean)
