@@ -175,8 +175,9 @@ Moduł miał pierwotnie łańcuch *baza → LLM z pamięci → GS1*. Produkcja g
 
 ### Dwie pułapki, obie obsłużone
 
-- **`temperature` jest zabroniona** dla modeli `*-search-preview` (błąd 400), więc
-  `WebLookupConfig` jej nie ustawia. Determinizm bierze się z promptu.
+- **`tool_choice: "required"`.** Przy `auto` wyszukiwanie jest OPCJONALNE — model może
+  odpowiedzieć z pamięci, a stamtąd nie mapuje EAN-u na produkt i oddaje pustkę, czyli
+  po cichu odtwarza pierwotny błąd.
 - **Kod wychodzi w postaci DRUKOWANEJ.** Wewnątrz katalog kluczujemy GTIN-em-14, ale
   `05902806493015` nie znajduje w sieci niczego, a `5902806493015` znajduje produkt.
   Służy do tego `Gtin.displayValue`; pilnuje go `GtinDisplayValueTest`.
