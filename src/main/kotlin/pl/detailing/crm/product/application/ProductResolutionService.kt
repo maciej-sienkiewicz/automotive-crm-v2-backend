@@ -1,0 +1,162 @@
+package pl.detailing.crm.product.application
+
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.stereotype.Service
+import pl.detailing.crm.product.adapter.ai.AiProductProvider
+import pl.detailing.crm.product.adapter.gs1.Gs1ProductProvider
+import pl.detailing.crm.product.adapter.local.LocalCatalogProvider
+import pl.detailing.crm.product.domain.Gtin
+import pl.detailing.crm.product.domain.ProductSource
+import pl.detailing.crm.product.domain.Provenance
+import pl.detailing.crm.product.domain.VerificationLevel
+import pl.detailing.crm.product.port.ProductLookupResult
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.ValidationException
+import java.time.Duration
+
+/**
+ * Łańcuch rozpoznawania produktu po kodzie: LOKALNY → AI (z weryfikatorem) → GS1.
+ *
+ * Kolejność i próg pewności są KONFIGURACJĄ, nie kodem (`crm.products.resolution.*`),
+ * więc zmiana na LOCAL,GS1,AI to jedna właściwość, bez deployu. Wynik AI schodzi do GS1
+ * dopiero poniżej progu (domyślnie 0,90) — dokładnie jak w punkcie 2 wymagania.
+ *
+ * Trafienie lokalne jest darmowym cache'em (sam katalog globalny). Nierozpoznane kody
+ * lądują w negatywnym cache w Redisie, żeby każdy kolejny skan tego samego śmiecia nie
+ * płacił za odpytanie zewnętrzne.
+ */
+@Service
+class ProductResolutionService(
+    private val local: LocalCatalogProvider,
+    private val ai: AiProductProvider,
+    private val gs1: Gs1ProductProvider,
+    private val redisTemplate: StringRedisTemplate,
+    @Value("\${crm.products.resolution.order:LOCAL,AI,GS1}") private val orderRaw: String,
+    @Value("\${crm.products.resolution.ai-min-confidence:0.90}") private val aiMinConfidence: Double,
+    @Value("\${crm.products.lookup.negative-cache-ttl-days:7}") private val negativeCacheTtlDays: Long
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    private val order: List<String> by lazy {
+        orderRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotBlank() }
+    }
+
+    /**
+     * @throws ValidationException gdy suma kontrolna kodu jest błędna (brama przed
+     *   płatnym zapytaniem — kod z literówką nie kosztuje ani grosza).
+     */
+    suspend fun resolve(barcode: String): ProductResolution {
+        val gtin = Gtin.parse(barcode)
+
+        // Krok 0.5: negatywny cache — kod, którego nikt nie zna, nie jest odpytywany
+        // ponownie przy każdym skanie. Trafienie lokalne go omija (może się pojawił).
+        val localHit = runProvider("LOCAL", gtin)
+        if (localHit != null) {
+            log.debug("[PRODUCT_LOOKUP] local_hit gtin={}", gtin)
+            return ProductResolution.found(localHit, fromLocalCatalog = true)
+        }
+        if (isNegativelyCached(gtin)) {
+            log.debug("[PRODUCT_LOOKUP] negative_cache gtin={}", gtin)
+            return ProductResolution.notFound(gtin)
+        }
+
+        for (name in order) {
+            if (name == "LOCAL") continue // już sprawdzony wyżej
+            val result = runProvider(name, gtin) ?: continue
+
+            when (name) {
+                "AI" -> if (result.confidence >= aiMinConfidence) {
+                    log.info("[PRODUCT_LOOKUP] ai_hit gtin={} confidence={}", gtin, result.confidence)
+                    return ProductResolution.resolved(result)
+                } else {
+                    log.info(
+                        "[PRODUCT_LOOKUP] ai_below_threshold gtin={} confidence={} < {} — schodzę dalej",
+                        gtin, result.confidence, aiMinConfidence
+                    )
+                }
+                else -> {
+                    log.info("[PRODUCT_LOOKUP] {}_hit gtin={}", name.lowercase(), gtin)
+                    return ProductResolution.resolved(result)
+                }
+            }
+        }
+
+        markNegative(gtin)
+        return ProductResolution.notFound(gtin)
+    }
+
+    private suspend fun runProvider(name: String, gtin: Gtin): ProductLookupResult? = try {
+        when (name) {
+            "LOCAL" -> local.findByGtin(gtin)
+            "AI" -> ai.takeIf { it.enabled }?.findByGtin(gtin)
+            "GS1" -> gs1.takeIf { it.enabled }?.findByGtin(gtin)
+            else -> {
+                log.warn("[PRODUCT_LOOKUP] Nieznany dostawca w konfiguracji kolejności: {}", name)
+                null
+            }
+        }
+    } catch (e: Exception) {
+        // Awaria jednego dostawcy nie wywraca łańcucha — idziemy dalej.
+        log.warn("[PRODUCT_LOOKUP] Dostawca {} zawiódł dla {}: {}", name, gtin, e.message)
+        null
+    }
+
+    private fun negativeKey(gtin: Gtin) = "product:lookup:miss:${gtin.value}"
+
+    private fun isNegativelyCached(gtin: Gtin): Boolean = try {
+        redisTemplate.hasKey(negativeKey(gtin))
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun markNegative(gtin: Gtin) {
+        try {
+            redisTemplate.opsForValue().set(negativeKey(gtin), "1", Duration.ofDays(negativeCacheTtlDays))
+        } catch (e: Exception) {
+            log.debug("[PRODUCT_LOOKUP] Nie udało się zapisać negatywnego cache: {}", e.message)
+        }
+    }
+
+    /** Kod z katalogu przestał być „miss": czyścimy negatywny wpis po ręcznym dodaniu. */
+    fun clearNegative(gtin: Gtin) {
+        try {
+            redisTemplate.delete(negativeKey(gtin))
+        } catch (e: Exception) {
+            log.debug("[PRODUCT_LOOKUP] Nie udało się wyczyścić negatywnego cache: {}", e.message)
+        }
+    }
+}
+
+/** Wynik łańcucha: znaleziony w katalogu, rozpoznany zewnętrznie, albo nieznany. */
+data class ProductResolution(
+    val status: Status,
+    val result: ProductLookupResult?,
+    val gtin: Gtin
+) {
+    enum class Status { FOUND_LOCAL, RESOLVED, NOT_FOUND }
+
+    /** Poziom weryfikacji wynikający ze źródła — nic nie awansuje samo (§3.2 architektury). */
+    fun verificationLevel(): VerificationLevel = when (result?.source) {
+        ProductSource.GS1 -> VerificationLevel.GS1_VERIFIED
+        ProductSource.AI -> VerificationLevel.AI_SUGGESTED
+        ProductSource.CURATED -> VerificationLevel.CURATED
+        ProductSource.MANUAL, null -> VerificationLevel.UNVERIFIED
+    }
+
+    fun provenance(): Provenance? = result?.let {
+        Provenance(
+            source = it.source,
+            verificationLevel = verificationLevel(),
+            confidence = if (it.source == ProductSource.AI) it.confidence else null
+        )
+    }
+
+    companion object {
+        fun found(r: ProductLookupResult, fromLocalCatalog: Boolean) =
+            ProductResolution(if (fromLocalCatalog) Status.FOUND_LOCAL else Status.RESOLVED, r, Gtin.parse(r.spec.gtin))
+        fun resolved(r: ProductLookupResult) = ProductResolution(Status.RESOLVED, r, Gtin.parse(r.spec.gtin))
+        fun notFound(gtin: Gtin) = ProductResolution(Status.NOT_FOUND, null, gtin)
+    }
+}

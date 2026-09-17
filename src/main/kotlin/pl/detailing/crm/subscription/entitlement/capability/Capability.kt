@@ -107,6 +107,12 @@ enum class CapabilityKey(
     STATS_VIEW(
         "Statystyki i raporty",
         setOf(FeatureKey.STATISTICS)
+    ),
+
+    /** Products module: shared product catalog, notes, rating, visit links. */
+    PRODUCTS_ACCESS(
+        "Produkty w studiu",
+        setOf(FeatureKey.PRODUCTS)
     );
 
     init {

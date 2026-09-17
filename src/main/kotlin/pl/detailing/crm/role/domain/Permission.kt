@@ -8,6 +8,7 @@ private const val SECTION_MEDIA = "Multimedia / Zdjęcia"
 private const val SECTION_CUSTOMERS = "Klienci i pojazdy"
 private const val SECTION_BATCH_ORDERS = "Zlecenia zbiorcze"
 private const val SECTION_NOTIFICATIONS = "Powiadomienia"
+private const val SECTION_PRODUCTS = "Produkty w studiu"
 
 /**
  * Hardcoded permission catalog organized as a **tree** (hierarchy). Administrators cannot
@@ -246,6 +247,54 @@ enum class Permission(
         PermissionModule.AUDIT, "Podgląd historii aktywności firmy",
         description = "Tablica wszystkich zdarzeń w firmie — kto co zrobił, kiedy i na jaką " +
             "kwotę. Obejmuje zdarzenia kadrowo-płacowe i bezpieczeństwa."
+    ),
+
+    // Sekcja: Produkty w studiu — TRZECI KORZEŃ modułu wizyt, celowo bez rodzica,
+    // dokładnie wzorcem BATCH_ORDERS.
+    //
+    // Zaopatrzeniem w studiu zajmuje się często osoba, która zamawia chemię i prowadzi
+    // katalog, a nie siedzi na recepcji. Nie ma powodu, żeby przy okazji dostała
+    // kartotekę klientów ani kalendarz — a każdy KORZEŃ SPOZA modułu wizyt implikuje
+    // VISITS_CREATE (patrz PermissionHierarchy + test „every non-VISITS module root
+    // requires visit creation"), które ciągnie za sobą CUSTOMERS_VIEW. Dlatego produkty
+    // NIE są osobnym PermissionModule: żeby dać czysty, samodzielny dostęp do samego
+    // katalogu (jak BATCH_ORDERS), korzeń musi żyć w module wizyt.
+    //
+    // „Osobny moduł" z wymagania jest realizowany tam, gdzie ma znaczenie — w
+    // finansach/abonamencie: FeatureKey.PRODUCTS, AddOnKey.PRODUCTS_MODULE,
+    // CapabilityKey.PRODUCTS_ACCESS. Feature-gating tych uprawnień idzie po
+    // featureKeyOverride = PRODUCTS, więc studio bez wykupionego modułu ich nie ma,
+    // mimo że siedzą w module wizyt (ten sam mechanizm co GALLERY/CUSTOMERS).
+    PRODUCTS_VIEW(
+        PermissionModule.VISITS, "Podgląd katalogu produktów",
+        section = SECTION_PRODUCTS,
+        featureKeyOverride = FeatureKey.PRODUCTS,
+        description = "Lista produktów, karta produktu, notatki i ocena studia. " +
+            "Bez cen jednostkowych — te wymagają osobnego uprawnienia. Uprawnienie " +
+            "niezależne od podglądu wizyt — można je nadać samo."
+    ),
+    // Dopinanie produktów do wizyt („do tej wizyty użyliśmy tego produktu"). Implikuje
+    // VISITS_VIEW (trzeba widzieć wizytę, do której się dopina) — ale świadomie NIE
+    // VISITS_CREATE: to nie jest umawianie wizyty.
+    PRODUCTS_USAGE(
+        PermissionModule.VISITS, "Powiązania produktów z wizytami",
+        parent = PRODUCTS_VIEW, section = SECTION_PRODUCTS,
+        featureKeyOverride = FeatureKey.PRODUCTS,
+        description = "Dopinanie użytych produktów do wizyt. Sekcja czysto informacyjna."
+    ),
+    PRODUCTS_MANAGE(
+        PermissionModule.VISITS, "Dodawanie i edycja produktów",
+        parent = PRODUCTS_VIEW, section = SECTION_PRODUCTS,
+        featureKeyOverride = FeatureKey.PRODUCTS,
+        description = "Dodawanie produktów (ręcznie, z kodu, ze skanu), edycja danych, " +
+            "notatki i ocena studia."
+    ),
+    PRODUCTS_COSTS(
+        PermissionModule.VISITS, "Ceny jednostkowe produktów",
+        parent = PRODUCTS_VIEW, section = SECTION_PRODUCTS,
+        featureKeyOverride = FeatureKey.PRODUCTS,
+        description = "Podgląd i edycja cen jednostkowych oraz dostawców. " +
+            "Dane wrażliwe konkurencyjnie — osobno od reszty modułu."
     );
 
     /** Feature that must be enabled in the studio's entitlements for this permission. */

@@ -44,6 +44,9 @@ object PermissionHierarchy {
         Permission.LEADS_MANAGE to setOf(Permission.VISITS_CREATE),
         Permission.TASKS_VIEW to setOf(Permission.VISITS_CREATE),
         Permission.AUDIT_VIEW to setOf(Permission.VISITS_CREATE),
+        // Dopięcie produktu do wizyty wymaga widzenia wizyty — ale NIE tworzenia jej.
+        // PRODUCTS_VIEW/MANAGE/COSTS celowo bez implikacji: katalog stoi samodzielnie.
+        Permission.PRODUCTS_USAGE to setOf(Permission.VISITS_VIEW),
     )
 
     /** Direct children of [permission] in declaration order. */

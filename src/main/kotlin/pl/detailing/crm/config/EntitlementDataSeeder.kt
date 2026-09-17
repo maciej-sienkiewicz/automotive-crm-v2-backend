@@ -208,6 +208,12 @@ class EntitlementDataSeeder(
                 AddOnKey.STATISTICS_MODULE, "Statystyki",
                 "Raporty przychodów, statystyki usług i analiza opóźnień",
                 1_900L, FeatureKey.STATISTICS
+            ),
+            ModuleSpec(
+                AddOnKey.PRODUCTS_MODULE, "Produkty w studiu",
+                "Katalog preparatów z danymi pobieranymi z kodu kreskowego, notatki, " +
+                    "ocena zespołu i powiązania produktów z wizytami",
+                2_900L, FeatureKey.PRODUCTS
             )
         )
 

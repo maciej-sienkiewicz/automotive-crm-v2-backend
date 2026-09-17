@@ -64,11 +64,23 @@ Moduł nie działa, dopóki nie zostanie wpisany w pięć miejsc. Kolejność ma
    automatycznie. `basicFeatures` jest listą jawną i zostaje bez zmian — moduł jest
    dodatkiem, nie częścią pakietu podstawowego. Seeder jest źródłem prawdy dla cennika,
    nie ma tu żadnego SQL-a do ręcznego uruchomienia.
-5. **`role/domain/PermissionModule.kt` + `Permission.kt` + `PermissionHierarchy.kt`** —
-   moduł `PRODUCTS`, cztery uprawnienia i implikacja `PRODUCTS_USAGE → VISITS_VIEW`.
-   Uwaga: `PRODUCTS_VIEW` celowo **nie** implikuje `VISITS_CREATE` (uzasadnienie
-   w dokumencie kanonicznym §7.2). Test niezmienników katalogu uprawnień musi przejść
-   bez modyfikacji.
+5. **`role/domain/Permission.kt` + `PermissionHierarchy.kt`** — cztery uprawnienia
+   (`PRODUCTS_VIEW` jako niezależny KORZEŃ, dzieci `PRODUCTS_USAGE/MANAGE/COSTS`) oraz
+   implikacja `PRODUCTS_USAGE → VISITS_VIEW`.
+
+   **Uwaga o module (decyzja wymuszona przez niezmiennik repo).** Produkty NIE są
+   osobnym `PermissionModule`. Repo egzekwuje testem
+   (`PermissionHierarchyTest.„every non-VISITS module root requires visit creation"`),
+   że **każdy korzeń spoza modułu wizyt implikuje `VISITS_CREATE`** — a to ciągnie
+   `CUSTOMERS_VIEW` (kartotekę klientów). Wymaganie mówi wprost, że osoba od zaopatrzenia
+   ma dostać sam katalog bez kartoteki, więc korzeń produktów musi być niezależny i NIC
+   nie implikować. Jedyny sposób w tym repo, żeby mieć taki niezależny korzeń bez
+   osłabiania testu, to umieścić go **w module wizyt** — dokładnie jak `BATCH_ORDERS`.
+   Cztery uprawnienia siedzą więc w `PermissionModule.VISITS` z
+   `featureKeyOverride = FeatureKey.PRODUCTS` i `section = "Produkty w studiu"`.
+   „Osobny moduł" z wymagania jest realizowany tam, gdzie ma znaczenie — w
+   finansach/abonamencie (FeatureKey/AddOnKey/CapabilityKey). Test katalogu uprawnień
+   przechodzi bez żadnej modyfikacji.
 
 Lustro po stronie frontu (`core/permissions/catalog.ts`, `modules/subscription/types`)
 jest opisane w dokumencie kanonicznym §7 i §9.
@@ -107,8 +119,11 @@ crm.products.lookup.negative-cache-ttl-days=7
 crm.products.lookup.ai-timeout-ms=8000
 crm.products.lookup.gs1-timeout-ms=5000
 
-# Model: odczyt faktu, nie twórczość — temperatura 0 jak w pozostałych odczytach.
+# Model odczytu: fakt, nie twórczość — temperatura 0 jak w pozostałych odczytach.
 crm.ai.product-lookup.model=${PRODUCT_LOOKUP_MODEL:gpt-4o-mini}
+# Model weryfikatora: niezależny krytyk „czy na pewno ta karta należy do tego kodu".
+# Może tylko OBNIŻYĆ zaufanie; „nie" spycha wynik poniżej progu i łańcuch schodzi do GS1.
+crm.ai.product-lookup.verifier-model=${PRODUCT_LOOKUP_VERIFIER_MODEL:gpt-4o-mini}
 
 # ── GS1 ─────────────────────────────────────────────────────────────────────
 # Bez umowy licencyjnej zostaw enabled=false — moduł działa, traci tylko krok 3.

@@ -24,5 +24,6 @@ enum class FeatureKey(val displayName: String) {
     CAMPAIGNS("Kampanie marketingowe SMS i E-mail"),
     E_SIGNATURES("Podpisy elektroniczne"),
     FINANCE("Kontrola nad finansami"),
-    STATISTICS("Statystyki")
+    STATISTICS("Statystyki"),
+    PRODUCTS("Produkty w studiu")
 }

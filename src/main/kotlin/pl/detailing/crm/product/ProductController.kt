@@ -1,0 +1,265 @@
+package pl.detailing.crm.product
+
+import kotlinx.coroutines.runBlocking
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.product.application.ProductCatalogService
+import pl.detailing.crm.product.application.ProductListFilter
+import pl.detailing.crm.product.application.ProductResolutionService
+import pl.detailing.crm.product.application.ProductResolution
+import pl.detailing.crm.product.notes.NoteDto
+import pl.detailing.crm.product.notes.ProductNoteService
+import pl.detailing.crm.product.rating.ProductRatingService
+import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.role.permission.RequiresPermission
+import pl.detailing.crm.shared.Pagination
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
+import java.util.UUID
+
+/**
+ * Moduł produktów. Cały kontroler jest za [CapabilityKey.PRODUCTS_ACCESS] (co studio
+ * kupiło) i za uprawnieniami roli (co wolno człowiekowi). Cena jednostkowa jest
+ * dodatkowo gated przez PRODUCTS_COSTS — sprawdzane inline, bo to samo pole steruje
+ * i zapisem, i widocznością w odpowiedzi.
+ */
+@RestController
+@RequestMapping("/api/v1/products")
+@RequiresCapability(CapabilityKey.PRODUCTS_ACCESS)
+class ProductController(
+    private val catalogService: ProductCatalogService,
+    private val resolutionService: ProductResolutionService,
+    private val noteService: ProductNoteService,
+    private val ratingService: ProductRatingService,
+    private val permissionCheckService: PermissionCheckService
+) {
+    private fun canSeeCosts(): Boolean {
+        val p = SecurityContextHelper.getCurrentUser()
+        return permissionCheckService.hasPermission(p.userId, p.studioId, Permission.PRODUCTS_COSTS)
+    }
+
+    // ── Lista ──
+    @GetMapping
+    @RequiresPermission(Permission.PRODUCTS_VIEW)
+    fun list(
+        @RequestParam(required = false, defaultValue = "") search: String,
+        @RequestParam(required = false, defaultValue = "false") onlyOurs: Boolean,
+        @RequestParam(required = false, defaultValue = "false") onlyFavourite: Boolean,
+        @RequestParam(required = false, defaultValue = "false") includeHidden: Boolean,
+        @RequestParam(required = false, defaultValue = "1") page: Int,
+        @RequestParam(required = false, defaultValue = "50") limit: Int,
+        @RequestParam(required = false) sortBy: String?,
+        @RequestParam(required = false, defaultValue = "asc") sortDirection: String
+    ): ResponseEntity<ProductListResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        var items = catalogService.list(
+            principal.studioId,
+            ProductListFilter(search, onlyOurs, onlyFavourite, includeHidden),
+            canSeeCosts()
+        )
+        items = when (sortBy) {
+            "name" -> if (sortDirection == "desc") items.sortedByDescending { it.name } else items.sortedBy { it.name }
+            "brand" -> if (sortDirection == "desc") items.sortedByDescending { it.brand } else items.sortedBy { it.brand }
+            else -> items.sortedBy { it.name }
+        }
+        val total = items.size
+        val safePage = Pagination.normalizePage(page)
+        val safeLimit = Pagination.normalizeLimit(limit, max = 200)
+        val slice = Pagination.slice(items, safePage, safeLimit)
+        return ResponseEntity.ok(
+            ProductListResponse(
+                products = slice,
+                pagination = ProductPaginationInfo(
+                    currentPage = safePage,
+                    totalPages = Pagination.totalPages(total, safeLimit),
+                    totalItems = total,
+                    itemsPerPage = safeLimit
+                )
+            )
+        )
+    }
+
+    // ── Karta ──
+    @GetMapping("/{id}")
+    @RequiresPermission(Permission.PRODUCTS_VIEW)
+    fun get(@PathVariable id: String): ResponseEntity<ProductResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(catalogService.get(principal.studioId, UUID.fromString(id), canSeeCosts()))
+    }
+
+    // ── Tworzenie ──
+    @PostMapping
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun create(@RequestBody req: CreateProductRequest): ResponseEntity<ProductResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val created = catalogService.create(principal.studioId, principal.userId, req, canSeeCosts())
+        return ResponseEntity.status(HttpStatus.CREATED).body(created)
+    }
+
+    // ── Rozpoznanie po kodzie ──
+    @PostMapping("/lookup")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun lookup(@RequestBody req: LookupRequest): ResponseEntity<LookupResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val resolution = resolutionService.resolve(req.barcode)
+        val response = when (resolution.status) {
+            ProductResolution.Status.FOUND_LOCAL -> {
+                // Produkt jest w katalogu — oddaj pełną kartę (z nakładką studia).
+                val existing = catalogService.get(
+                    principal.studioId,
+                    // znajdź po gtin z wyniku
+                    resolveLocalId(resolution),
+                    canSeeCosts()
+                )
+                LookupResponse("FOUND_LOCAL", existing, null, existing.provenance)
+            }
+            ProductResolution.Status.RESOLVED -> {
+                val r = resolution.result!!
+                val prov = resolution.provenance()!!
+                val draft = ProductDraft(
+                    gtin = r.spec.gtin,
+                    name = r.spec.name,
+                    brand = r.spec.brand,
+                    manufacturerName = r.spec.manufacturerName,
+                    unitOfMeasure = r.spec.unitOfMeasure.name,
+                    packageSizeValue = r.spec.packageSizeValue.stripTrailingZeros().toPlainString(),
+                    packageSizeUnit = r.spec.packageSizeUnit.name,
+                    description = r.spec.description,
+                    provenance = ProvenanceDto(prov.source, prov.verificationLevel, prov.confidence)
+                )
+                LookupResponse("RESOLVED", null, draft, draft.provenance)
+            }
+            ProductResolution.Status.NOT_FOUND ->
+                LookupResponse("NOT_FOUND", null, null, null)
+        }
+        ResponseEntity.ok(response)
+    }
+
+    private fun resolveLocalId(resolution: ProductResolution): UUID {
+        // FOUND_LOCAL zawsze niesie spec z gtin; karta jest w katalogu, więc pobierz po gtin.
+        val gtin = resolution.result!!.spec.gtin!!
+        val principal = SecurityContextHelper.getCurrentUser()
+        return catalogService.list(principal.studioId, ProductListFilter(search = gtin), canSeeCosts())
+            .firstOrNull { it.gtin == gtin }?.id?.let(UUID::fromString)
+            ?: throw pl.detailing.crm.shared.EntityNotFoundException("Produkt zniknął z katalogu")
+    }
+
+    /** Zapis karty rozpoznanej zewnętrznie do katalogu (front zatwierdza wynik lookup-u). */
+    @PostMapping("/from-draft")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun createFromDraft(@RequestBody draft: ProductDraft): ResponseEntity<ProductResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val saved = catalogService.saveResolvedDraft(principal.studioId, principal.userId, draft, canSeeCosts())
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved)
+    }
+
+    // ── Edycja danych globalnych (in-place albo propozycja korekty) ──
+    @PatchMapping("/{id}")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun update(@PathVariable id: String, @RequestBody req: UpdateProductRequest): ResponseEntity<Any> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val outcome = catalogService.updateProduct(principal.studioId, principal.userId, UUID.fromString(id), req, canSeeCosts())
+        return if (outcome.product != null) {
+            ResponseEntity.ok(outcome.product)
+        } else {
+            // Wpis zweryfikowany — zamiast edycji in-place powstała propozycja korekty.
+            ResponseEntity.status(HttpStatus.ACCEPTED).body(
+                mapOf(
+                    "status" to "PROPOSAL_CREATED",
+                    "proposalId" to outcome.proposalId,
+                    "message" to "Ten produkt jest zweryfikowany. Zmiana trafiła do weryfikacji; " +
+                        "u siebie możesz nadać własną nazwę w polu „nazwa własna”."
+                )
+            )
+        }
+    }
+
+    // ── Nakładka studia ──
+    @PutMapping("/{id}/studio")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun updateStudio(@PathVariable id: String, @RequestBody req: UpdateProductStudioRequest): ResponseEntity<ProductResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = catalogService.updateStudioOverlay(principal.studioId, principal.userId, UUID.fromString(id), req, canSeeCosts())
+        return ResponseEntity.ok(result)
+    }
+
+    // ── Potwierdzenie zgodności z etykietą ──
+    @PostMapping("/{id}/confirm")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun confirm(@PathVariable id: String): ResponseEntity<ProductResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(catalogService.confirm(principal.studioId, principal.userId, UUID.fromString(id), canSeeCosts()))
+    }
+
+    // ── Notatki ──
+    @GetMapping("/{id}/notes")
+    @RequiresPermission(Permission.PRODUCTS_VIEW)
+    fun listNotes(@PathVariable id: String): ResponseEntity<List<NoteDto>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(noteService.list(principal.studioId, UUID.fromString(id)))
+    }
+
+    @PostMapping("/{id}/notes")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun addNote(@PathVariable id: String, @RequestBody req: AddNoteRequest): ResponseEntity<NoteDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val note = noteService.add(
+            principal.studioId, principal.userId, principal.fullName,
+            UUID.fromString(id), req.content, req.visitId?.let(UUID::fromString)
+        )
+        return ResponseEntity.status(HttpStatus.CREATED).body(note)
+    }
+
+    @PatchMapping("/{id}/notes/{noteId}")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun editNote(@PathVariable id: String, @PathVariable noteId: String, @RequestBody req: AddNoteRequest): ResponseEntity<NoteDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            noteService.edit(principal.studioId, principal.userId, principal.fullName, principal.isOwner, UUID.fromString(noteId), req.content)
+        )
+    }
+
+    @DeleteMapping("/{id}/notes/{noteId}")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun deleteNote(@PathVariable id: String, @PathVariable noteId: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        noteService.delete(principal.studioId, principal.userId, principal.isOwner, UUID.fromString(noteId))
+        return ResponseEntity.noContent().build()
+    }
+
+    // ── Ocena ──
+    @PutMapping("/{id}/rating")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun setRating(@PathVariable id: String, @RequestBody req: SetRatingRequest): ResponseEntity<ProductRatingDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            ratingService.set(principal.studioId, principal.userId, principal.fullName, UUID.fromString(id), req.rating, req.justification)
+        )
+    }
+
+    @DeleteMapping("/{id}/rating")
+    @RequiresPermission(Permission.PRODUCTS_MANAGE)
+    fun clearRating(@PathVariable id: String): ResponseEntity<Void> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        ratingService.clear(principal.studioId, UUID.fromString(id))
+        return ResponseEntity.noContent().build()
+    }
+}
+
+data class ProductListResponse(
+    val products: List<ProductListItem>,
+    val pagination: ProductPaginationInfo
+)
+
+data class ProductPaginationInfo(
+    val currentPage: Int,
+    val totalPages: Int,
+    val totalItems: Int,
+    val itemsPerPage: Int
+)
+
+data class AddNoteRequest(val content: String, val visitId: String? = null)
+data class SetRatingRequest(val rating: Int, val justification: String? = null)

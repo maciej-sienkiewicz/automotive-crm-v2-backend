@@ -58,5 +58,6 @@ enum class AddOnKey(val displayName: String) {
     MARKETING_CAMPAIGNS("Kampanie marketingowe SMS i E-mail"),
     E_SIGNATURES("Podpisy elektroniczne"),
     FINANCE_MODULE("Kontrola nad finansami"),
-    STATISTICS_MODULE("Statystyki")
+    STATISTICS_MODULE("Statystyki"),
+    PRODUCTS_MODULE("Produkty w studiu")
 }
