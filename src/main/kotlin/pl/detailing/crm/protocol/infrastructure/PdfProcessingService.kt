@@ -109,7 +109,8 @@ class PdfProcessingService(
         templateS3Key: String,
         fieldMappings: Map<String, String>,
         outputS3Key: String,
-        logoPng: ByteArray? = null
+        logoPng: ByteArray? = null,
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
     ): String {
         // Download template from S3
         val downloadStart = System.currentTimeMillis()
@@ -118,7 +119,7 @@ class PdfProcessingService(
 
         // Fill the form
         val fillStart = System.currentTimeMillis()
-        val filledPdfBytes = fillForm(templateBytes, fieldMappings, logoPng)
+        val filledPdfBytes = fillForm(templateBytes, fieldMappings, logoPng, logoSlot = logoSlot)
         logger.info("[PERF]     - PDF form filling (PDFBox): ${System.currentTimeMillis() - fillStart}ms (${fieldMappings.size} fields)")
 
         // Upload filled PDF to S3
@@ -184,14 +185,16 @@ class PdfProcessingService(
         pdfBytes: ByteArray,
         fieldMappings: Map<String, String>,
         logoPng: ByteArray? = null,
-        typography: FieldTypography = FieldTypography.DEFAULT
-    ): ByteArray = fillForm(pdfBytes, fieldMappings, logoPng, typography)
+        typography: FieldTypography = FieldTypography.DEFAULT,
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
+    ): ByteArray = fillForm(pdfBytes, fieldMappings, logoPng, typography, logoSlot)
 
     private fun fillForm(
         pdfBytes: ByteArray,
         fieldMappings: Map<String, String>,
         logoPng: ByteArray?,
-        typography: FieldTypography = FieldTypography.DEFAULT
+        typography: FieldTypography = FieldTypography.DEFAULT,
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
     ): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
@@ -255,7 +258,7 @@ class PdfProcessingService(
                 }
                 logger.info("PDF form fill: $filledCount/${fieldMappings.size} fields set, $missedCount not found in AcroForm")
 
-                if (logoPng != null) stampLogo(document, logoPng)
+                if (logoPng != null) stampLogo(document, logoPng, logoSlot)
 
                 // Flatten all fields into static page content so the PDF renders
                 // correctly in every viewer (including pdf.js canvas rendering on
@@ -604,9 +607,13 @@ class PdfProcessingService(
      * pól formularza — użytkownik ogląda w ustawieniach dokładnie ten układ, który
      * dostanie klient, a pusty szablon zostaje pustym szablonem.
      */
-    fun stampLogoForPreview(pdfBytes: ByteArray, logoPng: ByteArray): ByteArray =
+    fun stampLogoForPreview(
+        pdfBytes: ByteArray,
+        logoPng: ByteArray,
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
+    ): ByteArray =
         Loader.loadPDF(pdfBytes).use { document ->
-            stampLogo(document, logoPng)
+            stampLogo(document, logoPng, logoSlot)
             ByteArrayOutputStream().use { out ->
                 document.save(out)
                 out.toByteArray()
@@ -620,7 +627,7 @@ class PdfProcessingService(
      * Nieudany stempel nie może zablokować dokumentu: protokół bez logo to mniejsza
      * szkoda niż wizyta bez protokołu.
      */
-    private fun stampLogo(document: PDDocument, logoPng: ByteArray) {
+    private fun stampLogo(document: PDDocument, logoPng: ByteArray, slot: DocumentLogoPlacement.Slot) {
         if (document.numberOfPages == 0) return
         try {
             val page = document.getPage(0)
@@ -628,7 +635,7 @@ class PdfProcessingService(
             // siada w rogu kartki wielkości znaczka. Slot zostaje ten sam — przycinamy sam
             // obraz, żeby wypełnił zarezerwowane miejsce (patrz [LogoTrim]).
             val image = PDImageXObject.createFromByteArray(document, LogoTrim.trim(logoPng), "studio-logo")
-            val box = DocumentLogoPlacement.fit(image.width, image.height, page.mediaBox.height)
+            val box = DocumentLogoPlacement.fit(image.width, image.height, page.mediaBox.height, slot)
             PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
                 cs.drawImage(image, box.x, box.y, box.width, box.height)
             }

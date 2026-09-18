@@ -14,6 +14,7 @@ import pl.detailing.crm.protocol.infrastructure.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.logo.CompanyLogoService
 import pl.detailing.crm.studio.logo.DocumentLogo
+import pl.detailing.crm.studio.logo.DocumentLogoPlacement
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.visit.infrastructure.DocumentService
@@ -157,7 +158,10 @@ class GenerateVisitProtocolsHandler(
             // nagłówku. Własny dokument studia niesie już jego markę tam, gdzie studio chciało.
             val isSystemConsent = DefaultMarketingConsentProvisioner.isSystemTemplate(templateEntity)
             val logoPng = if (isSystemConsent) documentLogo(studioId)?.printPng else null
-            pdfProcessingService.fillPdfForm(templateEntity.s3Key, companyFieldValues(settings), target, logoPng)
+            pdfProcessingService.fillPdfForm(
+                templateEntity.s3Key, companyFieldValues(settings), target, logoPng,
+                DocumentLogoPlacement.Slot.CONSENT
+            )
             target
         } catch (e: Exception) {
             logger.error(
@@ -307,7 +311,10 @@ class GenerateVisitProtocolsHandler(
                     } else {
                         null
                     }
-                    pdfProcessingService.fillPdfForm(template.s3Key, fieldValues, filledPdfS3Key, logoPng)
+                    pdfProcessingService.fillPdfForm(
+                        template.s3Key, fieldValues, filledPdfS3Key, logoPng,
+                        DocumentLogoPlacement.Slot.PROTOCOL
+                    )
                     filledPdfS3Key
                 }
                 ProtocolTemplateFormat.HTML -> {

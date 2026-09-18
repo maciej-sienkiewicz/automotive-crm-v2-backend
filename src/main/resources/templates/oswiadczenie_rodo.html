@@ -126,17 +126,18 @@
   /* ============ Miejsce na logo studia ============ */
   /* Ta sama kotwica co w protokołach: 188.16 x 16.38pt, top 24.23pt. Szablon
      systemowy sam nie niesie żadnej marki — logo wstawia backend w
-     data-field="companylogo" (patrz protokol_przyjecia_pojazdu.html). Pasmo ma
-     tylko 48pt, ale slot 36pt (14.42–50.42pt) nadal kończy się nad tytułem. */
+     data-field="companylogo" (patrz protokol_przyjecia_pojazdu.html). Slot jest tu
+     niższy niż na protokole (200 x 38pt, 13.42–51.42pt), bo tytuł zaczyna się już na
+     57.39pt — patrz DocumentLogoPlacement.Slot.CONSENT. */
   .header { position: relative; height: 48.00pt; }
   .company-logo {
     position: absolute;
     left: -0.94pt;
-    top: 14.42pt;
-    width: 188.16pt;
-    height: 36pt;
+    top: 13.42pt;
+    width: 200pt;
+    height: 38pt;                /* do 51.42pt; tytuł zgody zaczyna się już na 57.39pt */
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-start;
   }
   .company-logo img {

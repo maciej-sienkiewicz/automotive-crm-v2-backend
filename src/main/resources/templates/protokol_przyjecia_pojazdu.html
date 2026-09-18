@@ -132,17 +132,21 @@
      (HtmlProtocolFillService → data-field="companylogo" → <img> z data URI;
      w PDF ten sam slot stempluje PdfProcessingService wg DocumentLogoPlacement).
      Kotwica oryginału: 188.16 x 16.38pt, x=29.30pt od krawędzi strony, top 24.23pt.
-     Slot jest wyższy (36pt, wyśrodkowany na kotwicy: 32.42pt), bo logo klientów
-     ma dowolne proporcje — sygnet 1:1 też musi się zmieścić. */
+     Slot jest od niej wyższy i szerszy (200 x 56pt, 14.42–70.42pt od góry strony), bo
+     logo klientów ma dowolne proporcje: znak zbliżony do kwadratu przy 36pt siadał
+     w rogu kartki wielkości znaczka. Granicą wysokości jest tytuł protokołu na 78.04pt
+     — patrz DocumentLogoPlacement.Slot.PROTOCOL. Różnica wobec stempla w PDF: ten
+     dosuwa logo niższe niż 36pt z powrotem na środek kotwicy, żeby płaskie logotypy
+     nie drgnęły; w HTML wszystkie wiszą na górnej krawędzi slotu. */
   .header { position: relative; height: 68.65pt; }
   .company-logo {
     position: absolute;
     left: -0.94pt;               /* 29.30pt od krawędzi strony (padding .page = 30.24pt) */
-    top: 14.42pt;                /* 32.42 - 36/2 */
-    width: 188.16pt;
-    height: 36pt;
+    top: 14.42pt;                /* górna krawędź slotu — ok. 5 mm, tyle drukarka i tak obcina */
+    width: 200pt;
+    height: 56pt;                /* do 70.42pt; tytuł protokołu zaczyna się na 78.04pt */
     display: flex;
-    align-items: center;
+    align-items: flex-start;     /* wysoki znak rośnie w dół, w pasmo, które i tak jest puste */
     justify-content: flex-start;
   }
   .company-logo img {

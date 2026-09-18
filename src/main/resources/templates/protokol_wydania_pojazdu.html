@@ -123,18 +123,18 @@
   .checkbox { justify-content: center; }
 
   /* ============ Nagłówek: USŁUGODAWCA ============ */
-  /* Lewa strona nagłówka to miejsce na logo studia — ten sam slot i mechanizm
-     co w protokole przyjęcia (patrz komentarz tam): backend wstawia <img> w
-     data-field="companylogo", szablon systemowy sam nie niesie żadnej marki. */
+  /* Lewa strona nagłówka to miejsce na logo studia — ten sam slot (200 x 56pt) i ten
+     sam mechanizm co w protokole przyjęcia (patrz komentarz tam): backend wstawia
+     <img> w data-field="companylogo", szablon systemowy sam nie niesie żadnej marki. */
   .header { position: relative; height: 68.65pt; }
   .company-logo {
     position: absolute;
-    left: -0.94pt;
-    top: 14.42pt;
-    width: 188.16pt;
-    height: 36pt;
+    left: -0.94pt;               /* 29.30pt od krawędzi strony (padding .page = 30.24pt) */
+    top: 14.42pt;                /* górna krawędź slotu — ok. 5 mm, tyle drukarka i tak obcina */
+    width: 200pt;
+    height: 56pt;                /* do 70.42pt; tytuł protokołu zaczyna się na 78.04pt */
     display: flex;
-    align-items: center;
+    align-items: flex-start;     /* wysoki znak rośnie w dół, w pasmo, które i tak jest puste */
     justify-content: flex-start;
   }
   .company-logo img {

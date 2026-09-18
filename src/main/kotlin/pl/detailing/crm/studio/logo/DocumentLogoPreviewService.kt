@@ -34,23 +34,28 @@ class DocumentLogoPreviewService(
         val bytes = download(template.s3Key)
         if (template.fileFormat != ProtocolTemplateFormat.PDF) return bytes
         if (!DefaultProtocolTemplateProvisioner.isSystemTemplate(template)) return bytes
-        return withLogo(bytes, template.studioId.value)
+        return withLogo(bytes, template.studioId.value, DocumentLogoPlacement.Slot.PROTOCOL)
     }
 
     fun consentTemplatePreview(template: ConsentTemplateEntity): ByteArray {
         val bytes = download(template.s3Key)
         if (!DefaultMarketingConsentProvisioner.isSystemTemplate(template)) return bytes
-        return withLogo(bytes, template.studioId)
+        return withLogo(bytes, template.studioId, DocumentLogoPlacement.Slot.CONSENT)
     }
 
-    private fun withLogo(pdf: ByteArray, studioId: java.util.UUID): ByteArray {
+    /** Slot musi być ten sam co przy wypełnianiu — podgląd ma pokazywać dokument, a nie wariant. */
+    private fun withLogo(
+        pdf: ByteArray,
+        studioId: java.util.UUID,
+        slot: DocumentLogoPlacement.Slot
+    ): ByteArray {
         val logo = try {
             companyLogoService.loadDocumentLogo(studioId)
         } catch (e: Exception) {
             logger.warn("Could not load studio logo for preview (studio {}): {}", studioId, e.message)
             null
         } ?: return pdf
-        return pdfProcessingService.stampLogoForPreview(pdf, logo.printPng)
+        return pdfProcessingService.stampLogoForPreview(pdf, logo.printPng, slot)
     }
 
     private fun download(key: String): ByteArray =
