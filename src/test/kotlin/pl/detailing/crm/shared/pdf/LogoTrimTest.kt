@@ -53,22 +53,50 @@ class LogoTrimTest {
     }
 
     /**
-     * Regresja z produkcji: logotyp BELLISSIMOTO to biały napis na czarnej płycie 595 × 336 px.
-     * Pierwsza wersja ścięła płytę do 437 × 160 px, czyli do samego tuszu — napis dotykał
-     * wtedy krawędzi i na fakturze wyglądało to jak logo obcięte nożyczkami. Czarne tło widać
-     * na wydruku, więc jest grafiką, nie marginesem.
+     * Regresja z produkcji: logotyp BELLISSIMOTO to biały napis na czarnej płycie 595 × 336 px,
+     * tusz zajmuje 437 × 160 px. Przycięcie równo z tuszem sprawiało, że napis dotykał
+     * krawędzi płyty i na fakturze wyglądało to jak logo obcięte nożyczkami. Widoczna płyta
+     * zostaje, ale z marginesem: 6% krótszego boku tuszu, czyli 10 px.
      */
     @Test
-    fun `nie rusza znaku na ciemnej płycie`() {
+    fun `znak na ciemnej płycie dostaje delikatny margines`() {
         val bytes = png(595, 336, background = Color.BLACK) { markAt(it, 79, 88, 437, 160, Color.WHITE) }
-        assertArrayEquals(bytes, LogoTrim.trim(bytes))
+        val trimmed = LogoTrim.trim(bytes)
+
+        assertEquals(437 + 2 * 10 to 160 + 2 * 10, sizeOf(trimmed))
+        val result = ImageIO.read(ByteArrayInputStream(trimmed))
+        // Narożnik nadal czarny: płyta przeżyła przycięcie, zwęził się tylko zapas.
+        assertEquals(Color.BLACK.rgb, result.getRGB(0, 0))
+        assertEquals(Color.BLACK.rgb, result.getRGB(result.width - 1, result.height - 1))
     }
 
     /** Kolorowa płyta to ta sama historia co czarna. */
     @Test
-    fun `nie rusza znaku na kolorowej płycie`() {
-        val bytes = png(400, 200, background = Color(0x0F, 0x17, 0x2A)) { markAt(it, 150, 60, 80, 60, Color.WHITE) }
-        assertArrayEquals(bytes, LogoTrim.trim(bytes))
+    fun `znak na kolorowej płycie zachowuje tło`() {
+        val plate = Color(0x0F, 0x17, 0x2A)
+        val bytes = png(400, 200, background = plate) { markAt(it, 150, 60, 80, 60, Color.WHITE) }
+        val trimmed = LogoTrim.trim(bytes)
+
+        // 6% z 60 px to 4 px (po zaokrągleniu), więc kadr rośnie o 8 px w każdej osi.
+        assertEquals(80 + 8 to 60 + 8, sizeOf(trimmed))
+        assertEquals(plate.rgb, ImageIO.read(ByteArrayInputStream(trimmed)).getRGB(0, 0))
+    }
+
+    /**
+     * Znak dochodzący w pliku do krawędzi płyty: marginesu nie ma skąd wziąć i nie dorysowujemy go.
+     * Tusz 300 × 120 px dotyka lewej krawędzi, więc 7 px zapasu dochodzi z pozostałych trzech stron.
+     */
+    @Test
+    fun `margines nie wychodzi poza oryginał`() {
+        val bytes = png(400, 200, background = Color.BLACK) { markAt(it, 0, 40, 300, 120, Color.WHITE) }
+        assertEquals(307 to 134, sizeOf(LogoTrim.trim(bytes)))
+    }
+
+    /** Tła, którego na kartce nie widać, nie ma po co zostawiać — tam cięcie jest równe z tuszem. */
+    @Test
+    fun `przezroczyste tło tniemy bez marginesu`() {
+        val bytes = png(400, 200, background = null) { markAt(it, 150, 60, 80, 60) }
+        assertEquals(80 to 60, sizeOf(LogoTrim.trim(bytes)))
     }
 
     /** Gradient w tle znaczy, że „margines" jest częścią znaku — lepiej nie ruszać. */
