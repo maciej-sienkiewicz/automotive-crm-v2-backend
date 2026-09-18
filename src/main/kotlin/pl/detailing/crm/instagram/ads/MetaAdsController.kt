@@ -64,16 +64,27 @@ class MetaAdsController(
         @RequestBody request: LinkFacebookPageRequest
     ): ResponseEntity<Map<String, Any>> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val pageId = readService.linkFacebookPage(principal.studioId, profileId, request)
-            ?: return ResponseEntity.badRequest().body(mapOf("linked" to false))
+        return when (val outcome = readService.linkFacebookPage(principal, profileId, request)) {
+            is PageLinkOutcome.Rejected ->
+                ResponseEntity.badRequest().body(mapOf("status" to "REJECTED"))
 
-        val sync = syncService.syncProfile(profileId, pageId)
-        // Nazwa strony wraca na ekran: to jedyne potwierdzenie, że numer należy do
-        // tej firmy, o którą chodziło. Sam numer nic nie mówi, a pomyłka wciąga do
-        // kalendarza reklamy obcego przedsiębiorstwa pod nazwą konkurenta.
-        return ResponseEntity.ok(
-            mapOf("linked" to true, "adsFound" to sync.adsSeen, "pageName" to (sync.pageName ?: ""))
-        )
+            is PageLinkOutcome.RequestSent ->
+                ResponseEntity.accepted().body(mapOf("status" to "REQUESTED"))
+
+            is PageLinkOutcome.Linked -> {
+                val sync = syncService.syncProfile(profileId, outcome.pageId)
+                // Nazwa strony wraca na ekran: to jedyne potwierdzenie, że numer należy do
+                // tej firmy, o którą chodziło. Sam numer nic nie mówi, a pomyłka wciąga do
+                // kalendarza reklamy obcego przedsiębiorstwa pod nazwą konkurenta.
+                ResponseEntity.ok(
+                    mapOf(
+                        "status" to "LINKED",
+                        "adsFound" to sync.adsSeen,
+                        "pageName" to (sync.pageName ?: "")
+                    )
+                )
+            }
+        }
     }
 
     /**
@@ -88,12 +99,18 @@ class MetaAdsController(
         return ResponseEntity.ok(mapOf("candidates" to readService.searchPages(q)))
     }
 
-    /** Odpięcie strony — razem z migawkami reklam, bo opisują już cudzą firmę. */
+    /**
+     * Odpięcie strony — prośba do administratora, nie zapis.
+     *
+     * Odpięcie kasowało migawki reklam wspólne dla wszystkich studiów obserwujących
+     * profil, więc jedno kliknięcie zabierało historię także cudzym kalendarzom.
+     */
     @DeleteMapping("/profiles/{profileId}/page")
-    fun unlinkPage(@PathVariable profileId: UUID): ResponseEntity<Map<String, Boolean>> {
+    fun unlinkPage(@PathVariable profileId: UUID): ResponseEntity<Map<String, String>> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val unlinked = readService.unlinkFacebookPage(principal.studioId, profileId)
-        return if (unlinked) ResponseEntity.ok(mapOf("unlinked" to true))
-        else ResponseEntity.badRequest().body(mapOf("unlinked" to false))
+        return when (readService.unlinkFacebookPage(principal, profileId)) {
+            is PageLinkOutcome.RequestSent -> ResponseEntity.accepted().body(mapOf("status" to "REQUESTED"))
+            else -> ResponseEntity.badRequest().body(mapOf("status" to "REJECTED"))
+        }
     }
 }

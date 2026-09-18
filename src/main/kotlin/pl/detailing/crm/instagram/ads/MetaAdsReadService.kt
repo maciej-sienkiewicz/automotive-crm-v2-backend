@@ -3,6 +3,7 @@ package pl.detailing.crm.instagram.ads
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
 import pl.detailing.crm.shared.InstagramProfileStatus
@@ -25,7 +26,8 @@ class MetaAdsReadService(
     private val profileRepository: InstagramProfileRepository,
     private val snapshotRepository: MetaAdSnapshotRepository,
     private val client: MetaAdLibraryClient,
-    private val instagramResolver: AdvertiserInstagramResolver
+    private val instagramResolver: AdvertiserInstagramResolver,
+    private val changeRequestMailer: MetaPageChangeRequestMailer
 ) {
     private val log = LoggerFactory.getLogger(MetaAdsReadService::class.java)
 
@@ -188,25 +190,37 @@ class MetaAdsReadService(
      * udostępnia mostu profil IG → strona FB, a wyszukiwanie po nazwie trafia
      * na zbieżności („Auto Spa" jest w każdym mieście).
      *
-     * Zwraca znormalizowany identyfikator strony (null = odmowa), bo wołający
-     * ma zaraz po tym pobrać reklamy tej strony — powiązanie bez pobrania jest
-     * ruchem bez skutku: wiersz pojawia się w kalendarzu pusty i nic więcej.
+     * ## Dwie ścieżki i dlaczego
      *
-     * Wskazanie INNEJ strony kasuje migawki poprzedniej. To reklamy innej firmy —
-     * zostawione w bazie zmieszałyby w kalendarzu dwa różne studia pod jedną nazwą.
+     * Powiązanie siedzi na GLOBALNYM wierszu profilu (`instagram_profiles`), wspólnym dla
+     * wszystkich studiów, które ten profil obserwują — razem z migawkami reklam. Zapis
+     * wprost z aplikacji znaczył więc, że jedno studio przestawia dane pozostałym i kasuje
+     * im historię reklam.
+     *
+     * - **Pierwsze wskazanie** (profil nie ma jeszcze strony) zapisujemy od ręki: nie ma
+     *   czego zepsuć ani czego skasować, a bez tego moduł byłby bezużyteczny.
+     * - **Zmiana strony** idzie mailem do administratora i NIE rusza bazy. Administrator
+     *   sprawdza numer i wprowadza go sam — patrz [MetaPageChangeRequestMailer].
      */
     @Transactional
-    fun linkFacebookPage(studioId: StudioId, profileId: UUID, request: LinkFacebookPageRequest): String? {
-        if (!watches(studioId, profileId)) return null
+    fun linkFacebookPage(
+        requestedBy: UserPrincipal,
+        profileId: UUID,
+        request: LinkFacebookPageRequest
+    ): PageLinkOutcome {
+        if (!watches(requestedBy.studioId, profileId)) return PageLinkOutcome.Rejected
 
         val pageId = request.pageId.trim()
-        if (pageId.isEmpty() || !pageId.all { it.isDigit() } || pageId.length > 40) return null
+        if (pageId.isEmpty() || !pageId.all { it.isDigit() } || pageId.length > 40) return PageLinkOutcome.Rejected
 
-        val profile = profileRepository.findById(profileId).orElse(null) ?: return null
+        val profile = profileRepository.findById(profileId).orElse(null) ?: return PageLinkOutcome.Rejected
         val previous = profile.facebookPageId
-        if (previous != null && previous != pageId) {
-            snapshotRepository.deleteByProfileId(profileId)
-            log.info("Meta Ad Library: profil {} zmienia stronę {} → {}, migawki skasowane", profileId, previous, pageId)
+
+        if (previous == pageId) return PageLinkOutcome.Rejected
+
+        if (previous != null) {
+            changeRequestMailer.request(requestedBy, profile, pageId)
+            return PageLinkOutcome.RequestSent
         }
 
         profile.facebookPageId = pageId
@@ -214,31 +228,24 @@ class MetaAdsReadService(
         profile.facebookPageLinkedAt = Instant.now()
         profileRepository.save(profile)
         log.info("Meta Ad Library: profil {} (@{}) powiązany ze stroną {}", profileId, profile.username, pageId)
-        return pageId
+        return PageLinkOutcome.Linked(pageId)
     }
 
     /**
-     * Odpięcie strony. Migawki idą razem z nią: opisują reklamy strony, której
-     * już nie śledzimy, a zostawione udawałyby historię tego profilu.
+     * Odpięcie strony — prośba, nie zapis.
      *
-     * Powiązanie jest własnością profilu, nie studia — tak samo jak reszta danych
-     * profilu w tym module. Odpięcie działa więc dla wszystkich, którzy go obserwują;
-     * to ta sama zasada, na której działa wskazanie strony.
+     * Odpięcie kasowało migawki reklam, a te są wspólne dla wszystkich studiów
+     * obserwujących profil: jedno kliknięcie zabierało historię wszystkim. Idzie więc
+     * tą samą drogą co zmiana strony — mailem do administratora.
      */
-    @Transactional
-    fun unlinkFacebookPage(studioId: StudioId, profileId: UUID): Boolean {
-        if (!watches(studioId, profileId)) return false
+    fun unlinkFacebookPage(requestedBy: UserPrincipal, profileId: UUID): PageLinkOutcome {
+        if (!watches(requestedBy.studioId, profileId)) return PageLinkOutcome.Rejected
 
-        val profile = profileRepository.findById(profileId).orElse(null) ?: return false
-        if (profile.facebookPageId == null) return false
+        val profile = profileRepository.findById(profileId).orElse(null) ?: return PageLinkOutcome.Rejected
+        if (profile.facebookPageId == null) return PageLinkOutcome.Rejected
 
-        snapshotRepository.deleteByProfileId(profileId)
-        log.info("Meta Ad Library: profil {} (@{}) odpięty od strony {}", profileId, profile.username, profile.facebookPageId)
-        profile.facebookPageId = null
-        profile.facebookPageName = null
-        profile.facebookPageLinkedAt = null
-        profileRepository.save(profile)
-        return true
+        changeRequestMailer.request(requestedBy, profile, newPageId = null)
+        return PageLinkOutcome.RequestSent
     }
 
     /**

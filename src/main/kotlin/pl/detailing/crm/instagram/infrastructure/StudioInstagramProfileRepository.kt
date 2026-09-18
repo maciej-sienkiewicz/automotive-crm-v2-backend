@@ -19,6 +19,9 @@ interface StudioInstagramProfileRepository : JpaRepository<StudioInstagramProfil
     /**
      * Liczba aktywnych subskrypcji danego profilu (używane do decyzji o usunięciu global profilu)
      */
+    /** Ile studiów obserwuje ten profil — zasięg rażenia zmiany na globalnym wierszu profilu. */
+    fun countByProfileId(profileId: UUID): Long
+
     fun countByProfileIdAndStatus(profileId: UUID, status: InstagramProfileStatus): Long
 
     fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID): List<StudioInstagramProfileEntity>
