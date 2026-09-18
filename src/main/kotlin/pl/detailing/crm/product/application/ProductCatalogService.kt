@@ -63,7 +63,6 @@ class ProductCatalogService(
                 val overlay = overlays[p.id]
                 mapper.toListItem(p, overlay, ratings[p.id], canSeeCosts)
             }
-            .filter { item -> filter.onlyOurs.not() || item.isOurs }
             .filter { item -> filter.onlyFavourite.not() || item.isFavourite }
             .filter { item -> filter.includeHidden || overlays[UUID.fromString(item.id)]?.isHidden != true }
             .filter { item -> matchesRating(filter.rating, item.ratingValue) }
@@ -198,7 +197,10 @@ class ProductCatalogService(
         // Jak przy tworzeniu ręcznym: bez poprawnego kodu wiersz zostaje PRYWATNY.
         val gtin = draft.gtin?.let { Gtin.parseOrNull(it) }
         gtin?.let { productRepository.findByGtin(it.value) }?.let {
-            // Wyścig: ktoś zapisał ten sam kod w międzyczasie — zwróć istniejący.
+            // Wyścig: ktoś zapisał ten sam kod w międzyczasie — zwróć istniejący, ale zapisz,
+            // że to studio też go u siebie ma. Bez tego produkt zapisany przed chwilą nie
+            // pojawiłby się na liście.
+            adopt(studioId, userId, it.id)
             return get(studioId, it.id, canSeeCosts)
         }
         val unit = UnitOfMeasure.fromCode(draft.unitOfMeasure) ?: UnitOfMeasure.PIECE
@@ -298,6 +300,44 @@ class ProductCatalogService(
         return mapper.toResponse(product, overlay, rating, noteCount, canSeeCosts)
     }
 
+    /**
+     * Wciąga do katalogu studia wiersz, który już siedzi w cache.
+     *
+     * Skan kodu, który inne studio zapisało wcześniej, nie zostawiał po sobie żadnego śladu
+     * — karta się otwierała, ale produkt nigdy nie trafiał na listę „Produkty", bo lista
+     * pokazuje wyłącznie własne wiersze. Pusta nakładka jest właśnie tym śladem: nie zmienia
+     * danych produktu, mówi tylko „to studio ma go u siebie".
+     *
+     * Istniejącej nakładki NIE dotykamy: [upsertOverlay] nadpisuje pola nullami, więc
+     * „adopcja" produktu, który już ma cenę i nazwę własną, skasowałaby jedno i drugie.
+     */
+    @Transactional
+    fun adopt(studioId: StudioId, userId: UserId, productId: UUID) {
+        if (studioRepository.findByStudioIdAndProductId(studioId.value, productId) != null) return
+        val now = Instant.now()
+        studioRepository.save(
+            ProductStudioEntity(
+                id = UUID.randomUUID(),
+                studioId = studioId.value,
+                productId = productId,
+                unitPriceNetCents = null,
+                unitPriceGrossCents = null,
+                priceEnteredAs = null,
+                vatRate = null,
+                internalName = null,
+                internalNote = null,
+                createdBy = userId.value,
+                updatedBy = userId.value,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    /** Wiersz z cache po kodzie — z pominięciem listy, która pokazuje tylko własne produkty. */
+    @Transactional(readOnly = true)
+    fun findByGtin(gtin: String): UUID? = productRepository.findByGtin(gtin)?.id
+
     // ── helpers ──
     private fun upsertOverlay(
         studioId: StudioId,
@@ -353,7 +393,6 @@ class ProductCatalogService(
 
 data class ProductListFilter(
     val search: String = "",
-    val onlyOurs: Boolean = false,
     val onlyFavourite: Boolean = false,
     val includeHidden: Boolean = false,
     /**

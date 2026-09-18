@@ -50,7 +50,6 @@ class ProductController(
     @RequiresPermission(Permission.PRODUCTS_VIEW)
     fun list(
         @RequestParam(required = false, defaultValue = "") search: String,
-        @RequestParam(required = false, defaultValue = "false") onlyOurs: Boolean,
         @RequestParam(required = false, defaultValue = "false") onlyFavourite: Boolean,
         @RequestParam(required = false, defaultValue = "false") includeHidden: Boolean,
         @RequestParam(required = false, defaultValue = "") rating: String,
@@ -62,7 +61,7 @@ class ProductController(
         val principal = SecurityContextHelper.getCurrentUser()
         var items = catalogService.list(
             principal.studioId,
-            ProductListFilter(search, onlyOurs, onlyFavourite, includeHidden, rating),
+            ProductListFilter(search, onlyFavourite, includeHidden, rating),
             canSeeCosts()
         )
         items = when (sortBy) {
@@ -112,13 +111,12 @@ class ProductController(
         val resolution = resolutionService.resolve(req.barcode)
         val response = when (resolution.status) {
             ProductResolution.Status.FOUND_LOCAL -> {
-                // Produkt jest w katalogu — oddaj pełną kartę (z nakładką studia).
-                val existing = catalogService.get(
-                    principal.studioId,
-                    // znajdź po gtin z wyniku
-                    resolveLocalId(resolution),
-                    canSeeCosts()
-                )
+                // Produkt siedzi w cache — oddaj pełną kartę i zapisz, że to studio też go ma.
+                // Człowiek właśnie zeskanował kod w oknie „Dodaj produkt", więc to jest dodanie
+                // do katalogu, nawet jeśli wiersz założył ktoś inny.
+                val localId = resolveLocalId(resolution)
+                catalogService.adopt(principal.studioId, principal.userId, localId)
+                val existing = catalogService.get(principal.studioId, localId, canSeeCosts())
                 LookupResponse("FOUND_LOCAL", existing, null, existing.provenance)
             }
             ProductResolution.Status.RESOLVED -> {
@@ -144,11 +142,11 @@ class ProductController(
     }
 
     private fun resolveLocalId(resolution: ProductResolution): UUID {
-        // FOUND_LOCAL zawsze niesie spec z gtin; karta jest w katalogu, więc pobierz po gtin.
+        // FOUND_LOCAL zawsze niesie spec z gtin. Szukamy wprost po kodzie, nie przez listę:
+        // lista pokazuje wyłącznie produkty tego studia, a tu chodzi o cały cache — to jest
+        // dokładnie ta jedna ścieżka, do której współdzielona tabela służy.
         val gtin = resolution.result!!.spec.gtin!!
-        val principal = SecurityContextHelper.getCurrentUser()
-        return catalogService.list(principal.studioId, ProductListFilter(search = gtin), canSeeCosts())
-            .firstOrNull { it.gtin == gtin }?.id?.let(UUID::fromString)
+        return catalogService.findByGtin(gtin)
             ?: throw pl.detailing.crm.shared.EntityNotFoundException("Produkt zniknął z katalogu")
     }
 

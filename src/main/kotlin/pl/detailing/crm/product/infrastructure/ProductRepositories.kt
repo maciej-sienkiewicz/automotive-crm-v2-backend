@@ -43,14 +43,36 @@ interface ProductRepository : JpaRepository<ProductEntity, UUID> {
     ): ProductEntity?
 
     /**
-     * Lista katalogu: proste, wielkoliterowo-niewrażliwe wyszukiwanie po marce/nazwie/
-     * nazwie. Widoczność: wiersze globalne + prywatne TEGO studia. Wycofane pomijamy.
+     * Katalog TEGO studia: proste, wielkoliterowo-niewrażliwe wyszukiwanie po nazwie,
+     * marce i kodzie. Wycofane pomijamy.
+     *
+     * Tabela produktów jest współdzielona przez wszystkie studia, ale służy jako CACHE
+     * rozpoznawania po kodzie kreskowym — nie jako sklep, po którym się chodzi. Lista
+     * pokazuje więc wyłącznie to, co studio samo dodało; wiersz obcego najemcy, który
+     * akurat siedzi w cache, nie ma tu czego szukać. „Nasze" to jedno z czterech:
+     *
+     *  - wiersz prywatny studia (produkt bez poprawnego kodu),
+     *  - wiersz założony przez to studio (ręcznie albo ze skanu),
+     *  - wiersz z nakładką studia (cena, nazwa własna, ulubiony, ukryty),
+     *  - wiersz użyty przy którejkolwiek wizycie tego studia.
+     *
+     * Warunek jest w zapytaniu, nie w filtrze na liście: cache rośnie o produkty
+     * wszystkich najemców, więc ściąganie go w całości do pamięci przy każdym otwarciu
+     * listy skończyłoby się tym, że jeden warsztat płaci pamięcią za cudze skany.
      */
     @Query(
         """
         SELECT p FROM ProductEntity p
         WHERE p.isWithdrawn = false
           AND (p.ownerStudioId IS NULL OR p.ownerStudioId = :studioId)
+          AND (
+                p.ownerStudioId = :studioId
+             OR p.createdByStudioId = :studioId
+             OR EXISTS (SELECT 1 FROM ProductStudioEntity s
+                        WHERE s.productId = p.id AND s.studioId = :studioId)
+             OR EXISTS (SELECT 1 FROM VisitProductEntity v
+                        WHERE v.productId = p.id AND v.studioId = :studioId)
+          )
           AND (:search = '' OR
                LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
                LOWER(p.brand) LIKE LOWER(CONCAT('%', :search, '%')) OR
