@@ -67,9 +67,10 @@ data class QualityCertificateData(
     val services: List<String>,
     val usedProducts: List<CertificateItem>,
     /**
-     * Oświadczenie o zgodności preparatów — sedno tego dokumentu. Po skończonej usłudze
-     * nie widać już, czym została wykonana, więc wykaz bez podpisanego oświadczenia jest
-     * tylko listą. `null`, gdy nie wskazano żadnego preparatu: nie ma czego poświadczać.
+     * Deklaracja autentyczności — sedno tego dokumentu. Imienny wykaz marek związany
+     * podpisem wykonawcy jest sygnałem, którego nie da się podrobić ani zastąpić
+     * przymiotnikiem; sam wykaz, bez deklaracji, jest tylko listą. `null`, gdy nie
+     * wskazano żadnego materiału: nie ma wtedy czego poświadczać.
      */
     val productDeclaration: String?,
     val recommendedProducts: List<CertificateItem>,

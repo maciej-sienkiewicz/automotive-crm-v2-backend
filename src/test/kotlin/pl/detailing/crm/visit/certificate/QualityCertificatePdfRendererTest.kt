@@ -27,10 +27,11 @@ class QualityCertificatePdfRendererTest {
         vehicle = "Škoda Superb · WX 12345",
         customerName = "Zażółć Gęślą Jaźń",
         completedOn = "18.09.2026",
-        thankYou = listOf("Dziękujemy za powierzenie nam pojazdu.", "To jest Państwa kopia tej informacji."),
+        thankYou = listOf("Dziękujemy, że powierzyli nam Państwo samochód Škoda Superb."),
         services = services,
         usedProducts = used,
-        productDeclaration = "Oświadczamy, że pracowaliśmy wyłącznie preparatami wymienionymi powyżej."
+        productDeclaration = ("Zaświadczamy, że wszystkie wymienione poniżej prace wykonaliśmy "
+            + "z użyciem wyłącznie oryginalnych materiałów wskazanych producentów.")
             .takeIf { used.isNotEmpty() },
         recommendedProducts = recommended,
         careRules = listOf("Myj pojazd metodą dwóch wiader, szamponem o neutralnym pH."),
@@ -59,6 +60,10 @@ class QualityCertificatePdfRendererTest {
         assertTrue(text.contains("ADBL Glass Cleaner"), "brak użytego produktu")
         assertTrue(text.contains("Kosa Shampoo"), "brak zalecenia")
         assertTrue(text.contains("Michał Ćwikliński"), "brak podpisu wystawiającego")
+        assertTrue(
+            text.contains("ZA JAKOŚĆ ODPOWIADA OSOBIŚCIE"),
+            "imienna odpowiedzialność to sedno bloku podpisu: $text"
+        )
     }
 
     @Test
@@ -69,22 +74,45 @@ class QualityCertificatePdfRendererTest {
             !text.contains("ZALECANE DO DALSZEJ PIELĘGNACJI"),
             "pusta rubryka zaleceń wygląda jak niedokończony dokument: $text"
         )
-        assertTrue(text.contains("UŻYTE PREPARATY"), "sekcja użytych preparatów powinna zostać")
+        assertTrue(text.contains("UŻYTE MATERIAŁY"), "sekcja użytych materiałów powinna zostać")
     }
 
     @Test
-    fun `oświadczenie o preparatach znika razem z pustym wykazem`() {
+    fun `deklaracja autentyczności znika razem z pustym wykazem`() {
         val withProducts = textOf(renderer.render(data()))
         assertTrue(
-            withProducts.contains("pracowaliśmy wyłącznie preparatami"),
-            "oświadczenie to sedno certyfikatu: $withProducts"
+            withProducts.contains("wyłącznie oryginalnych materiałów"),
+            "deklaracja to sedno certyfikatu: $withProducts"
         )
 
         val without = textOf(renderer.render(data(used = emptyList())))
         assertTrue(
-            !without.contains("pracowaliśmy wyłącznie preparatami"),
+            !without.contains("wyłącznie oryginalnych materiałów"),
             "bez wykazu nie ma czego poświadczać: $without"
         )
+    }
+
+    /**
+     * Badania nad zaufaniem są w tej sprawie jednoznaczne: autopromocja u firmy
+     * kompetentnej obniża wiarygodność, a zdanie przypominające klientowi, że nie ma jak
+     * zweryfikować naszej pracy, wzbudza dokładnie ten niepokój, który dokument ma gasić.
+     * Ten test pilnuje, żeby takie zwroty nie wróciły tylnymi drzwiami.
+     */
+    @Test
+    fun `dokument nie zawiera zwrotów osłabiających zaufanie`() {
+        val text = textOf(renderer.render(data())).lowercase()
+
+        listOf(
+            "nie widać już",           // defensywne przypomnienie o braku weryfikacji
+            "kopia tej informacji",    // biurokratyczne
+            "preparat",                // ton apteczny zamiast rzemieślniczego
+            "podstawa roszcze",        // zamienia prezent w instrument prawny
+            "prosimy przechowywać",
+            "wyższy poziom",           // puste superlatywy
+            "doskonałoś"
+        ).forEach { banned ->
+            assertTrue(!text.contains(banned), "zakazany zwrot „$banned” w dokumencie: $text")
+        }
     }
 
     @Test
@@ -102,7 +130,7 @@ class QualityCertificatePdfRendererTest {
         val text = textOf(renderer.render(data(services = emptyList(), used = emptyList())))
 
         assertTrue(text.contains("ZAKRES WYKONANYCH PRAC"), "belka sekcji ma zostać")
-        assertTrue(text.contains("Nie wskazano prac"), "pusta lista musi się tłumaczyć: $text")
+        assertTrue(text.contains("Nie wskazano wykonanych prac"), "pusta lista musi się tłumaczyć: $text")
     }
 
     @Test
@@ -113,7 +141,7 @@ class QualityCertificatePdfRendererTest {
         assertTrue(pagesOf(bytes) > 1, "60 pozycji nie mieści się na jednej stronie A4")
         val text = textOf(bytes)
         assertTrue(text.contains("Usługa numer 60"), "ostatnia pozycja zgubiona przy łamaniu stron")
-        assertTrue(text.contains("PODPIS WYKONAWCY"), "blok podpisu musi przetrwać łamanie stron")
+        assertTrue(text.contains("ZA JAKOŚĆ ODPOWIADA OSOBIŚCIE"), "blok podpisu musi przetrwać łamanie stron")
     }
 
     @Test

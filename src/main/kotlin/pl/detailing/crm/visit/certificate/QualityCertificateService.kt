@@ -51,18 +51,23 @@ class QualityCertificateService(
         private val DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
         /**
-         * Oświadczenie o zgodności preparatów — powód, dla którego ten dokument w ogóle
-         * istnieje. Klient płaci między innymi za to, CZYM się przy jego aucie pracuje,
-         * a tego po zakończonej usłudze nie da się z auta odczytać. Podpisane zdanie
-         * zamienia wykaz w zobowiązanie.
+         * Deklaracja autentyczności — powód, dla którego ten dokument w ogóle istnieje.
          *
-         * Treść stała, nie do edycji w oknie: oświadczenie, które każdy formułuje
-         * po swojemu, przestaje cokolwiek znaczyć.
+         * Sformułowana pozytywnie i bez defensywności: mówi, czego użyliśmy, a nie
+         * przypomina klientowi, że sam tego nie zweryfikuje. To jest sygnał kosztowny
+         * w rozumieniu teorii sygnalizacji — imienna lista marek plus podpis wykonawcy
+         * wiążą nazwisko z jakością mocniej niż jakikolwiek przymiotnik.
+         *
+         * „Zaświadczamy" pada tu RAZ, w całym dokumencie. Kancelaryzm powtórzony brzmi
+         * biurokratycznie, a nie ekskluzywnie.
+         *
+         * Treść stała, nie do edycji w oknie: deklaracja, którą każdy formułuje po
+         * swojemu, przestaje cokolwiek znaczyć.
          */
         private const val PRODUCT_DECLARATION =
-            "Oświadczamy, że przy tej realizacji pracowaliśmy wyłącznie preparatami " +
-                "wymienionymi powyżej — w postaci oryginalnej, bez zamienników i bez " +
-                "rozcieńczeń innych niż przewidziane przez producenta."
+            "Zaświadczamy, że wszystkie wymienione poniżej prace wykonaliśmy z użyciem " +
+                "wyłącznie oryginalnych materiałów wskazanych producentów. Nie stosowaliśmy " +
+                "zamienników ani produktów niewiadomego pochodzenia."
 
         // Zasady pielęgnacji nie siedzą już w kodzie: są słownikiem studia
         // (pl.detailing.crm.careinstruction), bo jedne są prawdziwe zawsze, a inne
@@ -104,13 +109,13 @@ class QualityCertificateService(
             .trim()
             .ifBlank { customer?.companyName?.trim().orEmpty() }
 
-        val vehicle = listOf(visit.brandSnapshot, visit.modelSnapshot)
+        // Marka z modelem idą do akapitu, tablica tylko do tabeli nagłówkowej — zdanie
+        // powitalne z numerem rejestracyjnym brzmi jak pismo z urzędu.
+        val vehicleLabel = listOf(visit.brandSnapshot, visit.modelSnapshot)
             .filter { it.isNotBlank() }
             .joinToString(" ")
-            .let { base ->
-                val plate = visit.licensePlateSnapshot?.trim().orEmpty()
-                if (plate.isBlank()) base else "$base · $plate"
-            }
+        val plate = visit.licensePlateSnapshot?.trim().orEmpty()
+        val vehicle = if (plate.isBlank()) vehicleLabel else "$vehicleLabel · $plate"
 
         val completedAt = visit.pickupDate ?: visit.actualCompletionDate ?: visit.scheduledDate
 
@@ -120,7 +125,7 @@ class QualityCertificateService(
             vehicle = vehicle,
             customerName = customerName,
             completedOn = formatDate(completedAt),
-            thankYou = openingParagraphs(vehicle),
+            thankYou = openingParagraphs(vehicleLabel),
             services = services,
             usedProducts = usedProducts,
             productDeclaration = PRODUCT_DECLARATION.takeIf { usedProducts.isNotEmpty() },
@@ -216,21 +221,29 @@ class QualityCertificateService(
     }.getOrNull()
 
     /**
-     * Akapity otwierające.
+     * Akapit otwierający.
      *
-     * Świadomie bez podziękowań w rodzaju „cieszymy się, że nas Państwo wybrali":
-     * dokument, który zaczyna się od komplementu, czyta się jak ulotka, a ma być
-     * dowodem. Drugi akapit mówi wprost, PO CO klient go dostaje — to jedyne zdanie,
-     * które uzasadnia całą resztę kartki.
+     * JEDEN akapit, trzy zdania. Poprzednia wersja miała drugi akapit tłumaczący, po co
+     * ten dokument powstaje („po zakończonej usłudze nie widać już, czym została
+     * wykonana") — zdanie zostało usunięte, bo siało wątpliwość i brzmiało defensywnie:
+     * przypominało klientowi, że nie ma jak zweryfikować naszej pracy. Dokument, który
+     * ma redukować niepokój pozakupowy, nie może zawierać zdania, które go wzbudza.
+     *
+     * Deklaracja oryginalności jest wpleciona w zdanie o wykazie, a nie dopisana jako
+     * osobne zapewnienie: „bez zamienników" rozbraja obawę o tani odpowiednik w sposób
+     * pozytywny. Marki premium (Patek Philippe, AMG) piszą tak samo — fakty, nazwisko,
+     * powściągliwość, zero słowa sprzedażowego.
+     *
+     * Bez daty wydania: ta stoi w tabeli nagłówkowej. Krótkie zdania czyta się łatwiej,
+     * a informacja łatwa do przetworzenia jest oceniana jako bardziej wiarygodna.
      */
-    private fun openingParagraphs(vehicle: String): List<String> {
-        val vehiclePart = if (vehicle.isBlank()) "pojazdu" else "pojazdu $vehicle"
+    private fun openingParagraphs(vehicleLabel: String): List<String> {
+        val car = if (vehicleLabel.isBlank()) "swój samochód" else "samochód $vehicleLabel"
         return listOf(
-            "Dziękujemy za powierzenie nam $vehiclePart. Poniżej opisujemy, co przy nim " +
-                "wykonaliśmy, jakimi preparatami pracowaliśmy i co robić, żeby uzyskany efekt " +
-                "utrzymał się jak najdłużej.",
-            "Zakres prac i wykaz preparatów wystawiamy na piśmie, bo po zakończonej usłudze " +
-                "nie widać już, czym została wykonana. To jest Państwa kopia tej informacji."
+            "Dziękujemy, że powierzyli nam Państwo $car. Poniżej znajdą Państwo pełny wykaz " +
+                "wykonanych prac oraz materiałów, których użyliśmy — wszystkie pochodzą " +
+                "wyłącznie od renomowanych producentów, bez zamienników. Dołączamy również " +
+                "wskazówki, jak zachować uzyskany efekt na lata."
         )
     }
 

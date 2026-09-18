@@ -120,15 +120,18 @@ class QualityCertificatePdfRenderer {
             sheet, regular, bold,
             label = "ZAKRES WYKONANYCH PRAC",
             items = data.services.map { ListEntry(it, null) },
-            emptyText = "Nie wskazano prac do umieszczenia na certyfikacie."
+            emptyText = "Nie wskazano wykonanych prac."
         )
         drawList(
             sheet, regular, bold,
-            label = "UŻYTE PREPARATY",
+            // „Materiały", nie „preparaty": to drugie niesie skojarzenie z apteką i chemią
+            // i obniża ton dokumentu, który ma brzmieć rzemieślniczo.
+            label = "UŻYTE MATERIAŁY",
             items = data.usedProducts.map { ListEntry(it.title, it.note) },
-            emptyText = "Nie wskazano preparatów do umieszczenia na certyfikacie."
+            emptyText = "Nie wskazano użytych materiałów.",
+            // Deklaracja stoi NAD wykazem — najpierw zobowiązanie, potem dowód.
+            intro = data.productDeclaration
         )
-        data.productDeclaration?.let { drawDeclaration(sheet, bold, it) }
 
         drawList(
             sheet, regular, bold,
@@ -262,7 +265,9 @@ class QualityCertificatePdfRenderer {
         bold: PDFont,
         label: String,
         items: List<ListEntry>,
-        emptyText: String?
+        emptyText: String?,
+        /** Blok wprowadzający między belką a listą — dziś tylko deklaracja autentyczności. */
+        intro: String? = null
     ) {
         if (items.isEmpty() && emptyText == null) return
 
@@ -270,6 +275,8 @@ class QualityCertificatePdfRenderer {
         sheet.y -= 15.85f
         drawTab(sheet.cs, regular, LEFT, sheet.y, label, null)
         sheet.y -= TAB_H + 8f
+
+        if (intro != null && items.isNotEmpty()) drawDeclaration(sheet, bold, intro)
 
         if (items.isEmpty()) {
             sheet.ensure(BODY_LEAD)
@@ -303,11 +310,11 @@ class QualityCertificatePdfRenderer {
     }
 
     /**
-     * Oświadczenie o preparatach — jedyny blok na dokumencie leżący na własnej
+     * Deklaracja autentyczności — jedyny blok na dokumencie leżący na własnej
      * powierzchni.
      *
      * Szare pole jest w tym systemie wizualnym nośnikiem treści WPISANEJ (pola formularza
-     * w protokołach), więc oświadczenie czyta się jak zobowiązanie, a nie jak kolejny
+     * w protokołach), więc deklaracja czyta się jak zobowiązanie, a nie jak kolejny
      * akapit. Drugiego takiego bloku na certyfikacie nie ma i nie powinno być: dwie
      * wyróżnione powierzchnie znaczą tyle samo co żadna.
      */
@@ -316,8 +323,7 @@ class QualityCertificatePdfRenderer {
         val lines = wrap(text, bold, NOTE_FONT, CONTENT_W - 2 * pad)
         val boxH = lines.size * NOTE_LEAD + 2 * pad - (NOTE_LEAD - NOTE_FONT)
 
-        sheet.ensure(boxH + 12f)
-        sheet.y -= 9f
+        sheet.ensure(boxH + 14f)
         fillRect(sheet.cs, LEFT, sheet.y - boxH, CONTENT_W, boxH, GRAY)
 
         var ty = sheet.y - pad - NOTE_FONT
@@ -325,7 +331,7 @@ class QualityCertificatePdfRenderer {
             text(sheet.cs, bold, NOTE_FONT, LEFT + pad, ty, line, Color.BLACK)
             ty -= NOTE_LEAD
         }
-        sheet.y -= boxH
+        sheet.y -= boxH + 10f
     }
 
     /**
@@ -385,7 +391,10 @@ class QualityCertificatePdfRenderer {
         sheet.y = minOf(sheet.y - 22f, BOTTOM + blockH)
 
         val x = PAGE_W - RIGHT_MARGIN - boxW
-        drawTab(sheet.cs, regular, x, sheet.y, "PODPIS WYKONAWCY", boxW)
+        // „Za jakość odpowiada osobiście" zamiast „podpis wykonawcy": nazwisko związane
+        // z pracą jest sygnałem, którego nie da się podrobić ani zastąpić przymiotnikiem —
+        // ten sam mechanizm co plakietka budowniczego silnika w AMG.
+        drawTab(sheet.cs, regular, x, sheet.y, "ZA JAKOŚĆ ODPOWIADA OSOBIŚCIE", boxW)
         val boxTop = sheet.y - TAB_H - 2.30f
         fillRect(sheet.cs, x, boxTop - boxH, boxW, boxH, GRAY)
 

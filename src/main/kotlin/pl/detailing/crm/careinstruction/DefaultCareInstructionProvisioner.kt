@@ -37,6 +37,10 @@ class DefaultCareInstructionProvisioner(
          * Świadomie nie ma tu terminów utwardzania powłok ani zakazu mycia przez pierwsze
          * dni — to zależy od usługi i wchodzi do słownika jako osobne wpisy przypięte do
          * konkretnych pozycji cennika.
+         *
+         * Każda zasada zaczyna się od tego, CO robić, a nie od zakazu. Sekcja nosi tytuł
+         * „Jak utrzymać efekt" i ma się tak czytać: instrukcja dbania o wynik pracy,
+         * nie regulamin z listą przewinień.
          */
         val DEFAULTS: List<Pair<String, String>> = listOf(
             "Mycie" to "Myj pojazd metodą dwóch wiader, szamponem o neutralnym pH. " +
@@ -45,8 +49,8 @@ class DefaultCareInstructionProvisioner(
                 "Woda pozostawiona do odparowania zostawia osad z kamienia.",
             "Zabrudzenia organiczne" to "Odchody ptaków, owady i żywicę usuwaj możliwie szybko. " +
                 "Zaschnięte wytrawiają lakier i ślad po nich zostaje na stałe.",
-            "Chemia" to "Unikaj preparatów silnie alkalicznych i kwaśnych poza zastosowaniem, " +
-                "do którego są przeznaczone. Skracają żywotność zabezpieczeń."
+            "Chemia" to "Do bieżącej pielęgnacji używaj środków o neutralnym odczynie. " +
+                "Silnie alkaliczne i kwaśne skracają żywotność zabezpieczeń."
         )
     }
 
