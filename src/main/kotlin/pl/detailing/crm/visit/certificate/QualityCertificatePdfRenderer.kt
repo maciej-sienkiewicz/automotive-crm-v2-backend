@@ -118,24 +118,27 @@ class QualityCertificatePdfRenderer {
 
         drawList(
             sheet, regular, bold,
-            label = "ZAKRES WYKONANYCH USŁUG",
+            label = "ZAKRES WYKONANYCH PRAC",
             items = data.services.map { ListEntry(it, null) },
-            emptyText = "Nie wskazano usług do umieszczenia na certyfikacie."
+            emptyText = "Nie wskazano prac do umieszczenia na certyfikacie."
         )
         drawList(
             sheet, regular, bold,
-            label = "UŻYTE PRODUKTY",
+            label = "UŻYTE PREPARATY",
             items = data.usedProducts.map { ListEntry(it.title, it.note) },
-            emptyText = "Nie wskazano produktów do umieszczenia na certyfikacie."
+            emptyText = "Nie wskazano preparatów do umieszczenia na certyfikacie."
         )
+        data.productDeclaration?.let { drawDeclaration(sheet, bold, it) }
+
         drawList(
             sheet, regular, bold,
             label = "ZALECANE DO DALSZEJ PIELĘGNACJI",
             items = data.recommendedProducts.map { ListEntry(it.title, it.note) },
             emptyText = null
         )
+        drawCare(sheet, regular, bold, data)
 
-        drawSignature(sheet, doc, regular, data)
+        drawSignature(sheet, doc, regular, bold, data)
         sheet.close()
 
         ByteArrayOutputStream().use { out ->
@@ -156,29 +159,46 @@ class QualityCertificatePdfRenderer {
         val top = sheet.y
         val logoTop = top - 4f
 
-        data.logoPng?.let { png ->
+        val logoDrawn = data.logoPng?.let { png ->
             runCatching {
                 val image = PDImageXObject.createFromByteArray(doc, png, "studio-logo")
                 val scale = minOf(LOGO_W / image.width, LOGO_H / image.height)
                 val w = image.width * scale
                 val h = image.height * scale
                 // Wyrównanie do lewej i wyśrodkowanie w pionie slotu — jak w szablonach
-                // (`object-position: left center`).
+                // (object-position: left center).
                 sheet.cs.drawImage(image, LEFT - 0.94f, logoTop - LOGO_H + (LOGO_H - h) / 2f, w, h)
+                true
             }.onFailure { logger.warn("Nie udało się wstawić logo na certyfikat: ${it.message}") }
-        }
+                .getOrDefault(false)
+        } ?: false
 
-        val boxW = 180f
-        val boxX = PAGE_W - RIGHT_MARGIN - boxW
-        drawTab(sheet.cs, regular, boxX, logoTop, "USŁUGODAWCA", boxW)
-        val boxTop = logoTop - TAB_H - 2.28f
-        val boxH = 30.13f
-        fillRect(sheet.cs, boxX, boxTop - boxH, boxW, boxH, GRAY)
-        val providerLines = wrap(data.providerName, bold, META_LABEL, boxW - 4f).take(3)
-        var ty = boxTop - 10f
-        providerLines.forEach { line ->
-            text(sheet.cs, bold, META_LABEL, boxX + 2f, ty, line, Color.BLACK)
-            ty -= 9f
+        if (logoDrawn) {
+            // Z logo po lewej prawa strona niesie formalne pole „usługodawca", tak jak
+            // w protokołach.
+            val boxW = 180f
+            val boxX = PAGE_W - RIGHT_MARGIN - boxW
+            drawTab(sheet.cs, regular, boxX, logoTop, "USŁUGODAWCA", boxW)
+            val boxTop = logoTop - TAB_H - 2.28f
+            val boxH = 30.13f
+            fillRect(sheet.cs, boxX, boxTop - boxH, boxW, boxH, GRAY)
+            var ty = boxTop - 10f
+            wrap(data.providerName, bold, META_LABEL, boxW - 4f).take(3).forEach { line ->
+                text(sheet.cs, bold, META_LABEL, boxX + 2f, ty, line, Color.BLACK)
+                ty -= 9f
+            }
+        } else {
+            // Bez logo slot zostawał pusty, a nazwa studia siedziała drobnym drukiem
+            // w szarym polu po prawej — górna trzecia część kartki wyglądała na
+            // niedokończoną. Nazwa wchodzi wtedy w miejsce logo, jako znak firmowy
+            // złożony pismem, i nie dubluje się już nigdzie w nagłówku.
+            var ty = logoTop - LOGO_H + 12f
+            wrap(data.providerName, bold, 13f, PAGE_W - LEFT - RIGHT_MARGIN).take(2)
+                .asReversed()
+                .forEach { line ->
+                    text(sheet.cs, bold, 13f, LEFT, ty, line, NAVY)
+                    ty += 16f
+                }
         }
 
         sheet.y = top - 68.65f
@@ -283,13 +303,78 @@ class QualityCertificatePdfRenderer {
     }
 
     /**
+     * Oświadczenie o preparatach — jedyny blok na dokumencie leżący na własnej
+     * powierzchni.
+     *
+     * Szare pole jest w tym systemie wizualnym nośnikiem treści WPISANEJ (pola formularza
+     * w protokołach), więc oświadczenie czyta się jak zobowiązanie, a nie jak kolejny
+     * akapit. Drugiego takiego bloku na certyfikacie nie ma i nie powinno być: dwie
+     * wyróżnione powierzchnie znaczą tyle samo co żadna.
+     */
+    private fun drawDeclaration(sheet: Sheet, bold: PDFont, text: String) {
+        val pad = 8f
+        val lines = wrap(text, bold, NOTE_FONT, CONTENT_W - 2 * pad)
+        val boxH = lines.size * NOTE_LEAD + 2 * pad - (NOTE_LEAD - NOTE_FONT)
+
+        sheet.ensure(boxH + 12f)
+        sheet.y -= 9f
+        fillRect(sheet.cs, LEFT, sheet.y - boxH, CONTENT_W, boxH, GRAY)
+
+        var ty = sheet.y - pad - NOTE_FONT
+        lines.forEach { line ->
+            text(sheet.cs, bold, NOTE_FONT, LEFT + pad, ty, line, Color.BLACK)
+            ty -= NOTE_LEAD
+        }
+        sheet.y -= boxH
+    }
+
+    /**
+     * Pielęgnacja po wizycie.
+     *
+     * Najczęstsze pytanie klienta po odbiorze auta, więc ma własną sekcję zamiast zdania
+     * w podziękowaniu. Reguły stałe są prawdziwe przy każdej realizacji; to, co zależy od
+     * konkretnej pracy (terminy utwardzania powłoki), dopisuje pracownik.
+     */
+    private fun drawCare(sheet: Sheet, regular: PDFont, bold: PDFont, data: QualityCertificateData) {
+        if (data.careRules.isEmpty() && data.careNote.isNullOrBlank()) return
+
+        sheet.ensure(TAB_H + 24f)
+        sheet.y -= 15.85f
+        drawTab(sheet.cs, regular, LEFT, sheet.y, "JAK UTRZYMAĆ EFEKT", null)
+        sheet.y -= TAB_H + 8f
+
+        val indent = 12f
+        data.careRules.forEach { rule ->
+            wrap(rule, regular, NOTE_FONT, CONTENT_W - indent).forEachIndexed { index, line ->
+                sheet.ensure(NOTE_LEAD)
+                if (index == 0) fillRect(sheet.cs, LEFT + 1.5f, sheet.y - NOTE_FONT + 1.5f, 3f, 3f, NAVY)
+                text(sheet.cs, regular, NOTE_FONT, LEFT + indent, sheet.y - NOTE_FONT, line, INK)
+                sheet.y -= NOTE_LEAD
+            }
+            sheet.y -= 3f
+        }
+
+        data.careNote?.takeIf { it.isNotBlank() }?.let { note ->
+            sheet.y -= 4f
+            sheet.ensure(BODY_LEAD)
+            text(sheet.cs, bold, NOTE_FONT, LEFT, sheet.y - NOTE_FONT, "Zalecenia dla tej realizacji", INK)
+            sheet.y -= NOTE_LEAD + 1f
+            wrap(note, regular, NOTE_FONT, CONTENT_W).forEach { line ->
+                sheet.ensure(NOTE_LEAD)
+                text(sheet.cs, regular, NOTE_FONT, LEFT, sheet.y - NOTE_FONT, line, INK)
+                sheet.y -= NOTE_LEAD
+            }
+        }
+    }
+
+    /**
      * Podpis wykonawcy: obraz podpisu zalogowanego użytkownika w szarym polu, pod nim
      * imię i nazwisko oraz data wystawienia.
      *
      * Blok jest niepodzielny — gdy nie mieści się na stronie, idzie w całości na następną.
      * Podpis oderwany od nazwiska na osobnej kartce nie jest podpisem.
      */
-    private fun drawSignature(sheet: Sheet, doc: PDDocument, regular: PDFont, data: QualityCertificateData) {
+    private fun drawSignature(sheet: Sheet, doc: PDDocument, regular: PDFont, bold: PDFont, data: QualityCertificateData) {
         val boxW = 200f
         val boxH = 48f
         val blockH = TAB_H + 2.30f + boxH + 20f
@@ -318,6 +403,16 @@ class QualityCertificatePdfRenderer {
         val captionY = boxTop - boxH - 10f
         val caption = listOf(data.issuedByName, data.issuedOn).filter { it.isNotBlank() }.joinToString(" · ")
         text(sheet.cs, regular, NOTE_FONT, x, captionY, ellipsize(caption, regular, NOTE_FONT, boxW), MUTED)
+
+        // Kontakt naprzeciw podpisu: certyfikat zostaje u klienta i bywa jedyną kartką,
+        // na której ma numer do studia.
+        data.contactLine?.let { contact ->
+            text(sheet.cs, bold, NOTE_FONT, LEFT, boxTop - 2f, data.providerName, INK)
+            text(
+                sheet.cs, regular, NOTE_FONT, LEFT, boxTop - 2f - NOTE_LEAD,
+                ellipsize(contact, regular, NOTE_FONT, x - LEFT - 16f), MUTED
+            )
+        }
         sheet.y = captionY - 6f
     }
 

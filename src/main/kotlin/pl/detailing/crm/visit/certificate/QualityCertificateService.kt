@@ -13,6 +13,7 @@ import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.studio.logo.CompanyLogoService
+import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.signature.UserSignatureService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
@@ -46,6 +47,39 @@ class QualityCertificateService(
     companion object {
         private val WARSAW = ZoneId.of("Europe/Warsaw")
         private val DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+        /**
+         * Oświadczenie o zgodności preparatów — powód, dla którego ten dokument w ogóle
+         * istnieje. Klient płaci między innymi za to, CZYM się przy jego aucie pracuje,
+         * a tego po zakończonej usłudze nie da się z auta odczytać. Podpisane zdanie
+         * zamienia wykaz w zobowiązanie.
+         *
+         * Treść stała, nie do edycji w oknie: oświadczenie, które każdy formułuje
+         * po swojemu, przestaje cokolwiek znaczyć.
+         */
+        private const val PRODUCT_DECLARATION =
+            "Oświadczamy, że przy tej realizacji pracowaliśmy wyłącznie preparatami " +
+                "wymienionymi powyżej — w postaci oryginalnej, bez zamienników i bez " +
+                "rozcieńczeń innych niż przewidziane przez producenta."
+
+        /**
+         * Zasady pielęgnacji prawdziwe przy KAŻDEJ realizacji.
+         *
+         * Celowo nie ma tu terminów utwardzania powłok ani zakazu mycia przez pierwsze dni:
+         * to zależy od tego, co zrobiono, a nieprawdziwa instrukcja na dokumencie
+         * z podpisem jest gorsza niż jej brak. Takie rzeczy wpisuje pracownik w polu
+         * „zalecenia szczegółowe".
+         */
+        private val CARE_RULES = listOf(
+            "Myj pojazd metodą dwóch wiader, szamponem o neutralnym pH. Myjnie automatyczne " +
+                "ze szczotkami zostawiają na lakierze siatkę rys.",
+            "Osuszaj miękką mikrofibrą lub sprężonym powietrzem. Woda pozostawiona do " +
+                "odparowania zostawia osad z kamienia.",
+            "Odchody ptaków, owady i żywicę usuwaj możliwie szybko. Zaschnięte wytrawiają " +
+                "lakier i ślad po nich zostaje na stałe.",
+            "Unikaj preparatów silnie alkalicznych i kwaśnych poza zastosowaniem, do którego " +
+                "są przeznaczone. Skracają żywotność zabezpieczeń."
+        )
     }
 
     @Transactional(readOnly = true)
@@ -99,10 +133,14 @@ class QualityCertificateService(
             vehicle = vehicle,
             customerName = customerName,
             completedOn = formatDate(completedAt),
-            thankYou = thankYouParagraphs(customerName, vehicle),
+            thankYou = openingParagraphs(vehicle),
             services = services,
             usedProducts = usedProducts,
+            productDeclaration = PRODUCT_DECLARATION.takeIf { usedProducts.isNotEmpty() },
             recommendedProducts = recommended,
+            careRules = CARE_RULES,
+            careNote = request.careNote?.trim()?.takeIf { it.isNotBlank() },
+            contactLine = contactLine(settings),
             issuedByName = userFullName.trim(),
             issuedOn = LocalDate.now(WARSAW).format(DATE),
             logoPng = loadLogo(studioId),
@@ -190,21 +228,31 @@ class QualityCertificateService(
         "${product.packageSizeValue.stripTrailingZeros().toPlainString()} ${product.packageSizeUnit.displayName}"
     }.getOrNull()
 
-    private fun thankYouParagraphs(customerName: String, vehicle: String): List<String> {
-        val greeting = if (customerName.isBlank()) {
-            "Dziękujemy za zaufanie i wybranie naszego studia."
-        } else {
-            "$customerName — dziękujemy za zaufanie i wybranie naszego studia."
-        }
-        val vehiclePart = if (vehicle.isBlank()) "Państwa pojazdem" else "pojazdem $vehicle"
+    /**
+     * Akapity otwierające.
+     *
+     * Świadomie bez podziękowań w rodzaju „cieszymy się, że nas Państwo wybrali":
+     * dokument, który zaczyna się od komplementu, czyta się jak ulotka, a ma być
+     * dowodem. Drugi akapit mówi wprost, PO CO klient go dostaje — to jedyne zdanie,
+     * które uzasadnia całą resztę kartki.
+     */
+    private fun openingParagraphs(vehicle: String): List<String> {
+        val vehiclePart = if (vehicle.isBlank()) "pojazdu" else "pojazdu $vehicle"
         return listOf(
-            "$greeting Doceniamy, że jakość pracy jest dla Państwa równie ważna jak dla nas — " +
-                "to ona decyduje o tym, jak długo efekt utrzyma się na lakierze i we wnętrzu.",
-            "Poniżej znajduje się zestawienie prac wykonanych nad $vehiclePart, preparatów, " +
-                "których do nich użyliśmy, oraz produktów, które polecamy do dalszej pielęgnacji. " +
-                "W razie pytań o którykolwiek z nich — jesteśmy do dyspozycji."
+            "Dziękujemy za powierzenie nam $vehiclePart. Poniżej opisujemy, co przy nim " +
+                "wykonaliśmy, jakimi preparatami pracowaliśmy i co robić, żeby uzyskany efekt " +
+                "utrzymał się jak najdłużej.",
+            "Zakres prac i wykaz preparatów wystawiamy na piśmie, bo po zakończonej usłudze " +
+                "nie widać już, czym została wykonana. To jest Państwa kopia tej informacji."
         )
     }
+
+    /** Dane kontaktowe studia w stopce — certyfikat zostaje u klienta na dłużej niż faktura. */
+    private fun contactLine(settings: StudioSettingsEntity?): String? = listOfNotNull(
+        settings?.phone?.trim()?.takeIf { it.isNotBlank() },
+        settings?.email?.trim()?.takeIf { it.isNotBlank() },
+        settings?.website?.trim()?.takeIf { it.isNotBlank() }
+    ).joinToString("   ·   ").takeIf { it.isNotBlank() }
 
     private fun loadLogo(studioId: StudioId): ByteArray? = runCatching {
         companyLogoService.loadDocumentLogo(studioId.value)?.printPng

@@ -19,7 +19,13 @@ data class GenerateQualityCertificateRequest(
      */
     val extraProducts: List<CertificateProductRequest> = emptyList(),
     /** Zalecenia — zawsze dodawane ręcznie, nigdy nie wynikają z danych wizyty. */
-    val recommendations: List<CertificateProductRequest> = emptyList()
+    val recommendations: List<CertificateProductRequest> = emptyList(),
+    /**
+     * Zalecenia szczegółowe wpisane przez pracownika — np. termin pierwszego mycia po
+     * powłoce. Pole istnieje, bo reguły pielęgnacji zależą od tego, CO zrobiono: stały
+     * akapit na certyfikacie mówi tylko to, co jest prawdą przy każdej realizacji.
+     */
+    val careNote: String? = null
 )
 
 /**
@@ -51,11 +57,23 @@ data class QualityCertificateData(
     val vehicle: String,
     val customerName: String,
     val completedOn: String,
-    /** Akapity podziękowania — osobne pozycje, bo między nimi jest światło. */
+    /** Akapity otwierające — osobne pozycje, bo między nimi jest światło. */
     val thankYou: List<String>,
     val services: List<String>,
     val usedProducts: List<CertificateItem>,
+    /**
+     * Oświadczenie o zgodności preparatów — sedno tego dokumentu. Po skończonej usłudze
+     * nie widać już, czym została wykonana, więc wykaz bez podpisanego oświadczenia jest
+     * tylko listą. `null`, gdy nie wskazano żadnego preparatu: nie ma czego poświadczać.
+     */
+    val productDeclaration: String?,
     val recommendedProducts: List<CertificateItem>,
+    /** Zasady prawdziwe przy każdej realizacji — stała treść dokumentu. */
+    val careRules: List<String>,
+    /** Zalecenia szczegółowe tej realizacji, wpisane przez pracownika. */
+    val careNote: String?,
+    /** Telefon · e-mail · strona studia. Stopka dokumentu, który klient zatrzymuje. */
+    val contactLine: String?,
     val issuedByName: String,
     val issuedOn: String,
     val logoPng: ByteArray?,
