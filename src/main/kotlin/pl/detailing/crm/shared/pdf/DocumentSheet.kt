@@ -50,12 +50,24 @@ object DocumentStyle {
     const val NOTE_FONT = 8f
     const val NOTE_LEAD = 10f
 
-    /** Slot na logo studia w nagłówku — jak `.company-logo` w szablonach HTML. */
-    const val LOGO_W = 188.16f
-    const val LOGO_H = 36f
+    /**
+     * Slot na logo studia w nagłówku. Szerszy i wyższy niż kotwica z szablonów HTML
+     * (`.company-logo`, 188,16 × 36 pt), bo tamta kotwica opisuje bardzo płaski logotyp,
+     * a logo warsztatów bywa niemal kwadratowe — przy wysokości 36 pt taki znak
+     * zajmował jedną piątą przeznaczonego na niego pola i wyglądał na doklejony.
+     * 56 pt mieści się w paśmie nagłówka ([HEADER_H]) i nie dochodzi do ramki
+     * „USŁUGODAWCA" po prawej (zaczyna się na 385,68 pt).
+     */
+    const val LOGO_W = 200f
+    const val LOGO_H = 56f
 
-    /** Wysokość bloku nagłówka: logo po lewej, pole „usługodawca" po prawej. */
-    const val HEADER_H = 68.65f
+    /**
+     * Wysokość bloku nagłówka: logo po lewej, pole „usługodawca" po prawej.
+     *
+     * O 7 pt wyższa od pasma z szablonów HTML (68,65 pt), bo slot na logo urósł do 56 pt
+     * — bez tego zapasu dolna krawędź wysokiego znaku firmowego dotykałaby belki tytułu.
+     */
+    const val HEADER_H = 76f
 }
 
 /**
@@ -242,8 +254,10 @@ class DocumentSheet(val doc: PDDocument) : AutoCloseable {
         val top = y
         val logoTop = top - 4f
         val drewLogo = logoPng?.let { png ->
+            // Margines wtopiony w plik skalowałby się razem z logo i zjadał wysokość slotu,
+            // więc najpierw go odcinamy — patrz [LogoTrim].
             imageFitted(
-                png, "studio-logo",
+                LogoTrim.trim(png), "studio-logo",
                 DocumentStyle.LEFT - 0.94f, logoTop - DocumentStyle.LOGO_H,
                 DocumentStyle.LOGO_W, DocumentStyle.LOGO_H, alignLeft = true
             )
@@ -273,7 +287,10 @@ class DocumentSheet(val doc: PDDocument) : AutoCloseable {
                 }
             }
         } else {
-            var ty = logoTop - DocumentStyle.LOGO_H + 12f
+            // Blok nazwy zastępuje logo, ale nie rośnie razem ze slotem: to dwa wiersze pisma
+            // i mają stać tam, gdzie stały, zanim slot na logo został podwyższony.
+            val nameBlockH = 36f
+            var ty = logoTop - nameBlockH + 12f
             providerAddress?.let { address ->
                 text(
                     regular, DocumentStyle.NOTE_FONT, DocumentStyle.LEFT, ty,

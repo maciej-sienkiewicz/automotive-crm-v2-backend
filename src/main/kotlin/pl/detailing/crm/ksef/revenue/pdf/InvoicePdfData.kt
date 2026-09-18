@@ -67,12 +67,13 @@ data class InvoicePdfData(
     val correctedInvoiceNumber: String?,
     val correctionReason: String?,
 
-    /** Numer KSeF nadany fakturze; null, gdy dokument jeszcze do KSeF nie dotarł. */
+    /**
+     * Numer KSeF nadany fakturze; null, gdy dokument do KSeF nie dotarł. Null wycisza cały
+     * blok KSeF: faktura poza systemem nie wspomina o nim ani słowem.
+     */
     val ksefNumber: String?,
     /** Kod QR z adresem weryfikacyjnym KSeF (PNG) — wizualizacja udostępniana poza systemem. */
     val verificationQrPng: ByteArray?,
-    /** Ostrzeżenie drukowane na dokumencie, gdy faktura nie ma jeszcze numeru KSeF. */
-    val draftNotice: String?,
 
     val providerName: String,
     val providerAddress: String?,

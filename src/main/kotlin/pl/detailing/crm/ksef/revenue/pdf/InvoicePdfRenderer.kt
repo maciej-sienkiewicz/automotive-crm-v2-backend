@@ -61,6 +61,7 @@ class InvoicePdfRenderer {
             drawVatSummary(this, data)
             drawPayment(this, data)
             drawKsefBlock(this, data)
+            drawContactFooter(this, data)
             finish()
         }
     }
@@ -299,14 +300,20 @@ class InvoicePdfRenderer {
     }
 
     /**
-     * Blok KSeF: numer nadany fakturze i kod QR prowadzący do weryfikacji u MF.
+     * Blok KSeF: kod QR prowadzący do weryfikacji u MF i numer nadany fakturze.
      *
-     * Od 2026 r. wizualizacja udostępniana poza systemem musi nieść ten kod — bez niego
-     * odbiorca nie ma jak sprawdzić, czy PDF odpowiada fakturze w KSeF. Gdy faktura nie
-     * ma jeszcze numeru, drukujemy to wprost: dokument bez numeru KSeF nie jest jeszcze
-     * fakturą w rozumieniu przepisów i milczenie o tym wprowadzałoby w błąd.
+     * Rysowany WYŁĄCZNIE dla faktury, która jest już w KSeF. Dokument bez numeru KSeF
+     * nie mówi o KSeF nic — jest zwykłą fakturą papierową albo wystawioną poza systemem,
+     * a wzmianka o systemie, którego tu nie ma, tylko myli nabywcę. Kod QR bez numeru
+     * byłby jeszcze gorszy: prowadziłby do weryfikacji dokumentu, którego KSeF nie zna.
+     *
+     * Gdy numer jest, kod jest obowiązkowy: od 2026 r. wizualizacja udostępniana poza
+     * systemem musi go nieść, inaczej odbiorca nie ma jak sprawdzić, czy PDF odpowiada
+     * fakturze w KSeF.
      */
     private fun drawKsefBlock(sheet: DocumentSheet, data: InvoicePdfData) {
+        val number = data.ksefNumber?.takeIf { it.isNotBlank() } ?: return
+
         val qrSide = 64f
         val blockH = maxOf(qrSide, DocumentStyle.TAB_H + 30f)
         sheet.ensure(blockH + 26f)
@@ -314,6 +321,7 @@ class InvoicePdfRenderer {
 
         val top = sheet.y
         val textX = if (data.verificationQrPng != null) DocumentStyle.LEFT + qrSide + 12f else DocumentStyle.LEFT
+        val textW = DocumentStyle.CONTENT_W - (textX - DocumentStyle.LEFT)
 
         data.verificationQrPng?.let { png ->
             sheet.imageFitted(
@@ -325,20 +333,11 @@ class InvoicePdfRenderer {
         sheet.text(sheet.bold, DocumentStyle.NOTE_FONT, textX, ty, "KRAJOWY SYSTEM E-FAKTUR", DocumentStyle.NAVY)
         ty -= DocumentStyle.NOTE_LEAD + 1f
 
-        data.ksefNumber?.takeIf { it.isNotBlank() }?.let { number ->
-            sheet.wrap("Numer KSeF: $number", sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.CONTENT_W - (textX - DocumentStyle.LEFT))
-                .forEach { line ->
-                    sheet.text(sheet.regular, DocumentStyle.NOTE_FONT, textX, ty, line, DocumentStyle.INK)
-                    ty -= DocumentStyle.NOTE_LEAD
-                }
+        sheet.wrap("Numer KSeF: $number", sheet.regular, DocumentStyle.NOTE_FONT, textW).forEach { line ->
+            sheet.text(sheet.regular, DocumentStyle.NOTE_FONT, textX, ty, line, DocumentStyle.INK)
+            ty -= DocumentStyle.NOTE_LEAD
         }
-        data.draftNotice?.let { notice ->
-            sheet.wrap(notice, sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.CONTENT_W - (textX - DocumentStyle.LEFT))
-                .forEach { line ->
-                    sheet.text(sheet.regular, DocumentStyle.NOTE_FONT, textX, ty, line, DocumentStyle.INK)
-                    ty -= DocumentStyle.NOTE_LEAD
-                }
-        }
+
         if (data.verificationQrPng != null) {
             sheet.text(
                 sheet.regular, DocumentStyle.NOTE_FONT, textX, ty,
@@ -348,17 +347,20 @@ class InvoicePdfRenderer {
         }
 
         sheet.y = minOf(top - blockH, ty) - 10f
+    }
 
-        data.contactLine?.let { contact ->
-            sheet.ensure(DocumentStyle.NOTE_LEAD * 2)
-            sheet.text(
-                sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.LEFT,
-                sheet.y - DocumentStyle.NOTE_FONT,
-                sheet.ellipsize(contact, sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.CONTENT_W),
-                DocumentStyle.MUTED
-            )
-            sheet.y -= DocumentStyle.NOTE_LEAD
-        }
+    /** Stopka kontaktowa — ostatni wiersz dokumentu, niezależnie od tego, czy faktura jest w KSeF. */
+    private fun drawContactFooter(sheet: DocumentSheet, data: InvoicePdfData) {
+        val contact = data.contactLine ?: return
+        sheet.ensure(DocumentStyle.NOTE_LEAD * 2)
+        sheet.y -= 8f
+        sheet.text(
+            sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.LEFT,
+            sheet.y - DocumentStyle.NOTE_FONT,
+            sheet.ellipsize(contact, sheet.regular, DocumentStyle.NOTE_FONT, DocumentStyle.CONTENT_W),
+            DocumentStyle.MUTED
+        )
+        sheet.y -= DocumentStyle.NOTE_LEAD
     }
 
     // ── Formatowanie ──────────────────────────────────────────────────────────

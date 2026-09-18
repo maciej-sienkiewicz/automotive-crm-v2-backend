@@ -71,11 +71,17 @@ class InvoicePdfService(
         }
 
         val isCorrection = invoice.invoiceType == RevenueInvoiceType.KOR
-        val verificationUrl = qrCodeUrlBuilder.buildInvoiceVerificationUrl(
-            sellerNip = invoice.sellerNip,
-            issueDate = invoice.issueDate,
-            invoiceHash = invoice.invoiceHash ?: invoice.invoiceXml?.let { qrCodeUrlBuilder.hashInvoiceXml(it) }
-        )
+
+        // Kod weryfikacyjny budujemy WYŁĄCZNIE dla faktury, która ma numer KSeF. Skrót XML-a
+        // istnieje już przed wysyłką, więc bez tego warunku kod QR trafiałby na dokument,
+        // którego KSeF nie zna — po zeskanowaniu prowadziłby donikąd.
+        val verificationUrl = invoice.ksefNumber?.takeIf { it.isNotBlank() }?.let {
+            qrCodeUrlBuilder.buildInvoiceVerificationUrl(
+                sellerNip = invoice.sellerNip,
+                issueDate = invoice.issueDate,
+                invoiceHash = invoice.invoiceHash ?: invoice.invoiceXml?.let { xml -> qrCodeUrlBuilder.hashInvoiceXml(xml) }
+            )
+        }
 
         val data = InvoicePdfData(
             title = if (isCorrection) "FAKTURA KORYGUJĄCA" else "FAKTURA",
@@ -115,7 +121,6 @@ class InvoicePdfService(
             correctionReason = invoice.correctionReason,
             ksefNumber = invoice.ksefNumber,
             verificationQrPng = verificationUrl?.let { qrCodeImageFactory.png(it) },
-            draftNotice = draftNotice(invoice),
             providerName = settings?.name?.trim().orEmpty().ifBlank { invoice.sellerName.orEmpty() },
             providerAddress = providerAddress(settings),
             contactLine = contactLine(settings),
@@ -147,21 +152,6 @@ class InvoicePdfService(
                 )
             }
             .sortedByDescending { it.net }
-
-    /**
-     * Ostrzeżenie dla dokumentu, który nie ma jeszcze numeru KSeF.
-     *
-     * Fakturą jest dokument przyjęty przez KSeF. Wydruk sprzed przyjęcia nie jest nią
-     * jeszcze i milczenie o tym wprowadzałoby odbiorcę w błąd — a wizualizacja ma
-     * odwzorowywać stan faktyczny, nie życzenia.
-     */
-    private fun draftNotice(invoice: KsefRevenueInvoiceEntity): String? =
-        if (invoice.ksefNumber.isNullOrBlank()) {
-            "Dokument nie ma jeszcze numeru KSeF. Wydruk jest podglądem roboczym " +
-                "i nie stanowi faktury ustrukturyzowanej."
-        } else {
-            null
-        }
 
     private fun originalNumber(invoice: KsefRevenueInvoiceEntity): String? =
         invoice.originalInvoiceId?.let { id ->

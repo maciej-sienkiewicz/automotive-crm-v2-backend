@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import pl.detailing.crm.shared.pdf.LogoTrim
 import pl.detailing.crm.studio.logo.DocumentLogoPlacement
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
@@ -623,7 +624,10 @@ class PdfProcessingService(
         if (document.numberOfPages == 0) return
         try {
             val page = document.getPage(0)
-            val image = PDImageXObject.createFromByteArray(document, logoPng, "studio-logo")
+            // Margines wtopiony w plik logo skaluje się razem ze znakiem i zjada slot: znak
+            // siada w rogu kartki wielkości znaczka. Slot zostaje ten sam — przycinamy sam
+            // obraz, żeby wypełnił zarezerwowane miejsce (patrz [LogoTrim]).
+            val image = PDImageXObject.createFromByteArray(document, LogoTrim.trim(logoPng), "studio-logo")
             val box = DocumentLogoPlacement.fit(image.width, image.height, page.mediaBox.height)
             PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
                 cs.drawImage(image, box.x, box.y, box.width, box.height)

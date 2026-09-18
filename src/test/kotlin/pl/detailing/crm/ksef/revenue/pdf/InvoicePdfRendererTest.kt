@@ -70,11 +70,6 @@ class InvoicePdfRendererTest {
             correctionReason = if (correction) "Błędna stawka VAT" else null,
             ksefNumber = ksefNumber,
             verificationQrPng = qr,
-            draftNotice = if (ksefNumber == null) {
-                "Dokument nie ma jeszcze numeru KSeF. Wydruk jest podglądem roboczym i nie stanowi faktury ustrukturyzowanej."
-            } else {
-                null
-            },
             providerName = "Detail Studio Kraków sp. z o.o.",
             providerAddress = "ul. Zabłocie 23/4, 30-701 Kraków",
             contactLine = "+48 600 100 200, kontakt@detailstudio.pl",
@@ -119,13 +114,17 @@ class InvoicePdfRendererTest {
     }
 
     /**
-     * Wydruk sprzed przyjęcia przez KSeF nie jest jeszcze fakturą ustrukturyzowaną.
-     * Milczenie o tym wprowadzałoby odbiorcę w błąd.
+     * Faktura poza KSeF nie wspomina o KSeF ani słowem — ani nagłówkiem bloku, ani kodem QR.
+     * Wzmianka o systemie, w którym dokumentu nie ma, tylko myli nabywcę, a kod QR bez numeru
+     * prowadziłby do weryfikacji dokumentu, którego KSeF nie zna.
      */
     @Test
-    fun `dokument bez numeru KSeF mówi o tym wprost`() {
-        val text = textOf(renderer.render(data(ksefNumber = null)))
-        assertTrue(text.contains("podglądem roboczym"), "brak ostrzeżenia o braku numeru KSeF: $text")
+    fun `faktura poza KSeF nie wspomina o KSeF`() {
+        val text = textOf(renderer.render(data(ksefNumber = null, qr = ByteArray(0))))
+        assertTrue(!text.contains("KSeF"), "wzmianka o KSeF na fakturze spoza systemu: $text")
+        assertTrue(!text.contains("KRAJOWY SYSTEM E-FAKTUR"), "nagłówek KSeF na fakturze spoza systemu")
+        assertTrue(text.contains("FV/2026/09/0001"), "reszta dokumentu musi zostać nietknięta")
+        assertTrue(text.contains("kontakt@detailstudio.pl"), "stopka kontaktowa musi zostać")
     }
 
     /** Korekta musi wskazać fakturę pierwotną i przyczynę — art. 106j ust. 2. */
