@@ -208,14 +208,6 @@ class ProductController(
         return ResponseEntity.ok(result)
     }
 
-    // ── Potwierdzenie zgodności z etykietą ──
-    @PostMapping("/{id}/confirm")
-    @RequiresPermission(Permission.PRODUCTS_MANAGE)
-    fun confirm(@PathVariable id: String): ResponseEntity<ProductResponse> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        return ResponseEntity.ok(catalogService.confirm(principal.studioId, principal.userId, UUID.fromString(id), canSeeCosts()))
-    }
-
     // ── Notatki ──
     @GetMapping("/{id}/notes")
     @RequiresPermission(Permission.PRODUCTS_VIEW)

@@ -298,22 +298,6 @@ class ProductCatalogService(
         return mapper.toResponse(product, overlay, rating, noteCount, canSeeCosts)
     }
 
-    // ── Potwierdzenie zgodności z etykietą → STUDIO_CONFIRMED ──
-    @Transactional
-    fun confirm(studioId: StudioId, userId: UserId, productId: UUID, canSeeCosts: Boolean): ProductResponse {
-        val product = loadVisible(studioId, productId)
-        // Awans TYLKO w górę i tylko z akcji człowieka. CURATED/GS1 zostają jak są.
-        if (product.verificationLevel == VerificationLevel.UNVERIFIED ||
-            product.verificationLevel == VerificationLevel.AI_SUGGESTED
-        ) {
-            product.verificationLevel = VerificationLevel.STUDIO_CONFIRMED
-            product.updatedBy = userId.value
-            product.updatedAt = Instant.now()
-            productRepository.save(product)
-        }
-        return get(studioId, productId, canSeeCosts)
-    }
-
     // ── helpers ──
     private fun upsertOverlay(
         studioId: StudioId,
