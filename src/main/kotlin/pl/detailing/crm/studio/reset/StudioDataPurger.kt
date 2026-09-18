@@ -226,6 +226,11 @@ class StudioDataPurger(
         },
 
         StudioResetStep("Usługi i cennik") { ctx ->
+            // Słownik instrukcji pielęgnacyjnych i ich przypięcia do usług. Domyślne
+            // wpisy wracają po resecie same: finalizer zakłada świeży wiersz ustawień,
+            // czyli kasuje też znacznik zasiewu.
+            deleteByStudio("ServiceCareInstructionEntity", ctx)
+            deleteByStudio("CareInstructionEntity", ctx)
             deleteByStudio("CategoryServiceAssignmentEntity", ctx)
             deleteByStudio("ServiceCategoryEntity", ctx)
             deleteByStudio("ManualServiceCategoryAssignmentEntity", ctx)

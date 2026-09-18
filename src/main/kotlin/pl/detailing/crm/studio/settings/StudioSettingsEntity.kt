@@ -137,6 +137,17 @@ class StudioSettingsEntity(
     @Column(name = "visit_number_random_length", nullable = false)
     var visitNumberRandomLength: Int = 6,
 
+    /**
+     * Kiedy studio dostało domyślne instrukcje pielęgnacyjne na certyfikat.
+     *
+     * Znacznik, nie licznik: skasowanie wszystkich domyślnych wpisów ma być trwałe.
+     * Bez niego pusty słownik wyglądałby przy każdym starcie jak studio, które
+     * jeszcze ich nie dostało. Reset konta zakłada świeży wiersz ustawień, więc
+     * po „wyczyść konto" domyślne instrukcje wracają — i tak ma być.
+     */
+    @Column(name = "care_instructions_seeded_at", columnDefinition = "timestamp with time zone")
+    var careInstructionsSeededAt: Instant? = null,
+
     @Column(name = "updated_at", nullable = false, columnDefinition = "timestamp with time zone")
     var updatedAt: Instant = Instant.now()
 )

@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.certificate
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.careinstruction.CareInstructionService
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.product.infrastructure.ProductEntity
 import pl.detailing.crm.product.infrastructure.ProductRepository
@@ -39,6 +40,7 @@ class QualityCertificateService(
     private val visitProductRepository: VisitProductRepository,
     private val productRepository: ProductRepository,
     private val companyLogoService: CompanyLogoService,
+    private val careInstructionService: CareInstructionService,
     private val userSignatureService: UserSignatureService,
     private val renderer: QualityCertificatePdfRenderer
 ) {
@@ -62,24 +64,9 @@ class QualityCertificateService(
                 "wymienionymi powyżej — w postaci oryginalnej, bez zamienników i bez " +
                 "rozcieńczeń innych niż przewidziane przez producenta."
 
-        /**
-         * Zasady pielęgnacji prawdziwe przy KAŻDEJ realizacji.
-         *
-         * Celowo nie ma tu terminów utwardzania powłok ani zakazu mycia przez pierwsze dni:
-         * to zależy od tego, co zrobiono, a nieprawdziwa instrukcja na dokumencie
-         * z podpisem jest gorsza niż jej brak. Takie rzeczy wpisuje pracownik w polu
-         * „zalecenia szczegółowe".
-         */
-        private val CARE_RULES = listOf(
-            "Myj pojazd metodą dwóch wiader, szamponem o neutralnym pH. Myjnie automatyczne " +
-                "ze szczotkami zostawiają na lakierze siatkę rys.",
-            "Osuszaj miękką mikrofibrą lub sprężonym powietrzem. Woda pozostawiona do " +
-                "odparowania zostawia osad z kamienia.",
-            "Odchody ptaków, owady i żywicę usuwaj możliwie szybko. Zaschnięte wytrawiają " +
-                "lakier i ślad po nich zostaje na stałe.",
-            "Unikaj preparatów silnie alkalicznych i kwaśnych poza zastosowaniem, do którego " +
-                "są przeznaczone. Skracają żywotność zabezpieczeń."
-        )
+        // Zasady pielęgnacji nie siedzą już w kodzie: są słownikiem studia
+        // (pl.detailing.crm.careinstruction), bo jedne są prawdziwe zawsze, a inne
+        // zależą od wykonanej usługi i muszą dać się przypiąć do pozycji cennika.
     }
 
     @Transactional(readOnly = true)
@@ -138,7 +125,7 @@ class QualityCertificateService(
             usedProducts = usedProducts,
             productDeclaration = PRODUCT_DECLARATION.takeIf { usedProducts.isNotEmpty() },
             recommendedProducts = recommended,
-            careRules = CARE_RULES,
+            careRules = careInstructionService.contentsFor(studioId, request.careInstructionIds),
             careNote = request.careNote?.trim()?.takeIf { it.isNotBlank() },
             contactLine = contactLine(settings),
             issuedByName = userFullName.trim(),

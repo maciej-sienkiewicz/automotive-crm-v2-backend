@@ -21,9 +21,14 @@ data class GenerateQualityCertificateRequest(
     /** Zalecenia — zawsze dodawane ręcznie, nigdy nie wynikają z danych wizyty. */
     val recommendations: List<CertificateProductRequest> = emptyList(),
     /**
-     * Zalecenia szczegółowe wpisane przez pracownika — np. termin pierwszego mycia po
-     * powłoce. Pole istnieje, bo reguły pielęgnacji zależą od tego, CO zrobiono: stały
-     * akapit na certyfikacie mówi tylko to, co jest prawdą przy każdej realizacji.
+     * Instrukcje pielęgnacyjne wybrane w oknie — identyfikatory ze słownika studia.
+     * Okno zaznacza je wstępnie (domyślne + przypięte do zaznaczonych usług), ale
+     * o tym, co trafi na dokument, decyduje ten wykaz, a nie serwer.
+     */
+    val careInstructionIds: List<String> = emptyList(),
+    /**
+     * Uwagi dopisane z ręki przy tym jednym certyfikacie — rzeczy, których nie da się
+     * skonfigurować, bo dotyczą wyłącznie tej wizyty.
      */
     val careNote: String? = null
 )
@@ -68,7 +73,7 @@ data class QualityCertificateData(
      */
     val productDeclaration: String?,
     val recommendedProducts: List<CertificateItem>,
-    /** Zasady prawdziwe przy każdej realizacji — stała treść dokumentu. */
+    /** Instrukcje wybrane ze słownika studia — treści gotowe do wydruku. */
     val careRules: List<String>,
     /** Zalecenia szczegółowe tej realizacji, wpisane przez pracownika. */
     val careNote: String?,
