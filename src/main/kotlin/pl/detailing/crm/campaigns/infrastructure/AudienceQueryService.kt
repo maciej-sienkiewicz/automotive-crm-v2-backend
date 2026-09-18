@@ -84,6 +84,38 @@ class AudienceQueryService(
 ) {
 
     /**
+     * Imiona i nazwiska odbiorców kampanii, po `customer_id`.
+     *
+     * Lista wysyłki trzymała dotąd sam adres (numer telefonu albo e-mail) i tyle
+     * trafiało do okna kampanii. Numer nie mówi nic: po „693 004 221" nikt nie
+     * pozna klienta, a przy nieudanej wysyłce właśnie od rozpoznania człowieka
+     * zaczyna się reakcja — trzeba wiedzieć, do KOGO oddzwonić.
+     *
+     * Osobne zapytanie, a nie złączenie w [CampaignRecipient]: odbiorca jest
+     * zapisem wysyłki i jego snapshot ma zostać taki, jaki był w chwili wysyłki.
+     * Nazwisko to dane bieżące klienta i pobieramy je dopiero do prezentacji.
+     */
+    fun customerNames(studioId: StudioId, customerIds: Collection<UUID>): Map<UUID, Pair<String?, String?>> {
+        if (customerIds.isEmpty()) return emptyMap()
+        val params = MapSqlParameterSource()
+            .addValue("studioId", studioId.value)
+            .addValue("ids", customerIds.toSet())
+        val out = HashMap<UUID, Pair<String?, String?>>()
+        jdbc.query(
+            """
+            SELECT id, first_name, last_name
+            FROM customers
+            WHERE studio_id = :studioId AND id IN (:ids)
+            """.trimIndent(),
+            params
+        ) { rs ->
+            out[UUID.fromString(rs.getString("id"))] =
+                rs.getString("first_name") to rs.getString("last_name")
+        }
+        return out
+    }
+
+    /**
      * Podsumowanie grupy odbiorców plus jedna strona listy.
      *
      * Kreator kampanii pokazuje tę listę jako tabelę z polami wyboru, więc potrzebuje

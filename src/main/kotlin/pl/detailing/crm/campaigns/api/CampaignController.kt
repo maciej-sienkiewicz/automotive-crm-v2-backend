@@ -9,6 +9,7 @@ import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.campaigns.application.*
 import pl.detailing.crm.campaigns.domain.*
 import pl.detailing.crm.campaigns.infrastructure.AudienceEstimate
+import pl.detailing.crm.campaigns.infrastructure.AudienceQueryService
 import pl.detailing.crm.campaigns.infrastructure.AudienceRow
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.DeliveryPolicy
@@ -285,17 +286,30 @@ data class CampaignRecipientDto(
     val customerId: UUID,
     val channel: RecipientChannel,
     val address: String,
+    /**
+     * Dane bieżące klienta, dołączane wyłącznie do prezentacji listy wysyłki.
+     * Sam adres nic nie mówi — po numerze telefonu nikt nie rozpozna klienta,
+     * a przy nieudanej wysyłce od rozpoznania człowieka zaczyna się reakcja.
+     * Null, gdy kartoteka została w międzyczasie usunięta.
+     */
+    @Pii val firstName: String?,
+    @Pii val lastName: String?,
     val status: RecipientStatus,
     val errorMessage: String?,
     val scheduledFor: Instant,
     val sentAt: Instant?
 ) {
     companion object {
-        fun fromDomain(r: CampaignRecipient) = CampaignRecipientDto(
+        fun fromDomain(
+            r: CampaignRecipient,
+            names: Map<UUID, Pair<String?, String?>> = emptyMap()
+        ) = CampaignRecipientDto(
             id = r.id,
             customerId = r.customerId,
             channel = r.channel,
             address = r.address,
+            firstName = names[r.customerId]?.first,
+            lastName = names[r.customerId]?.second,
             status = r.status,
             errorMessage = r.errorMessage,
             scheduledFor = r.scheduledFor,
@@ -343,7 +357,8 @@ data class CampaignSettingsDto(
 @RequiresPermission(Permission.COMMUNICATION_SEND)
 class CampaignController(
     private val service: CampaignService,
-    private val gateway: OutboundCommunicationGateway
+    private val gateway: OutboundCommunicationGateway,
+    private val audience: AudienceQueryService
 ) {
 
     @GetMapping
@@ -450,9 +465,10 @@ class CampaignController(
         @RequestParam(required = false) status: RecipientStatus?
     ): ResponseEntity<List<CampaignRecipientDto>> {
         val principal = SecurityContextHelper.getCurrentUser()
-        return ResponseEntity.ok(
-            service.recipientsOf(id, principal.studioId, status).map { CampaignRecipientDto.fromDomain(it) }
-        )
+        val found = service.recipientsOf(id, principal.studioId, status)
+        // Jedno zapytanie na całą listę, nie jedno na wiersz.
+        val names = audience.customerNames(principal.studioId, found.map { it.customerId })
+        return ResponseEntity.ok(found.map { CampaignRecipientDto.fromDomain(it, names) })
     }
 
     @PostMapping("/{id}/recipients/{recipientId}/retry")
