@@ -410,7 +410,7 @@ class QualityCertificatePdfRenderer {
         }
 
         val captionY = boxTop - boxH - 10f
-        val caption = listOf(data.issuedByName, data.issuedOn).filter { it.isNotBlank() }.joinToString(" · ")
+        val caption = listOf(data.issuedByName, data.issuedOn).filter { it.isNotBlank() }.joinToString(", ")
         text(sheet.cs, regular, NOTE_FONT, x, captionY, ellipsize(caption, regular, NOTE_FONT, boxW), MUTED)
 
         // Kontakt naprzeciw podpisu: certyfikat zostaje u klienta i bywa jedyną kartką,

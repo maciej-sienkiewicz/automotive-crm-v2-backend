@@ -64,10 +64,41 @@ class QualityCertificateService(
          * Treść stała, nie do edycji w oknie: deklaracja, którą każdy formułuje po
          * swojemu, przestaje cokolwiek znaczyć.
          */
-        private const val PRODUCT_DECLARATION =
+        internal const val PRODUCT_DECLARATION =
             "Zaświadczamy, że wszystkie wymienione poniżej prace wykonaliśmy z użyciem " +
                 "wyłącznie oryginalnych materiałów wskazanych producentów. Nie stosowaliśmy " +
                 "zamienników ani produktów niewiadomego pochodzenia."
+
+        /**
+         * Akapit otwierający. JEDEN wariant treści i taki ma zostać: dokument, którego ton
+         * zmienia się zależnie od ustawienia, przestaje być podpisem firmy pod jakością.
+         *
+         * Wypadło stąd zdanie tłumaczące, po co ten dokument powstaje („po zakończonej
+         * usłudze nie widać już, czym została wykonana") — siało wątpliwość i brzmiało
+         * defensywnie: przypominało klientowi, że nie ma jak zweryfikować naszej pracy.
+         * Dokument, który ma redukować niepokój pozakupowy, nie może zawierać zdania,
+         * które go wzbudza.
+         *
+         * Deklaracja oryginalności jest wpleciona w zdanie o wykazie, a nie dopisana jako
+         * osobne zapewnienie: „bez zamienników" rozbraja obawę o tani odpowiednik w sposób
+         * pozytywny. Marki premium (Patek Philippe, AMG) piszą tak samo: fakty, nazwisko,
+         * powściągliwość, zero słowa sprzedażowego.
+         *
+         * Bez daty wydania: ta stoi w tabeli nagłówkowej. Krótkie zdania czyta się łatwiej,
+         * a informacja łatwa do przetworzenia jest oceniana jako bardziej wiarygodna.
+         *
+         * Interpunkcja: żadnych myślników em ani kropek środkowych jako separatorów.
+         * Zdania rozdziela kropka, wyliczenia przecinek. Pilnuje tego [CertificateCopyTest].
+         */
+        internal fun openingParagraphs(vehicleLabel: String): List<String> {
+            val car = if (vehicleLabel.isBlank()) "swój samochód" else "samochód $vehicleLabel"
+            return listOf(
+                "Dziękujemy, że powierzyli nam Państwo $car. Poniżej znajdą Państwo pełny wykaz " +
+                    "wykonanych prac oraz materiałów, których użyliśmy. Wszystkie pochodzą wyłącznie " +
+                    "od renomowanych producentów, bez zamienników. Dołączamy również wskazówki, " +
+                    "jak zachować uzyskany efekt na lata."
+            )
+        }
 
         // Zasady pielęgnacji nie siedzą już w kodzie: są słownikiem studia
         // (pl.detailing.crm.careinstruction), bo jedne są prawdziwe zawsze, a inne
@@ -115,7 +146,7 @@ class QualityCertificateService(
             .filter { it.isNotBlank() }
             .joinToString(" ")
         val plate = visit.licensePlateSnapshot?.trim().orEmpty()
-        val vehicle = if (plate.isBlank()) vehicleLabel else "$vehicleLabel · $plate"
+        val vehicle = if (plate.isBlank()) vehicleLabel else "$vehicleLabel, $plate"
 
         val completedAt = visit.pickupDate ?: visit.actualCompletionDate ?: visit.scheduledDate
 
@@ -172,7 +203,7 @@ class QualityCertificateService(
                 note = listOfNotNull(
                     product?.let { packageLabel(it) },
                     link.note?.trim()?.takeIf { it.isNotBlank() }
-                ).joinToString(" · ").takeIf { it.isNotBlank() }
+                ).joinToString(", ").takeIf { it.isNotBlank() }
             )
         }
     }
@@ -198,7 +229,7 @@ class QualityCertificateService(
         when {
             product != null -> CertificateItem(
                 title = displayName(product),
-                note = listOfNotNull(packageLabel(product), note).joinToString(" · ").takeIf { it.isNotBlank() }
+                note = listOfNotNull(packageLabel(product), note).joinToString(", ").takeIf { it.isNotBlank() }
             )
             !entry.name.isNullOrBlank() -> CertificateItem(entry.name.trim(), note)
             else -> null
@@ -220,39 +251,12 @@ class QualityCertificateService(
         "${product.packageSizeValue.stripTrailingZeros().toPlainString()} ${product.packageSizeUnit.displayName}"
     }.getOrNull()
 
-    /**
-     * Akapit otwierający.
-     *
-     * JEDEN akapit, trzy zdania. Poprzednia wersja miała drugi akapit tłumaczący, po co
-     * ten dokument powstaje („po zakończonej usłudze nie widać już, czym została
-     * wykonana") — zdanie zostało usunięte, bo siało wątpliwość i brzmiało defensywnie:
-     * przypominało klientowi, że nie ma jak zweryfikować naszej pracy. Dokument, który
-     * ma redukować niepokój pozakupowy, nie może zawierać zdania, które go wzbudza.
-     *
-     * Deklaracja oryginalności jest wpleciona w zdanie o wykazie, a nie dopisana jako
-     * osobne zapewnienie: „bez zamienników" rozbraja obawę o tani odpowiednik w sposób
-     * pozytywny. Marki premium (Patek Philippe, AMG) piszą tak samo — fakty, nazwisko,
-     * powściągliwość, zero słowa sprzedażowego.
-     *
-     * Bez daty wydania: ta stoi w tabeli nagłówkowej. Krótkie zdania czyta się łatwiej,
-     * a informacja łatwa do przetworzenia jest oceniana jako bardziej wiarygodna.
-     */
-    private fun openingParagraphs(vehicleLabel: String): List<String> {
-        val car = if (vehicleLabel.isBlank()) "swój samochód" else "samochód $vehicleLabel"
-        return listOf(
-            "Dziękujemy, że powierzyli nam Państwo $car. Poniżej znajdą Państwo pełny wykaz " +
-                "wykonanych prac oraz materiałów, których użyliśmy — wszystkie pochodzą " +
-                "wyłącznie od renomowanych producentów, bez zamienników. Dołączamy również " +
-                "wskazówki, jak zachować uzyskany efekt na lata."
-        )
-    }
-
     /** Dane kontaktowe studia w stopce — certyfikat zostaje u klienta na dłużej niż faktura. */
     private fun contactLine(settings: StudioSettingsEntity?): String? = listOfNotNull(
         settings?.phone?.trim()?.takeIf { it.isNotBlank() },
         settings?.email?.trim()?.takeIf { it.isNotBlank() },
         settings?.website?.trim()?.takeIf { it.isNotBlank() }
-    ).joinToString("   ·   ").takeIf { it.isNotBlank() }
+    ).joinToString(", ").takeIf { it.isNotBlank() }
 
     private fun loadLogo(studioId: StudioId): ByteArray? = runCatching {
         companyLogoService.loadDocumentLogo(studioId.value)?.printPng

@@ -78,7 +78,7 @@ data class QualityCertificateData(
     val careRules: List<String>,
     /** Zalecenia szczegółowe tej realizacji, wpisane przez pracownika. */
     val careNote: String?,
-    /** Telefon · e-mail · strona studia. Stopka dokumentu, który klient zatrzymuje. */
+    /** Telefon, e-mail i strona studia. Stopka dokumentu, który klient zatrzymuje. */
     val contactLine: String?,
     val issuedByName: String,
     val issuedOn: String,

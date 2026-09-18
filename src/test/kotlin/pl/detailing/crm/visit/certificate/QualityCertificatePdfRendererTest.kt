@@ -18,13 +18,13 @@ class QualityCertificatePdfRendererTest {
 
     private fun data(
         services: List<String> = listOf("Korekta lakieru jednoetapowa"),
-        used: List<CertificateItem> = listOf(CertificateItem("ADBL Glass Cleaner", "500 ml · na szyby")),
+        used: List<CertificateItem> = listOf(CertificateItem("ADBL Glass Cleaner", "500 ml, na szyby")),
         recommended: List<CertificateItem> = listOf(CertificateItem("Kosa Shampoo", "co dwa tygodnie")),
         careNote: String? = null
     ) = QualityCertificateData(
         providerName = "Studio Detailingu Żółć Sp. z o.o.",
         visitNumber = "WIZ/2026/00123",
-        vehicle = "Škoda Superb · WX 12345",
+        vehicle = "Škoda Superb, WX 12345",
         customerName = "Zażółć Gęślą Jaźń",
         completedOn = "18.09.2026",
         thankYou = listOf("Dziękujemy, że powierzyli nam Państwo samochód Škoda Superb."),
