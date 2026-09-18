@@ -65,6 +65,26 @@ class KsefSyncCursorEntity(
         updatedAt = OffsetDateTime.now()
     )
 
+    /**
+     * Stan w słowniku API: NEVER_SYNCED | RUNNING | SUCCESS | FAILED.
+     *
+     * Baza trzyma stan PRACY schedulera (IDLE | RUNNING | ERROR), a klient pyta o co innego:
+     * czy lista dokumentów, którą właśnie czyta, jest kompletna. Te dwa słowniki trzeba
+     * przełożyć, bo „IDLE" znaczy raz jedno, raz drugie: po udanym przebiegu — SUCCESS,
+     * przed pierwszym — NEVER_SYNCED. Bez tego przekładu front dostawał „IDLE", nie miał
+     * takiej wartości w typie i pokazywał nad pełną listą faktur ostrzeżenie
+     * „Nie pobrano jeszcze faktur z KSeF".
+     *
+     * Rozróżnienie „jeszcze nigdy" od „udane" robią znaczniki czasu, bo tylko [toSuccess]
+     * je ustawia.
+     */
+    fun apiStatus(): String = when {
+        syncStatus == "RUNNING" -> "RUNNING"
+        syncStatus == "ERROR" -> "FAILED"
+        lastExpenseSync == null && lastRevenueSync == null -> "NEVER_SYNCED"
+        else -> "SUCCESS"
+    }
+
     fun isStale(threshold: Duration): Boolean =
         syncStatus == "RUNNING" && updatedAt.isBefore(OffsetDateTime.now().minus(threshold))
 

@@ -175,7 +175,7 @@ class KsefController(
         val cursor = syncCursorRepository.findById(SecurityContextHelper.getCurrentUser().studioId.value).orElse(null)
         return ResponseEntity.ok(
             KsefSyncStatusResponse(
-                syncStatus      = cursor?.syncStatus ?: "NEVER_SYNCED",
+                syncStatus      = cursor?.apiStatus() ?: "NEVER_SYNCED",
                 lastExpenseSync = cursor?.lastExpenseSync,
                 lastError       = cursor?.lastError,
                 updatedAt       = cursor?.updatedAt
@@ -191,7 +191,7 @@ class KsefController(
         val cursor = syncCursorRepository.findById(studioId.value).orElse(null)
         return ResponseEntity.ok(
             KsefSyncStatusResponse(
-                syncStatus      = cursor?.syncStatus ?: "NEVER_SYNCED",
+                syncStatus      = cursor?.apiStatus() ?: "NEVER_SYNCED",
                 lastExpenseSync = cursor?.lastExpenseSync,
                 lastError       = cursor?.lastError,
                 updatedAt       = cursor?.updatedAt
@@ -448,7 +448,7 @@ class KsefController(
                     )
                 },
                 dataAsOf   = cursor?.lastExpenseSync,
-                syncStatus = cursor?.syncStatus ?: "NEVER_SYNCED"
+                syncStatus = cursor?.apiStatus() ?: "NEVER_SYNCED"
             )
         )
     }
