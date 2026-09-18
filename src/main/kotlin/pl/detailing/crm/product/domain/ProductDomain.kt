@@ -53,7 +53,13 @@ enum class VerificationLevel {
     UNVERIFIED,        // wpis w pełni ręczny
     AI_SUGGESTED,      // odczyt modelu, przeszedł weryfikatora — WYMAGA sprawdzenia etykiety
     GS1_VERIFIED,      // rejestr GS1
-    STUDIO_CONFIRMED,  // człowiek potwierdził zgodność z etykietą
+    // Nic już nie nadaje tego poziomu: akcja „Dane zgadzają się z etykietą"
+    // (POST /{id}/confirm) została usunięta. Wartość ZOSTAJE, bo opisuje wiersze,
+    // które są już w bazie — kolumna trzyma nazwę stałej, więc jej skasowanie
+    // wywaliłoby odczyt tych produktów. Dodatkowo kolejność deklaracji niesie
+    // porządek zaufania (`atLeast` liczy na `ordinal`), więc wyjęcie wartości ze
+    // środka po cichu przesunęłoby progi dla GS1_VERIFIED i CURATED.
+    STUDIO_CONFIRMED,  // historyczne: człowiek potwierdził zgodność z etykietą
     CURATED;           // moderacja platformy
 
     fun atLeast(other: VerificationLevel): Boolean = ordinal >= other.ordinal
