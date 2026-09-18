@@ -53,6 +53,7 @@ class ProductController(
         @RequestParam(required = false, defaultValue = "false") onlyOurs: Boolean,
         @RequestParam(required = false, defaultValue = "false") onlyFavourite: Boolean,
         @RequestParam(required = false, defaultValue = "false") includeHidden: Boolean,
+        @RequestParam(required = false, defaultValue = "") rating: String,
         @RequestParam(required = false, defaultValue = "1") page: Int,
         @RequestParam(required = false, defaultValue = "50") limit: Int,
         @RequestParam(required = false) sortBy: String?,
@@ -61,7 +62,7 @@ class ProductController(
         val principal = SecurityContextHelper.getCurrentUser()
         var items = catalogService.list(
             principal.studioId,
-            ProductListFilter(search, onlyOurs, onlyFavourite, includeHidden),
+            ProductListFilter(search, onlyOurs, onlyFavourite, includeHidden, rating),
             canSeeCosts()
         )
         items = when (sortBy) {

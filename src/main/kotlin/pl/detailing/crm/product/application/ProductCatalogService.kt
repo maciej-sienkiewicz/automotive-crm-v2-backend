@@ -66,8 +66,16 @@ class ProductCatalogService(
             .filter { item -> filter.onlyOurs.not() || item.isOurs }
             .filter { item -> filter.onlyFavourite.not() || item.isFavourite }
             .filter { item -> filter.includeHidden || overlays[UUID.fromString(item.id)]?.isHidden != true }
+            .filter { item -> matchesRating(filter.rating, item.ratingValue) }
             .toList()
     }
+
+    private fun matchesRating(filter: String, ratingValue: Int?): Boolean =
+        when (val f = filter.trim().lowercase()) {
+            "", "all" -> true
+            "none" -> ratingValue == null
+            else -> ratingValue != null && ratingValue == f.toIntOrNull()
+        }
 
     /**
      * Wiersz widoczny dla tego studia: globalny albo prywatny TEGO studia.
@@ -363,5 +371,11 @@ data class ProductListFilter(
     val search: String = "",
     val onlyOurs: Boolean = false,
     val onlyFavourite: Boolean = false,
-    val includeHidden: Boolean = false
+    val includeHidden: Boolean = false,
+    /**
+     * Ocena zespołu: "1".."5" (dokładnie tyle gwiazdek), "none" (bez oceny) albo puste
+     * = bez filtrowania. Tekst, nie Int?, bo „bez oceny" i „nie filtruj" to DWA różne
+     * stany, a jeden `Int?` potrafi wyrazić tylko jeden z nich.
+     */
+    val rating: String = ""
 )
