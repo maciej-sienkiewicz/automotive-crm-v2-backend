@@ -200,10 +200,10 @@ class QualityCertificateService(
             val product = products[link.productId]
             CertificateItem(
                 title = product?.let { displayName(it) } ?: "Produkt usunięty z katalogu",
-                note = listOfNotNull(
-                    product?.let { packageLabel(it) },
-                    link.note?.trim()?.takeIf { it.isNotBlank() }
-                ).joinToString(", ").takeIf { it.isNotBlank() }
+                // Bez pojemności opakowania: klienta nie interesuje, czy preparat szedł
+                // z butelki 500 ml czy z kanistra, a liczba przy nazwie marki czyta się
+                // jak zapis magazynowy. Zostaje to, co napisał pracownik.
+                note = link.note?.trim()?.takeIf { it.isNotBlank() }
             )
         }
     }
@@ -211,8 +211,8 @@ class QualityCertificateService(
     /**
      * Pozycje wpisane ręcznie w oknie — zalecenia i dopisane produkty użyte.
      *
-     * Wskazanie na katalog daje nazwę i opakowanie prosto z karty produktu; wpis z ręki
-     * przechodzi taki, jaki jest — pracujemy i polecamy też rzeczy spoza swojego katalogu.
+     * Wskazanie na katalog daje nazwę marki i produktu prosto z jego karty; wpis z ręki
+     * przechodzi taki, jaki jest: pracujemy i polecamy też rzeczy spoza swojego katalogu.
      */
     private fun resolveManualProducts(
         studioId: StudioId,
@@ -227,10 +227,7 @@ class QualityCertificateService(
             ?.takeIf { it.ownerStudioId == null || it.ownerStudioId == studioId.value }
 
         when {
-            product != null -> CertificateItem(
-                title = displayName(product),
-                note = listOfNotNull(packageLabel(product), note).joinToString(", ").takeIf { it.isNotBlank() }
-            )
+            product != null -> CertificateItem(title = displayName(product), note = note)
             !entry.name.isNullOrBlank() -> CertificateItem(entry.name.trim(), note)
             else -> null
         }
@@ -246,10 +243,6 @@ class QualityCertificateService(
             else -> "$brand $name"
         }
     }
-
-    private fun packageLabel(product: ProductEntity): String? = runCatching {
-        "${product.packageSizeValue.stripTrailingZeros().toPlainString()} ${product.packageSizeUnit.displayName}"
-    }.getOrNull()
 
     /** Dane kontaktowe studia w stopce — certyfikat zostaje u klienta na dłużej niż faktura. */
     private fun contactLine(settings: StudioSettingsEntity?): String? = listOfNotNull(
