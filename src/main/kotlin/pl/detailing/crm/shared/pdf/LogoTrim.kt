@@ -7,20 +7,33 @@ import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
 /**
- * Przycina jednolite obrzeże logo: przezroczyste albo w kolorze tła wziętym z narożników.
+ * Przycina NIEWIDOCZNE obrzeże logo: przezroczyste albo białe, czyli takie, które na białej
+ * kartce i tak nie istnieje.
  *
  * Slot w nagłówku skaluje CAŁY obraz („contain"), więc margines wtopiony w plik zjada
  * wysokość — znak firmowy siada w rogu kartki wielkości znaczka, chociaż miejsca jest
  * pod dostatkiem. Tak właśnie wyglądało logo na pierwszej fakturze: w slocie 188 × 36 pt
  * sam znak miał 26 × 20 pt, reszta to było puste pole z pliku.
  *
+ * ## Dlaczego tylko przezroczyste i białe
+ *
+ * Pierwsza wersja przycinała dowolne jednolite tło wzięte z narożników — i ścięła czarną
+ * płytę logotypu BELLISSIMOTO (595 × 336 px) do 437 × 160 px, czyli do samego tuszu. Skan
+ * działał poprawnie, tyle że założenie było błędne: czarny prostokąt nie jest marginesem,
+ * jest częścią znaku. Po przycięciu napis dotykał krawędzi płyty i dokument wyglądał,
+ * jakby logo obcięto nożyczkami.
+ *
+ * Piksel wolno wyrzucić tylko wtedy, gdy jego brak niczego nie zmienia na wydruku: gdy jest
+ * przezroczysty albo praktycznie biały jak kartka. Każde inne tło — czarne, granatowe,
+ * kolorowe — jest grafiką i zostaje.
+ *
  * Liczymy to po pikselach, bo alternatywą jest kazanie właścicielowi warsztatu poprawić
  * eksport w programie graficznym — a plik raz wgrany wraca na każdy dokument.
  *
- * Ostrożność jest wbudowana: przycinamy tylko wtedy, gdy wszystkie cztery narożniki mają
- * to samo tło (inaczej nie wiadomo, co jest marginesem), i tylko gdy jest co przycinać.
- * Przy jakiejkolwiek wątpliwości wracają oryginalne bajty — gorzej obciąć logo niż
- * zostawić je za małe.
+ * Reszta ostrożności: przycinamy tylko wtedy, gdy wszystkie cztery narożniki mają to samo
+ * tło (inaczej nie wiadomo, co jest marginesem), i tylko gdy jest co przycinać. Przy
+ * jakiejkolwiek wątpliwości wracają oryginalne bajty — gorzej obciąć logo niż zostawić
+ * je za małe.
  */
 object LogoTrim {
 
@@ -34,6 +47,12 @@ object LogoTrim {
 
     /** Poniżej tego zysku nie ma po co przekodowywać obrazu. */
     private const val MIN_GAIN = 0.02
+
+    /**
+     * Od tej jasności każdego kanału tło jest bielą kartki: na białym dokumencie nie widać
+     * różnicy między nim a niczym, więc wolno je wyrzucić.
+     */
+    private const val PAPER_WHITE_MIN = 245
 
     fun trim(bytes: ByteArray): ByteArray = runCatching { trimOrNull(bytes) ?: bytes }
         .onFailure { logger.warn("Nie udało się przyciąć marginesów logo: ${it.message}") }
@@ -52,6 +71,8 @@ object LogoTrim {
         val background = corners.first()
         // Narożniki różnią się od siebie -> to nie jest obraz z jednolitym marginesem.
         if (corners.any { !sameBackground(it, background) }) return null
+        // Tło widać na wydruku -> jest grafiką, nie marginesem (patrz KDoc: BELLISSIMOTO).
+        if (!isInvisibleOnPaper(background)) return null
 
         var left = w
         var right = -1
@@ -86,6 +107,12 @@ object LogoTrim {
     }
 
     private fun alpha(argb: Int): Int = (argb ushr 24) and 0xFF
+
+    /** Tło, którego na białej kartce nie widać: przezroczyste albo białe. */
+    private fun isInvisibleOnPaper(background: Int): Boolean {
+        if (alpha(background) < ALPHA_VISIBLE) return true
+        return (0..2).all { shift -> ((background ushr (shift * 8)) and 0xFF) >= PAPER_WHITE_MIN }
+    }
 
     /**
      * Tło może być przezroczyste albo jednolicie zamalowane (białe, czarne, dowolne).
