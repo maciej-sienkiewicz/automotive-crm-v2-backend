@@ -26,6 +26,7 @@ import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceCommand
 import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceHandler
 import pl.detailing.crm.ksef.revenue.issue.RevenueInvoiceBuyerCommand
 import pl.detailing.crm.ksef.revenue.issue.RevenueInvoiceItemCommand
+import pl.detailing.crm.ksef.revenue.pdf.InvoicePdfService
 import pl.detailing.crm.ksef.revenue.send.KsefRevenueDispatchService
 import pl.detailing.crm.ksef.revenue.statistics.RevenueStatisticsHandler
 import pl.detailing.crm.ksef.revenue.statistics.RevenueStatisticsQuery
@@ -58,7 +59,8 @@ class KsefRevenueController(
     private val correctionHandler: IssueCorrectionHandler,
     private val dispatchService: KsefRevenueDispatchService,
     private val statisticsHandler: RevenueStatisticsHandler,
-    private val qrCodeUrlBuilder: KsefQrCodeUrlBuilder
+    private val qrCodeUrlBuilder: KsefQrCodeUrlBuilder,
+    private val invoicePdfService: InvoicePdfService
 ) {
 
     // ── Wystawianie ────────────────────────────────────────────────────────────
@@ -242,6 +244,28 @@ class KsefRevenueController(
         val xml = invoice.invoiceXml
             ?: throw NotFoundException("Faktura nie ma zapisanego XML (faktura zewnętrzna)")
         return xmlDownload(xml, "faktura-${invoice.invoiceNumber.replace('/', '-')}.xml")
+    }
+
+    /**
+     * Wizualizacja faktury w PDF.
+     *
+     * `inline`, nie `attachment`: przycisk nazywa się „Faktura PDF" i ma otworzyć
+     * podgląd, a nie wrzucić plik do katalogu pobranych — do zapisania wystarczy
+     * przycisk w czytniku PDF przeglądarki.
+     */
+    @GetMapping("/invoices/{id}/pdf", produces = [MediaType.APPLICATION_PDF_VALUE])
+    fun downloadPdf(@PathVariable id: UUID): ResponseEntity<ByteArray> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val file = invoicePdfService.render(principal.studioId, id)
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            // Budowane przez Springa, nie sklejane ze stringów: numer faktury bywa
+            // dowolnym tekstem, a cudzysłów w nim rozbijał nagłówek.
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.inline().filename(file.fileName, StandardCharsets.UTF_8).build().toString()
+            )
+            .body(file.bytes)
     }
 
     /** UPO (Urzędowe Poświadczenie Odbioru) faktury przyjętej w KSeF. */

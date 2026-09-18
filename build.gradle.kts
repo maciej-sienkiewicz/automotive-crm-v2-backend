@@ -108,6 +108,9 @@ dependencies {
     implementation("org.apache.xmlgraphics:batik-transcoder:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
     implementation("org.apache.xmlgraphics:batik-codec:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.10.1")
+    // Kod QR na wizualizacji faktury KSeF: od 2026 r. wizualizacja udostępniana poza
+    // systemem musi go nieść, żeby odbiorca mógł zweryfikować dokument u MF.
+    implementation("com.google.zxing:core:3.5.3")
 
     // jsoup – HTML e-mail denoising (quoted history + signature stripping before storage and LLM calls)
     implementation("org.jsoup:jsoup:1.17.2")
