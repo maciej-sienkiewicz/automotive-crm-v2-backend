@@ -162,28 +162,33 @@ class LeadServiceSuggestionServiceTest {
 
     /**
      * CATALOG_NEAR_MISS („macie naprawę tapicerki DRZWI, klient pyta o FOTEL"):
-     * zamiast pewnie brzmiącej pozycji CATALOG za 599,99 zł powstaje pozycja
-     * BEZ CENY z notatką — dokładnie ta różnica, na której poległ przypadek 2.
+     * ani pozycji z cennika (599,99 zł za DRZWI — tak poległ przypadek 2), ani
+     * pozycji-zaślepki bez nazwy roboty. Zaślepka „Wycena indywidualna" stała tu
+     * przez jedną iterację i była błędem: wystawiała wyjaśnienie pracy automatu
+     * jako wiersz wyceny, a właściciel dostawał puste pole na kwotę, nie wiedząc
+     * CZEGO ta kwota dotyczy. Nic nie pasuje → sekcja milczy, usługę dodaje człowiek.
      */
     @Test
-    fun `catalog near miss tworzy pozycje bez ceny z notatka, nie pozycje z cennika`() {
+    fun `catalog near miss nie tworzy zadnej sugestii ani zaslepki`() {
         every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns LeadServiceIntent(
             ServiceIntentStatus.CATALOG_NEAR_MISS, emptySet(), emptySet(), ServiceScope.UNKNOWN
         )
-        val saved = slot<LeadServiceItemEntity>()
-        every { itemRepository.save(capture(saved)) } answers { firstArg() }
 
         service.recompute(studioId, leadId, force = false)
 
-        assertEquals(LeadServiceSuggestionService.NEAR_MISS_ITEM_NAME, saved.captured.name)
-        assertNull(saved.captured.priceGross)
-        assertEquals(LeadServicePriceSource.PENDING, saved.captured.priceSource)
-        assertEquals(LeadServiceSuggestionService.NEAR_MISS_NOTE, saved.captured.note)
-        assertNull(saved.captured.serviceId, "Zaślepka nie może wskazywać pozycji o innej części auta")
+        verify(exactly = 0) { itemRepository.save(any()) }
+        verify { itemRepository.deleteByLeadIdAndStatusAndSource(leadId, LeadServiceItemStatus.SUGGESTED, LeadServiceItemSource.AI) }
+        verify { itemsService.recomputeEstimatedValue(any()) }
     }
 
+    /**
+     * Druga połowa reguły z zadania: pole na kwotę pokazujemy TYLKO wtedy, gdy
+     * wiadomo, czego dotyczy. Usługa z `requireManualPrice` bez historii idzie
+     * pod własną NAZWĄ i ze wskazaniem pozycji cennika — brakuje samej ceny,
+     * więc jest o co pytać. (Bezimienna zaślepka „Wycena indywidualna" poszła.)
+     */
     @Test
-    fun `wycena niestandardowa bez historii czeka na kwote`() {
+    fun `wycena niestandardowa bez historii czeka na kwote pod wlasna nazwa`() {
         matchedIntent(manualServiceId)
         every { serviceRepository.findAllByIdInAndStudioId(any(), studioId.value) } returns
             listOf(catalogService(manualServiceId, "Renowacja skóry", basePriceGross = 0, manualPrice = true))
@@ -194,6 +199,9 @@ class LeadServiceSuggestionServiceTest {
 
         assertEquals(LeadServicePriceSource.PENDING, saved.captured.priceSource)
         assertNull(saved.captured.priceGross)
+        assertEquals("Renowacja skóry", saved.captured.name, "Pole na kwotę musi wiedzieć, czego dotyczy")
+        assertEquals(manualServiceId, saved.captured.serviceId, "Sugestia wskazuje konkretną pozycję cennika")
+        assertNull(saved.captured.note, "Notatka tłumacząca pracę automatu nie jest wierszem wyceny")
     }
 
     @Test

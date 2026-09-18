@@ -43,9 +43,13 @@ enum class ServiceIntentStatus {
     /**
      * Cennik ma TĘ SAMĄ OPERACJĘ na INNEJ CZĘŚCI auta („Naprawa tapicerki DRZWI"
      * przy pytaniu o FOTEL). To nie jest dopasowanie — inna powierzchnia to inna
-     * robota i inna cena — ale jest informacją: sekcja mówi „macie X, klient pyta
-     * o Y", a sugestia usług tworzy pozycję BEZ ceny z notatką, zamiast pewnie
-     * brzmiącej pozycji CATALOG za 599,99 zł. Dokładnie tak poległ przypadek 2.
+     * robota i inna cena — więc ŻADNEJ ceny stąd nie wolno podać; dokładnie tak
+     * poległ przypadek 2 (pewnie brzmiąca pozycja CATALOG za 599,99 zł).
+     *
+     * Skutek jest taki sam jak przy NOT_IN_CATALOG: sugestie usług milczą, a usługę
+     * dodaje człowiek. Stała tu kiedyś pozycja-zaślepka „Wycena indywidualna" bez
+     * ceny — puste pole na kwotę bez nazwy roboty pytało o cenę czegoś, czego nikt
+     * nie nazwał, więc zostało zdjęte.
      */
     CATALOG_NEAR_MISS,
 

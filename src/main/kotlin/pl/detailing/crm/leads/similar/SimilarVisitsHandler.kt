@@ -227,7 +227,7 @@ class SimilarVisitsHandler(
         when (intent.status) {
             // Decyzja właściciela produktu: robota spoza cennika = ŻADNYCH cen.
             // CATALOG_NEAR_MISS („macie X, klient pyta o Y") również: inna część
-            // auta to inna robota — notatkę dla właściciela niesie sekcja sugestii.
+            // auta to inna robota, więc żaden kandydat nie ma prawa podać kwoty.
             ServiceIntentStatus.NOT_IN_CATALOG, ServiceIntentStatus.CATALOG_NEAR_MISS ->
                 return abstainRow(lead, REASON_SERVICE_NOT_IN_CATALOG, AbstentionPolicy.CODE_NOT_IN_CATALOG)
 

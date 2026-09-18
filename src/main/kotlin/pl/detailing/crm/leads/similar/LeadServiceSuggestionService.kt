@@ -35,6 +35,10 @@ import java.util.UUID
  *    najnowsza wizyta wygrywa,
  *  - brak historii → cena pusta (PENDING), a interfejs wymusi kwotę przy akceptacji.
  *
+ * Gdy nic z cennika nie pasuje — także przy CATALOG_NEAR_MISS — sekcja MILCZY.
+ * Sugestia bez wskazanej usługi nie niesie żadnej wiedzy: pole na kwotę bez nazwy
+ * roboty pyta o cenę czegoś, czego nikt nie nazwał. Wtedy usługę dodaje człowiek.
+ *
  * Liczone RAZ, w tle, po rozstrzygnięciu auta ([LeadSimilarPrecomputeListener]) —
  * tym samym wyzwalaczem co „Podobne zlecenia", z których czerpie ceny.
  */
@@ -71,36 +75,19 @@ class LeadServiceSuggestionService(
 
         val intent = intentService.intentFor(studioId, leadId, lead.initialMessage, force, lead.threadId)
 
-        // „Prawie trafienie": cennik ma tę samą OPERACJĘ na INNEJ CZĘŚCI auta.
-        // Zamiast pewnie brzmiącej pozycji CATALOG (599,99 zł za DRZWI przy pytaniu
-        // o FOTEL) powstaje pozycja BEZ CENY z notatką — interfejs wymusi kwotę,
-        // a właściciel widzi, DLACZEGO automat nie podał liczby.
-        if (intent != null && intent.status == ServiceIntentStatus.CATALOG_NEAR_MISS) {
-            val alreadySuggested = itemRepository.findByLeadIdOrderByCreatedAtAsc(leadId).isNotEmpty()
-            if (!alreadySuggested) {
-                itemRepository.save(
-                    LeadServiceItemEntity(
-                        id = UUID.randomUUID(),
-                        studioId = studioId.value,
-                        leadId = leadId,
-                        serviceId = null,
-                        name = NEAR_MISS_ITEM_NAME,
-                        priceGross = null,
-                        note = NEAR_MISS_NOTE,
-                        quantity = 1,
-                        status = LeadServiceItemStatus.SUGGESTED,
-                        source = LeadServiceItemSource.AI,
-                        priceSource = LeadServicePriceSource.PENDING
-                    )
-                )
-            }
-            itemsService.recomputeEstimatedValue(lead)
-            publishChanged(lead)
-            return
-        }
-
-        // Awaria modelu (null) albo robota spoza cennika/brak usługi → bez sugestii.
-        // Przy NOT_IN_CATALOG to świadome: nie podsuwamy cen innej roboty.
+        // Awaria modelu (null) albo cokolwiek poza trafieniem w cennik → BEZ SUGESTII.
+        //
+        // Dotyczy to także CATALOG_NEAR_MISS („macie naprawę tapicerki DRZWI, klient
+        // pyta o FOTEL"). Przez jedną iterację powstawała tu pozycja-zaślepka
+        // „Wycena indywidualna" — bez ceny, z notatką tłumaczącą, czemu automat nie
+        // podał kwoty. Była błędem: nie jest usługą, której klient sobie życzy, tylko
+        // wyjaśnieniem pracy automatu wystawionym jako wiersz wyceny. Właściciel
+        // dostawał puste pole na kwotę, nie wiedząc CZEGO ta kwota dotyczy, i tak czy
+        // owak musiał wpisać nazwę roboty gdzie indziej. Pusta sekcja jest uczciwsza:
+        // nic nie pasowało, więc usługę dodaje człowiek od początku.
+        //
+        // Pole na kwotę ZOSTAJE tam, gdzie ma sens — przy usłudze z cennika z flagą
+        // `requireManualPrice`, bo wtedy wiadomo, jaka to robota, a brakuje samej ceny.
         if (intent == null || intent.status != ServiceIntentStatus.MATCHED || intent.matchedServiceIds.isEmpty()) {
             itemsService.recomputeEstimatedValue(lead)
             publishChanged(lead)
@@ -280,14 +267,6 @@ class LeadServiceSuggestionService(
         eventPublisher.publishEvent(
             LeadChangedEvent(source = this, studioId = StudioId(lead.studioId), leadId = LeadId(lead.id))
         )
-    }
-
-    companion object {
-        /** Pozycja-zaślepka przy CATALOG_NEAR_MISS — interfejs wymusi kwotę przy akceptacji. */
-        const val NEAR_MISS_ITEM_NAME = "Wycena indywidualna"
-        const val NEAR_MISS_NOTE =
-            "Klient pyta o robotę podobną do pozycji cennika, ale na innej części auta — " +
-                "automat nie podał ceny, żeby nie podpowiedzieć kwoty innej roboty."
     }
 }
 
