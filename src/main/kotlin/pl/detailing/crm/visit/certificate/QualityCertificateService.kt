@@ -152,6 +152,7 @@ class QualityCertificateService(
 
         val data = QualityCertificateData(
             providerName = settings?.name?.trim().orEmpty(),
+            providerAddress = providerAddress(settings),
             visitNumber = visit.visitNumber,
             vehicle = vehicle,
             customerName = customerName,
@@ -242,6 +243,21 @@ class QualityCertificateService(
             name.startsWith(brand, ignoreCase = true) -> name
             else -> "$brand $name"
         }
+    }
+
+    /**
+     * Adres siedziby pod nazwą studia w nagłówku.
+     *
+     * Ta sama składnia co w protokołach (ulica, kod z miastem), żeby oba dokumenty
+     * wizyty podawały adres identycznie.
+     */
+    private fun providerAddress(settings: StudioSettingsEntity?): String? {
+        val street = settings?.street?.trim().orEmpty()
+        val cityLine = listOfNotNull(
+            settings?.postalCode?.trim()?.takeIf { it.isNotBlank() },
+            settings?.city?.trim()?.takeIf { it.isNotBlank() }
+        ).joinToString(" ")
+        return listOf(street, cityLine).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotBlank() }
     }
 
     /** Dane kontaktowe studia w stopce — certyfikat zostaje u klienta na dłużej niż faktura. */

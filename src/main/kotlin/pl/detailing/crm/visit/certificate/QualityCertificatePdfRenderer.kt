@@ -185,17 +185,38 @@ class QualityCertificatePdfRenderer {
             val boxTop = logoTop - TAB_H - 2.28f
             val boxH = 30.13f
             fillRect(sheet.cs, boxX, boxTop - boxH, boxW, boxH, GRAY)
-            var ty = boxTop - 10f
-            wrap(data.providerName, bold, META_LABEL, boxW - 4f).take(3).forEach { line ->
-                text(sheet.cs, bold, META_LABEL, boxX + 2f, ty, line, Color.BLACK)
-                ty -= 9f
+
+            // Nazwa w pierwszym wierszu, adres siedziby pod nią. Trzy wiersze to
+            // wszystko, co mieści szare pole — długa nazwa zabiera miejsce adresowi,
+            // więc skracamy ją do jednego wiersza zamiast wypychać adres poza pole.
+            var ty = boxTop - 8.5f
+            text(
+                sheet.cs, bold, META_LABEL, boxX + 2f, ty,
+                ellipsize(data.providerName, bold, META_LABEL, boxW - 4f), Color.BLACK
+            )
+            ty -= 8.5f
+            data.providerAddress?.let { address ->
+                wrap(address, regular, META_LABEL, boxW - 4f).take(2).forEach { line ->
+                    text(sheet.cs, regular, META_LABEL, boxX + 2f, ty, line, Color.BLACK)
+                    ty -= 8.5f
+                }
             }
         } else {
             // Bez logo slot zostawał pusty, a nazwa studia siedziała drobnym drukiem
             // w szarym polu po prawej — górna trzecia część kartki wyglądała na
             // niedokończoną. Nazwa wchodzi wtedy w miejsce logo, jako znak firmowy
             // złożony pismem, i nie dubluje się już nigdzie w nagłówku.
+            // Adres idzie pod znakiem firmowym: bez logo nie ma po prawej szarego pola
+            // „usługodawca", a dokument nie może zgubić adresu siedziby przez to, że
+            // studio nie wgrało jeszcze logotypu.
             var ty = logoTop - LOGO_H + 12f
+            data.providerAddress?.let { address ->
+                text(
+                    sheet.cs, regular, NOTE_FONT, LEFT, ty,
+                    ellipsize(address, regular, NOTE_FONT, PAGE_W - LEFT - RIGHT_MARGIN), MUTED
+                )
+                ty += 15f
+            }
             wrap(data.providerName, bold, 13f, PAGE_W - LEFT - RIGHT_MARGIN).take(2)
                 .asReversed()
                 .forEach { line ->

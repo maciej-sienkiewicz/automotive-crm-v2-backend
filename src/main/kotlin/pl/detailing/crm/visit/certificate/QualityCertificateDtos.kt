@@ -58,6 +58,8 @@ data class CertificateItem(
 /** Wszystko, co rysuje [QualityCertificatePdfRenderer] — bez zależności od encji i JPA. */
 data class QualityCertificateData(
     val providerName: String,
+    /** Adres siedziby z ustawień firmy: ulica, kod pocztowy i miasto. */
+    val providerAddress: String?,
     val visitNumber: String,
     val vehicle: String,
     val customerName: String,

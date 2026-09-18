@@ -23,6 +23,7 @@ class QualityCertificatePdfRendererTest {
         careNote: String? = null
     ) = QualityCertificateData(
         providerName = "Studio Detailingu Żółć Sp. z o.o.",
+        providerAddress = "ul. Kwiatowa 5, 30-001 Kraków",
         visitNumber = "WIZ/2026/00123",
         vehicle = "Škoda Superb, WX 12345",
         customerName = "Zażółć Gęślą Jaźń",
@@ -57,6 +58,10 @@ class QualityCertificatePdfRendererTest {
         assertTrue(text.contains("Zażółć Gęślą Jaźń"), "zgubione polskie znaki w nazwisku klienta")
         assertTrue(text.contains("Korekta lakieru jednoetapowa"), "brak wybranej usługi")
         assertTrue(text.contains("Studio Detailingu Żółć"), "bez logo nazwa studia musi wejść w jego miejsce")
+        assertTrue(
+            text.contains("ul. Kwiatowa 5, 30-001 Kraków"),
+            "adres siedziby ma być na dokumencie także wtedy, gdy studio nie ma logo: $text"
+        )
         assertTrue(text.contains("ADBL Glass Cleaner"), "brak użytego produktu")
         assertTrue(text.contains("Kosa Shampoo"), "brak zalecenia")
         assertTrue(text.contains("Michał Ćwikliński"), "brak podpisu wystawiającego")
