@@ -70,6 +70,15 @@ data class ProofreadResponse(val text: String)
 
 data class SendMailResponse(val messageId: String, val threadId: String)
 
+/**
+ * Wynik cofnięcia rozmowy do nieprzeczytanej.
+ *
+ * `null` znaczy „nie było czego cofać" - wątek bez wiadomości przychodzących albo
+ * taki, którego najnowsza przychodząca i tak czeka nieprzeczytana. Ekran ma wtedy
+ * zostawić licznik w spokoju zamiast go podbijać w ciemno.
+ */
+data class MarkThreadUnreadResponse(val messageId: String?)
+
 data class CreateLabelRequest(val name: String, val color: String?)
 
 data class SetThreadLabelRequest(val labelId: String?)
@@ -180,6 +189,20 @@ class CommsController(
         val principal = SecurityContextHelper.getCurrentUser()
         readService.markThreadReadFromCrm(principal.studioId.value, UUID.fromString(id))
         return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Cofnięcie rozmowy do nieprzeczytanej z poziomu LISTY.
+     *
+     * Dotyka jednej wiadomości - najnowszej przychodzącej - więc odpowiedź niesie
+     * jej identyfikator: ekran, który zgadywał, co się zmieniło, pokazywałby licznik
+     * rozjechany z bazą przy wątku bez wiadomości przychodzących.
+     */
+    @PostMapping("/threads/{id}/unread")
+    fun markThreadUnread(@PathVariable id: String): ResponseEntity<MarkThreadUnreadResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val messageId = readService.markThreadUnreadFromCrm(principal.studioId.value, UUID.fromString(id))
+        return ResponseEntity.ok(MarkThreadUnreadResponse(messageId?.toString()))
     }
 
     @PostMapping("/messages/{id}/read")
