@@ -22,6 +22,7 @@ import pl.detailing.crm.shared.Pagination
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 import java.util.UUID
+import pl.detailing.crm.product.application.ProductListSort
 
 /**
  * Moduł produktów. Cały kontroler jest za [CapabilityKey.PRODUCTS_ACCESS] (co studio
@@ -64,11 +65,7 @@ class ProductController(
             ProductListFilter(search, onlyFavourite, includeHidden, rating),
             canSeeCosts()
         )
-        items = when (sortBy) {
-            "name" -> if (sortDirection == "desc") items.sortedByDescending { it.name } else items.sortedBy { it.name }
-            "brand" -> if (sortDirection == "desc") items.sortedByDescending { it.brand } else items.sortedBy { it.brand }
-            else -> items.sortedBy { it.name }
-        }
+        items = ProductListSort.apply(items, sortBy, sortDirection)
         val total = items.size
         val safePage = Pagination.normalizePage(page)
         val safeLimit = Pagination.normalizeLimit(limit, max = 200)
