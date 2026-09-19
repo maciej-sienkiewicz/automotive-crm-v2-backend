@@ -24,6 +24,8 @@ object AreaAdvertiserSummary {
      * @param knownSince rejestr reklamodawców: strona → najwcześniejszy start kampanii,
      *   jaki KIEDYKOLWIEK u niej widzieliśmy (także takiej, której w cache już nie ma).
      *   Bez tego nie da się odróżnić debiutanta od firmy, która podmieniła kreację.
+     * @param ackedThrough dzień, do którego studio odznaczyło nowości („widziałem
+     *   wszystko, co ruszyło do tego dnia włącznie"). Null = nigdy nie odznaczano.
      * @param today dzień, względem którego liczy się okno nowości — parametr, żeby
      *   granicę okna dało się sprawdzić testem bez zegara.
      */
@@ -33,6 +35,7 @@ object AreaAdvertiserSummary {
         mode: AreaMatchMode,
         blockedPageIds: Set<String> = emptySet(),
         knownSince: Map<String, LocalDate> = emptyMap(),
+        ackedThrough: LocalDate? = null,
         today: LocalDate = AreaNovelty.today()
     ): List<AdvertiserRow> =
         ads.asSequence()
@@ -40,7 +43,7 @@ object AreaAdvertiserSummary {
             .filterNot { it.pageId in blockedPageIds }
             .filter { AreaLocationMatcher.matches(it.locations, requestedCities, mode) }
             .groupBy { it.pageId }
-            .map { (pageId, group) -> toRow(pageId, group, knownSince[pageId], today) }
+            .map { (pageId, group) -> toRow(pageId, group, knownSince[pageId], ackedThrough, today) }
             // Nowości na górze — na 14 dni. Tabela odpowiada na „kto tu jest", ale
             // człowiek wraca do niej z pytaniem „co się zmieniło"; nowa firma z jedną
             // reklamą stałaby inaczej na piątej stronie i nikt by jej nie zobaczył.
@@ -54,9 +57,15 @@ object AreaAdvertiserSummary {
                     .thenBy { it.companyName.lowercase() }
             )
 
-    private fun toRow(pageId: String, group: List<DiscoveredAd>, knownSince: LocalDate?, today: LocalDate): AdvertiserRow {
+    private fun toRow(
+        pageId: String,
+        group: List<DiscoveredAd>,
+        knownSince: LocalDate?,
+        ackedThrough: LocalDate?,
+        today: LocalDate
+    ): AdvertiserRow {
         val reachValues = group.mapNotNull { it.reach }
-        val newStarts = group.map { it.deliveryStart }.filter { AreaNovelty.isNew(it, today) }
+        val newStarts = group.map { it.deliveryStart }.filter { AreaNovelty.isNew(it, today, ackedThrough) }
         // Debiut liczymy od NAJWCZEŚNIEJSZEGO startu, jaki znamy: z rejestru albo —
         // gdy rejestru dla tej strony jeszcze nie ma — z tego, co widać w cache.
         val earliestKnown = listOfNotNull(knownSince, group.minOf { it.deliveryStart }).min()
@@ -78,7 +87,7 @@ object AreaAdvertiserSummary {
             // wtedy nie ma po co szukać jej okrężnie na stronie firmy.
             instagram = AdvertiserInstagram.handleFromCaptions(group.map { it.linkCaption }),
             newCampaigns = newStarts.size,
-            newAdvertiser = AreaNovelty.isNew(earliestKnown, today),
+            newAdvertiser = AreaNovelty.isNew(earliestKnown, today, ackedThrough),
             latestCampaignStart = newStarts.maxOrNull()
         )
     }
@@ -100,6 +109,11 @@ object AreaAdvertiserSummary {
  * wizycie, a trzydzieści zamieniłoby w ruchliwym rejonie pół tabeli w nowości —
  * i wtedy odznaka przestałaby cokolwiek wyróżniać. Dwa tygodnie to dwie wizyty:
  * pierwsza zauważa, druga jeszcze widzi.
+ *
+ * Okno jest GÓRNĄ granicą, nie jedyną: odznaczenie („Odznacz nowe") gasi pigułki
+ * wcześniej. Samo wygaszanie po czasie odpowiada na upływ dni, a nie na to, że
+ * ktoś już te firmy przejrzał — a odznaka oglądana po raz dziesiąty przestaje być
+ * widziana i przegapia się przy niej tę jedną nową.
  */
 object AreaNovelty {
     const val WINDOW_DAYS = 14L
@@ -108,9 +122,18 @@ object AreaNovelty {
 
     fun today(): LocalDate = LocalDate.now(warsaw)
 
-    /** Start 0…13 dni temu = nowe; równo 14 dni temu już nie. Start w przyszłości też liczy się jako nowy. */
-    fun isNew(start: LocalDate, today: LocalDate): Boolean =
-        ChronoUnit.DAYS.between(start, today) < WINDOW_DAYS
+    /**
+     * Start 0…13 dni temu = nowe; równo 14 dni temu już nie. Start w przyszłości
+     * też liczy się jako nowy.
+     *
+     * [ackedThrough] odcina dodatkowo wszystko, co ruszyło do dnia odznaczenia
+     * WŁĄCZNIE — odznaczenie znaczy „widziałem to, co teraz pokazujecie", więc
+     * kampania z dzisiejszym startem gaśnie razem z resztą, a jutrzejsza wraca.
+     */
+    fun isNew(start: LocalDate, today: LocalDate, ackedThrough: LocalDate? = null): Boolean {
+        if (ackedThrough != null && !start.isAfter(ackedThrough)) return false
+        return ChronoUnit.DAYS.between(start, today) < WINDOW_DAYS
+    }
 }
 
 /** Adresy do Biblioteki reklam Meta — jedno miejsce, żeby format żył w jednym punkcie. */

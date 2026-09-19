@@ -85,6 +85,20 @@ class AdDiscoveryController(
         return ResponseEntity.ok(readService.results(principal.studioId, page, pageSize))
     }
 
+    /**
+     * „Odznacz nowe": studio potwierdza, że przejrzało nowości w swoim rejonie.
+     *
+     * Odznaki gasną po tym od razu, także w pasku podpowiedzi na Tablicy — obie
+     * liczby biorą się z tego samego ustawienia, więc nie da się ich rozjechać.
+     * Studio bez wskazanego rejonu nie ma czego odznaczać i dostaje `null`.
+     */
+    @PostMapping("/novelty/ack")
+    fun acknowledgeNovelty(): ResponseEntity<Map<String, String?>> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val acked = settingsService.acknowledgeNovelty(principal.studioId, principal.userId)
+        return ResponseEntity.ok(mapOf("noveltyAckedThrough" to acked?.toString()))
+    }
+
     // ── Wykluczeni reklamodawcy ──────────────────────────────────────────────
     //
     // Wyłącznie czarna lista TEGO studia. Wykluczeń globalnych (boty, hurtownie,

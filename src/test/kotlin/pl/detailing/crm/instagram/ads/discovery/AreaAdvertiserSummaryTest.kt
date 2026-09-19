@@ -323,4 +323,64 @@ class AreaAdvertiserSummaryTest {
         )
         assertTrue(rows.isEmpty())
     }
+
+    // ── Odznaczenie nowości ──────────────────────────────────────────────────
+
+    @Test
+    fun `odznaczenie gasi wszystko, co ruszylo do tego dnia wlacznie`() {
+        val ads = listOf(
+            ad("1", pageId = "100", start = today.minusDays(5)),
+            ad("2", pageId = "200", start = today)
+        )
+
+        val before = AreaAdvertiserSummary.summarize(ads, cities, AreaMatchMode.CITIES_ONLY, today = today)
+        assertTrue(before.all { it.newAdvertiser })
+
+        val after = AreaAdvertiserSummary.summarize(
+            ads, cities, AreaMatchMode.CITIES_ONLY, ackedThrough = today, today = today
+        )
+        assertTrue(after.none { it.newAdvertiser })
+        assertTrue(after.all { it.newCampaigns == 0 })
+        assertTrue(after.all { it.latestCampaignStart == null })
+    }
+
+    @Test
+    fun `kampania pozniejsza niz odznaczenie znowu jest nowa`() {
+        val rows = AreaAdvertiserSummary.summarize(
+            listOf(
+                ad("1", pageId = "100", start = today.minusDays(6)),
+                ad("2", pageId = "100", start = today.minusDays(1))
+            ),
+            cities, AreaMatchMode.CITIES_ONLY,
+            knownSince = mapOf("100" to LocalDate.of(2026, 1, 1)),
+            ackedThrough = today.minusDays(3),
+            today = today
+        )
+
+        val row = rows.single()
+        assertEquals(1, row.newCampaigns)
+        assertEquals(today.minusDays(1), row.latestCampaignStart)
+    }
+
+    @Test
+    fun `po odznaczeniu wiersze wracaja do zwyklej kolejnosci - najwieksi na gorze`() {
+        val ads = listOf(
+            ad("1", pageId = "big", pageName = "Big", reach = 9000),
+            ad("2", pageId = "big", pageName = "Big", reach = 9000),
+            ad("3", pageId = "big", pageName = "Big", reach = 9000),
+            ad("4", pageId = "debut", pageName = "Debut", reach = 10, start = today.minusDays(2))
+        )
+        val knownSince = mapOf("big" to LocalDate.of(2025, 1, 1), "debut" to today.minusDays(2))
+
+        val highlighted = AreaAdvertiserSummary.summarize(
+            ads, cities, AreaMatchMode.CITIES_ONLY, knownSince = knownSince, today = today
+        )
+        assertEquals(listOf("debut", "big"), highlighted.map { it.pageId })
+
+        val acknowledged = AreaAdvertiserSummary.summarize(
+            ads, cities, AreaMatchMode.CITIES_ONLY,
+            knownSince = knownSince, ackedThrough = today, today = today
+        )
+        assertEquals(listOf("big", "debut"), acknowledged.map { it.pageId })
+    }
 }

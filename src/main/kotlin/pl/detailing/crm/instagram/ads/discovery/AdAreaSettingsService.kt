@@ -7,6 +7,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * Ustawienia rejonu jednego studia — odczyt i zapis, nic więcej.
@@ -41,6 +42,7 @@ class AdAreaSettingsService(
                 matchMode = AreaMatchMode.INCLUDE_BROADER,
                 excludedPhraseIds = emptyList(),
                 trackedPhraseCount = AdDiscoveryCatalog.ALL.size,
+                noveltyAckedThrough = null,
                 updatedAt = null
             )
 
@@ -59,6 +61,32 @@ class AdAreaSettingsService(
         entity.updatedAt = Instant.now()
 
         return settingsRepository.save(entity).toDto()
+    }
+
+    /**
+     * „Odznacz nowe": studio potwierdza, że widziało wszystko, co ruszyło do dziś.
+     *
+     * Zapis jest IDEMPOTENTNY i nieodwracalny w jedną stronę — data może iść tylko
+     * do przodu. Dwa kliknięcia tego samego dnia to jeden stan, a przypadkowe
+     * cofnięcie (np. zapis starszą datą z innego wątku) nie przywróci pigułek,
+     * które ktoś już odznaczył.
+     *
+     * Brak wiersza ustawień nie jest błędem: studio, które nie wskazało rejonu,
+     * nie ma czego odznaczać, więc oddajemy stan pusty zamiast zakładać wiersz
+     * bez ani jednej miejscowości (encja wymaga rejonu, żeby cokolwiek znaczyć).
+     */
+    @Transactional
+    fun acknowledgeNovelty(studioId: StudioId, userId: UserId, today: LocalDate = AreaNovelty.today()): LocalDate? {
+        val entity = settingsRepository.findById(studioId.value).orElse(null) ?: return null
+
+        val current = entity.noveltyAckedThrough
+        if (current == null || current.isBefore(today)) {
+            entity.noveltyAckedThrough = today
+            entity.updatedByUserId = userId.value
+            entity.updatedAt = Instant.now()
+            settingsRepository.save(entity)
+        }
+        return entity.noveltyAckedThrough
     }
 
     private fun cleanLocations(raw: List<String>): List<String> {
@@ -97,6 +125,7 @@ class AdAreaSettingsService(
             matchMode = matchMode,
             excludedPhraseIds = excluded,
             trackedPhraseCount = AdDiscoveryCatalog.ALL.size - excluded.count(AdDiscoveryCatalog::exists),
+            noveltyAckedThrough = noveltyAckedThrough?.toString(),
             updatedAt = updatedAt.toString()
         )
     }
