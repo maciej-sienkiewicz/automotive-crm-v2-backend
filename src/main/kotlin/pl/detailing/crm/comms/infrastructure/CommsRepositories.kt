@@ -90,6 +90,20 @@ interface CommMessageRepository : JpaRepository<CommMessageEntity, UUID> {
     fun findFirstByThreadIdOrderBySentAtDesc(threadId: UUID): CommMessageEntity?
 
     /**
+     * Najnowsza wiadomość PRZYCHODZĄCA wątku - ta, którą cofa „Oznacz jako
+     * nieprzeczytaną" z listy rozmów.
+     *
+     * Przychodząca, nie „ostatnia w ogóle": wychodząca jest przeczytana z definicji
+     * i nie wchodzi do licznika nieprzeczytanych, więc cofanie jej nie miałoby czego
+     * zmienić. Gdy odpisaliśmy klientowi, wracamy do jego ostatniej wiadomości.
+     */
+    fun findFirstByStudioIdAndThreadIdAndDirectionOrderBySentAtDesc(
+        studioId: UUID,
+        threadId: UUID,
+        direction: pl.detailing.crm.comms.domain.CommDirection
+    ): CommMessageEntity?
+
+    /**
      * Ostatnia wiadomość przychodząca i wychodząca dla każdego z wątków — jednym
      * zapytaniem dla całej strony listy, zamiast odpytywania wątek po wątku.
      *

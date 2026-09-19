@@ -63,6 +63,34 @@ class CommsReadService(
     }
 
     /**
+     * „Oznacz jako nieprzeczytaną" z LISTY rozmów.
+     *
+     * Cofa dokładnie JEDNĄ wiadomość - najnowszą przychodzącą w wątku - a nie całą
+     * rozmowę. Wątek z piętnastoma wiadomościami klienta po takim kliknięciu ma
+     * wrócić z licznikiem „1", bo to jest to, co użytkownik chce sobie zostawić do
+     * przeczytania; cofnięcie wszystkich piętnastu kazałoby mu je potem odklikiwać.
+     *
+     * Cała robota (flaga, licznik wątku, MARK_UNSEEN do serwera, zdarzenie) dzieje
+     * się w [markUnreadFromCrm] - tu zostaje tylko wybór wiadomości.
+     *
+     * @return id cofniętej wiadomości albo null, gdy nie było czego cofać:
+     *   wątek bez wiadomości przychodzących (sama korespondencja wychodząca) albo
+     *   taki, w którym najnowsza przychodząca i tak jest już nieprzeczytana.
+     */
+    @Transactional
+    fun markThreadUnreadFromCrm(studioId: UUID, threadId: UUID): UUID? {
+        val newestInbound = messageRepository
+            .findFirstByStudioIdAndThreadIdAndDirectionOrderBySentAtDesc(
+                studioId, threadId, CommDirection.INBOUND
+            )
+            ?: return null
+        if (!newestInbound.isRead) return null
+
+        markUnreadFromCrm(studioId, newestInbound.id)
+        return newestInbound.id
+    }
+
+    /**
      * Użytkownik oznaczył wiadomość jako NIEPRZECZYTANĄ w CRM. Odwrotność
      * [markReadFromCrm].
      *
