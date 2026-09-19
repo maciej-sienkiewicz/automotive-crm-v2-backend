@@ -75,7 +75,16 @@ data class ProductListItem(
     val isFavourite: Boolean,
     val isOurs: Boolean,               // czy studio ma na to nakładkę
     val price: ProductPriceDto?,       // null bez PRODUCTS_COSTS
-    val ratingValue: Int?
+    val ratingValue: Int?,
+    /**
+     * W ilu WIZYTACH użyto tego produktu. Liczymy różne wizyty, nie wiersze
+     * `visit_products`: ten sam produkt bywa dopięty do jednej wizyty przez dwie
+     * osoby (tabela świadomie nie ma klucza unikalnego), a wtedy „2 użycia"
+     * przy jednej wizycie byłoby zwykłym zawyżeniem.
+     */
+    val usageCount: Int = 0,
+    /** ISO. Kiedy ostatnio dopięto go do wizyty; null, gdy nigdy. */
+    val lastUsedAt: Instant? = null
 )
 
 data class ProductRatingDto(
