@@ -34,6 +34,8 @@ enum class DashboardHintKind {
     WORKTIME_MISSING,
     WORKTIME_UNUSED,
     COMPETITOR_STANDOUT,
+    /** Nowa firma albo nowa kampania konkurencji w obserwowanym rejonie (Biblioteka reklam Meta). */
+    AREA_NEW_ADS,
     UNREAD_MAIL,
     SELF_IG_SILENT,
     KSEF_UPSELL

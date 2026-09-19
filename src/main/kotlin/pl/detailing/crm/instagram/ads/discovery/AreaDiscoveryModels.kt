@@ -1,6 +1,7 @@
 package pl.detailing.crm.instagram.ads.discovery
 
 import pl.detailing.crm.instagram.ads.RawAdLocation
+import java.time.LocalDate
 
 /**
  * Odkrywanie reklamodawców po frazie i obszarze („Kto jeszcze reklamuje się na
@@ -53,7 +54,9 @@ data class DiscoveredAd(
     /** Targetowanie reklamodawcy — po nim decydujemy, czy reklama obejmuje wskazany teren. */
     val locations: List<RawAdLocation>,
     /** Adres z reklamy — punkt zaczepienia dla nazwy profilu na Instagramie. */
-    val linkCaption: String? = null
+    val linkCaption: String? = null,
+    /** Dzień startu emisji wg Meta — po nim rozpoznajemy nową kampanię. */
+    val deliveryStart: LocalDate
 )
 
 /** Jeden wiersz tabeli wyników: jeden reklamodawca (strona na Facebooku). */
@@ -70,5 +73,17 @@ data class AdvertiserRow(
     /** Domena firmy złożona z adresów jej reklam; null, gdy kieruje tylko na pośredników. */
     val domain: String? = null,
     /** Nazwa profilu na Instagramie, bez małpy. Null, gdy nie udało się jej ustalić. */
-    val instagram: String? = null
+    val instagram: String? = null,
+    /**
+     * Ile z aktywnych reklam firmy w rejonie wystartowało w oknie nowości
+     * ([AreaNovelty.WINDOW_DAYS]). Zero u firmy, która tylko trwa.
+     */
+    val newCampaigns: Int = 0,
+    /**
+     * Firma, która w ogóle zaczęła się reklamować dopiero w oknie nowości — wg
+     * rejestru [AdDiscoveryAdvertiserEntity], nie samego cache. Debiutant, nie rotacja kreacji.
+     */
+    val newAdvertiser: Boolean = false,
+    /** Start najświeższej kampanii w rejonie; null, gdy żadna nie jest nowa. */
+    val latestCampaignStart: LocalDate? = null
 )
