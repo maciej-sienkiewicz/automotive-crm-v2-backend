@@ -51,6 +51,13 @@ class StudioResetCoverageTest {
         // ale nie ten cache; osierocone frazy same wypadają z odświeżania.
         "AdDiscoveryPhraseEntity" to "wspólny cache reklam pod frazę, współdzielony między studiami",
         "AdDiscoveryAdEntity" to "wspólny cache reklam pod frazę, współdzielony między studiami",
+        // Rejestr reklamodawców: „od kiedy ta firma w ogóle się reklamuje". Odpowiedź
+        // jest ta sama dla każdego, kto na nią patrzy, i nie zawiera ani jednej danej
+        // studia — wiersz jest kluczowany po stronie na Facebooku, nie po najemcy.
+        // Skasowanie go przy resecie jednego studia zabrałoby WSZYSTKIM pamięć, której
+        // nie da się odtworzyć (Biblioteka reklam oddaje tylko stan na teraz): każda
+        // firma reklamująca się dziś zaświeciłaby u wszystkich jako debiutant.
+        "AdDiscoveryAdvertiserEntity" to "rejestr startów kampanii reklamodawców, współdzielony między studiami",
         // Nazwa profilu IG należy do STRONY na Facebooku, nie do studia: profil
         // „Auto Spa Poznań" jest ten sam niezależnie od tego, kto na niego patrzy.
         // Kasowanie go przy resecie jednego studia zmuszałoby do ponownego
