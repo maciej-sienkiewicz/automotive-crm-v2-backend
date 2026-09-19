@@ -22,6 +22,21 @@ class EmailHtmlSanitizer {
      */
     fun sanitize(rawHtml: String, messageId: UUID, cidToAttachmentId: Map<String, UUID>): String {
         val document = Jsoup.parse(rawHtml)
+        /*
+         * Bez tego Jsoup wypisuje dokument „ładnie": dokłada nowe linie i wcięcia
+         * wokół elementów blokowych. Wygląda to niewinnie, bo przeglądarka zwija
+         * białe znaki przy renderowaniu - ale ten HTML jest też CZYTANY z powrotem.
+         *
+         * Zgłoszenie z produkcji: stopka „Mikolaj Błaszczak\nCarsLab" zapisana jako
+         * `<div>Mikolaj Błaszczak<br>CarsLab</div>` wracała do edytora jako nazwisko,
+         * pusta linia i wcięty „CarsLab" - bo to, co dołożył pretty-print, edytor
+         * odczytał jako treść stopki. Ten sam mechanizm psuje cudze wiadomości
+         * z `white-space: pre-wrap`, gdzie wcięcia są widoczne wprost.
+         *
+         * Ustawiamy PRZED `document.html()` niżej: to tam powstaje tekst, który
+         * idzie dalej.
+         */
+        document.outputSettings(Document.OutputSettings().prettyPrint(false))
         document.select("script, iframe, object, embed, form, base, meta, link").remove()
 
         // Rewrite inline images before cleaning — Safelist would drop unknown protocols.
