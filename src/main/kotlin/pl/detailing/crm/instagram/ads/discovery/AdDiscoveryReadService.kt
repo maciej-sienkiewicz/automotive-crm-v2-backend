@@ -91,7 +91,9 @@ class AdDiscoveryReadService(
         val visible = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode)
         val blocked = blockService.blockedPageIds(studioId)
         val knownSince = knownSince(discovered)
-        val shown = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode, blocked, knownSince)
+        val shown = AreaAdvertiserSummary.summarize(
+            discovered, cleanLocations, mode, blocked, knownSince, ackedThrough(settings)
+        )
         // Nazwy IG dociągamy TYLKO dla widocznej strony: każda nieznana domena to
         // pobranie cudzej strony WWW, a nikt nie ogląda czterystu wierszy naraz.
         val pages = if (shown.isEmpty()) 1 else (shown.size + size - 1) / size
@@ -146,7 +148,7 @@ class AdDiscoveryReadService(
 
         val rows = AreaAdvertiserSummary.summarize(
             discovered, cleanLocations, settings.matchMode,
-            blockService.blockedPageIds(studioId), knownSince(discovered)
+            blockService.blockedPageIds(studioId), knownSince(discovered), ackedThrough(settings)
         )
         val debutants = rows.filter { it.newAdvertiser }
         val withNewCampaign = rows.filter { !it.newAdvertiser && it.newCampaigns > 0 }
@@ -160,6 +162,14 @@ class AdDiscoveryReadService(
             windowDays = AreaNovelty.WINDOW_DAYS.toInt()
         )
     }
+
+    /**
+     * Dzień, do którego studio odznaczyło nowości. Trzymany w ustawieniach jako tekst
+     * ISO — nieczytelna wartość (ręczna edycja w bazie) nie ma prawa wywrócić tabeli,
+     * więc traktujemy ją jak brak odznaczenia.
+     */
+    private fun ackedThrough(settings: AreaSettingsDto): java.time.LocalDate? =
+        settings.noveltyAckedThrough?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
 
     /** Rejestr reklamodawców dla stron obecnych w cache: strona → najwcześniejszy znany start. */
     private fun knownSince(discovered: List<DiscoveredAd>): Map<String, java.time.LocalDate> {

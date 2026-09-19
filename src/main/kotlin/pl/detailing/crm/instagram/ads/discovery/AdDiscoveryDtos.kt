@@ -98,6 +98,8 @@ data class AreaSettingsDto(
     val excludedPhraseIds: List<String>,
     /** Ile fraz katalogu zostaje po odznaczeniach — jedna liczba zamiast liczenia na ekranie. */
     val trackedPhraseCount: Int,
+    /** ISO data, do której studio odznaczyło nowości; null, gdy nigdy tego nie robiło. */
+    val noveltyAckedThrough: String?,
     /** ISO albo null, gdy studio jeszcze nic nie ustawiło. */
     val updatedAt: String?
 )

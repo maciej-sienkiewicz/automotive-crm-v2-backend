@@ -169,6 +169,20 @@ class AdAreaSettingsEntity(
     @Column(name = "excluded_phrase_ids", nullable = false, columnDefinition = "text")
     var excludedPhraseIds: String = "",
 
+    /**
+     * Do którego dnia studio potwierdziło, że widziało nowości („Odznacz nowe").
+     *
+     * Odznaki gasną same po oknie nowości, ale to jest reakcja na upływ czasu,
+     * nie na przeczytanie: kto przejrzał tabelę w poniedziałek, przez kolejne dwa
+     * tygodnie patrzy na te same pigułki i przestaje je widzieć — a wtedy przegapi
+     * tę jedną, która pojawi się w piątek.
+     *
+     * DATA, nie znacznik czasu: „widziałem wszystko, co ruszyło do dziś włącznie".
+     * Kampania z jutrzejszym startem jest znowu nowa. NULL = nigdy nie odznaczano.
+     */
+    @Column(name = "novelty_acked_through", nullable = true)
+    var noveltyAckedThrough: LocalDate? = null,
+
     @Column(name = "updated_by_user_id", nullable = true, columnDefinition = "uuid")
     var updatedByUserId: UUID? = null,
 
