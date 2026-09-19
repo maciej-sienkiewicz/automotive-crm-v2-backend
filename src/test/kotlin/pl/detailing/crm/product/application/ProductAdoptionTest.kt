@@ -37,6 +37,7 @@ class ProductAdoptionTest {
         noteRepository = mockk(relaxed = true),
         proposalRepository = mockk(relaxed = true),
         priceResolver = ProductPriceResolver(),
+        visitProductRepository = mockk(relaxed = true),
         mapper = mockk(relaxed = true),
         objectMapper = com.fasterxml.jackson.databind.ObjectMapper(),
         resolutionService = mockk(relaxed = true)

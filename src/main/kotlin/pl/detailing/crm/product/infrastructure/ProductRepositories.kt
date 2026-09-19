@@ -167,4 +167,35 @@ interface VisitProductRepository : JpaRepository<VisitProductEntity, UUID> {
     fun findByIdAndStudioId(id: UUID, studioId: UUID): VisitProductEntity?
 
     fun existsByStudioIdAndVisitIdAndProductId(studioId: UUID, visitId: UUID, productId: UUID): Boolean
+
+    /**
+     * Użycie produktów JEDNYM zapytaniem, nie po jednym na wiersz listy.
+     *
+     * `COUNT(DISTINCT vp.visitId)`, nie `COUNT(*)`: tabela świadomie nie ma klucza
+     * unikalnego (visit_id, product_id), bo ten sam produkt bywa dopięty do wizyty
+     * przez dwie osoby. Liczy się liczba wizyt, w których produkt poszedł w ruch.
+     *
+     * Indeks (studio_id, product_id, created_at) obsługuje i grupowanie, i MAX.
+     */
+    @Query(
+        """
+        SELECT new pl.detailing.crm.product.infrastructure.ProductUsageRow(
+            vp.productId, COUNT(DISTINCT vp.visitId), MAX(vp.createdAt)
+        )
+        FROM VisitProductEntity vp
+        WHERE vp.studioId = :studioId AND vp.productId IN :productIds
+        GROUP BY vp.productId
+        """
+    )
+    fun usageByProduct(
+        @Param("studioId") studioId: UUID,
+        @Param("productIds") productIds: Collection<UUID>
+    ): List<ProductUsageRow>
 }
+
+/** Ile wizyt i kiedy ostatnio - wynik agregatu [VisitProductRepository.usageByProduct]. */
+data class ProductUsageRow(
+    val productId: UUID,
+    val visitCount: Long,
+    val lastUsedAt: java.time.Instant
+)

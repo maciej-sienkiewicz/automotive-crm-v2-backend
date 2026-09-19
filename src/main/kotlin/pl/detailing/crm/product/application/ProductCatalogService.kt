@@ -40,6 +40,7 @@ class ProductCatalogService(
     private val noteRepository: ProductNoteRepository,
     private val proposalRepository: ProductCorrectionProposalRepository,
     private val priceResolver: ProductPriceResolver,
+    private val visitProductRepository: VisitProductRepository,
     private val mapper: ProductMapper,
     private val objectMapper: ObjectMapper,
     private val resolutionService: ProductResolutionService
@@ -58,7 +59,7 @@ class ProductCatalogService(
             ratingRepository.findByStudioIdAndProductId(studioId.value, p.id)?.let { p.id to it.rating }
         }.toMap()
 
-        return products.asSequence()
+        val visible = products.asSequence()
             .map { p ->
                 val overlay = overlays[p.id]
                 mapper.toListItem(p, overlay, ratings[p.id], canSeeCosts)
@@ -67,6 +68,26 @@ class ProductCatalogService(
             .filter { item -> filter.includeHidden || overlays[UUID.fromString(item.id)]?.isHidden != true }
             .filter { item -> matchesRating(filter.rating, item.ratingValue) }
             .toList()
+
+        return withUsage(studioId, visible)
+    }
+
+    /**
+     * Dokleja „w ilu wizytach użyto" i datę ostatniego użycia.
+     *
+     * Jedno zapytanie na całą listę, nie jedno na wiersz - tabela `visit_products`
+     * rośnie z każdą wizytą, więc odpytywanie jej per produkt byłoby najdroższą
+     * rzeczą na tym ekranie. Liczby doklejamy PO filtrach: produkt odsiany przez
+     * ocenę albo ulubione i tak nie trafi na ekran, więc nie ma po co go liczyć.
+     */
+    private fun withUsage(studioId: StudioId, items: List<ProductListItem>): List<ProductListItem> {
+        if (items.isEmpty()) return items
+
+        val rows = visitProductRepository.usageByProduct(
+            studioId.value,
+            items.map { UUID.fromString(it.id) }
+        )
+        return ProductUsageMerge.apply(items, rows)
     }
 
     private fun matchesRating(filter: String, ratingValue: Int?): Boolean =
