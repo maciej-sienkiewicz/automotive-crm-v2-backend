@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
+import pl.detailing.crm.instagram.ads.discovery.AdDiscoveryReadService
+import pl.detailing.crm.instagram.ads.discovery.AreaNoveltyDto
 import pl.detailing.crm.instagram.analytics.MetricsCalculator
 import pl.detailing.crm.instagram.analytics.WeeklyDigestDto
 import pl.detailing.crm.instagram.infrastructure.InstagramReportRepository
@@ -45,6 +47,7 @@ class GetDashboardHintsHandler(
     private val commThreadRepository: CommThreadRepository,
     private val ksefCredentialsRepository: KsefCredentialsRepository,
     private val awaitingWorkService: AwaitingWorkService,
+    private val areaDiscovery: AdDiscoveryReadService,
     private val visitRepository: VisitRepository,
     private val dismissalRepository: DashboardHintDismissalRepository,
     private val permissionCheckService: PermissionCheckService,
@@ -93,6 +96,7 @@ class GetDashboardHintsHandler(
             safely("leads-awaiting") { leadsAwaitingHint(principal) }
             safely("worktime-missing") { worktime?.takeIf { it.kind == DashboardHintKind.WORKTIME_MISSING } }
             safely("competitor") { competitorStandoutHint(principal, digest) }
+            safely("area-new-ads") { areaNewAdsHint(principal) }
             safely("unread-mail") { unreadMailHint(principal) }
             safely("self-silent") { selfSilentHint(principal, digest, today) }
             safely("worktime-unused") { worktime?.takeIf { it.kind == DashboardHintKind.WORKTIME_UNUSED } }
@@ -300,6 +304,85 @@ class GetDashboardHintsHandler(
             ),
             permanentDismiss = false
         )
+    }
+
+    // ── Reklamy konkurencji w rejonie ────────────────────────────────────────
+
+    /**
+     * Nowa firma zaczęła się reklamować w obserwowanym rejonie albo znana firma
+     * uruchomiła nową kampanię. Liczby biorą się z tej samej funkcji, która maluje
+     * odznaki „Nowa" w tabeli reklamodawców — podpowiedź obiecuje dokładnie to,
+     * co ekran potem pokazuje.
+     *
+     * Odczyt WYŁĄCZNIE z cache i rejestru: [AdDiscoveryReadService.novelty] nie
+     * rusza Meta ani cudzych stron WWW, więc Tablica nie ma jak stać się tym, co
+     * uruchamia bibliotekę reklam.
+     *
+     * Klucz niesie datę startu najświeższej nowości: zamknięcie ucisza podpowiedź
+     * na tydzień, ale kolejna nowość w rejonie to nowy klucz — i pasek odzywa się
+     * znowu, bo mówi już o czymś innym.
+     */
+    private fun areaNewAdsHint(principal: UserPrincipal): DashboardHint? {
+        if (!hasPermission(principal, Permission.MARKETING_MANAGE)) return null
+        val novelty = areaDiscovery.novelty(principal.studioId) ?: return null
+
+        return DashboardHint(
+            key = "AREA_NEW_ADS_${novelty.latestStart}",
+            kind = DashboardHintKind.AREA_NEW_ADS,
+            text = areaNewAdsText(novelty),
+            action = DashboardHintAction(
+                label = "Zobacz, kto",
+                type = DashboardHintActionType.NAVIGATE,
+                url = "/instagram?widok=reklamy"
+            ),
+            permanentDismiss = false
+        )
+    }
+
+    /**
+     * Jedno zdanie, w którym pada NAZWA — „w rejonie coś się zmieniło" nikogo nie
+     * ruszy, „Auto Spa Poznań zaczęło się reklamować" tak. Debiutanci przed nowymi
+     * kampaniami: nowy gracz to większa wiadomość niż kolejna kreacja znanego.
+     */
+    private fun areaNewAdsText(novelty: AreaNoveltyDto): String {
+        val debutants = novelty.newAdvertiserNames
+        val campaigns = novelty.newCampaigns
+        val window = "w ostatnich ${novelty.windowDays} dniach"
+
+        val debutSentence = when (debutants.size) {
+            0 -> null
+            1 -> "W Twoim rejonie zaczęła się reklamować nowa firma: ${debutants[0]}."
+            else -> "W Twoim rejonie zaczęły się reklamować nowe firmy: ${listNames(debutants)}."
+        }
+        val campaignSentence = when {
+            campaigns == 0 -> null
+            debutSentence == null ->
+                "Konkurencja w Twoim rejonie uruchomiła ${campaignPhrase(campaigns)} $window" +
+                    " — m.in. ${listNames(novelty.newCampaignAdvertiserNames)}."
+            else -> "Do tego znane firmy uruchomiły ${campaignPhrase(campaigns)} $window."
+        }
+        return listOfNotNull(debutSentence, campaignSentence).joinToString(" ")
+    }
+
+    /** „X", „X i Y", „X, Y i 3 inne" — najwyżej dwa nazwiska, reszta liczbą. */
+    private fun listNames(names: List<String>): String = when (names.size) {
+        0 -> ""
+        1 -> names[0]
+        2 -> "${names[0]} i ${names[1]}"
+        else -> "${names[0]}, ${names[1]} i ${names.size - 2} ${otherWord(names.size - 2)}"
+    }
+
+    private fun otherWord(n: Int): String = if (n == 1) "inna" else "inne"
+
+    private fun campaignPhrase(n: Int): String {
+        val last = n % 10
+        val lastTwo = n % 100
+        val word = when {
+            n == 1 -> "nową kampanię"
+            last in 2..4 && lastTwo !in 12..14 -> "nowe kampanie"
+            else -> "nowych kampanii"
+        }
+        return "$n $word"
     }
 
     // ── Poczta ───────────────────────────────────────────────────────────────

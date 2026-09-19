@@ -14,6 +14,9 @@ import pl.detailing.crm.leads.analytics.AwaitingWorkService
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
+import pl.detailing.crm.instagram.ads.discovery.AdDiscoveryReadService
+import pl.detailing.crm.instagram.ads.discovery.AreaNoveltyDto
+import java.time.LocalDate
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.util.UUID
@@ -28,6 +31,7 @@ class GetDashboardHintsHandlerTest {
     private val permissionCheckService = mockk<PermissionCheckService>()
     private val awaitingWorkService = mockk<AwaitingWorkService>()
     private val commThreadRepository = mockk<CommThreadRepository>(relaxed = true)
+    private val areaDiscovery = mockk<AdDiscoveryReadService>()
 
     private val handler = GetDashboardHintsHandler(
         userRepository = mockk(relaxed = true),
@@ -37,6 +41,7 @@ class GetDashboardHintsHandlerTest {
         commThreadRepository = commThreadRepository,
         ksefCredentialsRepository = mockk(relaxed = true),
         awaitingWorkService = awaitingWorkService,
+        areaDiscovery = areaDiscovery,
         visitRepository = mockk(relaxed = true),
         dismissalRepository = mockk(relaxed = true),
         permissionCheckService = permissionCheckService,
@@ -55,6 +60,12 @@ class GetDashboardHintsHandlerTest {
     private fun grantLeads() {
         every { permissionCheckService.hasPermission(any(), any(), any()) } returns false
         every { permissionCheckService.hasPermission(any(), any(), Permission.LEADS_MANAGE) } returns true
+    }
+
+    private fun grantMarketing() {
+        every { permissionCheckService.hasPermission(any(), any(), any()) } returns false
+        every { permissionCheckService.hasPermission(any(), any(), Permission.MARKETING_MANAGE) } returns true
+        every { commThreadRepository.countUnread(any()) } returns 0L
     }
 
     @Test
@@ -161,5 +172,90 @@ class GetDashboardHintsHandlerTest {
         val hints = runBlocking { handler.handle(principal) }
 
         assertTrue(hints.none { it.kind == DashboardHintKind.LEADS_AWAITING })
+    }
+
+    // ── Nowości w rejonie (Biblioteka reklam) ────────────────────────────────
+
+    @Test
+    fun `new advertiser in the area is named, dated in the key and leads to the ads view`() {
+        grantMarketing()
+        every { areaDiscovery.novelty(principal.studioId) } returns AreaNoveltyDto(
+            newAdvertiserNames = listOf("Auto Spa Poznań"),
+            newCampaigns = 0,
+            newCampaignAdvertiserNames = emptyList(),
+            latestStart = LocalDate.of(2026, 9, 12),
+            windowDays = 14
+        )
+
+        val hint = runBlocking { handler.handle(principal) }.single()
+
+        assertEquals(DashboardHintKind.AREA_NEW_ADS, hint.kind)
+        assertEquals("AREA_NEW_ADS_2026-09-12", hint.key)
+        assertEquals(DashboardHintSeverity.INFO, hint.severity)
+        assertEquals("W Twoim rejonie zaczęła się reklamować nowa firma: Auto Spa Poznań.", hint.text)
+        assertEquals(DashboardHintActionType.NAVIGATE, hint.action?.type)
+        assertEquals("/instagram?widok=reklamy", hint.action?.url)
+    }
+
+    @Test
+    fun `debutants come first, known advertisers' campaigns second, names capped at two`() {
+        grantMarketing()
+        every { areaDiscovery.novelty(principal.studioId) } returns AreaNoveltyDto(
+            newAdvertiserNames = listOf("Folia Pro", "Ceramic Lab", "Detal House"),
+            newCampaigns = 3,
+            newCampaignAdvertiserNames = listOf("Auto Spa Poznań"),
+            latestStart = LocalDate.of(2026, 9, 15),
+            windowDays = 14
+        )
+
+        val hint = runBlocking { handler.handle(principal) }.single()
+
+        assertEquals(
+            "W Twoim rejonie zaczęły się reklamować nowe firmy: Folia Pro, Ceramic Lab i 1 inna. " +
+                "Do tego znane firmy uruchomiły 3 nowe kampanie w ostatnich 14 dniach.",
+            hint.text
+        )
+    }
+
+    @Test
+    fun `only new campaigns of known advertisers still name who`() {
+        grantMarketing()
+        every { areaDiscovery.novelty(principal.studioId) } returns AreaNoveltyDto(
+            newAdvertiserNames = emptyList(),
+            newCampaigns = 5,
+            newCampaignAdvertiserNames = listOf("Auto Spa Poznań", "Folia Pro", "Ceramic Lab"),
+            latestStart = LocalDate.of(2026, 9, 15),
+            windowDays = 14
+        )
+
+        val hint = runBlocking { handler.handle(principal) }.single()
+
+        assertEquals(
+            "Konkurencja w Twoim rejonie uruchomiła 5 nowych kampanii w ostatnich 14 dniach " +
+                "— m.in. Auto Spa Poznań, Folia Pro i 1 inna.",
+            hint.text
+        )
+    }
+
+    @Test
+    fun `no marketing module means the area is never read`() {
+        grantLeads()
+        every { commThreadRepository.countUnread(any()) } returns 0L
+        every { awaitingWorkService.awaitingWork(principal.studioId) } returns AwaitingWorkDto(0, 0, null)
+
+        val hints = runBlocking { handler.handle(principal) }
+
+        assertTrue(hints.none { it.kind == DashboardHintKind.AREA_NEW_ADS })
+        verify(exactly = 0) { areaDiscovery.novelty(any()) }
+    }
+
+    @Test
+    fun `quiet area means no hint`() {
+        grantMarketing()
+        every { areaDiscovery.novelty(principal.studioId) } returns null
+
+        val hints = runBlocking { handler.handle(principal) }
+
+        assertTrue(hints.none { it.kind == DashboardHintKind.AREA_NEW_ADS })
     }
 }

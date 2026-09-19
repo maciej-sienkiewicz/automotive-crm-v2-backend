@@ -103,7 +103,8 @@ class AdDiscoveryFetchService(
 @Service
 class AdDiscoveryCacheWriter(
     private val phraseRepository: AdDiscoveryPhraseRepository,
-    private val adRepository: AdDiscoveryAdRepository
+    private val adRepository: AdDiscoveryAdRepository,
+    private val advertiserLedger: AdvertiserLedger
 ) {
 
     /**
@@ -121,6 +122,10 @@ class AdDiscoveryCacheWriter(
         // saveAll (a nie save w pętli): fraza jak „ceramika" to tysiące reklam, więc
         // pozwalamy Hibernate wsadzić je paczką zamiast wiersz po wierszu.
         adRepository.saveAll(deduped.map { toEntity(phrase, it, now) })
+
+        // Rejestr reklamodawców dopisujemy W TEJ SAMEJ transakcji: to jedyna pamięć
+        // o firmach, których kampanie z cache znikną przy następnej podmianie.
+        advertiserLedger.record(deduped, now)
 
         val entity = phraseRepository.findByPhrase(phrase)
         if (entity == null) {

@@ -28,6 +28,7 @@ class AdDiscoveryReadService(
     private val instagramResolver: AdvertiserInstagramResolver,
     private val blockService: AdvertiserBlockService,
     private val settingsService: AdAreaSettingsService,
+    private val advertiserRepository: AdDiscoveryAdvertiserRepository,
     private val igLookupService: pl.detailing.crm.instagram.ads.discovery.ig.MetaIgLookupService,
     @Value("\${meta.ads.discovery.results-page-size:10}") private val defaultPageSize: Int
 ) {
@@ -67,6 +68,9 @@ class AdDiscoveryReadService(
                 totalAdvertisers = 0,
                 totalActiveAds = 0,
                 hiddenAdvertisers = 0,
+                newAdvertisers = 0,
+                newCampaigns = 0,
+                newWindowDays = AreaNovelty.WINDOW_DAYS.toInt(),
                 phraseStatuses = emptyList()
             )
         }
@@ -86,7 +90,8 @@ class AdDiscoveryReadService(
         // tabela nie odróżnia „nikt się nie reklamuje" od „wszystkich ukryłeś".
         val visible = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode)
         val blocked = blockService.blockedPageIds(studioId)
-        val shown = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode, blocked)
+        val knownSince = knownSince(discovered)
+        val shown = AreaAdvertiserSummary.summarize(discovered, cleanLocations, mode, blocked, knownSince)
         // Nazwy IG dociągamy TYLKO dla widocznej strony: każda nieznana domena to
         // pobranie cudzej strony WWW, a nikt nie ogląda czterystu wierszy naraz.
         val pages = if (shown.isEmpty()) 1 else (shown.size + size - 1) / size
@@ -106,8 +111,61 @@ class AdDiscoveryReadService(
             totalAdvertisers = shown.size,
             totalActiveAds = shown.sumOf { it.activeAds },
             hiddenAdvertisers = visible.size - shown.size,
+            newAdvertisers = shown.count { it.newAdvertiser },
+            // Kampanie debiutantów nie liczą się drugi raz: „2 nowe firmy i 3 nowe
+            // kampanie" ma znaczyć 3 kampanie u firm, które już tu były.
+            newCampaigns = shown.filterNot { it.newAdvertiser }.sumOf { it.newCampaigns },
+            newWindowDays = AreaNovelty.WINDOW_DAYS.toInt(),
             phraseStatuses = normalizedPhrases.map { phrase -> phraseStatus(phrase, phraseEntities[phrase]) }
         )
+    }
+
+    /**
+     * Nowości w rejonie studia — dla paska podpowiedzi na Tablicy.
+     *
+     * Ta sama arytmetyka co w [results] (te same frazy, rejon, wykluczenia i rejestr),
+     * więc liczba z podpowiedzi zawsze zgadza się z odznakami w tabeli. Różnica jest
+     * jedna i celowa: BEZ dociągania fraz z Meta i bez ustalania nazw profili IG.
+     * Tablica ładuje się przy każdym wejściu do aplikacji — nie może być tym, co
+     * wywołuje bibliotekę reklam ani cudze strony WWW. Czytamy to, co już jest.
+     */
+    fun novelty(studioId: StudioId): AreaNoveltyDto? {
+        val settings = settingsService.get(studioId)
+        val cleanLocations = settings.locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (cleanLocations.isEmpty()) return null
+
+        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(settings.excludedPhraseIds)
+            .mapNotNull(AdDiscoveryPhrase::normalizeValid)
+            .distinct()
+        if (normalizedPhrases.isEmpty()) return null
+
+        val discovered = adRepository.findByPhraseIn(normalizedPhrases)
+            .distinctBy { it.adArchiveId }
+            .map { it.toDiscovered() }
+        if (discovered.isEmpty()) return null
+
+        val rows = AreaAdvertiserSummary.summarize(
+            discovered, cleanLocations, settings.matchMode,
+            blockService.blockedPageIds(studioId), knownSince(discovered)
+        )
+        val debutants = rows.filter { it.newAdvertiser }
+        val withNewCampaign = rows.filter { !it.newAdvertiser && it.newCampaigns > 0 }
+        if (debutants.isEmpty() && withNewCampaign.isEmpty()) return null
+
+        return AreaNoveltyDto(
+            newAdvertiserNames = debutants.map { it.companyName },
+            newCampaigns = withNewCampaign.sumOf { it.newCampaigns },
+            newCampaignAdvertiserNames = withNewCampaign.map { it.companyName },
+            latestStart = rows.mapNotNull { it.latestCampaignStart }.max(),
+            windowDays = AreaNovelty.WINDOW_DAYS.toInt()
+        )
+    }
+
+    /** Rejestr reklamodawców dla stron obecnych w cache: strona → najwcześniejszy znany start. */
+    private fun knownSince(discovered: List<DiscoveredAd>): Map<String, java.time.LocalDate> {
+        val pageIds = discovered.map { it.pageId }.distinct()
+        if (pageIds.isEmpty()) return emptyMap()
+        return advertiserRepository.findByPageIdIn(pageIds).associate { it.pageId to it.firstDeliveryStart }
     }
 
     /**
@@ -160,7 +218,8 @@ class AdDiscoveryReadService(
         active = deliveryStop == null,
         reach = reachEu,
         locations = MetaAdCodec.decodeLocations(targetLocations),
-        linkCaption = linkCaption
+        linkCaption = linkCaption,
+        deliveryStart = deliveryStart
     )
 
     private fun AdvertiserRow.toDto() = AdvertiserRowDto(
@@ -170,7 +229,10 @@ class AdDiscoveryReadService(
         reach = reach,
         adLibraryUrl = adLibraryUrl,
         sampleSnapshotUrl = sampleSnapshotUrl,
-        instagram = instagram
+        instagram = instagram,
+        newCampaigns = newCampaigns,
+        newAdvertiser = newAdvertiser,
+        latestCampaignStart = latestCampaignStart?.toString()
     )
 
     private fun phraseStatus(phrase: String, entity: AdDiscoveryPhraseEntity?) = PhraseStatusDto(

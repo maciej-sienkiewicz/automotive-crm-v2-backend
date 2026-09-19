@@ -16,7 +16,13 @@ data class AdvertiserRowDto(
      * Nazwa profilu na Instagramie, bez małpy. Meta jej nie podaje — wyprowadzamy
      * ją z adresu, na który kieruje reklama, więc bywa pusta i to jest normalny wynik.
      */
-    val instagram: String? = null
+    val instagram: String? = null,
+    /** Ile aktywnych reklam firmy w rejonie ruszyło w oknie nowości (patrz `newWindowDays`). */
+    val newCampaigns: Int = 0,
+    /** Firma zaczęła się reklamować dopiero w oknie nowości — debiutant, nie rotacja kreacji. */
+    val newAdvertiser: Boolean = false,
+    /** ISO data startu najświeższej nowej kampanii; null, gdy żadna nie jest nowa. */
+    val latestCampaignStart: String? = null
 )
 
 /** Status frazy we wspólnym cache — po nim ekran wie, czemu tabela jest pusta lub niepełna. */
@@ -57,7 +63,28 @@ data class AreaResultsDto(
     val totalActiveAds: Int,
     /** Ilu reklamodawców odpadło przez wykluczenia — bez tego krótka tabela nie mówi dlaczego. */
     val hiddenAdvertisers: Int,
+    /** Ile firm w CAŁEJ tabeli (nie na tej stronie) zadebiutowało w oknie nowości. */
+    val newAdvertisers: Int,
+    /** Ile nowych kampanii uruchomiły firmy, które już tu były (bez kampanii debiutantów). */
+    val newCampaigns: Int,
+    /** Długość okna nowości w dniach — ekran pisze „z ostatnich N dni" z tej liczby, nie z własnej stałej. */
+    val newWindowDays: Int,
     val phraseStatuses: List<PhraseStatusDto>
+)
+
+/**
+ * Nowości w rejonie studia dla paska podpowiedzi na Tablicy. Null zamiast pustego
+ * obiektu, gdy nie ma o czym mówić — podpowiedź istnieje tylko wtedy, gdy jest konkret.
+ */
+data class AreaNoveltyDto(
+    /** Debiutanci w kolejności tabeli (najwięksi pierwsi). */
+    val newAdvertiserNames: List<String>,
+    /** Nowe kampanie firm, które już tu były. */
+    val newCampaigns: Int,
+    val newCampaignAdvertiserNames: List<String>,
+    /** Start najświeższej nowości — trafia do klucza podpowiedzi, więc nowsza nowość to nowa podpowiedź. */
+    val latestStart: java.time.LocalDate,
+    val windowDays: Int
 )
 
 /**
