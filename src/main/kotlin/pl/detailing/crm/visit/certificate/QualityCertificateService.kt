@@ -94,7 +94,7 @@ class QualityCertificateService(
             val car = if (vehicleLabel.isBlank()) "swój samochód" else "samochód $vehicleLabel"
             return listOf(
                 "Dziękujemy, że powierzyli nam Państwo $car. Poniżej znajdą Państwo pełny wykaz " +
-                    "wykonanych prac oraz materiałów, których użyliśmy. Wszystkie pochodzą wyłącznie " +
+                    "wykonanych prac oraz materiałów, których użyliśmy. Dokument jest między innymi gwarancją, że wszystkie produkty pochodzą wyłącznie " +
                     "od renomowanych producentów, bez zamienników. Dołączamy również wskazówki, " +
                     "jak zachować uzyskany efekt na lata."
             )

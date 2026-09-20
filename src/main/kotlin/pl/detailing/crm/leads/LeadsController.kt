@@ -21,6 +21,8 @@ import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
 import pl.detailing.crm.leads.create.CreateLeadHandler
+import pl.detailing.crm.leads.delete.BulkDeleteLeadsHandler
+import pl.detailing.crm.leads.delete.BulkDeleteResult
 import pl.detailing.crm.leads.delete.DeleteLeadHandler
 import pl.detailing.crm.leads.domain.LeadCategory
 import pl.detailing.crm.leads.domain.LeadLostReason
@@ -74,6 +76,15 @@ data class MarkThreadAsLeadRequest(
 )
 
 /** Notatka jest opcjonalna — sam fakt telefonu bywa całą informacją. */
+/**
+ * Usunięcie zaznaczonych spraw. [deleteAppointments] dotyczy WSZYSTKICH z listy:
+ * interfejs pyta o to raz, gdy w zaznaczeniu jest choć jedna sprawa z terminem.
+ */
+data class BulkDeleteLeadsRequest(
+    val ids: List<String>,
+    val deleteAppointments: Boolean = false
+)
+
 data class RecordCallbackRequest(
     val note: String? = null,
     /**
@@ -142,6 +153,7 @@ class LeadsController(
     private val markThreadAsLeadHandler: MarkThreadAsLeadHandler,
     private val updateHandlers: UpdateLeadHandlers,
     private val deleteLeadHandler: DeleteLeadHandler,
+    private val bulkDeleteLeadsHandler: BulkDeleteLeadsHandler,
     private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler,
     private val overviewHandler: LeadOverviewHandler,
@@ -579,6 +591,35 @@ class LeadsController(
      * [deleteAppointment] = true kasuje razem z leadem jego rezerwację (decyzja pada
      * w oknie potwierdzenia); false zostawia ją w kalendarzu jako samodzielny termin.
      */
+    /**
+     * Usunięcie wielu spraw naraz. Odpowiedź mówi, ile poszło i czego nie dało się
+     * usunąć — pominięcie pojedynczej sprawy (np. z wizytą) nie jest błędem całości
+     * i nie wycofuje pozostałych.
+     *
+     * POST, nie DELETE: lista identyfikatorów jedzie w ciele żądania, a DELETE z ciałem
+     * bywa po drodze wycinany przez pośredniki.
+     */
+    @PostMapping("/bulk-delete")
+    fun bulkDelete(@RequestBody request: BulkDeleteLeadsRequest): ResponseEntity<BulkDeleteResult> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val ids = request.ids.map {
+            try {
+                UUID.fromString(it)
+            } catch (e: IllegalArgumentException) {
+                throw ValidationException("Nieprawidłowy identyfikator sprawy: $it")
+            }
+        }
+        return ResponseEntity.ok(
+            bulkDeleteLeadsHandler.handle(
+                studioId = principal.studioId,
+                leadIds = ids,
+                userId = principal.userId.value,
+                userName = principal.fullName,
+                deleteAppointments = request.deleteAppointments
+            )
+        )
+    }
+
     @DeleteMapping("/{id}")
     fun delete(
         @PathVariable id: String,
