@@ -47,8 +47,8 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND (:direction    IS NULL OR d.direction    = :direction)
           AND (:status       IS NULL OR d.status       = :status)
           AND (:visitId      IS NULL OR d.visitId      = :visitId)
-          AND (:dateFrom     IS NULL OR d.issueDate   >= :dateFrom)
-          AND (:dateTo       IS NULL OR d.issueDate   <= :dateTo)
+          AND d.issueDate >= COALESCE(:dateFrom, d.issueDate)
+          AND d.issueDate <= COALESCE(:dateTo,   d.issueDate)
     """)
     fun findWithFilters(
         studioId: UUID,
@@ -85,6 +85,27 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
      * z PENDING. Wcześniejsza wersja przyjmowała jeden status i dokument
      * przeterminowany był wart zero złotych po obu stronach raportu.
      */
+    /*
+     * Zakres dat przez COALESCE, nie przez „(:dateFrom IS NULL OR …)".
+     *
+     * Zapis z IS NULL wygląda naturalniej, ale w Postgresie wywraca całe
+     * zapytanie, gdy data jest pusta: Hibernate wypisuje parametr DWA razy
+     * (`$4 is null or issue_date >= $5`), a pierwsze wystąpienie stoi samotnie
+     * przy IS NULL i nie ma z czego wywnioskować typu. Sterownik wysyła wtedy
+     * NULL bez typu, a serwer odpowiada `could not determine data type of
+     * parameter $4` (SQLState 42P18) - kafle „Podsumowanie finansowe" nie
+     * ładowały się wcale, gdy zakresem był „Cały czas".
+     *
+     * `d.issueDate >= COALESCE(:dateFrom, d.issueDate)` zostawia parametr
+     * wyłącznie w miejscu, gdzie sąsiaduje z kolumną typu date - typ jest znany
+     * także dla NULL-a, a pusta data znaczy „bez dolnej granicy", bo warunek
+     * schodzi wtedy do `issueDate >= issueDate`. Kolumna jest NOT NULL, więc
+     * porównanie nie ma jak dać NULL-a i wyciąć wiersza.
+     *
+     * Zapytania natywne w tym module rozwiązują to samo przez CAST (patrz
+     * IncomeDocumentsRepository, KsefInvoiceRepository); w JPQL COALESCE jest
+     * krótszy i nie powtarza typu kolumny w dwóch miejscach.
+     */
     @Query("""
         SELECT COALESCE(SUM(d.totalNet), 0) FROM FinancialDocumentEntity d
         WHERE d.studioId  = :studioId
@@ -93,8 +114,8 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.deletedAt IS NULL
           AND d.excludedAt IS NULL
           AND d.ksefRevenueInvoiceId IS NULL
-          AND (:dateFrom IS NULL OR d.issueDate >= :dateFrom)
-          AND (:dateTo   IS NULL OR d.issueDate <= :dateTo)
+          AND d.issueDate >= COALESCE(:dateFrom, d.issueDate)
+          AND d.issueDate <= COALESCE(:dateTo,   d.issueDate)
     """)
     fun sumNet(
         studioId: UUID,
