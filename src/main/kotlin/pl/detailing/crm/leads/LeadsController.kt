@@ -15,9 +15,8 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.leads.analytics.GetLeadAnalyticsHandler
 import pl.detailing.crm.leads.analytics.LeadAnalyticsDto
-import pl.detailing.crm.leads.analytics.LeadIntakeYearDto
-import pl.detailing.crm.leads.analytics.LeadIntakeYearHandler
-import pl.detailing.crm.leads.update.LeadOwedService
+import pl.detailing.crm.leads.analytics.LeadOverviewDto
+import pl.detailing.crm.leads.analytics.LeadOverviewHandler
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
@@ -86,9 +85,6 @@ data class RecordCallbackRequest(
     val owed: Boolean = false
 )
 
-/** Zgłoszenie długu z panelu sprawy: „wróć do mojego ruchu". */
-data class DeclareOwedRequest(val note: String? = null)
-
 data class LeadCallbackResponse(
     val id: String,
     val note: String?,
@@ -148,8 +144,7 @@ class LeadsController(
     private val deleteLeadHandler: DeleteLeadHandler,
     private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler,
-    private val intakeYearHandler: LeadIntakeYearHandler,
-    private val owedService: LeadOwedService,
+    private val overviewHandler: LeadOverviewHandler,
     private val noteService: LeadNoteService,
     private val callbackHandler: RecordLeadCallbackHandler,
     private val similarVisitsHandler: SimilarVisitsHandler,
@@ -221,17 +216,18 @@ class LeadsController(
     }
 
     /**
-     * Dwanaście punktów na wykres „co miesiąc wpływa" — w sztukach i w złotówkach naraz.
+     * Ekran startowy modułu: cztery kafle kontekstu i dwanaście punktów wykresu
+     * (w sztukach i w złotówkach naraz).
      *
-     * Osobno od /analytics, bo to jedyna rzecz z analityki, która stoi na domyślnym
+     * Osobno od /analytics, bo to jedyne liczby z analityki, które stoją na domyślnym
      * ekranie modułu: pełny rachunek liczyłby przy każdym wejściu w Leady macierze
      * i segmenty, których ten ekran nie pokazuje.
      */
-    @GetMapping("/intake-year")
-    fun intakeYear(@RequestParam(required = false) year: Int?): ResponseEntity<LeadIntakeYearDto> {
+    @GetMapping("/overview")
+    fun overview(@RequestParam(required = false) year: Int?): ResponseEntity<LeadOverviewDto> {
         val principal = SecurityContextHelper.getCurrentUser()
         return ResponseEntity.ok(
-            intakeYearHandler.handle(principal.studioId, year ?: intakeYearHandler.currentYear())
+            overviewHandler.handle(principal.studioId, year ?: overviewHandler.currentYear())
         )
     }
 
@@ -365,33 +361,6 @@ class LeadsController(
                 createdAt = callback.createdAt
             )
         )
-    }
-
-    // ── „Ruch jest u mnie" ─────────────────────────────────────────────────
-
-    /**
-     * Ręczne cofnięcie sprawy do naszego ruchu — odpowiednik „Oznacz jako nieprzeczytaną"
-     * z poczty. System wnioskuje czyj ruch z kierunku ostatniej wiadomości i w jednym
-     * codziennym przypadku myli się zawsze: klient dzwoni i prosi o ofertę mailem.
-     */
-    @PostMapping("/{id}/owed")
-    fun declareOwed(
-        @PathVariable id: String,
-        @RequestBody(required = false) request: DeclareOwedRequest?
-    ): ResponseEntity<LeadDto> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val leadId = UUID.fromString(id)
-        owedService.declare(principal.studioId, leadId, request?.note)
-        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
-    }
-
-    /** „Już wysłane" — jedyne ręczne zdjęcie długu; resztę kasują dowody spłaty. */
-    @DeleteMapping("/{id}/owed")
-    fun settleOwed(@PathVariable id: String): ResponseEntity<LeadDto> {
-        val principal = SecurityContextHelper.getCurrentUser()
-        val leadId = UUID.fromString(id)
-        owedService.settle(principal.studioId, leadId)
-        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
     }
 
     // ── Notatki ────────────────────────────────────────────────────────────

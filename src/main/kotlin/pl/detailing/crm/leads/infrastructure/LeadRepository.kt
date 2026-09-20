@@ -39,6 +39,28 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         @Param("to") to: Instant
     ): List<Array<Any>>
 
+    /**
+     * Pary (wpłynęło, pierwsza odpowiedź) do rachunku czasu reakcji.
+     *
+     * [since] przesuwa dolną granicę okna; `Instant.EPOCH` daje całą historię studia.
+     * Znowu projekcja dwóch kolumn, nie encje: przy tysiącu leadów pełne wiersze
+     * ciągnęłyby treść każdej pierwszej wiadomości, żeby policzyć różnicę dwóch dat.
+     *
+     * Średnią i percentyl liczy Kotlin, nie baza: `avg` po stronie SQL-a musiałby
+     * i tak wrócić po posortowany zbiór dla P95, a przy tej liczności sortowanie
+     * kilkuset liczb w pamięci jest tańsze niż drugie zapytanie.
+     */
+    @Query(
+        """SELECT l.createdAt, l.firstResponseAt FROM LeadEntity l
+           WHERE l.studioId = :studioId
+             AND l.firstResponseAt IS NOT NULL
+             AND l.createdAt >= :since"""
+    )
+    fun findResponseFacts(
+        @Param("studioId") studioId: UUID,
+        @Param("since") since: Instant
+    ): List<Array<Any>>
+
     fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 
     /**

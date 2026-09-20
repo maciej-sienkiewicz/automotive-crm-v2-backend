@@ -8,10 +8,8 @@ import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
-import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
-import java.util.UUID
 
 /**
  * „Ruch jest u mnie" — ręczne obejście reguły, która wnioskuje czyj ruch z rozmowy.
@@ -47,14 +45,13 @@ class LeadOwedService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** Zgłoszenie długu z panelu sprawy albo z okna „Kontakt poza pocztą". */
-    @Transactional
-    fun declare(studioId: StudioId, leadId: UUID, note: String?): LeadEntity {
-        val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
-            ?: throw NotFoundException("Nie znaleziono leada")
-        return declare(lead, note)
-    }
-
+    /**
+     * Zgłoszenie długu. Jedyne wejście: odpowiedź „mam coś wysłać" w oknie kontaktu
+     * poza pocztą — czyli chwila, w której obietnica pada. Osobnego przycisku „cofnij
+     * do mojego ruchu" świadomie NIE MA: przycisk, który trzeba sobie wytłumaczyć,
+     * jest gorszy niż jego brak, a to pytanie ma sens tylko tam, gdzie zna się
+     * odpowiedź bez zastanowienia.
+     */
     @Transactional
     fun declare(lead: LeadEntity, note: String?): LeadEntity {
         /*
@@ -71,18 +68,12 @@ class LeadOwedService(
         return saved
     }
 
-    /** „Już wysłane" z panelu sprawy — jedyne ręczne zdjęcie długu. */
-    @Transactional
-    fun settle(studioId: StudioId, leadId: UUID): LeadEntity {
-        val lead = leadRepository.findByIdAndStudioId(leadId, studioId.value)
-            ?: throw NotFoundException("Nie znaleziono leada")
-        settle(lead)
-        return lead
-    }
-
     /**
      * Zdjęcie długu przez dowód spłaty. Cicho i bez zdarzenia, gdy nie było długu —
      * wołają to automaty przy każdej wysyłce i każdej zmianie statusu.
+     *
+     * Nie ma ręcznego odpowiednika i nie jest potrzebny: każda droga, którą obietnica
+     * może zostać spełniona, kończy się tutaj sama.
      */
     @Transactional
     fun settle(lead: LeadEntity) {
