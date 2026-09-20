@@ -46,6 +46,16 @@ data class LeadDto(
     val lastOutboundAt: Instant?,
     val firstResponseAt: Instant?,
     val closedAt: Instant?,
+    /**
+     * Od kiedy TO MY jesteśmy coś winni klientowi — dług zadeklarowany ręcznie.
+     *
+     * Interfejs traktuje go jak „nieprzeczytane" w poczcie: sprawa wraca do sekcji
+     * „Czeka na Ciebie" niezależnie od tego, kto napisał ostatni. Musi jechać tą
+     * samą drogą co reszta pól (REST i WebSocket), bo pole doklejone tylko w jednym
+     * z tych miejsc gaśnie na ekranie po pierwszej zmianie statusu.
+     */
+    val owedSince: Instant?,
+    val owedNote: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -178,6 +188,8 @@ fun LeadEntity.toDto(
     lastOutboundAt = conversation.lastOutboundAt,
     firstResponseAt = firstResponseAt,
     closedAt = closedAt,
+    owedSince = owedSince,
+    owedNote = owedNote,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

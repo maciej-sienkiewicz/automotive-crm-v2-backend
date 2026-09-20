@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.leads.update.LeadOwedService
 import pl.detailing.crm.leads.update.LeadStatusService
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.NotFoundException
@@ -64,7 +65,17 @@ data class RecordLeadCallbackCommand(
     val leadId: UUID,
     val userId: UserId,
     val userName: String,
-    val note: String?
+    val note: String?,
+    /**
+     * Czy po tej rozmowie coś zostało PO NASZEJ stronie.
+     *
+     * Pytanie zadawane w oknie odnotowania kontaktu, bo to najtańsza chwila w całym
+     * systemie na jego zadanie: człowiek właśnie odłożył telefon i pamięta rozmowę.
+     * `true` zgłasza dług studia — sprawa zostaje w „Czeka na Ciebie" mimo że
+     * formalnie to my odezwaliśmy się ostatni. `false` zdejmuje dług zgłoszony
+     * wcześniej: kolejna rozmowa, po której nic nam nie zostało, jest jego spłatą.
+     */
+    val owed: Boolean = false
 )
 
 /**
@@ -83,7 +94,8 @@ data class RecordLeadCallbackCommand(
 class RecordLeadCallbackHandler(
     private val leadRepository: LeadRepository,
     private val callbackRepository: LeadCallbackRepository,
-    private val statusService: LeadStatusService
+    private val statusService: LeadStatusService,
+    private val owedService: LeadOwedService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -121,6 +133,17 @@ class RecordLeadCallbackHandler(
                 changedByName = command.userName
             )
         }
+
+        /*
+         * Czyj ruch po tej rozmowie — jedyna rzecz, której system nie policzy sam.
+         *
+         * Bez tego pytania rozmowa zakończona prośbą „prześlij mi to na maila"
+         * zdejmowała sprawę z kolejki zaległości, bo odnotowany kontakt wygląda
+         * w danych identycznie jak udzielona odpowiedź. Klient czekał, a sprawa
+         * wyglądała na załatwioną — i za uczciwe odnotowanie telefonu użytkownik
+         * dostawał zniknięcie sprawy z listy.
+         */
+        if (command.owed) owedService.declare(lead, command.note) else owedService.settle(lead)
 
         log.info("[LEADS] Odnotowano telefon do klienta na leadzie {} ({})", lead.id, command.userName)
         return callback

@@ -2,6 +2,9 @@ package pl.detailing.crm.leads.analytics
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.conversation.LeadConversationState
+import pl.detailing.crm.leads.conversation.LeadConversationStateService
+import pl.detailing.crm.leads.conversation.LeadTurnResolver
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
@@ -37,7 +40,9 @@ class GetLeadAnalyticsHandler(
     private val tagService: LeadTagService,
     private val tagCatalog: LeadTagCatalogService,
     private val awaitingWorkService: AwaitingWorkService,
-    private val vehicleSegments: VehicleSegmentRepository
+    private val vehicleSegments: VehicleSegmentRepository,
+    private val conversationStates: LeadConversationStateService,
+    private val turnResolver: LeadTurnResolver
 ) {
 
     @Transactional(readOnly = true)
@@ -66,6 +71,27 @@ class GetLeadAnalyticsHandler(
 
         val windowLength = Duration.between(from, to)
         val now = Instant.now()
+
+        /*
+         * Które rozmowy ucichły — liczone z tej samej reguły, co sekcja „Ucichło"
+         * w kolejce: ruch jest u klienta i cisza trwa dłużej niż próg studia.
+         *
+         * Wcześniej stała tu własna definicja („lead otwarty starszy niż 14 dni od
+         * wpłynięcia"), niezależna od tej, którą widział użytkownik. Dopóki obie
+         * liczby stały na osobnych ekranach, nikt tego nie zauważał; odkąd kwota
+         * „ucichłych pieniędzy" podpisuje sekcję kolejki, dwie definicje znaczyłyby
+         * dwie sprzeczne prawdy obok siebie. Zapytanie sprzed miesiąca, w którym
+         * klient odpisał wczoraj, jest żywe — liczy się wiek CISZY, nie wiek sprawy.
+         */
+        val thresholds = turnResolver.thresholdsOf(studioId)
+        val states = conversationStates.statesOf(studioId.value, leads)
+        val silentIds: Set<UUID> = leads.filter { lead ->
+            turnResolver.isSilent(
+                turnResolver.resolve(lead, states[lead.id] ?: LeadConversationState.NONE),
+                thresholds,
+                now
+            )
+        }.map { it.id }.toSet()
         // Klasyfikacja aut pobrana raz i podana obu osiom — dwa identyczne zapytania
         // po tę samą tabelę byłyby czystą stratą.
         val vehicleSegmentsOf = segmentsOf(leads)
@@ -86,8 +112,8 @@ class GetLeadAnalyticsHandler(
             // Świadomie bez leadów odrzuconych z naszej woli i bez spamu: to nigdy
             // nie były nasze pieniądze, patrz LeadLostReason.countsAsLoss.
             lostValue = leads.filter { it.isRealLoss() }.sumOf { it.estimatedValue },
-            pipelineValue = leads.filter { it.isLive(now) }.sumOf { it.estimatedValue },
-            silentValue = leads.filter { it.isSilent(now) }.sumOf { it.estimatedValue },
+            pipelineValue = leads.filter { it.isLive(silentIds) }.sumOf { it.estimatedValue },
+            silentValue = leads.filter { it.isSilent(silentIds) }.sumOf { it.estimatedValue },
             categories = categories(studioId, leads, tagsByLead),
             lostReasons = lostReasons(leads),
             medianFirstResponseMinutes = medianFirstResponseMinutes(leads),
@@ -97,7 +123,7 @@ class GetLeadAnalyticsHandler(
             inquiriesByMonthDay = inquiriesByMonthDay(leads),
             responseImpact = responseImpact(leads),
             vehicleOutliers = vehicleOutliers(leads, ratio(completed, closed)),
-            timeline = timeline(leads, from, to, now),
+            timeline = timeline(leads, from, to, silentIds),
             weekdayMatrix = weekdayMatrix(studioId, leads, tagsByLead),
             bySizeSegment = bySizeSegment(leads, vehicleSegmentsOf),
             byMarketTier = byMarketTier(leads, vehicleSegmentsOf),
@@ -107,7 +133,7 @@ class GetLeadAnalyticsHandler(
             // ten sam wynik napędza też priorytetową podpowiedź na Tablicy i nie może
             // się między tymi ekranami rozjechać.
             awaiting = awaitingWorkService.awaitingWork(studioId),
-            leaks = leaks(leads, now),
+            leaks = leaks(leads, silentIds),
             // Poprzednie okno tej samej długości — jedyny punkt odniesienia, jaki
             // właściciel ma bez wychodzenia z ekranu. Bez niego kwota wygranych jest
             // liczbą bez skali: nie wiadomo, czy to dobrze, czy źle.
@@ -429,7 +455,7 @@ class GetLeadAnalyticsHandler(
         leads: List<LeadEntity>,
         from: Instant,
         to: Instant,
-        now: Instant
+        silentIds: Set<UUID>
     ): List<TimelinePointDto> {
         val start = from.localDate()
         val end = to.localDate()
@@ -449,8 +475,8 @@ class GetLeadAnalyticsHandler(
         return buckets.map { (periodStart, group) ->
             val won = group.filter { it.status == LeadStatus.COMPLETED }
             val lost = group.filter { it.isRealLoss() }
-            val live = group.filter { it.isLive(now) }
-            val silent = group.filter { it.isSilent(now) }
+            val live = group.filter { it.isLive(silentIds) }
+            val silent = group.filter { it.isSilent(silentIds) }
             TimelinePointDto(
                 periodStart = periodStart,
                 created = group.size,
@@ -544,9 +570,9 @@ class GetLeadAnalyticsHandler(
      * jedyna pozycja tej listy, którą da się naprawić w tym tygodniu i za darmo,
      * więc ma być widoczna jako osobna, a nie rozpuszczona w „inne".
      */
-    private fun leaks(leads: List<LeadEntity>, now: Instant): List<LeakDto> {
+    private fun leaks(leads: List<LeadEntity>, silentIds: Set<UUID>): List<LeakDto> {
         val lost = leads.filter { it.isRealLoss() }
-        val silentOpen = leads.filter { it.isSilent(now) }
+        val silentOpen = leads.filter { it.isSilent(silentIds) }
         if (lost.isEmpty() && silentOpen.isEmpty()) return emptyList()
 
         // Zapytanie, na które nigdy nie poszła odpowiedź, ma tylko jeden prawdziwy
@@ -624,13 +650,16 @@ class GetLeadAnalyticsHandler(
     private fun LeadEntity.isRealLoss(): Boolean =
         status in LOST_STATUSES && (lostReasonCode?.countsAsLoss ?: true)
 
-    /** Rozmowa wciąż żywa: otwarta i młodsza niż okno decyzji. */
-    private fun LeadEntity.isLive(now: Instant): Boolean =
-        status in OPEN_STATUSES && ChronoUnit.DAYS.between(createdAt, now) <= DECISION_WINDOW_DAYS
+    /** Rozmowa wciąż żywa: otwarta i jeszcze nie ucichła. */
+    private fun LeadEntity.isLive(silentIds: Set<UUID>): Boolean =
+        status in OPEN_STATUSES && id !in silentIds
 
-    /** Otwarta, ale starsza niż okno decyzji — formalnie żywa, w praktyce ucichła. */
-    private fun LeadEntity.isSilent(now: Instant): Boolean =
-        status in OPEN_STATUSES && ChronoUnit.DAYS.between(createdAt, now) > DECISION_WINDOW_DAYS
+    /**
+     * Otwarta, ale cisza klienta przekroczyła próg studia — formalnie żywa,
+     * w praktyce ucichła. Zbiór liczy się raz, wspólną regułą [LeadTurnResolver].
+     */
+    private fun LeadEntity.isSilent(silentIds: Set<UUID>): Boolean =
+        status in OPEN_STATUSES && id in silentIds
 
     private fun Instant.localDate(): LocalDate = atZone(DateRangeFilter.ZONE).toLocalDate()
 
@@ -655,19 +684,6 @@ class GetLeadAnalyticsHandler(
         const val MIN_OUTLIER_SAMPLE = 5
         const val OUTLIER_THRESHOLD = 0.20
         const val MAX_OUTLIERS = 4
-
-        /**
-         * Ile dni klient realnie potrzebuje na decyzję o detailingu.
-         *
-         * Dwa tygodnie: kto pyta o mycie, decyduje w dzień, kto o powłokę — po
-         * obejrzeniu auta i jednej rozmowie o cenie. Rozmowa otwarta miesiąc po
-         * zapytaniu nie jest pipeline'em, tylko czymś, czego nikt nie zamknął, i
-         * pokazywanie jej jako „wciąż w grze" zawyża wartość otwartych zapytań
-         * dokładnie o pieniądze, których nie będzie. Dłuższe przypadki się zdarzają
-         * — flota, auto w budowie — ale są wyjątkiem, nie regułą, i mają wracać
-         * przez pozycję „Rozmowa ucichła", a nie zawyżać sumę.
-         */
-        const val DECISION_WINDOW_DAYS = 14L
 
         /** Ponad kwartał liczymy miesiącami, żeby na wykresie było widać kształt. */
         const val MONTHLY_THRESHOLD_DAYS = 120L

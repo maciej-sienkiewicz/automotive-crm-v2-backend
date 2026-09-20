@@ -2,8 +2,10 @@ package pl.detailing.crm.leads.analytics
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.leads.conversation.LeadConversationState
 import pl.detailing.crm.leads.conversation.LeadConversationStateService
-import pl.detailing.crm.leads.conversation.LeadReplyState
+import pl.detailing.crm.leads.conversation.LeadTurn
+import pl.detailing.crm.leads.conversation.LeadTurnResolver
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
@@ -13,15 +15,16 @@ import java.time.temporal.ChronoUnit
 /**
  * Pieniądze czekające na odpowiedź studia — stan BIEŻĄCY, nie okno raportu.
  *
- * Wyciągnięte z [GetLeadAnalyticsHandler] do osobnej usługi, bo ten sam rachunek
- * napędza teraz dwa miejsca: pasmo „Czeka na Ciebie" w analityce leadów oraz
- * priorytetową (czerwoną) podpowiedź na Tablicy. Jedno źródło prawdy — ta sama
- * liczba nie ma prawa rozjechać się między ekranem analityki a paskiem Tablicy.
+ * Ten sam rachunek napędza pasmo „Czeka na Ciebie" w analityce leadów, priorytetową
+ * podpowiedź na Tablicy i sekcję kolejki o tej samej nazwie. Jedno źródło prawdy —
+ * ta sama liczba nie ma prawa rozjechać się między tymi ekranami.
  *
- * Liczy się tylko to, w czym ostatnie słowo należy do klienta — piłka po naszej
- * stronie. Lead, w którym to my napisaliśmy ostatni, nie jest zaległością, tylko
- * czekaniem na decyzję; mieszanie tych dwóch rzeczy zamieniłoby dług w listę
- * wszystkiego.
+ * Liczy się to, w czym ruch jest po naszej stronie, wprost z [LeadTurnResolver] —
+ * czyli z tej samej reguły, którą widzi użytkownik w kolejce. Wcześniej stał tu
+ * własny, uboższy wariant tej reguły: patrzył wyłącznie na `replyState`, więc lead
+ * bez wątku (telefon, formularz, dodany ręcznie) nie wchodził do rachunku w ogóle,
+ * choć w kolejce stał na czerwono. Tablica i kolejka mówiły o tym samym studiu
+ * dwie różne rzeczy.
  *
  * Świadomie poza zakresem dat: zaległa odpowiedź nie przestaje być zaległa dlatego,
  * że ktoś przełączył widok na „ostatnie 30 dni". Rozmowa sprzed czterdziestu dni,
@@ -30,7 +33,8 @@ import java.time.temporal.ChronoUnit
 @Service
 class AwaitingWorkService(
     private val leadRepository: LeadRepository,
-    private val conversationStates: LeadConversationStateService
+    private val conversationStates: LeadConversationStateService,
+    private val turnResolver: LeadTurnResolver
 ) {
 
     @Transactional(readOnly = true)
@@ -40,10 +44,9 @@ class AwaitingWorkService(
 
         val states = conversationStates.statesOf(studioId.value, open)
         val waiting = open.mapNotNull { lead ->
-            val state = states[lead.id] ?: return@mapNotNull null
-            if (state.replyState != LeadReplyState.AWAITING_OUR_REPLY) return@mapNotNull null
-            val since = state.waitingSince ?: return@mapNotNull null
-            lead to since
+            val turn = turnResolver.resolve(lead, states[lead.id] ?: LeadConversationState.NONE)
+            if (turn.turn != LeadTurn.OURS) return@mapNotNull null
+            turn.since?.let { lead to it }
         }
         if (waiting.isEmpty()) return EMPTY
 

@@ -73,10 +73,10 @@ class StudioSettingsEntity(
     var logoOnDocuments: Boolean = true,
 
     @Column(name = "lead_stagnant_our_threshold_hours", nullable = false)
-    var leadStagnantOurThresholdHours: Int = 48,
+    var leadStagnantOurThresholdHours: Int = 24,
 
     @Column(name = "lead_stagnant_client_threshold_hours", nullable = false)
-    var leadStagnantClientThresholdHours: Int = 72,
+    var leadStagnantClientThresholdHours: Int = 120,
 
     /** Delivery channel for the customer Visit Card link: EMAIL, SMS, BOTH or NONE (no auto-send). */
     @Column(name = "visit_card_delivery_channel", nullable = false, length = 10)

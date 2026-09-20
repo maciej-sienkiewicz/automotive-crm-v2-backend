@@ -118,6 +118,22 @@ class LeadEntity(
     @Column(name = "closed_at", columnDefinition = "timestamp with time zone")
     var closedAt: Instant? = null,
 
+    /**
+     * Od kiedy TO MY jesteśmy coś winni klientowi — dług zadeklarowany ręcznie.
+     *
+     * Ustawia człowiek („klient prosił o ofertę mailem"), kasuje dowód spłaty:
+     * nasza wiadomość w wątku, kolejny kontakt zamknięty odpowiedzią „czekam na
+     * klienta" albo rozstrzygnięcie sprawy — patrz [pl.detailing.crm.leads.update.LeadOwedService].
+     * Dopóki stoi, [pl.detailing.crm.leads.conversation.LeadTurnResolver] trzyma
+     * sprawę po naszej stronie niezależnie od tego, co mówi korespondencja.
+     */
+    @Column(name = "owed_since", columnDefinition = "timestamp with time zone")
+    var owedSince: Instant? = null,
+
+    /** Co konkretnie jesteśmy winni — jedno zdanie z rozmowy. Opcjonalne jak sam dług. */
+    @Column(name = "owed_note", length = 500)
+    var owedNote: String? = null,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -149,6 +165,8 @@ class LeadEntity(
         lostReasonCode = lostReasonCode,
         firstResponseAt = firstResponseAt,
         closedAt = closedAt,
+        owedSince = owedSince,
+        owedNote = owedNote,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -179,6 +197,8 @@ class LeadEntity(
             lostReasonCode = lead.lostReasonCode,
             firstResponseAt = lead.firstResponseAt,
             closedAt = lead.closedAt,
+            owedSince = lead.owedSince,
+            owedNote = lead.owedNote,
             createdAt = lead.createdAt,
             updatedAt = lead.updatedAt
         )

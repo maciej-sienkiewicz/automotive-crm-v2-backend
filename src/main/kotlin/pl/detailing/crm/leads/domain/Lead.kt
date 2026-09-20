@@ -101,6 +101,9 @@ data class Lead(
     val lostReasonCode: LeadLostReason? = null,
     val firstResponseAt: Instant? = null,
     val closedAt: Instant? = null,
+    /** Od kiedy my jesteśmy coś winni klientowi; null, gdy nie zadeklarowano długu. */
+    val owedSince: Instant? = null,
+    val owedNote: String? = null,
     val createdAt: Instant,
     val updatedAt: Instant
 )

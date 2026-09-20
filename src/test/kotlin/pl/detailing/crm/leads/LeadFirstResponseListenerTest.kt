@@ -13,7 +13,9 @@ import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import org.springframework.context.ApplicationEventPublisher
 import pl.detailing.crm.leads.update.LeadFirstResponseListener
+import pl.detailing.crm.leads.update.LeadOwedService
 import pl.detailing.crm.leads.update.LeadStatusService
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -31,14 +33,21 @@ class LeadFirstResponseListenerTest {
         every { save(any()) } answers { firstArg() }
     }
     private val statusService = mockk<LeadStatusService>(relaxed = true)
-    private val listener = LeadFirstResponseListener(leadRepository, statusService)
+
+    /*
+     * Prawdziwa usługa długu, nie atrapa: „wysłana wiadomość spłaca obietnicę" jest
+     * zachowaniem, a nie wywołaniem, i test ma pilnować skutku na leadzie.
+     */
+    private val owedService = LeadOwedService(leadRepository, mockk<ApplicationEventPublisher>(relaxed = true))
+    private val listener = LeadFirstResponseListener(leadRepository, statusService, owedService)
 
     private val threadId = UUID.randomUUID()
 
     private fun lead(
         status: LeadStatus = LeadStatus.NEW,
         firstResponseAt: Instant? = null,
-        createdAt: Instant = Instant.now()
+        createdAt: Instant = Instant.now(),
+        owedSince: Instant? = null
     ) = LeadEntity(
         id = UUID.randomUUID(),
         studioId = UUID.randomUUID(),
@@ -60,6 +69,7 @@ class LeadFirstResponseListenerTest {
         stagnantAlertSentAt = null,
         threadId = threadId,
         firstResponseAt = firstResponseAt,
+        owedSince = owedSince,
         createdAt = createdAt
     )
 
@@ -100,6 +110,27 @@ class LeadFirstResponseListenerTest {
 
         assertNotNull(lead.firstResponseAt)
         verify(exactly = 0) { statusService.transition(any(), any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * Klient poprosił przez telefon o ofertę mailem, więc ktoś zgłosił dług studia.
+     * Wysłanie tej oferty jest jedynym dowodem spłaty — i musi zdjąć sprawę z sekcji
+     * „Czeka na Ciebie" bez proszenia użytkownika o drugie kliknięcie.
+     */
+    @Test
+    fun `wysłana wiadomość spłaca ręcznie zgłoszony dług studia`() {
+        val lead = lead(
+            status = LeadStatus.IN_PROGRESS,
+            firstResponseAt = Instant.now().minusSeconds(7200),
+            owedSince = Instant.now().minusSeconds(3600)
+        )
+        lead.owedNote = "Wysłać wycenę ceramiki"
+        every { leadRepository.findByThreadIdOrderByCreatedAtAsc(threadId) } returns listOf(lead)
+
+        listener.onOutboundSent(event())
+
+        assertNull(lead.owedSince)
+        assertNull(lead.owedNote)
     }
 
     @Test

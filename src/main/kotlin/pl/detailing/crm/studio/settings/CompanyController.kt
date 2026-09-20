@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.leads.conversation.LeadStagnationThresholds
 import pl.detailing.crm.role.permission.RequiresOwner
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.StudioId
@@ -239,8 +240,10 @@ class CompanyController(
         }
         ResponseEntity.ok(
             LeadAlertConfigResponse(
-                leadStagnantOurThresholdHours = settings?.leadStagnantOurThresholdHours ?: 48,
-                leadStagnantClientThresholdHours = settings?.leadStagnantClientThresholdHours ?: 72
+                leadStagnantOurThresholdHours = settings?.leadStagnantOurThresholdHours
+                    ?: LeadStagnationThresholds.DEFAULT.ourReplyHours,
+                leadStagnantClientThresholdHours = settings?.leadStagnantClientThresholdHours
+                    ?: LeadStagnationThresholds.DEFAULT.clientSilenceHours
             )
         )
     }

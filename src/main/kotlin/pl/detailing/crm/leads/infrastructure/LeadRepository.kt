@@ -16,6 +16,29 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): LeadEntity?
 
+    /**
+     * Dwie kolumny na wykres „co miesiąc wpływa": data wpłynięcia i wycena.
+     *
+     * Świadomie projekcja, nie encje. Wykres roczny wisi na domyślnym ekranie
+     * modułu, więc pobiera się przy KAŻDYM wejściu w Leady — a rok to kilkanaście
+     * setek wierszy. Pełne encje ciągnęłyby przy tym treść pierwszej wiadomości
+     * każdego zapytania, czyli dziesiątki kilobajtów tekstu, z których wykres nie
+     * używa ani znaku.
+     *
+     * Kubełkowanie po miesiącach zostaje w Kotlinie, a nie w SQL-u: granica miesiąca
+     * zależy od strefy studia (Europe/Warsaw), a `date_part` po stronie bazy liczyłby
+     * ją w UTC i przerzucał zapytania z pierwszego dnia miesiąca do poprzedniego.
+     */
+    @Query(
+        """SELECT l.createdAt, l.estimatedValue FROM LeadEntity l
+           WHERE l.studioId = :studioId AND l.createdAt >= :from AND l.createdAt < :to"""
+    )
+    fun findIntakeFacts(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<Array<Any>>
+
     fun findByAppointmentId(appointmentId: UUID): LeadEntity?
 
     /**
@@ -131,6 +154,7 @@ interface LeadRepository : JpaRepository<LeadEntity, UUID> {
         """SELECT COUNT(l) FROM LeadEntity l
            WHERE l.studioId = :studioId
              AND (l.status = pl.detailing.crm.shared.LeadStatus.NEW
+                  OR (l.status IN :openStatuses AND l.owedSince IS NOT NULL)
                   OR (l.status IN :openStatuses
                       AND l.threadId IS NOT NULL
                       AND EXISTS (SELECT 1 FROM CommMessageEntity mi

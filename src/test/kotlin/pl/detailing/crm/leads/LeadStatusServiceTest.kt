@@ -57,6 +57,49 @@ class LeadStatusServiceTest {
         stagnantAlertSentAt = null
     )
 
+    /**
+     * Dług studia („obiecałem wysłać ofertę") znika, gdy sprawa się rozstrzyga —
+     * i TYLKO wtedy.
+     *
+     * Awans „Nowy" → „W kontakcie" dzieje się sam, przy odnotowaniu telefonu, czyli
+     * dokładnie w tej rozmowie, w której obietnica pada. Gdyby kasował dług, zgłoszenie
+     * ginęłoby w chwili złożenia — i to w jedynym przypadku, dla którego cały ten
+     * mechanizm powstał.
+     */
+    @Test
+    fun `awans na W kontakcie nie kasuje dlugu studia`() {
+        val lead = lead(LeadStatus.NEW)
+        lead.owedSince = java.time.Instant.now()
+        lead.owedNote = "Wysłać wycenę ceramiki"
+
+        service.transition(lead, LeadStatus.IN_PROGRESS)
+
+        assertNotNull(lead.owedSince)
+        assertEquals("Wysłać wycenę ceramiki", lead.owedNote)
+    }
+
+    @Test
+    fun `rezerwacja kasuje dlug studia`() {
+        val lead = lead(LeadStatus.IN_PROGRESS)
+        lead.owedSince = java.time.Instant.now()
+        lead.owedNote = "Wysłać wycenę ceramiki"
+
+        service.transition(lead, LeadStatus.CONFIRMED)
+
+        assertNull(lead.owedSince)
+        assertNull(lead.owedNote)
+    }
+
+    @Test
+    fun `przegrana kasuje dlug studia`() {
+        val lead = lead(LeadStatus.IN_PROGRESS)
+        lead.owedSince = java.time.Instant.now()
+
+        service.transition(lead, LeadStatus.LOST, lostReasonCode = LeadLostReason.TOO_EXPENSIVE)
+
+        assertNull(lead.owedSince)
+    }
+
     @Test
     fun `losing a lead requires a dictionary reason`() {
         assertThrows(ValidationException::class.java) {

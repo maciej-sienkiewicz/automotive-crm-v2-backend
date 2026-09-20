@@ -55,6 +55,24 @@ class LeadStatusService(
             lead.lostReason = lostNote?.take(500)
         }
         lead.closedAt = if (targetStatus in TERMINAL_STATUSES) Instant.now() else null
+        /*
+         * Rozstrzygnięcie sprawy spłaca ręcznie zgłoszony dług studia — rezerwacja,
+         * wygrana i przegrana są wszystkie odpowiedzią na „obiecałem coś wysłać".
+         *
+         * WYŁĄCZNIE te statusy. Przejście „Nowy" → „W kontakcie" niczego nie
+         * rozstrzyga i nie wolno mu kasować długu: ten awans dzieje się także sam,
+         * przy odnotowaniu telefonu, czyli dokładnie w tej rozmowie, w której dług
+         * bywa zgłaszany. Kasowanie przy każdej zmianie statusu gubiłoby obietnicę
+         * w chwili jej złożenia.
+         *
+         * Zerujemy wprost, a nie przez LeadOwedService: lead i tak jest tu zapisywany
+         * i zdarzenie o zmianie i tak stąd wychodzi, więc osobne wywołanie kosztowałoby
+         * drugi zapis i drugie zdarzenie o tej samej sprawie.
+         */
+        if (targetStatus == LeadStatus.CONFIRMED || targetStatus in TERMINAL_STATUSES) {
+            lead.owedSince = null
+            lead.owedNote = null
+        }
         leadRepository.save(lead)
 
         historyRepository.save(

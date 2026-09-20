@@ -69,7 +69,10 @@ class StudioResetFinalizerTest {
         // Ustawienia behawioralne wracają do wartości z deklaracji encji.
         assertEquals(0, fresh.idleTimeoutSeconds)
         assertEquals(false, fresh.visitCardSendByDefault)
-        assertEquals(48, fresh.leadStagnantOurThresholdHours)
+        // 24 h, nie 48: domyślny próg zszedł do wartości, którą interfejs pokazywał
+        // od zawsze (migracja V145). Test pilnuje tego samego co dotąd — że reset
+        // wraca do DEKLARACJI encji — a nie konkretnej liczby.
+        assertEquals(24, fresh.leadStagnantOurThresholdHours)
         assertNull(fresh.visitNumberFormat)
         // Logo znika zawsze — pliki studia w S3 są czyszczone bezwarunkowo.
         assertNull(fresh.logoS3Key)

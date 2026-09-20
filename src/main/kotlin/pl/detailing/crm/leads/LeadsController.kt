@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.leads.analytics.GetLeadAnalyticsHandler
 import pl.detailing.crm.leads.analytics.LeadAnalyticsDto
+import pl.detailing.crm.leads.analytics.LeadIntakeYearDto
+import pl.detailing.crm.leads.analytics.LeadIntakeYearHandler
+import pl.detailing.crm.leads.update.LeadOwedService
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadCommand
 import pl.detailing.crm.leads.convert.MarkThreadAsLeadHandler
 import pl.detailing.crm.leads.create.CreateLeadCommand
@@ -72,7 +75,19 @@ data class MarkThreadAsLeadRequest(
 )
 
 /** Notatka jest opcjonalna — sam fakt telefonu bywa całą informacją. */
-data class RecordCallbackRequest(val note: String? = null)
+data class RecordCallbackRequest(
+    val note: String? = null,
+    /**
+     * Czy po tej rozmowie coś zostało po NASZEJ stronie („prześlij mi to mailem").
+     *
+     * Domyślnie false, więc starszy klient aplikacji zachowuje się dokładnie tak,
+     * jak dotąd: odnotowany kontakt jest odpowiedzią i zdejmuje sprawę z zaległości.
+     */
+    val owed: Boolean = false
+)
+
+/** Zgłoszenie długu z panelu sprawy: „wróć do mojego ruchu". */
+data class DeclareOwedRequest(val note: String? = null)
 
 data class LeadCallbackResponse(
     val id: String,
@@ -133,6 +148,8 @@ class LeadsController(
     private val deleteLeadHandler: DeleteLeadHandler,
     private val tagCatalog: LeadTagCatalogService,
     private val analyticsHandler: GetLeadAnalyticsHandler,
+    private val intakeYearHandler: LeadIntakeYearHandler,
+    private val owedService: LeadOwedService,
     private val noteService: LeadNoteService,
     private val callbackHandler: RecordLeadCallbackHandler,
     private val similarVisitsHandler: SimilarVisitsHandler,
@@ -201,6 +218,21 @@ class LeadsController(
         val rangeTo = to ?: Instant.now()
         val rangeFrom = from ?: rangeTo.minus(30, ChronoUnit.DAYS)
         return ResponseEntity.ok(analyticsHandler.handle(principal.studioId, rangeFrom, rangeTo))
+    }
+
+    /**
+     * Dwanaście punktów na wykres „co miesiąc wpływa" — w sztukach i w złotówkach naraz.
+     *
+     * Osobno od /analytics, bo to jedyna rzecz z analityki, która stoi na domyślnym
+     * ekranie modułu: pełny rachunek liczyłby przy każdym wejściu w Leady macierze
+     * i segmenty, których ten ekran nie pokazuje.
+     */
+    @GetMapping("/intake-year")
+    fun intakeYear(@RequestParam(required = false) year: Int?): ResponseEntity<LeadIntakeYearDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            intakeYearHandler.handle(principal.studioId, year ?: intakeYearHandler.currentYear())
+        )
     }
 
     @GetMapping("/{id}")
@@ -321,7 +353,8 @@ class LeadsController(
                 leadId = UUID.fromString(id),
                 userId = principal.userId,
                 userName = principal.fullName,
-                note = request.note
+                note = request.note,
+                owed = request.owed
             )
         )
         return ResponseEntity.status(HttpStatus.CREATED).body(
@@ -332,6 +365,33 @@ class LeadsController(
                 createdAt = callback.createdAt
             )
         )
+    }
+
+    // ── „Ruch jest u mnie" ─────────────────────────────────────────────────
+
+    /**
+     * Ręczne cofnięcie sprawy do naszego ruchu — odpowiednik „Oznacz jako nieprzeczytaną"
+     * z poczty. System wnioskuje czyj ruch z kierunku ostatniej wiadomości i w jednym
+     * codziennym przypadku myli się zawsze: klient dzwoni i prosi o ofertę mailem.
+     */
+    @PostMapping("/{id}/owed")
+    fun declareOwed(
+        @PathVariable id: String,
+        @RequestBody(required = false) request: DeclareOwedRequest?
+    ): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val leadId = UUID.fromString(id)
+        owedService.declare(principal.studioId, leadId, request?.note)
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
+    }
+
+    /** „Już wysłane" — jedyne ręczne zdjęcie długu; resztę kasują dowody spłaty. */
+    @DeleteMapping("/{id}/owed")
+    fun settleOwed(@PathVariable id: String): ResponseEntity<LeadDto> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val leadId = UUID.fromString(id)
+        owedService.settle(principal.studioId, leadId)
+        return ResponseEntity.ok(queryHandlers.get(principal.studioId, leadId))
     }
 
     // ── Notatki ────────────────────────────────────────────────────────────

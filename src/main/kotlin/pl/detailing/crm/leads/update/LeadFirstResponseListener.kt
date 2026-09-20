@@ -49,7 +49,8 @@ import java.time.Instant
 @Component
 class LeadFirstResponseListener(
     private val leadRepository: LeadRepository,
-    private val statusService: LeadStatusService
+    private val statusService: LeadStatusService,
+    private val owedService: LeadOwedService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -71,6 +72,15 @@ class LeadFirstResponseListener(
         if (lead.status == LeadStatus.NEW) {
             statusService.transition(lead, LeadStatus.IN_PROGRESS)
         }
+
+        /*
+         * Wysłana wiadomość jest DOWODEM spłaty ręcznie zgłoszonego długu („klient
+         * prosił o ofertę mailem"). Kasujemy go tutaj, a nie przy odczycie, bo to
+         * jest dokładnie ten moment, w którym obietnica przestaje być niespełniona —
+         * i jedyny, po którym sprawa ma prawo zejść z sekcji „Czeka na Ciebie".
+         */
+        owedService.settle(lead)
+
         log.debug("[LEADS] Odpowiedź w wątku {} odnotowana na leadzie {}", event.threadId, lead.id)
     }
 }
