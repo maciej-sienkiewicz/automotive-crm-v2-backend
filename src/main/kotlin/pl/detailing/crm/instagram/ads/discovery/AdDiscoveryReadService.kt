@@ -123,6 +123,53 @@ class AdDiscoveryReadService(
     }
 
     /**
+     * Nazwa profilu na Instagramie reklamodawcy, którego studio widzi w swoim rejonie.
+     *
+     * Istnieje po to, żeby „Obserwuj" w tabeli NIE wysyłał nazwy z przeglądarki.
+     * Przeglądarka dostała ją od nas, ale wraca jako dane od klienta i wolno ją
+     * podmienić na dowolny ciąg — a po drugiej stronie stoi dopisanie profilu do
+     * listy obserwowanych studia, czyli zobowiązanie do regularnego pobierania
+     * cudzego konta. Serwer ustala tę nazwę sam, tą samą drogą, którą wypełnił
+     * tabelę.
+     *
+     * Zwraca null także wtedy, gdy reklamodawcy w ogóle nie ma w wynikach tego
+     * studia — bo jest wykluczony, bo wypadł z rejonu albo bo nigdy go tam nie było.
+     * „Nie widzisz go w tabeli" znaczy „nie możesz go stąd obserwować".
+     */
+    fun instagramHandleFor(studioId: StudioId, pageId: String): String? {
+        val settings = settingsService.get(studioId)
+        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(settings.excludedPhraseIds)
+            .mapNotNull(AdDiscoveryPhrase::normalizeValid)
+            .distinct()
+        val cleanLocations = settings.locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (normalizedPhrases.isEmpty() || cleanLocations.isEmpty()) return null
+
+        /*
+         * Bez `ensureFresh`: to jest reakcja na kliknięcie w wiersz, który użytkownik
+         * ma przed oczami, więc dane są w cache. Dociąganie fraz z Meta zamieniłoby
+         * jedno kliknięcie w kilkunastosekundowe czekanie i wydało quotę na to samo,
+         * co przed chwilą wypełniło tabelę.
+         */
+        val discovered = adRepository.findByPhraseIn(normalizedPhrases)
+            .distinctBy { it.adArchiveId }
+            .map { it.toDiscovered() }
+
+        val row = AreaAdvertiserSummary.summarize(
+            discovered,
+            cleanLocations,
+            settings.matchMode,
+            blockService.blockedPageIds(studioId),
+            knownSince(discovered),
+            ackedThrough(settings)
+        ).firstOrNull { it.pageId == pageId } ?: return null
+
+        // Ta sama ścieżka ustalania nazwy co w tabeli — podpis reklamy, Biblioteka
+        // reklam, strona firmy — więc „Obserwuj" dodaje dokładnie ten profil, który
+        // w tym wierszu widać.
+        return withInstagram(listOf(row)).firstOrNull()?.instagram
+    }
+
+    /**
      * Nowości w rejonie studia — dla paska podpowiedzi na Tablicy.
      *
      * Ta sama arytmetyka co w [results] (te same frazy, rejon, wykluczenia i rejestr),

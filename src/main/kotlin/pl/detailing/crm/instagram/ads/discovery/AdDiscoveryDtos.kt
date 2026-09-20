@@ -142,6 +142,18 @@ data class BlockedAdvertiserDto(
     val createdAt: String
 )
 
+/**
+ * Odpowiedź „Obserwuj". Zawiera nazwę USTALONĄ PRZEZ SERWER — interfejs pokazuje
+ * ją w komunikacie, bo to jedyny moment, w którym użytkownik dowiaduje się, co
+ * dokładnie zaczął obserwować.
+ */
+data class FollowAdvertiserResponse(
+    val profileId: String,
+    val username: String,
+    /** PENDING_APPROVAL zaraz po dodaniu — tak samo jak przy ręcznym wpisaniu nazwy. */
+    val status: String
+)
+
 data class BlockAdvertiserRequest(
     val pageId: String,
     /** Nazwa w chwili ukrycia — bez niej lista jest ciągiem numerów. */

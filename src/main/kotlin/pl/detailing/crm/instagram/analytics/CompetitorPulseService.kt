@@ -2,10 +2,6 @@ package pl.detailing.crm.instagram.analytics
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import pl.detailing.crm.instagram.ads.AdCalendarMath
-import pl.detailing.crm.instagram.ads.MetaAdCodec
-import pl.detailing.crm.instagram.ads.MetaAdSnapshotEntity
-import pl.detailing.crm.instagram.ads.MetaAdsActivityService
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.InstagramPostTopicEntity
@@ -18,7 +14,6 @@ import pl.detailing.crm.instagram.infrastructure.InstagramProfileStatsWeeklyRepo
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
 import pl.detailing.crm.shared.InstagramProfileStatus
 import pl.detailing.crm.shared.StudioId
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -26,14 +21,23 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import pl.detailing.crm.instagram.ads.discovery.MetaAdLibraryUrl
 
 // ── DTO ───────────────────────────────────────────────────────────────────────
 
 /**
- * Pojedyncze zdarzenie. [kind] steruje ikoną i kolorem na froncie:
- * YOUR_POST | YOUR_SILENCE | ACCELERATION | SLOWDOWN | STANDOUT_POST | NEW_TOPIC |
- * FOLLOWER_SPIKE | FOLLOWER_DROP
+ * Pojedyncze zdarzenie.
+ *
+ * [kind]: FOLLOWER_SPIKE | FOLLOWER_DROP | NEW_TOPIC | SLOWDOWN.
+ *
+ * Zostały cztery rodzaje i to jest cały kontrakt. Sześć wcześniejszych („twój post",
+ * „nie opublikowałeś nic", przyspieszenie tempa, post ponad normę, uruchomienie
+ * i zakończenie kampanii) mówiło dokładnie to, co wiersz profilu w zakładce Tydzień —
+ * tyle że w osobnej sekcji, pod innym tytułem i w innej zakładce. Sekcja zniknęła,
+ * więc znikają i zdarzenia, które istniały wyłącznie dla niej.
+ *
+ * Te cztery zostają, bo wiersz tygodnia nie zna żadnego z nich: on patrzy na posty
+ * i ich zaangażowanie, a nie na liczbę obserwujących ani na to, o czym profil
+ * zaczął nagle mówić.
  */
 data class PulseEventDto(
     val kind: String,
@@ -82,8 +86,7 @@ class CompetitorPulseService(
     private val postRepository: InstagramPostSnapshotRepository,
     private val topicRepository: InstagramPostTopicRepository,
     private val statsRepository: InstagramProfileStatsWeeklyRepository,
-    private val metricsRepository: InstagramProfileMetricsSnapshotRepository,
-    private val adsActivityService: MetaAdsActivityService
+    private val metricsRepository: InstagramProfileMetricsSnapshotRepository
 ) {
 
     companion object {
@@ -92,17 +95,6 @@ class CompetitorPulseService(
 
         // Próg wiarygodnej normy (ile tygodni historii, ile postów) mieszka w
         // DigestRules — jedna definicja zdarzenia dla całego modułu.
-
-        /** Post wyróżniający się: tyle razy powyżej mediany profilu. */
-        private const val STANDOUT_FACTOR = 2.5
-
-        /** Twój post uznajemy za mocny / słaby przy takim odchyleniu od własnej normy. */
-        private const val OWN_STRONG_FACTOR = 1.5
-        private const val OWN_WEAK_FACTOR = 0.6
-
-        /** Przyspieszenie publikacji: tyle razy powyżej własnego tempa i co najmniej tyle postów. */
-        private const val ACCELERATION_FACTOR = 2.0
-        private const val ACCELERATION_MIN_POSTS = 2
 
         /** Cisza: tyle tygodni bez publikacji u profilu, który normalnie publikuje. */
         private const val SILENCE_WEEKS = 3
@@ -113,28 +105,23 @@ class CompetitorPulseService(
 
         private const val MAX_EVENTS = 14
 
+        /**
+         * Kolejność wyświetlania. Cztery rodzaje, bo tylko tyle zostało: reszta
+         * („twój post", „nie opublikowałeś nic", przyspieszenie tempa, post ponad
+         * normę, start i koniec kampanii) dublowała wiersz profilu w zakładce Tydzień
+         * i została stamtąd wycięta razem z sekcją, która ją pokazywała.
+         *
+         * Najpierw to, co mówi o pieniądzach i zasięgu (ruch obserwujących), potem
+         * zmiana w tym, o czym konkurent mówi, na końcu spowolnienie — fakt prawdziwy,
+         * ale najwolniej zmieniający cokolwiek.
+         */
+        private val KIND_ORDER = listOf("FOLLOWER_SPIKE", "FOLLOWER_DROP", "NEW_TOPIC", "SLOWDOWN")
+
         /** Tematy porządkowe — „pierwszy post o Inne" nie jest zdarzeniem. */
         private val NON_SERVICE_TOPICS = setOf("INNE", "PROMOCJA", "KONKURS")
 
         private val DATE_FMT = DateTimeFormatter.ofPattern("dd.MM")
 
-        private val DAY_NAMES = listOf(
-            "poniedziałku", "wtorku", "środy", "czwartku", "piątku", "soboty", "niedzieli"
-        )
-
-        /** Kolejność wyświetlania: najpierw Ty, potem to, co u konkurencji najgłośniejsze. */
-        private val KIND_ORDER = listOf(
-            "YOUR_POST", "YOUR_SILENCE", "AD_STARTED", "ACCELERATION", "STANDOUT_POST",
-            "AD_ENDED", "FOLLOWER_SPIKE", "NEW_TOPIC", "FOLLOWER_DROP", "SLOWDOWN"
-        )
-
-        private val PLATFORM_LABELS = mapOf(
-            "FACEBOOK" to "Facebook",
-            "INSTAGRAM" to "Instagram",
-            "MESSENGER" to "Messenger",
-            "AUDIENCE_NETWORK" to "Audience Network",
-            "THREADS" to "Threads"
-        )
     }
 
     @Transactional(readOnly = true)
@@ -195,21 +182,22 @@ class CompetitorPulseService(
             )
             val hasBaseline = DigestRules.hasBaseline(weeksObserved, baselinePosts.size)
 
-            val medianEngagement = MetricsCalculator.median(baselinePosts.map { engagementOf(it).toDouble() })
-            val medianWeeklyPosts = medianWeeklyPosts(baselinePosts, windowStart, weeksObserved)
+                val medianWeeklyPosts = medianWeeklyPosts(baselinePosts, windowStart, weeksObserved)
 
-            if (link.isSelf) {
-                events += ownEvents(username, windowPosts, medianEngagement, medianWeeklyPosts, hasBaseline, weeks)
-            } else {
+            /*
+             * Własny profil nie generuje zdarzeń o publikacjach. Wszystko, co puls
+             * miał o nim do powiedzenia — „twój post", „nie opublikowałeś nic" —
+             * mówi już wiersz w zakładce Tydzień, i mówi to pełnym zdaniem z werdyktem.
+             * Zostają mu wyłącznie ruchy obserwujących, których tamten wiersz nie zna.
+             */
+            if (!link.isSelf) {
                 events += competitorEvents(
                     username = username,
                     windowPosts = windowPosts,
                     baselinePosts = baselinePosts,
                     topics = topics,
-                    medianEngagement = medianEngagement,
                     medianWeeklyPosts = medianWeeklyPosts,
                     hasBaseline = hasBaseline,
-                    weeks = weeks,
                     today = today
                 )
             }
@@ -224,14 +212,6 @@ class CompetitorPulseService(
                 today = today
             )
         }
-
-        events += adEvents(
-            profileIds = profileIds,
-            usernames = profiles.mapValues { (_, profile) -> profile.username },
-            selfIds = links.filter { it.isSelf }.map { it.profileId }.toSet(),
-            windowStart = windowStart,
-            today = today
-        )
 
         val ordered = events
             .sortedWith(
@@ -250,156 +230,6 @@ class CompetitorPulseService(
         )
     }
 
-    // ── Reklamy ───────────────────────────────────────────────────────────────
-
-    /**
-     * Kampania reklamowa trwa tygodniami, więc zdarzeniem są wyłącznie jej dwa
-     * końce: uruchomienie i zakończenie. Gdyby zdarzeniem było „trwa", jedna
-     * kampania wypełniłaby Puls przez dwa miesiące i wypchnęła z niego wszystko,
-     * co się w tym czasie faktycznie wydarzyło.
-     *
-     * Zakończenie raportujemy z datą NASZEGO odczytu, nie z daty wpisanej przez
-     * Meta: bibliotece zdarza się uzupełnić ją z opóźnieniem, a zdarzenie ma się
-     * pojawić raz, w tygodniu, w którym je zobaczyliśmy.
-     */
-    private fun adEvents(
-        profileIds: List<UUID>,
-        usernames: Map<UUID, String>,
-        selfIds: Set<UUID>,
-        windowStart: LocalDate,
-        today: LocalDate
-    ): List<PulseEventDto> {
-        val started = adsActivityService.startedSince(profileIds, windowStart, today)
-        val ended = adsActivityService.endedSince(
-            profileIds,
-            windowStart.atStartOfDay(ZoneOffset.UTC).toInstant()
-        )
-        if (started.isEmpty() && ended.isEmpty()) return emptyList()
-
-        val allAds = adsActivityService.allFor(profileIds)
-        val events = mutableListOf<PulseEventDto>()
-
-        started.forEach { (profileId, ads) ->
-            val username = usernames[profileId] ?: return@forEach
-            val isSelf = profileId in selfIds
-            ads.forEach { ad ->
-                val parallel = adsActivityService.concurrentOn(allAds[profileId].orEmpty(), ad.deliveryStart)
-                events += PulseEventDto(
-                    kind = "AD_STARTED",
-                    isSelf = isSelf,
-                    username = username,
-                    headline = if (isSelf) "Uruchomiłeś reklamę" else "@$username uruchomił reklamę",
-                    detail = listOfNotNull(
-                        ad.title?.takeIf { it.isNotBlank() },
-                        platformsOf(ad),
-                        if (parallel > 1) "$parallel ${campaignWord(parallel)} równolegle" else null
-                    ).joinToString(" · "),
-                    permalink = MetaAdLibraryUrl.forAd(ad.adArchiveId),
-                    occurredAt = DATE_FMT.format(ad.deliveryStart)
-                )
-            }
-        }
-
-        ended.forEach { (profileId, ads) ->
-            val username = usernames[profileId] ?: return@forEach
-            val isSelf = profileId in selfIds
-            ads.forEach { ad ->
-                val detectedOn = ad.endedDetectedAt?.atZone(ZoneOffset.UTC)?.toLocalDate() ?: today
-                val days = AdCalendarMath.daysInWindow(
-                    ad.deliveryStart, ad.deliveryStop, ad.deliveryStart, ad.deliveryStop ?: detectedOn
-                )
-                events += PulseEventDto(
-                    kind = "AD_ENDED",
-                    isSelf = isSelf,
-                    username = username,
-                    headline = if (isSelf) "Zakończyłeś reklamę" else "@$username zakończył reklamę",
-                    detail = listOfNotNull(
-                        ad.title?.takeIf { it.isNotBlank() },
-                        "$days ${dayWord(days)} emisji",
-                        (ad.reachPl ?: ad.reachEu)?.let { "zasięg ${groupDigits(it)}" }
-                    ).joinToString(" · "),
-                    permalink = MetaAdLibraryUrl.forAd(ad.adArchiveId),
-                    occurredAt = DATE_FMT.format(detectedOn)
-                )
-            }
-        }
-
-        return events
-    }
-
-    /** „Facebook, Instagram" — skróty FB/IG nic nikomu nie mówią. */
-    private fun platformsOf(ad: MetaAdSnapshotEntity): String? =
-        MetaAdCodec.decodePlatforms(ad.platforms)
-            .mapNotNull { PLATFORM_LABELS[it] }
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString(", ")
-
-    private fun campaignWord(count: Int): String = when {
-        count == 1 -> "kampania"
-        count % 10 in 2..4 && count % 100 !in 12..14 -> "kampanie"
-        else -> "kampanii"
-    }
-
-    private fun dayWord(count: Int): String = if (count == 1) "dzień" else "dni"
-
-    /** 41200 → „41 200". Liczby zasięgu czyta się w setkach tysięcy. */
-    private fun groupDigits(value: Int): String =
-        value.toString().reversed().chunked(3).joinToString("\u00A0").reversed()
-
-    // ── Twój profil ───────────────────────────────────────────────────────────
-
-    /**
-     * Twoje posty raportujemy wszystkie, każdy z porównaniem do własnej normy.
-     * To jedna obserwacja zestawiona z medianą z pół roku — porównanie w pełni poprawne,
-     * w przeciwieństwie do liczenia „skuteczności tematu" z trzech postów.
-     */
-    private fun ownEvents(
-        username: String,
-        windowPosts: List<InstagramPostSnapshotEntity>,
-        medianEngagement: Double?,
-        medianWeeklyPosts: Double,
-        hasBaseline: Boolean,
-        weeks: Int
-    ): List<PulseEventDto> {
-        if (windowPosts.isEmpty()) {
-            if (!hasBaseline || medianWeeklyPosts < 1.0) return emptyList()
-            return listOf(
-                PulseEventDto(
-                    kind = "YOUR_SILENCE",
-                    isSelf = true,
-                    username = username,
-                    headline = if (weeks == 1) "Nie opublikowałeś nic w tym tygodniu" else "Brak publikacji w tym okresie",
-                    detail = "Zwykle publikujesz około ${formatDecimal(medianWeeklyPosts)} ${postWord(medianWeeklyPosts)} tygodniowo.",
-                    permalink = null,
-                    occurredAt = ""
-                )
-            )
-        }
-
-        return windowPosts.map { post ->
-            val engagement = engagementOf(post)
-            val detail = when {
-                medianEngagement == null || medianEngagement <= 0.0 || !hasBaseline ->
-                    "$engagement ${reactionWord(engagement)}. Za mało historii, aby porównać z twoją normą."
-                engagement >= medianEngagement * OWN_STRONG_FACTOR ->
-                    "$engagement ${reactionWord(engagement)} — powyżej twojej zwykłej średniej (${medianEngagement.roundToInt()})."
-                engagement <= medianEngagement * OWN_WEAK_FACTOR ->
-                    "$engagement ${reactionWord(engagement)} — poniżej twojej zwykłej średniej (${medianEngagement.roundToInt()})."
-                else ->
-                    "$engagement ${reactionWord(engagement)}, twoja zwykła średnia to ${medianEngagement.roundToInt()}."
-            }
-            PulseEventDto(
-                kind = "YOUR_POST",
-                isSelf = true,
-                username = username,
-                headline = "Twój post z ${dayNameOf(post.takenAt)}",
-                detail = detail,
-                permalink = permalinkOf(post),
-                occurredAt = dateOf(post)
-            )
-        }
-    }
-
     // ── Konkurencja ───────────────────────────────────────────────────────────
 
     private fun competitorEvents(
@@ -407,31 +237,11 @@ class CompetitorPulseService(
         windowPosts: List<InstagramPostSnapshotEntity>,
         baselinePosts: List<InstagramPostSnapshotEntity>,
         topics: Map<UUID, InstagramPostTopicEntity>,
-        medianEngagement: Double?,
         medianWeeklyPosts: Double,
         hasBaseline: Boolean,
-        weeks: Int,
         today: LocalDate
     ): List<PulseEventDto> {
         val events = mutableListOf<PulseEventDto>()
-        val postsPerWeek = windowPosts.size.toDouble() / weeks
-
-        // Przyspieszenie: wyraźnie więcej niż własne tempo.
-        if (hasBaseline && medianWeeklyPosts > 0 &&
-            windowPosts.size >= ACCELERATION_MIN_POSTS &&
-            postsPerWeek >= medianWeeklyPosts * ACCELERATION_FACTOR
-        ) {
-            events += PulseEventDto(
-                kind = "ACCELERATION",
-                isSelf = false,
-                username = username,
-                headline = "@$username publikuje więcej niż zwykle",
-                detail = "${windowPosts.size} ${postWord(windowPosts.size.toDouble())} w tym okresie, " +
-                    "przy zwykłym tempie ${formatDecimal(medianWeeklyPosts)} tygodniowo.",
-                permalink = null,
-                occurredAt = dateOf(windowPosts.last())
-            )
-        }
 
         // Cisza: profil, który normalnie publikuje, milczy od kilku tygodni.
         if (hasBaseline && medianWeeklyPosts >= 1.0 && windowPosts.isEmpty()) {
@@ -450,27 +260,6 @@ class CompetitorPulseService(
                     occurredAt = lastPost?.let { dateOf(it) } ?: ""
                 )
             }
-        }
-
-        // Post wyraźnie powyżej własnej normy profilu.
-        if (hasBaseline && medianEngagement != null && medianEngagement > 0.0) {
-            windowPosts
-                .filter { engagementOf(it) >= medianEngagement * STANDOUT_FACTOR }
-                .sortedByDescending { engagementOf(it) }
-                .take(2)
-                .forEach { post ->
-                    val engagement = engagementOf(post)
-                    events += PulseEventDto(
-                        kind = "STANDOUT_POST",
-                        isSelf = false,
-                        username = username,
-                        headline = "@$username ma post powyżej swojej normy",
-                        detail = "$engagement ${reactionWord(engagement)} przy zwykłych ${medianEngagement.roundToInt()} " +
-                            "— ${formatDecimal(engagement / medianEngagement)}× więcej.",
-                        permalink = permalinkOf(post),
-                        occurredAt = dateOf(post)
-                    )
-                }
         }
 
         // Nowy temat: usługa, o której ten profil nie mówił przez całe okno bazowe.
@@ -571,9 +360,6 @@ class CompetitorPulseService(
     private fun dateOf(post: InstagramPostSnapshotEntity): String =
         DATE_FMT.format(post.takenAt.atZone(ZoneOffset.UTC).toLocalDate())
 
-    private fun dayNameOf(takenAt: Instant): String =
-        DAY_NAMES[takenAt.atZone(ZoneOffset.UTC).dayOfWeek.value - 1]
-
     private fun formatDecimal(value: Double): String =
         if (value == value.roundToInt().toDouble()) value.roundToInt().toString()
         else "%.1f".format(value).replace('.', ',')
@@ -581,12 +367,6 @@ class CompetitorPulseService(
     private fun formatSigned(value: Double): String {
         val rounded = value.roundToInt()
         return if (rounded > 0) "+$rounded" else rounded.toString()
-    }
-
-    private fun reactionWord(count: Int): String = when {
-        count == 1 -> "reakcja"
-        count % 10 in 2..4 && count % 100 !in 12..14 -> "reakcje"
-        else -> "reakcji"
     }
 
     private fun postWord(count: Double): String {

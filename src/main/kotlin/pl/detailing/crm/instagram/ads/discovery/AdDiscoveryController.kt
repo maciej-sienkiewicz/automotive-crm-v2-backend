@@ -4,6 +4,9 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.instagram.add.AddInstagramProfileCommand
+import pl.detailing.crm.instagram.add.AddInstagramProfileHandler
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
@@ -29,7 +32,8 @@ import java.util.UUID
 class AdDiscoveryController(
     private val readService: AdDiscoveryReadService,
     private val settingsService: AdAreaSettingsService,
-    private val blockService: AdvertiserBlockService
+    private val blockService: AdvertiserBlockService,
+    private val addProfileHandler: AddInstagramProfileHandler
 ) {
 
     /**
@@ -97,6 +101,52 @@ class AdDiscoveryController(
         val principal = SecurityContextHelper.getCurrentUser()
         val acked = settingsService.acknowledgeNovelty(principal.studioId, principal.userId)
         return ResponseEntity.ok(mapOf("noveltyAckedThrough" to acked?.toString()))
+    }
+
+    /**
+     * „Obserwuj": reklamodawca z tabeli trafia na listę obserwowanych profili studia.
+     *
+     * ── Dlaczego w ciele jedzie identyfikator strony, a nie nazwa profilu ───────
+     *
+     * Bo nazwa profilu jest DANYMI OD KLIENTA, choćby przed chwilą przyszła od nas.
+     * Po drugiej stronie stoi dopisanie cudzego konta do listy, którą studio będzie
+     * regularnie pobierać — więc o tym, co tam trafi, decyduje serwer. Przeglądarka
+     * wskazuje WIERSZ, nie nazwę: [AdDiscoveryReadService.instagramHandleFor] ustala
+     * ją tą samą drogą, którą wypełnił tabelę, i tylko dla reklamodawcy, którego
+     * to studio faktycznie widzi w swoim rejonie.
+     *
+     * Format nazwy waliduje jeszcze raz [AddInstagramProfileHandler] — on jest jedynym
+     * wejściem na listę obserwowanych i ma pilnować swojego kontraktu niezależnie
+     * od tego, kto go woła.
+     *
+     * Status po dodaniu to PENDING_APPROVAL, dokładnie jak przy ręcznym wpisaniu
+     * nazwy. Skrót dotyczy wpisywania, nie zatwierdzania: pobieranie profilu kosztuje
+     * i zgoda na ten koszt zostaje tam, gdzie była.
+     */
+    @PostMapping("/advertisers/{pageId}/follow")
+    fun followAdvertiser(@PathVariable pageId: String): ResponseEntity<FollowAdvertiserResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val username = readService.instagramHandleFor(principal.studioId, pageId)
+            ?: throw ValidationException(
+                "Nie znamy profilu na Instagramie tego reklamodawcy. Dodaj go ręcznie, " +
+                    "jeśli wiesz, jak się nazywa."
+            )
+
+        val result = addProfileHandler.handle(
+            AddInstagramProfileCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                username = username
+            )
+        )
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+            FollowAdvertiserResponse(
+                profileId = result.studioProfileId.toString(),
+                username = result.username,
+                status = result.status.name
+            )
+        )
     }
 
     // ── Wykluczeni reklamodawcy ──────────────────────────────────────────────
