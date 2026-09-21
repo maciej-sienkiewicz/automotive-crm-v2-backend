@@ -4,6 +4,7 @@ import io.mockk.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.http.MediaType
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.context.SecurityContextImpl
@@ -33,6 +34,8 @@ import pl.detailing.crm.studio.logo.CompanyLogoService
  * z nagłówkiem nadawcy (np. "InPost"). Weryfikacja "po naszej stronie" była fikcją.
  * Teraz studio może flagę tylko wycofać; nadaje ją operator przez /api/internal.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class SmsSenderConfirmationTamperingTest {
 
     private val smsConfigRepository = mockk<SmsAutomationConfigJpaRepository>()

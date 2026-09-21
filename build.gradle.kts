@@ -36,6 +36,14 @@ val runTestcontainers = providers.gradleProperty("runTestcontainers").isPresent
  */
 val runRedisTests = providers.gradleProperty("runRedisTests").isPresent
 
+/**
+ * Liczba JVM-ów testowych. Równoległość zapewniają WĄTKI wewnątrz jednego JVM
+ * (src/test/resources/junit-platform.properties) — zmierzone: 1 fork ~32 s, 2 forki ~35 s,
+ * bo każdy kolejny JVM płaci za rozgrzewkę i bierze do 2 GB sterty, nic nie przyspieszając.
+ * Pokrętło zostaje na wypadek, gdyby zestaw urósł ponad możliwości jednego procesu.
+ */
+val testForks = providers.gradleProperty("testForks").map(String::toInt).getOrElse(1)
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
 }
@@ -183,6 +191,7 @@ tasks.withType<Test> {
     // na `OutOfMemoryError: Java heap space` w połowie przebiegu, więc wynik nie mówił nic
     // o kodzie — build padał tak samo przy zielonych testach, co przy czerwonych.
     maxHeapSize = "2g"
+    maxParallelForks = testForks
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {

@@ -7,6 +7,7 @@ import io.mockk.mockk
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.context.SecurityContextImpl
@@ -36,6 +37,8 @@ import pl.detailing.crm.shared.UserId
  * context grants access. This is the "canary": if someone unregisters the module or
  * the filter, these tests fail.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class PiiAccessFilterTest {
 
     data class CustomerDto(

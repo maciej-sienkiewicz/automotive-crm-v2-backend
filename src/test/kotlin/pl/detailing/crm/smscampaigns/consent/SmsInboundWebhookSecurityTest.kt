@@ -5,6 +5,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -19,6 +20,8 @@ import pl.detailing.crm.visitcard.upsell.ReservationUpsellConsentService
  * `sms_text=TAK` zatwierdzało płatne usługi na cudzej wizycie, `STOP` masowo wypisywało
  * klientów z kampanii — we wszystkich studiach naraz.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class SmsInboundWebhookSecurityTest {
 
     private val consentService = mockk<SmsConsentService>(relaxed = true)

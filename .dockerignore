@@ -1,0 +1,20 @@
+# Bez tego pliku `docker build .` pakuje do kontekstu cały workspace (~290 MB:
+# .git, build/classes, cache Kotlina, wyniki testów), choć deploy/Dockerfile
+# potrzebuje z niego JEDNEGO pliku — build/libs/*.jar.
+
+.git
+.gradle
+.kotlin
+.idea
+docs
+scripts
+meta-ig-resolver
+*.md
+*.docs
+
+# Z build/ zostaje wyłącznie gotowy bootJar.
+build/*
+!build/libs
+# `./gradlew build` produkuje też *-plain.jar (bez zależności). Dwa jary pod
+# wzorcem `COPY build/libs/*.jar` wywracają build obrazu.
+build/libs/*-plain.jar

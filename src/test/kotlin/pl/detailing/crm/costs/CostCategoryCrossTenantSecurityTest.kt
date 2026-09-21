@@ -4,6 +4,7 @@ import io.mockk.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.http.MediaType
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.context.SecurityContextImpl
@@ -37,6 +38,8 @@ import java.util.UUID
  * brak wycieku informacji o istnieniu ID) i NIC nie zostaje zapisane; własna pozycja
  * przechodzi; walidacja JSR-380 odrzuca złośliwe ładunki kodem 400, nie 500.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class CostCategoryCrossTenantSecurityTest {
 
     private val categoryRepository = mockk<CostCategoryRepository>()

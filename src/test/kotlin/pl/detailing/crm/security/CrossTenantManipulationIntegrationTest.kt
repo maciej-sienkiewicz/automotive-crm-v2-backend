@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.http.MediaType
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.context.SecurityContextImpl
@@ -35,6 +36,8 @@ import java.util.UUID
  * throws EntityNotFoundException, so no real Spring context or database is needed.
  * The [TenantIsolationAuditService] is mocked to isolate GlobalExceptionHandler behaviour.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class CrossTenantManipulationIntegrationTest {
 
     // ── Fake controller that simulates what CustomerExistenceValidator does ──

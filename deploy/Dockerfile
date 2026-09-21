@@ -1,15 +1,44 @@
-FROM openjdk:22-jdk-slim
+# ── Etap 1: rozpakowanie bootJara na warstwy ────────────────────────────────
+#
+# Fat jar to ~66 MB, z czego >95% to zależności, które między commitami się nie
+# zmieniają. Skopiowany jako jeden plik unieważnia całą warstwę przy każdej
+# zmianie w kodzie: 66 MB do registry, 66 MB przy `compose pull`, 66 MB
+# osieroconej warstwy na dysku hosta — za każdym buildem.
+#
+# Spring Boot zapisuje w jarze layers.idx; `layertools extract` dzieli go na
+# katalogi ułożone od najrzadziej do najczęściej zmienianych. Po zmianie w kodzie
+# przebudowuje się i wędruje przez sieć tylko ostatnia warstwa (kilka MB).
+FROM eclipse-temurin:21-jre-jammy AS layers
+WORKDIR /layers
+COPY build/libs/*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget gnupg locales \
-    libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libdbus-1-3 libexpat1 libxcb1 libxkbcommon0 \
-    libatspi2.0-0 libx11-6 libxcomposite1 libxdamage1 libxext6 \
-    libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
-    libasound2 libgdk-pixbuf-2.0-0 libgtk-3-0 fonts-liberation \
-    fonts-dejavu fontconfig \
-  && rm -rf /var/lib/apt/lists/*
+# ── Etap 2: obraz uruchomieniowy ────────────────────────────────────────────
+#
+# JRE zamiast pełnego JDK, LTS zamiast porzuconego `openjdk:22` (obrazy `openjdk`
+# na Docker Hubie są wygaszone i nie dostają poprawek bezpieczeństwa).
+FROM eclipse-temurin:21-jre-jammy
 
-COPY /build/libs/*.jar /detailing-crm-backed.jar
+# Fonty + fontconfig są potrzebne naprawdę: PDFBox, Batik i AWT (protokoły,
+# faktury, logo) renderują tekst po stronie serwera. Bibliotek Chromium
+# (libnss3, libgtk-3, libgbm…) już tu nie ma — przeglądarka żyje w sidecarze
+# meta-ig-resolver, backend niczego z nich nie ładował.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      fontconfig fonts-dejavu fonts-liberation \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --create-home --shell /usr/sbin/nologin spring
 
-ENTRYPOINT ["java", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005","-Dspring.profiles.active=docker-props", "-jar", "detailing-crm-backed.jar"]
+USER spring
+WORKDIR /app
+
+# Kolejność = częstotliwość zmian. Trzy pierwsze warstwy trafiają z cache
+# praktycznie zawsze; `application` to jedyna, która zmienia się co commit.
+COPY --from=layers /layers/dependencies/ ./
+COPY --from=layers /layers/spring-boot-loader/ ./
+COPY --from=layers /layers/snapshot-dependencies/ ./
+COPY --from=layers /layers/application/ ./
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005", "-Dspring.profiles.active=docker-props", "org.springframework.boot.loader.launch.JarLauncher"]

@@ -4,6 +4,7 @@ import io.mockk.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
 import org.springframework.http.MediaType
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.context.SecurityContextImpl
@@ -35,6 +36,8 @@ import java.time.Instant
  * `studioRepository.findAll()[0]` — pierwszego studia w bazie. Każdy z internetu mógł
  * zalewać cudzy pipeline leadów fałszywymi połączeniami.
  */
+// clearAllMocks() czyści mocki w CAŁYM JVM — przy równoległych klasach wymazałoby stuby sąsiadom.
+@Isolated
 class InboundCallWebhookSecurityTest {
 
     private val registerHandler = mockk<RegisterInboundCallHandler>()
