@@ -86,7 +86,8 @@ class UpdateVisitDamageMapHandlerTest {
 
     private val handler = UpdateVisitDamageMapHandler(
         visitRepository, visitDocumentRepository, damageMapStore, reportService, markingService,
-        s3, documentService, checkinPhotoService, customerRepository, notifier, auditService
+        s3, documentService, checkinPhotoService, customerRepository, notifier, auditService,
+        mockk<pl.detailing.crm.livemetrics.BusinessEventPublisher>(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())

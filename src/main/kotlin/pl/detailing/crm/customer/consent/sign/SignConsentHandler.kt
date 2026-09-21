@@ -8,6 +8,8 @@ import pl.detailing.crm.customer.consent.domain.CustomerConsent
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentEntity
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
 import pl.detailing.crm.customer.consent.infrastructure.S3ConsentStorageService
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.CustomerConsentId
 import java.time.Instant
 
@@ -26,7 +28,8 @@ import java.time.Instant
 class SignConsentHandler(
     private val validatorComposite: SignConsentValidatorComposite,
     private val customerConsentRepository: CustomerConsentRepository,
-    private val s3ConsentStorageService: S3ConsentStorageService
+    private val s3ConsentStorageService: S3ConsentStorageService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -68,6 +71,17 @@ class SignConsentHandler(
             // Step 4: Persist (append-only, never update)
             val entity = CustomerConsentEntity.fromDomain(consent)
             customerConsentRepository.save(entity)
+
+            // Live metrics — liczymy podpisane zgody klientów (w tym marketingową).
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.CONSENT_SIGNED,
+                attributes = mapOf(
+                    "consentId" to consent.id.value.toString(),
+                    "customerId" to command.customerId.value.toString(),
+                    "templateId" to command.templateId.value.toString()
+                )
+            )
 
             // Step 5: Return result
             SignConsentResult(

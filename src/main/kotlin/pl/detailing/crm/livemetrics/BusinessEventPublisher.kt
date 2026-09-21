@@ -40,6 +40,7 @@ class BusinessEventPublisher(
         type: BusinessEventType,
         dimensionValue: String? = null,
         attributes: Map<String, String> = emptyMap(),
+        amountCents: Long = 0,
         occurredAt: Instant = Instant.now()
     ) {
         val event = try {
@@ -48,7 +49,8 @@ class BusinessEventPublisher(
                 type = type,
                 occurredAt = occurredAt,
                 dimensionValue = dimensionValue,
-                attributes = attributes
+                attributes = attributes,
+                amountCents = amountCents
             )
         } catch (e: IllegalArgumentException) {
             // Błąd programisty (zła wartość wymiaru) — logujemy głośno, ale nie psujemy żądania.

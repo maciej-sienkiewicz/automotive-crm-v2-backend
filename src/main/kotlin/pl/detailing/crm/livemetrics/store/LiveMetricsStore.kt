@@ -70,6 +70,9 @@ class LiveMetricsStore(
                             ops.expire(hKey, hourTtl)
                             hash.increment(LiveMetricsKeys.dayHash(scope, series), LiveMetricsKeys.dayField(at), 1)
                             hash.increment(LiveMetricsKeys.totalHash(scope), series, 1)
+                            if (event.amountCents != 0L) {
+                                hash.increment(LiveMetricsKeys.sumHash(scope), series, event.amountCents)
+                            }
                             hash.put(LiveMetricsKeys.lastHash(scope), series, event.occurredAt.toEpochMilli().toString())
                         }
                         val recent = LiveMetricsKeys.recentList(scope)
@@ -97,6 +100,7 @@ class LiveMetricsStore(
         fields["tenantId"] = event.tenantId.value.toString()
         fields["type"] = event.type.name
         fields["at"] = event.occurredAt.toEpochMilli().toString()
+        if (event.amountCents != 0L) fields["amount"] = event.amountCents.toString()
         event.dimensionValue?.let { fields["dim"] = it }
         event.attributes.forEach { (k, v) -> fields["a:$k"] = v }
         return fields
@@ -114,6 +118,10 @@ class LiveMetricsStore(
 
     fun totals(scope: String): Map<String, Long> =
         redis.opsForHash<String, String>().entries(LiveMetricsKeys.totalHash(scope)).mapValues { it.value.toLongOrDefault() }
+
+    /** Sumy kwot (grosze) od początku, per seria — tylko typy `monetary`. */
+    fun amountSums(scope: String): Map<String, Long> =
+        redis.opsForHash<String, String>().entries(LiveMetricsKeys.sumHash(scope)).mapValues { it.value.toLongOrDefault() }
 
     fun lastSeen(scope: String): Map<String, Instant> =
         redis.opsForHash<String, String>().entries(LiveMetricsKeys.lastHash(scope))

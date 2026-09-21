@@ -34,7 +34,8 @@ class TeamWorkTimeCrossTenantTest {
         periodRepository,
         mockk<PermissionCheckService>(relaxed = true),
         mockk<AuditService>(relaxed = true),
-        mockk<AuditActorResolver>(relaxed = true)
+        mockk<AuditActorResolver>(relaxed = true),
+        mockk<pl.detailing.crm.livemetrics.BusinessEventPublisher>(relaxed = true)
     )
 
     private val studioA = StudioId.random()

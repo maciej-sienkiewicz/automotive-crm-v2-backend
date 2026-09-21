@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.role.domain.PermissionHierarchy
 import pl.detailing.crm.role.domain.Role
 import pl.detailing.crm.role.infrastructure.RoleEntity
@@ -18,7 +20,8 @@ import java.time.Instant
 class CreateRoleHandler(
     private val roleRepository: RoleRepository,
     private val auditService: AuditService,
-    private val roleGrantGuard: RoleGrantGuard
+    private val roleGrantGuard: RoleGrantGuard,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: CreateRoleCommand): RoleId = withContext(Dispatchers.IO) {
@@ -47,6 +50,18 @@ class CreateRoleHandler(
         )
 
         roleRepository.save(RoleEntity.fromDomain(role))
+
+        // Live metrics — liczymy dodaną rolę.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.ROLE_CREATED,
+            attributes = mapOf(
+                "roleId" to role.id.value.toString(),
+                "name" to role.name,
+                "permissions" to role.permissions.size.toString(),
+                "userId" to command.requestedBy.value.toString()
+            )
+        )
 
         auditService.log(LogAuditCommand(
             studioId = command.studioId,

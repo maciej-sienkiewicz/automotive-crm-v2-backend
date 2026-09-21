@@ -3,6 +3,8 @@ package pl.detailing.crm.visit.comment
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.visit.domain.VisitComment
@@ -16,7 +18,8 @@ class AddCommentToVisitHandler(
     private val visitRepository: VisitRepository,
     private val visitCommentRepository: VisitCommentRepository,
     private val userRepository: UserRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: AddCommentToVisitCommand): AddCommentToVisitResult {
@@ -55,6 +58,18 @@ class AddCommentToVisitHandler(
         // Step 4: Save to database
         val commentEntity = VisitCommentEntity.fromDomain(comment)
         visitCommentRepository.save(commentEntity)
+
+        // Live metrics — liczymy komentarz dodany do wizyty, z podziałem na wewnętrzny i dla klienta.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.VISIT_COMMENT_ADDED,
+            dimensionValue = command.type.name,
+            attributes = mapOf(
+                "commentId" to comment.id.value.toString(),
+                "visitId" to command.visitId.value.toString(),
+                "userId" to command.userId.value.toString()
+            )
+        )
 
         // Step 5: Audit log
         auditService.log(LogAuditCommand(

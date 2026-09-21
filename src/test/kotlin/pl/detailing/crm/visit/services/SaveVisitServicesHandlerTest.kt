@@ -28,7 +28,8 @@ class SaveVisitServicesHandlerTest {
         auditService = mockk(relaxed = true),
         customerRepository = mockk(relaxed = true),
         smsConsentService = mockk(relaxed = true),
-        servicesChangePlanner = ServicesChangePlanner(serviceRepository)
+        servicesChangePlanner = ServicesChangePlanner(serviceRepository),
+        businessEventPublisher = mockk(relaxed = true)
     )
 
     @Test

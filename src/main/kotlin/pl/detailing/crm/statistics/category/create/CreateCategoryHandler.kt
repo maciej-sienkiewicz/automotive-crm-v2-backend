@@ -3,6 +3,9 @@ package pl.detailing.crm.statistics.category.create
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.StatsCategoryKind
 import pl.detailing.crm.shared.ServiceCategoryId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.statistics.category.infrastructure.ServiceCategoryEntity
@@ -11,7 +14,8 @@ import java.time.Instant
 
 @Service
 class CreateCategoryHandler(
-    private val serviceCategoryRepository: ServiceCategoryRepository
+    private val serviceCategoryRepository: ServiceCategoryRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     suspend fun handle(command: CreateCategoryCommand): ServiceCategoryId = withContext(Dispatchers.IO) {
         val trimmedName = command.name.trim()
@@ -49,6 +53,18 @@ class CreateCategoryHandler(
         )
 
         serviceCategoryRepository.save(entity)
+
+        // Live metrics — liczymy nowe kategorie w statystykach; wymiar mówi, że to
+        // kategoria przychodowa (usługowa), nie kosztowa.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.STATS_CATEGORY_CREATED,
+            dimensionValue = StatsCategoryKind.SERVICE.name,
+            attributes = mapOf(
+                "categoryId" to categoryId.value.toString(),
+                "name" to trimmedName
+            )
+        )
 
         categoryId
     }

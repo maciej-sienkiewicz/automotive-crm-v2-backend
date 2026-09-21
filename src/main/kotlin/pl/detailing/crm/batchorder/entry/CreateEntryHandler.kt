@@ -9,6 +9,8 @@ import pl.detailing.crm.batchorder.domain.BatchOrderServiceItem
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -20,7 +22,8 @@ import java.time.LocalDate
 @Service
 class CreateEntryHandler(
     private val entryRepository: BatchOrderEntryRepository,
-    private val contractorRepository: BatchContractorRepository
+    private val contractorRepository: BatchContractorRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: CreateEntryCommand): EntryItem {
@@ -50,6 +53,19 @@ class CreateEntryHandler(
         )
 
         val saved = entryRepository.save(BatchOrderEntryEntity.fromDomain(entry))
+
+        // Live metrics — liczymy usługi dodane do zlecenia zbiorczego, po jednej na pozycję wpisu
+        entry.services.forEach { serviceItem ->
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.BATCH_SERVICE_ADDED,
+                attributes = mapOf(
+                    "entryId" to saved.id.toString(),
+                    "serviceName" to serviceItem.name
+                )
+            )
+        }
+
         return saved.toEntryItem()
     }
 }

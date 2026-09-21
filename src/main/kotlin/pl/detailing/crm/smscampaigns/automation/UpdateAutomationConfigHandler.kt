@@ -2,6 +2,8 @@ package pl.detailing.crm.smscampaigns.automation
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfig
@@ -41,7 +43,8 @@ data class UpdateNotificationRuleCommand(
  */
 @Service
 class UpdateAutomationConfigHandler(
-    private val configRepository: SmsAutomationConfigRepository
+    private val configRepository: SmsAutomationConfigRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     fun handle(command: UpdateAutomationConfigCommand): SmsAutomationConfig {
@@ -99,7 +102,30 @@ class UpdateAutomationConfigHandler(
                 messageTemplate = command.signatureRequest.messageTemplate
             )
         )
-        return configRepository.save(config)
+        val saved = configRepository.save(config)
+
+        // Live metrics — liczymy zapis konfiguracji automatów/szablonów SMS.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.SMS_TEMPLATE_UPDATED,
+            attributes = mapOf(
+                "enabledRules" to listOf(
+                    command.preVisit.enabled,
+                    command.postVisit.enabled,
+                    command.delayedReminder.enabled,
+                    command.bookingConfirmation.enabled,
+                    command.rescheduleConfirmation.enabled,
+                    command.visitReadyForPickup.enabled,
+                    command.visitCardLink.enabled,
+                    command.reservationCardLink.enabled,
+                    command.upsellConsent.enabled,
+                    command.upsellSuggestion.enabled,
+                    command.signatureRequest.enabled
+                ).count { it }.toString()
+            )
+        )
+
+        return saved
     }
 
     /**

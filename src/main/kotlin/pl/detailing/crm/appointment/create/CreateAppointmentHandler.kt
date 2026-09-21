@@ -22,6 +22,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.RecordOrigin
 
 @Service
 class CreateAppointmentHandler(
@@ -233,6 +234,17 @@ class CreateAppointmentHandler(
         val entity = CustomerEntity.fromDomain(customer)
         customerRepository.save(entity)
 
+        // Live metrics — klient powstał mimochodem przy rezerwacji, nie w kartotece.
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.CUSTOMER_CREATED,
+            dimensionValue = RecordOrigin.APPOINTMENT.name,
+            attributes = mapOf(
+                "customerId" to customer.id.value.toString(),
+                "userId" to userId.value.toString()
+            )
+        )
+
         return customer.id
     }
 
@@ -291,6 +303,17 @@ class CreateAppointmentHandler(
 
         val vehicleEntity = VehicleEntity.fromDomain(vehicle)
         vehicleRepository.save(vehicleEntity)
+
+        // Live metrics — pojazd powstał mimochodem przy rezerwacji, nie w kartotece.
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.VEHICLE_CREATED,
+            dimensionValue = RecordOrigin.APPOINTMENT.name,
+            attributes = mapOf(
+                "vehicleId" to vehicle.id.value.toString(),
+                "userId" to userId.value.toString()
+            )
+        )
 
         // Link vehicle to customer
         val vehicleOwner = VehicleOwner(

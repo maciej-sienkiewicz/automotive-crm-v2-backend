@@ -6,6 +6,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.shared.StudioId
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
@@ -42,6 +45,7 @@ class TabletSessionService(
     private val tabletRepository: SigningTabletRepository,
     private val redisTemplate: StringRedisTemplate,
     private val objectMapper: ObjectMapper,
+    private val businessEventPublisher: BusinessEventPublisher,
     @Value("\${signing.tablet.pairing-code-ttl-minutes:5}") private val pairingCodeTtlMinutes: Long
 ) {
     companion object {
@@ -89,6 +93,17 @@ class TabletSessionService(
                 studioId = UUID.fromString(tenantId),
                 deviceName = deviceName.take(200),
                 tokenHash = hashToken(token)
+            )
+        )
+
+        // Live metrics — liczymy sparowany tablet do podpisów. Żądanie idzie z niezalogowanego
+        // urządzenia, więc studio bierzemy z payloadu kodu parowania, tak jak zapis wyżej.
+        businessEventPublisher.publish(
+            tenantId = StudioId(UUID.fromString(tenantId)),
+            type = BusinessEventType.TABLET_PAIRED,
+            attributes = mapOf(
+                "tabletId" to tabletId.toString(),
+                "deviceName" to deviceName.take(200)
             )
         )
 

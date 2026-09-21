@@ -14,6 +14,8 @@ import pl.detailing.crm.customer.consent.infrastructure.ConsentDefinitionReposit
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentEntity
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.visitprotocol.ProtocolDocumentNaming
 import pl.detailing.crm.protocol.visitprotocol.VisitProtocolDocumentRegistrar
@@ -60,7 +62,8 @@ class SubmitSignatureHandler(
     private val customerConsentRepository: CustomerConsentRepository,
     private val auditService: AuditService,
     private val userSignatureService: UserSignatureService,
-    private val protocolDocumentRegistrar: VisitProtocolDocumentRegistrar
+    private val protocolDocumentRegistrar: VisitProtocolDocumentRegistrar,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -246,6 +249,21 @@ class SubmitSignatureHandler(
                     notes = null
                 )
                 visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
+
+                // Live metrics — liczymy podpisany protokół wizyty (przyjęcie vs wydanie).
+                // Protokoły zgód nie mają etapu i nie są protokołem wizyty, więc ich nie liczymy.
+                if (protocol.consentDefinitionId == null) {
+                    businessEventPublisher.publish(
+                        tenantId = request.studioId,
+                        type = BusinessEventType.PROTOCOL_SIGNED,
+                        dimensionValue = protocol.stage.name,
+                        attributes = mapOf(
+                            "protocolId" to protocol.id.value.toString(),
+                            "visitId" to request.visitId.value.toString(),
+                            "signatureRequestId" to request.id.value.toString()
+                        )
+                    )
+                }
 
                 // Consent protocols additionally create the immutable CustomerConsent record
                 protocol.consentDefinitionId?.let { definitionId ->

@@ -9,6 +9,8 @@ import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ForbiddenException
@@ -34,7 +36,8 @@ class WorkTimeService(
     private val periodRepository: WorkTimePeriodRepository,
     private val permissionCheckService: PermissionCheckService,
     private val auditService: AuditService,
-    private val auditActorResolver: AuditActorResolver
+    private val auditActorResolver: AuditActorResolver,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     fun hasTrackWorkTime(userId: UserId, studioId: StudioId): Boolean =
         permissionCheckService.getTrackWorkTime(userId, studioId)
@@ -95,6 +98,18 @@ class WorkTimeService(
         }
         ensurePeriodExists(userId.value, studioId.value, YearMonth.from(date))
 
+        // Live metrics — liczymy zapisany wpis godzin pracownika (nowy albo poprawiony).
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.WORKTIME_ENTRY_SAVED,
+            attributes = mapOf(
+                "entryId" to entry.id.toString(),
+                "employeeUserId" to userId.value.toString(),
+                "date" to date.toString(),
+                "minutes" to minutes.toString()
+            )
+        )
+
         auditService.recordSync(
             AuditEvent(
                 studioId = studioId,
@@ -152,7 +167,7 @@ class WorkTimeService(
             if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
                 val existing = entryRepository.findByUserIdAndDate(userId.value, current)
                 if (existing == null) {
-                    entryRepository.save(
+                    val filled = entryRepository.save(
                         WorkTimeEntryEntity(
                             id = UUID.randomUUID(),
                             userId = userId.value,
@@ -162,6 +177,20 @@ class WorkTimeService(
                         )
                     )
                     daysFilled++
+
+                    // Live metrics — liczymy KAŻDY zapisany wpis godzin, tak samo jak przy
+                    // pojedynczej edycji: licznik ma mierzyć wpisy, a nie gesty w interfejsie.
+                    businessEventPublisher.publish(
+                        tenantId = studioId,
+                        type = BusinessEventType.WORKTIME_ENTRY_SAVED,
+                        attributes = mapOf(
+                            "entryId" to filled.id.toString(),
+                            "employeeUserId" to userId.value.toString(),
+                            "date" to filled.date.toString(),
+                            "minutes" to filled.minutes.toString(),
+                            "fillMonth" to "true"
+                        )
+                    )
                 }
             }
             current = current.plusDays(1)

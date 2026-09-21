@@ -8,6 +8,9 @@ import pl.detailing.crm.instagram.infrastructure.InstagramPostSnapshotRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramPostReactionEntity
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramPostReactionRepository
 import pl.detailing.crm.instagram.infrastructure.StudioInstagramProfileRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.RatedContentTarget
 import pl.detailing.crm.shared.*
 import java.time.Instant
 import java.util.*
@@ -23,7 +26,8 @@ class ReactToInstagramPostHandler(
     private val postSnapshotRepository: InstagramPostSnapshotRepository,
     private val studioProfileRepository: StudioInstagramProfileRepository,
     private val reactionRepository: StudioInstagramPostReactionRepository,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     /**
@@ -80,6 +84,18 @@ class ReactToInstagramPostHandler(
                 )
             )
         }
+
+        // Live metrics — liczymy oceny treści; ten wymiar to post konkurencji. Usunięcie
+        // oceny (reaction == null) wyszło wyżej i świadomie nic tu nie liczy.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.INSTAGRAM_CONTENT_RATED,
+            dimensionValue = RatedContentTarget.COMPETITOR.name,
+            attributes = mapOf(
+                "postId" to command.postId.value.toString(),
+                "reaction" to command.reaction.name
+            )
+        )
 
         // Publikuj zdarzenie — IndexingService sklasyfikuje i zaindeksuje post w VectorStore
         eventPublisher.publishEvent(

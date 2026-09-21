@@ -11,6 +11,8 @@ import pl.detailing.crm.leads.infrastructure.LeadServiceItemRepository
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemSource
 import pl.detailing.crm.leads.infrastructure.LeadServiceItemStatus
 import pl.detailing.crm.leads.infrastructure.LeadServicePriceSource
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.service.infrastructure.ServiceRepository
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
@@ -48,7 +50,8 @@ class LeadServiceItemsService(
     private val leadRepository: LeadRepository,
     private val serviceRepository: ServiceRepository,
     private val quoteSync: LeadQuoteSyncService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     /**
@@ -60,6 +63,10 @@ class LeadServiceItemsService(
      */
     @Transactional
     fun replaceItems(lead: LeadEntity, inputs: List<LeadServiceItemInput>): Long {
+        // Stan wyceny SPRZED podmiany — potrzebny do rozpoznania przejścia pusta → niepusta.
+        // Czytamy tu, bo zaraz poniżej kasujemy pozycje i tej informacji już nie będzie.
+        val hadQuoteBefore = hasRealQuote(lead)
+
         itemRepository.deleteByLeadIdAndStatusNot(lead.id, LeadServiceItemStatus.SUGGESTED)
 
         inputs.forEach { input ->
@@ -98,6 +105,19 @@ class LeadServiceItemsService(
 
         val total = recomputeEstimatedValue(lead)
 
+        // Live metrics — liczymy LEADY, które dostały wycenę, a nie kolejne edycje tej samej
+        // wyceny: zdarzenie pada wyłącznie przy przejściu pusta → niepusta.
+        if (!hadQuoteBefore && hasRealQuote(lead)) {
+            businessEventPublisher.publish(
+                tenantId = StudioId(lead.studioId),
+                type = BusinessEventType.LEAD_QUOTED,
+                attributes = mapOf(
+                    "leadId" to lead.id.toString(),
+                    "itemCount" to inputs.size.toString()
+                )
+            )
+        }
+
         // Lead z terminem ma tę samą listę usług w kalendarzu — poprawka wyceny,
         // która tam nie dojdzie, to kwota uzgodniona z klientem i niewidoczna dla
         // tego, kto będzie auto przyjmował.
@@ -130,4 +150,16 @@ class LeadServiceItemsService(
         leadRepository.save(lead)
         return total
     }
+
+    /**
+     * Czy lead ma NIEPUSTĄ wycenę — ten sam warunek, co przy synchronizacji do rezerwacji
+     * (patrz [LeadQuoteSyncService.pushToAppointment]): pozycja przyjęta przez człowieka
+     * i z kwotą. Sama sugestia AI ani pozycja bez ceny się nie liczy.
+     *
+     * Celowo NIE `lead.estimatedValue` — tamta suma wlicza także sugestie AI, więc lead
+     * bez jednej zaakceptowanej pozycji wyglądałby w niej na wyceniony.
+     */
+    private fun hasRealQuote(lead: LeadEntity): Boolean =
+        itemRepository.findByLeadIdOrderByCreatedAtAsc(lead.id)
+            .any { it.status != LeadServiceItemStatus.SUGGESTED && it.priceGross != null }
 }

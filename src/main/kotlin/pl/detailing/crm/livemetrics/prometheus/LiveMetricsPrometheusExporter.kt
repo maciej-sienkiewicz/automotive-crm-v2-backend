@@ -30,18 +30,26 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `crm_business_events_all_time{tenant_id, tenant, type}` — suma od początku (Redis,
  *    bez TTL): jedyna metryka odpowiadająca na pytania o stan („kto ma podłączoną pocztę”),
  *    a nie o dzisiejszy ruch;
+ *  - `crm_business_events_all_time_dim{tenant_id, tenant, type, dimension}` — to samo
+ *    w rozbiciu na wymiar (pod-serie). Osobna metryka, bo pod-serie sumują się do serii
+ *    bazowej: wrzucone do `all_time` liczyłyby każde zdarzenie z wymiarem dwa razy;
+ *  - `crm_business_events_sum_all_time{tenant_id, tenant, type}` — suma kwot w GROSZACH
+ *    od początku (przychód, koszt, obrót kasowy). Dzielenie przez 100 robi Grafana;
  *  - `crm_business_events_today{tenant_id, tenant, type}` — liczba od północy
  *    (strefa studia), odświeżana z Redisa; identyczna na każdej instancji, więc w
- *    Grafanie agregujemy `max by (tenant_id)`, nie `sum`;
+ *    Grafanie agregujemy `max by (tenant_id)`, nie `sum`. Wyłącznie typy `daily` —
+ *    reszta kosztowałaby HGET na tenanta i typ co 15 s za odpowiedź, której nikt nie czyta;
  *  - `crm_business_events_hour_of_day{tenant_id, tenant, type, hour}` — profil
  *    „o której klienci rezerwują” z ostatnich 7 dni; per tenant tylko dla rezerwacji,
  *    dla całej platformy (`tenant_id="_platform"`) dla wszystkich typów — świadomy
  *    limit kardynalności (500 tenantów × 24 h = 12k serii, nie 60k);
  *  - `crm_live_metrics_pipeline_*` — stan potoku ingestu tej instancji.
  *
- * Kardynalność jest zamknięta z założenia: etykiety to tenant (dziesiątki–setki),
- * typ (12), wymiar (max 4) i godzina (24). Żadnych id encji. Na tenanta wychodzi ~25 serii
- * licznika, po 12 gauge'y „dziś" i „od początku" oraz 24 kubełki godzinowe (tylko rezerwacje).
+ * Kardynalność jest zamknięta z założenia: etykiety to tenant (dziesiątki–setki), typ,
+ * wymiar (max 4) i godzina (24). Żadnych id encji — te idą wyłącznie do `attributes` strumienia.
+ * Na tenanta wychodzi ~70 serii licznika, tyle samo gauge'y „od początku", ~30 z rozbiciem
+ * na wymiar, 3 sumy kwot, kilka kafli „dziś" (tylko typy `daily`) i 24 kubełki godzinowe
+ * (tylko rezerwacje).
  */
 @Component
 class LiveMetricsPrometheusExporter(
@@ -58,6 +66,8 @@ class LiveMetricsPrometheusExporter(
         const val EVENTS = "crm.business.events"
         const val TODAY = "crm.business.events.today"
         const val ALL_TIME = "crm.business.events.all_time"
+        const val ALL_TIME_DIM = "crm.business.events.all_time_dim"
+        const val SUM_ALL_TIME = "crm.business.events.sum_all_time"
         const val HOUR_OF_DAY = "crm.business.events.hour_of_day"
         const val PLATFORM_TENANT = "_platform"
         const val NO_DIMENSION = "none"
@@ -71,12 +81,17 @@ class LiveMetricsPrometheusExporter(
     private val tenantNames = ConcurrentHashMap<UUID, String>()
     private lateinit var todayGauge: MultiGauge
     private lateinit var allTimeGauge: MultiGauge
+    private lateinit var allTimeDimGauge: MultiGauge
+    private lateinit var sumAllTimeGauge: MultiGauge
     private lateinit var hourOfDayGauge: MultiGauge
 
     @PostConstruct
     fun register() {
         todayGauge = MultiGauge.builder(TODAY).description("Zdarzenia biznesowe od północy (strefa studia)").register(registry)
         allTimeGauge = MultiGauge.builder(ALL_TIME).description("Zdarzenia biznesowe od początku istnienia tenanta").register(registry)
+        allTimeDimGauge = MultiGauge.builder(ALL_TIME_DIM).description("Zdarzenia biznesowe od początku, w rozbiciu na wymiar").register(registry)
+        sumAllTimeGauge = MultiGauge.builder(SUM_ALL_TIME).baseUnit("grosze")
+            .description("Suma kwot zdarzeń pieniężnych od początku (grosze)").register(registry)
         hourOfDayGauge = MultiGauge.builder(HOUR_OF_DAY).description("Rozkład godzinowy zdarzeń z ostatnich 7 dni").register(registry)
         Gauge.builder("crm.live_metrics.pipeline.queued") { worker.queued() }.register(registry)
         Gauge.builder("crm.live_metrics.pipeline.queue_capacity") { worker.capacity() }.register(registry)
@@ -126,8 +141,13 @@ class LiveMetricsPrometheusExporter(
         }
 
     /**
-     * Liczniki „od północy" — jedna partia HGET-ów na wszystkie tenanty i typy.
+     * Liczniki „od północy" — jedna partia HGET-ów na wszystkie tenanty i typy dzienne.
      * To jedyny gauge odświeżany w tempie scrape'u, bo tylko on musi nadążać za żywym ruchem.
+     *
+     * Ograniczenie do [BusinessEventType.daily] nie jest kosmetyką: koszt tej metody to
+     * `tenanci × typy` HGET-ów co 15 sekund. Przy komplecie typów i kilkuset studiach to
+     * dziesiątki tysięcy poleceń na cykl — za odpowiedź „dziś zero”, która dla zdarzeń
+     * rzadkich (parowanie tabletu, dodanie roli) nie niesie żadnej informacji.
      */
     @Scheduled(fixedDelayString = "\${crm.live-metrics.prometheus-refresh-seconds:15}000", initialDelay = 10_000)
     fun refreshTodayGauges() {
@@ -137,13 +157,14 @@ class LiveMetricsPrometheusExporter(
             refreshTenantNames(tenants)
             primeCounters(tenants)
             val scopes = tenants.map { LiveMetricsKeys.tenantScope(it) }
-            val baseSeries = BusinessEventType.entries.map { it.series }
+            val dailyTypes = BusinessEventType.entries.filter { it.daily }
+            val baseSeries = dailyTypes.map { it.series }
             val todayCounts = store.dayCounts(scopes, baseSeries, LocalDate.now(store.zone))
 
             val rows = ArrayList<MultiGauge.Row<Number>>(tenants.size * baseSeries.size)
             tenants.forEachIndexed { idx, tenant ->
                 val tags = tenantTags(tenant)
-                for (type in BusinessEventType.entries) {
+                for (type in dailyTypes) {
                     rows += MultiGauge.Row.of(tags.and("type", type.name), todayCounts[scopes[idx]]?.get(type.series) ?: 0L)
                 }
             }
@@ -161,9 +182,12 @@ class LiveMetricsPrometheusExporter(
      * czyli u wszystkich, których pytanie dotyczy. Suma z Redisa (`lm:{scope}:total`, bez TTL)
      * odpowiada wprost i przeżywa restarty, w przeciwieństwie do `crm_business_events_total`.
      *
-     * Odświeżane rzadko: to jeden HGETALL na tenanta, a odpowiedź nie zmienia się w minutę.
-     * Eksportujemy wyłącznie serie bazowe — pod-serie (`VISIT_CREATED:DIRECT`) są inkrementowane
-     * razem z bazową, więc trafiłyby do sumy drugi raz.
+     * Odświeżane rzadko: to dwa HGETALL-e na tenanta, a odpowiedź nie zmienia się w minutę.
+     *
+     * Serie bazowe i pod-serie idą do ROZŁĄCZNYCH metryk. `crm_business_events_all_time` liczy
+     * wyłącznie bazowe, bo pod-seria (`VISIT_CREATED:DIRECT`) jest inkrementowana razem z bazową
+     * i w jednej metryce zostałaby policzona drugi raz. Rozbicie na wymiar ma więc własną nazwę
+     * (`..._all_time_dim`), której nigdy nie sumuje się z bazową.
      */
     @Scheduled(fixedDelay = ALL_TIME_REFRESH_MS, initialDelay = 25_000)
     fun refreshAllTimeGauges() {
@@ -172,14 +196,25 @@ class LiveMetricsPrometheusExporter(
             val tenants = store.tenants().toList()
             refreshTenantNames(tenants)
             val rows = ArrayList<MultiGauge.Row<Number>>(tenants.size * BusinessEventType.entries.size)
+            val dimRows = ArrayList<MultiGauge.Row<Number>>()
+            val sumRows = ArrayList<MultiGauge.Row<Number>>()
             for (tenant in tenants) {
-                val totals = store.totals(LiveMetricsKeys.tenantScope(tenant))
+                val scope = LiveMetricsKeys.tenantScope(tenant)
+                val totals = store.totals(scope)
+                val sums = store.amountSums(scope)
                 val tags = tenantTags(tenant)
                 for (type in BusinessEventType.entries) {
-                    rows += MultiGauge.Row.of(tags.and("type", type.name), totals[type.series] ?: 0L)
+                    val typeTags = tags.and("type", type.name)
+                    rows += MultiGauge.Row.of(typeTags, totals[type.series] ?: 0L)
+                    for (dim in type.dimensions) {
+                        dimRows += MultiGauge.Row.of(typeTags.and("dimension", dim), totals[type.subSeries(dim)] ?: 0L)
+                    }
+                    if (type.monetary) sumRows += MultiGauge.Row.of(typeTags, sums[type.series] ?: 0L)
                 }
             }
             allTimeGauge.register(rows, true)
+            allTimeDimGauge.register(dimRows, true)
+            sumAllTimeGauge.register(sumRows, true)
         } catch (e: Exception) {
             log.warn("[LIVE-METRICS] all-time gauge refresh failed: {}", e.toString())
         }

@@ -22,6 +22,7 @@ import java.util.UUID
  * lm:{scope}:{series}:h:{yyyyMMdd}   hash  HH       -> licznik (TTL: retention.hour-days)
  * lm:{scope}:{series}:d              hash  yyyyMMdd -> licznik (bez TTL)
  * lm:{scope}:total                   hash  series   -> licznik od początku
+ * lm:{scope}:sum                     hash  series   -> suma kwot w groszach (typy `monetary`)
  * lm:{scope}:last                    hash  series   -> epoch millis ostatniego zdarzenia
  * lm:{scope}:recent                  lista JSON ostatnich zdarzeń (LPUSH + LTRIM)
  * ```
@@ -39,6 +40,7 @@ object LiveMetricsKeys {
     fun hourHash(scope: String, series: String, day: LocalDate) = "$PREFIX:$scope:$series:h:${DAY.format(day)}"
     fun dayHash(scope: String, series: String) = "$PREFIX:$scope:$series:d"
     fun totalHash(scope: String) = "$PREFIX:$scope:total"
+    fun sumHash(scope: String) = "$PREFIX:$scope:sum"
     fun lastHash(scope: String) = "$PREFIX:$scope:last"
     fun recentList(scope: String) = "$PREFIX:$scope:recent"
 

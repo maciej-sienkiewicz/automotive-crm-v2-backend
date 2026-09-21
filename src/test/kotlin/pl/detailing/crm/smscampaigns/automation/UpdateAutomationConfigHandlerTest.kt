@@ -18,7 +18,10 @@ import java.util.UUID
 class UpdateAutomationConfigHandlerTest {
 
     private val repository: SmsAutomationConfigRepository = mockk { every { save(any()) } answers { firstArg() } }
-    private val handler = UpdateAutomationConfigHandler(repository)
+    private val handler = UpdateAutomationConfigHandler(
+        repository,
+        mockk<pl.detailing.crm.livemetrics.BusinessEventPublisher>(relaxed = true)
+    )
     private val studioId = StudioId(UUID.randomUUID())
 
     @Test

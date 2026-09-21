@@ -3,6 +3,8 @@ package pl.detailing.crm.instagram.ads
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
@@ -23,7 +25,8 @@ import java.util.UUID
 @RequestMapping("/api/v1/instagram/ads")
 class MetaAdsController(
     private val readService: MetaAdsReadService,
-    private val syncService: MetaAdsSyncService
+    private val syncService: MetaAdsSyncService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     /** Kalendarz roku: kto, kiedy i jak długo się reklamował. */
@@ -41,7 +44,18 @@ class MetaAdsController(
     fun detail(@PathVariable adId: String): ResponseEntity<AdDetailDto> {
         val principal = SecurityContextHelper.getCurrentUser()
         val detail = readService.detail(principal.studioId, adId)
-        return detail?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+            ?: return ResponseEntity.notFound().build()
+
+        // Live metrics — liczymy otwarcia szczegółów kampanii. Świadomy wyjątek od reguły
+        // „publish po save": to jedyne zdarzenie czysto odczytowe, więc punktem odniesienia
+        // jest niepusty wynik odczytu, a nie zapis. 404 nie jest podglądem i nic nie liczy.
+        businessEventPublisher.publish(
+            tenantId = principal.studioId,
+            type = BusinessEventType.INSTAGRAM_AD_DETAILS_VIEWED,
+            attributes = mapOf("adId" to adId)
+        )
+
+        return ResponseEntity.ok(detail)
     }
 
     /**

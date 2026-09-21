@@ -5,6 +5,8 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.domain.BatchContractor
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -12,7 +14,8 @@ import java.time.Instant
 
 @Service
 class CreateContractorHandler(
-    private val contractorRepository: BatchContractorRepository
+    private val contractorRepository: BatchContractorRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: CreateContractorCommand): ContractorListItem {
@@ -34,6 +37,14 @@ class CreateContractorHandler(
         )
 
         val saved = contractorRepository.save(BatchContractorEntity.fromDomain(contractor))
+
+        // Live metrics — kontrahent jest w słowniku zleceń zbiorczych, licznik kontrahentów tenanta rośnie natychmiast
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.BATCH_CONTRACTOR_CREATED,
+            attributes = mapOf("contractorId" to saved.id.toString())
+        )
+
         return ContractorListItem(
             id = saved.id.toString(),
             name = saved.name,

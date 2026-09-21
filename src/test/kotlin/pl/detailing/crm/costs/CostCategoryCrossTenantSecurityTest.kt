@@ -19,6 +19,7 @@ import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.security.TenantIsolationAuditService
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -57,7 +58,8 @@ class CostCategoryCrossTenantSecurityTest {
                 CostCategoryController(
                     categoryRepository, assignmentRepository, autoRuleRepository,
                     invoiceRepository, invoiceItemRepository,
-                    SupplierAutoRuleService(autoRuleRepository, invoiceRepository, invoiceItemRepository, assignmentRepository)
+                    SupplierAutoRuleService(autoRuleRepository, invoiceRepository, invoiceItemRepository, assignmentRepository),
+                    mockk<BusinessEventPublisher>(relaxed = true)
                 )
             )
             .setControllerAdvice(GlobalExceptionHandler(mockk<TenantIsolationAuditService>(relaxed = true)))

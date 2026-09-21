@@ -14,7 +14,9 @@ data class BusinessEventDto(
     val dimension: String?,
     val dimensionValue: String?,
     val occurredAt: Instant,
-    val attributes: Map<String, String>
+    val attributes: Map<String, String>,
+    /** Kwota w groszach; 0 dla zdarzeń niepieniężnych. */
+    val amountCents: Long = 0
 ) {
     companion object {
         fun from(event: BusinessEvent) = BusinessEventDto(
@@ -25,7 +27,8 @@ data class BusinessEventDto(
             dimension = event.type.dimension,
             dimensionValue = event.dimensionValue,
             occurredAt = event.occurredAt,
-            attributes = event.attributes
+            attributes = event.attributes,
+            amountCents = event.amountCents
         )
     }
 }

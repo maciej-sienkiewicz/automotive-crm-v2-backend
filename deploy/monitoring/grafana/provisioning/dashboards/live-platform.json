@@ -1,7 +1,7 @@
 {
   "uid": "crm-live-platform",
   "title": "Live metrics — platforma",
-  "description": "Zdarzenia biznesowe wszystkich tenantów w czasie rzeczywistym: rezerwacje, wizyty (wg źródła), leady, wysłane wiadomości, karty wizyt, kampanie, pracownicy, profile IG, poczta, nowe usługi, zdjęcia, log aktywności. Źródło: /actuator/prometheus.",
+  "description": "TEMPO zdarzeń biznesowych wszystkich tenantów. Pytanie „ile łącznie” obsługuje dashboard Zaangażowanie, a „kto z czego korzysta” — Adopcja. Źródło: /actuator/prometheus.",
   "tags": [
     "crm",
     "live-metrics"
@@ -33,14 +33,24 @@
   },
   "links": [
     {
-      "title": "Platforma",
+      "title": "Platforma — na żywo",
       "type": "link",
       "url": "/d/crm-live-platform"
     },
     {
-      "title": "Tenant",
+      "title": "Tenant — na żywo",
       "type": "link",
       "url": "/d/crm-live-tenant"
+    },
+    {
+      "title": "Zaangażowanie tenanta",
+      "type": "link",
+      "url": "/d/crm-engagement-tenant"
+    },
+    {
+      "title": "Adopcja — platforma",
+      "type": "link",
+      "url": "/d/crm-adoption-platform"
     }
   ],
   "panels": [
@@ -176,7 +186,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Leady dziś",
+      "title": "Stworzone dziś",
       "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
@@ -234,7 +244,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Wiadomości dziś",
+      "title": "Wysłane wiadomości dziś",
       "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
@@ -350,7 +360,7 @@
     {
       "id": 7,
       "type": "stat",
-      "title": "Aktywność dziś",
+      "title": "Wpisy w historii dziś",
       "description": "Licznik od północy (strefa studia), czytany z Redisa co 15 s. `—` zamiast liczby oznacza, że metryka w ogóle nie dociera do Prometheusa.",
       "datasource": {
         "type": "prometheus",
@@ -421,8 +431,8 @@
     {
       "id": 9,
       "type": "stat",
-      "title": "Leady",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Stworzone",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -479,8 +489,8 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "Wiadomości",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Wysłane wiadomości",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -537,8 +547,8 @@
     {
       "id": 11,
       "type": "stat",
-      "title": "Kampanie",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Stworzone kampanie",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -595,8 +605,8 @@
     {
       "id": 12,
       "type": "stat",
-      "title": "Pracownicy",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Dodani pracownicy",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -653,8 +663,8 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Karty wizyt",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Wysłane karty wizyt",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -711,8 +721,8 @@
     {
       "id": 14,
       "type": "stat",
-      "title": "Profile IG",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Dodane profile",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -769,8 +779,8 @@
     {
       "id": 15,
       "type": "stat",
-      "title": "Poczta",
-      "description": "Suma od początku istnienia studia — odporna na restarty i na to, że dziś akurat nic się nie wydarzyło.",
+      "title": "Podłączenia poczty",
+      "description": "Suma od WDROŻENIA metryki (nie od założenia studia), czytana z Redisa bez TTL — restart aplikacji jej nie zeruje. Rośnie monotonicznie: płaski odcinek znaczy „nic się nie działo”, nie „brak danych”.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -899,7 +909,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Rezerwacje na żywo",
-      "description": "Ile rezerwacji utworzono w każdym przedziale. Krok minimalny 1 min — increase() na oknie krótszym niż dwa scrape'y nie zwraca nic.",
+      "description": "TEMPO, nie suma: ile rezerwacji utworzono w każdym przedziale. Wykres wraca do zera, gdy nic się nie dzieje — „ile łącznie” jest na dashboardzie Zaangażowanie. Krok minimalny 1 min, bo increase() na oknie krótszym niż dwa scrape'y nie zwraca nic.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1230,187 +1240,6 @@
     {
       "id": 22,
       "type": "timeseries",
-      "title": "Katalog usług — nowości",
-      "description": "Kiedy studio rozszerza ofertę: SERVICE = pojedyncza usługa, PACKAGE = pakiet.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 27
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"SERVICE_CREATED\"}[$__rate_interval]))",
-          "legendFormat": "{{dimension}}",
-          "refId": "A",
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 80,
-            "showPoints": "never",
-            "spanNulls": false,
-            "lineInterpolation": "linear",
-            "drawStyle": "bars",
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SERVICE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PACKAGE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "pink"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 23,
-      "type": "timeseries",
-      "title": "Log aktywności",
-      "description": "Przyrost rekordów w historii aktywności — sam fakt powstania wpisu systemowego.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 27
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\"}[$__rate_interval]))",
-          "legendFormat": "Wpisy",
-          "refId": "A",
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 80,
-            "showPoints": "never",
-            "spanNulls": false,
-            "lineInterpolation": "linear",
-            "drawStyle": "bars",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Wpisy"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "red"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 24,
-      "type": "timeseries",
       "title": "Leady wg źródła",
       "description": "Skąd przychodzą leady: PHONE (telefon), EMAIL (poczta), FORM (formularz na stronie), MANUAL (dodany ręcznie).",
       "datasource": {
@@ -1421,7 +1250,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 27
       },
       "targets": [
         {
@@ -1537,7 +1366,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 23,
       "type": "timeseries",
       "title": "Wysłane wiadomości wg kanału",
       "description": "Tylko wysyłki, które naprawdę wyszły do dostawcy — blokady (brak modułu, zgody, kredytów) się nie liczą. SMS i EMAIL to wysyłka systemowa (przypomnienia, kampanie, karty wizyt), MAILBOX to mail napisany ręcznie w module Poczta. Wszystkie maile razem = EMAIL + MAILBOX.",
@@ -1549,7 +1378,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 27
       },
       "targets": [
         {
@@ -1650,10 +1479,10 @@
       }
     },
     {
-      "id": 26,
+      "id": 24,
       "type": "timeseries",
-      "title": "Karty wizyt wg kanału",
-      "description": "Karty Wizyt i Karty Rezerwacji policzone per realnie wysłany kanał — jedno żądanie wysyłki na oba kanały to dwa zdarzenia.",
+      "title": "Log aktywności",
+      "description": "Przyrost rekordów w historii aktywności — sam fakt powstania wpisu systemowego.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1662,7 +1491,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 35
       },
       "targets": [
         {
@@ -1670,8 +1499,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (dimension)(increase(crm_business_events_total{type=\"VISIT_CARD_SENT\"}[$__rate_interval]))",
-          "legendFormat": "{{dimension}}",
+          "expr": "sum(increase(crm_business_events_total{type=\"ACTIVITY_LOGGED\"}[$__rate_interval]))",
+          "legendFormat": "Wpisy",
           "refId": "A",
           "editorMode": "code",
           "range": true,
@@ -1696,7 +1525,7 @@
             "lineInterpolation": "linear",
             "drawStyle": "bars",
             "stacking": {
-              "mode": "normal",
+              "mode": "none",
               "group": "A"
             },
             "axisSoftMin": 0
@@ -1706,29 +1535,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "EMAIL"
+              "options": "Wpisy"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "light-blue"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SMS"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "red"
                 }
               }
             ]
@@ -1748,10 +1562,10 @@
       }
     },
     {
-      "id": 27,
+      "id": 25,
       "type": "timeseries",
-      "title": "Kampanie, pracownicy, profile IG, poczta",
-      "description": "Zdarzenia rzadkie, więc w jednym panelu. Puste nie znaczy „nie ma” — aktualny stan czytaj z kafli „od początku” na górze dashboardu.",
+      "title": "Wizyty: upselling i podpisy na żywo",
+      "description": "Co dzieje się w trakcie realizacji wizyt. Rozbicia (przyjęcie/wydanie, wybrane/potwierdzone) są na dashboardzie Zaangażowanie.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1760,7 +1574,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 35
       },
       "targets": [
         {
@@ -1768,8 +1582,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"CAMPAIGN_CREATED\"}[$__rate_interval]))",
-          "legendFormat": "Kampanie",
+          "expr": "sum(increase(crm_business_events_total{type=\"UPSELL_USED\"}[$__rate_interval]))",
+          "legendFormat": "Upselling",
           "refId": "A",
           "editorMode": "code",
           "range": true,
@@ -1781,8 +1595,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"EMPLOYEE_CREATED\"}[$__rate_interval]))",
-          "legendFormat": "Pracownicy",
+          "expr": "sum(increase(crm_business_events_total{type=\"PROTOCOL_SIGNED\"}[$__rate_interval]))",
+          "legendFormat": "Podpisane protokoły",
           "refId": "B",
           "editorMode": "code",
           "range": true,
@@ -1794,22 +1608,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(crm_business_events_total{type=\"INSTAGRAM_PROFILE_ADDED\"}[$__rate_interval]))",
-          "legendFormat": "Profile IG",
+          "expr": "sum(increase(crm_business_events_total{type=\"VISIT_PRICE_EDITED\"}[$__rate_interval]))",
+          "legendFormat": "Edycje ceny",
           "refId": "C",
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(increase(crm_business_events_total{type=\"MAILBOX_CONNECTED\"}[$__rate_interval]))",
-          "legendFormat": "Poczta",
-          "refId": "D",
           "editorMode": "code",
           "range": true,
           "instant": false,
@@ -1843,14 +1644,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Kampanie"
+              "options": "Upselling"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "pink"
+                  "fixedColor": "green"
                 }
               }
             ]
@@ -1858,126 +1659,9 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Pracownicy"
+              "options": "Podpisane protokoły"
             },
             "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "super-light-purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Profile IG"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "dark-purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Poczta"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "dark-green"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 28,
-      "type": "timeseries",
-      "title": "Wszystkie zdarzenia — narastająco",
-      "description": "Suma od początku per typ: wysokość linii w danym punkcie to „ile było do tego momentu”. Linia tylko rośnie, więc płaski odcinek znaczy „nic się nie działo”, a nie „brak danych”. Źródłem jest licznik z Redisa bez TTL — restart aplikacji go nie zeruje — odświeżany co 5 minut, stąd schodki. Liczy od wdrożenia metryki, nie od założenia studia.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 51
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (type) (max by (tenant_id, type) (crm_business_events_all_time{}))",
-          "legendFormat": "{{type}}",
-          "refId": "A",
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": false,
-            "lineInterpolation": "linear",
-            "drawStyle": "line",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "RESERVATION_CREATED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Rezerwacje"
-              },
               {
                 "id": "color",
                 "value": {
@@ -1990,208 +1674,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "VISIT_CREATED"
+              "options": "Edycje ceny"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "Wizyty"
-              },
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "orange"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SERVICE_CREATED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Nowe usługi"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PHOTO_UPLOADED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Zdjęcia"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "yellow"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ACTIVITY_LOGGED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Aktywność"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "red"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "LEAD_CREATED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Leady"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MESSAGE_SENT"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Wiadomości"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "light-blue"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CAMPAIGN_CREATED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kampanie"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "pink"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "EMPLOYEE_CREATED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Pracownicy"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "super-light-purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "VISIT_CARD_SENT"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Karty wizyt"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "semi-dark-orange"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "INSTAGRAM_PROFILE_ADDED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Profile IG"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "dark-purple"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MAILBOX_CONNECTED"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Poczta"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "dark-green"
                 }
               }
             ]
@@ -2211,7 +1701,7 @@
       }
     },
     {
-      "id": 29,
+      "id": 26,
       "type": "row",
       "title": "Tenanci",
       "collapsed": false,
@@ -2219,12 +1709,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 43
       },
       "panels": []
     },
     {
-      "id": 30,
+      "id": 27,
       "type": "table",
       "title": "Tenanci — dziś",
       "datasource": {
@@ -2236,7 +1726,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 44
       },
       "targets": [
         {
@@ -2269,18 +1759,49 @@
             "renameByName": {
               "tenant\\type": "Tenant",
               "tenant\\\\type": "Tenant",
+              "TASK_CREATED": "Zadania",
               "RESERVATION_CREATED": "Rezerwacje",
               "VISIT_CREATED": "Wizyty",
-              "SERVICE_CREATED": "Nowe usługi",
+              "CALENDAR_EVENT_CREATED": "Wydarzenia",
+              "BATCH_CONTRACTOR_CREATED": "Kontrahenci",
+              "BATCH_SERVICE_ADDED": "Usługi w zleceniach",
               "PHOTO_UPLOADED": "Zdjęcia",
-              "ACTIVITY_LOGGED": "Aktywność",
-              "LEAD_CREATED": "Leady",
-              "MESSAGE_SENT": "Wiadomości",
-              "CAMPAIGN_CREATED": "Kampanie",
-              "EMPLOYEE_CREATED": "Pracownicy",
-              "VISIT_CARD_SENT": "Karty wizyt",
-              "INSTAGRAM_PROFILE_ADDED": "Profile IG",
-              "MAILBOX_CONNECTED": "Poczta"
+              "MESSAGE_SENT": "Wysłane wiadomości",
+              "LEAD_CREATED": "Stworzone",
+              "LEAD_COMPLETED": "Zakończone",
+              "LEAD_QUOTED": "Z wyceną",
+              "LEAD_RESERVATION_LINKED": "Z rezerwacją",
+              "CUSTOMER_CREATED": "Stworzeni",
+              "CONSENT_SIGNED": "Podpisane zgody",
+              "CUSTOMER_NOTE_ADDED": "Notatki",
+              "CUSTOMER_NIP_SET": "Z NIP",
+              "CUSTOMER_DELETED": "Usunięci",
+              "VEHICLE_CREATED": "Stworzone",
+              "VEHICLE_NOTE_ADDED": "Notatki",
+              "FINANCIAL_DOC_ISSUED": "Dokumenty przychodowe",
+              "EXPENSE_RECORDED": "Dokumenty kosztowe",
+              "CASH_OPERATION": "Operacje kasowe",
+              "STATS_CATEGORY_CREATED": "Stworzone kategorie",
+              "CAMPAIGN_CREATED": "Stworzone kampanie",
+              "INSTAGRAM_PROFILE_ADDED": "Dodane profile",
+              "INSTAGRAM_CONTENT_RATED": "Ocenione treści",
+              "INSTAGRAM_AD_DETAILS_VIEWED": "Podglądy kampanii",
+              "SERVICE_CREATED": "Dodane usługi",
+              "EMPLOYEE_CREATED": "Dodani pracownicy",
+              "WORKTIME_ENTRY_SAVED": "Wpisy godzin",
+              "ROLE_CREATED": "Dodane role",
+              "APPOINTMENT_COLOR_CREATED": "Dodane kolory",
+              "SMS_TEMPLATE_UPDATED": "Edycje szablonów",
+              "TABLET_PAIRED": "Parowania tabletu",
+              "VISIT_CARD_SENT": "Wysłane karty wizyt",
+              "UPSELL_USED": "Upselling",
+              "VISIT_PRICE_EDITED": "Edycje ceny",
+              "PRICE_CONFIRMATION_REQUESTED": "Prośby o cenę (SMS)",
+              "VISIT_COMMENT_ADDED": "Komentarze",
+              "PROTOCOL_SIGNED": "Podpisane protokoły",
+              "DAMAGE_MAP_REFILLED": "Ponowne mapy uszkodzeń",
+              "ACTIVITY_LOGGED": "Wpisy w historii",
+              "MAILBOX_CONNECTED": "Podłączenia poczty"
             }
           }
         },
@@ -2329,7 +1850,7 @@
       }
     },
     {
-      "id": 31,
+      "id": 28,
       "type": "row",
       "title": "Potok metryk (ingest → Redis → Prometheus / WebSocket)",
       "collapsed": false,
@@ -2337,12 +1858,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 56
       },
       "panels": []
     },
     {
-      "id": 32,
+      "id": 29,
       "type": "stat",
       "title": "W kolejce",
       "description": "Zdarzenia czekające na zapis (suma instancji).",
@@ -2354,7 +1875,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {
@@ -2400,7 +1921,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 30,
       "type": "stat",
       "title": "Przyjęte",
       "description": "",
@@ -2412,7 +1933,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {
@@ -2458,7 +1979,7 @@
       }
     },
     {
-      "id": 34,
+      "id": 31,
       "type": "stat",
       "title": "Zapisane do Redisa",
       "description": "",
@@ -2470,7 +1991,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {
@@ -2516,7 +2037,7 @@
       }
     },
     {
-      "id": 35,
+      "id": 32,
       "type": "stat",
       "title": "Nieudane partie",
       "description": "",
@@ -2528,7 +2049,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {
@@ -2574,7 +2095,7 @@
       }
     },
     {
-      "id": 36,
+      "id": 33,
       "type": "stat",
       "title": "Rozgłoszone (SSE)",
       "description": "",
@@ -2586,7 +2107,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {
@@ -2632,7 +2153,7 @@
       }
     },
     {
-      "id": 37,
+      "id": 34,
       "type": "stat",
       "title": "Subskrybenci SSE",
       "description": "",
@@ -2644,7 +2165,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 73
+        "y": 57
       },
       "targets": [
         {

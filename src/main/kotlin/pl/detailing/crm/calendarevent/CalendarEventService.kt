@@ -2,6 +2,8 @@ package pl.detailing.crm.calendarevent
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -11,7 +13,8 @@ import java.util.UUID
 
 @Service
 class CalendarEventService(
-    private val repository: CalendarEventRepository
+    private val repository: CalendarEventRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     fun list(studioId: StudioId, from: LocalDate, to: LocalDate): List<CalendarEventEntity> {
         if (to.isBefore(from)) throw ValidationException("Koniec zakresu jest wcześniejszy niż początek")
@@ -23,7 +26,7 @@ class CalendarEventService(
         val title = command.title.trim()
         validate(title, command.startDate, command.endDate)
 
-        return repository.save(
+        val saved = repository.save(
             CalendarEventEntity(
                 id = UUID.randomUUID(),
                 studioId = command.studioId.value,
@@ -35,6 +38,15 @@ class CalendarEventService(
                 createdByName = command.userName
             )
         )
+
+        // Live metrics — wydarzenie własne jest w kalendarzu, licznik wydarzeń tenanta rośnie natychmiast
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.CALENDAR_EVENT_CREATED,
+            attributes = mapOf("calendarEventId" to saved.id.toString())
+        )
+
+        return saved
     }
 
     @Transactional

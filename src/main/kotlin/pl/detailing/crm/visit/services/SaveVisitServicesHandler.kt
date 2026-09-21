@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import java.math.BigDecimal
 import pl.detailing.crm.smscampaigns.consent.ServiceChangesSummary
 import pl.detailing.crm.smscampaigns.consent.SmsConsentService
@@ -22,7 +24,8 @@ class SaveVisitServicesHandler(
     private val auditService: AuditService,
     private val customerRepository: CustomerRepository,
     private val smsConsentService: SmsConsentService,
-    private val servicesChangePlanner: ServicesChangePlanner
+    private val servicesChangePlanner: ServicesChangePlanner,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     companion object {
@@ -76,6 +79,22 @@ class SaveVisitServicesHandler(
                 BigDecimal(grossAfter).movePointLeft(2).toPlainString(),
                 AuditValueType.MONEY
             ))
+        }
+
+        // Live metrics — liczymy edycję ceny pozycji wizyty. Dodanie i usunięcie usługi
+        // to inne zdarzenia biznesowe, więc licznik rusza wyłącznie przy `payload.updated`.
+        if (payload.updated.isNotEmpty()) {
+            businessEventPublisher.publish(
+                tenantId = studioId,
+                type = BusinessEventType.VISIT_PRICE_EDITED,
+                attributes = mapOf(
+                    "visitId" to visitId.value.toString(),
+                    "itemsUpdated" to payload.updated.size.toString(),
+                    "grossBefore" to grossBefore.toString(),
+                    "grossAfter" to grossAfter.toString(),
+                    "userId" to userId.value.toString()
+                )
+            )
         }
 
         val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, studioId.value)

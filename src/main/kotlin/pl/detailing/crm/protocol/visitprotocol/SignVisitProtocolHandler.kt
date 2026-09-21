@@ -9,6 +9,8 @@ import pl.detailing.crm.customer.consent.domain.CustomerConsent
 import pl.detailing.crm.customer.consent.infrastructure.ConsentTemplateRepository
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentEntity
 import pl.detailing.crm.customer.consent.infrastructure.CustomerConsentRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.protocol.domain.VisitProtocol
 import pl.detailing.crm.protocol.infrastructure.PdfProcessingService
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -33,7 +35,8 @@ class SignVisitProtocolHandler(
     private val s3StorageService: S3ProtocolStorageService,
     private val consentTemplateRepository: ConsentTemplateRepository,
     private val customerConsentRepository: CustomerConsentRepository,
-    private val documentRegistrar: VisitProtocolDocumentRegistrar
+    private val documentRegistrar: VisitProtocolDocumentRegistrar,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -80,6 +83,21 @@ class SignVisitProtocolHandler(
             )
 
             visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
+
+            // Live metrics — liczymy podpisany protokół wizyty (przyjęcie vs wydanie).
+            // Protokoły zgód nie mają etapu i nie są protokołem wizyty, więc ich nie liczymy.
+            if (protocol.consentDefinitionId == null) {
+                businessEventPublisher.publish(
+                    tenantId = command.studioId,
+                    type = BusinessEventType.PROTOCOL_SIGNED,
+                    dimensionValue = protocol.stage.name,
+                    attributes = mapOf(
+                        "protocolId" to command.protocolId.value.toString(),
+                        "visitId" to command.visitId.value.toString(),
+                        "signedBy" to command.signedBy
+                    )
+                )
+            }
 
             // Protokół, który przy generowaniu NIE stał się dokumentem wizyty (wydanie —
             // patrz [VisitProtocolDocumentRegistrar]), staje się nim teraz: z podpisem,

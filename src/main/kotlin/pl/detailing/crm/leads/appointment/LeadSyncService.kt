@@ -11,6 +11,8 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadStatusService
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -27,7 +29,8 @@ import java.util.UUID
 class LeadSyncService(
     private val leadRepository: LeadRepository,
     private val statusService: LeadStatusService,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(LeadSyncService::class.java)
 
@@ -44,6 +47,17 @@ class LeadSyncService(
         leadEntity.requiresVerification = false
         leadEntity.updatedAt = Instant.now()
         leadRepository.save(leadEntity)
+
+        // Live metrics — liczymy leady, które doczekały się terminu w kalendarzu.
+        businessEventPublisher.publish(
+            tenantId = StudioId(studioId),
+            type = BusinessEventType.LEAD_RESERVATION_LINKED,
+            attributes = mapOf(
+                "leadId" to leadEntity.id.toString(),
+                "appointmentId" to appointmentId.toString()
+            )
+        )
+
         statusService.transition(
             lead = leadEntity,
             targetStatus = LeadStatus.CONFIRMED,

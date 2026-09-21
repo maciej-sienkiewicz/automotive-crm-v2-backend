@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.TaskId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.task.domain.Task
@@ -21,7 +23,8 @@ class CreateTaskHandler(
     private val taskRepository: TaskRepository,
     private val auditService: AuditService,
     private val userRepository: UserRepository,
-    private val roleRepository: RoleRepository
+    private val roleRepository: RoleRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(CreateTaskHandler::class.java)
 
@@ -62,6 +65,16 @@ class CreateTaskHandler(
             )
 
             taskRepository.save(TaskEntity.fromDomain(task))
+
+            // Live metrics — zadanie jest na Tablicy, licznik zadań tenanta rośnie natychmiast
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.TASK_CREATED,
+                attributes = mapOf(
+                    "taskId" to task.id.value.toString(),
+                    "visibilityType" to task.visibilityType.name
+                )
+            )
 
             log.info("[TASKS] Created task: taskId={}, studioId={}", task.id.value, task.studioId.value)
 

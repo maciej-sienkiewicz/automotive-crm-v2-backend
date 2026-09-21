@@ -11,6 +11,8 @@ import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.CustomerId
 import pl.detailing.crm.shared.DocumentType
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -92,7 +94,8 @@ class UpdateVisitDamageMapHandler(
     private val checkinPhotoService: CheckinPhotoService,
     private val customerRepository: CustomerRepository,
     private val notifier: VisitDamageMapNotifier,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(UpdateVisitDamageMapHandler::class.java)
@@ -146,6 +149,22 @@ class UpdateVisitDamageMapHandler(
         // KROK 3 — audyt. Musi powstać także wtedy, gdy PDF się nie udał: ślad
         // „kto i kiedy dopisał uszkodzenie" jest ważniejszy od pliku.
         recordAudit(command, visitEntity.visitNumber, pointsBefore, generated, revision, hadDocument)
+
+        // Live metrics — liczymy PONOWNE wypełnienie mapy uszkodzeń. Rewizja 1 powstaje przy
+        // check-inie i jest częścią przyjęcia, więc pierwsze wypełnienie się nie liczy.
+        if (revision > 1) {
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.DAMAGE_MAP_REFILLED,
+                attributes = mapOf(
+                    "visitId" to command.visitId.value.toString(),
+                    "revision" to revision.toString(),
+                    "pointsBefore" to pointsBefore.toString(),
+                    "pointsAfter" to command.damagePoints.size.toString(),
+                    "userId" to command.userId.value.toString()
+                )
+            )
+        }
 
         // KROK 4 — klient. Tylko na wyraźne TAK.
         val notification = if (command.notifyCustomer) {

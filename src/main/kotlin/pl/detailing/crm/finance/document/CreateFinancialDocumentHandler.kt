@@ -24,6 +24,10 @@ import pl.detailing.crm.finance.infrastructure.CashRegisterEntity
 import pl.detailing.crm.finance.infrastructure.CashRegisterRepository
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.CashOperationKind
+import pl.detailing.crm.livemetrics.domain.FinancialDocumentKind
 import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.StudioId
@@ -36,6 +40,7 @@ import pl.detailing.crm.visit.infrastructure.auditDisplayName
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * Command to create a new financial document (receipt, invoice, or other).
@@ -84,7 +89,8 @@ class CreateFinancialDocumentHandler(
     private val cashRegisterRepository: CashRegisterRepository,
     private val cashOperationRepository: CashOperationRepository,
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(CreateFinancialDocumentHandler::class.java)
 
@@ -127,6 +133,32 @@ class CreateFinancialDocumentHandler(
         )
 
         val saved = documentRepository.save(entity)
+
+        // Live metrics — liczymy wystawione dokumenty przychodowe (z rozbiciem na paragon/
+        // fakturę/inny) i zarejestrowane dokumenty kosztowe. Kwota to dokładne brutto
+        // ZAPISANE na dokumencie — nigdy odtworzone z netta.
+        when (command.direction) {
+            DocumentDirection.INCOME -> businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.FINANCIAL_DOC_ISSUED,
+                dimensionValue = metricsKindOf(command.documentType).name,
+                attributes = mapOf(
+                    "documentId" to saved.id.toString(),
+                    "documentNumber" to documentNumber
+                ),
+                amountCents = saved.totalGross
+            )
+
+            DocumentDirection.EXPENSE -> businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.EXPENSE_RECORDED,
+                attributes = mapOf(
+                    "documentId" to saved.id.toString(),
+                    "documentNumber" to documentNumber
+                ),
+                amountCents = saved.totalGross
+            )
+        }
 
         // Update cash register for cash payments settled immediately
         if (command.paymentMethod.affectsCashRegister()) {
@@ -264,7 +296,7 @@ class CreateFinancialDocumentHandler(
         val cashComment = command.description?.takeIf { it.isNotBlank() }
             ?: documentNumber
 
-        cashOperationRepository.save(
+        val savedOperation = cashOperationRepository.save(
             CashOperationEntity(
                 id                  = UUID.randomUUID(),
                 studioId            = command.studioId.value,
@@ -279,10 +311,41 @@ class CreateFinancialDocumentHandler(
             )
         )
 
+        // Live metrics — liczymy ruch w kasie wywołany dokumentem gotówkowym. Kierunek
+        // siedzi w wymiarze, więc kwota idzie bez znaku (suma musi rosnąć monotonicznie).
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.CASH_OPERATION,
+            dimensionValue = metricsKindOf(savedOperation.operationType).name,
+            attributes = mapOf(
+                "cashOperationId" to savedOperation.id.toString(),
+                "documentId" to documentId.toString(),
+                "documentNumber" to documentNumber
+            ),
+            amountCents = abs(savedOperation.amount)
+        )
+
         log.debug(
             "Cash register updated: studio={} before={} change={} after={} comment={}",
             command.studioId, balanceBefore, changeAmount, newBalance, cashComment
         )
+    }
+
+    /**
+     * Rodzaj dokumentu w słowniku metryk. Mapowanie jawne, a nie `valueOf(name)`:
+     * nowa wartość [DocumentType] ma wywalić kompilację, a nie wysłać nieznany wymiar.
+     */
+    private fun metricsKindOf(type: DocumentType): FinancialDocumentKind = when (type) {
+        DocumentType.RECEIPT -> FinancialDocumentKind.RECEIPT
+        DocumentType.INVOICE -> FinancialDocumentKind.INVOICE
+        DocumentType.OTHER   -> FinancialDocumentKind.OTHER
+    }
+
+    /** Rodzaj ruchu kasowego w słowniku metryk — mapowanie jawne, jak wyżej. */
+    private fun metricsKindOf(type: CashOperationType): CashOperationKind = when (type) {
+        CashOperationType.PAYMENT_IN        -> CashOperationKind.PAYMENT_IN
+        CashOperationType.PAYMENT_OUT       -> CashOperationKind.PAYMENT_OUT
+        CashOperationType.MANUAL_ADJUSTMENT -> CashOperationKind.MANUAL_ADJUSTMENT
     }
 
     private fun getOrCreateCashRegister(studioId: UUID): CashRegisterEntity {

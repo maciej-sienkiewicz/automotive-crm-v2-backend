@@ -17,6 +17,9 @@ import pl.detailing.crm.finance.infrastructure.CashOperationEntity
 import pl.detailing.crm.finance.infrastructure.CashOperationRepository
 import pl.detailing.crm.finance.infrastructure.CashRegisterEntity
 import pl.detailing.crm.finance.infrastructure.CashRegisterRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.CashOperationKind
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -71,7 +74,8 @@ data class AdjustCashBalanceCommand(
 class AdjustCashBalanceHandler(
     private val cashRegisterRepository: CashRegisterRepository,
     private val cashOperationRepository: CashOperationRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(AdjustCashBalanceHandler::class.java)
 
@@ -92,7 +96,7 @@ class AdjustCashBalanceHandler(
         cashRegister.updatedAt = Instant.now()
         cashRegisterRepository.save(cashRegister)
 
-        cashOperationRepository.save(
+        val savedOperation = cashOperationRepository.save(
             CashOperationEntity(
                 id                  = UUID.randomUUID(),
                 studioId            = command.studioId.value,
@@ -105,6 +109,23 @@ class AdjustCashBalanceHandler(
                 financialDocumentId = null,
                 createdBy           = command.userId.value
             )
+        )
+
+        // Live metrics — liczymy ręczną korektę kasy. Kierunek (wpłata/wypłata) czytamy ze
+        // znaku kwoty i wkładamy do wymiaru, więc sama kwota idzie bez znaku.
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.CASH_OPERATION,
+            dimensionValue = if (savedOperation.amount > 0) {
+                CashOperationKind.PAYMENT_IN.name
+            } else {
+                CashOperationKind.PAYMENT_OUT.name
+            },
+            attributes = mapOf(
+                "cashOperationId" to savedOperation.id.toString(),
+                "cashRegisterId" to cashRegister.id.toString()
+            ),
+            amountCents = abs(savedOperation.amount)
         )
 
         log.info(

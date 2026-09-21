@@ -8,6 +8,8 @@ import pl.detailing.crm.communication.CommunicationLogService
 import pl.detailing.crm.communication.DeliveryPolicy
 import pl.detailing.crm.communication.OutboundCommunicationGateway
 import pl.detailing.crm.communication.RecordCommunicationCommand
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
 import pl.detailing.crm.shared.CommunicationStatus
@@ -55,7 +57,8 @@ class SmsConsentService(
     private val smsConsentRequestRepository: SmsConsentRequestRepository,
     private val visitRepository: VisitRepository,
     private val communicationLogService: CommunicationLogService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     /**
@@ -214,6 +217,18 @@ class SmsConsentService(
                 externalMessageId = result.externalMessageId,
                 createdAt = Instant.now(),
                 respondedAt = null
+            )
+        )
+
+        // Live metrics — liczymy prośbę o potwierdzenie ceny wysłaną do klienta. To wspólne
+        // wąskie gardło obu ścieżek (edycja usług i upsell), więc wywołujący nic nie liczą.
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.PRICE_CONFIRMATION_REQUESTED,
+            attributes = mapOf(
+                "visitId" to visitId.value.toString(),
+                "proposedTotalGross" to proposedTotalGrossCents.toString(),
+                "smsSent" to result.success.toString()
             )
         )
 

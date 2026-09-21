@@ -5,6 +5,10 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.UpsellStage
+import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.smscampaigns.consent.SmsConsentConfirmedEvent
 import pl.detailing.crm.visitcard.upsell.infrastructure.UpsellSuggestionStatus
 import pl.detailing.crm.visitcard.upsell.infrastructure.VisitUpsellSuggestionRepository
@@ -21,7 +25,8 @@ import java.time.Instant
 @Component
 class UpsellConsentConfirmedListener(
     private val suggestionRepository: VisitUpsellSuggestionRepository,
-    private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository
+    private val visitRepository: pl.detailing.crm.visit.infrastructure.VisitRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -44,6 +49,21 @@ class UpsellConsentConfirmedListener(
             it.confirmedAt = now
         }
         suggestionRepository.saveAll(requested)
+
+        // Live metrics — liczymy KAŻDĄ usługę upsellową potwierdzoną przez klienta SMS-em ("TAK").
+        requested.forEach { suggestion ->
+            businessEventPublisher.publish(
+                tenantId = StudioId(event.studioId),
+                type = BusinessEventType.UPSELL_USED,
+                dimensionValue = UpsellStage.CONFIRMED.name,
+                attributes = mapOf(
+                    "suggestionId" to suggestion.id.toString(),
+                    "serviceId" to suggestion.serviceId.toString(),
+                    "serviceName" to suggestion.serviceName,
+                    "visitId" to event.visitId.toString()
+                )
+            )
+        }
 
         logger.info(
             "Upsell suggestions confirmed via SMS TAK | visit={} count={}",

@@ -17,6 +17,9 @@ import pl.detailing.crm.instagram.ai.model.GeneratedPostResponse
 import pl.detailing.crm.instagram.ai.model.RateGeneratedPostRequest
 import pl.detailing.crm.instagram.ai.model.StoredVerificationReport
 import pl.detailing.crm.instagram.ai.model.VerifiedGenerationResult
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.RatedContentTarget
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -33,7 +36,8 @@ import java.util.UUID
 @Service
 class InstagramGeneratedPostService(
     private val repository: InstagramGeneratedPostRepository,
-    private val vectorIndexer: GeneratedPostVectorIndexer
+    private val vectorIndexer: GeneratedPostVectorIndexer,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(InstagramGeneratedPostService::class.java)
     private val json: ObjectMapper = jacksonObjectMapper().findAndRegisterModules()
@@ -117,6 +121,17 @@ class InstagramGeneratedPostService(
         post.ratingComment = comment
         post.ratedAt = Instant.now()
         val saved = repository.save(post)
+
+        // Live metrics — liczymy oceny treści; ten wymiar to post wygenerowany przez AI.
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.INSTAGRAM_CONTENT_RATED,
+            dimensionValue = RatedContentTarget.AI.name,
+            attributes = mapOf(
+                "postId" to postId.toString(),
+                "rating" to request.rating.name
+            )
+        )
 
         ioScope.launch {
             try {

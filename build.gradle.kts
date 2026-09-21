@@ -179,6 +179,10 @@ tasks.withType<Test> {
         if (!runTestcontainers) excludeTags("testcontainers")
         if (!runRedisTests) excludeTags("redis")
     }
+    // Domyślne 512 MB Gradle'a przestało wystarczać całemu zestawowi: executor przewracał się
+    // na `OutOfMemoryError: Java heap space` w połowie przebiegu, więc wynik nie mówił nic
+    // o kodzie — build padał tak samo przy zielonych testach, co przy czerwonych.
+    maxHeapSize = "2g"
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {

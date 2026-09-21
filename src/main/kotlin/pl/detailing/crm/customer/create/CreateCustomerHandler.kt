@@ -11,6 +11,9 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.customer.domain.Customer
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.RecordOrigin
 import pl.detailing.crm.shared.CustomerId
 import java.time.Instant
 
@@ -18,7 +21,8 @@ import java.time.Instant
 class CreateCustomerHandler(
     private val validatorComposite: CreateCustomerValidatorComposite,
     private val customerRepository: CustomerRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -43,6 +47,27 @@ class CreateCustomerHandler(
 
         val entity = CustomerEntity.fromDomain(customer)
         customerRepository.save(entity)
+
+        // Live metrics — klient założony świadomie w kartotece (a nie mimochodem przy rezerwacji).
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.CUSTOMER_CREATED,
+            dimensionValue = RecordOrigin.DIRECT.name,
+            attributes = mapOf(
+                "customerId" to customer.id.value.toString(),
+                "userId" to command.userId.value.toString()
+            )
+        )
+
+        // Live metrics — klient od razu z NIP-em; to samo przejście brak → wartość,
+        // co przy edycji danych firmy (patrz UpdateCompanyHandler).
+        if (!command.companyData?.nip.isNullOrBlank()) {
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.CUSTOMER_NIP_SET,
+                attributes = mapOf("customerId" to customer.id.value.toString())
+            )
+        }
 
         val displayName = listOfNotNull(customer.firstName, customer.lastName).joinToString(" ").ifBlank { customer.email ?: customer.phone ?: "" }
 

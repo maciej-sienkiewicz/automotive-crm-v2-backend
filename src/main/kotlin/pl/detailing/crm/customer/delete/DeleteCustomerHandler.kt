@@ -11,6 +11,8 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.customer.notes.CustomerNoteRepository
 import pl.detailing.crm.leads.infrastructure.LeadRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -49,7 +51,8 @@ class DeleteCustomerHandler(
     private val vehicleRepository: VehicleRepository,
     private val leadRepository: LeadRepository,
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -111,6 +114,18 @@ class DeleteCustomerHandler(
         customer.updatedBy = userId.value
         customer.updatedAt = now
         customerRepository.save(customer)
+
+        // Live metrics — liczymy wymazanych klientów. Zdarzenie pada za guardem
+        // idempotencji, więc drugie kliknięcie nie doliczy drugiego usunięcia.
+        // Bez danych osobowych w atrybutach — to przeczyłoby wymazaniu.
+        businessEventPublisher.publish(
+            tenantId = studioId,
+            type = BusinessEventType.CUSTOMER_DELETED,
+            attributes = mapOf(
+                "customerId" to customerId.toString(),
+                "userId" to userId.value.toString()
+            )
+        )
 
         // Bez nazwiska w dzienniku — wpisanie go tutaj przeczyłoby wymazaniu.
         auditService.logSync(

@@ -14,6 +14,7 @@ import pl.detailing.crm.instagram.ai.model.GeneratedPostRating
 import pl.detailing.crm.instagram.ai.model.RateGeneratedPostRequest
 import pl.detailing.crm.instagram.ai.rating.GeneratedPostVectorIndexer
 import pl.detailing.crm.instagram.ai.rating.InstagramGeneratedPostService
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
@@ -31,7 +32,8 @@ class InstagramGeneratedPostRatingTest {
 
     private val repository = mockk<InstagramGeneratedPostRepository>()
     private val vectorIndexer = mockk<GeneratedPostVectorIndexer>(relaxed = true)
-    private val service = InstagramGeneratedPostService(repository, vectorIndexer)
+    private val businessEventPublisher: BusinessEventPublisher = mockk(relaxed = true)
+    private val service = InstagramGeneratedPostService(repository, vectorIndexer, businessEventPublisher)
 
     private val studio = StudioId.random()
 

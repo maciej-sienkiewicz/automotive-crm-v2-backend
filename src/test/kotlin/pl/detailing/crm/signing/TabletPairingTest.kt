@@ -30,7 +30,11 @@ class TabletPairingTest {
     private val repository = mockk<SigningTabletRepository>(relaxed = true)
     private val redis = mockk<StringRedisTemplate>(relaxed = true)
     private val valueOps = mockk<ValueOperations<String, String>>(relaxed = true)
-    private val service = TabletSessionService(repository, redis, ObjectMapper(), pairingCodeTtlMinutes = 5L)
+    private val service = TabletSessionService(
+        repository, redis, ObjectMapper(),
+        mockk<pl.detailing.crm.livemetrics.BusinessEventPublisher>(relaxed = true),
+        pairingCodeTtlMinutes = 5L
+    )
 
     private val studioId = UUID.randomUUID()
 

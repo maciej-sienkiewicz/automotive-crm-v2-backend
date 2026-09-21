@@ -6,13 +6,16 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentColorRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.AppointmentColorId
 import java.time.Instant
 
 @Service
 class CreateAppointmentColorHandler(
     private val validatorComposite: CreateAppointmentColorValidatorComposite,
-    private val appointmentColorRepository: AppointmentColorRepository
+    private val appointmentColorRepository: AppointmentColorRepository,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     @Transactional
     suspend fun handle(command: CreateAppointmentColorCommand): CreateAppointmentColorResult =
@@ -36,6 +39,17 @@ class CreateAppointmentColorHandler(
 
             val entity = AppointmentColorEntity.fromDomain(domain)
             appointmentColorRepository.save(entity)
+
+            // Live metrics — liczymy dodany kolor oznaczeń rezerwacji.
+            businessEventPublisher.publish(
+                tenantId = command.studioId,
+                type = BusinessEventType.APPOINTMENT_COLOR_CREATED,
+                attributes = mapOf(
+                    "colorId" to colorId.value.toString(),
+                    "name" to command.name,
+                    "userId" to command.userId.value.toString()
+                )
+            )
 
             CreateAppointmentColorResult(
                 colorId = colorId,

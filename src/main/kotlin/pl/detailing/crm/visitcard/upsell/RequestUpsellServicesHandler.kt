@@ -21,6 +21,9 @@ import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import pl.detailing.crm.smscampaigns.domain.SmsAutomationConfigRepository
 import pl.detailing.crm.communication.RecordCommunicationCommand
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.UpsellStage
 import pl.detailing.crm.shared.AppointmentId
 import pl.detailing.crm.shared.CommunicationChannel
 import pl.detailing.crm.shared.CommunicationMessageType
@@ -83,7 +86,8 @@ class RequestUpsellServicesHandler(
     private val communicationLogService: CommunicationLogService,
     private val smsAutomationConfigRepository: SmsAutomationConfigRepository,
     private val renderer: MessageTemplateRenderer,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -170,6 +174,21 @@ class RequestUpsellServicesHandler(
         }
         suggestionRepository.saveAll(selected)
 
+        // Live metrics — liczymy KAŻDĄ usługę upsellową wybraną przez klienta na Karcie Wizyty.
+        selected.forEach { suggestion ->
+            businessEventPublisher.publish(
+                tenantId = studioId,
+                type = BusinessEventType.UPSELL_USED,
+                dimensionValue = UpsellStage.REQUESTED.name,
+                attributes = mapOf(
+                    "suggestionId" to suggestion.id.toString(),
+                    "serviceId" to suggestion.serviceId.toString(),
+                    "serviceName" to suggestion.serviceName,
+                    "visitId" to visitId.value.toString()
+                )
+            )
+        }
+
         val normalizedPhone = normalizePolishPhone(phone)
         val message = renderConsentSms(
             studioId = studioId,
@@ -247,6 +266,21 @@ class RequestUpsellServicesHandler(
             suggestion.requestedAt = now
         }
         suggestionRepository.saveAll(selected)
+
+        // Live metrics — liczymy KAŻDĄ usługę upsellową wybraną przez klienta na Karcie Rezerwacji.
+        selected.forEach { suggestion ->
+            businessEventPublisher.publish(
+                tenantId = studioId,
+                type = BusinessEventType.UPSELL_USED,
+                dimensionValue = UpsellStage.REQUESTED.name,
+                attributes = mapOf(
+                    "suggestionId" to suggestion.id.toString(),
+                    "serviceId" to suggestion.serviceId.toString(),
+                    "serviceName" to suggestion.serviceName,
+                    "appointmentId" to appointmentId.value.toString()
+                )
+            )
+        }
 
         val normalizedPhone = normalizePolishPhone(phone)
         val message = renderConsentSms(

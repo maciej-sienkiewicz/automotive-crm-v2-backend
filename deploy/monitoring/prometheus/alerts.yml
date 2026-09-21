@@ -57,6 +57,59 @@ groups:
             należącej do innego tenanta. Sprawdź audit_logs tabeli SECURITY.
 
       # ── Anomalous 401/403 rejections ────────────────────────────────────────
+
+  # ── Telemetria zaangażowania ────────────────────────────────────────────────
+  # Wszystkie trzy reguły pilnują tego samego: żeby liczby na dashboardach Zaangażowanie
+  # i Adopcja były kompletne. Niepełne dane wyglądają tu dokładnie jak spokojny tydzień
+  # u klienta, więc bez alertu nikt by się nie zorientował — a na ich podstawie zapadają
+  # decyzje o tym, którego klienta trzeba dosprzedać albo uratować.
+  - name: crm_live_metrics
+    interval: 60s
+    rules:
+
+      - alert: LiveMetricsPipelineDropping
+        expr: |
+          increase(crm_live_metrics_pipeline_dropped[15m]) > 0
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Potok live-metrics gubi zdarzenia biznesowe"
+          description: >
+            Kolejka ingestu przepełniła się albo zapis do Redisa nie przeszedł.
+            Zdarzenia zgubione w ten sposób nie wracają — liczniki narastające
+            zaniżą się trwale. Sprawdź dostępność Redisa i crm_live_metrics_pipeline_queued.
+
+      - alert: LiveMetricsIngestQueueSaturated
+        expr: |
+          sum(crm_live_metrics_pipeline_queued) / sum(crm_live_metrics_pipeline_queue_capacity) > 0.7
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Kolejka ingestu live-metrics zapełniona w ponad 70%"
+          description: >
+            Worker nie nadąża opróżniać kolejki. To stan PRZED gubieniem zdarzeń —
+            jeśli zapełnienie rośnie, LiveMetricsPipelineDropping odpali za chwilę.
+
+      # Nieudane odświeżenie ZOSTAWIA poprzednie wartości gauge'y (MultiGauge ich nie zeruje),
+      # więc martwy eksporter wygląda jak zamrożona prawda. Wiek ostatniego udanego cyklu
+      # jest jedynym sygnałem, który to rozróżnia.
+      - alert: TenantStateGaugesStale
+        expr: |
+          time() - max(crm_tenant_state_refreshed_seconds) > 900
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Stany tenantów nie odświeżyły się od 15 minut"
+          description: >
+            Kafle „Tak/Nie" i wielkości bieżące (usługi, pracownicy, kredyty SMS) pokazują
+            wartości zamrożone w przeszłości. Sprawdź logi TenantStateMetricsExporter —
+            najczęstsza przyczyna to błąd SQL po migracji schematu.
+
   - name: crm_ksef_limits
     interval: 60s
     rules:

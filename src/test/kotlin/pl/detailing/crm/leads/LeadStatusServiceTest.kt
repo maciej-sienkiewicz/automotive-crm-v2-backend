@@ -18,6 +18,7 @@ import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryEntity
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
 import pl.detailing.crm.leads.update.LeadStatusService
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
 import pl.detailing.crm.shared.ValidationException
@@ -34,7 +35,8 @@ class LeadStatusServiceTest {
     private val eventPublisher = mockk<ApplicationEventPublisher> {
         every { publishEvent(any()) } just Runs
     }
-    private val service = LeadStatusService(leadRepository, historyRepository, eventPublisher)
+    private val businessEventPublisher: BusinessEventPublisher = mockk(relaxed = true)
+    private val service = LeadStatusService(leadRepository, historyRepository, eventPublisher, businessEventPublisher)
 
     private fun lead(status: LeadStatus = LeadStatus.NEW) = LeadEntity(
         id = UUID.randomUUID(),

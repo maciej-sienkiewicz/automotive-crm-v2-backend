@@ -10,6 +10,9 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemRepository
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.StatsCategoryKind
 import pl.detailing.crm.shared.DateRangeFilter
 import pl.detailing.crm.shared.EntityNotFoundException
 import jakarta.validation.Valid
@@ -185,7 +188,8 @@ class CostCategoryController(
     private val autoRuleRepository: SupplierAutoRuleRepository,
     private val invoiceRepository: KsefInvoiceRepository,
     private val invoiceItemRepository: KsefInvoiceItemRepository,
-    private val autoRuleService: SupplierAutoRuleService
+    private val autoRuleService: SupplierAutoRuleService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     // ── Categories CRUD ───────────────────────────────────────────────────────
@@ -209,6 +213,19 @@ class CostCategoryController(
             createdBy   = principal.userId.value
         )
         val saved = categoryRepository.save(entity)
+
+        // Live metrics — liczymy nowe kategorie w statystykach; wymiar mówi, że to
+        // kategoria kosztowa.
+        businessEventPublisher.publish(
+            tenantId = principal.studioId,
+            type = BusinessEventType.STATS_CATEGORY_CREATED,
+            dimensionValue = StatsCategoryKind.COST.name,
+            attributes = mapOf(
+                "categoryId" to saved.id.toString(),
+                "name" to saved.name
+            )
+        )
+
         return ResponseEntity.status(HttpStatus.CREATED).body(
             CreateCostCategoryResponse(
                 id        = saved.id.toString(),

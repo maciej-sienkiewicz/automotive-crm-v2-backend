@@ -9,6 +9,9 @@ import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryEntity
 import pl.detailing.crm.leads.infrastructure.LeadStatusHistoryRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.LeadOutcome
 import pl.detailing.crm.shared.LeadChangedEvent
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadStatus
@@ -26,7 +29,8 @@ import java.util.UUID
 class LeadStatusService(
     private val leadRepository: LeadRepository,
     private val historyRepository: LeadStatusHistoryRepository,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -74,6 +78,20 @@ class LeadStatusService(
             lead.owedNote = null
         }
         leadRepository.save(lead)
+
+        // Live metrics — liczymy leady domknięte, czyli te, które trafiły w stan terminalny
+        // (wygrana / przegrana / brak stawiennictwa). Stany pośrednie niczego nie kończą.
+        if (targetStatus in TERMINAL_STATUSES && LeadOutcome.entries.any { it.name == targetStatus.name }) {
+            businessEventPublisher.publish(
+                tenantId = StudioId(lead.studioId),
+                type = BusinessEventType.LEAD_COMPLETED,
+                dimensionValue = targetStatus.name,
+                attributes = mapOf(
+                    "leadId" to lead.id.toString(),
+                    "previousStatus" to oldStatus.name
+                )
+            )
+        }
 
         historyRepository.save(
             LeadStatusHistoryEntity(

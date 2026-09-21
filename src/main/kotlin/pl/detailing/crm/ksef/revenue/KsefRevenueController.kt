@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.qr.KsefQrCodeUrlBuilder
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.FinancialDocumentKind
 import pl.detailing.crm.ksef.revenue.domain.DuplicateStatus
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
 import pl.detailing.crm.ksef.revenue.domain.RevenueSource
@@ -60,7 +63,8 @@ class KsefRevenueController(
     private val dispatchService: KsefRevenueDispatchService,
     private val statisticsHandler: RevenueStatisticsHandler,
     private val qrCodeUrlBuilder: KsefQrCodeUrlBuilder,
-    private val invoicePdfService: InvoicePdfService
+    private val invoicePdfService: InvoicePdfService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     // ── Wystawianie ────────────────────────────────────────────────────────────
@@ -103,6 +107,24 @@ class KsefRevenueController(
                 description         = req.description
             )
         )
+        // Faktura przychodowa wystawiona RĘCZNIE z modułu KSeF — liczymy ją tutaj, a nie
+        // w IssueRevenueInvoiceHandler, bo ten sam handler obsługuje też zamknięcie wizyty,
+        // gdzie fakturę liczy już FinancialDocument (byłby podwójny przychód). Ta ścieżka
+        // jako jedyna nie tworzy dokumentu finansowego, więc bez tego wpięcia faktury
+        // wystawione z modułu KSeF nie byłyby liczone w ogóle.
+        // Kwota: dokładne brutto zapisane na fakturze, nigdy przeliczane z netta.
+        businessEventPublisher.publish(
+            tenantId = principal.studioId,
+            type = BusinessEventType.FINANCIAL_DOC_ISSUED,
+            dimensionValue = FinancialDocumentKind.INVOICE.name,
+            attributes = mapOf(
+                "invoiceId" to invoice.id.toString(),
+                "invoiceNumber" to invoice.invoiceNumber,
+                "channel" to "KSEF_MANUAL"
+            ),
+            amountCents = invoice.totalGross
+        )
+
         val items = itemRepository.findByInvoiceIdOrderByLineNumberAsc(invoice.id)
         return ResponseEntity.status(HttpStatus.CREATED).body(invoice.toResponse(items))
     }

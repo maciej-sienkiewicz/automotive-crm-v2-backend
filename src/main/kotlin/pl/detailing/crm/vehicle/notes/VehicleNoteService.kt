@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -16,7 +18,8 @@ import java.util.UUID
 class VehicleNoteService(
     private val vehicleNoteRepository: VehicleNoteRepository,
     private val vehicleRepository: VehicleRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional(readOnly = true)
@@ -51,6 +54,17 @@ class VehicleNoteService(
         )
 
         val saved = vehicleNoteRepository.save(entity)
+
+        // Live metrics — liczymy DODANE notatki pojazdów; edycja i usunięcie to nie nowa notatka.
+        businessEventPublisher.publish(
+            tenantId = StudioId(studioId),
+            type = BusinessEventType.VEHICLE_NOTE_ADDED,
+            attributes = mapOf(
+                "noteId" to saved.id.toString(),
+                "vehicleId" to vehicleId.toString(),
+                "userId" to createdBy.toString()
+            )
+        )
 
         auditService.log(LogAuditCommand(
             studioId = StudioId(studioId),

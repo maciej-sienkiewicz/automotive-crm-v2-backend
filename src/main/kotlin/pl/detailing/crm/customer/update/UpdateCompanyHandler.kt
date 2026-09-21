@@ -9,13 +9,16 @@ import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.customer.domain.CompanyAddress
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.NotFoundException
 import java.time.Instant
 
 @Service
 class UpdateCompanyHandler(
     private val customerRepository: CustomerRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
     suspend fun handle(command: UpdateCompanyCommand): UpdateCompanyResult =
         withContext(Dispatchers.IO) {
@@ -36,6 +39,10 @@ class UpdateCompanyHandler(
                 "companyAddressCountry" to entity.companyAddressCountry
             )
 
+            // NIP sprzed edycji — po przypisaniu poniżej nie da się już odróżnić
+            // pierwszego uzupełnienia od poprawki literówki.
+            val previousNip = entity.companyNip
+
             // Update company fields
             entity.companyName = command.name
             entity.companyNip = command.nip
@@ -51,6 +58,16 @@ class UpdateCompanyHandler(
 
             // Save
             val saved = customerRepository.save(entity)
+
+            // Live metrics — liczymy KLIENTÓW z NIP-em, więc tylko przejście brak → wartość.
+            // Poprawka istniejącego numeru to ta sama kartoteka, nie nowa.
+            if (previousNip.isNullOrBlank() && !saved.companyNip.isNullOrBlank()) {
+                businessEventPublisher.publish(
+                    tenantId = command.studioId,
+                    type = BusinessEventType.CUSTOMER_NIP_SET,
+                    attributes = mapOf("customerId" to command.customerId.value.toString())
+                )
+            }
 
             // Compute changes for audit
             val newValues = mapOf(

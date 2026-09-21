@@ -6,6 +6,9 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.livemetrics.domain.RecordOrigin
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.vehicle.domain.Vehicle
 import pl.detailing.crm.vehicle.domain.VehicleOwner
@@ -21,7 +24,8 @@ class CreateVehicleHandler(
     private val vehicleRepository: VehicleRepository,
     private val vehicleOwnerRepository: VehicleOwnerRepository,
     private val auditService: AuditService,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional
@@ -67,6 +71,17 @@ class CreateVehicleHandler(
                     vehicleOwnerRepository.save(vehicleOwnerEntity)
                 }
         }
+
+        // Live metrics — pojazd dodany świadomie w kartotece (a nie mimochodem przy rezerwacji).
+        businessEventPublisher.publish(
+            tenantId = command.studioId,
+            type = BusinessEventType.VEHICLE_CREATED,
+            dimensionValue = RecordOrigin.DIRECT.name,
+            attributes = mapOf(
+                "vehicleId" to vehicle.id.value.toString(),
+                "userId" to command.userId.value.toString()
+            )
+        )
 
         val displayName = listOfNotNull(vehicle.brand, vehicle.model, vehicle.licensePlate).joinToString(" ")
 

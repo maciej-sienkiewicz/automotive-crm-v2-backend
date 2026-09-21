@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
+import pl.detailing.crm.livemetrics.BusinessEventPublisher
+import pl.detailing.crm.livemetrics.domain.BusinessEventType
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -16,7 +18,8 @@ import java.util.UUID
 class CustomerNoteService(
     private val customerNoteRepository: CustomerNoteRepository,
     private val customerRepository: CustomerRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val businessEventPublisher: BusinessEventPublisher
 ) {
 
     @Transactional(readOnly = true)
@@ -51,6 +54,17 @@ class CustomerNoteService(
         )
 
         val saved = customerNoteRepository.save(entity)
+
+        // Live metrics — liczymy DODANE notatki klientów; edycja i usunięcie to nie nowa notatka.
+        businessEventPublisher.publish(
+            tenantId = StudioId(studioId),
+            type = BusinessEventType.CUSTOMER_NOTE_ADDED,
+            attributes = mapOf(
+                "noteId" to saved.id.toString(),
+                "customerId" to customerId.toString(),
+                "userId" to createdBy.toString()
+            )
+        )
 
         auditService.log(LogAuditCommand(
             studioId = StudioId(studioId),
