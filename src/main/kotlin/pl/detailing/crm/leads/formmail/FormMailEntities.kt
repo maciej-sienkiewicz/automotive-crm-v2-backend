@@ -93,4 +93,10 @@ interface FormMailExtractionRepository : JpaRepository<FormMailExtractionEntity,
 
     /** Cała rozmowa naraz — podgląd wątku pyta o lead przy każdej wiadomości. */
     fun findByMessageIdIn(messageIds: Collection<UUID>): List<FormMailExtractionEntity>
+
+    /**
+     * Zgłoszenie, z którego powstał ten lead. Dziennik jest JEDYNYM połączeniem
+     * między leadem z formularza a wiadomością — lead świadomie nie ma wątku.
+     */
+    fun findByLeadIdIn(leadIds: Collection<UUID>): List<FormMailExtractionEntity>
 }

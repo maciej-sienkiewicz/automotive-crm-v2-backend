@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.comms.domain.EmailTextCleaner
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommSendStatus
@@ -18,6 +19,7 @@ import pl.detailing.crm.leads.attachment.LeadAttachmentEntity
 import pl.detailing.crm.leads.attachment.LeadAttachmentRepository
 import pl.detailing.crm.leads.callback.LeadCallbackEntity
 import pl.detailing.crm.leads.callback.LeadCallbackRepository
+import pl.detailing.crm.leads.conversation.FormLeadConversation
 import pl.detailing.crm.leads.conversation.LeadConversationStateService
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.infrastructure.LeadEntity
@@ -55,10 +57,19 @@ class LeadTimelineTest {
     private val attachmentRepository = mockk<CommAttachmentRepository>(relaxed = true)
     private val leadAttachmentRepository = mockk<LeadAttachmentRepository>(relaxed = true)
 
+    // Prawdziwy, nie mock: czyszczenie treści jest czystą logiką i to ONO decyduje,
+    // co zobaczy użytkownik na osi czasu. Zaślepka zamieniłaby ten test w sprawdzanie,
+    // czy wołamy metodę - zamiast tego, czy oś czasu pokazuje odpowiedź bez cytatu.
+    private val textCleaner = EmailTextCleaner()
+
+    // Leady z tego zestawu mają własny wątek, więc ta ścieżka nie powinna się
+    // odezwać; zaślepka pilnuje, że oś czasu nie zaczęła po cichu z niej korzystać.
+    private val formLeadConversation = mockk<FormLeadConversation>(relaxed = true)
+
     private val handlers = LeadQueryHandlers(
         leadRepository, itemRepository, historyRepository, tagService, tagCatalog,
         conversationStates, messageRepository, callbackRepository,
-        attachmentRepository, leadAttachmentRepository
+        attachmentRepository, leadAttachmentRepository, textCleaner, formLeadConversation
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -165,6 +176,38 @@ class LeadTimelineTest {
             timeline.map { it.kind }
         )
         assertEquals("za drogo. 800 dam", timeline.last().body)
+    }
+
+    @Test
+    fun `wiadomosc z pusta kolumna oczyszczona nie wylewa cytatu na os czasu`() {
+        /*
+         * Zgłoszenie z produkcji. Skrzynka pisze odpowiedź POD cytatem, więc czyszczenie
+         * przy imporcie oddawało pustkę i w bazie została pusta kolumna. Odczyt schodził
+         * wtedy awaryjnie do surowego ciała — czyli pokazywał dokładnie to, co czyszczenie
+         * miało usunąć: całą poprzednią rozmowę przy każdej kolejnej wiadomości.
+         *
+         * `clean = ""` odtwarza wiersze ZAPISANE WCZEŚNIEJ, których żadna poprawka
+         * importu już nie ruszy. Ich ratunkiem jest liczenie przy odczycie i to ono
+         * jest tu sprawdzane.
+         */
+        val bottomPosted = """
+            W dniu 2026-09-21 11:17, klient@example.com napisał(a):
+            > Dzień dobry, proszę o wycenę renowacji lamp.
+            >
+            > Pozdrawiam,
+            > Piotr Franaszek
+
+            Koszt usługi to 500,00 zł brutto za parę reflektorów.
+        """.trimIndent()
+
+        every { messageRepository.findByThreadIdOrderBySentAtAsc(threadId) } returns listOf(
+            message(CommDirection.OUTBOUND, start, body = bottomPosted, clean = "")
+        )
+        every { historyRepository.findByLeadIdOrderByCreatedAtAsc(leadId) } returns emptyList()
+
+        val timeline = handlers.timeline(studioId, leadId)
+
+        assertEquals("Koszt usługi to 500,00 zł brutto za parę reflektorów.", timeline.single().body)
     }
 
     @Test

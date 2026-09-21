@@ -127,6 +127,56 @@ interface CommMessageRepository : JpaRepository<CommMessageEntity, UUID> {
         @Param("threadIds") threadIds: Collection<UUID>
     ): List<Array<Any?>>
 
+    /**
+     * Korespondencja z JEDNYM klientem wewnątrz wątku zbiorczego.
+     *
+     * Robot formularza ze strony wrzuca zgłoszenia wszystkich klientów do jednego
+     * wątku — u jednego studia jest ich w nim 249. Lead z takiego zgłoszenia nie ma
+     * więc wątku (podpięcie pokazałoby mu cudzą korespondencję), ale jego własna
+     * rozmowa w tym wątku jest: to wiadomości, których DRUGĄ STRONĄ jest ten klient.
+     *
+     * Przychodzące poznajemy po nadawcy, wychodzące po odbiorcy — `toEmails` jest
+     * listą rozdzieloną przecinkami, stąd LIKE zamiast równości.
+     */
+    @Query(
+        """
+        SELECT m FROM CommMessageEntity m
+        WHERE m.studioId = :studioId
+          AND m.threadId = :threadId
+          AND m.sentAt >= :since
+          AND (
+                (m.direction = pl.detailing.crm.comms.domain.CommDirection.INBOUND
+                 AND LOWER(m.fromEmail) = :contact)
+             OR (m.direction = pl.detailing.crm.comms.domain.CommDirection.OUTBOUND
+                 AND LOWER(m.toEmails) LIKE CONCAT('%', :contact, '%'))
+          )
+        ORDER BY m.sentAt ASC
+        """
+    )
+    fun findCounterpartyMessages(
+        @Param("studioId") studioId: UUID,
+        @Param("threadId") threadId: UUID,
+        @Param("contact") contact: String,
+        @Param("since") since: Instant
+    ): List<CommMessageEntity>
+
+    /**
+     * Lekki rzut tych samych wiadomości dla CAŁEJ strony listy: kierunek, strony
+     * i czas, bez treści i załączników. Filtrowanie po kliencie robi wołający —
+     * jedno zapytanie na stronę zamiast jednego na leada.
+     */
+    @Query(
+        """
+        SELECT m.threadId, m.direction, LOWER(m.fromEmail), LOWER(m.toEmails), m.sentAt
+        FROM CommMessageEntity m
+        WHERE m.studioId = :studioId AND m.threadId IN :threadIds
+        """
+    )
+    fun findCounterpartyRows(
+        @Param("studioId") studioId: UUID,
+        @Param("threadIds") threadIds: Collection<UUID>
+    ): List<Array<Any?>>
+
     /** Thread resolution by RFC 5322 ancestry: any known message with one of these ids. */
     @Query(
         """SELECT m FROM CommMessageEntity m

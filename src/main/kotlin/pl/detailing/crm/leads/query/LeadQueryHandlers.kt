@@ -3,6 +3,8 @@ package pl.detailing.crm.leads.query
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.comms.domain.EmailTextCleaner
+import pl.detailing.crm.leads.conversation.FormLeadConversation
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommAttachmentMeta
@@ -37,7 +39,9 @@ class LeadQueryHandlers(
     private val messageRepository: CommMessageRepository,
     private val callbackRepository: LeadCallbackRepository,
     private val attachmentRepository: CommAttachmentRepository,
-    private val leadAttachmentRepository: LeadAttachmentRepository
+    private val leadAttachmentRepository: LeadAttachmentRepository,
+    private val textCleaner: EmailTextCleaner,
+    private val formLeadConversation: FormLeadConversation
 ) {
 
     /**
@@ -127,9 +131,15 @@ class LeadQueryHandlers(
             .filterNot { it.toStatus in ECHOED_STATUSES }
             .map { it.toTimelineEntry() }
         val callbacks = callbackRepository.findByLeadIdOrderByCreatedAtAsc(leadId).map { it.toTimelineEntry() }
+        /*
+         * Lead z formularza nie ma wątku — jego rozmowa siedzi w wątku robota, wśród
+         * zgłoszeń innych klientów, i wyciąga się ją po drugiej stronie korespondencji
+         * ([FormLeadConversation]). Bez tego oś czasu takiego leada była PUSTA: nie było
+         * na niej nawet zgłoszenia, które go utworzyło.
+         */
         val threadMessages = lead.threadId
             ?.let { messageRepository.findByThreadIdOrderBySentAtAsc(it) }
-            .orEmpty()
+            ?: formLeadConversation.messagesOf(lead)
 
         // Załączniki wiadomości z wątku czytamy wprost ze skrzynki, jednym zapytaniem:
         // dzięki temu widać także pliki z DALSZEJ korespondencji, nie tylko te z
@@ -207,21 +217,43 @@ class LeadQueryHandlers(
         id = id.toString(),
         kind = if (direction == CommDirection.INBOUND) "INBOUND_MESSAGE" else "OUTBOUND_MESSAGE",
         at = sentAt,
-        // Po stronie klienta nazwa z nagłówka bywa pusta — wtedy zostaje to, pod czym
-        // lead jest znany w CRM-ie, a w ostateczności sam adres.
+        /*
+         * Po stronie klienta nazwa z nagłówka bywa pusta — wtedy zostaje to, pod czym
+         * lead jest znany w CRM-ie, a w ostateczności sam adres.
+         *
+         * Wyjątek: zgłoszenie z formularza przychodzi OD ROBOTA ze strony, więc nagłówek
+         * niesie nazwę robota („Carslab"), a nie klienta. Wpis podpisany nazwą robota
+         * sugerowałby, że to studio pisze samo do siebie — kiedy nadawca nie jest
+         * kontaktem leada, pierwszeństwo ma nazwa klienta.
+         */
         actorName = if (direction == CommDirection.INBOUND) {
-            fromName ?: lead.customerName ?: fromEmail
+            val fromCustomer = fromEmail.equals(lead.contactIdentifier, ignoreCase = true)
+            if (fromCustomer) fromName ?: lead.customerName ?: fromEmail
+            else lead.customerName ?: lead.contactIdentifier
         } else {
             fromName
         },
         subject = subject,
-        // Wersja bez cytatów i stopek; surowy tekst dopiero wtedy, gdy oczyszczonego
-        // nie ma. Odpowiedź klienta to zwykle jedno zdanie i kopia całej rozmowy pod
-        // spodem — pokazanie tej kopii w podglądzie zamieniłoby oś czasu w kolejny
-        // przebieg tego samego wątku.
-        body = (bodyTextClean?.takeIf { it.isNotBlank() } ?: bodyText)
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+        /*
+         * Wersja bez cytatów i stopek. Odpowiedź klienta to zwykle jedno zdanie i kopia
+         * całej rozmowy pod spodem — pokazanie tej kopii zamieniłoby oś czasu w kolejny
+         * przebieg tego samego wątku.
+         *
+         * Gdy zapisana wersja jest pusta, czyścimy TU, zamiast schodzić do surowego
+         * ciała. Pusto znaczyło dotąd „czyszczenie się nie udało" i wołało awaryjnie
+         * `bodyText` — czyli w praktyce pokazywało wszystko to, co czyszczenie miało
+         * usunąć. Tak właśnie wyglądała oś czasu dla skrzynek piszących odpowiedź POD
+         * cytatem: `EmailTextCleaner` zwracał wtedy pustkę, a awaryjne zejście dokładało
+         * całą historię wątku przy każdej wiadomości.
+         *
+         * Liczenie przy odczycie ratuje też wiadomości zaimportowane WCZEŚNIEJ, z pustą
+         * kolumną w bazie — inaczej trzeba by przeliczać historię migracją, a tej nie da
+         * się napisać w SQL-u, bo czyszczenie jest kodem. Wątek leada to kilka
+         * wiadomości, więc koszt jest pomijalny.
+         */
+        body = (bodyTextClean?.takeIf { it.isNotBlank() } ?: textCleaner.clean(null, bodyText))
+            .trim()
+            .takeIf { it.isNotEmpty() }
             ?.take(MAX_TIMELINE_BODY),
         attachments = attachments
     )

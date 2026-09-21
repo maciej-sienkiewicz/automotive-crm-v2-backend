@@ -17,14 +17,22 @@ import java.util.UUID
  */
 @Service
 class LeadConversationStateService(
-    private val messageRepository: CommMessageRepository
+    private val messageRepository: CommMessageRepository,
+    private val formLeadConversation: FormLeadConversation
 ) {
 
     /** Stany rozmów dla całej strony listy — jedno zapytanie na stronę, nie na lead. */
     @Transactional(readOnly = true)
     fun statesOf(studioId: UUID, leads: Collection<LeadEntity>): Map<UUID, LeadConversationState> {
+        /*
+         * Leady z formularza nie mają wątku i ich rozmowa liczy się inaczej — patrz
+         * [FormLeadConversation]. Bez tej gałęzi sprawa po udzieleniu odpowiedzi
+         * dalej wyglądała na nieodpisaną i wisiała w „Czeka na Ciebie".
+         */
+        val formStates = formLeadConversation.statesOf(studioId, leads)
+
         val threadIdByLead = leads.mapNotNull { lead -> lead.threadId?.let { lead.id to it } }
-        if (threadIdByLead.isEmpty()) return emptyMap()
+        if (threadIdByLead.isEmpty()) return formStates
 
         val byThread = messageRepository
             .findLastDirectionTimestamps(studioId, threadIdByLead.map { it.second }.distinct())
@@ -35,7 +43,7 @@ class LeadConversationStateService(
                 )
             }
 
-        return threadIdByLead.mapNotNull { (leadId, threadId) ->
+        return formStates + threadIdByLead.mapNotNull { (leadId, threadId) ->
             byThread[threadId]?.let { leadId to it }
         }.toMap()
     }
