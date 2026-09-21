@@ -21,6 +21,10 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.id = :id AND d.studioId = :studioId")
     fun findByIdAndStudioIdIncludingDeleted(id: UUID, studioId: UUID): FinancialDocumentEntity?
 
+    /** Zaznaczone dokumenty w jednym zapytaniu — dla operacji grupowych na liście przychodów. */
+    @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.id IN :ids AND d.studioId = :studioId AND d.deletedAt IS NULL")
+    fun findAllByIdInAndStudioId(ids: Collection<UUID>, studioId: UUID): List<FinancialDocumentEntity>
+
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.visitId = :visitId AND d.studioId = :studioId AND d.deletedAt IS NULL")
     fun findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visitId: UUID, studioId: UUID): List<FinancialDocumentEntity>
 

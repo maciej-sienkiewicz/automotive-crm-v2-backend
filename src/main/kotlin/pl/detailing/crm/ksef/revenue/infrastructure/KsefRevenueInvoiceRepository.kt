@@ -17,6 +17,9 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefRevenueInvoiceEntity?
 
+    /** Zaznaczone faktury w jednym zapytaniu — dla operacji grupowych na liście przychodów. */
+    fun findByIdInAndStudioId(ids: Collection<UUID>, studioId: UUID): List<KsefRevenueInvoiceEntity>
+
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefRevenueInvoiceEntity?
 
     /**

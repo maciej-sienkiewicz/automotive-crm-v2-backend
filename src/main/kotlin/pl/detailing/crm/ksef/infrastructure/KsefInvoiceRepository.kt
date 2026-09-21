@@ -15,6 +15,9 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefInvoiceEntity?
 
+    /** Zaznaczone dokumenty kosztowe w jednym zapytaniu — dla operacji grupowych. */
+    fun findByIdInAndStudioId(ids: Collection<UUID>, studioId: UUID): List<KsefInvoiceEntity>
+
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefInvoiceEntity?
 
     /** All invoices from a given seller (by normalized NIP) excluding cancelled/excluded — used for auto-rule application. */

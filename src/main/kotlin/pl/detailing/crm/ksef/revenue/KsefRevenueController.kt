@@ -337,9 +337,7 @@ class KsefRevenueController(
         if (newStatus != "PAID" && newStatus != "PENDING") {
             throw ValidationException("paymentStatus musi być PAID lub PENDING")
         }
-        invoice.paymentStatus = newStatus
-        invoice.paidAt = if (newStatus == "PAID") (invoice.paidAt ?: Instant.now()) else null
-        invoice.updatedAt = Instant.now()
+        invoice.applyPaymentStatus(newStatus)
         invoiceRepository.save(invoice)
 
         val items = itemRepository.findByInvoiceIdOrderByLineNumberAsc(invoice.id)

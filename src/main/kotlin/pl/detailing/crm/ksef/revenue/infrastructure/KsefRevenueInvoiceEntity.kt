@@ -279,6 +279,19 @@ class KsefRevenueInvoiceEntity(
         this.updatedAt          = now
     }
 
+    /**
+     * Status płatności faktury przychodowej: PAID albo PENDING.
+     *
+     * Data zapłaty raz ustawiona nie jest przesuwana przy powtórnym oznaczeniu jako
+     * opłacona — inaczej grupowe „oznacz jako opłacone" przestawiłoby dzień zapłaty
+     * fakturom, które już go mają. Cofnięcie do PENDING czyści ją, bo zapłaty nie było.
+     */
+    fun applyPaymentStatus(newStatus: String, now: Instant = Instant.now()) {
+        paymentStatus = newStatus
+        paidAt = if (newStatus == "PAID") (paidAt ?: now) else null
+        updatedAt = now
+    }
+
     fun markExcluded(userId: UUID?, now: Instant = Instant.now()) {
         excludedAt = now
         excludedBy = userId

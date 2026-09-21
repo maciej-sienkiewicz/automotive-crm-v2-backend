@@ -9,7 +9,15 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
+import org.springframework.web.bind.annotation.RequestBody
+import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
+import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
+import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.finance.payment.BulkPaymentStatusPlan
+import pl.detailing.crm.finance.payment.BulkPaymentStatusResponse
+import pl.detailing.crm.finance.payment.BulkPaymentStatusSkip
+import pl.detailing.crm.shared.FinancialDocumentId
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.SearchTerm
@@ -34,12 +42,16 @@ import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 class IncomeDocumentsController(
     private val repository: IncomeDocumentsRepository,
     private val revenueInvoiceRepository: KsefRevenueInvoiceRepository,
-    private val financialDocumentRepository: FinancialDocumentRepository
+    private val financialDocumentRepository: FinancialDocumentRepository,
+    private val updateDocumentStatusHandler: UpdateDocumentStatusHandler
 ) {
 
     companion object {
         private val DOCUMENT_TYPES = setOf("INVOICE", "CORRECTION", "RECEIPT", "OTHER")
         private val PAYMENT_STATUSES = setOf("PAID", "PENDING", "OVERDUE")
+        private val SOURCE_KINDS = setOf("KSEF", "FINANCE")
+        /** Górny limit jednej operacji grupowej — tyle, ile realnie mieści się na liście. */
+        private const val MAX_BULK_DOCUMENTS = 200
     }
 
     @GetMapping
@@ -118,6 +130,97 @@ class IncomeDocumentsController(
     fun restore(@PathVariable sourceKind: String, @PathVariable id: UUID): ResponseEntity<Void> =
         setExcluded(sourceKind, id, excluded = false)
 
+    /**
+     * Grupowa zmiana statusu płatności dla zaznaczonych dokumentów przychodowych.
+     *
+     * Lista łączy dwa źródła, więc i ta operacja musi: faktura z ledgera KSeF dostaje
+     * status wprost (tam jest on adnotacją księgową i cofa się swobodnie), a dokument
+     * modułu finansowego idzie przez [UpdateDocumentStatusHandler], bo tylko on zna
+     * regułę „opłaconego nie da się cofnąć" i zapisuje wpis do audytu.
+     *
+     * Dokumenty, których nie wolno ruszyć, odsiewa [BulkPaymentStatusPlan] ZANIM
+     * cokolwiek zostanie zapisane. Gdyby zamiast tego łapać wyjątek z handlera,
+     * transakcja byłaby już oznaczona jako rollback-only i przepadłaby cała operacja —
+     * a nie po to zaznacza się dwadzieścia faktur, żeby jedna opłacona wywróciła resztę.
+     */
+    @PatchMapping("/payment-status")
+    @Transactional
+    fun updatePaymentStatus(
+        @RequestBody request: BulkIncomePaymentStatusRequest
+    ): ResponseEntity<BulkPaymentStatusResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        if (request.documents.isEmpty()) throw ValidationException("Nie wskazano żadnego dokumentu")
+        if (request.documents.size > MAX_BULK_DOCUMENTS) {
+            throw ValidationException("Jednorazowo można zmienić status najwyżej $MAX_BULK_DOCUMENTS dokumentów")
+        }
+        val target = request.paymentStatus.uppercase()
+        if (target !in BulkPaymentStatusPlan.TARGETS) {
+            throw ValidationException("paymentStatus musi być PAID lub PENDING")
+        }
+
+        val requested = request.documents.distinct()
+        requested.forEach {
+            if (it.sourceKind.uppercase() !in SOURCE_KINDS) {
+                throw ValidationException("Nieprawidłowe źródło dokumentu: '${it.sourceKind}'. Dozwolone: KSEF, FINANCE")
+            }
+        }
+
+        val ksefIds    = requested.filter { it.sourceKind.uppercase() == "KSEF" }.map { it.id }
+        val financeIds = requested.filter { it.sourceKind.uppercase() == "FINANCE" }.map { it.id }
+
+        val ksefInvoices = if (ksefIds.isEmpty()) emptyList()
+                           else revenueInvoiceRepository.findByIdInAndStudioId(ksefIds, studioId)
+        val financeDocuments = if (financeIds.isEmpty()) emptyList()
+                               else financialDocumentRepository.findAllByIdInAndStudioId(financeIds, studioId)
+
+        val found =
+            ksefInvoices.map { BulkPaymentStatusPlan.Item(key("KSEF", it.id), it.paymentStatus) } +
+            financeDocuments.map {
+                BulkPaymentStatusPlan.Item(key("FINANCE", it.id), it.status.name, paidIsFinal = true)
+            }
+
+        val plan = BulkPaymentStatusPlan.of(
+            requested = requested.map { key(it.sourceKind.uppercase(), it.id) },
+            found     = found,
+            target    = target
+        )
+        val toChange = plan.toChange.toSet()
+
+        ksefInvoices
+            .filter { key("KSEF", it.id) in toChange }
+            .forEach {
+                it.applyPaymentStatus(target)
+                revenueInvoiceRepository.save(it)
+            }
+
+        financeDocuments
+            .filter { key("FINANCE", it.id) in toChange }
+            .forEach {
+                updateDocumentStatusHandler.handle(
+                    UpdateDocumentStatusCommand(
+                        studioId        = principal.studioId,
+                        userId          = principal.userId,
+                        userDisplayName = principal.fullName,
+                        documentId      = FinancialDocumentId(it.id),
+                        newStatus       = DocumentStatus.valueOf(target)
+                    )
+                )
+            }
+
+        return ResponseEntity.ok(
+            BulkPaymentStatusResponse(
+                updated   = plan.toChange.size,
+                unchanged = plan.unchanged.size,
+                skipped   = plan.skipped.map { BulkPaymentStatusSkip(it.key.substringAfter(':'), it.reason) }
+            )
+        )
+    }
+
+    /** Klucz pozycji w planie — id samo w sobie nie wystarcza, bo lista łączy dwa źródła. */
+    private fun key(sourceKind: String, id: UUID) = "$sourceKind:$id"
+
     private fun setExcluded(sourceKind: String, id: UUID, excluded: Boolean): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
         val studioId = principal.studioId.value
@@ -168,6 +271,18 @@ class IncomeDocumentsController(
         excluded         = excluded
     )
 }
+
+/** Jeden zaznaczony wiersz listy: id samo w sobie nie wystarcza, bo źródła są dwa. */
+data class IncomeDocumentRef(
+    val sourceKind: String,
+    val id: UUID
+)
+
+data class BulkIncomePaymentStatusRequest(
+    val documents: List<IncomeDocumentRef>,
+    /** PAID | PENDING */
+    val paymentStatus: String
+)
 
 data class IncomeDocumentResponse(
     val id: String,

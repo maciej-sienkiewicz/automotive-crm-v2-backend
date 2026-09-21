@@ -13,6 +13,9 @@ import pl.detailing.crm.ksef.auth.KsefSessionCache
 import pl.detailing.crm.ksef.auth.KsefTokenVerifier
 import pl.detailing.crm.ksef.credentials.KsefCredentialsEntity
 import pl.detailing.crm.ksef.credentials.KsefCredentialsRepository
+import pl.detailing.crm.finance.payment.BulkPaymentStatusPlan
+import pl.detailing.crm.finance.payment.BulkPaymentStatusResponse
+import pl.detailing.crm.finance.payment.BulkPaymentStatusSkip
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceEntity
 import pl.detailing.crm.ksef.infrastructure.KsefInvoiceItemEntity
@@ -50,6 +53,11 @@ class KsefController(
     private val statisticsHandler: KsefStatisticsHandler,
     private val studioSettingsRepository: StudioSettingsRepository
 ) {
+
+    companion object {
+        /** Górny limit jednej operacji grupowej — tyle, ile realnie mieści się na liście. */
+        const val MAX_BULK_DOCUMENTS = 200
+    }
 
     // ── Credentials ────────────────────────────────────────────────────────────
 
@@ -365,6 +373,42 @@ class KsefController(
         )
     }
 
+    /**
+     * Grupowa zmiana statusu płatności dla zaznaczonych dokumentów kosztowych.
+     *
+     * Jedno żądanie zamiast N osobnych PATCH-y: tak samo jak przy pojedynczej zmianie
+     * nie ma tu żadnego przejścia zakazanego, więc pominięte mogą być wyłącznie
+     * dokumenty spoza studia (albo już usunięte), a dokumenty mające już docelowy
+     * status wracają jako [BulkPaymentStatusResponse.unchanged].
+     */
+    @PatchMapping("/expenses/payment-status")
+    @Transactional
+    fun updateExpensesPaymentStatus(
+        @RequestBody req: BulkUpdatePaymentStatusRequest
+    ): ResponseEntity<BulkPaymentStatusResponse> {
+        requireManagerOrOwner()
+        val studioId = SecurityContextHelper.getCurrentUser().studioId.value
+        val target = validateBulkRequest(req.ids.size, req.paymentStatus)
+
+        val ids = req.ids.distinct()
+        val found = invoiceRepository.findByIdInAndStudioId(ids, studioId)
+        val plan = BulkPaymentStatusPlan.of(
+            requested = ids.map(UUID::toString),
+            found     = found.map { BulkPaymentStatusPlan.Item(it.id.toString(), it.paymentStatus) },
+            target    = target
+        )
+
+        plan.toChange.forEach { invoiceRepository.updatePaymentStatus(UUID.fromString(it), studioId, target) }
+
+        return ResponseEntity.ok(
+            BulkPaymentStatusResponse(
+                updated   = plan.toChange.size,
+                unchanged = plan.unchanged.size,
+                skipped   = plan.skipped.map { BulkPaymentStatusSkip(it.key, it.reason) }
+            )
+        )
+    }
+
     /** Add or edit the free-text note on an expense document. */
     @PatchMapping("/expenses/{id}/note")
     @Transactional
@@ -473,6 +517,22 @@ class KsefController(
 
     private fun requireManagerOrOwner() {
         // MANAGER checks removed — access open to all authenticated users
+    }
+
+    /**
+     * Wspólna walidacja operacji grupowej. Limit jest po to, żeby zaznaczenie „wszystko"
+     * na wielotysięcznej liście nie zamieniło się w jedną transakcję na pół bazy.
+     */
+    private fun validateBulkRequest(count: Int, paymentStatus: String): String {
+        if (count == 0) throw ValidationException("Nie wskazano żadnego dokumentu")
+        if (count > MAX_BULK_DOCUMENTS) {
+            throw ValidationException("Jednorazowo można zmienić status najwyżej $MAX_BULK_DOCUMENTS dokumentów")
+        }
+        val target = paymentStatus.uppercase()
+        if (target !in BulkPaymentStatusPlan.TARGETS) {
+            throw ValidationException("paymentStatus musi być PAID lub PENDING")
+        }
+        return target
     }
 
     private fun findExpenseOrThrow(id: UUID, studioId: UUID): KsefInvoiceEntity =
@@ -600,6 +660,12 @@ data class CreateManualExpenseRequest(
 )
 
 data class UpdatePaymentStatusRequest(val paymentStatus: String)
+
+/** Grupowa zmiana statusu płatności: te same dwa stany, tylko dla wielu dokumentów naraz. */
+data class BulkUpdatePaymentStatusRequest(
+    val ids: List<UUID>,
+    val paymentStatus: String
+)
 
 data class UpsertNoteRequest(val note: String)
 
