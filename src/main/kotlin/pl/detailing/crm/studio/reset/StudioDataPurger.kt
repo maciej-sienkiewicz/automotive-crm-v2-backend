@@ -286,6 +286,21 @@ class StudioDataPurger(
             deleteByStudio("ContactNoteEventEntity", ctx)
             deleteByStudio("ContactNoteEntity", ctx)
             deleteByStudio("CommUserSignatureEntity", ctx)
+            /*
+             * Znaczniki UID folderów skrzynki. Nie mają studioId — wiszą przy koncie —
+             * więc idą podzapytaniem i KONIECZNIE przed samym kontem: po jego usunięciu
+             * podzapytanie nie zwróciłoby już nic. Na bazie broni ich jeszcze ON DELETE
+             * CASCADE, ale reset ma usuwać świadomie, a nie liczyć na więzy.
+             *
+             * Zostawione znaczyłyby „ten folder przeczytany do UID N" dla skrzynki, której
+             * już nie ma: po ponownym podłączeniu tego samego adresu CRM pominąłby całą
+             * korespondencję sprzed resetu.
+             */
+            deleteWhere(
+                "MailFolderCursorEntity c",
+                "c.accountId IN (SELECT a.id FROM MailAccountEntity a WHERE a.studioId = :studioId)",
+                ctx
+            )
             deleteByStudio("MailAccountEntity", ctx)
             // Wiadomości czekające na okno wysyłki: reset ma je wycofać, zanim dispatcher
             // wyśle o 12:00 coś, czego studio już u siebie nie widzi.
