@@ -16,3 +16,9 @@ interface MailAccountRepository : JpaRepository<MailAccountEntity, UUID> {
         providerType: MailProviderType
     ): List<MailAccountEntity>
 }
+
+@Repository
+interface MailFolderCursorRepository : JpaRepository<MailFolderCursorEntity, UUID> {
+    fun findByAccountId(accountId: UUID): List<MailFolderCursorEntity>
+    fun deleteByAccountId(accountId: UUID)
+}

@@ -131,7 +131,15 @@ class CommsOutboxProcessor(
         val fresh = messageRepository.findById(message.id).orElse(null) ?: return
         if (fresh.imapUid != null) return
 
-        val sentFolderName = imapSessions.findSentFolderName(store)
+        /*
+         * Folder zapamiętany przy koncie ma pierwszeństwo przed świeżym rozpoznaniem.
+         *
+         * Bez tego APPEND i skanowanie potrafiły rozjechać się na dwa różne foldery:
+         * tam kopia własnej wysyłki, tu czytanie. Konto zna także ręczne wskazanie
+         * człowieka, którego samo rozpoznanie nie zna.
+         */
+        val sentFolderName = account.sentFolderName?.takeIf { it.isNotBlank() }
+            ?: imapSessions.findSentFolderName(store)
             ?: return // no recognisable Sent folder — mail was sent, copy is only local
         val folder = store.getFolder(sentFolderName)
         folder.open(Folder.READ_WRITE)

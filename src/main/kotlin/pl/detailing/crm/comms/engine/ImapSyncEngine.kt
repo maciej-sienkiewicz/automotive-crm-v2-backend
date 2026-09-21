@@ -18,6 +18,8 @@ import pl.detailing.crm.mailbox.domain.MailAccountStatus
 import pl.detailing.crm.mailbox.domain.MailProviderType
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
+import pl.detailing.crm.mailbox.infrastructure.MailFolderCursorEntity
+import pl.detailing.crm.mailbox.infrastructure.MailFolderCursorRepository
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -35,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Service
 class ImapSyncEngine(
     private val accountRepository: MailAccountRepository,
+    private val folderCursorRepository: MailFolderCursorRepository,
     private val messageRepository: CommMessageRepository,
     private val imapSessions: ImapSessions,
     private val parser: MimeEmailParser,
@@ -93,75 +96,78 @@ class ImapSyncEngine(
                 account.inboxLastUid = lastUid
             }
 
-            // Folder Wysłanych to jedyne źródło odpowiedzi wysłanych spoza CRM-a
-            // (webmail, telefon, Outlook). Kolejność: RĘCZNE nadpisanie (jeśli wciąż
-            // istnieje) -> rozpoznanie generyczne (SPECIAL-USE \Sent, potem nazwy).
-            // Wynik zapamiętujemy przy koncie, a gdy nic nie pasuje - wypisujemy listę
-            // folderów skrzynki, żeby dało się wskazać właściwy ręcznie i świadomie.
+            /*
+             * Foldery Wysłanych — WSZYSTKIE, nie jeden.
+             *
+             * Wcześniej stał tu wybór: ręczne nadpisanie, a jak nie ma, to rozpoznanie
+             * generyczne. Wybór przegrał na produkcji dwa razy pod rząd, za każdym razem
+             * inaczej. Skrzynka biuro@carslab.pl ma trzy foldery wysłanych naraz:
+             * „Elementy wysłane" (pusty), „Sent" (106 wiadomości) i „INBOX.Sent" (67) —
+             * zakładał je każdy kolejny program pocztowy. Najpierw wygrywał pusty, bo
+             * rozstrzygała nazwa; po poprawce na zawartość wygrał „Sent", który stoi na
+             * UID 1093 od trzech dni, podczas gdy klient pisze z innego programu do innego
+             * folderu.
+             *
+             * Przegrany zakład nie daje ŻADNEGO objawu: log mówi „0 nowych", bo w tym
+             * folderze faktycznie nic nowego nie ma. Rozjazd wychodzi dopiero wtedy, gdy
+             * ktoś zauważy brak własnej odpowiedzi w rozmowie — czyli za późno.
+             *
+             * Dlatego skanujemy każdy wiarygodny folder. Kosztuje to jedno otwarcie
+             * folderu na przebieg (skrzynki z jednym folderem Wysłanych, czyli większość,
+             * nie płacą nic), a duplikaty odsiewa `ingest` po Message-ID — ta sama
+             * wiadomość leżąca w dwóch folderach wejdzie raz.
+             */
             val inspection = imapSessions.inspectFolders(store)
+
+            /*
+             * Ręczne nadpisanie nie zawęża już skanowania do jednego folderu — byłoby to
+             * dokładnie to, co przestaliśmy robić. Zamiast tego DOPISUJE folder do listy
+             * i stawia go na jej czele: człowiek, który świadomie wskazał folder, wie
+             * o swojej skrzynce coś, czego heurystyka nie wie, ale nie musi wiedzieć
+             * o pozostałych.
+             */
             val override = account.sentFolderName
                 ?.takeIf { it.isNotBlank() }
                 ?.takeIf { it in inspection.allFolderNames }
-            val detected = inspection.sentFolderName
+            val sentFolders = (listOfNotNull(override) + inspection.sentFolderNames).distinct()
 
-            /*
-             * SAMONAPRAWA: zapamiętany folder okazał się pusty, a inny kandydat ma pocztę.
-             *
-             * Zapamiętany wybór jest z zasady lepki — inaczej rozpoznanie miotałoby
-             * skrzynką przy każdym przebiegu. Ale „lepki" nie może znaczyć „na zawsze",
-             * gdy wiadomo, że jest zły: skrzynka po latach ma po kilka folderów wysłanych
-             * naraz, a ten, na którym kiedyś stanęło, bywa opróżniony albo odtworzony przez
-             * klienta pocztowego. Bez tej gałęzi trzeba było wejść do bazy produkcyjnej,
-             * żeby wskazać właściwy.
-             *
-             * Warunek jest celowo ciasny: przełączamy się wyłącznie wtedy, gdy o starym
-             * WIEMY, że jest pusty, a o nowym WIEMY, że ma wiadomości. Samo „nie wiem"
-             * po żadnej ze stron niczego nie zmienia.
-             */
-            val healed = override != null &&
-                detected != null &&
-                detected != override &&
-                inspection.isKnownEmpty(override) &&
-                inspection.hasMessages(detected)
-
-            if (healed) {
-                log.warn(
-                    "[COMMS] {}: folder Wysłanych '{}' jest pusty, a '{}' ma wiadomości — " +
-                        "przełączam i czytam go od nowa",
-                    account.emailAddress, override, detected
-                )
-                // Znaczniki należały do TAMTEGO folderu i w nowym nie znaczą nic.
-                account.sentUidValidity = null
-                account.sentLastUid = 0
+            // Przy koncie zostaje czoło listy — to folder, do którego CRM robi APPEND
+            // po własnej wysyłce, a tam wybrać trzeba, bo APPEND jest jeden.
+            val primary = sentFolders.firstOrNull()
+            if (primary != null && primary != account.sentFolderName) {
+                log.info("[COMMS] {}: folder Wysłanych rozpoznany jako '{}'", account.emailAddress, primary)
+                account.sentFolderName = primary
             }
 
-            val sentFolderName = if (healed) detected else (override ?: detected)
-
-            if (sentFolderName != null && sentFolderName != account.sentFolderName) {
-                log.info("[COMMS] {}: folder Wysłanych rozpoznany jako '{}'", account.emailAddress, sentFolderName)
-                account.sentFolderName = sentFolderName
-            }
-
-            if (sentFolderName == null) {
+            if (sentFolders.isEmpty()) {
                 // Nadpisanie wskazywało na folder, którego już nie ma — czyścimy, żeby
                 // przy następnym przebiegu zadziałało rozpoznanie automatyczne.
-                if (override != null) account.sentFolderName = null
+                if (account.sentFolderName != null) account.sentFolderName = null
                 log.warn(
-                    "[COMMS] {}: nie rozpoznano folderu Wysłanych — odpowiedzi wysłane spoza CRM-a " +
-                        "nie zostaną dopięte do rozmów. Foldery skrzynki: {}",
+                    "[COMMS] {}: nie rozpoznano żadnego folderu Wysłanych — odpowiedzi wysłane spoza " +
+                        "CRM-a nie zostaną dopięte do rozmów. Foldery skrzynki: {}",
                     account.emailAddress, inspection.allFolderNames
                 )
             } else {
-                syncFolder(
-                    store, account, sentFolderName, CommFolderKind.SENT,
-                    account.sentUidValidity, account.sentLastUid,
-                    // Lista folderów tylko dla Wysłanych: to jedyny folder, który
-                    // WYBIERAMY, więc jako jedyny możemy wybrać źle. INBOX nazywa się
-                    // INBOX i nie ma tu czego diagnozować.
-                    inspection.allFolderNames
-                )?.let { (validity, lastUid) ->
-                    account.sentUidValidity = validity
-                    account.sentLastUid = lastUid
+                if (sentFolders.size > 1) {
+                    log.debug(
+                        "[COMMS] {}: foldery Wysłanych do przeskanowania: {}",
+                        account.emailAddress, sentFolders
+                    )
+                }
+                val cursors = folderCursorRepository.findByAccountId(account.id).associateBy { it.folderName }
+                sentFolders.forEach { folderName ->
+                    val cursor = cursors[folderName]
+                    syncFolder(
+                        store, account, folderName, CommFolderKind.SENT,
+                        cursor?.uidValidity, cursor?.lastUid,
+                        // Lista folderów tylko dla Wysłanych: to jedyne foldery, które
+                        // WYBIERAMY, więc jako jedyne możemy wybrać źle. INBOX nazywa się
+                        // INBOX i nie ma tu czego diagnozować.
+                        inspection.allFolderNames
+                    )?.let { (validity, lastUid) ->
+                        saveCursor(cursor, account.id, folderName, validity, lastUid)
+                    }
                 }
             }
 
@@ -186,6 +192,25 @@ class ImapSyncEngine(
             // wyglądałby jak wieczna synchronizacja.
             progressRegistry.finish(account.id)
         }
+    }
+
+    /**
+     * Zapis znacznika folderu. Wiersz zakładamy dopiero przy pierwszym udanym skanie —
+     * folder, którego nie dało się otworzyć, nie zostawia po sobie śladu, więc lista
+     * kursorów nie puchnie o foldery, których w skrzynce już nie ma.
+     */
+    private fun saveCursor(
+        existing: MailFolderCursorEntity?,
+        accountId: UUID,
+        folderName: String,
+        uidValidity: Long,
+        lastUid: Long
+    ) {
+        val cursor = existing ?: MailFolderCursorEntity(accountId = accountId, folderName = folderName)
+        cursor.uidValidity = uidValidity
+        cursor.lastUid = lastUid
+        cursor.updatedAt = Instant.now()
+        folderCursorRepository.save(cursor)
     }
 
     /** Returns the new (uidValidity, lastUid) pair, or null when the folder could not be read. */

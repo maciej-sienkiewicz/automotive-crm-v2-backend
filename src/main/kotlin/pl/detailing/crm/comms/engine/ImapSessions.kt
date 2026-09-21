@@ -57,6 +57,12 @@ class ImapSessions(
      */
     data class FolderInspection(
         val sentFolderName: String?,
+        /**
+         * WSZYSTKIE foldery, które mogą być Wysłanymi — od najbardziej do najmniej
+         * prawdopodobnego. Skanujemy każdy z nich, bo wybór jednego jest zakładem,
+         * a zakład przegrywa po cichu: patrz komentarz przy [chooseSentFolder].
+         */
+        val sentFolderNames: List<String>,
         val allFolderNames: List<String>,
         /**
          * Liczba wiadomości w folderach branych pod uwagę jako Wysłane. Pusta, gdy
@@ -121,8 +127,10 @@ class ImapSessions(
         }.toMap()
 
         val probed = candidates.map { it.copy(messageCount = counts[it.fullName]) }
+        val ordered = orderSentFolders(probed)
         return FolderInspection(
-            sentFolderName = chooseSentFolder(probed),
+            sentFolderName = ordered.firstOrNull(),
+            sentFolderNames = ordered,
             allFolderNames = folders.map { it.fullName },
             sentCandidateCounts = counts
         )
@@ -210,49 +218,52 @@ class ImapSessions(
         }
 
         /**
-         * Czysty wybór — bez IMAP-a, więc daje się otestować dla dowolnego układu folderów.
+         * Czysta KOLEJNOŚĆ kandydatów — bez IMAP-a, więc daje się otestować dla dowolnego
+         * układu folderów. Pierwszy element jest tym, który wcześniej był „wyborem".
          *
-         * ── Pierwsze kryterium: ZAWARTOŚĆ, nie nazwa ────────────────────────────
+         * ── Dlaczego to jest kolejność, a nie wybór ─────────────────────────────
          *
-         * Skrzynki po latach pracy mają po kilka folderów wysłanych naraz: polski
-         * „Elementy wysłane" obok angielskiego „Sent", a prawdziwy ruch pod
-         * „INBOX.Sent". Wcześniej rozstrzygała nazwa i głębokość, więc przy remisie
-         * wygrywał ten, którego serwer wymienił pierwszy — i potrafił to być folder
-         * pusty, założony kiedyś przez przypadkowego klienta pocztowego. Skutek:
-         * odpowiedzi wysyłane spoza CRM-a po cichu nie dopinały się do rozmów.
+         * Bo wyboru nie da się zrobić dobrze. Skrzynka po latach pracy ma po kilka
+         * folderów wysłanych naraz: polski „Elementy wysłane" obok angielskiego „Sent",
+         * a prawdziwy ruch pod „INBOX.Sent" — i to, do którego z nich pisze klient,
+         * zmienia się z programem pocztowym, nie z nazwą folderu. Produkcja pokazała
+         * to dwa razy pod rząd: najpierw wygrywał pusty „Elementy wysłane" (rozstrzygała
+         * nazwa i głębokość), potem — już po poprawce na zawartość — „Sent", który
+         * zatrzymał się na UID 1093, podczas gdy poczta szła gdzie indziej.
          *
-         * Nazwa bywa myląca u każdego dostawcy inaczej; pusty folder jest pusty
-         * wszędzie tak samo. Dlatego folder, o którym WIEMY, że coś w nim leży, bije
-         * folder, o którym wiemy, że jest pusty — nawet jeśli ten drugi ma ładniejszą
-         * nazwę albo atrybut SPECIAL-USE.
+         * Każde kryterium wyboru jest zakładem o cudzy nawyk, a przegrany zakład nie
+         * daje żadnego objawu: skan mówi „0 nowych", bo w tym folderze faktycznie nic
+         * nowego nie ma. Dlatego wołający skanuje WSZYSTKIE pozycje tej listy, a nie
+         * jej czoło; duplikaty odsiewa `ingest` po Message-ID.
          *
-         * „Nie wiem" (sonda pominięta albo serwer nie odpowiedział) nie dyskwalifikuje
-         * nikogo: wtedy decyduje dokładnie ta sama kolejność co wcześniej — SPECIAL-USE,
-         * dokładna nazwa liścia, częściowe trafienie, a przy remisie płycej w hierarchii.
+         * Kolejność zostaje, bo czoło listy wskazuje folder, do którego robimy APPEND
+         * po wysyłce z CRM-a — a tam trzeba wybrać jeden.
+         *
+         * Rangi: najpierw te, o których WIEMY, że coś w nich leży; potem te, o których
+         * nie wiemy nic (sonda pominięta albo serwer nie odpowiedział); na końcu te,
+         * o których wiemy, że są puste. „Nie wiem" i „wiem, że pusty" to dwie różne
+         * rzeczy i nie wolno ich mylić. W obrębie rangi: SPECIAL-USE, dokładna nazwa
+         * liścia, częściowe trafienie, a przy remisie płycej w hierarchii.
          */
-        internal fun chooseSentFolder(candidates: List<SentCandidate>): String? {
-            val plausible = plausibleSentCandidates(candidates)
-            if (plausible.isEmpty()) return null
+        internal fun orderSentFolders(candidates: List<SentCandidate>): List<String> =
+            plausibleSentCandidates(candidates)
+                .sortedWith(
+                    compareBy<SentCandidate> { contentRank(it) }
+                        .thenByDescending { nameConfidence(it) }
+                        .thenBy { it.depth }
+                )
+                .map { it.fullName }
 
-            val withMail = plausible.filter { (it.messageCount ?: 0) > 0 }
-            if (withMail.isNotEmpty()) {
-                return withMail.minWithOrNull(
-                    compareByDescending<SentCandidate> { nameConfidence(it) }.thenBy { it.depth }
-                )!!.fullName
-            }
-
-            /*
-             * Nikt nie ma wiadomości albo nikogo nie odpytaliśmy. Kandydatów, o których
-             * WIEMY, że są puste, odkładamy na koniec — ale ich nie wyrzucamy: świeża
-             * skrzynka, w której nikt jeszcze nic nie wysłał, ma wyłącznie takich.
-             */
-            val knownEmptyLast = plausible.sortedWith(
-                compareBy<SentCandidate> { it.messageCount == 0 }
-                    .thenByDescending { nameConfidence(it) }
-                    .thenBy { it.depth }
-            )
-            return knownEmptyLast.firstOrNull()?.fullName
+        /** 0 = wiemy, że ma pocztę; 1 = nie wiemy; 2 = wiemy, że pusty. */
+        private fun contentRank(candidate: SentCandidate): Int = when (candidate.messageCount) {
+            null -> 1
+            0 -> 2
+            else -> 0
         }
+
+        /** Folder, do którego dopisujemy własną wysyłkę. Tu wybrać trzeba — jest jeden APPEND. */
+        internal fun chooseSentFolder(candidates: List<SentCandidate>): String? =
+            orderSentFolders(candidates).firstOrNull()
     }
 }
 

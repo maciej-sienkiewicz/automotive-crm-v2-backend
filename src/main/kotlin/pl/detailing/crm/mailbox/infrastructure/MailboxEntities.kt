@@ -93,3 +93,54 @@ class MailAccountEntity(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
 )
+
+/**
+ * Znacznik UID dla JEDNEGO folderu skrzynki.
+ *
+ * Do tej pory para (uidValidity, lastUid) wisiała przy koncie i była jedna na Wysłane —
+ * co wystarczało dopóty, dopóki folder Wysłanych był jeden. Nie jest: skrzynka po latach
+ * pracy ma ich po kilka („Elementy wysłane", „Sent", „INBOX.Sent"), bo zakładał je każdy
+ * kolejny program pocztowy, a poczta idzie do tego, którego akurat używa klient. Skanujemy
+ * więc wszystkie, a każdy potrzebuje własnego znacznika — UID-y są numeracją FOLDERU i
+ * przeniesione między folderami nie znaczą nic.
+ *
+ * Dlaczego osobna tabela, a nie kolejne kolumny przy koncie: folderów jest z góry nieznana
+ * liczba i przybywa ich w cudzej skrzynce, bez naszego udziału.
+ */
+@Entity
+@Table(
+    name = "mail_folder_cursors",
+    indexes = [
+        Index(name = "idx_mail_folder_cursors_account", columnList = "account_id"),
+        Index(
+            name = "idx_mail_folder_cursors_account_folder",
+            columnList = "account_id, folder_name",
+            unique = true
+        )
+    ]
+)
+class MailFolderCursorEntity(
+    @Id
+    @Column(name = "id", columnDefinition = "uuid")
+    val id: UUID = UUID.randomUUID(),
+
+    @Column(name = "account_id", nullable = false, columnDefinition = "uuid")
+    val accountId: UUID,
+
+    /** Pełna nazwa IMAP folderu — ta sama, którą oddaje LIST. */
+    @Column(name = "folder_name", nullable = false, length = 1000)
+    val folderName: String,
+
+    /**
+     * UIDVALIDITY folderu z ostatniego przebiegu. Jego zmiana to komunikat serwera
+     * „folder, który znałeś, przestał istnieć" (RFC 3501) i unieważnia [lastUid].
+     */
+    @Column(name = "uid_validity")
+    var uidValidity: Long? = null,
+
+    @Column(name = "last_uid", nullable = false)
+    var lastUid: Long = 0,
+
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = Instant.now()
+)

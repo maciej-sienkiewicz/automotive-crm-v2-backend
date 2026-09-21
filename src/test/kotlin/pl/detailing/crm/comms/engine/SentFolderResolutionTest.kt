@@ -189,4 +189,88 @@ class SentFolderResolutionTest {
         assertEquals("gesendet", ImapSessions.normalizeFolderName("GESENDET"))
         assertEquals("sent items", ImapSessions.normalizeFolderName("  Sent   Items "))
     }
+
+    // ── Skanujemy WSZYSTKIE foldery, a nie zwycięzcę ──────────────────────────
+    //
+    // Produkcja pokazała, że wybór jednego folderu jest zakładem o cudzy nawyk i że
+    // przegrany zakład nie daje żadnego objawu: skan melduje „0 nowych", bo w wybranym
+    // folderze faktycznie nic nowego nie ma. Te testy pilnują, żeby żaden wiarygodny
+    // folder nie wypadł z listy - kolejność jest podpowiedzią, nie filtrem.
+
+    /**
+     * Dokładny układ skrzynki biuro@carslab.pl z 21 września: najpierw czytaliśmy pusty
+     * „Elementy wysłane", potem „Sent" stojący na UID 1093, a poczta szła do „INBOX.Sent".
+     * Obie pomyłki znikają dopiero wtedy, gdy na liście są wszystkie trzy.
+     */
+    @Test
+    fun `wszystkie trzy foldery wyslanych trafiaja na liste`() {
+        val order = ImapSessions.orderSentFolders(listOf(
+            folder("Elementy wysłane", messages = 0),
+            folder("Sent", messages = 106),
+            folder("INBOX.Sent", leaf = "Sent", depth = 1, messages = 67),
+            folder("INBOX", leaf = "INBOX"),
+            folder("Kosz", messages = 400),
+            folder("Kopie robocze", messages = 3)
+        ))
+
+        assertEquals(listOf("Sent", "INBOX.Sent", "Elementy wysłane"), order)
+    }
+
+    @Test
+    fun `pusty folder zostaje na liscie, tylko na jej koncu`() {
+        // Pusty dziś nie znaczy pusty jutro: to do niego może zacząć pisać kolejny
+        // program pocztowy. Wypadnięcie z listy byłoby tą samą pomyłką co wcześniej.
+        val order = ImapSessions.orderSentFolders(listOf(
+            folder("Sent", messages = 0),
+            folder("Wysłane", messages = 12)
+        ))
+
+        assertEquals(listOf("Wysłane", "Sent"), order)
+    }
+
+    @Test
+    fun `foldery o innej roli nie wchodza na liste, choc maja poczte`() {
+        val order = ImapSessions.orderSentFolders(listOf(
+            folder("Kosz", messages = 900),
+            folder("Spam", messages = 500),
+            folder("Archiwum", otherRole = true, messages = 4000),
+            folder("Sent", messages = 1)
+        ))
+
+        assertEquals(listOf("Sent"), order)
+    }
+
+    @Test
+    fun `skrzynka z jednym folderem wyslanych oddaje dokladnie jeden`() {
+        // Większość skrzynek. Nie ma czego rozstrzygać i nie ma za co płacić sondą.
+        val order = ImapSessions.orderSentFolders(listOf(
+            folder("INBOX", leaf = "INBOX"),
+            folder("Wysłane")
+        ))
+
+        assertEquals(listOf("Wysłane"), order)
+    }
+
+    @Test
+    fun `czolo listy jest tym samym wyborem co dotad`() {
+        // APPEND po własnej wysyłce idzie do jednego folderu, więc wybór nie znika -
+        // schodzi tylko do roli „pierwszy na liście".
+        val candidates = listOf(
+            folder("Elementy wysłane", messages = 0),
+            folder("Sent", messages = 106),
+            folder("INBOX.Sent", leaf = "Sent", depth = 1, messages = 67)
+        )
+
+        assertEquals(ImapSessions.orderSentFolders(candidates).first(), ImapSessions.chooseSentFolder(candidates))
+    }
+
+    @Test
+    fun `brak kandydatow to pusta lista, a nie wyjatek`() {
+        val order = ImapSessions.orderSentFolders(listOf(
+            folder("INBOX", leaf = "INBOX"),
+            folder("Kosz")
+        ))
+
+        assertEquals(emptyList<String>(), order)
+    }
 }
