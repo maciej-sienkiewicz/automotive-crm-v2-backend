@@ -71,36 +71,23 @@ class LeadServiceSuggestionService(
 
         val intent = intentService.intentFor(studioId, leadId, lead.initialMessage, force, lead.threadId)
 
-        // „Prawie trafienie": cennik ma tę samą OPERACJĘ na INNEJ CZĘŚCI auta.
-        // Zamiast pewnie brzmiącej pozycji CATALOG (599,99 zł za DRZWI przy pytaniu
-        // o FOTEL) powstaje pozycja BEZ CENY z notatką — interfejs wymusi kwotę,
-        // a właściciel widzi, DLACZEGO automat nie podał liczby.
-        if (intent != null && intent.status == ServiceIntentStatus.CATALOG_NEAR_MISS) {
-            val alreadySuggested = itemRepository.findByLeadIdOrderByCreatedAtAsc(leadId).isNotEmpty()
-            if (!alreadySuggested) {
-                itemRepository.save(
-                    LeadServiceItemEntity(
-                        id = UUID.randomUUID(),
-                        studioId = studioId.value,
-                        leadId = leadId,
-                        serviceId = null,
-                        name = NEAR_MISS_ITEM_NAME,
-                        priceGross = null,
-                        note = NEAR_MISS_NOTE,
-                        quantity = 1,
-                        status = LeadServiceItemStatus.SUGGESTED,
-                        source = LeadServiceItemSource.AI,
-                        priceSource = LeadServicePriceSource.PENDING
-                    )
-                )
-            }
-            itemsService.recomputeEstimatedValue(lead)
-            publishChanged(lead)
-            return
-        }
-
-        // Awaria modelu (null) albo robota spoza cennika/brak usługi → bez sugestii.
-        // Przy NOT_IN_CATALOG to świadome: nie podsuwamy cen innej roboty.
+        /*
+         * Sugerujemy WYŁĄCZNIE pozycje z cennika studia. Wszystko inne — awaria modelu,
+         * robota spoza cennika, „prawie trafienie" (ta sama operacja na innej części
+         * auta) — kończy się brakiem sugestii.
+         *
+         * Stała tu wcześniej pozycja-zaślepka „Wycena indywidualna": bez ceny, bez
+         * `serviceId`, z notatką tłumaczącą, czemu automat nie podał kwoty. Zamysł był
+         * taki, żeby nie zgubić sygnału „klient pyta o coś bliskiego" — ale skutek był
+         * odwrotny od zamierzonego: na liście usług leada pojawiała się pozycja o nazwie,
+         * której w cenniku nie ma i nigdy nie było. Właściciel widzi w wycenie usługę,
+         * której nie sprzedaje, i musi się domyślić, że to nie jest jego usługa, tylko
+         * komunikat automatu przebrany za pozycję.
+         *
+         * Komunikat i pozycja cennika to dwie różne rzeczy i nie wolno ich mylić.
+         * Skoro nic z katalogu nie pasuje, lista zostaje pusta — a właściciel dopisuje
+         * to, co uzna za stosowne, tym samym przyciskiem, którego używa zawsze.
+         */
         if (intent == null || intent.status != ServiceIntentStatus.MATCHED || intent.matchedServiceIds.isEmpty()) {
             itemsService.recomputeEstimatedValue(lead)
             publishChanged(lead)
@@ -282,13 +269,6 @@ class LeadServiceSuggestionService(
         )
     }
 
-    companion object {
-        /** Pozycja-zaślepka przy CATALOG_NEAR_MISS — interfejs wymusi kwotę przy akceptacji. */
-        const val NEAR_MISS_ITEM_NAME = "Wycena indywidualna"
-        const val NEAR_MISS_NOTE =
-            "Klient pyta o robotę podobną do pozycji cennika, ale na innej części auta — " +
-                "automat nie podał ceny, żeby nie podpowiedzieć kwoty innej roboty."
-    }
 }
 
 /** Rezerwacji nie wolno założyć, dopóki sugestie z tej listy czekają na kwotę. */

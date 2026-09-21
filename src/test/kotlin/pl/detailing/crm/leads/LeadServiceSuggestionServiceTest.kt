@@ -161,25 +161,27 @@ class LeadServiceSuggestionServiceTest {
     }
 
     /**
-     * CATALOG_NEAR_MISS („macie naprawę tapicerki DRZWI, klient pyta o FOTEL"):
-     * zamiast pewnie brzmiącej pozycji CATALOG za 599,99 zł powstaje pozycja
-     * BEZ CENY z notatką — dokładnie ta różnica, na której poległ przypadek 2.
+     * CATALOG_NEAR_MISS („macie naprawę tapicerki DRZWI, klient pyta o FOTEL")
+     * NIE tworzy żadnej pozycji.
+     *
+     * Powstawała tu zaślepka „Wycena indywidualna": bez ceny i bez `serviceId`,
+     * z notatką tłumaczącą, czemu automat nie podał kwoty. Zamysł był taki, żeby
+     * nie zgubić sygnału „klient pyta o coś bliskiego", a skutek odwrotny: na liście
+     * usług leada stawała nazwa, której w cenniku nie ma i nigdy nie było.
+     * Sugerujemy wyłącznie pozycje cennika; resztę dopisuje właściciel.
      */
     @Test
-    fun `catalog near miss tworzy pozycje bez ceny z notatka, nie pozycje z cennika`() {
+    fun `catalog near miss nie tworzy zadnej sugestii`() {
         every { intentService.intentFor(studioId, leadId, any(), any(), any()) } returns LeadServiceIntent(
             ServiceIntentStatus.CATALOG_NEAR_MISS, emptySet(), emptySet(), ServiceScope.UNKNOWN
         )
-        val saved = slot<LeadServiceItemEntity>()
-        every { itemRepository.save(capture(saved)) } answers { firstArg() }
 
         service.recompute(studioId, leadId, force = false)
 
-        assertEquals(LeadServiceSuggestionService.NEAR_MISS_ITEM_NAME, saved.captured.name)
-        assertNull(saved.captured.priceGross)
-        assertEquals(LeadServicePriceSource.PENDING, saved.captured.priceSource)
-        assertEquals(LeadServiceSuggestionService.NEAR_MISS_NOTE, saved.captured.note)
-        assertNull(saved.captured.serviceId, "Zaślepka nie może wskazywać pozycji o innej części auta")
+        verify(exactly = 0) { itemRepository.save(any()) }
+        // Poprzednie sugestie i tak znikają, a potencjał leada przelicza się na nowo.
+        verify { itemRepository.deleteByLeadIdAndStatusAndSource(leadId, LeadServiceItemStatus.SUGGESTED, LeadServiceItemSource.AI) }
+        verify { itemsService.recomputeEstimatedValue(any()) }
     }
 
     @Test

@@ -120,7 +120,11 @@ class ImapSyncEngine(
             } else {
                 syncFolder(
                     store, account, sentFolderName, CommFolderKind.SENT,
-                    account.sentUidValidity, account.sentLastUid
+                    account.sentUidValidity, account.sentLastUid,
+                    // Lista folderów tylko dla Wysłanych: to jedyny folder, który
+                    // WYBIERAMY, więc jako jedyny możemy wybrać źle. INBOX nazywa się
+                    // INBOX i nie ma tu czego diagnozować.
+                    inspection.allFolderNames
                 )?.let { (validity, lastUid) ->
                     account.sentUidValidity = validity
                     account.sentLastUid = lastUid
@@ -157,7 +161,13 @@ class ImapSyncEngine(
         folderName: String,
         folderKind: CommFolderKind,
         savedUidValidity: Long?,
-        savedLastUid: Long?
+        savedLastUid: Long?,
+        /**
+         * Lista folderów skrzynki — wypisywana tylko wtedy, gdy folder nie oddaje nic
+         * mimo poprawnego otwarcia. Bez niej „0 nowych" jest nieodróżnialne od
+         * „czytamy nie ten folder, co trzeba", a jedno od drugiego dzieli akurat ta lista.
+         */
+        allFolderNames: List<String> = emptyList()
     ): Pair<Long, Long>? {
         val folder = runCatching { store.getFolder(folderName) }.getOrNull() ?: return null
         if (!runCatching { folder.exists() }.getOrDefault(false)) return null
@@ -170,6 +180,24 @@ class ImapSyncEngine(
             }
             val uidValidity = uidFolder.uidValidity
             val fullResync = savedUidValidity == null || savedUidValidity != uidValidity
+
+            /*
+             * Zmiana UIDVALIDITY to komunikat serwera „folder, który znałeś, przestał
+             * istnieć — ten jest inny" (RFC 3501). Unieważnia WSZYSTKIE zapamiętane
+             * UID-y tego folderu, więc zaczynamy od zera i czytamy go od nowa.
+             *
+             * Musi być widoczne w logu na poziomie INFO: bez tej linii rozjazd między
+             * numeracją zapisaną przy wiadomościach a numeracją konta wychodzi dopiero
+             * przy ręcznym zapytaniu do bazy — a to jest moment, w którym folder może
+             * po cichu przestać cokolwiek oddawać.
+             */
+            if (savedUidValidity != null && savedUidValidity != uidValidity) {
+                log.info(
+                    "[COMMS] {}: folder {} zmienił UIDVALIDITY {} → {} — pełny skan od nowa, " +
+                        "wcześniejsze UID-y przestały obowiązywać",
+                    account.emailAddress, folderName, savedUidValidity, uidValidity
+                )
+            }
             val startUid = if (fullResync) 1L else (savedLastUid ?: 0L) + 1
             val isBackfill = startUid <= 1L
             val cutoff = Instant.now().minus(BACKFILL_WINDOW_DAYS, ChronoUnit.DAYS)
@@ -226,11 +254,36 @@ class ImapSyncEngine(
                     account.emailAddress, ingested, folderName, if (fullResync) "pełny skan" else "delta"
                 )
             } else {
-                // Bez tej linii „przeskanowano, nic nowego" jest nieodróżnialne od „w ogóle
-                // nie skanowano" - a to właśnie ta różnica decyduje, gdzie zginęła odpowiedź.
+                /*
+                 * Bez tej linii „przeskanowano, nic nowego" jest nieodróżnialne od „w ogóle
+                 * nie skanowano" — a to właśnie ta różnica decyduje, gdzie zginęła odpowiedź.
+                 *
+                 * `zwrócono` rozdziela dwie sytuacje, które do tej pory wyglądały tak samo:
+                 * folder oddał komplet znanych wiadomości (nic nowego, wszystko w porządku)
+                 * i folder nie oddał NICZEGO (czytamy pustkę albo nie ten folder).
+                 */
                 log.debug(
-                    "[COMMS] {}: przeskanowano {} ({}), 0 nowych (startUid={})",
-                    account.emailAddress, folderName, if (fullResync) "pełny skan" else "delta", startUid
+                    "[COMMS] {}: przeskanowano {} ({}), 0 nowych (startUid={}, zwrócono={})",
+                    account.emailAddress, folderName, if (fullResync) "pełny skan" else "delta",
+                    startUid, messages.size
+                )
+            }
+
+            /*
+             * Folder otwarty poprawnie, a mimo to nigdy nie oddał ani jednej wiadomości.
+             * Sam w sobie bywa to prawdą (świeża skrzynka, nikt nic nie wysłał), ale jest
+             * też jedynym objawem sytuacji, w której czytamy NIE TEN folder — a wtedy
+             * odpowiedzi wysyłane spoza CRM-a po cichu nie dopinają się do rozmów.
+             *
+             * Lista folderów skrzynki jest tu jedyną informacją, która pozwala to rozstrzygnąć
+             * bez dostępu do cudzej poczty, więc idzie do logu razem z ostrzeżeniem.
+             */
+            if (messages.isEmpty() && watermark.value() == 0L && allFolderNames.isNotEmpty()) {
+                log.warn(
+                    "[COMMS] {}: folder {} ({}) jest rozpoznany i otwiera się, ale nie oddał ani " +
+                        "jednej wiadomości. Jeśli w skrzynce coś w nim leży, czytamy nie ten folder. " +
+                        "Foldery skrzynki: {}",
+                    account.emailAddress, folderName, folderKind, allFolderNames
                 )
             }
             return uidValidity to watermark.value()
