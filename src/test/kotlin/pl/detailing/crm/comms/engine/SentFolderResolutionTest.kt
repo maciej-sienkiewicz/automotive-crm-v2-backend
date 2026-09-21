@@ -16,8 +16,70 @@ class SentFolderResolutionTest {
         leaf: String = fullName.substringAfterLast('/').substringAfterLast('.'),
         depth: Int = 0,
         sent: Boolean = false,
-        otherRole: Boolean = false
-    ) = SentCandidate(fullName, leaf, depth, sent, otherRole)
+        otherRole: Boolean = false,
+        /** null = nie pytaliśmy serwera; liczba = tyle wiadomości zgłosił. */
+        messages: Int? = null
+    ) = SentCandidate(fullName, leaf, depth, sent, otherRole, messages)
+
+    // ── Zawartość folderu bije nazwę ──────────────────────────────────────────
+    //
+    // Skrzynka po latach pracy ma po kilka folderów wysłanych naraz — polski obok
+    // angielskiego, a prawdziwy ruch pod „INBOX.". Nazwa bywa myląca u każdego
+    // dostawcy inaczej; pusty folder jest pusty wszędzie tak samo.
+
+    /** Przypadek z produkcji: trzy foldery wysłanych, poczta w najgłębszym. */
+    @Test
+    fun `folder z wiadomosciami wygrywa z pustym o lepszej nazwie`() {
+        val chosen = ImapSessions.chooseSentFolder(listOf(
+            folder("Elementy wysłane", messages = 0),
+            folder("Sent", messages = 0),
+            folder("INBOX.Sent", leaf = "Sent", depth = 1, messages = 1088),
+            folder("INBOX", leaf = "INBOX")
+        ))
+        assertEquals("INBOX.Sent", chosen)
+    }
+
+    @Test
+    fun `pusty SPECIAL-USE przegrywa z niepustym dopasowaniem po nazwie`() {
+        val chosen = ImapSessions.chooseSentFolder(listOf(
+            folder("Elementy wysłane", sent = true, messages = 0),
+            folder("INBOX.Sent", leaf = "Sent", depth = 1, messages = 412)
+        ))
+        assertEquals("INBOX.Sent", chosen)
+    }
+
+    @Test
+    fun `przy dwoch niepustych decyduje nazwa, potem glebokosc`() {
+        val chosen = ImapSessions.chooseSentFolder(listOf(
+            folder("Archiwum/Sent", leaf = "Sent", depth = 1, messages = 900),
+            folder("Elementy wysłane", sent = true, messages = 12)
+        ))
+        assertEquals("Elementy wysłane", chosen, "SPECIAL-USE wygrywa, gdy obydwa mają pocztę")
+    }
+
+    /**
+     * „Nie wiem" to nie to samo co „pusty": sonda bywa pominięta (jeden kandydat)
+     * albo serwer nie odpowie na STATUS. Wtedy decyduje dokładnie ta sama kolejność
+     * co przed wprowadzeniem sondy.
+     */
+    @Test
+    fun `brak danych o liczbie wiadomosci nie dyskwalifikuje kandydata`() {
+        val chosen = ImapSessions.chooseSentFolder(listOf(
+            folder("Elementy wysłane", messages = 0),
+            folder("INBOX.Sent", leaf = "Sent", depth = 1, messages = null)
+        ))
+        assertEquals("INBOX.Sent", chosen, "kandydat bez pomiaru idzie przed tym, o którym wiemy, że pusty")
+    }
+
+    @Test
+    fun `swieza skrzynka z samymi pustymi folderami dalej wskazuje ten wlasciwy`() {
+        val chosen = ImapSessions.chooseSentFolder(listOf(
+            folder("Drafts", otherRole = true, messages = 3),
+            folder("Sent", messages = 0),
+            folder("INBOX", leaf = "INBOX")
+        ))
+        assertEquals("Sent", chosen, "pusty Sent to nadal Sent — nie ma czego wybrać lepiej")
+    }
 
     // ── SPECIAL-USE \Sent (RFC 6154) — najmocniejszy, niezależny od nazwy ──────
 

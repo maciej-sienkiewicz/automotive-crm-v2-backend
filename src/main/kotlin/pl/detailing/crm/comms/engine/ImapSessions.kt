@@ -55,7 +55,22 @@ class ImapSessions(
      * Jeden przegląd skrzynki: wybrany folder Wysłanych plus pełna lista folderów.
      * Lista służy diagnostyce i ręcznemu wskazaniu folderu, gdy automat nie trafi.
      */
-    data class FolderInspection(val sentFolderName: String?, val allFolderNames: List<String>)
+    data class FolderInspection(
+        val sentFolderName: String?,
+        val allFolderNames: List<String>,
+        /**
+         * Liczba wiadomości w folderach branych pod uwagę jako Wysłane. Pusta, gdy
+         * kandydat był jeden (nie ma czego rozstrzygać) albo serwer nie odpowiedział.
+         */
+        val sentCandidateCounts: Map<String, Int> = emptyMap()
+    ) {
+        /** „Wiemy na pewno, że pusty" — różne od „nie pytaliśmy". */
+        fun isKnownEmpty(folderName: String?): Boolean =
+            folderName != null && sentCandidateCounts[folderName] == 0
+
+        fun hasMessages(folderName: String?): Boolean =
+            folderName != null && (sentCandidateCounts[folderName] ?: 0) > 0
+    }
 
     /**
      * Rozpoznanie folderu Wysłanych — GENERYCZNE, bo u każdego dostawcy nazywa się
@@ -73,6 +88,7 @@ class ImapSessions(
             store.defaultFolder.list("*").filterIsInstance<IMAPFolder>()
         }.getOrDefault(emptyList())
 
+        val byName = folders.associateBy { it.fullName }
         val candidates = folders.map { folder ->
             val attrs = runCatching { folder.attributes.toList() }.getOrDefault(emptyList())
             val separator = runCatching { folder.separator }.getOrDefault('/')
@@ -84,9 +100,31 @@ class ImapSessions(
                 hasOtherRoleAttribute = attrs.any { a -> ROLE_ATTRIBUTES.any { it.equals(a, ignoreCase = true) } }
             )
         }
+
+        /*
+         * Sonda: ile wiadomości ma każdy kandydat na Wysłane.
+         *
+         * Pytamy WYŁĄCZNIE wtedy, gdy kandydatów jest więcej niż jeden — przy jednym
+         * nie ma czego rozstrzygać, a każde pytanie to jedna komenda STATUS do serwera.
+         * Skrzynka z jednym folderem Wysłanych (czyli większość) nie płaci za to nic.
+         *
+         * Każde zapytanie osobno w runCatching: serwer, który nie odpowie na STATUS,
+         * ma zostawić kandydata z „nie wiem", a nie wywrócić całego rozpoznania.
+         */
+        val plausible = plausibleSentCandidates(candidates)
+        val counts = if (plausible.size < 2) emptyMap() else plausible.mapNotNull { candidate ->
+            val folder = byName[candidate.fullName] ?: return@mapNotNull null
+            runCatching { folder.messageCount }
+                .getOrNull()
+                ?.takeIf { it >= 0 }
+                ?.let { candidate.fullName to it }
+        }.toMap()
+
+        val probed = candidates.map { it.copy(messageCount = counts[it.fullName]) }
         return FolderInspection(
-            sentFolderName = chooseSentFolder(candidates),
-            allFolderNames = folders.map { it.fullName }
+            sentFolderName = chooseSentFolder(probed),
+            allFolderNames = folders.map { it.fullName },
+            sentCandidateCounts = counts
         )
     }
 
@@ -147,27 +185,73 @@ class ImapSessions(
                 .replace(Regex("\\s+"), " ")
 
         /**
-         * Czysty wybór — bez IMAP-a, więc daje się otestować dla dowolnego układu folderów.
-         * SPECIAL-USE wygrywa; potem dokładna nazwa liścia; potem częściowe trafienie.
-         * Przy remisie wygrywa folder płycej w hierarchii (top-level „Sent" nad „Archiwum/Sent").
+         * Kandydaci, których nazwa albo atrybut w ogóle dopuszczają do roli Wysłanych.
+         * Wydzielone, bo tę samą listę bierze sonda liczby wiadomości i sam wybór.
          */
-        internal fun chooseSentFolder(candidates: List<SentCandidate>): String? {
-            candidates.firstOrNull { it.hasSentAttribute }?.let { return it.fullName }
-
-            val usable = candidates
+        internal fun plausibleSentCandidates(candidates: List<SentCandidate>): List<SentCandidate> =
+            candidates
                 .filterNot { it.hasOtherRoleAttribute }
                 .map { it to normalizeFolderName(it.leaf) }
                 .filterNot { (_, leaf) -> OTHER_ROLE_KEYWORDS.any { leaf.contains(it) } }
+                .filter { (candidate, leaf) ->
+                    candidate.hasSentAttribute ||
+                        leaf in KNOWN_SENT_LEAVES ||
+                        SENT_KEYWORDS.any { leaf.contains(it) }
+                }
+                .map { it.first }
 
-            usable.filter { (_, leaf) -> leaf in KNOWN_SENT_LEAVES }
-                .minByOrNull { (candidate, _) -> candidate.depth }
-                ?.let { return it.first.fullName }
+        /** Jak bardzo nazwa/atrybut wskazują na Wysłane: 3 = SPECIAL-USE, 2 = dokładna nazwa, 1 = rdzeń. */
+        private fun nameConfidence(candidate: SentCandidate): Int {
+            if (candidate.hasSentAttribute) return 3
+            val leaf = normalizeFolderName(candidate.leaf)
+            if (leaf in KNOWN_SENT_LEAVES) return 2
+            if (SENT_KEYWORDS.any { leaf.contains(it) }) return 1
+            return 0
+        }
 
-            usable.filter { (_, leaf) -> SENT_KEYWORDS.any { leaf.contains(it) } }
-                .minByOrNull { (candidate, _) -> candidate.depth }
-                ?.let { return it.first.fullName }
+        /**
+         * Czysty wybór — bez IMAP-a, więc daje się otestować dla dowolnego układu folderów.
+         *
+         * ── Pierwsze kryterium: ZAWARTOŚĆ, nie nazwa ────────────────────────────
+         *
+         * Skrzynki po latach pracy mają po kilka folderów wysłanych naraz: polski
+         * „Elementy wysłane" obok angielskiego „Sent", a prawdziwy ruch pod
+         * „INBOX.Sent". Wcześniej rozstrzygała nazwa i głębokość, więc przy remisie
+         * wygrywał ten, którego serwer wymienił pierwszy — i potrafił to być folder
+         * pusty, założony kiedyś przez przypadkowego klienta pocztowego. Skutek:
+         * odpowiedzi wysyłane spoza CRM-a po cichu nie dopinały się do rozmów.
+         *
+         * Nazwa bywa myląca u każdego dostawcy inaczej; pusty folder jest pusty
+         * wszędzie tak samo. Dlatego folder, o którym WIEMY, że coś w nim leży, bije
+         * folder, o którym wiemy, że jest pusty — nawet jeśli ten drugi ma ładniejszą
+         * nazwę albo atrybut SPECIAL-USE.
+         *
+         * „Nie wiem" (sonda pominięta albo serwer nie odpowiedział) nie dyskwalifikuje
+         * nikogo: wtedy decyduje dokładnie ta sama kolejność co wcześniej — SPECIAL-USE,
+         * dokładna nazwa liścia, częściowe trafienie, a przy remisie płycej w hierarchii.
+         */
+        internal fun chooseSentFolder(candidates: List<SentCandidate>): String? {
+            val plausible = plausibleSentCandidates(candidates)
+            if (plausible.isEmpty()) return null
 
-            return null
+            val withMail = plausible.filter { (it.messageCount ?: 0) > 0 }
+            if (withMail.isNotEmpty()) {
+                return withMail.minWithOrNull(
+                    compareByDescending<SentCandidate> { nameConfidence(it) }.thenBy { it.depth }
+                )!!.fullName
+            }
+
+            /*
+             * Nikt nie ma wiadomości albo nikogo nie odpytaliśmy. Kandydatów, o których
+             * WIEMY, że są puste, odkładamy na koniec — ale ich nie wyrzucamy: świeża
+             * skrzynka, w której nikt jeszcze nic nie wysłał, ma wyłącznie takich.
+             */
+            val knownEmptyLast = plausible.sortedWith(
+                compareBy<SentCandidate> { it.messageCount == 0 }
+                    .thenByDescending { nameConfidence(it) }
+                    .thenBy { it.depth }
+            )
+            return knownEmptyLast.firstOrNull()?.fullName
         }
     }
 }
@@ -178,5 +262,13 @@ internal data class SentCandidate(
     val leaf: String,
     val depth: Int = 0,
     val hasSentAttribute: Boolean = false,
-    val hasOtherRoleAttribute: Boolean = false
+    val hasOtherRoleAttribute: Boolean = false,
+    /**
+     * Ile wiadomości serwer zgłasza w tym folderze; null = nie pytaliśmy albo
+     * serwer nie odpowiedział.
+     *
+     * `null` i `0` to DWIE RÓŻNE rzeczy i nie wolno ich mylić: „nie wiem" nie może
+     * dyskwalifikować kandydata, a „wiem, że pusty" musi.
+     */
+    val messageCount: Int? = null
 )

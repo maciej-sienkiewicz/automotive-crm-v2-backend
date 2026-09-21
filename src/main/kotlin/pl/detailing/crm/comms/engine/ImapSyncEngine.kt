@@ -99,9 +99,43 @@ class ImapSyncEngine(
             // Wynik zapamiętujemy przy koncie, a gdy nic nie pasuje - wypisujemy listę
             // folderów skrzynki, żeby dało się wskazać właściwy ręcznie i świadomie.
             val inspection = imapSessions.inspectFolders(store)
-            val override = account.sentFolderName?.takeIf { it.isNotBlank() }
-            val sentFolderName = override?.takeIf { it in inspection.allFolderNames }
-                ?: inspection.sentFolderName
+            val override = account.sentFolderName
+                ?.takeIf { it.isNotBlank() }
+                ?.takeIf { it in inspection.allFolderNames }
+            val detected = inspection.sentFolderName
+
+            /*
+             * SAMONAPRAWA: zapamiętany folder okazał się pusty, a inny kandydat ma pocztę.
+             *
+             * Zapamiętany wybór jest z zasady lepki — inaczej rozpoznanie miotałoby
+             * skrzynką przy każdym przebiegu. Ale „lepki" nie może znaczyć „na zawsze",
+             * gdy wiadomo, że jest zły: skrzynka po latach ma po kilka folderów wysłanych
+             * naraz, a ten, na którym kiedyś stanęło, bywa opróżniony albo odtworzony przez
+             * klienta pocztowego. Bez tej gałęzi trzeba było wejść do bazy produkcyjnej,
+             * żeby wskazać właściwy.
+             *
+             * Warunek jest celowo ciasny: przełączamy się wyłącznie wtedy, gdy o starym
+             * WIEMY, że jest pusty, a o nowym WIEMY, że ma wiadomości. Samo „nie wiem"
+             * po żadnej ze stron niczego nie zmienia.
+             */
+            val healed = override != null &&
+                detected != null &&
+                detected != override &&
+                inspection.isKnownEmpty(override) &&
+                inspection.hasMessages(detected)
+
+            if (healed) {
+                log.warn(
+                    "[COMMS] {}: folder Wysłanych '{}' jest pusty, a '{}' ma wiadomości — " +
+                        "przełączam i czytam go od nowa",
+                    account.emailAddress, override, detected
+                )
+                // Znaczniki należały do TAMTEGO folderu i w nowym nie znaczą nic.
+                account.sentUidValidity = null
+                account.sentLastUid = 0
+            }
+
+            val sentFolderName = if (healed) detected else (override ?: detected)
 
             if (sentFolderName != null && sentFolderName != account.sentFolderName) {
                 log.info("[COMMS] {}: folder Wysłanych rozpoznany jako '{}'", account.emailAddress, sentFolderName)
