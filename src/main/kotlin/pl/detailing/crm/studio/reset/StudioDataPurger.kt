@@ -213,6 +213,9 @@ class StudioDataPurger(
             // studia — trzymanie ich po resecie jest dokładnie tym, czego „Wyczyść
             // konto" obiecuje nie robić.
             deleteByStudio("LeadMatchDecisionEntity", ctx)
+            // Dziennik doboru sugestii niesie DOSŁOWNE cytaty z maili klientów tego
+            // studia — po resecie nie ma prawa zostać ani jeden.
+            deleteByStudio("LeadSuggestionDecisionEntity", ctx)
             deleteByStudio("LeadAttachmentFactsEntity", ctx)
             deleteByStudio("AnchorOutcomeEntity", ctx)
             deleteByStudio("StudioPriceAnchorEntity", ctx)

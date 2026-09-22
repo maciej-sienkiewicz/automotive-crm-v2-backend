@@ -86,6 +86,67 @@ data class WorkNeed(
 }
 
 /**
+ * Werdykt dla JEDNEJ potrzeby — nie dla całego zapytania.
+ *
+ * Do v3 werdykt był jeden na leada i przez to niewyrażalne było zdanie, które padło
+ * w incydencie z renowacją reflektorów: „głównej roboty NIE MA w cenniku, a poboczna
+ * jest". MATCHED na jednej pozycji otwierał bramę wszystkim pozostałym.
+ */
+enum class NeedStatus {
+    /** Tę potrzebę studio wykonuje i pozycje cennika ją pokrywają. */
+    MATCHED,
+
+    /** Cennik ma tę samą operację na INNEJ części auta — informacja, nie dopasowanie. */
+    NEAR_MISS,
+
+    /** Tej roboty studio nie ma w ofercie. Zero pozycji, zero cen. */
+    NOT_IN_CATALOG
+}
+
+/**
+ * Po co pozycja stoi na liście. Dosprzedaż NIE jest odpowiedzią na pytanie klienta
+ * i nie wchodzi do wyceny: folia na reflektory przy pytaniu o ich renowację to
+ * co najwyżej propozycja, a wygląda w wycenie identycznie jak odpowiedź.
+ */
+enum class SuggestionRole { ANSWER, UPSELL, UNKNOWN;
+
+    companion object {
+        fun from(raw: String?): SuggestionRole =
+            entries.firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: UNKNOWN
+    }
+}
+
+/**
+ * Potrzeba z własnym werdyktem i własnym cytatem-dowodem.
+ *
+ * [main] wskazuje robotę, o którą klient FAKTYCZNIE pyta — od niej zależy globalny
+ * status intencji, a więc i to, czy „Podobne zlecenia" mają czego szukać. Etap tej
+ * samej roboty („zabezpieczenie powierzchni po renowacji") nie jest osobną potrzebą
+ * i prompt v3 zabrania go tak zgłaszać.
+ */
+data class ResolvedNeed(
+    val need: WorkNeed,
+    val status: NeedStatus,
+    val main: Boolean,
+    /** Dosłowny fragment zapytania — zweryfikowany przez KOD, nie obiecany przez model. */
+    val quote: String?
+)
+
+/**
+ * Pozycja cennika dopuszczona do zasugerowania — po wszystkich bramkach.
+ *
+ * Istnienie tego obiektu znaczy: pozycja ma dosłowne pokrycie w treści zapytania,
+ * rolę ODPOWIEDZI, zgodną rodzinę i nie kłóci się osiami z żadną potrzebą.
+ */
+data class SuggestedService(
+    val serviceId: UUID,
+    val nameKey: String,
+    /** Cytat, który zobaczy właściciel przy sugestii. Nigdy pusty — bez niego pozycji nie ma. */
+    val quote: String,
+    val needIndex: Int
+)
+
+/**
  * Odczytana intencja leada — jeden wiersz na leada, liczony przy PIERWSZYM
  * otwarciu sekcji. Sekcja jest leniwa świadomie (większości leadów nikt nie
  * otworzy), więc i intencja jest leniwa; ale raz policzona zostaje na zawsze,
@@ -173,7 +234,26 @@ class LeadServiceIntentEntity(
 
     /** Ile numerów spoza zakresu cennika zwrócił model — liczone, nie połykane. */
     @Column(name = "invalid_index_count", nullable = false)
-    var invalidIndexCount: Int = 0
+    var invalidIndexCount: Int = 0,
+
+    /**
+     * Analiza modelu SPRZED werdyktów. Do v3 była parsowana i wyrzucana, więc na pytanie
+     * „dlaczego akurat ta pozycja" odpowiadało się śledztwem. Bratni tor zapisuje ją
+     * od początku ([pl.detailing.crm.leads.classification.LeadClassificationEntity.reasoning]).
+     */
+    @Column(name = "reasoning", length = 1000)
+    var reasoning: String? = null,
+
+    /**
+     * Pełny werdykt v3 jako JSON: potrzeby ze statusami i cytatami oraz pozycje, które
+     * przeszły bramki. JSON, a nie łańcuch rozdzielany „|" jak [needs], z jednego
+     * powodu: niesie DOSŁOWNE cytaty z maila klienta, w których stoi dowolny znak —
+     * każdy separator byłby tu ładunkiem do wstrzyknięcia.
+     *
+     * Pusty łańcuch = wiersz sprzed v3; czytany wtedy starą ścieżką (matched_service_ids).
+     */
+    @Column(name = "verdict_json", nullable = false, columnDefinition = "text")
+    var verdictJson: String = ""
 )
 
 @Repository
@@ -196,8 +276,31 @@ data class LeadServiceIntent(
      */
     val anchorGross: Long? = null,
     /** CATALOG | HISTORY_MEDIAN | NONE — skąd kotwica. */
-    val anchorSource: String? = null
-)
+    val anchorSource: String? = null,
+
+    /**
+     * Pozycje dopuszczone do zasugerowania, każda z cytatem — wynik prompt v3.
+     *
+     * NULL to NIE jest pusta lista i różnica jest tu cała rzecz:
+     *  - `null`      werdykt powstał starą ścieżką (wiersz sprzed v3 albo intencja
+     *                zbudowana wprost w teście jednostkowym) — sugestie lecą po
+     *                [matchedServiceIds], dokładnie jak przed zmianą;
+     *  - `emptyList` model odpowiedział i ŻADNA pozycja nie przeszła bramek — lista
+     *                sugestii ma zostać pusta.
+     * Zlanie tych dwóch stanów w jedno przywróciłoby dokładnie ten defekt, który
+     * ta zmiana usuwa: pozycję bez uzasadnienia w wycenie klienta.
+     */
+    val suggestions: List<SuggestedService>? = null,
+
+    /** Potrzeby z werdyktem per sztuka — puste dla wierszy sprzed v3. */
+    val resolvedNeeds: List<ResolvedNeed> = emptyList()
+) {
+    /**
+     * Robota, o którą klient faktycznie pyta. Od NIEJ zależy, czy „Podobne zlecenia"
+     * mają czego szukać — poboczna potrzeba nie jest powodem, żeby pokazać pasmo cen.
+     */
+    val mainNeed: ResolvedNeed? get() = resolvedNeeds.firstOrNull { it.main } ?: resolvedNeeds.firstOrNull()
+}
 
 @Configuration
 class LeadServiceIntentAiConfig {
@@ -246,7 +349,17 @@ class LeadServiceIntentService(
     private val classifier: pl.detailing.crm.service.taxonomy.ServiceFamilyClassifier? = null,
     private val commMessageRepository: pl.detailing.crm.comms.infrastructure.CommMessageRepository? = null,
     private val visionFactsRepository: pl.detailing.crm.leads.similar.vision.LeadAttachmentFactsRepository? = null,
-    private val priceAnchorRepository: pl.detailing.crm.leads.similar.feedback.StudioPriceAnchorRepository? = null
+    private val priceAnchorRepository: pl.detailing.crm.leads.similar.feedback.StudioPriceAnchorRepository? = null,
+    /**
+     * Krytyk zewnętrzny (L4 sugestii). NIEOBECNY (null) znaczy „komponent niepodpięty"
+     * — tryb testu jednostkowego, bramki kodu działają same. OBECNY, ale przerwany
+     * awarią, znaczy co innego: pozycja WYPADA. Asymetria strat jest tu jednostronna,
+     * dokładnie jak w [pl.detailing.crm.leads.similar.pricing.AnchorVerifier]: leniwe
+     * „nie" kosztuje jedno kliknięcie, leniwe „tak" kosztuje zaufanie do całej sekcji.
+     */
+    private val verifier: LeadSuggestionVerifier? = null,
+    /** Dziennik „co odpadło i na której bramce" — bez niego następny taki przypadek to znowu śledztwo. */
+    private val decisionRepository: LeadSuggestionDecisionRepository? = null
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -287,52 +400,93 @@ class LeadServiceIntentService(
         }
 
         val facts = readableFacts(leadId)
-        val answer = ask(query, listing(studioId, catalogEntities), factsBlock(facts)) ?: return null
+        // ── Osie pozycji cennika: raz, do LISTINGU i do bramek ─────────────────
+        // Do v3 klasyfikacja służyła wyłącznie do pokazania modelowi etykiet
+        // [OPERACJA/CZĘŚĆ]; kod nigdy jej nie czytał i przez to reguła „zgadza się
+        // operacja i część" żyła tylko w prompcie.
+        val axes = classifiedAxes(studioId, catalogEntities)
+        val answer = ask(query, listing(catalogEntities, axes), factsBlock(facts)) ?: return null
 
         val numbers = answer.matchedServices.orEmpty()
         val matchedEntities = numbers.mapNotNull { number -> catalogEntities.getOrNull(number - 1) }
         // Numer spoza zakresu jest LICZONY, nie połykany: „drzwi zamiast fotela"
         // ma dokładnie kształt przesunięcia o jeden i musi być widoczny w dzienniku.
-        val invalidCount = numbers.count { it < 1 || it > catalogEntities.size }
+        val invalidCount = numbers.count { it < 1 || it > catalogEntities.size } +
+            answer.needs.orEmpty().flatMap { it.services.orEmpty() }
+                .count { ref -> ref.number == null || ref.number < 1 || ref.number > catalogEntities.size }
         if (invalidCount > 0) {
             log.warn("[SIMILAR_VISITS] Lead {}: model wskazał {} numerów spoza cennika", leadId, invalidCount)
         }
 
-        val matchedKeys = matchedEntities.map { serviceNameKey(it.name) }.toSet()
-        // Do sugestii tylko pozycje, które da się dziś zaoferować i wycenić.
-        val activeMatched = matchedEntities.filter { it.isActive && !it.isPackage }
-        val matchedServiceIds = activeMatched.map { it.id }.distinct()
         val families = answer.families.orEmpty()
             .map { ServiceFamily.from(it) }
             .filter { it != ServiceFamily.UNKNOWN }
             .toSet()
 
-        var status = when (ServiceIntentStatus.entries.firstOrNull { it.name == answer.intent?.trim()?.uppercase() }) {
-            ServiceIntentStatus.MATCHED ->
-                // Werdykt MATCHED bez żadnego dowodu (ani pozycji, ani rodziny) jest
-                // sprzeczny sam ze sobą — traktujemy jak nieodczytany.
-                if (matchedKeys.isEmpty() && families.isEmpty()) ServiceIntentStatus.NO_SERVICE
-                else ServiceIntentStatus.MATCHED
-            ServiceIntentStatus.CATALOG_NEAR_MISS -> ServiceIntentStatus.CATALOG_NEAR_MISS
-            ServiceIntentStatus.NEEDS_INSPECTION -> ServiceIntentStatus.NEEDS_INSPECTION
-            ServiceIntentStatus.NOT_IN_CATALOG -> ServiceIntentStatus.NOT_IN_CATALOG
-            else -> ServiceIntentStatus.NO_SERVICE
-        }
-        // NOT_IN_CATALOG z niepustymi pozycjami to sprzeczność — pozycje wypadają,
-        // werdykt „spoza cennika" zostaje (ostrożniejszy z dwóch).
-        val cleanedKeys: Set<String>
-        val cleanedIds: List<UUID>
-        if (status == ServiceIntentStatus.NOT_IN_CATALOG && matchedKeys.isNotEmpty()) {
-            log.warn("[SIMILAR_VISITS] Lead {}: NOT_IN_CATALOG z {} pozycjami — sprzeczność, pozycje odrzucone", leadId, matchedKeys.size)
-            cleanedKeys = emptySet()
-            cleanedIds = emptyList()
+        // ── Ścieżka v3: werdykt PER POTRZEBA z dowodem PER POZYCJA ─────────────
+        val rawNeeds = answer.needs.orEmpty().take(MAX_NEEDS)
+        val v3 = rawNeeds.any { it.status != null || it.services != null }
+
+        val resolvedNeeds: List<ResolvedNeed>
+        val suggestions: List<SuggestedService>?
+        val decisions = mutableListOf<SuggestionDecision>()
+        var status: ServiceIntentStatus
+        val matchedKeys: Set<String>
+        val matchedServiceIds: List<UUID>
+        val survivingEntities: List<pl.detailing.crm.service.infrastructure.ServiceEntity>
+
+        if (v3) {
+            // Wyrównane do rawNeeds POZYCYJNIE (null = potrzeba nie do odczytania):
+            // pozycje cennika są podpięte numerem potrzeby, więc lista z dziurami po
+            // odrzuconych przesunęłaby każdego kandydata na sąsiednią potrzebę —
+            // ten sam kształt pomyłki co „drzwi zamiast fotela", tylko o jeden indeks.
+            val byIndex = rawNeeds.mapIndexed { index, raw -> toResolvedNeed(raw, query, index, rawNeeds) }
+            resolvedNeeds = byIndex.filterNotNull()
+            val gated = gateCandidates(query, rawNeeds, byIndex, catalogEntities, axes, families, decisions)
+            // Weryfikator (L4 sugestii) dostaje WYŁĄCZNIE to, co przeszło bramki kodu.
+            val verified = verify(query, gated, decisions)
+
+            suggestions = verified.map { it.suggestion }
+            survivingEntities = verified.map { it.entity }
+            matchedKeys = survivingEntities.map { serviceNameKey(it.name) }.toSet()
+            matchedServiceIds = survivingEntities.map { it.id }.distinct()
+            status = globalStatus(resolvedNeeds, families, matchedKeys)
         } else {
-            cleanedKeys = matchedKeys
-            cleanedIds = matchedServiceIds
+            // ── Ścieżka zastana: dokładnie jak przed v3 ────────────────────────
+            resolvedNeeds = emptyList()
+            suggestions = null
+            val legacyKeys = matchedEntities.map { serviceNameKey(it.name) }.toSet()
+            val legacyActive = matchedEntities.filter { it.isActive && !it.isPackage }
+            status = when (ServiceIntentStatus.entries.firstOrNull { it.name == answer.intent?.trim()?.uppercase() }) {
+                ServiceIntentStatus.MATCHED ->
+                    // Werdykt MATCHED bez żadnego dowodu (ani pozycji, ani rodziny) jest
+                    // sprzeczny sam ze sobą — traktujemy jak nieodczytany.
+                    if (legacyKeys.isEmpty() && families.isEmpty()) ServiceIntentStatus.NO_SERVICE
+                    else ServiceIntentStatus.MATCHED
+                ServiceIntentStatus.CATALOG_NEAR_MISS -> ServiceIntentStatus.CATALOG_NEAR_MISS
+                ServiceIntentStatus.NEEDS_INSPECTION -> ServiceIntentStatus.NEEDS_INSPECTION
+                ServiceIntentStatus.NOT_IN_CATALOG -> ServiceIntentStatus.NOT_IN_CATALOG
+                else -> ServiceIntentStatus.NO_SERVICE
+            }
+            // NOT_IN_CATALOG z niepustymi pozycjami to sprzeczność — pozycje wypadają,
+            // werdykt „spoza cennika" zostaje (ostrożniejszy z dwóch).
+            if (status == ServiceIntentStatus.NOT_IN_CATALOG && legacyKeys.isNotEmpty()) {
+                log.warn("[SIMILAR_VISITS] Lead {}: NOT_IN_CATALOG z {} pozycjami — sprzeczność, pozycje odrzucone", leadId, legacyKeys.size)
+                matchedKeys = emptySet()
+                matchedServiceIds = emptyList()
+                survivingEntities = emptyList()
+            } else {
+                matchedKeys = legacyKeys
+                matchedServiceIds = legacyActive.map { it.id }.distinct()
+                survivingEntities = legacyActive
+            }
         }
 
+        val cleanedKeys = matchedKeys
+        val cleanedIds = matchedServiceIds
+
         val needs = patchedNeeds(
-            answer.needs.orEmpty().mapNotNull { raw ->
+            (if (v3) resolvedNeeds.map { it.need } else rawNeeds.mapNotNull { raw ->
                 val operation = pl.detailing.crm.service.taxonomy.ServiceOperation.from(raw.operation)
                 val part = pl.detailing.crm.service.taxonomy.ServicePart.from(raw.part)
                 val needScope = ServiceScope.from(raw.scope)
@@ -341,17 +495,22 @@ class LeadServiceIntentService(
                         it.part != pl.detailing.crm.service.taxonomy.ServicePart.UNKNOWN ||
                         it.scope != ServiceScope.UNKNOWN
                 }
-            }.take(MAX_NEEDS),
+            }).take(MAX_NEEDS),
             facts
         )
 
-        // Kotwica: KOD, nigdy model. Suma cen katalogowych wskazanych pozycji;
-        // składnik z wyceną niestandardową (basePriceGross = 0 z UpdateServiceHandler)
+        recordDecisions(studioId.value, leadId, decisions)
+
+        // Kotwica: KOD, nigdy model. Suma cen katalogowych pozycji, KTÓRE PRZEŻYŁY
+        // bramki — a nie wszystkiego, co model wskazał. Na leadzie z renowacją
+        // reflektorów kotwicą było 799 zł z dwóch pozycji, których klient nie zamawiał,
+        // i ta liczba szła dalej do bramki skali „Podobnych zleceń".
+        // Składnik z wyceną niestandardową (basePriceGross = 0 z UpdateServiceHandler)
         // bierze medianę zrealizowanych — a gdy i jej nie ma, kotwicy NIE MA W OGÓLE:
         // kotwica częściowa zaniżałaby pasmo i wycinała dobre compsy.
         // Tryb bez klasyfikatora (testy jednostkowe) nie liczy kotwicy.
         val anchor = if (classifier != null && status == ServiceIntentStatus.MATCHED) {
-            anchorFor(studioId.value, activeMatched)
+            anchorFor(studioId.value, survivingEntities)
         } else null
 
         val entity = LeadServiceIntentEntity(
@@ -367,10 +526,15 @@ class LeadServiceIntentService(
             needs = needs.joinToString("|") { it.serialize() },
             anchorPriceGross = anchor?.first,
             anchorSource = anchor?.second,
-            evidenceQuote = answer.evidenceQuote?.trim()?.take(500),
+            // Także zapasowy cytat przechodzi weryfikację w kodzie — kolumna diagnostyczna
+            // z niesprawdzonym cytatem kłamałaby przy następnym śledztwie.
+            evidenceQuote = (resolvedNeeds.firstOrNull { it.main }?.quote
+                ?: quoteBackedBy(query, answer.evidenceQuote))?.take(500),
             catalogHash = catalogHash,
             promptVersion = PROMPT_VERSION,
-            invalidIndexCount = invalidCount
+            invalidIndexCount = invalidCount,
+            reasoning = answer.reasoning?.trim()?.takeIf { it.isNotEmpty() }?.take(1_000),
+            verdictJson = if (v3) serializeVerdict(resolvedNeeds, suggestions.orEmpty()) else ""
         )
         val saved = try {
             intentRepository.save(entity)
@@ -381,17 +545,358 @@ class LeadServiceIntentService(
         return toIntent(saved)
     }
 
-    private fun toIntent(row: LeadServiceIntentEntity) = LeadServiceIntent(
-        status = ServiceIntentStatus.entries.firstOrNull { it.name == row.intent } ?: ServiceIntentStatus.NO_SERVICE,
-        families = row.families.split(',').map { ServiceFamily.from(it) }.filter { it != ServiceFamily.UNKNOWN }.toSet(),
-        matchedNameKeys = row.matchedNameKeys.split('|').filter { it.isNotEmpty() }.toSet(),
-        scope = ServiceScope.from(row.scope),
-        matchedServiceIds = row.matchedServiceIds.split('|')
-            .filter { it.isNotEmpty() }
-            .mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() },
-        needs = row.needs.split('|').mapNotNull { WorkNeed.parse(it) },
-        anchorGross = row.anchorPriceGross,
-        anchorSource = row.anchorSource
+    private fun toIntent(row: LeadServiceIntentEntity): LeadServiceIntent {
+        // Jeden odczyt leada = jedno parsowanie werdyktu.
+        val stored = storedVerdict(row.verdictJson)
+        return LeadServiceIntent(
+            status = ServiceIntentStatus.entries.firstOrNull { it.name == row.intent } ?: ServiceIntentStatus.NO_SERVICE,
+            families = row.families.split(',').map { ServiceFamily.from(it) }.filter { it != ServiceFamily.UNKNOWN }.toSet(),
+            matchedNameKeys = row.matchedNameKeys.split('|').filter { it.isNotEmpty() }.toSet(),
+            scope = ServiceScope.from(row.scope),
+            matchedServiceIds = row.matchedServiceIds.split('|')
+                .filter { it.isNotEmpty() }
+                .mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() },
+            needs = row.needs.split('|').mapNotNull { WorkNeed.parse(it) },
+            anchorGross = row.anchorPriceGross,
+            anchorSource = row.anchorSource,
+            // Pusty verdict_json = wiersz sprzed v3: `null` (a nie pusta lista) każe
+            // wywołującemu zachować się jak przed zmianą — patrz [LeadServiceIntent.suggestions].
+            suggestions = stored?.let { deserializeSuggestions(it) },
+            resolvedNeeds = stored?.let { deserializeNeeds(it) }.orEmpty()
+        )
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    //  BRAMKI v3 — pomiędzy odpowiedzią modelu a pozycją w wycenie klienta
+    //
+    //  Do v3 nie było tu NICZEGO: werdykt MATCHED na jednej pozycji przepuszczał
+    //  wszystkie pozostałe, a reguła „zgadza się operacja i część" istniała wyłącznie
+    //  jako zdanie w prompcie. Stąd „Okresowy serwis powłoki ceramicznej" w odpowiedzi
+    //  na pytanie o renowację reflektorów.
+    //
+    //  Kolejność jest celowa: najpierw bramki DARMOWE i deterministyczne, na końcu
+    //  jedyna kosztowna (drugi model). Każdy odrzut ląduje w dzienniku z kodem.
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /** Kandydat, który przeszedł bramki kodu — pozycja cennika plus jej uzasadnienie. */
+    private data class GatedCandidate(
+        val suggestion: SuggestedService,
+        val entity: pl.detailing.crm.service.infrastructure.ServiceEntity,
+        val serviceName: String
+    )
+
+    /** Jeden wiersz dziennika: co model wskazał i gdzie to się zatrzymało. */
+    internal data class SuggestionDecision(
+        val serviceId: UUID?,
+        val serviceName: String,
+        val needIndex: Int,
+        val stage: String,
+        val quote: String?,
+        val role: SuggestionRole
+    )
+
+    /**
+     * Potrzeba z werdyktem. Potrzeba bez ŻADNEJ osi (same UNKNOWN) i bez cytatu nie
+     * niesie informacji — odpada, żeby nie udawać, że coś odczytaliśmy.
+     */
+    private fun toResolvedNeed(raw: RawNeed, query: String, index: Int, all: List<RawNeed>): ResolvedNeed? {
+        val need = WorkNeed(
+            operation = pl.detailing.crm.service.taxonomy.ServiceOperation.from(raw.operation),
+            part = pl.detailing.crm.service.taxonomy.ServicePart.from(raw.part),
+            scope = ServiceScope.from(raw.scope)
+        )
+        val blank = need.operation == pl.detailing.crm.service.taxonomy.ServiceOperation.UNKNOWN &&
+            need.part == pl.detailing.crm.service.taxonomy.ServicePart.UNKNOWN &&
+            need.scope == ServiceScope.UNKNOWN
+        if (blank && raw.quote.isNullOrBlank()) return null
+
+        val status = NeedStatus.entries.firstOrNull { it.name.equals(raw.status?.trim(), ignoreCase = true) }
+            // Brak statusu przy potrzebie v3 czytamy OSTROŻNIE: „nie wiem" to nie
+            // „mamy to w cenniku". MATCHED trzeba powiedzieć wprost.
+            ?: NeedStatus.NOT_IN_CATALOG
+        // „Główna" musi być dokładnie jedna: gdy model nie wskazał żadnej, główną jest
+        // pierwsza — model wymienia roboty w kolejności, w jakiej pyta o nie klient.
+        val main = raw.main == true || (all.none { it.main == true } && index == 0)
+        return ResolvedNeed(need, status, main, quoteBackedBy(query, raw.quote))
+    }
+
+    /**
+     * Globalny status — z potrzeby GŁÓWNEJ, nie z sumy wszystkich.
+     *
+     * To jest naprawa H2 i zarazem naprawa zatrutej kotwicy: przy pytaniu o renowację
+     * reflektorów (której studio nie ma) globalny werdykt musi brzmieć NOT_IN_CATALOG,
+     * choćby poboczna potrzeba trafiła w jakąś pozycję. Bez tego „Podobne zlecenia"
+     * dalej liczyłyby pasmo cen dla roboty, o którą nikt nie pytał.
+     */
+    private fun globalStatus(
+        needs: List<ResolvedNeed>,
+        families: Set<ServiceFamily>,
+        matchedKeys: Set<String>
+    ): ServiceIntentStatus {
+        val main = needs.firstOrNull { it.main } ?: needs.firstOrNull() ?: return ServiceIntentStatus.NO_SERVICE
+        return when (main.status) {
+            NeedStatus.NOT_IN_CATALOG -> ServiceIntentStatus.NOT_IN_CATALOG
+            NeedStatus.NEAR_MISS -> ServiceIntentStatus.CATALOG_NEAR_MISS
+            // MATCHED bez jakiegokolwiek dowodu jest sprzeczne samo ze sobą — reguła
+            // żywcem z wersji sprzed v3 i nadal obowiązuje.
+            NeedStatus.MATCHED ->
+                if (matchedKeys.isEmpty() && families.isEmpty()) ServiceIntentStatus.NO_SERVICE
+                else ServiceIntentStatus.MATCHED
+        }
+    }
+
+    /**
+     * Sześć bramek kodu. Pozycja przechodzi tylko, gdy przejdzie WSZYSTKIE.
+     */
+    private fun gateCandidates(
+        query: String,
+        rawNeeds: List<RawNeed>,
+        /** Wyrównana POZYCYJNIE do [rawNeeds]; null = potrzeby nie dało się odczytać. */
+        resolved: List<ResolvedNeed?>,
+        catalog: List<pl.detailing.crm.service.infrastructure.ServiceEntity>,
+        axes: Map<String, pl.detailing.crm.service.taxonomy.ClassifiedServiceName>?,
+        families: Set<ServiceFamily>,
+        decisions: MutableList<SuggestionDecision>
+    ): List<GatedCandidate> {
+        val survivors = mutableListOf<GatedCandidate>()
+        val seen = mutableSetOf<UUID>()
+
+        rawNeeds.forEachIndexed { needIndex, rawNeed ->
+            val need = resolved.getOrNull(needIndex)
+            rawNeed.services.orEmpty().take(MAX_SERVICES_PER_NEED).forEach { ref ->
+                val entity = ref.number?.let { catalog.getOrNull(it - 1) }
+                val name = entity?.name?.trim() ?: "#${ref.number}"
+                val role = SuggestionRole.from(ref.role)
+                fun drop(stage: String) {
+                    decisions += SuggestionDecision(entity?.id, name, needIndex, stage, ref.quote, role)
+                }
+
+                // G0. Numer musi wskazywać pozycję z listy, którą model widział.
+                if (entity == null) return@forEach drop(STAGE_INVALID_INDEX)
+
+                // G1. Potrzeba, do której pozycja należy, musi być rozpoznana i obecna
+                //     w cenniku. Pozycja podpięta pod NOT_IN_CATALOG jest z definicji
+                //     „czymś obok", a to jest dokładnie ten błąd, który naprawiamy.
+                if (need == null || need.status != NeedStatus.MATCHED) return@forEach drop(STAGE_NEED_NOT_MATCHED)
+
+                // G2. Rola: dosprzedaż nie jest odpowiedzią na pytanie klienta.
+                if (role != SuggestionRole.ANSWER) return@forEach drop(STAGE_ROLE_NOT_ANSWER)
+
+                // G3. CYTAT WERYFIKOWANY PRZEZ KOD. Model nie „obiecuje" uzasadnienia —
+                //     fragment musi dosłownie stać w treści, którą model dostał. Ta sama
+                //     zasada, co „model wybiera numery, nigdy nie emituje nazw ani cen":
+                //     uzasadnienie dane na słowo jest warte tyle, co cena dana na słowo.
+                val quote = quoteBackedBy(query, ref.quote) ?: return@forEach drop(STAGE_NO_QUOTE)
+
+                // G4. Rodzina pozycji musi stać wśród rodzin, które model SAM zadeklarował
+                //     dla tego zapytania. Na leadzie z reflektorami model zadeklarował
+                //     CORRECTION_POLISH, a wskazał pozycje z rodzin PPF i CERAMIC_COATING —
+                //     zaprzeczył sam sobie i nikt tego nie sprawdzał.
+                //     Bramka POMIJANA, gdy rodzin nie zadeklarowano albo rodzina pozycji
+                //     jest nieznana: brak danych nie jest zgadywaniem.
+                val classified = axes?.get(serviceNameKey(entity.name))
+                val itemFamily = classified?.family ?: ServiceFamily.UNKNOWN
+                if (families.isNotEmpty() && itemFamily != ServiceFamily.UNKNOWN && itemFamily !in families) {
+                    return@forEach drop(STAGE_FAMILY_MISMATCH)
+                }
+
+                // G5. Osie — ta sama macierz, co przy compach ([WorkAxisCompatibility]).
+                //     ŚWIADOMIE w wersji łagodnej (UNKNOWN pomija bramkę): w cenniku
+                //     z produkcji dwie trzecie pozycji ma part = UNKNOWN, a klasyfikator
+                //     potrafi się pomylić („Przyciemnianie szyb" dostało part = LAMPS).
+                //     Bramka ostra wyciszyłaby większość cennika i oparłaby precyzję
+                //     na danych, których nikt nie zmierzył.
+                if (classified != null && !axesComparable(need.need, classified)) {
+                    return@forEach drop(STAGE_AXIS_MISMATCH)
+                }
+
+                // G6. Pozycja musi dać się dziś zaoferować i wycenić.
+                if (!entity.isActive || entity.isPackage) return@forEach drop(STAGE_INACTIVE_OR_PACKAGE)
+                // Ta sama pozycja pod dwiema potrzebami to jedna pozycja w wycenie.
+                if (!seen.add(entity.id)) return@forEach drop(STAGE_DUPLICATE)
+
+                survivors += GatedCandidate(
+                    suggestion = SuggestedService(entity.id, serviceNameKey(entity.name), quote, needIndex),
+                    entity = entity,
+                    serviceName = entity.name.trim()
+                )
+            }
+        }
+        return survivors
+    }
+
+    /**
+     * Drugi przebieg: krytyk zewnętrzny na tym, co przeżyło bramki kodu.
+     *
+     * Weryfikator widzi WYŁĄCZNIE kandydatów, nigdy całego cennika — sędzia z cennikiem
+     * w ręku zaczyna szukać lepszych pozycji, czyli staje się drugim generatorem
+     * i przynosi z powrotem skłonności pierwszego.
+     */
+    private fun verify(
+        query: String,
+        gated: List<GatedCandidate>,
+        decisions: MutableList<SuggestionDecision>
+    ): List<GatedCandidate> {
+        if (verifier == null || gated.isEmpty()) {
+            gated.forEach { decisions += it.shown() }
+            return gated
+        }
+        val verdicts = verifier.verify(
+            query,
+            gated.mapIndexed { index, c -> VerifiedCandidate(index + 1, c.serviceName, c.suggestion.quote) }
+        )
+        if (verdicts == null) {
+            // Awaria weryfikatora PODPIĘTEGO = abstencja, nie przepuszczenie.
+            log.warn("[LEAD_SUGGEST] Weryfikator nie odpowiedział — {} pozycji wstrzymanych", gated.size)
+            gated.forEach { decisions += it.dropped(STAGE_VERIFIER_UNAVAILABLE) }
+            return emptyList()
+        }
+        return gated.filterIndexed { index, candidate ->
+            val accepted = verdicts[index + 1]?.wouldAddToQuote == true
+            decisions += if (accepted) candidate.shown() else candidate.dropped(STAGE_VERIFIER_REJECTED)
+            accepted
+        }
+    }
+
+    private fun GatedCandidate.shown() = SuggestionDecision(
+        entity.id, serviceName, suggestion.needIndex, STAGE_SHOWN, suggestion.quote, SuggestionRole.ANSWER
+    )
+
+    private fun GatedCandidate.dropped(stage: String) = SuggestionDecision(
+        entity.id, serviceName, suggestion.needIndex, stage, suggestion.quote, SuggestionRole.ANSWER
+    )
+
+    /**
+     * Osie potrzeby kontra osie pozycji — ta sama macierz i to samo wywołanie, co przy
+     * compach ([pl.detailing.crm.leads.similar.pricing.AnchorGate.axisDisqualification]):
+     * gdy operacja pozycji jest nieznana, grupę części czytamy po operacji POTRZEBY,
+     * bo to ona mówi, jakie części są w tym rzemiośle wymienne.
+     */
+    private fun axesComparable(
+        need: WorkNeed,
+        classified: pl.detailing.crm.service.taxonomy.ClassifiedServiceName
+    ): Boolean {
+        val axis = pl.detailing.crm.service.taxonomy.WorkAxisCompatibility
+        if (!axis.operationsComparable(need.operation, classified.operation)) return false
+        val groupOperation =
+            if (classified.operation != pl.detailing.crm.service.taxonomy.ServiceOperation.UNKNOWN) classified.operation
+            else need.operation
+        return axis.partsComparable(groupOperation, need.part, classified.part)
+    }
+
+    /**
+     * Cytat musi DOSŁOWNIE stać w treści, którą model dostał. Porównanie po zbiciu
+     * białych znaków i wielkości liter — model bywa niechlujny w przepisywaniu spacji,
+     * ale nie wolno mu dopisać słowa, którego klient nie napisał.
+     *
+     * @return cytat w formie z maila albo null, gdy go tam nie ma.
+     */
+    private fun quoteBackedBy(query: String, raw: String?): String? {
+        val cleaned = raw?.trim()?.trim('"', '„', '”', '\'', '…', '.', ' ')?.takeIf { it.length >= MIN_QUOTE_LENGTH }
+            ?: return null
+        return cleaned.takeIf { normalizeQuote(query).contains(normalizeQuote(it)) }?.take(300)
+    }
+
+    private fun normalizeQuote(text: String): String =
+        text.lowercase().replace(Regex("\\s+"), " ").trim()
+
+    /** Osie pozycji cennika — jedno wywołanie klasyfikatora na przebieg, do listingu i do bramek. */
+    private fun classifiedAxes(
+        studioId: StudioId,
+        entities: List<pl.detailing.crm.service.infrastructure.ServiceEntity>
+    ): Map<String, pl.detailing.crm.service.taxonomy.ClassifiedServiceName>? {
+        if (entities.isEmpty()) return null
+        return classifier?.let { c ->
+            runCatching { c.classify(studioId.value, entities.map { it.name }) }
+                .onFailure {
+                    // Do v3 ta awaria była NIEWIDOCZNA: listing cicho tracił osie ORAZ ceny,
+                    // a prompt mówi „czasem z osiami", więc model nie zgłaszał braku.
+                    log.warn("[SIMILAR_VISITS] Klasyfikacja osi cennika nie powiodła się: {}", it.message)
+                }
+                .getOrNull()
+        }
+    }
+
+    private fun recordDecisions(studioId: UUID, leadId: UUID, decisions: List<SuggestionDecision>) {
+        val repository = decisionRepository ?: return
+        runCatching {
+            repository.deleteByLeadId(leadId)
+            repository.saveAll(
+                decisions.map { d ->
+                    LeadSuggestionDecisionEntity(
+                        studioId = studioId,
+                        leadId = leadId,
+                        serviceId = d.serviceId,
+                        serviceName = d.serviceName.take(200),
+                        needIndex = d.needIndex,
+                        stage = d.stage,
+                        quote = d.quote?.trim()?.take(300),
+                        role = d.role.name,
+                        promptVersion = PROMPT_VERSION
+                    )
+                }
+            )
+        }.onFailure {
+            // Dziennik jest materiałem śledczym, nie warunkiem działania sekcji.
+            log.warn("[LEAD_SUGGEST] Zapis dziennika decyzji dla leada {} nie powiódł się: {}", leadId, it.message)
+        }
+    }
+
+    // ── Serializacja werdyktu v3 ────────────────────────────────────────────────
+
+    private fun serializeVerdict(needs: List<ResolvedNeed>, suggestions: List<SuggestedService>): String =
+        runCatching {
+            MAPPER.writeValueAsString(
+                StoredVerdict(
+                    needs = needs.map {
+                        StoredNeed(it.need.serialize(), it.status.name, it.main, it.quote)
+                    },
+                    services = suggestions.map {
+                        StoredService(it.serviceId.toString(), it.nameKey, it.quote, it.needIndex)
+                    }
+                )
+            )
+        }.getOrElse { "" }
+
+    private fun storedVerdict(json: String): StoredVerdict? =
+        json.takeIf { it.isNotBlank() }
+            ?.let { runCatching { MAPPER.readValue(it, StoredVerdict::class.java) }.getOrNull() }
+
+    private fun deserializeSuggestions(verdict: StoredVerdict): List<SuggestedService> =
+        verdict.services.orEmpty().mapNotNull { s ->
+            runCatching { UUID.fromString(s.serviceId) }.getOrNull()
+                ?.let { SuggestedService(it, s.nameKey.orEmpty(), s.quote.orEmpty(), s.needIndex ?: 0) }
+        }
+
+    private fun deserializeNeeds(verdict: StoredVerdict): List<ResolvedNeed> =
+        verdict.needs.orEmpty().mapNotNull { n ->
+            WorkNeed.parse(n.need.orEmpty())?.let {
+                ResolvedNeed(
+                    need = it,
+                    status = NeedStatus.entries.firstOrNull { s -> s.name == n.status } ?: NeedStatus.NOT_IN_CATALOG,
+                    main = n.main == true,
+                    quote = n.quote
+                )
+            }
+        }
+
+    internal data class StoredVerdict(
+        @JsonProperty("needs") val needs: List<StoredNeed>? = null,
+        @JsonProperty("services") val services: List<StoredService>? = null
+    )
+
+    internal data class StoredNeed(
+        @JsonProperty("need") val need: String? = null,
+        @JsonProperty("status") val status: String? = null,
+        @JsonProperty("main") val main: Boolean? = null,
+        @JsonProperty("quote") val quote: String? = null
+    )
+
+    internal data class StoredService(
+        @JsonProperty("serviceId") val serviceId: String? = null,
+        @JsonProperty("nameKey") val nameKey: String? = null,
+        @JsonProperty("quote") val quote: String? = null,
+        @JsonProperty("needIndex") val needIndex: Int? = null
     )
 
     /**
@@ -410,11 +915,11 @@ class LeadServiceIntentService(
             .take(MAX_CATALOG)
 
     /** Cennik z osiami i cenami, gdy klasyfikator dostępny; goły w trybie testowym. */
-    private fun listing(studioId: StudioId, entities: List<pl.detailing.crm.service.infrastructure.ServiceEntity>): String {
+    private fun listing(
+        entities: List<pl.detailing.crm.service.infrastructure.ServiceEntity>,
+        axes: Map<String, pl.detailing.crm.service.taxonomy.ClassifiedServiceName>?
+    ): String {
         if (entities.isEmpty()) return "(cennik jest pusty)"
-        val axes = classifier?.let { c ->
-            runCatching { c.classify(studioId.value, entities.map { it.name }) }.getOrNull()
-        }
         return entities.mapIndexed { index, entity ->
             val base = "${index + 1}. ${entity.name.trim()}"
             if (axes == null) base
@@ -554,10 +1059,22 @@ $query
             null
         }
 
+    /** Jedna pozycja cennika wskazana DO POTRZEBY, z własnym uzasadnieniem. */
+    internal data class RawServiceRef(
+        @JsonProperty("number") val number: Int? = null,
+        @JsonProperty("quote") val quote: String? = null,
+        @JsonProperty("role") val role: String? = null
+    )
+
     internal data class RawNeed(
         @JsonProperty("operation") val operation: String? = null,
         @JsonProperty("part") val part: String? = null,
-        @JsonProperty("scope") val scope: String? = null
+        @JsonProperty("scope") val scope: String? = null,
+        // ── v3: werdykt, dowód i pozycje PER POTRZEBA ──────────────────────────
+        @JsonProperty("status") val status: String? = null,
+        @JsonProperty("main") val main: Boolean? = null,
+        @JsonProperty("quote") val quote: String? = null,
+        @JsonProperty("services") val services: List<RawServiceRef>? = null
     )
 
     internal data class RawIntent(
@@ -583,15 +1100,40 @@ $query
          * na nowych leadach jest nieodróżnialna od braku poprawki.
          * v2 = osie potrzeb + CATALOG_NEAR_MISS + evidenceQuote + koniec z „bliskimi wariantami".
          */
-        const val PROMPT_VERSION = "v2"
+        const val PROMPT_VERSION = "v3"
 
         const val ANCHOR_CATALOG = "CATALOG"
         const val ANCHOR_HISTORY = "HISTORY_MEDIAN"
+
+        // ── Etapy dziennika decyzji ─────────────────────────────────────────────
+        const val STAGE_SHOWN = "SHOWN"
+        const val STAGE_INVALID_INDEX = "INVALID_INDEX"
+        const val STAGE_NEED_NOT_MATCHED = "NEED_NOT_MATCHED"
+        const val STAGE_ROLE_NOT_ANSWER = "ROLE_NOT_ANSWER"
+        const val STAGE_NO_QUOTE = "NO_QUOTE"
+        const val STAGE_FAMILY_MISMATCH = "FAMILY_MISMATCH"
+        const val STAGE_AXIS_MISMATCH = "AXIS_MISMATCH"
+        const val STAGE_INACTIVE_OR_PACKAGE = "INACTIVE_OR_PACKAGE"
+        const val STAGE_DUPLICATE = "DUPLICATE"
+        const val STAGE_VERIFIER_REJECTED = "VERIFIER_REJECTED"
+        const val STAGE_VERIFIER_UNAVAILABLE = "VERIFIER_UNAVAILABLE"
+
+        private val MAPPER = com.fasterxml.jackson.databind.ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
         private const val MAX_QUERY_LENGTH = 4_000
         private const val FOLLOW_UP_LENGTH = 1_500
         private const val MAX_FOLLOW_UPS = 2
         private const val MAX_NEEDS = 6
+
+        /** Sufit pozycji na jedną potrzebę — jedna robota to jedna pozycja, dwie to już wariant. */
+        private const val MAX_SERVICES_PER_NEED = 2
+
+        /**
+         * Krótszy fragment nie jest cytatem, tylko słowem. „lamp" stoi w co drugim
+         * mailu o reflektorach i uzasadnia wszystko, czyli nic.
+         */
+        private const val MIN_QUOTE_LENGTH = 12
 
         /** Sufit pozycji cennika w prompcie — powyżej tego lista i tak nie jest cennikiem, tylko śmietnikiem. */
         private const val MAX_CATALOG = 300
@@ -631,47 +1173,88 @@ CZYSZCZENIE ≠ NAPRAWA: „pranie tapicerki" to CLEAN, „naprawa tapicerki" to
 inny fach, inna cena. FOTEL ≠ DRZWI: ta sama operacja na innej części auta to INNA
 robota o INNEJ cenie.
 
-═══ ODPOWIEDŹ ═══
-  reasoning:       najpierw analiza — co klient chce zrobić, na jakiej części,
-                   w jakiej skali; werdykty dopiero PO analizie.
-  evidenceQuote:   DOSŁOWNY cytat z zapytania, z którego wyczytujesz robotę i skalę.
-                   Bez cytatu nie wolno Ci twierdzić, że skalę znasz.
-  intent:          MATCHED | CATALOG_NEAR_MISS | NOT_IN_CATALOG | NEEDS_INSPECTION | NO_SERVICE
-  matchedServices: numery pozycji cennika, o które klient pyta. Wskaż pozycję TYLKO
-                   wtedy, gdy zgadza się jej OPERACJA i CZĘŚĆ AUTA. Tylko numery
-                   z listy. Pusta lista, gdy żadna nie pasuje.
-                   JEDNA POZYCJA NA JEDNĄ POTRZEBĘ: klient wymienia N robót, więc
-                   numerów ma być najwyżej N. Gdy kilka pozycji cennika opisuje tę
-                   samą robotę — pakiet i jego składnik, dwa warianty tego samego —
-                   wskaż JEDNĄ, tę bliższą zakresowi z zapytania.
-                   Wymień za to KAŻDĄ osobną robotę z zapytania — mycie, korekta,
-                   wosk i wnętrze to cztery potrzeby, nie jedna.
-  families:        kody rodzin roboty, o którą pyta klient (zwykle jedna).
-  needs:           lista { operation, part, scope } — jedna pozycja na jedną robotę
-                   z zapytania. Lead pakietowy („PPF na przód i ceramika na resztę")
-                   to DWIE pozycje needs.
-  scope:           FULL | PARTIAL | UNKNOWN — całościowo dla zapytania.
+═══ CO JEST OSOBNĄ ROBOTĄ, A CO JEJ ETAPEM ═══
+To jest najczęstsze źródło błędnych podpowiedzi, więc czytaj uważnie.
 
-═══ KIEDY KTÓRY intent ═══
+Wymień KAŻDĄ osobną robotę z zapytania — mycie, korekta, wosk i wnętrze to cztery
+potrzeby, nie jedna.
+
+ALE: etap jednej roboty NIE jest osobną potrzebą. Rzemieślnik opisuje klientowi
+przebieg tego, co zamawia, i wymienia kroki — kroki nie są zamówieniami.
+  • „renowacja reflektorów: usunięcie zmatowienia i zarysowań ORAZ ZABEZPIECZENIE
+    POWIERZCHNI PO WYKONANEJ USŁUDZE" → JEDNA potrzeba (renowacja lamp).
+    Zabezpieczenie jest ostatnim krokiem tej renowacji, nie zamówieniem powłoki.
+  • „polerowanie, a na koniec wosk, żeby się trzymało" → JEDNA potrzeba (korekta).
+  • „pranie tapicerki i odkurzenie" → JEDNA potrzeba (czyszczenie wnętrza).
+Kontra — to SĄ dwie potrzeby, bo klient zamawia dwie różne roboty na różnym materiale:
+  • „PPF na przód i ceramika na resztę lakieru".
+  • „korekta lakieru, a osobno pranie foteli".
+
+Pytanie kontrolne przed rozbiciem na dwie potrzeby: czy klient zamówiłby to DRUGIE,
+gdyby pierwszego nie robił? Jeśli nie — to jeden etap, nie druga robota.
+
+═══ ODPOWIEDŹ ═══
+  reasoning:       PIERWSZE pole. Najpierw analiza — co klient chce zrobić, na jakiej
+                   części, w jakiej skali, co jest robotą, a co jej etapem; werdykty
+                   dopiero PO analizie.
+  families:        kody rodzin roboty, o którą pyta klient (zwykle jedna).
+  scope:           FULL | PARTIAL | UNKNOWN — całościowo dla zapytania.
+  needs:           lista potrzeb, jedna pozycja na jedną ROBOTĘ (nie na etap).
+                   Każda potrzeba to obiekt:
+    { operation, part, scope,
+      main:    true dla roboty, o którą klient FAKTYCZNIE pyta. Dokładnie jedna
+               potrzeba ma main=true. Przy „renowacja reflektorów" główna jest
+               renowacja lamp — nawet gdy nie ma jej w cenniku.
+      quote:   DOSŁOWNY fragment zapytania, przepisany znak w znak, z którego
+               czytasz tę potrzebę. Nie streszczaj i nie poprawiaj — fragment
+               jest sprawdzany w tekście i potrzeba bez trafienia przepada.
+      status:  MATCHED        cennik MA tę robotę: ta sama operacja i ta sama
+                              część auta,
+               NEAR_MISS      cennik ma tę operację na INNEJ części auta,
+               NOT_IN_CATALOG cennika nie ma ani tej roboty, ani niczego z jej
+                              rodziny. Tego statusu używasz ŚMIAŁO — na jego
+                              podstawie system NIE pokaże cen, a to jest dobry
+                              wynik. Cena za inną robotę jest gorsza niż milczenie.
+      services: pozycje cennika DO TEJ potrzeby; pusta lista przy NEAR_MISS
+                i NOT_IN_CATALOG. Każda pozycja to obiekt:
+        { number: numer z listy cennika — tylko numer, nigdy nazwa ani cena,
+          quote:  DOSŁOWNY fragment zapytania, który uzasadnia TĘ pozycję.
+                  Fragment sprawdzany w tekście; bez trafienia pozycja przepada.
+                  Ten sam fragment dla pozycji z zupełnie innej rodziny to znak,
+                  że pozycja nie pasuje — wtedy jej nie podawaj.
+          role:   ANSWER  klient o to pyta i po to napisał,
+                  UPSELL  moglibyśmy to dosprzedać, ale klient o to NIE pytał.
+                  UPSELL nie wchodzi do wyceny. W razie wahania: UPSELL. }
+                JEDNA POZYCJA NA JEDNĄ POTRZEBĘ. Gdy kilka pozycji cennika opisuje
+                tę samą robotę — pakiet i jego składnik, dwa warianty tego samego —
+                wskaż JEDNĄ, tę bliższą zakresowi z zapytania.
+                Wskaż pozycję TYLKO wtedy, gdy zgadza się jej OPERACJA i CZĘŚĆ AUTA
+                ORAZ jej rodzina jest wśród rodzin, które podałeś w families. }
+  intent:          zgodny ze statusem potrzeby GŁÓWNEJ; NEEDS_INSPECTION, gdy roboty
+                   nie da się wycenić zdalnie, NO_SERVICE, gdy nie widać usługi.
+  evidenceQuote:   cytat dla potrzeby głównej (to samo, co jej quote).
+  matchedServices: nie używaj — zostało dla zgodności ze starymi zapisami.
+
+═══ KIEDY KTÓRY status potrzeby ═══
   MATCHED           klient pyta o robotę, którą to studio wykonuje, i wskazane
                     pozycje zgadzają się operacją I częścią auta.
-  CATALOG_NEAR_MISS cennik ma tę samą OPERACJĘ, ale na INNEJ CZĘŚCI auta
+  NEAR_MISS         cennik ma tę samą OPERACJĘ, ale na INNEJ CZĘŚCI auta
                     (przykład: cennik „naprawa tapicerki drzwi", klient pyta
-                    o FOTEL). Nazwij różnicę w reasoning. NIE wskazuj tej pozycji
-                    w matchedServices.
+                    o FOTEL). Nazwij różnicę w reasoning. NIE podawaj pozycji.
   NOT_IN_CATALOG    klient pyta o KONKRETNĄ robotę, a cennik nie ma ani jej,
                     ani niczego z jej rodziny. To ustalenie jest ważne: na jego
                     podstawie system NIE pokaże cen — lepiej nie podpowiedzieć nic,
                     niż podpowiedzieć cenę innej roboty.
-  NEEDS_INSPECTION  roboty nie da się wycenić zdalnie: klient odsyła do zdjęć,
-                    których odczyt nie mówi o skali, albo skala naprawy jest
-                    z natury do oględzin.
-  NO_SERVICE        z treści nie sposób wyczytać żadnej konkretnej usługi.
 
 ═══ ZASADA NADRZĘDNA ═══
-Nie naciągaj dopasowania. Wskazana pozycja stanie się podstawą ceny podanej klientowi.
-W razie wątpliwości: mniej numerów, CATALOG_NEAR_MISS zamiast najbliższego sąsiada,
-NEEDS_INSPECTION zamiast zgadywania skali, NO_SERVICE zamiast zgadywania roboty.
+Nie naciągaj dopasowania. Wskazana pozycja trafia wprost do wyceny, którą właściciel
+wyśle klientowi. Właściciel ma na nią spojrzeć i kliknąć „dodaj" bez wahania; pozycja,
+przy której musiałby się zastanowić „czemu to tu jest", jest gorsza niż jej brak,
+bo uczy go ignorować całą sekcję.
+
+W razie wątpliwości: mniej pozycji, UPSELL zamiast ANSWER, NOT_IN_CATALOG zamiast
+najbliższego sąsiada, NEEDS_INSPECTION zamiast zgadywania skali, NO_SERVICE zamiast
+zgadywania roboty. PUSTA LISTA POZYCJI JEST POPRAWNĄ I CZĘSTĄ ODPOWIEDZIĄ.
 """.trim()
     }
 }

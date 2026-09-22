@@ -21,6 +21,7 @@ import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.shared.VatRate
 import java.util.UUID
 
 /**
@@ -88,7 +89,36 @@ class LeadServiceSuggestionService(
          * Skoro nic z katalogu nie pasuje, lista zostaje pusta — a właściciel dopisuje
          * to, co uzna za stosowne, tym samym przyciskiem, którego używa zawsze.
          */
-        if (intent == null || intent.status != ServiceIntentStatus.MATCHED || intent.matchedServiceIds.isEmpty()) {
+        if (intent == null) {
+            itemsService.recomputeEstimatedValue(lead)
+            publishChanged(lead)
+            return
+        }
+
+        /*
+         * Które pozycje wolno podsunąć — i z jakim uzasadnieniem.
+         *
+         * `suggestions == null` znaczy „werdykt powstał przed v3" (wiersz zastany albo
+         * intencja zbudowana wprost w teście): wtedy jedziemy po matchedServiceIds
+         * i po globalnym statusie, dokładnie jak przed zmianą.
+         *
+         * `suggestions` niepuste znaczy, że KAŻDA pozycja przeszła komplet bramek
+         * (potrzeba obecna w cenniku, rola odpowiedzi, cytat sprawdzony w treści,
+         * zgodna rodzina, zgodne osie, werdykt weryfikatora) i niesie własny cytat.
+         *
+         * Globalnego statusu NIE pytamy tutaj z rozmysłem. On opisuje robotę GŁÓWNĄ
+         * i rządzi „Podobnymi zleceniami": lead „renowacja lamp (nie mamy) + mycie
+         * (mamy)" ma status NOT_IN_CATALOG, bo pasma cen dla renowacji nie pokażemy —
+         * ale mycie jest uzasadnioną sugestią i skasowanie go byłoby nadkorektą
+         * w drugą stronę.
+         */
+        val justification: Map<UUID, String> = intent.suggestions.orEmpty().associate { it.serviceId to it.quote }
+        val allowedIds = intent.suggestions
+            ?: intent.matchedServiceIds
+                .takeIf { intent.status == ServiceIntentStatus.MATCHED }
+                .orEmpty()
+                .map { SuggestedService(it, "", "", 0) }
+        if (allowedIds.isEmpty()) {
             itemsService.recomputeEstimatedValue(lead)
             publishChanged(lead)
             return
@@ -100,7 +130,7 @@ class LeadServiceSuggestionService(
             .toSet()
 
         val services = serviceRepository
-            .findAllByIdInAndStudioId(intent.matchedServiceIds, studioId.value)
+            .findAllByIdInAndStudioId(allowedIds.map { it.serviceId }, studioId.value)
             .filter { it.isActive && !it.isPackage && it.id !in alreadyOnLead }
         if (services.isEmpty()) {
             itemsService.recomputeEstimatedValue(lead)
@@ -119,6 +149,9 @@ class LeadServiceSuggestionService(
                     leadId = leadId,
                     serviceId = service.id,
                     name = service.name.take(200),
+                    // Brutto z cennika przechodzi BEZ przeliczania, a netto jest tym
+                    // netto, które stoi obok niego w cenniku — para zapisana przez
+                    // człowieka nie jest tu odtwarzana z drugiej strony (CLAUDE.md §1).
                     priceGross = price,
                     priceNet = if (priceSource == LeadServicePriceSource.CATALOG) service.basePriceNet else null,
                     vatRate = service.vatRate,
@@ -126,7 +159,8 @@ class LeadServiceSuggestionService(
                     quantity = 1,
                     status = LeadServiceItemStatus.SUGGESTED,
                     source = LeadServiceItemSource.AI,
-                    priceSource = priceSource
+                    priceSource = priceSource,
+                    evidenceQuote = justification[service.id]
                 )
             )
         }
@@ -152,6 +186,13 @@ class LeadServiceSuggestionService(
             if (priceGross < 0) throw ValidationException("Cena nie może być ujemna")
             item.priceGross = priceGross
             item.priceSource = LeadServicePriceSource.MANUAL
+            // Netto z cennika należało do CENY Z CENNIKA. Człowiek podał własne brutto,
+            // więc brutto jest źródłem prawdy i zostaje zapisane bez zmian, a netto
+            // liczy się z niego (CLAUDE.md §1, reguła kierunkowa). Zostawienie starego
+            // netto pokazywałoby w edytorze wyceny parę, która do siebie nie pasuje.
+            item.priceNet = item.vatRate
+                ?.let { rate -> VatRate.entries.find { it.rate == rate } }
+                ?.netCentsFromGrossCents(priceGross)
         }
         if (item.priceGross == null) {
             // Zakaz halucynacji dochodzi do skutku właśnie tu: pozycja bez ceny nie

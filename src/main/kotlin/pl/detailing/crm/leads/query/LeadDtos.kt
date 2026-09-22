@@ -77,7 +77,14 @@ data class LeadServiceItemDto(
     /** MANUAL | AI — źródło pozycji; AI + SUGGESTED daje badge „Sugerowane". */
     val source: String,
     /** CATALOG | HISTORY | MANUAL | PENDING — skąd cena; PENDING = trzeba podać kwotę. */
-    val priceSource: String
+    val priceSource: String,
+    /**
+     * Dosłowny fragment wiadomości klienta, którym sugestia jest uzasadniona.
+     * Null dla pozycji ręcznych i dla sugestii sprzed v3. Interfejs pokazuje go
+     * przy pozycji: sugestia, której nie da się uzasadnić cytatem, nie powinna
+     * była powstać — a właściciel ma widzieć, na czym automat ją oparł.
+     */
+    val evidenceQuote: String? = null
 )
 
 /**
@@ -206,7 +213,8 @@ fun LeadServiceItemEntity.toDto(): LeadServiceItemDto = LeadServiceItemDto(
     totalGross = (priceGross ?: 0L) * quantity,
     status = status.name,
     source = source.name,
-    priceSource = priceSource.name
+    priceSource = priceSource.name,
+    evidenceQuote = evidenceQuote
 )
 
 /**

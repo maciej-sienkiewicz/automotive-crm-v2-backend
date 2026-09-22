@@ -66,7 +66,7 @@ class LeadServiceItemEntity(
      * stanu; sumuje się nadal brutto.
      */
     @Column(name = "price_net")
-    val priceNet: Long? = null,
+    var priceNet: Long? = null,
 
     /** Stawka VAT w procentach; -1 oznacza „zwolniony" (spójnie z resztą aplikacji). */
     @Column(name = "vat_rate")
@@ -90,6 +90,18 @@ class LeadServiceItemEntity(
     @Enumerated(EnumType.STRING)
     @Column(name = "price_source", nullable = false, length = 20)
     var priceSource: LeadServicePriceSource = LeadServicePriceSource.MANUAL,
+
+    /**
+     * DOSŁOWNY fragment wiadomości klienta, który uzasadnia tę sugestię — sprawdzony
+     * przez kod, że faktycznie w niej stoi. Null dla pozycji wpisanych ręcznie i dla
+     * sugestii sprzed v3.
+     *
+     * Bez tego pola sekcja podpowiadała pozycje, których nie umiała uzasadnić:
+     * przy zapytaniu o renowację reflektorów wstawiła serwis powłoki ceramicznej,
+     * a jedyny zapisany cytat był jeden na cały werdykt i nigdy nie wracał z bazy.
+     */
+    @Column(name = "evidence_quote", length = 300)
+    var evidenceQuote: String? = null,
 
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now()
