@@ -2,9 +2,11 @@ package pl.detailing.crm.finance.income
 
 import org.springframework.http.ResponseEntity
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -52,6 +54,7 @@ class IncomeDocumentsController(
         @RequestParam(required = false) dateTo: LocalDate?,
         @RequestParam(defaultValue = "false") onlyKsef: Boolean,
         @RequestParam(defaultValue = "false") includeExcluded: Boolean,
+        @RequestParam(defaultValue = "false") onlyExcluded: Boolean,
         /**
          * Jedna fraza „szukaj": NIP, nazwa kontrahenta, nazwa pozycji, numer dokumentu,
          * numer KSeF albo kwota. Rozkład frazy na porównywalne warianty robi [SearchTerm].
@@ -81,6 +84,7 @@ class IncomeDocumentsController(
             dateTo        = dateTo,
             onlyKsef      = onlyKsef,
             includeExcluded = includeExcluded,
+            onlyExcluded  = onlyExcluded,
             search        = SearchTerm.like(search),
             searchDigits  = SearchTerm.digitsLike(search),
             searchAmount  = SearchTerm.amountLike(search)
@@ -145,6 +149,52 @@ class IncomeDocumentsController(
         return ResponseEntity.noContent().build()
     }
 
+    /**
+     * Dodaje albo edytuje odręczną notatkę do dokumentu przychodowego — wzorem
+     * notatki na fakturze kosztowej. Kieruje zapis do właściwej tabeli po [sourceKind].
+     */
+    @PatchMapping("/{sourceKind}/{id}/note")
+    @Transactional
+    fun upsertNote(
+        @PathVariable sourceKind: String,
+        @PathVariable id: UUID,
+        @RequestBody req: UpsertIncomeNoteRequest
+    ): ResponseEntity<Void> {
+        val note = req.note.trim()
+        if (note.isEmpty()) throw ValidationException("Notatka nie może być pusta")
+        setNote(sourceKind, id, note)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/{sourceKind}/{id}/note")
+    @Transactional
+    fun deleteNote(@PathVariable sourceKind: String, @PathVariable id: UUID): ResponseEntity<Void> {
+        setNote(sourceKind, id, null)
+        return ResponseEntity.noContent().build()
+    }
+
+    private fun setNote(sourceKind: String, id: UUID, note: String?) {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+        when (sourceKind.uppercase()) {
+            "KSEF" -> {
+                val invoice = revenueInvoiceRepository.findByIdAndStudioId(id, studioId)
+                    ?: throw NotFoundException("Faktura przychodowa $id nie istnieje")
+                invoice.note = note
+                revenueInvoiceRepository.save(invoice)
+            }
+            "FINANCE" -> {
+                val document = financialDocumentRepository.findByIdAndStudioId(id, studioId)
+                    ?: throw NotFoundException("Dokument przychodowy $id nie istnieje")
+                document.note = note
+                document.updatedBy = principal.userId.value
+                document.updatedAt = Instant.now()
+                financialDocumentRepository.save(document)
+            }
+            else -> throw ValidationException("Nieprawidłowe źródło dokumentu: '$sourceKind'. Dozwolone: KSEF, FINANCE")
+        }
+    }
+
     private fun IncomeDocumentRow.toResponse() = IncomeDocumentResponse(
         id               = id,
         sourceKind       = sourceKind,
@@ -165,7 +215,8 @@ class IncomeDocumentsController(
         duplicateStatus  = duplicateStatus,
         visitId          = visitId,
         createdAt        = createdAt,
-        excluded         = excluded
+        excluded         = excluded,
+        note             = note
     )
 }
 
@@ -192,8 +243,12 @@ data class IncomeDocumentResponse(
     val visitId: String?,
     val createdAt: Instant,
     /** Ukryty ręcznie ze statystyk — widoczny tylko przy includeExcluded=true. */
-    val excluded: Boolean
+    val excluded: Boolean,
+    /** Odręczna notatka operatora; null = brak. */
+    val note: String? = null
 )
+
+data class UpsertIncomeNoteRequest(val note: String = "")
 
 data class IncomeDocumentListResponse(
     val documents: List<IncomeDocumentResponse>,

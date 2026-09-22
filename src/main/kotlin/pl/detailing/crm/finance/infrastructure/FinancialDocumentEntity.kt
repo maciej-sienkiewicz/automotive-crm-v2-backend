@@ -132,6 +132,10 @@ class FinancialDocumentEntity(
     @Column(name = "deleted_at")
     var deletedAt: Instant? = null,
 
+    /** Odręczna notatka operatora — odpowiednik notatki na fakturze kosztowej KSeF. */
+    @Column(name = "note", columnDefinition = "TEXT")
+    var note: String? = null,
+
     /**
      * Faktura przychodowa KSeF odpowiadająca temu dokumentowi (jeśli istnieje).
      * Ustawiana przy zakończeniu wizyty z fakturą — zunifikowana lista dokumentów

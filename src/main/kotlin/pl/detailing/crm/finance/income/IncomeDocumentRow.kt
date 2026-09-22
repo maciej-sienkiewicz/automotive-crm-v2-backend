@@ -41,7 +41,9 @@ data class IncomeDocumentRow(
     val visitId: String?,
     val createdAt: Instant,
     /** Ukryty ręcznie ze statystyk — widoczny tylko przy includeExcluded. */
-    val excluded: Boolean
+    val excluded: Boolean,
+    /** Odręczna notatka operatora; null = brak. */
+    val note: String? = null
 ) {
     companion object {
         fun from(row: Array<Any?>) = IncomeDocumentRow(
@@ -64,7 +66,8 @@ data class IncomeDocumentRow(
             duplicateStatus  = row[16] as? String ?: "NONE",
             visitId          = row[17] as? String,
             createdAt        = toInstant(row[18]),
-            excluded         = row[19] == true
+            excluded         = row[19] == true,
+            note             = row[20] as? String
         )
 
         /**

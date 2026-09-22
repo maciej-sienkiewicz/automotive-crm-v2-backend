@@ -29,7 +29,7 @@ class IncomeDocumentsRepository(
      * 0 id, 1 sourceKind, 2 documentType, 3 documentNumber, 4 issueDate,
      * 5 counterpartyName, 6 counterpartyNip, 7 totalNet, 8 totalVat, 9 totalGross,
      * 10 currency, 11 paymentStatus, 12 paymentLabel, 13 ksefStatus, 14 ksefNumber,
-     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt, 19 excluded
+     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt, 19 excluded, 20 note
      */
     /**
      * UWAGA: w natywnych zapytaniach nie wolno używać postgresowej składni rzutowania `::`,
@@ -58,7 +58,8 @@ class IncomeDocumentsRepository(
             i.duplicate_status                      AS duplicate_status,
             CAST(i.visit_id AS text)                AS visit_id,
             i.created_at                            AS created_at,
-            (i.excluded_at IS NOT NULL)             AS is_excluded
+            (i.excluded_at IS NOT NULL)             AS is_excluded,
+            i.note                                  AS note
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = CAST(:studioId AS uuid)
           AND (CAST(:documentType AS text) IS NULL
@@ -67,7 +68,9 @@ class IncomeDocumentsRepository(
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
-          AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)
+          AND ((CAST(:onlyExcluded AS boolean) = TRUE AND i.excluded_at IS NOT NULL)
+               OR (CAST(:onlyExcluded AS boolean) = FALSE
+                   AND (CAST(:includeExcluded AS boolean) = TRUE OR i.excluded_at IS NULL)))
           AND (CAST(:search AS text) IS NULL
                OR LOWER(COALESCE(i.invoice_number, '')) LIKE CAST(:search AS text)
                OR LOWER(COALESCE(i.ksef_number, ''))    LIKE CAST(:search AS text)
@@ -107,7 +110,8 @@ class IncomeDocumentsRepository(
             'NONE',
             CAST(d.visit_id AS text),
             d.created_at,
-            (d.excluded_at IS NOT NULL)
+            (d.excluded_at IS NOT NULL),
+            d.note
         FROM financial_documents d
         WHERE d.studio_id = CAST(:studioId AS uuid)
           AND d.direction = 'INCOME'
@@ -117,7 +121,9 @@ class IncomeDocumentsRepository(
           AND (CAST(:paymentStatus AS text) IS NULL OR d.status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS date) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
-          AND (CAST(:includeExcluded AS boolean) = TRUE OR d.excluded_at IS NULL)
+          AND ((CAST(:onlyExcluded AS boolean) = TRUE AND d.excluded_at IS NOT NULL)
+               OR (CAST(:onlyExcluded AS boolean) = FALSE
+                   AND (CAST(:includeExcluded AS boolean) = TRUE OR d.excluded_at IS NULL)))
           AND CAST(:onlyKsef AS boolean) = FALSE
           AND (CAST(:search AS text) IS NULL
                OR LOWER(d.document_number)                    LIKE CAST(:search AS text)
@@ -158,6 +164,7 @@ class IncomeDocumentsRepository(
         query.setParameter("dateTo", filters.dateTo)
         query.setParameter("onlyKsef", filters.onlyKsef)
         query.setParameter("includeExcluded", filters.includeExcluded)
+        query.setParameter("onlyExcluded", filters.onlyExcluded)
         query.setParameter("search", filters.search)
         query.setParameter("searchDigits", filters.searchDigits)
         query.setParameter("searchAmount", filters.searchAmount)
@@ -179,6 +186,8 @@ data class IncomeDocumentFilters(
      * pozycje nie pojawiają się na liście, tak jak po stronie dokumentów kosztowych.
      */
     val includeExcluded: Boolean = false,
+    /** true = pokaż WYŁĄCZNIE ukryte. Ma pierwszeństwo nad [includeExcluded]. */
+    val onlyExcluded: Boolean = false,
     /**
      * Fraza wyszukiwarki jako wzorzec `%…%` małymi literami — szuka po numerze dokumentu,
      * numerze KSeF, nazwie i NIP-ie kontrahenta, opisie oraz nazwach pozycji faktury.

@@ -364,6 +364,7 @@ class CostCategoryController(
             source          = null,
             paymentStatus   = null,
             includeExcluded = false,
+            onlyExcluded    = false,
             dateFrom        = DateRangeFilter.startOfDay(dateFrom),
             dateToExclusive = DateRangeFilter.startOfNextDay(dateTo),
             search          = null,

@@ -222,7 +222,8 @@ class KsefController(
         // took LocalDate and set the convention for this API.
         @RequestParam(required = false)      dateFrom: LocalDate?,
         @RequestParam(required = false)      dateTo: LocalDate?,
-        @RequestParam(defaultValue = "false") includeExcluded: Boolean
+        @RequestParam(defaultValue = "false") includeExcluded: Boolean,
+        @RequestParam(defaultValue = "false") onlyExcluded: Boolean
     ): ResponseEntity<ExpenseListResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         val pageable  = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 100))
@@ -232,6 +233,7 @@ class KsefController(
             source          = source?.uppercase(),
             paymentStatus   = paymentStatus?.uppercase(),
             includeExcluded = includeExcluded,
+            onlyExcluded    = onlyExcluded,
             dateFrom        = DateRangeFilter.startOfDay(dateFrom),
             // dateTo names a day the user expects to see in full, so the bound is the
             // start of the next one; the query compares with `<`.

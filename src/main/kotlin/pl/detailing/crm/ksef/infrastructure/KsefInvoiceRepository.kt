@@ -64,7 +64,9 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     @Query(value = """
         SELECT * FROM ksef_invoices i
         WHERE i.studio_id = CAST(:studioId AS uuid)
-          AND (:includeExcluded = true OR i.status <> 'EXCLUDED')
+          AND ((CAST(:onlyExcluded AS boolean) = true AND i.status = 'EXCLUDED')
+               OR (CAST(:onlyExcluded AS boolean) = false
+                   AND (:includeExcluded = true OR i.status <> 'EXCLUDED')))
           AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
@@ -86,7 +88,9 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     """, countQuery = """
         SELECT COUNT(*) FROM ksef_invoices i
         WHERE i.studio_id = CAST(:studioId AS uuid)
-          AND (:includeExcluded = true OR i.status <> 'EXCLUDED')
+          AND ((CAST(:onlyExcluded AS boolean) = true AND i.status = 'EXCLUDED')
+               OR (CAST(:onlyExcluded AS boolean) = false
+                   AND (:includeExcluded = true OR i.status <> 'EXCLUDED')))
           AND (CAST(:source AS text) IS NULL OR i.source = CAST(:source AS text))
           AND (CAST(:paymentStatus AS text) IS NULL OR i.payment_status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS timestamptz) IS NULL OR i.invoicing_date >= CAST(:dateFrom AS timestamptz))
@@ -110,6 +114,7 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("source") source: String?,
         @Param("paymentStatus") paymentStatus: String?,
         @Param("includeExcluded") includeExcluded: Boolean,
+        @Param("onlyExcluded") onlyExcluded: Boolean,
         @Param("dateFrom") dateFrom: OffsetDateTime?,
         /**
          * Exclusive: the instant the range ends, i.e. local midnight *after* the last day
