@@ -791,7 +791,7 @@ class VisitController(
                 totalVisits = stats.totalVisits,
                 totalSpent = MoneyAmountResponse(
                     netAmount = stats.totalSpent.amountInCents,
-                    grossAmount = stats.totalSpent.amountInCents, // For totalSpent, we show net = gross
+                    grossAmount = stats.totalSpentGross.amountInCents,
                     currency = "PLN"
                 ),
                 vehiclesCount = stats.vehiclesCount
@@ -861,7 +861,8 @@ class VisitController(
             pendingOperation = serviceItem.pendingOperation?.let { mapPendingOperation(it) },
             hasPendingChange = serviceItem.pendingOperation != null,
             previousPriceNet = if (showPrices) serviceItem.confirmedSnapshot?.finalPriceNet?.amountInCents else null,
-            previousPriceGross = if (showPrices) serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents else null
+            previousPriceGross = if (showPrices) serviceItem.confirmedSnapshot?.finalPriceGross?.amountInCents else null,
+            basePriceGross = if (showPrices) serviceItem.basePriceGross?.amountInCents else null
         )
     }
 

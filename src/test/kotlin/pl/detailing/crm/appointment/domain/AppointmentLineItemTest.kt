@@ -72,8 +72,10 @@ class AppointmentLineItemTest {
         // Gdy adjustment faktycznie coś zmienia, nie ma już jednej "kwoty bazowej", którą
         // dałoby się po prostu przepisać - finalNet się zmienia, więc finalGross musi
         // zostać przeliczony z NOWEGO netta, nie ze starego brutto sprzed rabatu.
-        // 154472 * 0,9 = 139024,8..., obcięte (nie zaokrąglone) do 139024 - tak liczy
-        // calculateFinalNet.
+        // Kwota rabatu jest ZAOKRĄGLANA: round(154472 * 0,1) = round(15447,2) = 15447,
+        // netto 139025 — tak samo liczy wizyta (PriceCalculator) i podgląd na froncie
+        // (applyAdjustment). Rezerwacja obcinała wcześniej netto do 139024, więc zapisana
+        // cena różniła się o grosz od tej, którą użytkownik widział w formularzu.
         val item = create(
             basePriceNet = 154_472L,
             basePriceGross = 190_000L,
@@ -81,7 +83,7 @@ class AppointmentLineItemTest {
             adjustmentValue = AdjustmentType.convertPercentValueToBasisPoints(-10.0)
         )
 
-        assertEquals(139_024L, item.finalPriceNet.amountInCents)
+        assertEquals(139_025L, item.finalPriceNet.amountInCents)
         assertEquals(VatRate.VAT_23.calculateGrossAmount(item.finalPriceNet).amountInCents, item.finalPriceGross.amountInCents)
     }
 

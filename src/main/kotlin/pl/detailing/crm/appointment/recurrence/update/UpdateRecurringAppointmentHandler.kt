@@ -114,7 +114,8 @@ class UpdateRecurringAppointmentHandler(
                             adjustmentValue = template.adjustmentValue,
                             finalPriceNet = template.finalPriceNet,
                             finalPriceGross = template.finalPriceGross,
-                            customNote = template.customNote
+                            customNote = template.customNote,
+                            basePriceGross = template.basePriceGross
                         )
                     }
                     entity.lineItems.addAll(newItems)

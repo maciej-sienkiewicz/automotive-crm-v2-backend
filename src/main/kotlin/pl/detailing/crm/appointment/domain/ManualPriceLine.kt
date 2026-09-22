@@ -1,6 +1,7 @@
 package pl.detailing.crm.appointment.domain
 
 import pl.detailing.crm.shared.Money
+import pl.detailing.crm.shared.VatRate
 
 /**
  * Cena bazowa pozycji opartej o usługę z CENNIKA.
@@ -35,3 +36,39 @@ fun catalogBaseNet(requireManualPrice: Boolean, catalogNet: Money, requestedNetC
  */
 fun catalogBaseGross(requireManualPrice: Boolean, catalogGross: Money, requestedGrossCents: Long?): Money? =
     if (requireManualPrice) requestedGrossCents?.let { Money.fromCents(it) } else catalogGross
+
+/**
+ * Cena bazowa pozycji z cennika — netto i dokładne brutto — przy stawce VAT tej POZYCJI.
+ *
+ * Usługa z ceną ręczną bierze cenę z żądania ([catalogBaseNet], [catalogBaseGross]). Zwykła
+ * bierze ją z cennika, ale brutto cennika obowiązuje wyłącznie przy stawce cennika. Pozycja
+ * rezerwacji może mieć inną (stawkę zmienia tabela usług, a kalendarz wysyłał domyślne 23%):
+ * brutto przekazane wtedy dalej nie pasowało do netta i kontrola spójności pozycji wywracała
+ * cały zapis rezerwacji.
+ *
+ * Przy innej stawce zostaje strona, którą ktoś ustalił (CLAUDE.md §1): brutto wpisane od
+ * strony brutto — różne od netto × stawka — zostaje, a netto liczy się z niego; w każdym
+ * innym przypadku zostaje netto, a brutto liczy się z niego. To ta sama reguła co
+ * `withVatRate` na froncie, więc podgląd w tabeli i zapis dają te same kwoty.
+ */
+fun catalogLinePrice(
+    requireManualPrice: Boolean,
+    catalogNet: Money,
+    catalogGross: Money,
+    catalogVatRate: VatRate,
+    lineVatRate: VatRate,
+    requestedNetCents: Long,
+    requestedGrossCents: Long?
+): Pair<Money, Money?> {
+    if (requireManualPrice) {
+        return catalogBaseNet(true, catalogNet, requestedNetCents) to
+            catalogBaseGross(true, catalogGross, requestedGrossCents)
+    }
+    if (lineVatRate == catalogVatRate) return catalogNet to catalogGross
+    val grossTyped = catalogGross != catalogVatRate.calculateGrossAmount(catalogNet)
+    return if (grossTyped) {
+        Money(lineVatRate.netCentsFromGrossCents(catalogGross.amountInCents)) to catalogGross
+    } else {
+        catalogNet to null
+    }
+}

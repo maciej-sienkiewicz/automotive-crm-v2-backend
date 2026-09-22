@@ -154,7 +154,9 @@ class RequestUpsellServicesHandler(
                 adjustmentType = suggestion.adjustmentType,
                 adjustmentValue = suggestion.adjustmentValue,
                 customNote = suggestion.note,
-                basePriceGross = Money.fromCents(suggestion.finalPriceGross)
+                // Brutto BAZOWE, nie końcowe: końcowe podane jako bazowe odejmowało rabat
+                // od brutto drugi raz (FIXED_GROSS 100 zł dawał klientowi 200 zł upustu).
+                basePriceGross = suggestion.exactBaseGross()?.let { Money.fromCents(it) }
             )
         }
 

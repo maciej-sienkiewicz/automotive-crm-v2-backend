@@ -183,8 +183,9 @@ class LeadQuoteSyncService(
             ) {
                 return storedNet
             }
-            val multiplier = if (vatRate == VatRate.VAT_ZW) 1.0 else 1.0 + vatRate.rate.toDouble() / 100.0
-            return Math.round(grossCents / multiplier)
+            // Ten sam prymityw co wszędzie indziej (CLAUDE.md §1) — własne dzielenie przez 1,23
+            // w double mogło rozejść się z nim o grosz na połówkach.
+            return vatRate.netCentsFromGrossCents(grossCents)
         }
     }
 }

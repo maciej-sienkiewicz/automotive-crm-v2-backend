@@ -73,7 +73,10 @@ class ReservationUpsellConsentService(
                         adjustmentValue = suggestion.adjustmentValue,
                         finalPriceNet = suggestion.finalPriceNet,
                         finalPriceGross = suggestion.finalPriceGross,
-                        customNote = suggestion.note
+                        customNote = suggestion.note,
+                        // check-in przelicza pozycję od ceny bazowej — bez dokładnego brutto
+                        // bazowego cena pokazana klientowi zjeżdżałaby o grosz
+                        basePriceGross = suggestion.exactBaseGross()
                     )
                 )
                 suggestion.status = UpsellSuggestionStatus.CONFIRMED

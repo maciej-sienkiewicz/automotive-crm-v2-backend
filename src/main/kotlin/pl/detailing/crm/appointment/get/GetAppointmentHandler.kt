@@ -155,7 +155,8 @@ class GetAppointmentHandler(
             finalPriceNet = lineItem.finalPriceNet,
             finalPriceGross = lineItem.finalPriceGross,
             isPackage = isPackage,
-            packageItems = packageItems
+            packageItems = packageItems,
+            basePriceGross = lineItem.basePriceGross
         )
     }
 }

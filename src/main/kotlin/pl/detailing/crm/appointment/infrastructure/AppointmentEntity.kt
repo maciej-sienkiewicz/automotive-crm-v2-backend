@@ -211,7 +211,11 @@ class AppointmentLineItemEntity(
     var finalPriceGross: Long,
 
     @Column(name = "custom_note", columnDefinition = "TEXT")
-    var customNote: String?
+    var customNote: String?,
+
+    /** Dokładne brutto ceny bazowej: wpisane od strony brutto albo z cennika; NULL = nikt go nie ustalił, brutto liczy się z netta. */
+    @Column(name = "base_price_gross")
+    var basePriceGross: Long? = null
 ) {
     fun toDomain(): AppointmentLineItem = AppointmentLineItem(
         serviceId = serviceId?.let { ServiceId(it) },
@@ -222,7 +226,8 @@ class AppointmentLineItemEntity(
         adjustmentValue = adjustmentValue,
         finalPriceNet = Money(finalPriceNet),
         finalPriceGross = Money(finalPriceGross),
-        customNote = customNote
+        customNote = customNote,
+        basePriceGross = basePriceGross?.let { Money(it) }
     )
 
     companion object {
@@ -237,7 +242,8 @@ class AppointmentLineItemEntity(
                 adjustmentValue = lineItem.adjustmentValue,
                 finalPriceNet = lineItem.finalPriceNet.amountInCents,
                 finalPriceGross = lineItem.finalPriceGross.amountInCents,
-                customNote = lineItem.customNote
+                customNote = lineItem.customNote,
+                basePriceGross = lineItem.basePriceGross?.amountInCents
             )
     }
 }

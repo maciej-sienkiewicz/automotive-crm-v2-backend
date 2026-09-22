@@ -191,10 +191,7 @@ class CompleteVisitInvoiceOrchestrator(
         var remainderId: java.util.UUID? = null
         var remainderNumber: String? = null
         if (remainderGross > 0) {
-            val remainderNet = BigDecimal(remainderGross)
-                .multiply(BigDecimal(100))
-                .divide(BigDecimal(123), 0, RoundingMode.HALF_UP)
-                .toLong()
+            val remainderNet = remainderNetCents(visit.calculateTotalNet().amountInCents, invoiceTotals.net, remainderGross)
             val remainderDoc = createFinancialDocumentHandler.handle(
                 CreateFinancialDocumentCommand(
                     studioId          = command.studioId,
@@ -440,3 +437,19 @@ class CompleteVisitInvoiceOrchestrator(
     private fun grosz(amount: Long): String =
         BigDecimal(amount).movePointLeft(2).setScale(2).toPlainString()
 }
+
+/**
+ * Netto reszty kwoty wizyty, której faktura nie objęła: netto wizyty − netto faktury.
+ * Reszta dziedziczy stawki usług spoza faktury, a VAT to różnica brutto − netto
+ * (CLAUDE.md §1). Sztywne ÷1,23 dawało złe netto (a więc zły przychód w statystykach)
+ * przy usługach na 8% czy zw.
+ *
+ * Gdy pozycje faktury zmieniono tak, że różnica nie mieści się w reszcie, zostaje dawny
+ * podział po 23% — zamiast zapisać ujemne netto albo netto większe niż brutto.
+ */
+internal fun remainderNetCents(visitNetCents: Long, invoiceNetCents: Long, remainderGrossCents: Long): Long =
+    (visitNetCents - invoiceNetCents).takeIf { it in 0..remainderGrossCents }
+        ?: BigDecimal(remainderGrossCents)
+            .multiply(BigDecimal(100))
+            .divide(BigDecimal(123), 0, RoundingMode.HALF_UP)
+            .toLong()

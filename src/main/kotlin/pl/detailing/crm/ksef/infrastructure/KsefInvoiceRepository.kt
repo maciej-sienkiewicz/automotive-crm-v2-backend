@@ -201,6 +201,11 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
 
     /**
      * Monthly expense breakdown, excluding CANCELLED and EXCLUDED invoices.
+     *
+     * Brakujące kwoty są odtwarzane tą samą regułą co w [sumNetByPaymentStatus]: ręczny koszt
+     * bywa wpisany tylko brutto. Zwykłe SUM(net_amount)/SUM(vat_amount) wyrzucało taki koszt
+     * z netto i VAT, zostawiając go w brutto — statystyki KSeF pokazywały inne koszty netto
+     * niż podsumowanie finansów, a netto + VAT przestawało dawać brutto.
      * Correction invoices (FA_KOR) are included — their amounts carry the correct sign from KSeF.
      *
      * Result columns (index):
@@ -214,9 +219,9 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
     @Query(value = """
         SELECT
             TO_CHAR(DATE_TRUNC('month', invoicing_date), 'YYYY-MM')            AS month_label,
-            COALESCE(SUM(gross_amount), 0)                                      AS costs_gross,
-            COALESCE(SUM(net_amount),   0)                                      AS costs_net,
-            COALESCE(SUM(vat_amount),   0)                                      AS costs_vat,
+            COALESCE(SUM(COALESCE(gross_amount, net_amount + COALESCE(vat_amount, 0), 0)), 0) AS costs_gross,
+            COALESCE(SUM(COALESCE(net_amount, gross_amount - COALESCE(vat_amount, 0), 0)), 0) AS costs_net,
+            COALESCE(SUM(COALESCE(vat_amount, gross_amount - net_amount, 0)), 0)             AS costs_vat,
             COUNT(CASE WHEN is_correction = FALSE THEN 1 END)                   AS expense_count,
             COUNT(CASE WHEN is_correction = TRUE  THEN 1 END)                   AS correction_count
         FROM ksef_invoices
@@ -239,9 +244,9 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
      */
     @Query(value = """
         SELECT
-            COALESCE(SUM(gross_amount), 0)                                      AS costs_gross,
-            COALESCE(SUM(net_amount),   0)                                      AS costs_net,
-            COALESCE(SUM(vat_amount),   0)                                      AS costs_vat,
+            COALESCE(SUM(COALESCE(gross_amount, net_amount + COALESCE(vat_amount, 0), 0)), 0) AS costs_gross,
+            COALESCE(SUM(COALESCE(net_amount, gross_amount - COALESCE(vat_amount, 0), 0)), 0) AS costs_net,
+            COALESCE(SUM(COALESCE(vat_amount, gross_amount - net_amount, 0)), 0)             AS costs_vat,
             COUNT(CASE WHEN is_correction = FALSE THEN 1 END)                   AS expense_count,
             COUNT(CASE WHEN is_correction = TRUE  THEN 1 END)                   AS correction_count
         FROM ksef_invoices

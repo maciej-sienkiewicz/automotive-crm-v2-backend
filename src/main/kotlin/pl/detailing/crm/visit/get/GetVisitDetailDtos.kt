@@ -165,7 +165,14 @@ data class ServiceLineItemResponse(
 
     // Previous values for EDIT operations (for displaying changes)
     val previousPriceNet: Long?,
-    val previousPriceGross: Long?
+    val previousPriceGross: Long?,
+
+    /**
+     * Dokładne brutto ceny bazowej — wpisane od strony brutto albo z cennika; `null` = nikt go
+     * nie ustalił i brutto liczy się z netta. Edytor ceny ma wypełniać pole brutto TĄ kwotą —
+     * netto × stawka dałoby 1900,01 zamiast 1900,00.
+     */
+    val basePriceGross: Long? = null
 )
 
 /**
@@ -253,8 +260,14 @@ data class VisitSettlementInfo(
  */
 data class CustomerStats(
     val totalVisits: Int,
+    /** Suma NETTO zakończonych wizyt klienta. */
     val totalSpent: Money,
-    val vehiclesCount: Int
+    val vehiclesCount: Int,
+    /**
+     * Suma BRUTTO tych samych wizyt — osobno, bo brutto nie da się odtworzyć z sumy netto.
+     * Celowo bez wartości domyślnej: domyślne `totalSpent` po cichu podałoby netto jako brutto.
+     */
+    val totalSpentGross: Money
 )
 
 /**

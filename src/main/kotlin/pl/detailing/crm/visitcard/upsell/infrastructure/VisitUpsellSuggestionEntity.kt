@@ -8,6 +8,8 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import pl.detailing.crm.appointment.domain.AdjustmentType
+import pl.detailing.crm.shared.Money
+import pl.detailing.crm.shared.VatRate
 import java.time.Instant
 import java.util.UUID
 
@@ -85,6 +87,10 @@ class VisitUpsellSuggestionEntity(
     @Column(name = "final_price_gross", nullable = false)
     val finalPriceGross: Long,
 
+    /** Dokładne brutto ceny bazowej (z katalogu); NULL w sugestiach sprzed dodania kolumny. */
+    @Column(name = "base_price_gross")
+    val basePriceGross: Long? = null,
+
     @Column(name = "note", length = 500)
     val note: String?,
 
@@ -109,4 +115,34 @@ class VisitUpsellSuggestionEntity(
 
     @Column(name = "confirmed_at", columnDefinition = "timestamp with time zone")
     var confirmedAt: Instant? = null
-)
+) {
+    /**
+     * Dokładne brutto ceny bazowej — to, od którego liczy się cena pokazana klientowi.
+     *
+     * Sugestie sprzed dodania kolumny go nie mają, więc odzyskujemy je z ceny końcowej tam,
+     * gdzie to jednoznaczne: przy rabacie zerowym baza JEST ceną końcową, a rabat kwotowy
+     * od brutto da się odwrócić. Rabatów liczonych od netta odwrócić się nie da — wtedy
+     * `null`, czyli cena od strony netta (brutto końcowe i tak wynika wtedy z netta).
+     *
+     * Nie wolno tu podać brutto KOŃCOWEGO jako bazowego: przy rabacie od brutto odjąłby się
+     * on drugi raz.
+     */
+    fun exactBaseGross(): Long? = basePriceGross ?: when {
+        adjustmentValue == 0L && adjustmentType in NO_OP_CAPABLE -> finalPriceGross
+        adjustmentType == AdjustmentType.FIXED_GROSS -> finalPriceGross + adjustmentValue
+        else -> null
+    }
+
+    /**
+     * Cena „przed rabatem" pokazywana klientowi (przekreślona). Liczona z netta dawała
+     * 1900,01 przy cenie 1900,00 — klient widział fałszywą obniżkę „1900,01 → 1900,00"
+     * przy sugestii bez żadnego rabatu.
+     */
+    fun originalPriceGross(): Long = exactBaseGross()
+        ?: VatRate.fromInt(vatRate).calculateGrossAmount(Money.fromCents(basePriceNet)).amountInCents
+
+    private companion object {
+        /** Typy, dla których wartość 0 znaczy „bez korekty" (SET_* z zerem to cena 0 zł). */
+        val NO_OP_CAPABLE = setOf(AdjustmentType.PERCENT, AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS)
+    }
+}

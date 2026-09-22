@@ -57,7 +57,7 @@ class ServicesChangePlanner(
 
             val adjustmentValueLong = when (adjustmentType) {
                 AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(adjustmentValue)
-                else -> adjustmentValue.toLong()
+                else -> Math.round(adjustmentValue)
             }
 
             val serviceId = added.serviceId?.let { ServiceId.fromString(it) }
@@ -69,12 +69,13 @@ class ServicesChangePlanner(
                 VatRate.fromInt(added.vatRate)
             }
 
-            // Catalog's stored gross applies only when the item is added at the catalog net
-            // price — otherwise (custom/edited base) gross is derived from net as before.
-            val basePriceGross = serviceId
-                ?.let { servicesFromDb[it.value] }
-                ?.takeIf { it.basePriceNet == added.basePriceNet }
-                ?.let { Money(it.basePriceGross) }
+            // Brutto wpisane przez użytkownika wygrywa (CLAUDE.md §1). Bez niego brutto katalogu —
+            // tylko gdy usługa dodawana jest po cenie katalogowej; inaczej brutto wynika z netta.
+            val basePriceGross = requireConsistentGross(added.basePriceNet, added.basePriceGross, vatRate)
+                ?: serviceId
+                    ?.let { servicesFromDb[it.value] }
+                    ?.takeIf { it.basePriceNet == added.basePriceNet && it.vatRate == vatRate.rate }
+                    ?.let { Money(it.basePriceGross) }
 
             VisitServiceItem.createPending(
                 serviceId = serviceId,
@@ -98,12 +99,17 @@ class ServicesChangePlanner(
             val newAdjustmentValue = updated.adjustment?.let { adj ->
                 when (adj.type) {
                     AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(adj.value)
-                    else -> adj.value.toLong()
+                    else -> Math.round(adj.value)
                 }
             }
 
             val newVatRate = updated.vatRate?.let { VatRate.fromInt(it) }
-            existingItem.toPending(Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue, newVatRate)
+            val newBasePriceGross = requireConsistentGross(
+                updated.basePriceNet, updated.basePriceGross, newVatRate ?: existingItem.vatRate
+            )
+            existingItem.toPending(
+                Money(updated.basePriceNet), newAdjustmentType, newAdjustmentValue, newVatRate, newBasePriceGross
+            )
         }
 
         val deletedItems = payload.deleted.map { deleted ->
@@ -124,6 +130,22 @@ class ServicesChangePlanner(
     private fun requireValidPrice(basePriceNet: Long) {
         if (basePriceNet < 0) throw ValidationException("Cena netto nie może być ujemna")
         if (basePriceNet > MAX_BASE_PRICE_NET_CENTS) throw ValidationException("Cena netto przekracza dopuszczalny limit")
+    }
+
+    /**
+     * Brutto od klienta musi pasować do netta z dokładnością do grosza — tyle wynosi
+     * różnica zaokrągleń „w stu" dla ceny wpisanej od strony brutto. Większa rozbieżność
+     * to niespójne dane i dostaje 400 zamiast wybuchnąć niezmiennikiem pozycji (500).
+     */
+    private fun requireConsistentGross(basePriceNet: Long, basePriceGross: Long?, vatRate: VatRate): Money? {
+        if (basePriceGross == null) return null
+        val derived = vatRate.calculateGrossAmount(Money(basePriceNet)).amountInCents
+        if (basePriceGross < 0 || Math.abs(basePriceGross - derived) > 1) {
+            throw ValidationException(
+                "Niespójna cena: brutto $basePriceGross gr nie odpowiada netto $basePriceNet gr przy stawce ${vatRate.rate}%"
+            )
+        }
+        return Money(basePriceGross)
     }
 
     private fun requireValidAdjustment(adjustment: ServiceAdjustment) {

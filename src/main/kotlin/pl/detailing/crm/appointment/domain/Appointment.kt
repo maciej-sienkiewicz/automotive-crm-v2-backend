@@ -2,17 +2,18 @@ package pl.detailing.crm.appointment.domain
 
 import pl.detailing.crm.appointment.recurrence.domain.RecurrenceSeriesId
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.PriceCalculator
 import java.time.Instant
 
 /**
  * Price adjustment types for service line items
  */
 enum class AdjustmentType {
-    PERCENT,        // Percentage discount/markup on base price
-    FIXED_NET,      // Fixed amount added to net price
-    FIXED_GROSS,    // Fixed amount added to gross price
-    SET_NET,        // Override net price completely
-    SET_GROSS;      // Override gross price completely
+    PERCENT,        // Rabat/narzut procentowy od netta (basis points; ujemny = rabat)
+    FIXED_NET,      // Rabat kwotowy od netta w groszach, ODEJMOWANY (v > 0 = rabat)
+    FIXED_GROSS,    // Rabat kwotowy od brutto w groszach, ODEJMOWANY (v > 0 = rabat)
+    SET_NET,        // Docelowa cena netto
+    SET_GROSS;      // Docelowa cena brutto (zachowywana co do grosza)
 
     companion object {
         /**
@@ -115,10 +116,16 @@ data class AppointmentLineItem(
     val basePriceNet: Money,
     val vatRate: VatRate,
     val adjustmentType: AdjustmentType,
-    val adjustmentValue: Long, // In cents for FIXED_*, as integer for PERCENT, or final price for SET_*
+    val adjustmentValue: Long, // basis points for PERCENT; discount in grosz for FIXED_* (v > 0 = rabat); target price for SET_*
     val finalPriceNet: Money,
     val finalPriceGross: Money,
-    val customNote: String?
+    val customNote: String?,
+    /**
+     * Dokładne brutto ceny bazowej wpisanej od strony brutto (albo z katalogu); `null` =
+     * cena od strony netta. Musi przetrwać zapis rezerwacji, bo check-in przepisuje z niej
+     * cenę na wizytę — odtworzone z netta brutto 1900,00 wraca jako 1900,01 (CLAUDE.md §1).
+     */
+    val basePriceGross: Money? = null
 ) {
     init {
         // Financial integrity: gross must correspond to net. A 1-grosz tolerance is
@@ -136,10 +143,19 @@ data class AppointmentLineItem(
         /**
          * Create a line item by applying price adjustment to base price.
          *
-         * [basePriceGross] — the catalog's stored gross (exact, user-entered). When the
-         * price flows gross-side (SET_GROSS / FIXED_GROSS / no-op adjustment on a gross
-         * base) the exact gross is preserved instead of being re-derived from net, so
-         * user-entered gross prices like 201.00 don't drift to 200.99.
+         * Rezerwacja liczy dokładnie tym samym silnikiem co wizyta ([PriceCalculator]):
+         * check-in przepisuje `adjustmentValue` z rezerwacji na pozycję wizyty, a każda
+         * późniejsza edycja pozycji wizyty liczy ją [PriceCalculator]-em. Własny silnik
+         * rezerwacji DODAWAŁ rabat kwotowy (front wysyła go jako wartość dodatnią), więc
+         * „rabat 100 zł" zapisywał się jako narzut, a PERCENT/SET_GROSS obcinał netto
+         * zamiast je zaokrąglić.
+         *
+         * [basePriceGross] — dokładne brutto ceny bazowej (wpisane od brutto albo z katalogu).
+         * Gdy cena płynie od strony brutto (SET_GROSS / FIXED_GROSS / rabat zerowy), to brutto
+         * przechodzi dokładnie, zamiast być odtwarzane z netta (1900,00 nie zjeżdża do 1900,01).
+         *
+         * Rabat większy niż cena daje 0 zamiast błędu walidacji — tak rezerwacja działała
+         * zawsze, a zapisane wcześniej rezerwacje muszą dać się przyjąć na check-inie.
          */
         fun create(
             serviceId: ServiceId?,
@@ -151,8 +167,13 @@ data class AppointmentLineItem(
             customNote: String?,
             basePriceGross: Money? = null
         ): AppointmentLineItem {
-            val finalNet = calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
-            val finalGross = calculateFinalGross(finalNet, basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross)
+            val finalNet = Money(
+                PriceCalculator.adjustedNetCents(basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross)
+                    .coerceAtLeast(0)
+            )
+            val finalGross = PriceCalculator.calculateFinalGross(
+                finalNet, basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross
+            )
 
             return AppointmentLineItem(
                 serviceId = serviceId,
@@ -163,84 +184,9 @@ data class AppointmentLineItem(
                 adjustmentValue = adjustmentValue,
                 finalPriceNet = finalNet,
                 finalPriceGross = finalGross,
-                customNote = customNote
+                customNote = customNote,
+                basePriceGross = basePriceGross
             )
-        }
-
-        /**
-         * Price calculation engine - applies adjustment based on type
-         */
-        private fun calculateFinalNet(
-            basePriceNet: Money,
-            vatRate: VatRate,
-            adjustmentType: AdjustmentType,
-            adjustmentValue: Long
-        ): Money {
-            return when (adjustmentType) {
-                AdjustmentType.PERCENT -> {
-                    // adjustmentValue is in basis points (hundredths of percent)
-                    // e.g., -4919 for -49.19% discount, +2050 for +20.50% markup
-                    val multiplier = 1.0 + (adjustmentValue.toDouble() / 10000.0)
-                    val calculatedNet = (basePriceNet.amountInCents * multiplier).toLong()
-                    Money(calculatedNet.coerceAtLeast(0))
-                }
-                AdjustmentType.FIXED_NET -> {
-                    // adjustmentValue is fixed amount in cents to add/subtract from net
-                    val calculatedNet = basePriceNet.amountInCents + adjustmentValue
-                    Money(calculatedNet.coerceAtLeast(0))
-                }
-                AdjustmentType.FIXED_GROSS -> {
-                    // adjustmentValue is fixed amount to add/subtract from gross, recalculate net
-                    val baseGross = vatRate.calculateGrossAmount(basePriceNet)
-                    val newGross = (baseGross.amountInCents + adjustmentValue).coerceAtLeast(0)
-                    // Calculate net from gross: net = gross / (1 + vatRate/100)
-                    // For VAT_ZW (rate=-1) gross == net, so multiplier is 1.0
-                    val vatMultiplier = if (vatRate == VatRate.VAT_ZW) 1.0 else 1.0 + (vatRate.rate.toDouble() / 100.0)
-                    val calculatedNet = (newGross / vatMultiplier).toLong()
-                    Money(calculatedNet.coerceAtLeast(0))
-                }
-                AdjustmentType.SET_NET -> {
-                    // adjustmentValue is the final net price
-                    Money(adjustmentValue.coerceAtLeast(0))
-                }
-                AdjustmentType.SET_GROSS -> {
-                    // adjustmentValue is the final gross price, calculate net from it
-                    // For VAT_ZW (rate=-1) gross == net, so multiplier is 1.0
-                    val vatMultiplier = if (vatRate == VatRate.VAT_ZW) 1.0 else 1.0 + (vatRate.rate.toDouble() / 100.0)
-                    val calculatedNet = (adjustmentValue / vatMultiplier).toLong()
-                    Money(calculatedNet.coerceAtLeast(0))
-                }
-            }
-        }
-
-        /**
-         * Final gross: preserved exactly whenever the price flows gross-side,
-         * otherwise derived from the final net (VAT "od sta").
-         */
-        private fun calculateFinalGross(
-            finalNet: Money,
-            basePriceNet: Money,
-            vatRate: VatRate,
-            adjustmentType: AdjustmentType,
-            adjustmentValue: Long,
-            basePriceGross: Money?
-        ): Money {
-            val isNoOpAdjustment = when (adjustmentType) {
-                AdjustmentType.PERCENT, AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS -> adjustmentValue == 0L
-                AdjustmentType.SET_NET, AdjustmentType.SET_GROSS -> false
-            }
-            return when {
-                // Explicit gross target — keep it to the grosz
-                adjustmentType == AdjustmentType.SET_GROSS ->
-                    Money(adjustmentValue.coerceAtLeast(0))
-                // Gross-side discount from a known exact base gross
-                adjustmentType == AdjustmentType.FIXED_GROSS && basePriceGross != null ->
-                    Money((basePriceGross.amountInCents + adjustmentValue).coerceAtLeast(0))
-                // No adjustment at all — the catalog's stored gross IS the final gross
-                isNoOpAdjustment && basePriceGross != null && finalNet.amountInCents == basePriceNet.amountInCents ->
-                    basePriceGross
-                else -> vatRate.calculateGrossAmount(finalNet)
-            }
         }
     }
 }

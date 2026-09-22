@@ -2,6 +2,7 @@ package pl.detailing.crm.visitcard
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.appointment.domain.AdjustmentType
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentEntity
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
@@ -202,10 +203,14 @@ class GetVisitCardHandler(
                 totalNet = appointment.lineItems.sumOf { it.finalPriceNet },
                 totalGross = appointment.lineItems.sumOf { it.finalPriceGross },
                 totalDiscountGross = appointment.lineItems.sumOf { item ->
-                    val originalGross = VatRate.fromInt(item.vatRate)
-                        .calculateGrossAmount(Money.fromCents(item.basePriceNet))
-                        .amountInCents
-                    maxOf(0L, originalGross - item.finalPriceGross)
+                    lineDiscountGross(
+                        basePriceNet = item.basePriceNet,
+                        basePriceGross = item.basePriceGross,
+                        vatRate = VatRate.fromInt(item.vatRate),
+                        adjustmentType = item.adjustmentType,
+                        adjustmentValue = item.adjustmentValue,
+                        finalPriceGross = item.finalPriceGross
+                    )
                 },
                 currency = "PLN"
             ),
@@ -349,18 +354,26 @@ class GetVisitCardHandler(
     private fun calculateVisitDiscountGross(visit: Visit): Long {
         return visit.serviceItems.sumOf { item ->
             when {
-                item.status == VisitServiceStatus.CONFIRMED || item.status == VisitServiceStatus.APPROVED -> {
-                    val originalGross = item.vatRate.calculateGrossAmount(item.basePriceNet).amountInCents
-                    maxOf(0L, originalGross - item.finalPriceGross.amountInCents)
-                }
+                item.status == VisitServiceStatus.CONFIRMED || item.status == VisitServiceStatus.APPROVED ||
+                    (item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE) ->
+                    lineDiscountGross(
+                        basePriceNet = item.basePriceNet.amountInCents,
+                        basePriceGross = item.basePriceGross?.amountInCents,
+                        vatRate = item.vatRate,
+                        adjustmentType = item.adjustmentType,
+                        adjustmentValue = item.adjustmentValue,
+                        finalPriceGross = item.finalPriceGross.amountInCents
+                    )
                 item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT -> {
                     val snapshot = item.confirmedSnapshot ?: return@sumOf 0L
-                    val originalGross = snapshot.vatRate.calculateGrossAmount(snapshot.basePriceNet).amountInCents
-                    maxOf(0L, originalGross - snapshot.finalPriceGross.amountInCents)
-                }
-                item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE -> {
-                    val originalGross = item.vatRate.calculateGrossAmount(item.basePriceNet).amountInCents
-                    maxOf(0L, originalGross - item.finalPriceGross.amountInCents)
+                    lineDiscountGross(
+                        basePriceNet = snapshot.basePriceNet.amountInCents,
+                        basePriceGross = snapshot.basePriceGross?.amountInCents,
+                        vatRate = snapshot.vatRate,
+                        adjustmentType = snapshot.adjustmentType,
+                        adjustmentValue = snapshot.adjustmentValue,
+                        finalPriceGross = snapshot.finalPriceGross.amountInCents
+                    )
                 }
                 else -> 0L
             }
@@ -399,4 +412,27 @@ class GetVisitCardHandler(
             entity.toPublicDto(isPackage = isPackage, packageItems = items)
         }
     }
+}
+
+/**
+ * Rabat pozycji w brutto: brutto „przed rabatem" minus brutto końcowe.
+ *
+ * Brutto przed rabatem to DOKŁADNE brutto ceny bazowej, gdy je znamy (CLAUDE.md §1) —
+ * liczone z netta dawało 1900,01 przy cenie 1900,00, więc klient widział na karcie
+ * „rabat 0,01 zł" przy każdej usłudze wycenionej od brutto. Rabat zerowy z definicji
+ * nie jest rabatem, także dla pozycji zapisanych, zanim zaczęliśmy pamiętać brutto.
+ */
+internal fun lineDiscountGross(
+    basePriceNet: Long,
+    basePriceGross: Long?,
+    vatRate: VatRate,
+    adjustmentType: AdjustmentType,
+    adjustmentValue: Long,
+    finalPriceGross: Long
+): Long {
+    val isNoOp = adjustmentValue == 0L &&
+        adjustmentType in setOf(AdjustmentType.PERCENT, AdjustmentType.FIXED_NET, AdjustmentType.FIXED_GROSS)
+    if (isNoOp) return 0L
+    val originalGross = basePriceGross ?: vatRate.calculateGrossAmount(Money.fromCents(basePriceNet)).amountInCents
+    return maxOf(0L, originalGross - finalPriceGross)
 }

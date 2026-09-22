@@ -610,7 +610,11 @@ data class Money(
     companion object {
         val ZERO = Money(0)
         fun fromCents(cents: Long) = Money(cents)
-        fun fromAmount(amount: Double) = Money((amount * 100).toLong())
+        /**
+         * Złote → grosze z zaokrągleniem. Obcięcie gubiło grosz na zwykłych kwotach, bo
+         * double nie trzyma ich dokładnie: 19.99 * 100 = 1998.9999999999998 → 1998.
+         */
+        fun fromAmount(amount: Double) = Money(Math.round(amount * 100))
     }
 }
 

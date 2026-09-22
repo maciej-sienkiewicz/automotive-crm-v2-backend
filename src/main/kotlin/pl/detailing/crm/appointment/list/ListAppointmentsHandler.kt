@@ -217,7 +217,8 @@ class ListAppointmentsHandler(
             finalPriceNet = lineItem.finalPriceNet,
             finalPriceGross = lineItem.finalPriceGross,
             isPackage = isPackage,
-            packageItems = packageItems
+            packageItems = packageItems,
+            basePriceGross = lineItem.basePriceGross
         )
     }
 }
@@ -363,7 +364,13 @@ data class ServiceLineItemInfo(
     val finalPriceNet: Long,
     val finalPriceGross: Long,
     val isPackage: Boolean,
-    val packageItems: List<PackageItemDto>?
+    val packageItems: List<PackageItemDto>?,
+    /**
+     * Dokładne brutto ceny bazowej — wpisane od strony brutto albo z cennika; `null` = nikt go
+     * nie ustalił i brutto liczy się z netta. Kreator check-inu przenosi je na wizytę — bez
+     * niego 1900,00 wraca jako 1900,01.
+     */
+    val basePriceGross: Long? = null
 )
 
 data class PriceAdjustmentInfo(

@@ -124,9 +124,7 @@ fun VisitUpsellSuggestionEntity.toPublicDto(
     isPackage: Boolean = false,
     packageItems: List<UpsellPackageItemDto>? = null
 ): VisitCardUpsellSuggestion {
-    val originalGross = pl.detailing.crm.shared.VatRate.fromInt(vatRate)
-        .calculateGrossAmount(pl.detailing.crm.shared.Money.fromCents(basePriceNet))
-        .amountInCents
+    val originalGross = originalPriceGross()
     return VisitCardUpsellSuggestion(
         id = id.toString(),
         name = serviceName,

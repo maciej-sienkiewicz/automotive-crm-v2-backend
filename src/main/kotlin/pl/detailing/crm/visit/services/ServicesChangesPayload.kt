@@ -27,7 +27,13 @@ data class AddedService(
     val basePriceNet: Long,
     val vatRate: Int,
     val adjustment: ServiceAdjustment?,
-    val note: String?
+    val note: String?,
+    /**
+     * Dokładne brutto ceny bazowej, gdy użytkownik wpisał ją od strony brutto (CLAUDE.md §1).
+     * `null` = cena od strony netta (albo stary klient API) — wtedy brutto z katalogu,
+     * o ile cena bazowa jest katalogowa, a w przeciwnym razie z netta.
+     */
+    val basePriceGross: Long? = null
 )
 
 data class ServiceAdjustment(
@@ -39,7 +45,13 @@ data class UpdatedService(
     val serviceLineItemId: String,
     val basePriceNet: Long,
     val vatRate: Int? = null,
-    val adjustment: ServiceAdjustment? = null
+    val adjustment: ServiceAdjustment? = null,
+    /**
+     * Dokładne brutto nowej ceny bazowej, gdy użytkownik wpisał ją od strony brutto — także
+     * przy zmianie stawki VAT, która ma zachować wpisane brutto. `null` przy niezmienionej
+     * cenie i stawce = pozycja zachowuje swoje dotychczasowe brutto.
+     */
+    val basePriceGross: Long? = null
 )
 
 data class DeletedService(

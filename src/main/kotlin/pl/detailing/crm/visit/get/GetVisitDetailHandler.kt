@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.get
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
@@ -101,11 +102,11 @@ class GetVisitDetailHandler(
         val totalVisits = customerVisits.size
 
         // Force load serviceItems for each visit before mapping
-        val totalSpent = customerVisits
+        val completedVisits = customerVisits
             .onEach { it.serviceItems.size }  // Force load serviceItems
             .map { it.toDomain() }
             .filter { it.status == VisitStatus.COMPLETED }
-            .fold(Money.ZERO) { acc, v -> acc.plus(v.calculateTotalNet()) }
+        val (totalSpent, totalSpentGross) = customerSpend(completedVisits)
 
         // Count unique vehicles for this customer (bez pojazdów usuniętych)
         val vehiclesCount = vehicleOwnerRepository.countActiveVehiclesByCustomerId(
@@ -116,7 +117,8 @@ class GetVisitDetailHandler(
         val customerStats = CustomerStats(
             totalVisits = totalVisits,
             totalSpent = totalSpent,
-            vehiclesCount = vehiclesCount
+            vehiclesCount = vehiclesCount,
+            totalSpentGross = totalSpentGross
         )
 
         val doorToDoor = doorToDoorRepository.findByVisitIdAndStudioId(visit.id.value, command.studioId.value)
@@ -165,3 +167,13 @@ class GetVisitDetailHandler(
         )
     }
 }
+
+/**
+ * Wydatki klienta: suma netto i suma brutto zakończonych wizyt, każda liczona osobno.
+ * Brutto sumujemy z brutto wizyt — wcześniej odpowiedź podawała sumę netto jako brutto,
+ * a odtworzenie brutto z sumy netto zgubiłoby dokładne kwoty pozycji (CLAUDE.md §1).
+ */
+internal fun customerSpend(completedVisits: List<Visit>): Pair<Money, Money> =
+    completedVisits.fold(Money.ZERO to Money.ZERO) { (net, gross), visit ->
+        net.plus(visit.calculateTotalNet()) to gross.plus(visit.calculateTotalGross())
+    }

@@ -312,6 +312,10 @@ class VisitServiceItemEntity(
     @Column(name = "final_price_gross", nullable = false)
     val finalPriceGross: Long,
 
+    /** Dokładne brutto ceny bazowej: wpisane od strony brutto albo z cennika; NULL = nikt go nie ustalił, brutto liczy się z netta. */
+    @Column(name = "base_price_gross")
+    val basePriceGross: Long? = null,
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(50)")
     var status: VisitServiceStatus,
@@ -346,10 +350,12 @@ class VisitServiceItemEntity(
                 adjustmentValue = (data["adjustmentValue"] as Number).toLong(),
                 finalPriceNet = Money((data["finalPriceNet"] as Number).toLong()),
                 finalPriceGross = Money((data["finalPriceGross"] as Number).toLong()),
-                customNote = data["customNote"] as String?
+                customNote = data["customNote"] as String?,
+                // Snapshoty zapisane przed dodaniem pola nie mają tego klucza — wtedy cena od netta.
+                basePriceGross = (data["basePriceGross"] as Number?)?.let { Money(it.toLong()) }
             )
         }
-        
+
         return VisitServiceItem(
             id = VisitServiceItemId(id),
             serviceId = serviceId?.let { ServiceId(it) },
@@ -366,7 +372,8 @@ class VisitServiceItemEntity(
             customNote = customNote,
             createdAt = createdAt,
             confirmedAt = confirmedAt,
-            pendingAt = pendingAt
+            pendingAt = pendingAt,
+            basePriceGross = basePriceGross?.let { Money(it) }
         )
     }
 
@@ -381,10 +388,11 @@ class VisitServiceItemEntity(
                     "adjustmentValue" to snapshot.adjustmentValue,
                     "finalPriceNet" to snapshot.finalPriceNet.amountInCents,
                     "finalPriceGross" to snapshot.finalPriceGross.amountInCents,
-                    "customNote" to snapshot.customNote
+                    "customNote" to snapshot.customNote,
+                    "basePriceGross" to snapshot.basePriceGross?.amountInCents
                 ))
             }
-            
+
             return VisitServiceItemEntity(
                 id = serviceItem.id.value,
                 visit = visit,
@@ -396,6 +404,7 @@ class VisitServiceItemEntity(
                 adjustmentValue = serviceItem.adjustmentValue,
                 finalPriceNet = serviceItem.finalPriceNet.amountInCents,
                 finalPriceGross = serviceItem.finalPriceGross.amountInCents,
+                basePriceGross = serviceItem.basePriceGross?.amountInCents,
                 status = serviceItem.status,
                 pendingOperation = serviceItem.pendingOperation,
                 confirmedSnapshot = snapshotJson,

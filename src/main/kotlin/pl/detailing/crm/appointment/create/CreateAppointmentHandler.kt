@@ -73,7 +73,7 @@ class CreateAppointmentHandler(
         val lineItems = command.services.map { serviceLineItem ->
             val adjustmentValue = when (serviceLineItem.adjustmentType) {
                 AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceLineItem.adjustmentValue)
-                else -> serviceLineItem.adjustmentValue.toLong()
+                else -> Math.round(serviceLineItem.adjustmentValue)
             }
 
             if (serviceLineItem.serviceId != null) {
@@ -82,20 +82,22 @@ class CreateAppointmentHandler(
 
                 // Cennik dyktuje cenę usługi katalogowej - z jednym wyjątkiem: usługa
                 // z ceną ustalaną ręcznie nie ma w cenniku żadnej ceny (zapisane jest
-                // przy niej Money.ZERO), więc jedynym jej źródłem jest żądanie.
+                // przy niej Money.ZERO), więc jedynym jej źródłem jest żądanie. Brutto
+                // cennika obowiązuje tylko przy stawce cennika - patrz catalogLinePrice.
+                val lineVatRate = VatRate.fromInt(serviceLineItem.vatRate)
+                val (baseNet, baseGross) = catalogLinePrice(
+                    service.requireManualPrice, service.basePriceNet, service.basePriceGross, service.vatRate,
+                    lineVatRate, serviceLineItem.basePriceNet, serviceLineItem.basePriceGross
+                )
                 AppointmentLineItem.create(
                     serviceId = service.id,
                     serviceName = service.name,
-                    basePriceNet = catalogBaseNet(
-                        service.requireManualPrice, service.basePriceNet, serviceLineItem.basePriceNet
-                    ),
-                    vatRate = VatRate.fromInt(serviceLineItem.vatRate),
+                    basePriceNet = baseNet,
+                    vatRate = lineVatRate,
                     adjustmentType = serviceLineItem.adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceLineItem.customNote,
-                    basePriceGross = catalogBaseGross(
-                        service.requireManualPrice, service.basePriceGross, serviceLineItem.basePriceGross
-                    )
+                    basePriceGross = baseGross
                 )
             } else {
                 // Custom service without serviceId - use provided data directly.

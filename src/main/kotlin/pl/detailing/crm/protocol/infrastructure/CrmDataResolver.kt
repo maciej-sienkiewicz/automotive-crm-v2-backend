@@ -13,6 +13,7 @@ import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -37,6 +38,16 @@ class CrmDataResolver(
     companion object {
         private val DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         private val DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+        /**
+         * Kwota na protokole: dokładnie z groszy i z etykietą tego, czym jest.
+         *
+         * Wcześniej każda kwota — także netto i VAT — dostawała na podpisywanym protokole
+         * dopisek „(brutto)", a liczba szła przez double i domyślny locale JVM. Format liczby
+         * zostaje ten sam (kropka dziesiętna), ale jest liczony z BigDecimal, nie z double.
+         */
+        internal fun formatMoney(amountInCents: Long, label: String): String =
+            "${BigDecimal.valueOf(amountInCents, 2).toPlainString()} PLN ($label)"
 
         /**
          * Ramka USŁUGODAWCA to wizytówka wystawcy, więc obok nazwy idzie adres siedziby
@@ -120,9 +131,9 @@ class CrmDataResolver(
                 val totalGross = visitDomain.calculateTotalGross()
                 val totalVat = visitDomain.calculateTotalVat()
 
-                put(CrmDataKey.TOTAL_NET_AMOUNT, formatMoney(totalNet.amountInCents))
-                put(CrmDataKey.TOTAL_GROSS_AMOUNT, formatMoney(totalGross.amountInCents))
-                put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents))
+                put(CrmDataKey.TOTAL_NET_AMOUNT, formatMoney(totalNet.amountInCents, "netto"))
+                put(CrmDataKey.TOTAL_GROSS_AMOUNT, formatMoney(totalGross.amountInCents, "brutto"))
+                put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents, "VAT"))
 
                 // Services list - one per line with notes in parentheses
                 val servicesList = visitDomain.serviceItems
@@ -187,8 +198,4 @@ class CrmDataResolver(
         return instant.atZone(ZoneId.of("Europe/Warsaw")).format(DATETIME_FORMATTER)
     }
 
-    private fun formatMoney(amountInCents: Long): String {
-        val amount = amountInCents / 100.0
-        return String.format("%.2f PLN (brutto)", amount)
-    }
 }

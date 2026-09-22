@@ -123,7 +123,8 @@ class CreateRecurringAppointmentHandler(
                         adjustmentValue = li.adjustmentValue,
                         finalPriceNet = li.finalPriceNet,
                         finalPriceGross = li.finalPriceGross,
-                        customNote = li.customNote
+                        customNote = li.customNote,
+                        basePriceGross = li.basePriceGross
                     )
                 }.toMutableList()
                 occurrence

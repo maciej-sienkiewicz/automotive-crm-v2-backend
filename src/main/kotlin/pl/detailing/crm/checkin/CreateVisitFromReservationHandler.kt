@@ -179,6 +179,7 @@ class CreateVisitFromReservationHandler(
             val visitNumber = visitNumberGenerator.generateVisitNumber(command.studioId)
 
             // Step 6: Map services to visit service items
+            val catalog = loadCatalog(command.services, command.studioId)
             val serviceItems = command.services.map { serviceReq ->
                 val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
 
@@ -188,10 +189,11 @@ class CreateVisitFromReservationHandler(
                 // - For others: round to Long (cents)
                 val adjustmentValue = when (adjustmentType) {
                     AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
-                    else -> serviceReq.adjustment.value.toLong() // Keep in cents
+                    else -> Math.round(serviceReq.adjustment.value) // grosze: zaokrąglenie, nie obcięcie double
                 }
 
-                // Calculate prices using AppointmentLineItem logic
+                // Jeden silnik cen (PriceCalculator) i dokładne brutto bazowe — z żądania,
+                // z rezerwacji albo z katalogu (resolveCheckinBaseGross)
                 val lineItem = AppointmentLineItem.create(
                     serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
                     serviceName = serviceReq.serviceName,
@@ -200,27 +202,10 @@ class CreateVisitFromReservationHandler(
                     adjustmentType = adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceReq.note,
-                    basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
+                    basePriceGross = resolveCheckinBaseGross(serviceReq, appointment.lineItems, catalog)
                 )
 
-                VisitServiceItem(
-                    id = VisitServiceItemId.random(),
-                    serviceId = lineItem.serviceId,
-                    serviceName = lineItem.serviceName,
-                    basePriceNet = lineItem.basePriceNet,
-                    vatRate = lineItem.vatRate,
-                    adjustmentType = lineItem.adjustmentType,
-                    adjustmentValue = lineItem.adjustmentValue,
-                    finalPriceNet = lineItem.finalPriceNet,
-                    finalPriceGross = lineItem.finalPriceGross,
-                    status = VisitServiceStatus.CONFIRMED,
-                    pendingOperation = null,
-                    confirmedSnapshot = null,
-                    customNote = lineItem.customNote,
-                    createdAt = Instant.now(),
-                    confirmedAt = Instant.now(),
-                    pendingAt = null
-                )
+                toConfirmedVisitItem(lineItem)
             }
 
             // Step 7: Create Visit domain object
@@ -471,7 +456,8 @@ class CreateVisitFromReservationHandler(
             }
 
             // Step 3: Create walk-in appointment (shadow appointment without prior reservation)
-            val appointment = createWalkInAppointment(command, customerId, vehicleId)
+            val catalog = loadCatalog(command.services, command.studioId)
+            val appointment = createWalkInAppointment(command, customerId, vehicleId, catalog)
 
             // Step 4: Load vehicle for snapshots
             val vehicle = vehicleRepository.findByIdAndStudioId(
@@ -487,7 +473,7 @@ class CreateVisitFromReservationHandler(
                 val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
                 val adjustmentValue = when (adjustmentType) {
                     AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
-                    else -> serviceReq.adjustment.value.toLong()
+                    else -> Math.round(serviceReq.adjustment.value)
                 }
                 val lineItem = AppointmentLineItem.create(
                     serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
@@ -497,26 +483,9 @@ class CreateVisitFromReservationHandler(
                     adjustmentType = adjustmentType,
                     adjustmentValue = adjustmentValue,
                     customNote = serviceReq.note,
-                    basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
+                    basePriceGross = resolveCheckinBaseGross(serviceReq, reservationItems = emptyList(), catalog = catalog)
                 )
-                VisitServiceItem(
-                    id = VisitServiceItemId.random(),
-                    serviceId = lineItem.serviceId,
-                    serviceName = lineItem.serviceName,
-                    basePriceNet = lineItem.basePriceNet,
-                    vatRate = lineItem.vatRate,
-                    adjustmentType = lineItem.adjustmentType,
-                    adjustmentValue = lineItem.adjustmentValue,
-                    finalPriceNet = lineItem.finalPriceNet,
-                    finalPriceGross = lineItem.finalPriceGross,
-                    status = VisitServiceStatus.CONFIRMED,
-                    pendingOperation = null,
-                    confirmedSnapshot = null,
-                    customNote = lineItem.customNote,
-                    createdAt = Instant.now(),
-                    confirmedAt = Instant.now(),
-                    pendingAt = null
-                )
+                toConfirmedVisitItem(lineItem)
             }
 
             // Step 7: Process session-based photos
@@ -970,16 +939,55 @@ class CreateVisitFromReservationHandler(
         }
     }
 
+    /** Ceny katalogowe usług z żądania check-inu — źródło dokładnego brutto, gdy klient API go nie przysłał. */
+    private fun loadCatalog(
+        services: List<ServiceLineItemRequest>,
+        studioId: StudioId
+    ): Map<UUID, CatalogPrice> {
+        val ids = services.mapNotNull { req -> req.serviceId?.let { UUID.fromString(it) } }.distinct()
+        if (ids.isEmpty()) return emptyMap()
+        return serviceRepository.findAllByIdInAndStudioId(ids, studioId.value)
+            .associate { it.id to CatalogPrice(it.basePriceNet, it.basePriceGross, it.vatRate) }
+    }
+
+    /**
+     * Potwierdzona pozycja wizyty z pozycji policzonej na check-inie. Dokładne brutto bazowe
+     * przechodzi dalej — bez niego pierwsza edycja pozycji na wizycie odtworzyłaby je z netta.
+     */
+    private fun toConfirmedVisitItem(lineItem: AppointmentLineItem): VisitServiceItem {
+        val now = Instant.now()
+        return VisitServiceItem(
+            id = VisitServiceItemId.random(),
+            serviceId = lineItem.serviceId,
+            serviceName = lineItem.serviceName,
+            basePriceNet = lineItem.basePriceNet,
+            vatRate = lineItem.vatRate,
+            adjustmentType = lineItem.adjustmentType,
+            adjustmentValue = lineItem.adjustmentValue,
+            finalPriceNet = lineItem.finalPriceNet,
+            finalPriceGross = lineItem.finalPriceGross,
+            status = VisitServiceStatus.CONFIRMED,
+            pendingOperation = null,
+            confirmedSnapshot = null,
+            customNote = lineItem.customNote,
+            createdAt = now,
+            confirmedAt = now,
+            pendingAt = null,
+            basePriceGross = lineItem.basePriceGross
+        )
+    }
+
     private fun createWalkInAppointment(
         command: WalkInVisitCommand,
         customerId: CustomerId,
-        vehicleId: VehicleId
+        vehicleId: VehicleId,
+        catalog: Map<UUID, CatalogPrice>
     ): Appointment {
         val lineItems = command.services.map { serviceReq ->
             val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
             val adjustmentValue = when (adjustmentType) {
                 AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
-                else -> serviceReq.adjustment.value.toLong()
+                else -> Math.round(serviceReq.adjustment.value)
             }
             AppointmentLineItem.create(
                 serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
@@ -989,7 +997,7 @@ class CreateVisitFromReservationHandler(
                 adjustmentType = adjustmentType,
                 adjustmentValue = adjustmentValue,
                 customNote = serviceReq.note,
-                basePriceGross = serviceReq.basePriceGross?.let { Money.fromCents(it) }
+                basePriceGross = resolveCheckinBaseGross(serviceReq, reservationItems = emptyList(), catalog = catalog)
             )
         }
 

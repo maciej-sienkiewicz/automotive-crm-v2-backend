@@ -71,13 +71,25 @@ ręką.
   więc brutto końcowe **należy** policzyć. `SET_GROSS`, `FIXED_GROSS` i rabat
   zerowy — nie wolno; tam dokładne brutto przechodzi dalej.
 - **Dokładne brutto musi przejść przez każdą granicę**: request → command →
-  domena → encja → response. Zgubione raz, nie odtworzy się już nigdy.
+  domena → encja → response. Zgubione raz, nie odtworzy się już nigdy. Pozycje
+  rezerwacji, wizyt i sugestii upsellu trzymają je w kolumnie `base_price_gross`
+  (V151) i zwracają w polu `basePriceGross`.
+- **Zmiana stawki VAT zachowuje stronę ustaloną.** Brutto cennika obowiązuje tylko
+  przy stawce cennika: przy innej stawce brutto wpisane od strony brutto zostaje,
+  a w każdym innym przypadku zostaje netto (`catalogLinePrice`). Ta sama stawka
+  nie zmienia niczego.
+- **Rabat kwotowy (`FIXED_NET`, `FIXED_GROSS`) jest ODEJMOWANY**, `v > 0` to rabat.
+  Jeden silnik cen (`PriceCalculator`) liczy rezerwację, wizytę i upsell — nie pisz
+  drugiego.
 
 ### Wzorce do skopiowania
 
 - `shared/ValueClasses.kt` → `VatRate.resolveGrossAmount`, `netCentsFromGrossCents`
-- `appointment/domain/Appointment.kt` → `AppointmentLineItem.calculateFinalGross`
-- `visit/domain/Visit.kt` → `calculateFinalGross` (wyjątki gross-side i rabat zerowy)
+- `visit/domain/Visit.kt` → `PriceCalculator.calculateFinalNet/calculateFinalGross`
+  (wyjątki gross-side i rabat zerowy) — używa go też `AppointmentLineItem.create`
+- `appointment/domain/ManualPriceLine.kt` → `catalogLinePrice` (cena z cennika przy
+  stawce pozycji)
+- `checkin/CheckinBaseGross.kt` → dokładne brutto przez przyjęcie pojazdu
 - `service/update/UpdateServiceHandler.kt` → zapis pary netto/brutto z katalogu
 
 ### Zlecenie stałe

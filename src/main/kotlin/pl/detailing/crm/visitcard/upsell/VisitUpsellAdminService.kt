@@ -153,15 +153,17 @@ class VisitUpsellAdminService(
         val adjustmentValue = when (adjustmentType) {
             AdjustmentType.PERCENT ->
                 AdjustmentType.convertPercentValueToBasisPoints(request.adjustment?.value ?: 0.0)
-            else -> (request.adjustment?.value ?: 0.0).toLong()
+            else -> Math.round(request.adjustment?.value ?: 0.0)
         }
 
         val basePriceNet = Money.fromCents(service.basePriceNet)
         val basePriceGross = Money.fromCents(service.basePriceGross)
         val vatRate = VatRate.fromInt(service.vatRate)
-        val finalNet = PriceCalculator.calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue)
-        // Preserve exact catalog gross when there is no adjustment; otherwise re-derive from adjusted net.
-        val finalGross = vatRate.resolveGrossAmount(finalNet, if (finalNet == basePriceNet) basePriceGross else null)
+        // Ten sam silnik co pozycja wizyty, do której sugestia trafi po akceptacji klienta.
+        // Rabat od brutto (SET_GROSS/FIXED_GROSS) i rabat zerowy niosą dokładne brutto katalogu;
+        // wcześniej brutto liczyło się tu z netta i SET_GROSS 1900,00 dawał klientowi 1900,01.
+        val finalNet = PriceCalculator.calculateFinalNet(basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross)
+        val finalGross = PriceCalculator.calculateFinalGross(finalNet, basePriceNet, vatRate, adjustmentType, adjustmentValue, basePriceGross)
 
         val entity = suggestionRepository.save(
             VisitUpsellSuggestionEntity(
@@ -177,6 +179,7 @@ class VisitUpsellAdminService(
                 adjustmentValue = adjustmentValue,
                 finalPriceNet = finalNet.amountInCents,
                 finalPriceGross = finalGross.amountInCents,
+                basePriceGross = basePriceGross.amountInCents,
                 note = request.note?.takeIf { it.isNotBlank() },
                 createdBy = userId.value
             )
@@ -234,9 +237,5 @@ class VisitUpsellAdminService(
     }
 }
 
-internal fun VisitUpsellSuggestionEntity.toResponse(): UpsellSuggestionResponse {
-    val originalGross = VatRate.fromInt(vatRate)
-        .calculateGrossAmount(Money.fromCents(basePriceNet))
-        .amountInCents
-    return UpsellSuggestionResponse.from(this, originalGross)
-}
+internal fun VisitUpsellSuggestionEntity.toResponse(): UpsellSuggestionResponse =
+    UpsellSuggestionResponse.from(this, originalPriceGross())
