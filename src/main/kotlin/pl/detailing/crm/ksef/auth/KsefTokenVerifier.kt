@@ -72,6 +72,15 @@ class KsefTokenVerifier(
             ksefAuthService.authenticate(studioId)
         } catch (e: pl.detailing.crm.shared.EntityNotFoundException) {
             throw e
+        } catch (e: KsefAuthException) {
+            // Komunikat mówi już, co KSeF odrzucił i co sprawdzić — bez dokładania prefiksu
+            log.info("KSeF token verification failed at authentication for studio {}: {}", studioId, e.message)
+            return VerificationResult(
+                tokenValid = false,
+                permissions = emptySet(),
+                permissionsKnown = false,
+                errorMessage = e.message
+            )
         } catch (e: Exception) {
             log.info("KSeF token verification failed at authentication for studio {}: {}", studioId, e.message)
             return VerificationResult(
