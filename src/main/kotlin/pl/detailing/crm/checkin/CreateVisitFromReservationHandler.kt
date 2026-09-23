@@ -229,13 +229,7 @@ class CreateVisitFromReservationHandler(
                     )
 
                     claimedPhotos.map { claimed ->
-                        pl.detailing.crm.visit.domain.VisitPhoto(
-                            id = VisitPhotoId(claimed.id),
-                            fileId = claimed.fileId,
-                            fileName = claimed.fileName,
-                            description = null,
-                            uploadedAt = Instant.now()
-                        )
+                        checkinPhoto(claimed.id, claimed.fileId, claimed.fileName, command.userId, command.userName)
                     }
                 } else {
                     emptyList()
@@ -253,13 +247,7 @@ class CreateVisitFromReservationHandler(
                     checkinId = qrCheckinId,
                     visitId = visitId
                 ).map { finalized ->
-                    VisitPhoto(
-                        id = VisitPhotoId(finalized.photoId),
-                        fileId = finalized.fileId,
-                        fileName = finalized.fileName,
-                        description = null,
-                        uploadedAt = Instant.now()
-                    )
+                    checkinPhoto(finalized.photoId, finalized.fileId, finalized.fileName, command.userId, command.userName)
                 }
             } catch (e: Exception) {
                 // Do not abort visit creation if QR photo finalization fails
@@ -500,13 +488,7 @@ class CreateVisitFromReservationHandler(
                         visitId = visitId,
                         studioId = command.studioId
                     ).map { claimed ->
-                        pl.detailing.crm.visit.domain.VisitPhoto(
-                            id = VisitPhotoId(claimed.id),
-                            fileId = claimed.fileId,
-                            fileName = claimed.fileName,
-                            description = null,
-                            uploadedAt = Instant.now()
-                        )
+                        checkinPhoto(claimed.id, claimed.fileId, claimed.fileName, command.userId, command.userName)
                     }
                 } else emptyList()
             } else emptyList()
@@ -520,13 +502,7 @@ class CreateVisitFromReservationHandler(
                         checkinId = qrId,
                         visitId = visitId
                     ).map { finalized ->
-                        VisitPhoto(
-                            id = VisitPhotoId(finalized.photoId),
-                            fileId = finalized.fileId,
-                            fileName = finalized.fileName,
-                            description = null,
-                            uploadedAt = Instant.now()
-                        )
+                        checkinPhoto(finalized.photoId, finalized.fileId, finalized.fileName, command.userId, command.userName)
                     }
                 } catch (e: Exception) {
                     println("Warning: Failed to finalize QR photos for walk-in checkin $qrId: ${e.message}")
@@ -1342,3 +1318,19 @@ class CreateVisitFromReservationHandler(
             ?: throw EntityNotFoundException("Kolor rezerwacji nie został znaleziony: ${colorId.value}")
     }
 }
+
+/**
+ * Zdjęcie z przyjęcia pojazdu - z sesji zdjęć albo z telefonu przez QR. Autorem jest
+ * osoba przyjmująca pojazd: ani sesja zdjęć, ani telefon z kodem QR nie niosą własnego
+ * autora. Bez niego galeria pokazywała przy tych zdjęciach puste „Dodał/a".
+ */
+internal fun checkinPhoto(id: UUID, fileId: String, fileName: String, userId: UserId, userName: String) =
+    VisitPhoto(
+        id = VisitPhotoId(id),
+        fileId = fileId,
+        fileName = fileName,
+        description = null,
+        uploadedAt = Instant.now(),
+        uploadedBy = userId.value,
+        uploadedByName = userName
+    )

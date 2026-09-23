@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.VisitPhoto
+import pl.detailing.crm.visit.infrastructure.VisitPhotoEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visit.infrastructure.PhotoSessionService
 import java.time.Instant
@@ -61,18 +62,10 @@ class AddVisitPhotoHandler(
 
         // 7. Update visit entity
         visitEntity.photos.clear()
-        visitEntity.photos.addAll(updatedPhotos.map { photo ->
-            pl.detailing.crm.visit.infrastructure.VisitPhotoEntity(
-                id = photo.id.value,
-                visit = visitEntity,
-                fileId = photo.fileId,
-                fileName = photo.fileName,
-                description = photo.description,
-                uploadedAt = photo.uploadedAt,
-                uploadedBy = photo.uploadedBy,
-                uploadedByName = photo.uploadedByName
-            )
-        })
+        // Kolekcja jest przepisywana w całości, więc przez to samo mapowanie co zapis
+        // wizyty: ręczna kopia pól gubiła thumbnailFileId i każde dodanie albo usunięcie
+        // zdjęcia kasowało miniatury pozostałych zdjęć wizyty.
+        visitEntity.photos.addAll(updatedPhotos.map { photo -> VisitPhotoEntity.fromDomain(photo, visitEntity) })
 
         visitRepository.save(visitEntity)
 
