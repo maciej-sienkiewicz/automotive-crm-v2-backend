@@ -50,6 +50,8 @@ class ResetPasswordHandler(
                 ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
 
             user.passwordHash = passwordEncoder.encode(request.password)
+            // Hasło ustawione z linku zaproszenia (albo resetu) - konto jest aktywowane.
+            user.invitationPending = false
             userRepository.save(user)
         } ?: throw ValidationException("Nie udało się zresetować hasła. Spróbuj ponownie.")
 

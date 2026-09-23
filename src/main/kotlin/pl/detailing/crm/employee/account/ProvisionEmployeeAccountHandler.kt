@@ -66,7 +66,10 @@ class ProvisionEmployeeAccountHandler(
             isOwner = false,
             isActive = true,
             createdAt = Instant.now(),
-            customRoleId = command.roleId?.value
+            customRoleId = command.roleId?.value,
+            // Konto działa (nie jest zablokowane), ale pracownik jeszcze go nie aktywował -
+            // do ustawienia hasła z linku albo pierwszego wejścia do aplikacji.
+            invitationPending = true
         )
         // One real transaction (TransactionTemplate — the body of a `@Transactional
         // suspend` function running on Dispatchers.IO escapes the interceptor-managed
@@ -84,20 +87,23 @@ class ProvisionEmployeeAccountHandler(
 
         // Delivery is best-effort and deliberately outside the transaction: a bounced
         // invitation must not undo an account that exists, and the link can be re-sent.
-        val setupLink = "${properties.frontendBaseUrl.trimEnd('/')}/confirm-password?token=$rawToken"
-
         val emailResult = emailProvider.send(
             to = email,
-            subject = "Zaproszenie do DetailBoost – skonfiguruj swoje konto",
-            bodyText = buildInvitationBody(
+            subject = EmployeeInvitationEmail.SUBJECT,
+            bodyText = EmployeeInvitationEmail.body(
                 firstName = employeeEntity.firstName,
                 invitedByName = command.requestedByName,
-                setupLink = setupLink,
-                validFor = hoursInPolish(properties.invitationTokenTtlHours)
+                setupLink = EmployeeInvitationEmail.setupLink(properties, rawToken),
+                validFor = EmployeeInvitationEmail.hoursInPolish(properties.invitationTokenTtlHours)
             )
         )
 
         if (emailResult.success) {
+            // Godzina wysyłki tylko przy udanej wysyłce: karta pracownika pokazuje wtedy,
+            // do kiedy link działa, a przy nieudanej - że zaproszenie trzeba wysłać ponownie.
+            // Konto i e-mail już są - nieudany zapis godziny nie może zamienić sukcesu w błąd.
+            runCatching { userRepository.markInvitationSent(userId, Instant.now()) }
+                .onFailure { logger.warn("Could not record invitation send time [userId={}]", userId, it) }
             logger.info("Invitation email sent [employeeId={}, userId={}]", command.employeeId.value, userId)
         } else {
             logger.warn(
@@ -122,41 +128,5 @@ class ProvisionEmployeeAccountHandler(
         ))
 
         UserId(userId)
-    }
-
-    private fun buildInvitationBody(
-        firstName: String,
-        invitedByName: String?,
-        setupLink: String,
-        validFor: String
-    ): String {
-        val inviter = invitedByName?.let { "Użytkownik $it" } ?: "Administrator"
-        return """
-            Cześć $firstName,
-
-            $inviter zaprosił(-a) Cię do platformy DetailBoost.
-
-            Aby aktywować swoje konto i ustawić hasło, kliknij w poniższy link:
-            $setupLink
-
-            Link jest aktywny przez $validFor. Po tym czasie wygaśnie i będziesz musiał(-a) poprosić administratora o ponowne wysłanie zaproszenia.
-
-            Jeśli nie spodziewałeś(-aś) się tego zaproszenia, możesz zignorować tę wiadomość.
-
-            Pozdrawiamy,
-            Zespół DetailBoost
-        """.trimIndent()
-    }
-
-    companion object {
-        /** „48 godzin", „24 godziny", „1 godzinę" — odmiana do zdania „aktywny przez …". */
-        internal fun hoursInPolish(hours: Long): String {
-            val unit = when {
-                hours == 1L -> "godzinę"
-                hours % 10 in 2..4 && hours % 100 !in 12..14 -> "godziny"
-                else -> "godzin"
-            }
-            return "$hours $unit"
-        }
     }
 }

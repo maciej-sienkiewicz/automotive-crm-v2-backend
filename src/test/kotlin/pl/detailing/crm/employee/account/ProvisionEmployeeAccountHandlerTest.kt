@@ -79,6 +79,7 @@ class ProvisionEmployeeAccountHandlerTest {
         every { employeeRepository.save(any()) } answers { firstArg() }
         every { userRepository.existsByEmailAndStudioId(any(), studioId) } returns false
         every { userRepository.save(any<UserEntity>()) } answers { firstArg() }
+        every { userRepository.markInvitationSent(any(), any()) } returns 1
         every { passwordEncoder.encode(any()) } returns "hash"
         every { tokenService.issueInvitationToken(any()) } returns "RAW-INVITE-TOKEN"
         every { emailProvider.send(capture(sentTo), any(), capture(sentBody), any()) } returns
@@ -130,7 +131,29 @@ class ProvisionEmployeeAccountHandlerTest {
             72L to "72 godziny", 100L to "100 godzin"
         )
         cases.forEach { (hours, expected) ->
-            assertEquals(expected, ProvisionEmployeeAccountHandler.hoursInPolish(hours))
+            assertEquals(expected, EmployeeInvitationEmail.hoursInPolish(hours))
         }
+    }
+
+    @Test
+    fun `nowe konto czeka na aktywacje - nie jest od razu kontem aktywnym`() = runBlocking {
+        val savedUser = slot<UserEntity>()
+        every { userRepository.save(capture(savedUser)) } answers { firstArg() }
+
+        val userId = handler().handle(command())
+
+        assertTrue(savedUser.captured.invitationPending, "zaproszony pracownik nie aktywował jeszcze konta")
+        assertTrue(savedUser.captured.isActive, "konto nie jest zablokowane")
+        verify(exactly = 1) { userRepository.markInvitationSent(userId.value, any()) }
+    }
+
+    @Test
+    fun `nieudana wysylka nie zapisuje godziny zaproszenia - karta pokaze, ze trzeba wyslac ponownie`() = runBlocking {
+        every { emailProvider.send(any(), any(), any(), any()) } returns
+            EmailDeliveryResult(success = false, messageId = null, errorMessage = "bounce")
+
+        handler().handle(command())
+
+        verify(exactly = 0) { userRepository.markInvitationSent(any(), any()) }
     }
 }

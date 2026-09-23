@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -87,4 +89,19 @@ interface UserRepository : JpaRepository<UserEntity, UUID> {
         @Param("targetRoleId") targetRoleId: UUID?,
         @Param("studioId") studioId: UUID
     ): Int
+
+    /** Zaproszenie doszło - zapis godziny wysyłki, bez nadpisywania reszty konta. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserEntity u SET u.invitationSentAt = :sentAt WHERE u.id = :userId")
+    fun markInvitationSent(@Param("userId") userId: UUID, @Param("sentAt") sentAt: Instant): Int
+
+    /**
+     * Pracownik aktywował konto z zaproszenia (otworzył aplikację). Zmienia wiersz tylko,
+     * gdy zaproszenie jeszcze czekało, więc zwykłe wejście do aplikacji niczego nie zapisuje.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserEntity u SET u.invitationPending = false WHERE u.id = :userId AND u.invitationPending = true")
+    fun markInvitationAccepted(@Param("userId") userId: UUID): Int
 }

@@ -20,7 +20,10 @@ import pl.detailing.crm.employee.update.UpdateEmployeeRequest
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.RoleId
+import pl.detailing.crm.auth.passwordreset.PasswordResetProperties
+import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
+import java.time.Duration
 import java.time.Instant
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.role.permission.PermissionCheckService
@@ -39,6 +42,8 @@ class EmployeeController(
     private val deleteEmployeeAccountHandler: DeleteEmployeeAccountHandler,
     private val deleteEmployeeHandler: DeleteEmployeeHandler,
     private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
+    private val resendEmployeeInvitationHandler: ResendEmployeeInvitationHandler,
+    private val passwordResetProperties: PasswordResetProperties,
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
     private val permissionCheckService: PermissionCheckService
@@ -70,11 +75,13 @@ class EmployeeController(
         // Role is management information, and this endpoint is deliberately open so the
         // calendar can read coworker names. Enrich only for callers who administer the
         // team; everyone else keeps the plain name list they had before.
+        val canManage = permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.EMPLOYEES_MANAGE)
+        val studioUsers = if (canManage) userRepository.findByStudioId(principal.studioId.value) else emptyList()
         val roleByUser: Map<String, RoleRef> =
-            if (permissionCheckService.hasPermission(principal.userId, principal.studioId, Permission.EMPLOYEES_MANAGE)) {
+            if (canManage) {
                 val roleNames = roleRepository.findByStudioId(principal.studioId.value)
                     .associate { it.id to it.name }
-                userRepository.findByStudioId(principal.studioId.value)
+                studioUsers
                     .mapNotNull { user ->
                         val roleId = user.customRoleId ?: return@mapNotNull null
                         val name = roleNames[roleId] ?: return@mapNotNull null
@@ -82,9 +89,13 @@ class EmployeeController(
                     }
                     .toMap()
             } else emptyMap()
+        // Tak samo jak rola - informacja kadrowa, tylko dla zarządzających zespołem.
+        val pendingUserIds: Set<String> = studioUsers
+            .filter { it.invitationPending }
+            .mapTo(HashSet()) { it.id.toString() }
 
         ResponseEntity.ok(EmployeeListResponse(
-            items = paginatedItems.map { it.toListItem(roleByUser) },
+            items = paginatedItems.map { it.toListItem(roleByUser, pendingUserIds) },
             pagination = EmployeePaginationInfo(
                 currentPage = safePage,
                 totalPages = Pagination.totalPages(totalItems, safeLimit),
@@ -101,7 +112,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
+                ?.let { u -> accountInfoOf(u) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -126,7 +137,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(result.employeeId, principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
+                ?.let { u -> accountInfoOf(u) }
         }
         ResponseEntity.status(HttpStatus.CREATED).body(employee.toDetailResponse(accountInfo))
     }
@@ -153,7 +164,7 @@ class EmployeeController(
         val employee = getEmployeeHandler.handle(EmployeeId.fromString(employeeId), principal.studioId)
         val accountInfo = employee.userId?.let {
             userRepository.findByIdAndStudioId(it.value, principal.studioId.value)
-                ?.let { u -> EmployeeAccountInfo(u.id.toString(), u.customRoleId?.toString(), u.isActive, u.pinHash != null) }
+                ?.let { u -> accountInfoOf(u) }
         }
         ResponseEntity.ok(employee.toDetailResponse(accountInfo))
     }
@@ -251,6 +262,35 @@ class EmployeeController(
         )
         ResponseEntity.noContent().build()
     }
+
+    /** „Wyślij maila ponownie" - nowy link do ustawienia hasła dla konta, którego pracownik jeszcze nie aktywował. */
+    @PostMapping("/{employeeId}/account/resend-invitation")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
+    fun resendInvitation(@PathVariable employeeId: String): ResponseEntity<ResendInvitationResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = resendEmployeeInvitationHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
+        ResponseEntity.ok(ResendInvitationResponse(sentAt = result.sentAt, expiresAt = result.expiresAt))
+    }
+
+    private fun accountInfoOf(user: UserEntity): EmployeeAccountInfo {
+        val sentAt = user.invitationSentAt.takeIf { user.invitationPending }
+        return EmployeeAccountInfo(
+            userId = user.id.toString(),
+            roleId = user.customRoleId?.toString(),
+            isActive = user.isActive,
+            hasPinConfigured = user.pinHash != null,
+            email = user.email,
+            invitationPending = user.invitationPending,
+            invitationSentAt = sentAt,
+            invitationExpiresAt = sentAt?.plus(Duration.ofHours(passwordResetProperties.invitationTokenTtlHours))
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,6 +313,11 @@ data class EmployeeListItem(
     val email: String?,
     val phone: String?,
     val hasAccount: Boolean,
+    /**
+     * Konto czeka na aktywację z zaproszenia (tylko dla zarządzających zespołem; dla
+     * pozostałych zawsze false, jak [role]).
+     */
+    val accountPending: Boolean = false,
     /**
      * The account's role, when the caller administers the team. Null covers three
      * different states the UI must tell apart, using [hasAccount]: no account at all,
@@ -301,8 +346,22 @@ data class EmployeePaginationInfo(
 data class EmployeeAccountInfo(
     val userId: String,
     val roleId: String?,
+    /** Konto nie jest zablokowane. NIE znaczy, że pracownik je aktywował - patrz [invitationPending]. */
     val isActive: Boolean,
-    val hasPinConfigured: Boolean = false
+    val hasPinConfigured: Boolean = false,
+    /** Login konta - na ten adres idzie zaproszenie. */
+    val email: String? = null,
+    /** Pracownik jeszcze nie aktywował konta z zaproszenia (nie ustawił hasła, nie wszedł do aplikacji). */
+    val invitationPending: Boolean = false,
+    /** Kiedy doszło ostatnie zaproszenie; null, gdy nie czeka albo wysyłka się nie udała. */
+    val invitationSentAt: Instant? = null,
+    /** Do kiedy działa link z ostatniego zaproszenia. */
+    val invitationExpiresAt: Instant? = null
+)
+
+data class ResendInvitationResponse(
+    val sentAt: Instant,
+    val expiresAt: Instant
 )
 
 data class EmployeeDetailResponse(
@@ -322,7 +381,10 @@ data class EmployeeDetailResponse(
 // Domain → Response mapping extensions
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun Employee.toListItem(roleByUser: Map<String, RoleRef> = emptyMap()) = EmployeeListItem(
+private fun Employee.toListItem(
+    roleByUser: Map<String, RoleRef> = emptyMap(),
+    pendingUserIds: Set<String> = emptySet()
+) = EmployeeListItem(
     id = id.toString(),
     firstName = firstName,
     lastName = lastName,
@@ -330,6 +392,7 @@ private fun Employee.toListItem(roleByUser: Map<String, RoleRef> = emptyMap()) =
     email = email,
     phone = phone,
     hasAccount = userId != null,
+    accountPending = userId?.let { it.toString() in pendingUserIds } ?: false,
     role = userId?.let { roleByUser[it.toString()] }
 )
 

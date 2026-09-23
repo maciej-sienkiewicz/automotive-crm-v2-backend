@@ -71,7 +71,20 @@ class UserEntity(
     var pinFailedAttempts: Int = 0,
 
     @Column(name = "pin_locked", nullable = false)
-    var pinLocked: Boolean = false
+    var pinLocked: Boolean = false,
+
+    /**
+     * Konto pracownika założone z zaproszenia, którego pracownik jeszcze nie aktywował:
+     * nie ustawił hasła z linku ani nie otworzył jeszcze aplikacji. Samo `isActive`
+     * mówi tylko, że konto nie jest zablokowane - bez tego zaproszony pracownik
+     * wyglądał w kadrach jak ktoś, kto już pracuje w systemie.
+     */
+    @Column(name = "invitation_pending", nullable = false, columnDefinition = "boolean not null default false")
+    var invitationPending: Boolean = false,
+
+    /** Kiedy ostatnio doszło zaproszenie (utworzenie konta albo „Wyślij maila ponownie"). */
+    @Column(name = "invitation_sent_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var invitationSentAt: Instant? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),

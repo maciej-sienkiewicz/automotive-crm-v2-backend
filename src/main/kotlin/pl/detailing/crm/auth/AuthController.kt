@@ -155,6 +155,12 @@ class AuthController(
 
             val userEntity = userRepository.findById(principal.userId.value).orElse(null)
             val mobileToken = userEntity?.let { mobileTokenService.ensureToken(it) }
+            // Pracownik z zaproszenia wszedł do aplikacji - konto jest aktywowane, karta
+            // pracownika przestaje pokazywać „Czeka na aktywację". Błąd zapisu nie może
+            // wylogować użytkownika (każdy wyjątek niżej kończy się odpowiedzią 401).
+            if (userEntity?.invitationPending == true) {
+                runCatching { userRepository.markInvitationAccepted(userEntity.id) }
+            }
 
             // null = owner (unrestricted); list = user's effective permission codes
             val permissions = permissionCheckService.getPermissions(principal.userId, principal.studioId)
