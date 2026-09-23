@@ -16,6 +16,7 @@ import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.pii.Pii
 import pl.detailing.crm.worktime.attendance.AttendanceSheetEntity
 import pl.detailing.crm.worktime.attendance.AttendanceSheetService
+import pl.detailing.crm.worktime.attendance.AttendanceSheetStatus
 import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import java.time.LocalDate
 import java.time.YearMonth
@@ -137,9 +138,9 @@ class TeamWorkTimeController(
     /**
      * Lista obecności na wskazany miesiąc dla zaznaczonych pracowników.
      *
-     * Zwraca OPIS dokumentu, a nie jego bajty: arkusz jest zapisywany w systemie
-     * (podpisany dokument kadrowy musi dać się odszukać później), a przed pobraniem
-     * użytkownik decyduje jeszcze, czy go podpisać. Sam plik idzie osobnym GET-em.
+     * Zwraca OPIS dokumentu, a nie jego bajty: arkusz ląduje w zakładce Rozliczenia,
+     * gdzie każdy administrator widzi go razem ze stanem (do zatwierdzenia / zatwierdzona).
+     * Sam plik idzie osobnym GET-em — do podglądu albo pobrania.
      *
      * POST, a nie GET, bo lista pracowników bywa długa i nie ma po co lądować
      * w logach serwera ani w historii przeglądarki.
@@ -152,10 +153,44 @@ class TeamWorkTimeController(
         val sheet = attendanceSheetService.generate(
             studioId = principal.studioId,
             userId = principal.userId,
+            userName = principal.fullName,
             period = parsePeriod(body.period),
             employeeIds = body.employeeIds.map { EmployeeId.fromString(it) }
         )
         ResponseEntity.ok(sheet.toResponse())
+    }
+
+    /**
+     * Zatwierdzenie rozliczenia — opcjonalnie z podpisem złożonym na tym urządzeniu.
+     * Kto zatwierdza, wynika z sesji, jak przy podpisie.
+     */
+    @PostMapping("/attendance-sheet/{sheetId}/approve")
+    fun approveAttendanceSheet(
+        @PathVariable sheetId: String,
+        @RequestBody(required = false) body: ApproveAttendanceSheetRequest?
+    ): ResponseEntity<AttendanceSheetResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val sheet = attendanceSheetService.approve(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            sheetId = UUID.fromString(sheetId),
+            signatureDataUrl = body?.signatureImage?.ifBlank { null }
+        )
+        ResponseEntity.ok(sheet.toResponse())
+    }
+
+    /** Usunięcie rozliczenia razem z plikami arkusza. */
+    @DeleteMapping("/attendance-sheet/{sheetId}")
+    fun deleteAttendanceSheet(@PathVariable sheetId: String): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        attendanceSheetService.delete(
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            sheetId = UUID.fromString(sheetId)
+        )
+        ResponseEntity.noContent().build()
     }
 
     /** Plik arkusza — podpisany, jeśli podpis już złożono. */
@@ -213,7 +248,11 @@ class TeamWorkTimeController(
         signed = signedFileS3Key != null,
         signerName = signerName,
         signedAt = signedAt?.toEpochMilli(),
-        createdAt = createdAt.toEpochMilli()
+        createdAt = createdAt.toEpochMilli(),
+        status = status,
+        createdByName = createdByName,
+        approvedAt = approvedAt?.toEpochMilli(),
+        approvedByName = approvedByName
     )
 
     @GetMapping("/{userId}/periods")
@@ -287,6 +326,11 @@ data class SignAttendanceSheetRequest(
     val signatureImage: String
 )
 
+/** @param signatureImage opcjonalny podpis z kanwy — bez niego lista jest tylko zatwierdzana */
+data class ApproveAttendanceSheetRequest(
+    val signatureImage: String? = null
+)
+
 data class AttendanceSheetResponse(
     val id: String,
     val period: String,
@@ -295,7 +339,12 @@ data class AttendanceSheetResponse(
     /** Imię i nazwisko osoby, która podpisała — maskowane tak jak przy podpisach protokołów. */
     @Pii val signerName: String?,
     val signedAt: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    val status: AttendanceSheetStatus,
+    /** Kto wygenerował listę; null przy liście, której autora nie da się już ustalić. */
+    @Pii val createdByName: String?,
+    val approvedAt: Long?,
+    @Pii val approvedByName: String?
 )
 
 data class EntryResponse(
