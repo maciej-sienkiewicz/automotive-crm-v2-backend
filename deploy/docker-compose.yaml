@@ -45,6 +45,11 @@ services:
       # kończyłoby się błędem połączenia.
       META_IG_RESOLVER_ENABLED: ${ENV_META_IG_RESOLVER_ENABLED:-false}
       META_IG_RESOLVER_URL: http://meta-ig-resolver:8080
+      # Podgląd roli (piaskownica pod osobnym adresem). Domyślnie wyłączony - włączać dopiero,
+      # gdy adres podglądu działa w DNS i w nginx-proxy-manager (patrz komentarz przy
+      # crm.role-preview w application.properties).
+      ROLE_PREVIEW_ENABLED: ${ENV_ROLE_PREVIEW_ENABLED:-false}
+      ROLE_PREVIEW_BASE_URL: ${ENV_ROLE_PREVIEW_BASE_URL:-}
     depends_on:
       - redis
     networks:

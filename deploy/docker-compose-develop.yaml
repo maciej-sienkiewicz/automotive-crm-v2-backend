@@ -45,6 +45,11 @@ services:
       VAPID_PUBLIC_KEY: ${ENV_VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${ENV_VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${ENV_VAPID_SUBJECT}
+      # Podgląd roli (piaskownica pod osobnym adresem). Domyślnie wyłączony - włączać dopiero,
+      # gdy adres podglądu działa w DNS i w nginx-proxy-manager (patrz komentarz przy
+      # crm.role-preview w application.properties).
+      ROLE_PREVIEW_ENABLED: ${ENV_ROLE_PREVIEW_ENABLED:-false}
+      ROLE_PREVIEW_BASE_URL: ${ENV_ROLE_PREVIEW_BASE_URL:-}
     depends_on:
       - redis
     networks:
