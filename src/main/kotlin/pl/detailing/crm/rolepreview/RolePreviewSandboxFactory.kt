@@ -112,7 +112,7 @@ class RolePreviewSandboxFactory(
 
         demoDataInitializer.seed(
             sandboxStudioId, ownerUserId,
-            contacts = SeedContacts.UNDELIVERABLE,
+            contacts = SeedContacts.undeliverable(),
             followInstagramProfiles = false
         )
         sampleData.seed(
