@@ -4,6 +4,7 @@ import pl.detailing.crm.appointment.recurrence.domain.RecurrenceSeriesId
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.domain.PriceCalculator
 import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Price adjustment types for service line items
@@ -104,6 +105,31 @@ data class AppointmentSchedule(
      */
     fun overlapsWith(other: AppointmentSchedule): Boolean {
         return !(endDateTime.isBefore(other.startDateTime) || startDateTime.isAfter(other.endDateTime))
+    }
+
+    companion object {
+        private val STUDIO_ZONE: ZoneId = ZoneId.of("Europe/Warsaw")
+
+        /**
+         * Flaga „całodniowa", którą wolno zapisać: wizyta całodniowa trwa JEDEN dzień
+         * (początek i koniec tego samego dnia czasu polskiego). Wizyta na kilka dni ma
+         * zawsze godzinę rozpoczęcia i zakończenia, więc przy kilku dniach flaga spada,
+         * a godziny zostają takie, jakie przyszły.
+         *
+         * Normalizujemy zamiast odrzucać: ekran edycji rezerwacji nie ma przełącznika
+         * „całodniowa" i odsyłał flagę oryginału razem z przesuniętym końcem
+         * (całodniowa 24.09 przeciągnięta do 28.09 zostawała całodniowa). Starszy front
+         * w otwartej karcie wysyła tak nadal - zapis ma się udać, a stan być poprawny.
+         */
+        fun resolveAllDay(requested: Boolean, startDateTime: Instant, endDateTime: Instant): Boolean =
+            requested && startDateTime.atZone(STUDIO_ZONE).toLocalDate() == endDateTime.atZone(STUDIO_ZONE).toLocalDate()
+
+        /** Termin z żądania, z flagą całodniową tylko dla wizyty jednodniowej ([resolveAllDay]). */
+        fun of(isAllDay: Boolean, startDateTime: Instant, endDateTime: Instant) = AppointmentSchedule(
+            isAllDay = resolveAllDay(isAllDay, startDateTime, endDateTime),
+            startDateTime = startDateTime,
+            endDateTime = endDateTime,
+        )
     }
 }
 

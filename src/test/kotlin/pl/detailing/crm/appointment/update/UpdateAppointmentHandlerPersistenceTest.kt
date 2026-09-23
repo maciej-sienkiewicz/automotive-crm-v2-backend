@@ -345,8 +345,11 @@ class UpdateAppointmentHandlerPersistenceTest {
 
     @Test
     fun `schedule isAllDay przelacza sie na true`() = runBlocking {
-        val day = Instant.parse("2026-03-05T00:00:00Z")
-        val dayEnd = Instant.parse("2026-03-05T23:59:59Z")
+        // Cały 5.03 czasu polskiego (zima, UTC+1), tak jak wysyła go front. Doba UTC
+        // (00:00Z-23:59:59Z) to w Polsce dwa dni, a całodniowa może być tylko wizyta
+        // jednodniowa (AppointmentSchedule.resolveAllDay).
+        val day = Instant.parse("2026-03-04T23:00:00Z")
+        val dayEnd = Instant.parse("2026-03-05T22:59:59Z")
 
         handler.handle(baseCommand(schedule = ScheduleCommand(isAllDay = true, startDateTime = day, endDateTime = dayEnd)))
 

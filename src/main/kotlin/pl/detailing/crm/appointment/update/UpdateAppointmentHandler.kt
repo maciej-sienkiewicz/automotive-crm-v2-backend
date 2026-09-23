@@ -150,7 +150,9 @@ class UpdateAppointmentHandler(
         existingEntity.note = command.note
         existingEntity.internalNote = command.internalNote
         existingEntity.protocolNote = command.protocolNote
-        existingEntity.isAllDay = command.schedule.isAllDay
+        existingEntity.isAllDay = AppointmentSchedule.resolveAllDay(
+            command.schedule.isAllDay, command.schedule.startDateTime, command.schedule.endDateTime
+        )
         existingEntity.startDateTime = command.schedule.startDateTime
         existingEntity.endDateTime = command.schedule.endDateTime
         existingEntity.updatedBy = command.userId.value

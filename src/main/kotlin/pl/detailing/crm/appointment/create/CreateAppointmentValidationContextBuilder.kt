@@ -151,7 +151,7 @@ class CreateAppointmentValidationContextBuilder(
                 customerPhoneExists = phoneExistsDeferred.await(),
                 requestedServiceIds = command.services.map { it.serviceId },
                 requestedServiceLineItems = command.services,
-                schedule = AppointmentSchedule(
+                schedule = AppointmentSchedule.of(
                     isAllDay = command.schedule.isAllDay,
                     startDateTime = command.schedule.startDateTime,
                     endDateTime = command.schedule.endDateTime

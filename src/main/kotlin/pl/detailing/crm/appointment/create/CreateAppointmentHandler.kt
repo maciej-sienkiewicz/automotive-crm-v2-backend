@@ -127,7 +127,7 @@ class CreateAppointmentHandler(
             appointmentTitle = command.appointmentTitle,
             appointmentColorId = command.appointmentColorId,
             lineItems = lineItems,
-            schedule = AppointmentSchedule(
+            schedule = AppointmentSchedule.of(
                 isAllDay = command.schedule.isAllDay,
                 startDateTime = command.schedule.startDateTime,
                 endDateTime = command.schedule.endDateTime

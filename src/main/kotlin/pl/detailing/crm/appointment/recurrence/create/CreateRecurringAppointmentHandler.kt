@@ -97,7 +97,7 @@ class CreateRecurringAppointmentHandler(
                     vehicleId = firstResult.vehicleId?.value,
                     appointmentTitle = command.base.appointmentTitle,
                     appointmentColorId = command.base.appointmentColorId.value,
-                    isAllDay = command.base.schedule.isAllDay,
+                    isAllDay = AppointmentSchedule.resolveAllDay(command.base.schedule.isAllDay, start, end),
                     startDateTime = start,
                     endDateTime = end,
                     status = AppointmentStatus.CREATED,
