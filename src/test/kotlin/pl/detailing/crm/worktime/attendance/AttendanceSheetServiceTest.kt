@@ -100,20 +100,51 @@ class AttendanceSheetServiceTest {
         assertEquals(AuditAction.ATTENDANCE_SHEET_GENERATED, audited.single().action)
     }
 
+    /**
+     * Zatwierdzający jest „osobą potwierdzającą" ze stopki arkusza: lista zatwierdzona bez
+     * jego podpisu niczego nie potwierdza. Odmowa nie zmienia niczego — także prośby
+     * o podpis czekającej na tablecie, bo tam ktoś może właśnie podpisywać.
+     */
     @Test
-    fun `zatwierdzenie bez podpisu zapisuje kto i kiedy, a pliku nie rusza`() {
+    fun `zatwierdzenie bez podpisu jest odrzucane i niczego nie zmienia`() {
+        val pending = pendingTabletRequest()
+        every { signatureRequests.findActiveForAttendanceSheets(studioId.value, listOf(sheetId), any()) } returns listOf(pending)
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns sheet()
+
+        listOf(null, "", "   ").forEach { missing ->
+            val error = assertThrows<ValidationException> {
+                runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, missing) }
+            }
+            assertTrue("Podpisz" in error.message!!, error.message)
+        }
+
+        verify(exactly = 0) { repository.markApproved(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { repository.markApprovedWithSignature(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
+        verify(exactly = 0) { signatureLifecycle.cancel(any(), any(), any(), any()) }
+        assertTrue(audited.isEmpty())
+    }
+
+    /** Arkusz podpisany starą ścieżką ([AttendanceSheetService.sign]) ma już podpis — drugiego nie dokładamy. */
+    @Test
+    fun `lista podpisana wczesniej zatwierdza sie bez nowego podpisu`() {
+        val earlierSigned = originalKey.removeSuffix(".pdf") + "-signed-1a2b3c4d.pdf"
         every { repository.findByIdAndStudioId(sheetId, studioId.value) } returnsMany listOf(
-            sheet(),
-            sheet(AttendanceSheetStatus.APPROVED, approvedByName = "Jan Kowalski")
+            sheet(signedKey = earlierSigned),
+            sheet(AttendanceSheetStatus.APPROVED, signedKey = earlierSigned, approvedByName = "Jan Kowalski")
         )
         every { repository.markApproved(sheetId, studioId.value, any(), adminId.value, "Jan Kowalski") } returns 1
 
         val result = runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, null) }
 
         assertEquals(AttendanceSheetStatus.APPROVED, result.status)
+        assertEquals(earlierSigned, result.signedFileS3Key)
+        verify(exactly = 0) { signer.sign(any(), any(), any(), any()) }
         verify(exactly = 0) { repository.markApprovedWithSignature(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
-        assertEquals(AuditAction.ATTENDANCE_SHEET_APPROVED, audited.single().action)
+        val approval = audited.single()
+        assertEquals(AuditAction.ATTENDANCE_SHEET_APPROVED, approval.action)
+        assertTrue(approval.changes.none { it.field == "signed" }, "Podpis nie jest nowy: ${approval.changes}")
     }
 
     @Test
@@ -133,7 +164,7 @@ class AttendanceSheetServiceTest {
     @Test
     fun `dwoch administratorow naraz - przegrany dostaje konflikt zamiast nadpisac zatwierdzenie`() {
         every { repository.findByIdAndStudioId(sheetId, studioId.value) } returnsMany listOf(
-            sheet(),
+            sheet(signedKey = "earlier-signed.pdf"),
             sheet(AttendanceSheetStatus.APPROVED, approvedByName = "Anna Nowak")
         )
         every { repository.markApproved(any(), any(), any(), any(), any()) } returns 0
@@ -244,14 +275,34 @@ class AttendanceSheetServiceTest {
             sheet(),
             sheet(AttendanceSheetStatus.APPROVED, approvedByName = "Jan Kowalski")
         )
-        every { repository.markApproved(any(), any(), any(), any(), any()) } returns 1
+        every { storage.downloadBytes(originalKey) } returns byteArrayOf(1)
+        every { signer.sign(any(), any(), any(), any()) } returns byteArrayOf(2)
+        every { repository.markApprovedWithSignature(any(), any(), any(), any(), any(), any()) } returns 1
 
-        runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, null) }
+        runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, signature) }
 
         // Tablet przestaje pokazywać listę, której podpisu nikt już nie przyjmie.
         verify(exactly = 1) {
             signatureLifecycle.cancel(studioId, SignatureRequestId(pending.id), "Jan Kowalski [${adminId.value}]", null)
         }
+    }
+
+    /** Pusta kanwa to też brak podpisu — i też nie może zdjąć listy z tabletu. */
+    @Test
+    fun `odrzucony podpis z kanwy nie konczy prosby o podpis na tablecie`() {
+        val pending = pendingTabletRequest()
+        every { signatureRequests.findActiveForAttendanceSheets(studioId.value, listOf(sheetId), any()) } returns listOf(pending)
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns sheet()
+        every { storage.downloadBytes(originalKey) } returns byteArrayOf(1)
+        every { signer.sign(any(), any(), any(), any()) } throws ValidationException("Podpis jest pusty.")
+
+        assertThrows<ValidationException> {
+            runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, signature) }
+        }
+
+        verify(exactly = 0) { signatureLifecycle.cancel(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
+        assertTrue(audited.isEmpty())
     }
 
     @Test

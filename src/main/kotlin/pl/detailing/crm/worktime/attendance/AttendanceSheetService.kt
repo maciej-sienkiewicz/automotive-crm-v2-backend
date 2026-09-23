@@ -120,8 +120,12 @@ class AttendanceSheetService(
      * Zatwierdza arkusz: od tej chwili każdy administrator widzi, że lista jest sprawdzona
      * i gotowa dla księgowości.
      *
-     * Podpis jest opcjonalny. Gdy przyjdzie, wtapia się w PDF jako osobny plik obok
-     * oryginału — zatwierdzający jest zarazem „osobą potwierdzającą" ze stopki arkusza.
+     * Bez podpisu nie ma zatwierdzenia. Zatwierdzający jest „osobą potwierdzającą" ze stopki
+     * arkusza, a lista zatwierdzona bez jej podpisu nie potwierdza niczego, co dałoby się
+     * pokazać księgowości albo inspekcji pracy. Podpis wtapia się w PDF jako osobny plik
+     * obok oryginału. Jedyny wyjątek to arkusz podpisany już wcześniej ([sign], ścieżka
+     * sprzed zakładki Rozliczenia): podpis na nim jest, a drugiego nie dokładamy.
+     *
      * Drugi raz zatwierdzić się nie da: przy dwóch administratorach klikających naraz
      * wygrywa pierwszy, a drugi dowiaduje się, kto go uprzedził.
      */
@@ -134,24 +138,28 @@ class AttendanceSheetService(
     ): AttendanceSheetEntity {
         val sheet = require(studioId, sheetId)
         if (sheet.status == AttendanceSheetStatus.APPROVED) throw alreadyApproved(sheet)
+        val approvedAt = Instant.now()
+
+        // Podpis sprawdzamy i wtapiamy, zanim cokolwiek się zmieni: odrzucone zatwierdzenie
+        // (brak podpisu, pusta kanwa) nie może zdjąć z tabletu listy, którą ktoś właśnie podpisuje.
+        val signedBytes = if (sheet.signedFileS3Key != null) {
+            null
+        } else {
+            val signaturePng = decodeSignature(signatureDataUrl?.ifBlank { null } ?: throw signatureRequired())
+            withContext(Dispatchers.IO) {
+                signer.sign(storageService.downloadBytes(sheet.fileS3Key), signaturePng, userName, approvedAt)
+            }
+        }
+
         // Zatwierdzenie tutaj kończy prośbę o podpis wysłaną wcześniej na tablet albo telefon -
         // inaczej tablet dalej pokazywałby listę, której podpisu nikt już nie przyjmie.
         cancelPendingSignatureRequests(studioId, sheetId, userId, userName)
 
-        // Podpis dokłada się tylko do arkusza, którego nikt jeszcze nie podpisał.
-        val signaturePng = signatureDataUrl
-            ?.takeIf { sheet.signedFileS3Key == null }
-            ?.let { decodeSignature(it) }
-        val approvedAt = Instant.now()
-
-        if (signaturePng == null) {
+        if (signedBytes == null) {
             if (repository.markApproved(sheetId, studioId.value, approvedAt, userId.value, userName) == 0) {
                 throw alreadyApproved(require(studioId, sheetId))
             }
         } else {
-            val signedBytes = withContext(Dispatchers.IO) {
-                signer.sign(storageService.downloadBytes(sheet.fileS3Key), signaturePng, userName, approvedAt)
-            }
             storeSignedAndApprove(sheet, signedBytes, approvedAt, userId, userName)
             logger.info("Attendance sheet signed: studioId={}, sheetId={}, by={}", studioId, sheetId, userId)
         }
@@ -161,7 +169,7 @@ class AttendanceSheetService(
             studioId, userId, userName, AuditAction.ATTENDANCE_SHEET_APPROVED, approved,
             listOfNotNull(
                 FieldChange("status", AttendanceSheetStatus.GENERATED.name, AttendanceSheetStatus.APPROVED.name),
-                signaturePng?.let { FieldChange("signed", null, "true") }
+                signedBytes?.let { FieldChange("signed", null, "true") }
             )
         )
         return approved
@@ -361,6 +369,10 @@ class AttendanceSheetService(
      * Przyjmujemy wyłącznie PNG — [SignatureImageProcessor] i tak sprawdzi zawartość,
      * ale odrzucenie innego typu od razu daje czytelny komunikat zamiast „nieprawidłowy obraz".
      */
+    private fun signatureRequired() = ValidationException(
+        "Podpisz listę obecności, żeby ją zatwierdzić: na tym urządzeniu, na tablecie albo na telefonie."
+    )
+
     private fun decodeSignature(dataUrl: String): ByteArray {
         val payload = dataUrl.substringAfter("base64,", missingDelimiterValue = "")
         if (payload.isBlank() || !dataUrl.startsWith("data:image/png")) {

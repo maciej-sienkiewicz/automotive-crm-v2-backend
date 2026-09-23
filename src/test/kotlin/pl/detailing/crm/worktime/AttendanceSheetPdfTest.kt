@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,21 +20,31 @@ import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.studio.logo.CompanyLogoService
+import pl.detailing.crm.studio.logo.DocumentLogo
+import pl.detailing.crm.studio.logo.DocumentLogoPlacement
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
-import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryEntity
 import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryRepository
 import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodEntity
 import pl.detailing.crm.worktime.infrastructure.WorkTimePeriodRepository
+import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine
+import org.apache.pdfbox.cos.COSBase
+import org.apache.pdfbox.cos.COSName
 import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.PDPage
+import org.apache.pdfbox.pdmodel.common.PDRectangle
+import org.apache.pdfbox.pdmodel.graphics.image.PDImage
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import pl.detailing.crm.signing.infrastructure.SignatureImageProcessor
 import pl.detailing.crm.worktime.attendance.AttendanceSheetSigner
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetCommand
 import pl.detailing.crm.worktime.attendance.GenerateAttendanceSheetHandler
+import java.awt.geom.Point2D
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.time.Instant
@@ -57,7 +68,9 @@ class AttendanceSheetPdfTest {
     private val userRepository = mockk<UserRepository>()
     private val roleRepository = mockk<RoleRepository>()
     private val studioSettingsRepository = mockk<StudioSettingsRepository>()
-    private val documentStorageService = mockk<DocumentStorageService>(relaxed = true)
+    private val companyLogoService = mockk<CompanyLogoService> {
+        every { loadDocumentLogo(any()) } returns null
+    }
     private val entryRepository = mockk<WorkTimeEntryRepository>()
     private val periodRepository = mockk<WorkTimePeriodRepository>()
     private val leaveRepository = mockk<EmployeeLeaveRepository> {
@@ -66,7 +79,7 @@ class AttendanceSheetPdfTest {
 
     private val handler = GenerateAttendanceSheetHandler(
         employeeRepository, userRepository, roleRepository, studioSettingsRepository,
-        documentStorageService, entryRepository, periodRepository, leaveRepository
+        companyLogoService, entryRepository, periodRepository, leaveRepository
     )
 
     private val studio = StudioId.random()
@@ -137,7 +150,6 @@ class AttendanceSheetPdfTest {
     private fun stubSettings(name: String? = "Studio Blask") {
         val settings = mockk<StudioSettingsEntity>()
         every { settings.name } returns name
-        every { settings.logoS3Key } returns null
         every { studioSettingsRepository.findById(studio.value) } returns Optional.of(settings)
     }
 
@@ -409,6 +421,156 @@ class AttendanceSheetPdfTest {
                 .getText(document)
         }
         assertTrue(lastPageText.contains("Mikołaj Właściciel"))
+    }
+
+    // ── Logo studia ──────────────────────────────────────────────────────────
+
+    /**
+     * Logo jak na protokole wydania pojazdu: tło wtopione w plik jest odcięte, a sam znak
+     * wypełnia ten sam slot co na protokole (do 200 × 56 pt, od 29,30 pt z lewej).
+     *
+     * Wcześniej arkusz rysował cały plik w polu 120 × 34 pt: ten sam sygnet z szerokim
+     * przezroczystym marginesem wychodził na kartce jako kwadracik 13,6 pt.
+     */
+    @Test
+    fun `logo jest przyciete z tla i wypelnia slot protokolu wydania pojazdu`() = runBlocking {
+        stubSettings()
+        // Sygnet 120 × 120 px na przezroczystym polu 600 × 300 px.
+        stubLogo(png(600, 300) { it.fillRect(240, 90, 120, 120) })
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true)
+
+        val pdf = handler.handle(GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id))))
+
+        val logo = Loader.loadPDF(pdf).use { imagesOn(it.getPage(0)) }.single()
+        assertEquals(120 to 120, logo.pixels, "Osadzony jest sam znak, bez przezroczystego marginesu")
+
+        val protocol = DocumentLogoPlacement.fit(120, 120, PDRectangle.A4.height, DocumentLogoPlacement.Slot.PROTOCOL)
+        assertEquals(protocol.x, logo.x, 0.01f, "Ta sama lewa krawędź co na protokole")
+        assertEquals(protocol.y, logo.y, 0.01f, "Ta sama wysokość na kartce co na protokole")
+        assertEquals(protocol.width, logo.width, 0.01f)
+        assertEquals(protocol.height, logo.height, 0.01f)
+        assertEquals(56f, logo.height, 0.01f, "Kwadratowy sygnet dostaje pełną wysokość slotu")
+    }
+
+    /** Białe tło to ten sam problem co przezroczyste — na białej kartce go nie widać. */
+    @Test
+    fun `logo na bialym tle traci biale tlo`() = runBlocking {
+        stubSettings()
+        // Logotyp 300 × 60 px na białej planszy 800 × 400 px.
+        stubLogo(png(800, 400, background = java.awt.Color.WHITE) { it.fillRect(250, 170, 300, 60) })
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true)
+
+        val pdf = handler.handle(GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id))))
+
+        val logo = Loader.loadPDF(pdf).use { imagesOn(it.getPage(0)) }.single()
+        assertEquals(300 to 60, logo.pixels)
+        assertEquals(200f, logo.width, 0.01f, "Płaski logotyp wypełnia szerokość slotu")
+        assertEquals(40f, logo.height, 0.01f)
+    }
+
+    /**
+     * Każda strona ma nagłówek z logo, ale plik niesie jeden obraz: wariant do druku ma do
+     * 2000 px dłuższego boku i osadzany osobno na każdej stronie puchłby razem z listą.
+     */
+    @Test
+    fun `logo na kazdej stronie to jeden obraz w pliku`() = runBlocking {
+        stubSettings()
+        stubLogo(png(600, 300) { it.fillRect(240, 90, 120, 120) })
+        val employees = (1..9).map { index ->
+            employee("Imie$index", "Nazwisko$index", UUID.randomUUID()).also { register(it, tracksWorkTime = true) }
+        }
+
+        val pdf = handler.handle(
+            GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 4), employees.map { EmployeeId(it.id) })
+        )
+
+        Loader.loadPDF(pdf).use { document ->
+            assertEquals(2, document.numberOfPages)
+            val first = imagesOn(document.getPage(0)).single()
+            val second = imagesOn(document.getPage(1)).single()
+            assertSame(first.stream, second.stream, "Obie strony rysują ten sam obiekt obrazu")
+        }
+    }
+
+    /** Logo wyłączone na dokumentach (albo brak logo) — arkusz bez obrazu, reszta bez zmian. */
+    @Test
+    fun `bez logo na dokumentach arkusz nie ma obrazu`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true)
+
+        val pdf = handler.handle(GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id))))
+
+        assertTrue(Loader.loadPDF(pdf).use { imagesOn(it.getPage(0)) }.isEmpty())
+        assertTrue(textOf(pdf).contains("Studio Blask"), "Nazwa studia nadal w polu USŁUGODAWCA")
+    }
+
+    /** Uszkodzony plik albo błąd magazynu nie mogą zablokować listy obecności. */
+    @Test
+    fun `logo, ktorego nie da sie wczytac ani osadzic, nie blokuje arkusza`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true)
+        val command = GenerateAttendanceSheetCommand(studio, YearMonth.of(2026, 3), listOf(EmployeeId(anna.id)))
+
+        stubLogo(byteArrayOf(1, 2, 3))
+        val corrupted = handler.handle(command)
+        assertTrue(textOf(corrupted).contains("LISTA OBECNOŚCI"))
+        assertTrue(Loader.loadPDF(corrupted).use { imagesOn(it.getPage(0)) }.isEmpty())
+
+        every { companyLogoService.loadDocumentLogo(studio.value) } throws IllegalStateException("S3 niedostępne")
+        assertTrue(textOf(handler.handle(command)).contains("LISTA OBECNOŚCI"))
+    }
+
+    private fun stubLogo(printPng: ByteArray) {
+        every { companyLogoService.loadDocumentLogo(studio.value) } returns DocumentLogo(printPng = printPng, vectorSvg = null)
+    }
+
+    private fun png(width: Int, height: Int, background: java.awt.Color? = null, ink: (java.awt.Graphics2D) -> Unit): ByteArray {
+        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+        val graphics = image.createGraphics()
+        background?.let { graphics.color = it; graphics.fillRect(0, 0, width, height) }
+        graphics.color = java.awt.Color(0x11, 0x17, 0x29)
+        ink(graphics)
+        graphics.dispose()
+        return ByteArrayOutputStream().also { ImageIO.write(image, "PNG", it) }.toByteArray()
+    }
+
+    /** Obraz narysowany na stronie: prostokąt w pt (początek układu w lewym dolnym rogu). */
+    private class DrawnImage(
+        val x: Float, val y: Float, val width: Float, val height: Float,
+        val pixels: Pair<Int, Int>,
+        val stream: COSBase
+    )
+
+    /** Obrazy narysowane na stronie razem z macierzą, w której je narysowano. */
+    private fun imagesOn(page: PDPage): List<DrawnImage> {
+        val drawn = mutableListOf<DrawnImage>()
+        object : PDFGraphicsStreamEngine(page) {
+            override fun drawImage(pdImage: PDImage) {
+                val matrix = graphicsState.currentTransformationMatrix
+                val image = pdImage as PDImageXObject
+                drawn += DrawnImage(
+                    matrix.translateX, matrix.translateY, matrix.scalingFactorX, matrix.scalingFactorY,
+                    image.width to image.height, image.cosObject
+                )
+            }
+            override fun appendRectangle(p0: Point2D, p1: Point2D, p2: Point2D, p3: Point2D) = Unit
+            override fun clip(windingRule: Int) = Unit
+            override fun moveTo(x: Float, y: Float) = Unit
+            override fun lineTo(x: Float, y: Float) = Unit
+            override fun curveTo(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) = Unit
+            override fun getCurrentPoint(): Point2D = Point2D.Float()
+            override fun closePath() = Unit
+            override fun endPath() = Unit
+            override fun strokePath() = Unit
+            override fun fillPath(windingRule: Int) = Unit
+            override fun fillAndStrokePath(windingRule: Int) = Unit
+            override fun shadingFill(shadingName: COSName) = Unit
+        }.processPage(page)
+        return drawn
     }
 
     @Test

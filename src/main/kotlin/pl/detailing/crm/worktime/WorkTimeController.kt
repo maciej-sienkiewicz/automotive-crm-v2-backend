@@ -170,8 +170,9 @@ class TeamWorkTimeController(
     }
 
     /**
-     * Zatwierdzenie rozliczenia — opcjonalnie z podpisem złożonym na tym urządzeniu.
-     * Kto zatwierdza, wynika z sesji, jak przy podpisie.
+     * Zatwierdzenie rozliczenia podpisem złożonym na tym urządzeniu. Bez podpisu zatwierdzić
+     * można tylko arkusz podpisany już wcześniej; podpis na tablecie albo telefonie zatwierdza
+     * listę sam (`/attendance-sheet/{id}/signature-requests`). Kto zatwierdza, wynika z sesji.
      */
     @PostMapping("/attendance-sheet/{sheetId}/approve")
     fun approveAttendanceSheet(
@@ -420,7 +421,11 @@ data class AttendanceSignatureRequestBody(
     val tabletId: String? = null
 )
 
-/** @param signatureImage opcjonalny podpis z kanwy — bez niego lista jest tylko zatwierdzana */
+/**
+ * @param signatureImage podpis z kanwy jako `data:image/png;base64,...` — wymagany, chyba że
+ *        arkusz jest już podpisany. Pole zostaje opcjonalne w JSON-ie, żeby brak podpisu
+ *        kończył się czytelnym komunikatem walidacji, a nie błędem parsowania żądania.
+ */
 data class ApproveAttendanceSheetRequest(
     val signatureImage: String? = null
 )
