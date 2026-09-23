@@ -12,6 +12,7 @@ import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
+import pl.detailing.crm.signing.domain.SignatureSubject
 import pl.detailing.crm.signing.infrastructure.SignatureEventPublisher
 import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
 import pl.detailing.crm.signing.infrastructure.TabletSessionService
@@ -205,8 +206,11 @@ data class TabletDto(
 
 data class SignatureRequestDto(
     val id: String,
-    val visitId: String,
-    val protocolId: String,
+    /** Protokół wizyty - puste dla listy obecności. */
+    val visitId: String?,
+    val protocolId: String?,
+    /** Lista obecności - puste dla protokołu wizyty. */
+    val attendanceSheetId: String?,
     val tabletId: String?,
     val channel: String,
     val status: String,
@@ -224,8 +228,9 @@ data class SignatureRequestDto(
 
 internal fun SignatureRequest.toDto() = SignatureRequestDto(
     id = id.toString(),
-    visitId = visitId.toString(),
-    protocolId = protocolId.toString(),
+    visitId = (subject as? SignatureSubject.VisitProtocol)?.visitId?.toString(),
+    protocolId = (subject as? SignatureSubject.VisitProtocol)?.protocolId?.toString(),
+    attendanceSheetId = (subject as? SignatureSubject.AttendanceSheet)?.sheetId?.toString(),
     tabletId = tabletId,
     channel = channel.name,
     status = status.name,

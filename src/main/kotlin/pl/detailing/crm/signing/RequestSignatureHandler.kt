@@ -24,14 +24,13 @@ import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
+import pl.detailing.crm.signing.domain.SignatureSubject
 import pl.detailing.crm.signing.infrastructure.*
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
 import pl.detailing.crm.visitcard.VisitCardProperties
-import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
-import java.util.Base64
 
 /**
  * Handles the "Poproś o podpis" action from the CRM.
@@ -133,12 +132,11 @@ class RequestSignatureHandler(
             val request = SignatureRequest(
                 id = SignatureRequestId.random(),
                 studioId = command.studioId,
-                visitId = command.visitId,
-                protocolId = command.protocolId,
+                subject = SignatureSubject.VisitProtocol(command.visitId, command.protocolId),
                 tabletId = if (command.channel == SignatureChannel.SMS_LINK) null else command.tabletId,
                 channel = command.channel,
                 signerPhone = signerPhone,
-                linkToken = if (command.channel == SignatureChannel.SMS_LINK) generateLinkToken() else null,
+                linkToken = if (command.channel == SignatureChannel.SMS_LINK) newSigningLinkToken() else null,
                 status = SignatureRequestStatus.PENDING_DISPLAY,
                 documentS3Key = documentS3Key,
                 documentSha256 = documentSha256,
@@ -200,7 +198,7 @@ class RequestSignatureHandler(
                 // komunikacji ma dlatego własną transakcję (CommunicationLogService.record)
                 // i nie jest w stanie unieważnić wysłanej już wiadomości.
                 if (command.channel == SignatureChannel.SMS_LINK) {
-                    sendSigningLinkSms(request, visitEntity.customerId, documentName)
+                    sendSigningLinkSms(request, command.visitId, visitEntity.customerId, documentName)
                 }
 
                 issued
@@ -248,9 +246,14 @@ class RequestSignatureHandler(
      * The rollback is real only because the caller runs this inside a TransactionTemplate;
      * the enclosing `@Transactional suspend` annotation alone never opened one.
      */
-    private fun sendSigningLinkSms(request: SignatureRequest, customerId: java.util.UUID, documentName: String) {
+    private fun sendSigningLinkSms(
+        request: SignatureRequest,
+        visitId: VisitId,
+        customerId: java.util.UUID,
+        documentName: String
+    ) {
         val phone = requireNotNull(request.signerPhone)
-        val signingUrl = "${visitCardProperties.frontendBaseUrl.trimEnd('/')}/sign/${request.linkToken}"
+        val signingUrl = signingLinkUrl(visitCardProperties.frontendBaseUrl, requireNotNull(request.linkToken))
 
         val rule = requireSigningSmsTemplate(request.studioId)
 
@@ -273,10 +276,10 @@ class RequestSignatureHandler(
             )
         } catch (e: InsufficientSmsCreditsException) {
             documentIntegrityService.invalidateChallenge(request.id.value)
-            recordSmsLog(request, customerId, phone, message, success = false, error = "Brak kredytów SMS")
+            recordSmsLog(request, visitId, customerId, phone, message, success = false, error = "Brak kredytów SMS")
             throw e
         }
-        recordSmsLog(request, customerId, phone, message, success = result.success, error = result.errorMessage)
+        recordSmsLog(request, visitId, customerId, phone, message, success = result.success, error = result.errorMessage)
         if (!result.success) {
             documentIntegrityService.invalidateChallenge(request.id.value)
             throw ValidationException("Nie udało się wysłać SMS z linkiem do podpisu: ${result.errorMessage ?: "błąd dostawcy"}")
@@ -286,6 +289,7 @@ class RequestSignatureHandler(
 
     private fun recordSmsLog(
         request: SignatureRequest,
+        visitId: VisitId,
         customerId: java.util.UUID,
         phone: String,
         message: String,
@@ -296,7 +300,7 @@ class RequestSignatureHandler(
             RecordCommunicationCommand(
                 studioId = request.studioId,
                 customerId = CustomerId(customerId),
-                visitId = request.visitId,
+                visitId = visitId,
                 channel = CommunicationChannel.SMS,
                 messageType = CommunicationMessageType.SIGNATURE_LINK_SMS,
                 recipientAddress = phone,
@@ -306,12 +310,6 @@ class RequestSignatureHandler(
                 errorMessage = error
             )
         )
-    }
-
-    private fun generateLinkToken(): String {
-        val bytes = ByteArray(32)
-        SecureRandom().nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     private fun resolveDocumentName(

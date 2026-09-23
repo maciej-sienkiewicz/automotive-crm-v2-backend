@@ -14,12 +14,19 @@ import org.junit.jupiter.api.assertThrows
 import pl.detailing.crm.audit.domain.AuditAction
 import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.shared.ConflictException
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.SignatureRequestId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.signing.SignatureRequestLifecycleService
+import pl.detailing.crm.signing.domain.SignatureSubject
+import pl.detailing.crm.signing.infrastructure.SignatureRequestEntity
+import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
+import pl.detailing.crm.signing.signatureRequest
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
 import java.time.YearMonth
@@ -45,10 +52,15 @@ class AttendanceSheetServiceTest {
     private val signer = mockk<AttendanceSheetSigner>()
     private val auditService = mockk<AuditService>(relaxed = true)
     private val audited = mutableListOf<AuditEvent>()
+    private val signatureRequests = mockk<SignatureRequestRepository>()
+    private val signatureLifecycle = mockk<SignatureRequestLifecycleService>(relaxed = true)
 
-    private val service = AttendanceSheetService(generateHandler, repository, storage, signer, auditService)
+    private val service = AttendanceSheetService(
+        generateHandler, repository, storage, signer, auditService, signatureRequests, signatureLifecycle
+    )
 
     init {
+        every { signatureRequests.findActiveForAttendanceSheets(any(), any(), any()) } returns emptyList()
         every { auditService.recordSync(capture(audited)) } returns Unit
         coEvery { storage.uploadDocument(any(), any(), any(), any()) } answers { firstArg() }
         coEvery { storage.deleteDocument(any()) } returns Unit
@@ -217,5 +229,80 @@ class AttendanceSheetServiceTest {
         }
         verify(exactly = 0) { repository.deleteByIdAndStudioId(any(), any()) }
         coVerify(exactly = 0) { storage.deleteDocument(any()) }
+    }
+
+    // ── Podpis na tablecie / telefonie ────────────────────────────────────────
+
+    private fun pendingTabletRequest(): SignatureRequestEntity =
+        SignatureRequestEntity.fromDomain(signatureRequest(SignatureSubject.AttendanceSheet(sheetId), studioId))
+
+    @Test
+    fun `zatwierdzenie w CRM konczy prosbe o podpis wyslana na tablet`() {
+        val pending = pendingTabletRequest()
+        every { signatureRequests.findActiveForAttendanceSheets(studioId.value, listOf(sheetId), any()) } returns listOf(pending)
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returnsMany listOf(
+            sheet(),
+            sheet(AttendanceSheetStatus.APPROVED, approvedByName = "Jan Kowalski")
+        )
+        every { repository.markApproved(any(), any(), any(), any(), any()) } returns 1
+
+        runBlocking { service.approve(studioId, adminId, "Jan Kowalski", sheetId, null) }
+
+        // Tablet przestaje pokazywać listę, której podpisu nikt już nie przyjmie.
+        verify(exactly = 1) {
+            signatureLifecycle.cancel(studioId, SignatureRequestId(pending.id), "Jan Kowalski [${adminId.value}]", null)
+        }
+    }
+
+    @Test
+    fun `usuniecie listy konczy prosbe o podpis`() {
+        val pending = pendingTabletRequest()
+        every { signatureRequests.findActiveForAttendanceSheets(studioId.value, listOf(sheetId), any()) } returns listOf(pending)
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns sheet()
+        every { repository.deleteByIdAndStudioId(sheetId, studioId.value) } returns 1
+
+        runBlocking { service.delete(studioId, adminId, "Jan Kowalski", sheetId) }
+
+        verify(exactly = 1) { signatureLifecycle.cancel(studioId, SignatureRequestId(pending.id), any(), any()) }
+    }
+
+    @Test
+    fun `podpis z tabletu zapisuje podpisany arkusz osobno i zatwierdza liste w imieniu proszacego`() {
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returnsMany listOf(
+            sheet(),
+            sheet(AttendanceSheetStatus.APPROVED, signedKey = "signed.pdf", approvedByName = "Jan Kowalski")
+        )
+        val signedKey = slot<String>()
+        every {
+            repository.markApprovedWithSignature(sheetId, studioId.value, any(), adminId.value, "Jan Kowalski", capture(signedKey))
+        } returns 1
+
+        runBlocking {
+            service.approveWithSignedDocument(
+                studioId, sheetId, adminId, "Jan Kowalski", byteArrayOf(7), Instant.now(), "TABLET"
+            )
+        }
+
+        assertTrue(signedKey.captured.startsWith(originalKey.removeSuffix(".pdf") + "-signed-"), signedKey.captured)
+        coVerify(exactly = 1) { storage.uploadDocument(signedKey.captured, byteArrayOf(7), "application/pdf", any()) }
+        val approval = audited.single()
+        assertEquals(AuditAction.ATTENDANCE_SHEET_APPROVED, approval.action)
+        assertTrue(FieldChange("signatureChannel", null, "TABLET") in approval.changes, approval.changes.toString())
+    }
+
+    @Test
+    fun `podpis z tabletu do listy zatwierdzonej w miedzyczasie jest odrzucany`() {
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns
+            sheet(AttendanceSheetStatus.APPROVED, approvedByName = "Anna Nowak")
+
+        assertThrows<ConflictException> {
+            runBlocking {
+                service.approveWithSignedDocument(
+                    studioId, sheetId, adminId, "Jan Kowalski", byteArrayOf(7), Instant.now(), "SMS_LINK"
+                )
+            }
+        }
+        coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
+        assertTrue(audited.isEmpty())
     }
 }

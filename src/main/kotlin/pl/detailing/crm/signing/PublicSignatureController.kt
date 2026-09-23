@@ -13,6 +13,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
+import pl.detailing.crm.signing.domain.SignatureSubject
 import pl.detailing.crm.signing.infrastructure.*
 import java.time.Instant
 
@@ -48,6 +49,13 @@ class PublicSignatureController(
         /** Stands in for the tablet id in the shared submit/decline pipeline. */
         const val REMOTE_DEVICE_ID = "SMS_LINK"
         const val REMOTE_DEVICE_NAME = "Telefon klienta (link SMS)"
+        const val OWN_PHONE_DEVICE_NAME = "Telefon osoby podpisującej (link SMS)"
+
+        /** Listę obecności podpisuje zatwierdzający na własnym telefonie - nie klient. */
+        fun remoteDeviceName(request: SignatureRequest): String = when (request.subject) {
+            is SignatureSubject.VisitProtocol -> REMOTE_DEVICE_NAME
+            is SignatureSubject.AttendanceSheet -> OWN_PHONE_DEVICE_NAME
+        }
     }
 
     /** Session metadata for the public signing page. Terminal/expired sessions still resolve so the page can explain what happened. */
@@ -113,7 +121,7 @@ class PublicSignatureController(
             requestId = request.id.value,
             studioId = request.studioId.value,
             eventType = SignatureAuditEventType.DOCUMENT_DELIVERED,
-            actor = REMOTE_DEVICE_NAME,
+            actor = remoteDeviceName(request),
             ipAddress = clientIp(httpRequest),
             userAgent = httpRequest.getHeader(HttpHeaders.USER_AGENT),
             details = "sha256=$actualSha256 — zgodność z żądaniem potwierdzona przy dostarczeniu (link SMS)"
@@ -157,7 +165,7 @@ class PublicSignatureController(
                 studioId = request.studioId,
                 requestId = request.id,
                 tabletId = REMOTE_DEVICE_ID,
-                deviceName = REMOTE_DEVICE_NAME,
+                deviceName = remoteDeviceName(request),
                 documentSha256 = body.documentSha256.trim(),
                 challenge = body.challenge,
                 declarationAccepted = body.declarationAccepted,

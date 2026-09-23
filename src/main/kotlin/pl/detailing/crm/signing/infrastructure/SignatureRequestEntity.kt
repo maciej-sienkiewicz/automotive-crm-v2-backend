@@ -9,6 +9,7 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureChannel
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
+import pl.detailing.crm.signing.domain.SignatureSubject
 import java.time.Instant
 import java.util.*
 
@@ -20,7 +21,8 @@ import java.util.*
         Index(name = "idx_signature_requests_protocol", columnList = "protocol_id"),
         Index(name = "idx_signature_requests_visit", columnList = "studio_id, visit_id"),
         Index(name = "idx_signature_requests_tablet", columnList = "studio_id, tablet_id, status"),
-        Index(name = "idx_signature_requests_link_token", columnList = "link_token")
+        Index(name = "idx_signature_requests_link_token", columnList = "link_token"),
+        Index(name = "idx_signature_requests_attendance_sheet", columnList = "studio_id, attendance_sheet_id")
     ]
 )
 class SignatureRequestEntity(
@@ -31,11 +33,16 @@ class SignatureRequestEntity(
     @Column(name = "studio_id", nullable = false, columnDefinition = "uuid")
     val studioId: UUID,
 
-    @Column(name = "visit_id", nullable = false, columnDefinition = "uuid")
-    val visitId: UUID,
+    // Podmiot podpisu: wizyta z protokołem ALBO lista obecności - dokładnie jedno
+    // (ck_signature_requests_subject, V156).
+    @Column(name = "visit_id", columnDefinition = "uuid")
+    val visitId: UUID?,
 
-    @Column(name = "protocol_id", nullable = false, columnDefinition = "uuid")
-    val protocolId: UUID,
+    @Column(name = "protocol_id", columnDefinition = "uuid")
+    val protocolId: UUID?,
+
+    @Column(name = "attendance_sheet_id", columnDefinition = "uuid")
+    val attendanceSheetId: UUID? = null,
 
     @Column(name = "tablet_id", length = 100)
     val tabletId: String?,
@@ -112,8 +119,11 @@ class SignatureRequestEntity(
     fun toDomain(): SignatureRequest = SignatureRequest(
         id = SignatureRequestId(id),
         studioId = StudioId(studioId),
-        visitId = VisitId(visitId),
-        protocolId = VisitProtocolId(protocolId),
+        subject = attendanceSheetId?.let { SignatureSubject.AttendanceSheet(it) }
+            ?: SignatureSubject.VisitProtocol(
+                VisitId(checkNotNull(visitId) { "Żądanie podpisu $id nie ma podmiotu" }),
+                VisitProtocolId(checkNotNull(protocolId) { "Żądanie podpisu $id nie ma protokołu" })
+            ),
         tabletId = tabletId,
         channel = channel ?: SignatureChannel.TABLET,
         signerPhone = signerPhone,
@@ -143,8 +153,9 @@ class SignatureRequestEntity(
         fun fromDomain(r: SignatureRequest): SignatureRequestEntity = SignatureRequestEntity(
             id = r.id.value,
             studioId = r.studioId.value,
-            visitId = r.visitId.value,
-            protocolId = r.protocolId.value,
+            visitId = (r.subject as? SignatureSubject.VisitProtocol)?.visitId?.value,
+            protocolId = (r.subject as? SignatureSubject.VisitProtocol)?.protocolId?.value,
+            attendanceSheetId = (r.subject as? SignatureSubject.AttendanceSheet)?.sheetId,
             tabletId = r.tabletId,
             channel = r.channel,
             signerPhone = r.signerPhone,
@@ -226,6 +237,29 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
     fun findActiveForProtocol(
         @Param("studioId") studioId: UUID,
         @Param("protocolId") protocolId: UUID,
+        @Param("now") now: Instant
+    ): List<SignatureRequestEntity>
+
+    /** Najnowsze żądanie podpisu listy obecności, w dowolnym stanie. */
+    fun findFirstByStudioIdAndAttendanceSheetIdOrderByCreatedAtDesc(
+        studioId: UUID,
+        attendanceSheetId: UUID
+    ): SignatureRequestEntity?
+
+    /** Aktywne żądania podpisu wskazanych list obecności - najnowsze pierwsze. */
+    @Query(
+        """
+        SELECT r FROM SignatureRequestEntity r
+        WHERE r.studioId = :studioId
+          AND r.attendanceSheetId IN :sheetIds
+          AND r.status IN ('PENDING_DISPLAY', 'DISPLAYED')
+          AND r.expiresAt > :now
+        ORDER BY r.createdAt DESC
+        """
+    )
+    fun findActiveForAttendanceSheets(
+        @Param("studioId") studioId: UUID,
+        @Param("sheetIds") sheetIds: Collection<UUID>,
         @Param("now") now: Instant
     ): List<SignatureRequestEntity>
 }

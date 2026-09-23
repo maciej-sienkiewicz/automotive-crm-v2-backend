@@ -66,7 +66,11 @@ class PiiResponseSurfaceScanTest {
             "pl.detailing.crm.visitcard.",
             // Click-to-call: numer jedzie push-em na telefon pracownika po to, żeby go
             // wybrać — zamaskowany ładunek nie zadzwoni:
-            "pl.detailing.crm.push.call.ClickToCallPayload"
+            "pl.detailing.crm.push.call.ClickToCallPayload",
+            // Podpis listy obecności na własnym telefonie: numer Z KONTA ZALOGOWANEGO (jego
+            // własny, nie klienta), już zamaskowany do trzech ostatnich cyfr - @Pii ukryłby
+            // go w całości przed kierownikiem bez dostępu do danych klientów:
+            "pl.detailing.crm.worktime.attendance.AttendanceSigningOptions"
         )
 
         private val MAPPING_ANNOTATIONS = listOf(

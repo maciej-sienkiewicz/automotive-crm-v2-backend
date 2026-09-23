@@ -54,12 +54,12 @@ class SignedDocumentComposer(
         companySignaturePngBytes: ByteArray?,
         request: SignatureRequest,
         auditEvents: List<SignatureAuditEventEntity>,
-        visitNumber: String
+        auditSubject: AuditPageSubject
     ): ByteArray {
         logger.info(
-            "[Composer] requestId={} protocolId={} — composing signed PDF: " +
+            "[Composer] requestId={} documentId={} — composing signed PDF: " +
                 "filledPdf={}B signaturePng={}B companySignature={} auditEvents={}",
-            request.id, request.protocolId,
+            request.id, auditSubject.documentId,
             filledPdfBytes.size, signaturePngBytes.size,
             if (companySignaturePngBytes != null) "${companySignaturePngBytes.size}B" else "none",
             auditEvents.size
@@ -103,7 +103,7 @@ class SignedDocumentComposer(
             document.documentCatalog.acroForm?.flatten()
 
             val pagesBeforeAudit = document.numberOfPages
-            auditTrailPageGenerator.appendAuditPage(document, request, auditEvents, visitNumber)
+            auditTrailPageGenerator.appendAuditPage(document, request, auditEvents, auditSubject)
             val pagesAfterAudit = document.numberOfPages
             logger.info(
                 "[Composer] requestId={} — after appendAuditPage: pages {} → {}",

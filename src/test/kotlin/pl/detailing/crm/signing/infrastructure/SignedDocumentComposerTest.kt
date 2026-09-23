@@ -25,6 +25,7 @@ import pl.detailing.crm.shared.VisitId
 import pl.detailing.crm.shared.VisitProtocolId
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
+import pl.detailing.crm.signing.domain.SignatureSubject
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -56,7 +57,7 @@ class SignedDocumentComposerTest {
     fun `oversized tablet signature is scaled down to fit entirely inside the signature field`() {
         val pdf = protocolPdfWithSignatureField()
         // Big tablet: 2000x600px, much larger than the 200x60pt field
-        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), auditSubject)
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -69,7 +70,7 @@ class SignedDocumentComposerTest {
     @Test
     fun `very wide signature is constrained by field width and centered vertically`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(3000, 300), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(3000, 300), null, request(), emptyList(), auditSubject)
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -82,7 +83,7 @@ class SignedDocumentComposerTest {
     @Test
     fun `very tall signature is constrained by field height`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(400, 800), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(400, 800), null, request(), emptyList(), auditSubject)
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -96,7 +97,7 @@ class SignedDocumentComposerTest {
         // az dotknie ramki na dluzszej osi (patrz KDoc fitPreservingAspect) — podpis
         // wyglada tak samo niezaleznie od rozdzielczosci tabletu, ktory go zebral.
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(50, 20), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(50, 20), null, request(), emptyList(), auditSubject)
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         assertInsideField(w, h, x, y)
@@ -109,7 +110,7 @@ class SignedDocumentComposerTest {
     @Test
     fun `signature field is flattened away in the final signed document`() {
         val pdf = protocolPdfWithSignatureField()
-        val signed = composer.compose(pdf, signaturePng(800, 300), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(800, 300), null, request(), emptyList(), auditSubject)
 
         Loader.loadPDF(signed).use { doc ->
             val fields = doc.documentCatalog.acroForm?.fields ?: emptyList()
@@ -123,7 +124,7 @@ class SignedDocumentComposerTest {
             doc.addPage(PDPage(PDRectangle.A4))
             ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
         }
-        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), "VIS-1")
+        val signed = composer.compose(pdf, signaturePng(2000, 600), null, request(), emptyList(), auditSubject)
 
         val (w, h, x, y) = drawnImageGeometry(signed)
         // Fallback box: (50, 50) 200x80pt — the image must stay inside it
@@ -148,11 +149,12 @@ class SignedDocumentComposerTest {
         assertEquals(imgW / imgH, drawnW / drawnH, 0.001f, "Aspect ratio must be preserved")
     }
 
+    private val auditSubject = AuditPageSubject("Identyfikator dokumentu (protokołu)", "p-1", "Numer wizyty", "VIS-1")
+
     private fun request() = SignatureRequest(
         id = SignatureRequestId.random(),
         studioId = StudioId.random(),
-        visitId = VisitId.random(),
-        protocolId = VisitProtocolId.random(),
+        subject = SignatureSubject.VisitProtocol(VisitId.random(), VisitProtocolId.random()),
         tabletId = null,
         status = SignatureRequestStatus.DISPLAYED,
         documentS3Key = "protocols/x.pdf",

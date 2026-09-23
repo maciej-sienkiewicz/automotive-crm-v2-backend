@@ -15,7 +15,8 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Generates the "Karta Podpisu / Ścieżka Audytu" — an additional final page merged into
- * every signed protocol.
+ * every document signed on a tablet or through an SMS link (visit protocols and
+ * attendance sheets).
  *
  * The page carries the transaction metadata forming the evidentiary chain:
  * document ID, SHA-256 digest of the source document, exact second-precision timestamps,
@@ -45,13 +46,13 @@ class AuditTrailPageGenerator {
         document: PDDocument,
         request: SignatureRequest,
         auditEvents: List<SignatureAuditEventEntity>,
-        visitNumber: String
+        subject: AuditPageSubject
     ) {
         val pagesBefore = document.numberOfPages
         logger.info(
-            "[AuditPage] requestId={} protocolId={} — starting audit page generation, " +
+            "[AuditPage] requestId={} documentId={} — starting audit page generation, " +
                 "document currently has {} page(s), auditEvents={}",
-            request.id, request.protocolId, pagesBefore, auditEvents.size
+            request.id, subject.documentId, pagesBefore, auditEvents.size
         )
 
         val regular = loadFont(document, "/fonts/LiberationSans-Regular.ttf")
@@ -76,18 +77,17 @@ class AuditTrailPageGenerator {
             var y = page.mediaBox.height - MARGIN
 
             y = writeLine(cs, bold, TITLE_SIZE, MARGIN, y, "KARTA PODPISU — ŚCIEŻKA AUDYTU")
-            y = writeLine(
-                cs, regular, LABEL_SIZE, MARGIN, y - 2,
-                "Integralna część dokumentu. Strona objęta kwalifikowaną pieczęcią elektroniczną " +
-                    "wraz ze znacznikiem czasu."
-            )
+            // Tylko „integralna część dokumentu": zdanie o kwalifikowanej pieczęci ze znacznikiem
+            // czasu było nieprawdziwe - pieczętowanie nigdy nie działało na produkcji i zostało
+            // usunięte (V94__drop_signature_seal_columns.sql).
+            y = writeLine(cs, regular, LABEL_SIZE, MARGIN, y - 2, "Integralna część dokumentu.")
             y -= 10f
 
             y = section(cs, bold, y, "IDENTYFIKACJA DOKUMENTU")
             y = field(cs, regular, bold, y, "Nazwa dokumentu", request.documentName)
-            y = field(cs, regular, bold, y, "Identyfikator dokumentu (protokołu)", request.protocolId.toString())
+            y = field(cs, regular, bold, y, subject.documentIdLabel, subject.documentId)
             y = field(cs, regular, bold, y, "Identyfikator sesji podpisu", request.id.toString())
-            y = field(cs, regular, bold, y, "Numer wizyty", visitNumber)
+            y = field(cs, regular, bold, y, subject.contextLabel, subject.contextValue)
             y = field(
                 cs, regular, bold, y,
                 "Skrót SHA-256 dokumentu źródłowego (WYSIWYS)", request.documentSha256
@@ -105,7 +105,7 @@ class AuditTrailPageGenerator {
 
             y = section(cs, bold, y, "URZĄDZENIE I SIEĆ")
             y = field(cs, regular, bold, y, "Adres IP urządzenia podpisującego", request.signerIpAddress ?: "—")
-            y = field(cs, regular, bold, y, "Urządzenie (tablet)", request.signerDevice ?: "—")
+            y = field(cs, regular, bold, y, "Urządzenie podpisujące", request.signerDevice ?: "—")
             request.tabletId?.let { y = field(cs, regular, bold, y, "Identyfikator tabletu", it) }
             y -= 6f
 
@@ -277,3 +277,14 @@ class AuditTrailPageGenerator {
             }
         }
 }
+
+/**
+ * Jak dokument jest opisany na karcie podpisu - zależy od tego, co podpisano: protokół
+ * wizyty niesie swój identyfikator i numer wizyty, lista obecności - swój i okres.
+ */
+data class AuditPageSubject(
+    val documentIdLabel: String,
+    val documentId: String,
+    val contextLabel: String,
+    val contextValue: String
+)

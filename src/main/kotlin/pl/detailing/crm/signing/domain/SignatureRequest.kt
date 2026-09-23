@@ -2,10 +2,12 @@ package pl.detailing.crm.signing.domain
 
 import pl.detailing.crm.shared.*
 import java.time.Instant
+import java.util.UUID
 
 /**
- * A tablet signing session for a single visit protocol (eIDAS "simple electronic signature"
- * hardened against the copy-paste / replay objection).
+ * A tablet signing session for a single document - a visit protocol or an attendance
+ * sheet, see [SignatureSubject] (eIDAS "simple electronic signature" hardened against
+ * the copy-paste / replay objection).
  *
  * The request is the cryptographic anchor of the WYSIWYS principle
  * (What You See Is What You Sign):
@@ -24,8 +26,8 @@ import java.time.Instant
 data class SignatureRequest(
     val id: SignatureRequestId,
     val studioId: StudioId,
-    val visitId: VisitId,
-    val protocolId: VisitProtocolId,
+    /** What is being signed - decides what happens to the document once it is signed. */
+    val subject: SignatureSubject,
     /** Tablet the request is routed to; null = any paired tablet in this studio. */
     val tabletId: String?,
     /** How the document is presented to the signer: studio tablet or a tokenized SMS link. */
@@ -131,10 +133,23 @@ data class SignatureRequest(
         copy(status = SignatureRequestStatus.FAILED, failureReason = reason, updatedAt = now)
 }
 
+/**
+ * Co jest podpisywane. Weryfikacja podpisu (jednorazowy token, skrót wyświetlonego
+ * dokumentu, obróbka obrazu w RAM) jest wspólna; różni się to, co dzieje się z dokumentem
+ * po podpisie - protokół wizyty staje się SIGNED, lista obecności zatwierdzona.
+ */
+sealed interface SignatureSubject {
+    /** Protokół wizyty (przyjęcie, wydanie, zgoda) - podpisuje klient. */
+    data class VisitProtocol(val visitId: VisitId, val protocolId: VisitProtocolId) : SignatureSubject
+
+    /** Lista obecności - podpisuje zatwierdzający, na tablecie studia albo własnym telefonie. */
+    data class AttendanceSheet(val sheetId: UUID) : SignatureSubject
+}
+
 /** Where the signer sees and signs the document. */
 enum class SignatureChannel {
     TABLET,     // Studio tablet paired via X-Tablet-Token
-    SMS_LINK    // Customer's own phone, opened from a tokenized link sent by SMS
+    SMS_LINK    // Signer's own phone, opened from a tokenized link sent by SMS
 }
 
 enum class SignatureRequestStatus {

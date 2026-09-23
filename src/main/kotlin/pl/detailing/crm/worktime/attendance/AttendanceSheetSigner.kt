@@ -17,11 +17,13 @@ import java.util.Locale
 /**
  * Wtapia podpis w gotowy arkusz obecności.
  *
- * Osobno od podpisów protokołów wizyt: tamten tor niesie żądanie podpisu, sesję na
- * tablecie, ślad audytowy i odcisk dokumentu, bo tam podpisuje KLIENT dokument, który
- * dostał od studia. Tutaj podpisuje osoba zalogowana w CRM-ie, na tym samym urządzeniu,
- * w tej samej sesji — dowód „kto i kiedy" niesie już wiersz w bazie, a rysunek jest
- * tylko widocznym potwierdzeniem na wydruku.
+ * Dwie drogi podpisu:
+ * - na TYM urządzeniu, w oknie zatwierdzania ([sign]) - podpisuje osoba zalogowana
+ *   w CRM-ie, w tej samej sesji, więc dowód „kto i kiedy" niesie już wiersz w bazie,
+ *   a rysunek jest tylko widocznym potwierdzeniem na wydruku;
+ * - na tablecie studia albo własnym telefonie ([signNormalized]) - wtedy podpis
+ *   przechodzi przez tor żądań podpisu (jednorazowy token, skrót wyświetlonego
+ *   dokumentu, ślad audytowy) i arkusz dostaje na końcu kartę podpisu z tym śladem.
  *
  * Sam bitmap podpisu przechodzi przez [SignatureImageProcessor]: kanał alfa jest
  * wymuszany po stronie serwera (klientowi się nie ufa), obraz jest przycinany do
@@ -43,10 +45,22 @@ class AttendanceSheetSigner(
      * Ostatnia strona, bo to na niej kończy się zestawienie — podpis pod tabelą, która
      * dopiero się zaczyna, niczego nie potwierdza.
      */
-    fun sign(pdfBytes: ByteArray, signaturePng: ByteArray, signerName: String, signedAt: Instant): ByteArray {
-        val normalized = signatureImageProcessor.normalizeToTransparentPng(signaturePng)
+    fun sign(pdfBytes: ByteArray, signaturePng: ByteArray, signerName: String, signedAt: Instant): ByteArray =
+        signNormalized(pdfBytes, signatureImageProcessor.normalizeToTransparentPng(signaturePng), signerName, signedAt)
 
-        return Loader.loadPDF(pdfBytes).use { document ->
+    /**
+     * Jak [sign], dla podpisu już znormalizowanego (tor tabletu i linku z SMS-a normalizuje
+     * go sam, przed weryfikacją). [appendPages] dokłada strony na końcu dokumentu - tam
+     * trafia karta podpisu.
+     */
+    fun signNormalized(
+        pdfBytes: ByteArray,
+        normalizedSignaturePng: ByteArray,
+        signerName: String,
+        signedAt: Instant,
+        appendPages: (PDDocument) -> Unit = {}
+    ): ByteArray =
+        Loader.loadPDF(pdfBytes).use { document ->
             if (document.numberOfPages == 0) throw ValidationException("Arkusz nie ma żadnej strony")
             val page = document.getPage(document.numberOfPages - 1)
 
@@ -55,7 +69,7 @@ class AttendanceSheetSigner(
                 AttendanceSheetSigner::class.java.getResourceAsStream("/fonts/LiberationSans-Regular.ttf")!!,
                 true
             )
-            val image = PDImageXObject.createFromByteArray(document, normalized, "signature")
+            val image = PDImageXObject.createFromByteArray(document, normalizedSignaturePng, "signature")
 
             PDPageContentStream(
                 document, page, PDPageContentStream.AppendMode.APPEND, true, true
@@ -88,9 +102,10 @@ class AttendanceSheetSigner(
                 cs.endText()
             }
 
+            appendPages(document)
+
             val output = ByteArrayOutputStream()
             document.save(output)
             output.toByteArray()
         }
-    }
 }

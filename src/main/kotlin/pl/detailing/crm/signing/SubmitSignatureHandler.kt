@@ -24,10 +24,12 @@ import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureRequestStatus
+import pl.detailing.crm.signing.domain.SignatureSubject
 import pl.detailing.crm.signing.infrastructure.*
 import pl.detailing.crm.user.signature.UserSignatureService
 import pl.detailing.crm.visit.infrastructure.DocumentService
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import pl.detailing.crm.worktime.attendance.AttendanceSheetRemoteSigning
 import java.time.Instant
 import java.time.LocalDate
 import java.util.Base64
@@ -63,7 +65,8 @@ class SubmitSignatureHandler(
     private val auditService: AuditService,
     private val userSignatureService: UserSignatureService,
     private val protocolDocumentRegistrar: VisitProtocolDocumentRegistrar,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val attendanceSheetSigning: AttendanceSheetRemoteSigning
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -165,114 +168,31 @@ class SubmitSignatureHandler(
 
                 request = request.markDisplayed() // idempotent safety before completion transition
 
-                val visitEntity = visitRepository.findById(request.visitId.value).orElse(null)
-                    ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
-
-                // ── 4. Compose: PDF + signature strokes + audit page ────────────────
-                val companySignatureBytes = userSignatureService.downloadBytes(
-                    request.studioId, request.requestedBy
+                // ── 4-5. Compose the signed document and store it with its subject ──
+                // Weryfikacja powyżej jest wspólna; tu rozstrzyga się, co dzieje się
+                // z dokumentem po podpisie.
+                val signedRequest = request.copy(
+                    signerIpAddress = command.ipAddress,
+                    signerDevice = command.deviceName,
+                    signedAt = signedAt
                 )
-                if (companySignatureBytes != null) {
-                    logger.info(
-                        "Company signature loaded for stamping: requestId={} userId={} bytes={}",
-                        request.id, request.requestedBy, companySignatureBytes.size
-                    )
-                } else {
-                    logger.info(
-                        "No company signature configured for requestedBy={} — 'company_signature' field will be skipped",
-                        request.requestedBy
-                    )
-                }
-
                 val auditEvents = auditTrailService.eventsFor(request.id.value)
-                logger.info(
-                    "Composing signed document: requestId={} protocolId={} " +
-                        "filledPdfS3Key={} filledPdfBytes={}B auditEvents={}",
-                    request.id, request.protocolId,
-                    request.documentS3Key, filledPdfBytes.size, auditEvents.size
-                )
-                val composedPdf = signedDocumentComposer.compose(
-                    filledPdfBytes = filledPdfBytes,
-                    signaturePngBytes = normalizedSignature,
-                    companySignaturePngBytes = companySignatureBytes,
-                    request = request.copy(
-                        signerIpAddress = command.ipAddress,
-                        signerDevice = command.deviceName,
-                        signedAt = signedAt
-                    ),
-                    auditEvents = auditEvents,
-                    visitNumber = visitEntity.visitNumber
-                )
-                logger.info(
-                    "Composed PDF ready: requestId={} composedBytes={}B",
-                    request.id, composedPdf.size
-                )
-
-                // ── 5. Persist ONLY the composed PDF; mark the protocol SIGNED ──────
-                val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
-                    request.visitId.value, request.protocolId.value, request.studioId.value
-                ) ?: throw NotFoundException("Protokół nie został znaleziony")
-                val protocol = protocolEntity.toDomain()
-                if (protocol.status != VisitProtocolStatus.READY_FOR_SIGNATURE) {
-                    throw ConflictException("Protokół nie oczekuje już na podpis (status: ${protocol.status})")
-                }
-
-                val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
-                    request.studioId.value, request.visitId.value, visitEntity.visitNumber,
-                    protocol.version, protocol.id.value
-                )
-                logger.info(
-                    "Uploading signed PDF to S3: requestId={} key={} size={}B",
-                    request.id, signedPdfS3Key, composedPdf.size
-                )
-                s3StorageService.uploadBytes(signedPdfS3Key, composedPdf)
-                logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
-
-                // Dokument wizyty: podmieniamy plik na wersję podpisaną.
-                //
-                // Zgoda i protokół WYDANIA idą inaczej — ich wiersz w dokumentach wizyty
-                // powstaje DOPIERO TERAZ. Klient, który zgody nie podpisał, nie zostawia
-                // po sobie pustego formularza udającego dokument sprawy; tak samo pracownik,
-                // który otworzył ekran wydania i go zamknął (patrz VisitProtocolDocumentRegistrar).
-                when {
-                    protocol.consentDefinitionId != null ->
-                        registerSignedConsentDocument(protocol, visitEntity, signedPdfS3Key)
-                    !VisitProtocolDocumentRegistrar.becomesDocumentOnGeneration(protocol.stage) ->
-                        protocolDocumentRegistrar.register(protocol, signedPdfS3Key, "pdf")
-                    else -> documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
-                }
-
-                val signedProtocol = protocol.sign(
-                    signedPdfS3Key = signedPdfS3Key,
-                    signedBy = request.signerName,
-                    signatureImageS3Key = null,   // RAM-only processing — no image is stored
-                    notes = null
-                )
-                visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
-
-                // Live metrics — liczymy podpisany protokół wizyty (przyjęcie vs wydanie).
-                // Protokoły zgód nie mają etapu i nie są protokołem wizyty, więc ich nie liczymy.
-                if (protocol.consentDefinitionId == null) {
-                    businessEventPublisher.publish(
-                        tenantId = request.studioId,
-                        type = BusinessEventType.PROTOCOL_SIGNED,
-                        dimensionValue = protocol.stage.name,
-                        attributes = mapOf(
-                            "protocolId" to protocol.id.value.toString(),
-                            "visitId" to request.visitId.value.toString(),
-                            "signatureRequestId" to request.id.value.toString()
-                        )
+                val signed: SignedSubject = when (val subject = request.subject) {
+                    is SignatureSubject.VisitProtocol ->
+                        signVisitProtocol(signedRequest, subject, filledPdfBytes, normalizedSignature, auditEvents)
+                    is SignatureSubject.AttendanceSheet -> SignedSubject(
+                        signedPdfS3Key = attendanceSheetSigning.completeSigning(
+                            request = signedRequest,
+                            sheetId = subject.sheetId,
+                            documentBytes = filledPdfBytes,
+                            normalizedSignature = normalizedSignature,
+                            signedAt = signedAt,
+                            auditEvents = auditEvents
+                        ),
+                        visit = null
                     )
                 }
-
-                // Consent protocols additionally create the immutable CustomerConsent record
-                protocol.consentDefinitionId?.let { definitionId ->
-                    recordCustomerConsent(
-                        definitionId, request.studioId,
-                        CustomerId(visitEntity.customerId), request.requestedBy,
-                        signedPdfS3Key
-                    )
-                }
+                val signedPdfS3Key = signed.signedPdfS3Key
 
                 request = request.complete(
                     signedPdfS3Key = signedPdfS3Key,
@@ -293,41 +213,9 @@ class SubmitSignatureHandler(
                     details = "signedPdfS3Key=$signedPdfS3Key"
                 )
 
-                // A signature captured while the visit is still DRAFT is part of the
-                // check-in flow — one business action, one activity entry: enrich the
-                // VISIT_CREATED ("Rozpoczęto wizytę") row instead of logging a separate
-                // "Podpisano protokół" duplicate. Signatures on already-running visits
-                // (e.g. remote signing later) keep their own entry. The signing module's
-                // compliance trail (auditTrailService above) is unaffected either way.
-                val enrichedCheckInEntry = visitEntity.status == VisitStatus.DRAFT &&
-                    auditService.enrichLatestEntry(
-                        studioId = request.studioId,
-                        action = AuditAction.VISIT_CREATED,
-                        visitId = request.visitId.value,
-                        patch = mapOf(
-                            "protocolSigned" to "true",
-                            "protocolSignerName" to request.signerName,
-                            "protocolSignedAt" to signedAt.toString()
-                        )
-                    )
-
-                if (!enrichedCheckInEntry) {
-                    auditService.log(LogAuditCommand(
-                        studioId = request.studioId,
-                        userId = request.requestedBy,
-                        userDisplayName = request.requestedByName,
-                        module = AuditModule.VISIT,
-                        entityId = request.visitId.value.toString(),
-                        entityDisplayName = visitEntity.visitNumber,
-                        action = AuditAction.PROTOCOL_SIGNED,
-                        metadata = mapOf(
-                            "protocolId" to request.protocolId.toString(),
-                            "signatureRequestId" to request.id.toString(),
-                            "documentSha256" to request.documentSha256,
-                            "signerName" to request.signerName,
-                            "signerIp" to (command.ipAddress ?: "")
-                        )
-                    ))
+                val subject = request.subject
+                if (subject is SignatureSubject.VisitProtocol && signed.visit != null) {
+                    recordVisitActivity(request, subject, signed.visit, signedAt, command)
                 }
 
                 eventPublisher.publish(
@@ -341,8 +229,8 @@ class SubmitSignatureHandler(
                 )
 
                 logger.info(
-                    "Signature request {} completed (protocol={})",
-                    request.id, request.protocolId
+                    "Signature request {} completed (subject={})",
+                    request.id, request.subject
                 )
 
                 SubmitSignatureResult(
@@ -357,6 +245,180 @@ class SubmitSignatureHandler(
                 signatureImageProcessor.wipe(normalizedSignature)
             }
         }
+
+    /**
+     * Protokół wizyty: podpis klienta (i opcjonalnie pracownika) w polach szablonu, karta
+     * podpisu, plik w dokumentach wizyty, protokół SIGNED, a przy zgodzie - zapis zgody.
+     */
+    private suspend fun signVisitProtocol(
+        request: pl.detailing.crm.signing.domain.SignatureRequest,
+        subject: SignatureSubject.VisitProtocol,
+        filledPdfBytes: ByteArray,
+        normalizedSignature: ByteArray,
+        auditEvents: List<SignatureAuditEventEntity>
+    ): SignedSubject {
+        val visitEntity = visitRepository.findById(subject.visitId.value).orElse(null)
+            ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
+
+        // ── 4. Compose: PDF + signature strokes + audit page ────────────────
+        val companySignatureBytes = userSignatureService.downloadBytes(
+            request.studioId, request.requestedBy
+        )
+        if (companySignatureBytes != null) {
+            logger.info(
+                "Company signature loaded for stamping: requestId={} userId={} bytes={}",
+                request.id, request.requestedBy, companySignatureBytes.size
+            )
+        } else {
+            logger.info(
+                "No company signature configured for requestedBy={} — 'company_signature' field will be skipped",
+                request.requestedBy
+            )
+        }
+
+        logger.info(
+            "Composing signed document: requestId={} protocolId={} " +
+                "filledPdfS3Key={} filledPdfBytes={}B auditEvents={}",
+            request.id, subject.protocolId,
+            request.documentS3Key, filledPdfBytes.size, auditEvents.size
+        )
+        val composedPdf = signedDocumentComposer.compose(
+            filledPdfBytes = filledPdfBytes,
+            signaturePngBytes = normalizedSignature,
+            companySignaturePngBytes = companySignatureBytes,
+            request = request,
+            auditEvents = auditEvents,
+            auditSubject = AuditPageSubject(
+                documentIdLabel = "Identyfikator dokumentu (protokołu)",
+                documentId = subject.protocolId.toString(),
+                contextLabel = "Numer wizyty",
+                contextValue = visitEntity.visitNumber
+            )
+        )
+        logger.info(
+            "Composed PDF ready: requestId={} composedBytes={}B",
+            request.id, composedPdf.size
+        )
+
+        // ── 5. Persist ONLY the composed PDF; mark the protocol SIGNED ──────
+        val protocolEntity = visitProtocolRepository.findByVisitIdAndIdAndStudioId(
+            subject.visitId.value, subject.protocolId.value, request.studioId.value
+        ) ?: throw NotFoundException("Protokół nie został znaleziony")
+        val protocol = protocolEntity.toDomain()
+        if (protocol.status != VisitProtocolStatus.READY_FOR_SIGNATURE) {
+            throw ConflictException("Protokół nie oczekuje już na podpis (status: ${protocol.status})")
+        }
+
+        val signedPdfS3Key = s3StorageService.buildSignedPdfS3Key(
+            request.studioId.value, subject.visitId.value, visitEntity.visitNumber,
+            protocol.version, protocol.id.value
+        )
+        logger.info(
+            "Uploading signed PDF to S3: requestId={} key={} size={}B",
+            request.id, signedPdfS3Key, composedPdf.size
+        )
+        s3StorageService.uploadBytes(signedPdfS3Key, composedPdf)
+        logger.info("S3 upload complete: requestId={} key={}", request.id, signedPdfS3Key)
+
+        // Dokument wizyty: podmieniamy plik na wersję podpisaną.
+        //
+        // Zgoda i protokół WYDANIA idą inaczej — ich wiersz w dokumentach wizyty
+        // powstaje DOPIERO TERAZ. Klient, który zgody nie podpisał, nie zostawia
+        // po sobie pustego formularza udającego dokument sprawy; tak samo pracownik,
+        // który otworzył ekran wydania i go zamknął (patrz VisitProtocolDocumentRegistrar).
+        when {
+            protocol.consentDefinitionId != null ->
+                registerSignedConsentDocument(protocol, visitEntity, signedPdfS3Key)
+            !VisitProtocolDocumentRegistrar.becomesDocumentOnGeneration(protocol.stage) ->
+                protocolDocumentRegistrar.register(protocol, signedPdfS3Key, "pdf")
+            else -> documentService.replaceS3Key(request.documentS3Key, signedPdfS3Key)
+        }
+
+        val signedProtocol = protocol.sign(
+            signedPdfS3Key = signedPdfS3Key,
+            signedBy = request.signerName,
+            signatureImageS3Key = null,   // RAM-only processing — no image is stored
+            notes = null
+        )
+        visitProtocolRepository.save(VisitProtocolEntity.fromDomain(signedProtocol))
+
+        // Live metrics — liczymy podpisany protokół wizyty (przyjęcie vs wydanie).
+        // Protokoły zgód nie mają etapu i nie są protokołem wizyty, więc ich nie liczymy.
+        if (protocol.consentDefinitionId == null) {
+            businessEventPublisher.publish(
+                tenantId = request.studioId,
+                type = BusinessEventType.PROTOCOL_SIGNED,
+                dimensionValue = protocol.stage.name,
+                attributes = mapOf(
+                    "protocolId" to protocol.id.value.toString(),
+                    "visitId" to subject.visitId.value.toString(),
+                    "signatureRequestId" to request.id.value.toString()
+                )
+            )
+        }
+
+        // Consent protocols additionally create the immutable CustomerConsent record
+        protocol.consentDefinitionId?.let { definitionId ->
+            recordCustomerConsent(
+                definitionId, request.studioId,
+                CustomerId(visitEntity.customerId), request.requestedBy,
+                signedPdfS3Key
+            )
+        }
+
+        return SignedSubject(signedPdfS3Key = signedPdfS3Key, visit = visitEntity)
+    }
+
+    private suspend fun recordVisitActivity(
+        request: pl.detailing.crm.signing.domain.SignatureRequest,
+        subject: SignatureSubject.VisitProtocol,
+        visitEntity: pl.detailing.crm.visit.infrastructure.VisitEntity,
+        signedAt: Instant,
+        command: SubmitSignatureCommand
+    ) {
+        // A signature captured while the visit is still DRAFT is part of the
+        // check-in flow — one business action, one activity entry: enrich the
+        // VISIT_CREATED ("Rozpoczęto wizytę") row instead of logging a separate
+        // "Podpisano protokół" duplicate. Signatures on already-running visits
+        // (e.g. remote signing later) keep their own entry. The signing module's
+        // compliance trail (auditTrailService above) is unaffected either way.
+        val enrichedCheckInEntry = visitEntity.status == VisitStatus.DRAFT &&
+            auditService.enrichLatestEntry(
+                studioId = request.studioId,
+                action = AuditAction.VISIT_CREATED,
+                visitId = subject.visitId.value,
+                patch = mapOf(
+                    "protocolSigned" to "true",
+                    "protocolSignerName" to request.signerName,
+                    "protocolSignedAt" to signedAt.toString()
+                )
+            )
+
+        if (!enrichedCheckInEntry) {
+            auditService.log(LogAuditCommand(
+                studioId = request.studioId,
+                userId = request.requestedBy,
+                userDisplayName = request.requestedByName,
+                module = AuditModule.VISIT,
+                entityId = subject.visitId.value.toString(),
+                entityDisplayName = visitEntity.visitNumber,
+                action = AuditAction.PROTOCOL_SIGNED,
+                metadata = mapOf(
+                    "protocolId" to subject.protocolId.toString(),
+                    "signatureRequestId" to request.id.toString(),
+                    "documentSha256" to request.documentSha256,
+                    "signerName" to request.signerName,
+                    "signerIp" to (command.ipAddress ?: "")
+                )
+            ))
+        }
+    }
+
+    /** Wynik podpisu dokumentu: klucz podpisanego pliku i - dla protokołu - wizyta. */
+    private class SignedSubject(
+        val signedPdfS3Key: String,
+        val visit: pl.detailing.crm.visit.infrastructure.VisitEntity?
+    )
 
     private fun fail(
         request: pl.detailing.crm.signing.domain.SignatureRequest,

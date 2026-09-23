@@ -20,7 +20,10 @@ import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
+import pl.detailing.crm.shared.SignatureRequestId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.signing.SignatureRequestLifecycleService
+import pl.detailing.crm.signing.infrastructure.SignatureRequestRepository
 import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import java.time.Instant
 import java.time.YearMonth
@@ -44,7 +47,9 @@ class AttendanceSheetService(
     private val repository: AttendanceSheetRepository,
     private val storageService: DocumentStorageService,
     private val signer: AttendanceSheetSigner,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val signatureRequestRepository: SignatureRequestRepository,
+    private val signatureLifecycle: SignatureRequestLifecycleService
 ) {
     private val logger = LoggerFactory.getLogger(AttendanceSheetService::class.java)
     private val json: ObjectMapper = jacksonObjectMapper().findAndRegisterModules()
@@ -129,6 +134,9 @@ class AttendanceSheetService(
     ): AttendanceSheetEntity {
         val sheet = require(studioId, sheetId)
         if (sheet.status == AttendanceSheetStatus.APPROVED) throw alreadyApproved(sheet)
+        // Zatwierdzenie tutaj kończy prośbę o podpis wysłaną wcześniej na tablet albo telefon -
+        // inaczej tablet dalej pokazywałby listę, której podpisu nikt już nie przyjmie.
+        cancelPendingSignatureRequests(studioId, sheetId, userId, userName)
 
         // Podpis dokłada się tylko do arkusza, którego nikt jeszcze nie podpisał.
         val signaturePng = signatureDataUrl
@@ -141,15 +149,10 @@ class AttendanceSheetService(
                 throw alreadyApproved(require(studioId, sheetId))
             }
         } else {
-            val signedKey = uploadSigned(sheet, signaturePng, userName, approvedAt)
-            val updated = repository.markApprovedWithSignature(
-                sheetId, studioId.value, approvedAt, userId.value, userName, signedKey
-            )
-            if (updated == 0) {
-                // Przegrany wyścig: po sobie sprzątamy, a zwycięzcy nie ruszamy.
-                runCatching { storageService.deleteDocument(signedKey) }
-                throw alreadyApproved(require(studioId, sheetId))
+            val signedBytes = withContext(Dispatchers.IO) {
+                signer.sign(storageService.downloadBytes(sheet.fileS3Key), signaturePng, userName, approvedAt)
             }
+            storeSignedAndApprove(sheet, signedBytes, approvedAt, userId, userName)
             logger.info("Attendance sheet signed: studioId={}, sheetId={}, by={}", studioId, sheetId, userId)
         }
 
@@ -159,6 +162,47 @@ class AttendanceSheetService(
             listOfNotNull(
                 FieldChange("status", AttendanceSheetStatus.GENERATED.name, AttendanceSheetStatus.APPROVED.name),
                 signaturePng?.let { FieldChange("signed", null, "true") }
+            )
+        )
+        return approved
+    }
+
+    /**
+     * Zatwierdzenie podpisem złożonym na tablecie studia albo na telefonie zatwierdzającego.
+     *
+     * Weryfikacja podpisu (jednorazowy token, skrót wyświetlonego dokumentu) jest już za nami
+     * - robi ją SubmitSignatureHandler - a [signedPdf] to gotowy arkusz z podpisem i kartą
+     * podpisu. Zatwierdza osoba, która poprosiła o podpis: podpisuje sama, tylko na innym
+     * urządzeniu.
+     *
+     * @param channel skąd przyszedł podpis (TABLET / SMS_LINK) - trafia do dziennika zdarzeń.
+     */
+    suspend fun approveWithSignedDocument(
+        studioId: StudioId,
+        sheetId: UUID,
+        approverId: UserId,
+        approverName: String,
+        signedPdf: ByteArray,
+        signedAt: Instant,
+        channel: String
+    ): AttendanceSheetEntity {
+        val sheet = require(studioId, sheetId)
+        if (sheet.status == AttendanceSheetStatus.APPROVED) throw alreadyApproved(sheet)
+        if (sheet.signedFileS3Key != null) throw ValidationException("Ten arkusz jest już podpisany.")
+
+        storeSignedAndApprove(sheet, signedPdf, signedAt, approverId, approverName)
+        logger.info(
+            "Attendance sheet signed remotely: studioId={}, sheetId={}, by={}, channel={}",
+            studioId, sheetId, approverId, channel
+        )
+
+        val approved = require(studioId, sheetId)
+        audit(
+            studioId, approverId, approverName, AuditAction.ATTENDANCE_SHEET_APPROVED, approved,
+            listOf(
+                FieldChange("status", AttendanceSheetStatus.GENERATED.name, AttendanceSheetStatus.APPROVED.name),
+                FieldChange("signed", null, "true"),
+                FieldChange("signatureChannel", null, channel)
             )
         )
         return approved
@@ -194,6 +238,7 @@ class AttendanceSheetService(
      */
     suspend fun delete(studioId: StudioId, userId: UserId, userName: String, sheetId: UUID) {
         val sheet = require(studioId, sheetId)
+        cancelPendingSignatureRequests(studioId, sheetId, userId, userName)
         if (repository.deleteByIdAndStudioId(sheetId, studioId.value) == 0) throw notFound(sheetId)
 
         listOfNotNull(sheet.fileS3Key, sheet.signedFileS3Key).forEach { key ->
@@ -228,6 +273,12 @@ class AttendanceSheetService(
     fun employeeIdsOf(entity: AttendanceSheetEntity): List<String> =
         runCatching { json.readValue<List<String>>(entity.employeeIdsJson) }.getOrDefault(emptyList())
 
+    /** Miesiąc arkusza słownie - „wrzesień 2026". */
+    fun monthLabelOf(sheet: AttendanceSheetEntity): String = monthLabel(sheet.period)
+
+    /** Nazwa dokumentu - ta sama w dzienniku zdarzeń, na tablecie i na karcie podpisu. */
+    fun documentNameOf(sheet: AttendanceSheetEntity): String = "Lista obecności — ${monthLabel(sheet.period)}"
+
     private fun notFound(sheetId: UUID) = EntityNotFoundException("Nie znaleziono listy obecności o id: $sheetId")
 
     private fun alreadyApproved(sheet: AttendanceSheetEntity) = ConflictException(
@@ -235,19 +286,17 @@ class AttendanceSheetService(
     )
 
     /**
-     * Wtapia podpis w oryginał i zapisuje wynik pod OSOBNYM kluczem na każdą próbę:
-     * dwa równoczesne podpisy nie nadpiszą sobie pliku, a przegrany wyścig kasuje tylko swój.
+     * Zapisuje podpisany arkusz pod OSOBNYM kluczem na każdą próbę i zatwierdza listę.
+     * Dwa równoczesne podpisy nie nadpiszą sobie pliku, a przegrany wyścig kasuje tylko swój
+     * plik - zwycięzcy nie rusza.
      */
-    private suspend fun uploadSigned(
+    private suspend fun storeSignedAndApprove(
         sheet: AttendanceSheetEntity,
-        signaturePng: ByteArray,
-        signerName: String,
-        signedAt: Instant
-    ): String {
-        val signedBytes = withContext(Dispatchers.IO) {
-            val original = storageService.downloadBytes(sheet.fileS3Key)
-            signer.sign(original, signaturePng, signerName, signedAt)
-        }
+        signedBytes: ByteArray,
+        signedAt: Instant,
+        approverId: UserId,
+        approverName: String
+    ) {
         val signedKey = sheet.fileS3Key.removeSuffix(".pdf") + "-signed-" + UUID.randomUUID().toString().take(8) + ".pdf"
         storageService.uploadDocument(
             s3Key = signedKey,
@@ -255,7 +304,33 @@ class AttendanceSheetService(
             contentType = "application/pdf",
             metadata = mapOf("period" to sheet.period, "signed" to "true")
         )
-        return signedKey
+        val updated = repository.markApprovedWithSignature(
+            sheet.id, sheet.studioId, signedAt, approverId.value, approverName, signedKey
+        )
+        if (updated == 0) {
+            runCatching { storageService.deleteDocument(signedKey) }
+            throw alreadyApproved(require(StudioId(sheet.studioId), sheet.id))
+        }
+    }
+
+    /**
+     * Zamyka prośby o podpis tej listy wysłane na tablet albo telefon. Nieudane zamknięcie
+     * nie blokuje zatwierdzenia ani usunięcia: prośba i tak wygaśnie, a podpis złożony do
+     * zatwierdzonej listy zostanie odrzucony (patrz [approveWithSignedDocument]).
+     */
+    private fun cancelPendingSignatureRequests(studioId: StudioId, sheetId: UUID, userId: UserId, userName: String) {
+        signatureRequestRepository
+            .findActiveForAttendanceSheets(studioId.value, listOf(sheetId), Instant.now())
+            .forEach { pending ->
+                runCatching {
+                    signatureLifecycle.cancel(
+                        studioId = studioId,
+                        requestId = SignatureRequestId(pending.id),
+                        cancelledBy = "$userName [${userId.value}]",
+                        ipAddress = null
+                    )
+                }.onFailure { logger.warn("Could not cancel signature request {} [sheetId={}]", pending.id, sheetId, it) }
+            }
     }
 
     private fun audit(
@@ -272,7 +347,7 @@ class AttendanceSheetService(
             module = AuditModule.WORK_TIME,
             action = action,
             entityId = sheet.id.toString(),
-            entityDisplayName = "Lista obecności — ${monthLabel(sheet.period)}",
+            entityDisplayName = documentNameOf(sheet),
             changes = changes,
             metadata = mapOf("period" to sheet.period)
         )
