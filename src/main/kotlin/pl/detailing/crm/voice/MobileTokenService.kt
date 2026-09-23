@@ -2,6 +2,7 @@ package pl.detailing.crm.voice
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.security.SecureRandom
@@ -9,12 +10,16 @@ import java.util.Base64
 
 @Service
 class MobileTokenService(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
     private val secureRandom = SecureRandom()
 
     fun resolveToken(token: String): UserEntity? {
         val user = userRepository.findByMobileToken(token) ?: return null
+        // Token aplikacji mobilnej działa poza sesją i poza adresem podglądu - konto
+        // piaskownicy podglądu roli nie może się nim posłużyć.
+        if (rolePreviewStudios.isRolePreview(user.studioId)) return null
         return if (user.isActive) user else null
     }
 

@@ -34,6 +34,8 @@ import pl.detailing.crm.batchorder.report.CloseMonthHandler
 import pl.detailing.crm.batchorder.report.GenerateBatchReportCommand
 import pl.detailing.crm.batchorder.report.GenerateBatchReportHandler
 import pl.detailing.crm.batchorder.vin.VinExtractionService
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.BatchOrderEntryId
@@ -66,7 +68,8 @@ class BatchOrderController(
     private val createBatchServiceHandler: CreateBatchServiceHandler,
     private val updateBatchServiceHandler: UpdateBatchServiceHandler,
     private val deleteBatchServiceHandler: DeleteBatchServiceHandler,
-    private val registerBatchServicesHandler: RegisterBatchServicesHandler
+    private val registerBatchServicesHandler: RegisterBatchServicesHandler,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(BatchOrderController::class.java)
 
@@ -471,7 +474,11 @@ class BatchOrderController(
 
     @PostMapping("/vin/extract", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun extractVin(@RequestParam("image") image: MultipartFile): ResponseEntity<VinExtractResponse> = runBlocking {
-        SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.AI,
+            "zdjęcie trafiłoby do modelu AI, który odczytałby z niego numer VIN"
+        )
 
         if (image.isEmpty) return@runBlocking ResponseEntity.badRequest().body(VinExtractResponse(null))
 

@@ -1,6 +1,7 @@
 package pl.detailing.crm.communication
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -47,7 +48,7 @@ class OutboundCommunicationGatewayConsentTest {
         smsProvider, emailProvider, consentChecker, smsCreditService,
         senderNameResolver, capabilityService, SimpleMeterRegistry(), businessEventPublisher, redirectService,
         RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
-        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>()
+        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>(), noRolePreview()
     )
 
     private val customerId = UUID.randomUUID()
@@ -113,3 +114,7 @@ class OutboundCommunicationGatewayConsentTest {
         verify(exactly = 0) { consentChecker.canSend(any(), any(), any(), any()) }
     }
 }
+
+/** Zwykłe studio: bezpiecznik piaskownicy podglądu roli niczego nie zatrzymuje. */
+private fun noRolePreview(): RolePreviewOutboundGuard =
+    mockk { every { intercepts(any(), any(), any(), any()) } returns false }

@@ -23,7 +23,16 @@ object MeteredKsefClient {
     /** Metody z Object — nie są żądaniami do KSeF i nie mogą zaśmiecać metryk. */
     private val NON_API_METHODS = setOf("equals", "hashCode", "toString")
 
-    fun wrap(delegate: KSeFClient, metrics: KsefApiMetrics): KSeFClient {
+    /**
+     * Czy żądanie danego studia ma w ogóle nie wyjść - piaskownica podglądu roli niczego nie
+     * wysyła do KSeF. Z tego samego powodu co licznik: tędy przechodzi każde żądanie do KSeF,
+     * także dodane w przyszłości, więc blokada tutaj nie ma luk.
+     */
+    fun interface OutboundBlock {
+        fun blocks(studioTag: String, operation: String): Boolean
+    }
+
+    fun wrap(delegate: KSeFClient, metrics: KsefApiMetrics, outboundBlock: OutboundBlock): KSeFClient {
         val proxy = Proxy.newProxyInstance(
             KSeFClient::class.java.classLoader,
             arrayOf(KSeFClient::class.java)
@@ -31,7 +40,7 @@ object MeteredKsefClient {
             if (method.name in NON_API_METHODS) {
                 invoke(method, delegate, args)
             } else {
-                invokeMetered(method, delegate, args, metrics)
+                invokeMetered(method, delegate, args, metrics, outboundBlock)
             }
         }
         return proxy as KSeFClient
@@ -41,10 +50,14 @@ object MeteredKsefClient {
         method: Method,
         delegate: KSeFClient,
         args: Array<out Any?>?,
-        metrics: KsefApiMetrics
+        metrics: KsefApiMetrics,
+        outboundBlock: OutboundBlock
     ): Any? {
         val studioTag = KsefTenantContext.currentStudioTag()
         val operation = toSnakeCase(method.name)
+        if (outboundBlock.blocks(studioTag, operation)) {
+            throw IllegalStateException("Podgląd roli niczego nie wysyła do KSeF")
+        }
         return try {
             val result = invoke(method, delegate, args)
             metrics.record(studioTag, operation, KsefApiMetrics.OUTCOME_SUCCESS)

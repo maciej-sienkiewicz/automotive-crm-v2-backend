@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.vehicle
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -55,7 +56,8 @@ class LeadVehicleExtractionListener(
     private val messageRepository: CommMessageRepository,
     private val extractionService: LeadVehicleExtractionService,
     private val segmentService: VehicleSegmentService,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -69,7 +71,8 @@ class LeadVehicleExtractionListener(
     fun onLeadThreadAttached(event: LeadThreadAttachedEvent) {
         val lead = leadRepository.findById(event.leadId).orElse(null) ?: return
         // Ręcznie wpisanej marki nie nadpisujemy — człowiek wie lepiej niż model.
-        if (!lead.vehicleBrand.isNullOrBlank()) {
+        // Piaskownica podglądu roli nie pyta modelu AI - zostaje to, co wpisał człowiek.
+        if (!lead.vehicleBrand.isNullOrBlank() || rolePreviewGuard.isSandbox(lead.studioId)) {
             finish(lead, brand = lead.vehicleBrand, model = lead.vehicleModel)
             return
         }
@@ -102,7 +105,7 @@ class LeadVehicleExtractionListener(
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onLeadTextAttached(event: LeadTextAttachedEvent) {
         val lead = leadRepository.findById(event.leadId).orElse(null) ?: return
-        if (!lead.vehicleBrand.isNullOrBlank()) {
+        if (!lead.vehicleBrand.isNullOrBlank() || rolePreviewGuard.isSandbox(lead.studioId)) {
             finish(lead, brand = lead.vehicleBrand, model = lead.vehicleModel)
             return
         }
@@ -139,7 +142,7 @@ class LeadVehicleExtractionListener(
          * istnienia leada. Awaria modelu nie może cofnąć rozpoznania auta, które
          * właśnie się udało.
          */
-        if (!brand.isNullOrBlank()) {
+        if (!brand.isNullOrBlank() && !rolePreviewGuard.isSandbox(lead.studioId)) {
             runCatching { segmentService.classify(brand, model) }
                 .onFailure { log.warn("[LEAD_VEHICLE] Klasyfikacja segmentu nie powiodła się: {}", it.message) }
         }

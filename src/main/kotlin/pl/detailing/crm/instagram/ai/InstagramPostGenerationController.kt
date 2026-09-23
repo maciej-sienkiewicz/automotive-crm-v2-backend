@@ -1,5 +1,7 @@
 package pl.detailing.crm.instagram.ai
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -40,9 +42,19 @@ class InstagramPostGenerationController(
     private val generatedPostService: InstagramGeneratedPostService,
     private val rateLimiter: InstagramAiRateLimiter,
     @org.springframework.beans.factory.annotation.Value("\${instagram.ai.debug-endpoints.enabled:false}")
-    private val debugEndpointsEnabled: Boolean
+    private val debugEndpointsEnabled: Boolean,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostGenerationController::class.java)
+
+    /** Piaskownica podglądu roli nie generuje treści przez AI - mówimy wprost, co by się stało. */
+    private fun requireOutsideRolePreview() {
+        rolePreviewGuard.requireOutsideSandbox(
+            SecurityContextHelper.getCurrentUser().studioId.value,
+            SimulatedEffectChannel.AI,
+            "wygenerowanie posta na Instagram przez asystenta AI"
+        )
+    }
 
     /** Endpointy diagnostyczne sa domyslnie wylaczone na produkcji. */
     private fun requireDebugEnabled() {
@@ -74,6 +86,7 @@ class InstagramPostGenerationController(
         @RequestBody request: GenerateInstagramPostRequest
     ): ResponseEntity<GenerateInstagramPostResponse> = runBlocking {
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
+        requireOutsideRolePreview()
 
         val principal = SecurityContextHelper.getCurrentUser()
         val rateLimit = rateLimiter.checkAndConsume(principal.studioId)
@@ -210,6 +223,7 @@ class InstagramPostGenerationController(
         @RequestBody request: GenerateInstagramPostRequest
     ): ResponseEntity<DebugInstagramPostResult> = runBlocking {
         requireDebugEnabled()
+        requireOutsideRolePreview()
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
 
         val principal = SecurityContextHelper.getCurrentUser()
@@ -247,6 +261,7 @@ class InstagramPostGenerationController(
         @RequestBody request: InstagramAbTestRequest
     ): ResponseEntity<InstagramAbTestResult> = runBlocking {
         requireDebugEnabled()
+        requireOutsideRolePreview()
         require(request.topic.isNotBlank()) { "Temat posta nie może być pusty" }
 
         val principal = SecurityContextHelper.getCurrentUser()
@@ -314,6 +329,7 @@ class InstagramPostGenerationController(
     @PostMapping("/negative-impact-test")
     fun negativeImpactTest(): ResponseEntity<InstagramNegativeImpactTestResult> = runBlocking {
         requireDebugEnabled()
+        requireOutsideRolePreview()
         logger.info("Starting negative impact test with hardcoded car detailing examples...")
 
         val topic = "Nowe zabezpieczenie lakieru — dlaczego warto"

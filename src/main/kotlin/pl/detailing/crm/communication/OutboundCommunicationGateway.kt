@@ -3,6 +3,8 @@ package pl.detailing.crm.communication
 import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.communication.queue.OutboundMessageDraft
 import pl.detailing.crm.communication.queue.OutboundMessageQueue
 import pl.detailing.crm.communication.queue.QueuedOutboundMessage
@@ -78,6 +80,9 @@ import java.util.UUID
  * Because all checks live here, new send paths automatically inherit them
  * without any extra effort from the developer — and there is no way to bypass them.
  */
+/** Identyfikator „wysłanej" wiadomości z piaskownicy podglądu roli - nic nie wyszło. */
+private const val ROLE_PREVIEW_MESSAGE_ID = "role-preview"
+
 @Service
 class OutboundCommunicationGateway(
     private val smsProvider: SmsProvider,
@@ -92,6 +97,8 @@ class OutboundCommunicationGateway(
     private val whitelist: RecipientWhitelist,
     private val sendWindow: SendWindow,
     private val messageQueue: OutboundMessageQueue,
+    /** Piaskownica podglądu roli niczego nie wysyła - patrz [RolePreviewOutboundGuard]. */
+    private val rolePreviewGuard: RolePreviewOutboundGuard,
     /** Podmieniany w testach; produkcyjnie zegar systemowy (Spring bierze wartość domyślną). */
     private val clock: Clock = Clock.systemUTC()
 ) {
@@ -255,6 +262,7 @@ class OutboundCommunicationGateway(
         if (marketingConsentBlocked(customerId, studioId, MarketingChannel.SMS, category, context)) {
             return SmsDeliveryResult.failure("Brak zgody na komunikację SMS")
         }
+        simulatedSms(studioId, phoneNumber, message)?.let { return it }
 
         val resolvedContext = context.ifBlank { category.name }
         val draft = OutboundMessageDraft(
@@ -280,6 +288,7 @@ class OutboundCommunicationGateway(
         validUntil: Instant? = null
     ): SmsDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return SmsDeliveryResult.failure(it) }
+        simulatedSms(studioId, phoneNumber, message)?.let { return it }
 
         val draft = OutboundMessageDraft(
             studioId, null, CommunicationChannel.SMS, category, phoneNumber, null, message, category.name
@@ -295,6 +304,7 @@ class OutboundCommunicationGateway(
     }
 
     private fun dispatchSms(studioId: UUID, phoneNumber: String, message: String, context: String): SmsDeliveryResult {
+        simulatedSms(studioId, phoneNumber, message)?.let { return it }
         val recipient = redirected(studioId, phoneNumber, MessageChannel.SMS) { it.phone }
         whitelistBlockReason(studioId, recipient, MessageChannel.SMS)?.let { return SmsDeliveryResult.failure(it) }
 
@@ -334,6 +344,7 @@ class OutboundCommunicationGateway(
         if (marketingConsentBlocked(customerId, studioId, MarketingChannel.EMAIL, category, context)) {
             return EmailDeliveryResult.failure("Brak zgody na komunikację EMAIL")
         }
+        simulatedEmail(studioId, to, subject)?.let { return it }
 
         val resolvedContext = context.ifBlank { category.name }
         val draft = OutboundMessageDraft(
@@ -366,6 +377,7 @@ class OutboundCommunicationGateway(
         validUntil: Instant? = null
     ): EmailDeliveryResult {
         moduleBlockReason(studioId, category)?.let { return EmailDeliveryResult.failure(it) }
+        simulatedEmail(studioId, to, subject)?.let { return it }
 
         val draft = OutboundMessageDraft(
             studioId, null, CommunicationChannel.EMAIL, category, to, subject, bodyText, category.name, attachments
@@ -388,6 +400,7 @@ class OutboundCommunicationGateway(
         attachments: List<EmailAttachment>,
         context: String
     ): EmailDeliveryResult {
+        simulatedEmail(studioId, to, subject)?.let { return it }
         // The stamp goes on the subject, not the body: the body must be exactly what a
         // customer would read, so the person reviewing it judges the real thing.
         val recipient = redirected(studioId, to, MessageChannel.EMAIL) { it.email }
@@ -396,6 +409,24 @@ class OutboundCommunicationGateway(
         if (result.success) countSent(studioId, MessageChannel.EMAIL, context)
         return result
     }
+
+    // ── Piaskownica podglądu roli ───────────────────────────────────────────
+
+    /**
+     * Piaskownica podglądu roli niczego nie wysyła: wiadomość, która przeszła wszystkie
+     * sprawdzenia (moduł, zgoda), trafia do panelu podglądu jako „system wysłałby…", a proces,
+     * który ją wysyłał, idzie dalej, jakby wyszła. Przed kolejką i przed kredytami SMS -
+     * piaskownica nie ma ani jednego, ani drugiego.
+     */
+    private fun simulatedSms(studioId: UUID, phoneNumber: String, message: String): SmsDeliveryResult? =
+        if (rolePreviewGuard.intercepts(studioId, SimulatedEffectChannel.SMS, phoneNumber, message)) {
+            SmsDeliveryResult.success(ROLE_PREVIEW_MESSAGE_ID)
+        } else null
+
+    private fun simulatedEmail(studioId: UUID, to: String, subject: String): EmailDeliveryResult? =
+        if (rolePreviewGuard.intercepts(studioId, SimulatedEffectChannel.EMAIL, to, subject)) {
+            EmailDeliveryResult.success(ROLE_PREVIEW_MESSAGE_ID)
+        } else null
 
     // ── Queue re-entry ──────────────────────────────────────────────────────
 

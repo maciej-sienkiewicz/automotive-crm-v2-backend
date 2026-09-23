@@ -5,6 +5,8 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.EnableCaching
@@ -12,8 +14,12 @@ import org.springframework.cache.concurrent.ConcurrentMapCacheManager
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.data.redis.cache.RedisCache
 import org.springframework.data.redis.core.StringRedisTemplate
+import pl.detailing.crm.config.CacheConfig
 import pl.detailing.crm.role.infrastructure.RoleRepository
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.util.UUID
 
@@ -91,5 +97,29 @@ class PermissionSnapshotCacheTest {
 
         verify(exactly = 1) { userRepository.findByIdAndStudioId(userA, studioId) }
         verify(exactly = 1) { userRepository.findByIdAndStudioId(userB, studioId) }
+    }
+
+    /**
+     * Regression guard: evictStudio matched `crm:v3:` keys while the cache manager wrote
+     * `crm:v4:` ones, so editing a role's permissions evicted nothing and revoked permissions
+     * stayed in force until the TTL ran out. The pattern is checked against the key the real
+     * cache manager configuration produces, not against a copy of the prefix.
+     */
+    @Test
+    fun `evictStudio pattern matches the keys the shared cache manager writes`() {
+        val manager = CacheConfig().cacheManager(mockk(relaxed = true))
+        manager.initializeCaches()
+        val redisCache = manager.getCache(PermissionSnapshotCache.CACHE_NAME) as RedisCache
+        val keyPrefix = redisCache.cacheConfiguration.getKeyPrefixFor(PermissionSnapshotCache.CACHE_NAME)
+        val studio = StudioId(UUID.randomUUID())
+        val otherStudio = StudioId(UUID.randomUUID())
+        val writtenKey = keyPrefix + PermissionSnapshotCache.cacheKey(UserId(UUID.randomUUID()), studio)
+        val otherStudioKey = keyPrefix + PermissionSnapshotCache.cacheKey(UserId(UUID.randomUUID()), otherStudio)
+
+        val pattern = PermissionSnapshotCache.studioKeyPattern(studio)
+
+        assertTrue(pattern.endsWith("*") && pattern.count { it == '*' } == 1, pattern)
+        assertTrue(writtenKey.startsWith(pattern.removeSuffix("*")), "$pattern vs $writtenKey")
+        assertFalse(otherStudioKey.startsWith(pattern.removeSuffix("*")))
     }
 }

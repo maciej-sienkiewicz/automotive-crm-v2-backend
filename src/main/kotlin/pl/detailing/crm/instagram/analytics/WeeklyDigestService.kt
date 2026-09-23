@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.analytics
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
@@ -223,7 +224,8 @@ class WeeklyDigestService(
     private val objectMapper: ObjectMapper,
     @Qualifier("instagramChatClient") private val chatClient: ObjectProvider<ChatClient>,
     @Value("\${instagram.digest.ai.enabled:true}") private val aiEnabled: Boolean,
-    private val adsActivityService: MetaAdsActivityService
+    private val adsActivityService: MetaAdsActivityService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(WeeklyDigestService::class.java)
 
@@ -257,6 +259,8 @@ class WeeklyDigestService(
      * dokładnie ta pułapka, którą opisuje AuditService.enrichLatestEntry.
      */
     fun digest(studioId: StudioId): WeeklyDigestDto? {
+        // Piaskownica podglądu roli nie obserwuje profili i nie pyta modelu AI o podsumowanie.
+        if (rolePreviewGuard.isSandbox(studioId.value)) return null
         val weekStart = MetricsCalculator.currentWeekStart()
         val links = studioProfileRepository
             .findByStudioIdAndStatus(studioId.value, InstagramProfileStatus.ACTIVE)

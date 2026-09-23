@@ -18,6 +18,7 @@ import org.springframework.stereotype.Repository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import java.time.Instant
 import java.util.UUID
 
@@ -178,7 +179,8 @@ data class ClassifiedServiceName(
 @Service
 class ServiceFamilyClassifier(
     @Qualifier("serviceFamilyChatClient") private val chatClient: ChatClient,
-    private val repository: ServiceFamilyRepository
+    private val repository: ServiceFamilyRepository,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -210,7 +212,10 @@ class ServiceFamilyClassifier(
         // promptem (sprzed osi) — bez tego warunku cały korpus zostałby z UNKNOWN
         // na zawsze, bo znana nazwa nie dotyka modelu. Poprawki człowieka (MANUAL)
         // i nadpisania per studio są nietykalne: automat ich nie reklasyfikuje.
-        val toClassify = samples.keys.filter { key ->
+        // Piaskownica podglądu roli nie pyta modelu i nie dopisuje wierszy globalnych: jej
+        // nazwy usług to dane pokazowe, a wiersz globalny przeżyłby jej usunięcie.
+        // Nazwy jeszcze nieznane zostają w niej po prostu bez klasyfikacji.
+        val toClassify = if (rolePreviewGuard.isSandbox(studioId)) emptyList() else samples.keys.filter { key ->
             val row = known[key]
             row == null || (
                 row.studioId == ServiceFamilyEntity.GLOBAL_STUDIO &&

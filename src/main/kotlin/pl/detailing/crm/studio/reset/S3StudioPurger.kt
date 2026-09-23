@@ -11,13 +11,16 @@ import software.amazon.awssdk.services.s3.model.ObjectIdentifier
 import java.util.UUID
 
 /**
- * Usuwa wszystkie obiekty studia z S3. Każdy klucz w buckecie zaczyna się od
- * `{studioId}/` (patrz DocumentStorageService, PhotoSessionService,
- * S3ProtocolStorageService, S3ConsentStorageService, UserSignatureService),
- * więc czyszczenie sprowadza się do usunięcia prefiksu — stronami po maksymalnie
- * 1000 obiektów, bo tyle przyjmuje DeleteObjects.
+ * Usuwa wszystkie obiekty studia z S3, stronami po maksymalnie 1000 obiektów, bo tyle
+ * przyjmuje DeleteObjects.
  *
- * Operacja jest idempotentna: ponowne uruchomienie na pustym prefiksie nic nie robi.
+ * Pliki studia leżą pod `{studioId}/` (patrz DocumentStorageService, PhotoSessionService,
+ * S3ProtocolStorageService, S3ConsentStorageService, UserSignatureService), ale nie wszystkie:
+ * miniatury zdjęć są pod `thumbs/{studioId}/`, a pliki tymczasowe pod `temp/{studioId}/`
+ * (sesje zdjęć) i `temp/uploads/{studioId}/` (zdjęcia z telefonu przy przyjęciu). Czyszczenie
+ * samego `{studioId}/` zostawiało w buckecie miniatury zdjęć studia, które już nie istnieje.
+ *
+ * Operacja jest idempotentna: ponowne uruchomienie na pustych prefiksach nic nie robi.
  */
 @Component
 class S3StudioPurger(
@@ -27,7 +30,12 @@ class S3StudioPurger(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     fun purge(studioId: UUID): Int {
-        val prefix = "$studioId/"
+        val deleted = prefixesOf(studioId).sumOf { purgePrefix(it) }
+        logger.info("S3 purge complete: studioId={}, deletedObjects={}", studioId, deleted)
+        return deleted
+    }
+
+    private fun purgePrefix(prefix: String): Int {
         var deleted = 0
         var continuationToken: String? = null
 
@@ -54,7 +62,16 @@ class S3StudioPurger(
             continuationToken = if (listing.isTruncated) listing.nextContinuationToken() else null
         } while (continuationToken != null)
 
-        logger.info("S3 purge complete: studioId={}, deletedObjects={}", studioId, deleted)
         return deleted
+    }
+
+    companion object {
+        /** Wszystkie prefiksy, pod którymi mogą leżeć pliki studia. */
+        fun prefixesOf(studioId: UUID): List<String> = listOf(
+            "$studioId/",
+            "thumbs/$studioId/",
+            "temp/$studioId/",
+            "temp/uploads/$studioId/"
+        )
     }
 }

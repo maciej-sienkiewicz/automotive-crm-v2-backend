@@ -26,6 +26,8 @@ import pl.detailing.crm.task.list.ListTasksQuery
 import pl.detailing.crm.task.update.UpdateTaskCommand
 import pl.detailing.crm.task.update.UpdateTaskHandler
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.voice.OpenAiTranscriptionService
 import java.util.UUID
 
@@ -48,7 +50,8 @@ class TasksController(
     private val listArchivedTasksHandler: ListArchivedTasksHandler,
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
-    private val transcriptionService: OpenAiTranscriptionService
+    private val transcriptionService: OpenAiTranscriptionService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     private val log = LoggerFactory.getLogger(TasksController::class.java)
@@ -161,6 +164,10 @@ class TasksController(
     fun createTaskFromVoice(@RequestPart("audio") audio: MultipartFile): ResponseEntity<TaskDto> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.AI,
+            "nagranie trafiłoby do modelu AI, który zamieniłby je na treść zadania"
+        )
         if (audio.isEmpty) throw ValidationException("Plik audio jest pusty")
         if (audio.size > MAX_VOICE_AUDIO_BYTES) {
             throw ValidationException("Plik audio przekracza dozwolony rozmiar (max 5 MB)")

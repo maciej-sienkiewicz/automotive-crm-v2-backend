@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.sync
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -44,7 +45,8 @@ class InstagramResyncService(
     private val profileRepository: InstagramProfileRepository,
     private val orchestrator: InstagramSyncOrchestrator,
     private val redisTemplate: StringRedisTemplate,
-    @Value("\${instagram.resync.cooldown-minutes:10}") private val cooldownMinutes: Long
+    @Value("\${instagram.resync.cooldown-minutes:10}") private val cooldownMinutes: Long,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(InstagramResyncService::class.java)
 
@@ -53,6 +55,8 @@ class InstagramResyncService(
     }
 
     fun resyncFailed(studioId: StudioId): ResyncResultDto {
+        // Piaskownica podglądu roli nie ma obserwowanych profili i nie pyta RapidAPI.
+        if (rolePreviewGuard.isSandbox(studioId.value)) return ResyncResultDto(attempted = 0, recovered = 0, stillFailing = 0)
         val failed = studioProfileRepository
             .findByStudioIdAndStatus(studioId.value, InstagramProfileStatus.ACTIVE)
             .let { links -> profileRepository.findAllById(links.map { it.profileId }) }

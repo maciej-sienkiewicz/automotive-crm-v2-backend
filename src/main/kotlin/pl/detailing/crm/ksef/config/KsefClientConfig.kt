@@ -1,5 +1,8 @@
 package pl.detailing.crm.ksef.config
 
+import java.util.UUID
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
@@ -33,7 +36,7 @@ class KsefClientConfig(private val properties: KsefProperties) {
      * w przyszłości.
      */
     @Bean
-    fun ksefClient(ksefApiMetrics: KsefApiMetrics): KSeFClient {
+    fun ksefClient(ksefApiMetrics: KsefApiMetrics, rolePreviewGuard: RolePreviewOutboundGuard): KSeFClient {
         val objectMapper = ObjectMapper()
             .registerModule(JavaTimeModule())
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -56,7 +59,11 @@ class KsefClientConfig(private val properties: KsefProperties) {
         return MeteredKsefClient.wrap(
             DefaultKsefClient(httpClient, apiProperties, objectMapper),
             ksefApiMetrics
-        )
+        ) { studioTag, operation ->
+            // Żądanie bez studia (klucz publiczny przy starcie) nie należy do żadnej piaskownicy.
+            val studioId = runCatching { UUID.fromString(studioTag) }.getOrNull()
+            rolePreviewGuard.intercepts(studioId, SimulatedEffectChannel.KSEF, null, "Żądanie do KSeF ($operation)")
+        }
     }
 
     /**

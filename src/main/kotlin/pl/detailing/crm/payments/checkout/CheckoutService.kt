@@ -1,5 +1,7 @@
 package pl.detailing.crm.payments.checkout
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -60,12 +62,17 @@ class CheckoutService(
     private val entitlementService: EntitlementService,
     private val prorationService: ProrationService,
     private val planRepository: PlanJpaRepository,
-    private val addOnRepository: AddOnJpaRepository
+    private val addOnRepository: AddOnJpaRepository,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Transactional
     fun checkout(studioId: StudioId, buyerEmail: String, request: CheckoutRequest): CheckoutResponse {
+        // Zakupy są tylko dla właściciela, którym pracownik piaskownicy nigdy nie jest - to
+        // druga linia: podgląd roli nie zakłada zamówień i niczego nie płaci.
+        rolePreviewGuard.requireOutsideSandbox(studioId.value, SimulatedEffectChannel.PAYMENT, "płatność za ${request.type.name}")
+
         val draft = when (request.type) {
             PaymentOrderType.INITIAL_PURCHASE -> prepareInitialPurchase(studioId, request)
             PaymentOrderType.RENEWAL -> prepareRenewal(studioId)

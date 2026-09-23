@@ -2,8 +2,10 @@ package pl.detailing.crm.role.permission
 
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.Cacheable
+import org.springframework.data.redis.core.ScanOptions
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
+import pl.detailing.crm.config.CacheConfig
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
@@ -48,10 +50,13 @@ class PermissionSnapshotCache(
     companion object {
         const val CACHE_NAME = "user-permissions"
 
-        /** Must match CacheConfig's `prefixCacheNameWith` + Spring's `cacheName::key` scheme. */
-        private const val REDIS_KEY_PREFIX = "crm:v3:$CACHE_NAME::"
+        /** CacheConfig's key prefix + Spring's `cacheName::key` scheme — the keys the cache manager writes. */
+        private const val REDIS_KEY_PREFIX = "${CacheConfig.CACHE_KEY_PREFIX}$CACHE_NAME::"
 
         fun cacheKey(userId: UserId, studioId: StudioId) = "${studioId.value}:${userId.value}"
+
+        /** Redis pattern matching every cached snapshot of one studio. */
+        internal fun studioKeyPattern(studioId: StudioId) = "$REDIS_KEY_PREFIX${studioId.value}:*"
     }
 
     /**
@@ -91,7 +96,11 @@ class PermissionSnapshotCache(
      * any number of users may hold that role, so all entries are invalidated.
      */
     fun evictStudio(studioId: StudioId) {
-        val keys = stringRedisTemplate.keys("$REDIS_KEY_PREFIX${studioId.value}:*")
+        // SCAN, not KEYS: KEYS walks the whole keyspace in one blocking call, and role edits
+        // in the role preview land here on every permission toggle.
+        val keys = mutableListOf<String>()
+        stringRedisTemplate.scan(ScanOptions.scanOptions().match(studioKeyPattern(studioId)).count(500).build())
+            .use { cursor -> cursor.forEachRemaining { keys += it } }
         if (keys.isNotEmpty()) {
             stringRedisTemplate.delete(keys)
         }

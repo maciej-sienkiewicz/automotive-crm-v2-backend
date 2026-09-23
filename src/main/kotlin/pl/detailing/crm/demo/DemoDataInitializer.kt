@@ -56,12 +56,24 @@ class DemoDataInitializer(
     private val studioInstagramProfileRepository: StudioInstagramProfileRepository
 ) {
 
+    /**
+     * @param contacts adresy klientów i leadów - prawdziwie wyglądające dla konta demo,
+     *   niedoręczalne dla piaskownicy podglądu roli.
+     * @param followInstagramProfiles obserwowanie przykładowych profili Instagrama. Profil
+     *   jest wierszem wspólnym dla wszystkich studiów, a obserwowany profil pobiera posty
+     *   z zewnętrznego API - piaskownica podglądu roli nie robi ani jednego, ani drugiego.
+     */
     @Transactional
-    fun seed(studioId: UUID, userId: UUID) {
+    fun seed(
+        studioId: UUID,
+        userId: UUID,
+        contacts: SeedContacts = SeedContacts.REALISTIC,
+        followInstagramProfiles: Boolean = true
+    ) {
         val colors = createColors(studioId, userId)
         val services = createServices(studioId, userId)
         createServiceCategories(studioId, userId, services)
-        val customers = createCustomers(studioId, userId)
+        val customers = createCustomers(studioId, userId, contacts)
         createCustomerNotes(studioId, userId, customers)
         val vehicles = createVehicles(studioId, userId, customers)
         createVehicleNotes(studioId, userId, vehicles)
@@ -69,9 +81,9 @@ class DemoDataInitializer(
         val inProgressVisits = createInProgressVisits(studioId, userId, customers, vehicles, services, colors)
         createVisitComments(studioId, userId, pastVisits + inProgressVisits)
         createFutureAppointments(studioId, userId, customers, vehicles, services, colors)
-        createLeads(studioId, customers, vehicles)
-        createCommunicationLogs(studioId, customers, pastVisits + inProgressVisits)
-        createInstagramProfiles(studioId, userId)
+        createLeads(studioId, customers, vehicles, contacts)
+        createCommunicationLogs(studioId, customers, pastVisits + inProgressVisits, contacts)
+        if (followInstagramProfiles) createInstagramProfiles(studioId, userId)
     }
 
     private fun createColors(studioId: UUID, userId: UUID): List<AppointmentColorEntity> {
@@ -119,7 +131,7 @@ class DemoDataInitializer(
                 studioId = studioId,
                 name = name,
                 basePriceNet = price,
-                basePriceGross = price + Math.round(price * vat / 100.0),
+                basePriceGross = VatRate.fromInt(vat).calculateGrossAmount(Money(price)).amountInCents,
                 vatRate = vat,
                 isActive = true,
                 requireManualPrice = false,
@@ -132,7 +144,7 @@ class DemoDataInitializer(
         }.also { serviceRepository.saveAll(it) }
     }
 
-    private fun createCustomers(studioId: UUID, userId: UUID): List<CustomerEntity> {
+    private fun createCustomers(studioId: UUID, userId: UUID, contacts: SeedContacts): List<CustomerEntity> {
         val now = Instant.now()
         data class CustomerData(
             val firstName: String?,
@@ -180,8 +192,8 @@ class DemoDataInitializer(
                 studioId = studioId,
                 firstName = d.firstName,
                 lastName = d.lastName,
-                email = d.email,
-                phone = d.phone,
+                email = d.email?.let(contacts::email),
+                phone = d.phone?.let(contacts::phone),
                 homeAddressStreet = d.street,
                 homeAddressCity = d.city,
                 homeAddressPostalCode = d.postal,
@@ -400,7 +412,7 @@ class DemoDataInitializer(
             val lineItems = spec.serviceIndices.map { sIdx ->
                 val svc = services[sIdx]
                 val finalNet = svc.basePriceNet
-                val finalGross = finalNet + (finalNet * svc.vatRate / 100)
+                val finalGross = VatRate.fromInt(svc.vatRate).calculateGrossAmount(Money(finalNet)).amountInCents
                 AppointmentLineItemEntity(
                     id = null,
                     appointment = appointment,
@@ -459,7 +471,7 @@ class DemoDataInitializer(
             val visitServiceItems = spec.serviceIndices.map { sIdx ->
                 val svc = services[sIdx]
                 val finalNet = svc.basePriceNet
-                val finalGross = finalNet + (finalNet * svc.vatRate / 100)
+                val finalGross = VatRate.fromInt(svc.vatRate).calculateGrossAmount(Money(finalNet)).amountInCents
                 VisitServiceItemEntity(
                     id = UUID.randomUUID(),
                     visit = visitEntity,
@@ -546,7 +558,7 @@ class DemoDataInitializer(
             val lineItems = spec.serviceIndices.map { sIdx ->
                 val svc = services[sIdx]
                 val finalNet = svc.basePriceNet
-                val finalGross = finalNet + (finalNet * svc.vatRate / 100)
+                val finalGross = VatRate.fromInt(svc.vatRate).calculateGrossAmount(Money(finalNet)).amountInCents
                 AppointmentLineItemEntity(
                     id = null,
                     appointment = appointment,
@@ -605,7 +617,7 @@ class DemoDataInitializer(
             val visitServiceItems = spec.serviceIndices.map { sIdx ->
                 val svc = services[sIdx]
                 val finalNet = svc.basePriceNet
-                val finalGross = finalNet + (finalNet * svc.vatRate / 100)
+                val finalGross = VatRate.fromInt(svc.vatRate).calculateGrossAmount(Money(finalNet)).amountInCents
                 VisitServiceItemEntity(
                     id = UUID.randomUUID(),
                     visit = visitEntity,
@@ -698,7 +710,7 @@ class DemoDataInitializer(
             val lineItems = spec.serviceIndices.map { sIdx ->
                 val svc = services[sIdx]
                 val finalNet = svc.basePriceNet
-                val finalGross = finalNet + (finalNet * svc.vatRate / 100)
+                val finalGross = VatRate.fromInt(svc.vatRate).calculateGrossAmount(Money(finalNet)).amountInCents
                 AppointmentLineItemEntity(
                     id = null,
                     appointment = appointment,
@@ -898,7 +910,12 @@ class DemoDataInitializer(
         vehicleNoteRepository.saveAll(entities)
     }
 
-    private fun createLeads(studioId: UUID, customers: List<CustomerEntity>, vehicles: List<VehicleEntity>) {
+    private fun createLeads(
+        studioId: UUID,
+        customers: List<CustomerEntity>,
+        vehicles: List<VehicleEntity>,
+        contacts: SeedContacts
+    ) {
         val now = Instant.now()
 
         data class LeadSpec(
@@ -935,7 +952,7 @@ class DemoDataInitializer(
                 studioId = studioId,
                 source = spec.source,
                 status = spec.status,
-                contactIdentifier = spec.phone,
+                contactIdentifier = contacts.phone(spec.phone),
                 customerName = spec.name,
                 initialMessage = spec.message,
                 estimatedValue = spec.estimatedValue,
@@ -959,7 +976,8 @@ class DemoDataInitializer(
     private fun createCommunicationLogs(
         studioId: UUID,
         customers: List<CustomerEntity>,
-        visits: List<VisitEntity>
+        visits: List<VisitEntity>,
+        contacts: SeedContacts
     ) {
         val now = Instant.now()
         val logs = mutableListOf<CommunicationLogEntity>()
@@ -1009,7 +1027,7 @@ class DemoDataInitializer(
                     appointmentId = visit.appointmentId,
                     channel = spec.channel,
                     messageType = spec.type,
-                    recipientAddress = spec.recipient,
+                    recipientAddress = contacts.address(spec.recipient),
                     subject = spec.subject,
                     bodyContent = spec.body,
                     status = CommunicationStatus.SENT,
@@ -1036,7 +1054,7 @@ class DemoDataInitializer(
                     appointmentId = null,
                     channel = CommunicationChannel.SMS,
                     messageType = CommunicationMessageType.SMS_AUTOMATION_PRE_VISIT,
-                    recipientAddress = phone,
+                    recipientAddress = contacts.phone(phone),
                     subject = null,
                     bodyContent = msg,
                     status = CommunicationStatus.SENT,

@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.ads.discovery
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
@@ -35,7 +36,8 @@ class AdDiscoveryScheduler(
     private val fetchService: AdDiscoveryFetchService,
     @Value("\${meta.ads.discovery.enabled:true}") private val enabled: Boolean,
     @Value("\${meta.ads.discovery.phrases-per-tick:1}") private val phrasesPerTick: Int,
-    @Value("\${meta.ads.discovery.min-refresh-hours:6}") minRefreshHours: Long
+    @Value("\${meta.ads.discovery.min-refresh-hours:6}") minRefreshHours: Long,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(AdDiscoveryScheduler::class.java)
 
@@ -78,6 +80,8 @@ class AdDiscoveryScheduler(
      */
     private fun stalestDue(): List<String> {
         val inUse = settingsRepository.findAllConfigured()
+            // Ustawienia piaskownicy podglądu roli nie zamawiają pobrań z Meta.
+            .filterNot { rolePreviewGuard.isSandbox(it.studioId) }
             .flatMap { AdDiscoveryCatalog.phrasesExcept(AreaLists.decode(it.excludedPhraseIds)) }
             .mapNotNull(AdDiscoveryPhrase::normalizeValid)
             .distinct()

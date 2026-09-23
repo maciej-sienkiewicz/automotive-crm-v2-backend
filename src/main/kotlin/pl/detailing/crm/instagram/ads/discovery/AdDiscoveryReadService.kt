@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.ads.discovery
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import pl.detailing.crm.instagram.ads.AdvertiserInstagramResolver
@@ -30,7 +31,8 @@ class AdDiscoveryReadService(
     private val settingsService: AdAreaSettingsService,
     private val advertiserRepository: AdDiscoveryAdvertiserRepository,
     private val igLookupService: pl.detailing.crm.instagram.ads.discovery.ig.MetaIgLookupService,
-    @Value("\${meta.ads.discovery.results-page-size:10}") private val defaultPageSize: Int
+    @Value("\${meta.ads.discovery.results-page-size:10}") private val defaultPageSize: Int,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     private companion object {
@@ -75,8 +77,12 @@ class AdDiscoveryReadService(
             )
         }
 
+        // Piaskownica podglądu roli pokazuje to, co już jest we wspólnym cache - nie pyta Meta
+        // i nie pobiera cudzych stron WWW (ani tu, ani przy nazwach profili niżej).
+        val sandbox = rolePreviewGuard.isSandbox(studioId.value)
+
         // On-demand: dociągnij brakujące/przeterminowane frazy do wspólnego cache.
-        fetchService.ensureFresh(normalizedPhrases)
+        if (!sandbox) fetchService.ensureFresh(normalizedPhrases)
 
         val phraseEntities = phraseRepository.findByPhraseIn(normalizedPhrases).associateBy { it.phrase }
 
@@ -99,7 +105,7 @@ class AdDiscoveryReadService(
         val pages = if (shown.isEmpty()) 1 else (shown.size + size - 1) / size
         val safePage = wanted.coerceAtMost(pages - 1)
         val slice = shown.drop(safePage * size).take(size)
-        val rows = withInstagram(slice).map { it.toDto() }
+        val rows = (if (sandbox) slice else withInstagram(slice)).map { it.toDto() }
 
         return AreaResultsDto(
             phrases = normalizedPhrases,

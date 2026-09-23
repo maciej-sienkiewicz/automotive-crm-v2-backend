@@ -1,5 +1,8 @@
 package pl.detailing.crm.pin
 
+import pl.detailing.crm.rolepreview.RolePreviewStudios
+import io.mockk.mockk
+import io.mockk.every
 import io.mockk.*
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
@@ -61,7 +64,8 @@ class PinBruteForceAndSessionTest {
         mockk<SubscriptionService>(relaxed = true),
         mockk<PermissionCheckService>(relaxed = true),
         studioSettingsRepository,
-        redis
+        redis,
+        regularStudios()
     )
 
     init {
@@ -138,3 +142,7 @@ class PinBruteForceAndSessionTest {
         assertNotEquals(idBefore, result.request.session!!.id, "session id must change when the identity changes")
     }
 }
+
+/** Zwykłe studia - żadne nie jest piaskownicą podglądu roli. */
+private fun regularStudios(): RolePreviewStudios =
+    mockk { every { isRolePreview(any()) } returns false }

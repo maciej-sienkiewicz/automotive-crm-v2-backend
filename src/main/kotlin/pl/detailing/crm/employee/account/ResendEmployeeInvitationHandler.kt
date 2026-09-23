@@ -1,5 +1,8 @@
 package pl.detailing.crm.employee.account
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.email.provider.EmailDeliveryResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -26,7 +29,8 @@ class ResendEmployeeInvitationHandler(
     private val tokenService: PasswordResetTokenService,
     private val emailProvider: EmailProvider,
     private val auditService: AuditService,
-    private val properties: PasswordResetProperties
+    private val properties: PasswordResetProperties,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     companion object {
         /** Dwa kliknięcia pod rząd nie mogą wysłać pracownikowi dwóch e-maili. */
@@ -64,16 +68,25 @@ class ResendEmployeeInvitationHandler(
         }
 
         val rawToken = tokenService.issueInvitationToken(user.id)
-        val result = emailProvider.send(
-            to = user.email,
-            subject = EmployeeInvitationEmail.SUBJECT,
-            bodyText = EmployeeInvitationEmail.body(
-                firstName = employee.firstName,
-                invitedByName = requestedByName,
-                setupLink = EmployeeInvitationEmail.setupLink(properties, rawToken),
-                validFor = EmployeeInvitationEmail.hoursInPolish(properties.invitationTokenTtlHours)
+        // W piaskownicy podglądu roli zaproszenie nie wychodzi - panel podglądu pokazuje, że by wyszło.
+        val result = if (rolePreviewGuard.intercepts(
+                studioId.value, SimulatedEffectChannel.EMAIL, user.email,
+                "Ponowne zaproszenie do konta dla ${employee.firstName} ${employee.lastName}"
             )
-        )
+        ) {
+            EmailDeliveryResult.success("role-preview")
+        } else {
+            emailProvider.send(
+                to = user.email,
+                subject = EmployeeInvitationEmail.SUBJECT,
+                bodyText = EmployeeInvitationEmail.body(
+                    firstName = employee.firstName,
+                    invitedByName = requestedByName,
+                    setupLink = EmployeeInvitationEmail.setupLink(properties, rawToken),
+                    validFor = EmployeeInvitationEmail.hoursInPolish(properties.invitationTokenTtlHours)
+                )
+            )
+        }
         if (!result.success) {
             logger.warn(
                 "Invitation re-send failed [employeeId={}, userId={}]: {}",

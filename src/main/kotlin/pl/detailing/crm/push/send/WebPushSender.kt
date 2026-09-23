@@ -1,5 +1,7 @@
 package pl.detailing.crm.push.send
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -36,7 +38,8 @@ enum class PushDeliveryStatus {
 class WebPushSender(
     @Value("\${webpush.vapid.public-key:}") private val vapidPublicKey: String,
     @Value("\${webpush.vapid.private-key:}") private val vapidPrivateKey: String,
-    @Value("\${webpush.vapid.subject:}") private val vapidSubject: String
+    @Value("\${webpush.vapid.subject:}") private val vapidSubject: String,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     private val log = LoggerFactory.getLogger(WebPushSender::class.java)
@@ -51,6 +54,11 @@ class WebPushSender(
     val publicKey: String get() = vapidPublicKey
 
     fun send(device: PushDevice, payloadJson: String, ttlSeconds: Long = 60): PushDeliveryStatus {
+        // Piaskownica podglądu roli nie rejestruje urządzeń, ale gdyby jakieś się znalazło -
+        // powiadomienie i tak nie wychodzi poza system.
+        if (rolePreviewGuard.intercepts(device.studioId.value, SimulatedEffectChannel.PUSH, null, "Powiadomienie push na telefon pracownika")) {
+            return PushDeliveryStatus.DELIVERED
+        }
         if (!isConfigured) {
             log.warn("[push] VAPID nie jest skonfigurowane (webpush.vapid.*) — pomijam wysyłkę")
             return PushDeliveryStatus.FAILED

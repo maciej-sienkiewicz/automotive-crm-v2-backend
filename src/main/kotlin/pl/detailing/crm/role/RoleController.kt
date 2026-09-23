@@ -49,19 +49,8 @@ class RoleController(
      * parent chain and the implication edges.
      */
     @GetMapping("/permissions")
-    fun getPermissionCatalog(): ResponseEntity<List<PermissionModuleTreeResponse>> {
-        val modules = PermissionModule.entries.mapNotNull { module ->
-            val roots = PermissionHierarchy.rootsOf(module)
-            if (roots.isEmpty()) return@mapNotNull null
-            PermissionModuleTreeResponse(
-                module = module.name,
-                displayName = module.displayName,
-                featureKey = module.featureKey?.name,
-                nodes = roots.map { it.toNodeResponse() }
-            )
-        }
-        return ResponseEntity.ok(modules)
-    }
+    fun getPermissionCatalog(): ResponseEntity<List<PermissionModuleTreeResponse>> =
+        ResponseEntity.ok(permissionCatalogTree())
 
     // ── Role CRUD ─────────────────────────────────────────────────────────────
 
@@ -269,6 +258,22 @@ data class PermissionNodeResponse(
     /** Permissions that require this one. Selecting a child must select the whole ancestor chain. */
     val children: List<PermissionNodeResponse>
 )
+
+/**
+ * Katalog uprawnień jako drzewo, pogrupowany po modułach - ten sam dla edytora ról
+ * i dla panelu podglądu roli, żeby oba pokazywały dokładnie te same zależności.
+ */
+fun permissionCatalogTree(): List<PermissionModuleTreeResponse> =
+    PermissionModule.entries.mapNotNull { module ->
+        val roots = PermissionHierarchy.rootsOf(module)
+        if (roots.isEmpty()) return@mapNotNull null
+        PermissionModuleTreeResponse(
+            module = module.name,
+            displayName = module.displayName,
+            featureKey = module.featureKey?.name,
+            nodes = roots.map { it.toNodeResponse() }
+        )
+    }
 
 private fun Permission.toNodeResponse(): PermissionNodeResponse = PermissionNodeResponse(
     code = name,

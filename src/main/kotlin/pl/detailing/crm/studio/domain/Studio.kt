@@ -20,7 +20,9 @@ data class Studio(
     val subscriptionEndsAt: Instant?,
     val trialUsed: Boolean,
     val createdAt: Instant,
-    val emailAlias: String?
+    val emailAlias: String?,
+    /** Rodzaj studia - nadawany przy zakładaniu, nigdy nie zmieniany (patrz [StudioKind]). */
+    val kind: StudioKind = StudioKind.REGULAR
 ) {
     fun isTrialActive(): Boolean =
         subscriptionStatus == SubscriptionStatus.TRIALING &&

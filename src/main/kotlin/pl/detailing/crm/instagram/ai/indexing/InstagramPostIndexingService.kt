@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.ai.indexing
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,7 +44,8 @@ class InstagramPostIndexingService(
     private val postSnapshotRepository: InstagramPostSnapshotRepository,
     private val classificationService: InstagramPostClassificationService,
     private val vectorStore: VectorStore,
-    private val jdbcTemplate: JdbcTemplate
+    private val jdbcTemplate: JdbcTemplate,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(InstagramPostIndexingService::class.java)
     private val ioScope = CoroutineScope(Dispatchers.IO)
@@ -51,6 +53,8 @@ class InstagramPostIndexingService(
     @Async
     @EventListener
     fun onReactionChanged(event: InstagramPostReactionChangedEvent) {
+        // Piaskownica podglądu roli nie klasyfikuje postów modelem AI ani nie liczy wektorów.
+        if (rolePreviewGuard.isSandbox(event.studioId.value)) return
         logger.info(
             "Reaction changed: studioId={}, postId={}, reaction={}",
             event.studioId, event.postId, event.reaction

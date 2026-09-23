@@ -1,5 +1,7 @@
 package pl.detailing.crm.comms.send
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import jakarta.activation.DataHandler
 import jakarta.mail.Message
 import jakarta.mail.Part
@@ -42,7 +44,8 @@ data class OutgoingMail(
  */
 @Service
 class AccountMailSender(
-    private val encryptionService: MailboxEncryptionService
+    private val encryptionService: MailboxEncryptionService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -53,6 +56,9 @@ class AccountMailSender(
     }
 
     fun send(account: MailAccountEntity, messageId: String, mail: OutgoingMail) {
+        rolePreviewGuard.requireOutsideSandbox(
+            account.studioId, SimulatedEffectChannel.EMAIL, "wysłanie wiadomości „${mail.subject}\" ze skrzynki ${account.emailAddress}"
+        )
         val message = compose(account, messageId, mail)
         val password = passwordOf(account)
         Transport.send(message, account.emailAddress, password)

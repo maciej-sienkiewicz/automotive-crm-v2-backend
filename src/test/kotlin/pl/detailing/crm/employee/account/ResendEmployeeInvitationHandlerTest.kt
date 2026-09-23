@@ -74,7 +74,8 @@ class ResendEmployeeInvitationHandlerTest {
     private val sentBody = slot<String>()
 
     private val handler = ResendEmployeeInvitationHandler(
-        employeeRepository, userRepository, tokenService, emailProvider, auditService, PasswordResetProperties()
+        employeeRepository, userRepository, tokenService, emailProvider, auditService, PasswordResetProperties(),
+        rolePreviewGuard = mockk(relaxed = true)
     )
 
     init {

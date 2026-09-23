@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component
 import pl.detailing.crm.auth.login.AccountLockoutService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import java.time.Instant
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import java.util.UUID
 
 @Configuration
@@ -73,6 +74,7 @@ class CardDavAuthenticationProvider(
     private val appPasswordRepository: CardDavAppPasswordRepository,
     private val passwordEncoder: PasswordEncoder,
     private val accountLockoutService: AccountLockoutService,
+    private val rolePreviewStudios: RolePreviewStudios,
 ) : AuthenticationProvider {
 
     override fun authenticate(authentication: Authentication): Authentication {
@@ -81,6 +83,10 @@ class CardDavAuthenticationProvider(
 
         val entity = userRepository.findByEmail(email)
             ?: throw UsernameNotFoundException("User not found: $email")
+        // Konta piaskownic podglądu roli nie logują się nigdzie - także do synchronizacji kontaktów.
+        if (rolePreviewStudios.isRolePreview(entity.studioId)) {
+            throw UsernameNotFoundException("User not found: $email")
+        }
         if (!entity.isActive) {
             throw UsernameNotFoundException("User account is disabled: $email")
         }

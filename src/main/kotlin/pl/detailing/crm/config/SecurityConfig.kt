@@ -14,6 +14,9 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository
 import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.firewall.StrictHttpFirewall
+import org.springframework.session.config.SessionRepositoryCustomizer
+import org.springframework.session.data.redis.RedisSessionMapper
+import org.springframework.session.data.redis.RedisSessionRepository
 import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession
 import org.springframework.session.web.http.CookieSerializer
 import org.springframework.session.web.http.DefaultCookieSerializer
@@ -64,6 +67,29 @@ class SecurityConfig(
         setUseSecureCookie(!appEnv.equals("local", ignoreCase = true))
     }
 
+    /**
+     * Sesja usunięta w trakcie żądania, które z niej korzysta (np. piaskownica podglądu roli
+     * sprzątnięta, gdy okno podglądu jeszcze coś wysyła), wraca do Redisa jako NIEPEŁNY wpis:
+     * na końcu żądania Spring Session dopisuje zmienione atrybuty, a nie ma już czasu
+     * utworzenia ani limitu bezczynności. Domyślny mapper rzuca wtedy IllegalStateException
+     * przy każdym kolejnym żądaniu z tym ciasteczkiem - 500 zamiast 401, aż wpis wygaśnie.
+     *
+     * Niepełny wpis to sesja, której nie ma: mapper zwraca null, a repozytorium samo usuwa
+     * taki wpis i traktuje żądanie jak niezalogowane.
+     */
+    @Bean
+    fun incompleteSessionIsNoSession(): SessionRepositoryCustomizer<RedisSessionRepository> =
+        SessionRepositoryCustomizer { repository ->
+            val mapper = RedisSessionMapper()
+            repository.setRedisSessionMapper { id, entries ->
+                try {
+                    mapper.apply(id, entries)
+                } catch (e: IllegalStateException) {
+                    null
+                }
+            }
+        }
+
     // StrictHttpFirewall only allows standard HTTP methods by default (GET, POST, PUT, DELETE,
     // PATCH, HEAD, OPTIONS, TRACE). WebDAV methods PROPFIND and REPORT must be explicitly
     // added, otherwise the firewall rejects them with HTTP 400 before any security filter runs.
@@ -109,6 +135,10 @@ class SecurityConfig(
                 // aplikację niemożliwą do zainstalowania, a na iOS bez instalacji
                 // nie ma Web Pusha w ogóle. Bez sesji zwraca nazwę produktu.
                 auth.requestMatchers("/api/v1/pwa/manifest").permitAll()
+
+                // Wejście do piaskownicy podglądu roli jednorazowym kodem - to ono zakłada sesję.
+                // Działa wyłącznie pod adresem podglądu (RolePreviewHostFilter i kontroler).
+                auth.requestMatchers(HttpMethod.POST, "/api/v1/role-preview/enter").permitAll()
 
                 auth.requestMatchers(
                     "/api/auth/**",

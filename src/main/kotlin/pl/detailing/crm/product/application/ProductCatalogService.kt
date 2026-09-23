@@ -17,6 +17,8 @@ import pl.detailing.crm.product.domain.VerificationLevel
 import pl.detailing.crm.product.infrastructure.*
 import pl.detailing.crm.shared.ConflictException
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
@@ -43,8 +45,27 @@ class ProductCatalogService(
     private val visitProductRepository: VisitProductRepository,
     private val mapper: ProductMapper,
     private val objectMapper: ObjectMapper,
-    private val resolutionService: ProductResolutionService
+    private val resolutionService: ProductResolutionService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
+
+    /**
+     * Piaskownica podglądu roli nie pisze do katalogu GLOBALNEGO: wiersz z kodem kreskowym
+     * widzą przy skanowaniu wszystkie studia, a usuwanie piaskownicy kasuje wyłącznie jej
+     * wiersze prywatne. Prywatne wpisy (bez kodu) i nakładka studia działają normalnie.
+     */
+    private fun refuseSharedCatalogWriteInSandbox(studioId: StudioId, summary: String, message: String) {
+        if (rolePreviewGuard.intercepts(studioId.value, SimulatedEffectChannel.SHARED_DATA, null, summary)) {
+            throw ConflictException(message)
+        }
+    }
+
+    private fun refuseNewSharedProductInSandbox(studioId: StudioId) = refuseSharedCatalogWriteInSandbox(
+        studioId,
+        summary = "Nowy produkt z kodem kreskowym we wspólnym katalogu produktów",
+        message = "W prawdziwym studiu produkt z kodem kreskowym trafia do wspólnego katalogu produktów " +
+            "wszystkich studiów. Podgląd roli go nie zmienia — dodaj produkt bez kodu kreskowego."
+    )
 
     // ── Lista ──
     @Transactional(readOnly = true)
@@ -153,6 +174,7 @@ class ProductCatalogService(
 
         // Bez poprawnego kodu wiersz NIE trafia do puli współdzielonej — zostaje prywatny.
         val ownerStudioId = if (gtin == null) studioId.value else null
+        if (ownerStudioId == null) refuseNewSharedProductInSandbox(studioId)
 
         // Deduplikacja: kod, a gdy go nie ma — klucz naturalny w obrębie właściciela.
         val existing = when {
@@ -224,6 +246,7 @@ class ProductCatalogService(
             adopt(studioId, userId, it.id)
             return get(studioId, it.id, canSeeCosts)
         }
+        if (gtin != null) refuseNewSharedProductInSandbox(studioId)
         val unit = UnitOfMeasure.fromCode(draft.unitOfMeasure) ?: UnitOfMeasure.PIECE
         val sizeUnit = UnitOfMeasure.fromCode(draft.packageSizeUnit) ?: unit
         val now = Instant.now()
@@ -269,6 +292,14 @@ class ProductCatalogService(
         canSeeCosts: Boolean
     ): UpdateOutcome {
         val product = loadVisible(studioId, productId)
+        if (product.ownerStudioId == null) {
+            refuseSharedCatalogWriteInSandbox(
+                studioId,
+                summary = "Zmiana danych produktu we wspólnym katalogu produktów",
+                message = "W prawdziwym studiu ta zmiana trafiłaby do wspólnego katalogu produktów wszystkich " +
+                    "studiów. Podgląd roli go nie zmienia — własną nazwę i notatkę ustawisz w danych studia."
+            )
+        }
         // Jak przy tworzeniu: wymagana jest tylko nazwa, reszta ma sensowne domyślne.
         val unit = UnitOfMeasure.fromCode(req.unitOfMeasure) ?: product.unitOfMeasure
 

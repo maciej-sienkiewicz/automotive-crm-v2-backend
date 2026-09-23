@@ -71,7 +71,8 @@ class ProvisionEmployeeAccountHandlerTest {
 
     private fun handler(properties: PasswordResetProperties = PasswordResetProperties()) = ProvisionEmployeeAccountHandler(
         employeeRepository, userRepository, roleRepository, passwordEncoder, tokenService,
-        emailProvider, auditService, properties, TransactionTemplate(NoOpTransactionManager())
+        emailProvider, auditService, properties, TransactionTemplate(NoOpTransactionManager()),
+        rolePreviewGuard = mockk(relaxed = true)
     )
 
     init {

@@ -36,6 +36,15 @@ import java.time.Duration
 @EnableCaching
 class CacheConfig {
 
+    companion object {
+        /**
+         * Prefix of every cache key in Redis. Code that reaches cache keys directly (e.g.
+         * dropping all entries of a studio by pattern) must take it from here — bumping the
+         * version only in the cache manager left such a pattern pointing at dead keys.
+         */
+        const val CACHE_KEY_PREFIX = "crm:v4:"
+    }
+
     @Bean
     @Primary
     fun cacheManager(connectionFactory: RedisConnectionFactory): RedisCacheManager {
@@ -68,7 +77,7 @@ class CacheConfig {
             )
             .serializeValuesWith(jsonSerializer)
             .disableCachingNullValues()
-            .prefixCacheNameWith("crm:v4:")
+            .prefixCacheNameWith(CACHE_KEY_PREFIX)
 
         val entitlementsConfig = defaultConfig.entryTtl(Duration.ofMinutes(5))
         val userPermissionsConfig = defaultConfig.entryTtl(Duration.ofSeconds(60))

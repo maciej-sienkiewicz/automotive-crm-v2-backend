@@ -1,5 +1,6 @@
 package pl.detailing.crm.instagram.ai.rating
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.ai.document.Document
 import org.springframework.ai.vectorstore.VectorStore
@@ -27,7 +28,8 @@ import java.util.UUID
 class GeneratedPostVectorIndexer(
     private val classificationService: InstagramPostClassificationService,
     private val vectorStore: VectorStore,
-    private val jdbcTemplate: JdbcTemplate
+    private val jdbcTemplate: JdbcTemplate,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(GeneratedPostVectorIndexer::class.java)
 
@@ -38,6 +40,8 @@ class GeneratedPostVectorIndexer(
         rating: GeneratedPostRating,
         ratingComment: String?
     ) {
+        // Piaskownica podglądu roli nie klasyfikuje postów modelem AI ani nie liczy wektorów.
+        if (rolePreviewGuard.isSandbox(studioId.value)) return
         val classification = classificationService.classify(content)
         val postLength = classificationService.determinePostLength(content)
 

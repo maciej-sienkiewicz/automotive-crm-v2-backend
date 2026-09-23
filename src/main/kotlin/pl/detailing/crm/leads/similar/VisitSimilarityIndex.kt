@@ -226,6 +226,11 @@ interface VisitIndexCandidateRepository : org.springframework.data.repository.Re
                 AND s.sourceUpdatedAt >= v.updatedAt
                 AND s.signatureVersion >= :version
           )
+          AND NOT EXISTS (
+              SELECT 1 FROM StudioEntity st
+              WHERE st.id = v.studioId
+                AND st.kind = pl.detailing.crm.studio.domain.StudioKind.ROLE_PREVIEW
+          )
         ORDER BY v.updatedAt ASC
         """
     )

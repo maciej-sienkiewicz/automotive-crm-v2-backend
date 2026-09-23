@@ -27,6 +27,8 @@ import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
 import pl.detailing.crm.voice.MobileTokenService
 import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.rolepreview.RolePreviewService
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -41,7 +43,9 @@ class AuthController(
     private val userRepository: UserRepository,
     private val mobileTokenService: MobileTokenService,
     private val permissionCheckService: PermissionCheckService,
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val rolePreviewStudios: RolePreviewStudios,
+    private val rolePreviewService: RolePreviewService
 ) {
 
     @PostMapping("/signup")
@@ -97,6 +101,9 @@ class AuthController(
         httpRequest: HttpServletRequest,
         httpResponse: HttpServletResponse
     ): ResponseEntity<UnifiedAuthResponse> {
+        // Wylogowanie z okna podglądu roli kończy piaskownicę - nie czeka na jej wygaśnięcie.
+        rolePreviewService.endIfSandbox(SecurityContextHolder.getContext().authentication as? UserPrincipal)
+
         val context = SecurityContextHolder.createEmptyContext()
         securityContextRepository.saveContext(context, httpRequest, httpResponse)
 
@@ -154,7 +161,11 @@ class AuthController(
             val subscriptionInfo = subscriptionService.getSubscriptionInfo(principal.studioId)
 
             val userEntity = userRepository.findById(principal.userId.value).orElse(null)
-            val mobileToken = userEntity?.let { mobileTokenService.ensureToken(it) }
+            // Konto piaskownicy podglądu roli nie dostaje tokenu aplikacji mobilnej: token działa
+            // poza sesją i poza adresem podglądu, a piaskownica ma być dostępna tylko z okna podglądu.
+            val mobileToken = userEntity
+                ?.takeUnless { rolePreviewStudios.isRolePreview(it.studioId) }
+                ?.let { mobileTokenService.ensureToken(it) }
             // Pracownik z zaproszenia wszedł do aplikacji - konto jest aktywowane, karta
             // pracownika przestaje pokazywać „Czeka na aktywację". Błąd zapisu nie może
             // wylogować użytkownika (każdy wyjątek niżej kończy się odpowiedzią 401).

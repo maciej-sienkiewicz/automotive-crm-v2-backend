@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.auth.PasswordPolicy
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.user.infrastructure.UserRepository
 
@@ -23,7 +24,8 @@ class ResetPasswordHandler(
     private val passwordEncoder: PasswordEncoder,
     private val passwordPolicy: PasswordPolicy,
     private val redisTemplate: StringRedisTemplate,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
     companion object {
         // Mirrors the keys used by LoginHandler so a successful reset also lifts any lockout.
@@ -48,6 +50,11 @@ class ResetPasswordHandler(
 
             val user = userRepository.findById(userId).orElse(null)
                 ?: throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
+            // Konto piaskownicy podglądu roli nie dostaje hasła - także z linku (zaproszenia
+            // wysłanego z piaskownicy, którego bezpiecznik i tak nie wypuszcza).
+            if (rolePreviewStudios.isRolePreview(user.studioId)) {
+                throw ValidationException("Link do resetowania hasła jest nieprawidłowy lub wygasł")
+            }
 
             user.passwordHash = passwordEncoder.encode(request.password)
             // Hasło ustawione z linku zaproszenia (albo resetu) - konto jest aktywowane.

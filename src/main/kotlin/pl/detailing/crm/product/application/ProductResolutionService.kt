@@ -101,6 +101,19 @@ class ProductResolutionService(
         }
     }
 
+    /**
+     * Sam krok 1 — nasz katalog, bez sieci i bez negatywnego cache. Dla piaskownicy podglądu
+     * roli: ta nie pyta zewnętrznych usług, a jej „nie znaleziono" nie może oznaczyć kodu
+     * jako nieznanego dla prawdziwych studiów.
+     *
+     * @throws ValidationException gdy suma kontrolna kodu jest błędna — jak [resolve].
+     */
+    suspend fun resolveLocally(barcode: String): ProductResolution {
+        val gtin = Gtin.parse(barcode)
+        return localHit(gtin)?.let { ProductResolution.found(it, fromLocalCatalog = true) }
+            ?: ProductResolution.notFound(gtin)
+    }
+
     // Awaria jednego kroku nie wywraca rozpoznania — idziemy dalej z pustym wynikiem.
     private suspend fun localHit(gtin: Gtin): ProductLookupResult? = try {
         local.findByGtin(gtin)

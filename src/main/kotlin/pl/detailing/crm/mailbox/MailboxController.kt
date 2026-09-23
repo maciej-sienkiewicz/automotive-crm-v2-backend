@@ -36,7 +36,8 @@ class MailboxController(
      */
     @PostMapping("/accounts/detect")
     fun detectProvider(@RequestBody request: DetectProviderRequest): ResponseEntity<DetectProviderResponse> {
-        val detection = mailAccountService.detect(DetectMailProviderQuery(request.email))
+        val principal = SecurityContextHelper.getCurrentUser()
+        val detection = mailAccountService.detect(DetectMailProviderQuery(request.email, principal.studioId))
         return ResponseEntity.ok(detection.toResponse())
     }
 

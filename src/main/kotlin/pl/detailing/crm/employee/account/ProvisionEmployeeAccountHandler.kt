@@ -1,5 +1,8 @@
 package pl.detailing.crm.employee.account
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.email.provider.EmailDeliveryResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -29,7 +32,8 @@ class ProvisionEmployeeAccountHandler(
     private val emailProvider: EmailProvider,
     private val auditService: AuditService,
     private val properties: PasswordResetProperties,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -87,16 +91,25 @@ class ProvisionEmployeeAccountHandler(
 
         // Delivery is best-effort and deliberately outside the transaction: a bounced
         // invitation must not undo an account that exists, and the link can be re-sent.
-        val emailResult = emailProvider.send(
-            to = email,
-            subject = EmployeeInvitationEmail.SUBJECT,
-            bodyText = EmployeeInvitationEmail.body(
-                firstName = employeeEntity.firstName,
-                invitedByName = command.requestedByName,
-                setupLink = EmployeeInvitationEmail.setupLink(properties, rawToken),
-                validFor = EmployeeInvitationEmail.hoursInPolish(properties.invitationTokenTtlHours)
+        // W piaskownicy podglądu roli zaproszenie nie wychodzi - panel podglądu pokazuje, że by wyszło.
+        val emailResult = if (rolePreviewGuard.intercepts(
+                command.studioId.value, SimulatedEffectChannel.EMAIL, email,
+                "Zaproszenie do konta dla ${employeeEntity.firstName} ${employeeEntity.lastName}"
             )
-        )
+        ) {
+            EmailDeliveryResult.success("role-preview")
+        } else {
+            emailProvider.send(
+                to = email,
+                subject = EmployeeInvitationEmail.SUBJECT,
+                bodyText = EmployeeInvitationEmail.body(
+                    firstName = employeeEntity.firstName,
+                    invitedByName = command.requestedByName,
+                    setupLink = EmployeeInvitationEmail.setupLink(properties, rawToken),
+                    validFor = EmployeeInvitationEmail.hoursInPolish(properties.invitationTokenTtlHours)
+                )
+            )
+        }
 
         if (emailResult.success) {
             // Godzina wysyłki tylko przy udanej wysyłce: karta pracownika pokazuje wtedy,

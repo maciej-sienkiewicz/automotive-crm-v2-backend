@@ -1,5 +1,6 @@
 package pl.detailing.crm.carddav
 
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -24,7 +25,7 @@ class CardDavBruteForceTest {
     private val appPasswords = mockk<CardDavAppPasswordRepository>()
     private val encoder = mockk<PasswordEncoder>()
     private val lockout = mockk<AccountLockoutService>(relaxed = true)
-    private val provider = CardDavAuthenticationProvider(userRepository, appPasswords, encoder, lockout)
+    private val provider = CardDavAuthenticationProvider(userRepository, appPasswords, encoder, lockout, regularStudios())
 
     private val user = UserEntity(
         id = UUID.randomUUID(), studioId = UUID.randomUUID(), email = "owner@studio.pl", phoneNumber = "",
@@ -66,3 +67,7 @@ class CardDavBruteForceTest {
         verify(exactly = 1) { lockout.clear("owner@studio.pl") }
     }
 }
+
+/** Zwykłe studia - żadne nie jest piaskownicą podglądu roli. */
+private fun regularStudios(): RolePreviewStudios =
+    mockk { every { isRolePreview(any()) } returns false }

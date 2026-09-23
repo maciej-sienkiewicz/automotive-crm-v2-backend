@@ -12,6 +12,7 @@ import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.protocol.template.DefaultProtocolTemplateProvisioner
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.studio.domain.StudioKind
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.user.infrastructure.UserEntity
@@ -60,7 +61,8 @@ class DemoAccountService(
             subscriptionEndsAt = null,
             trialUsed = true,
             createdAt = now,
-            emailAlias = UUID.randomUUID().toString().replace("-", "").take(32)
+            emailAlias = UUID.randomUUID().toString().replace("-", "").take(32),
+            kind = StudioKind.DEMO
         )
         studioRepository.save(studioEntity)
 

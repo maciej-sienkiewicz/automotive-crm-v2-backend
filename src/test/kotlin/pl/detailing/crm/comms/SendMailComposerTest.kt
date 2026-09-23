@@ -97,7 +97,7 @@ class OutgoingAttachmentPolicyTest {
 
 class AccountMailSenderComposeTest {
 
-    private val sender = AccountMailSender(mockk<MailboxEncryptionService>())
+    private val sender = AccountMailSender(mockk<MailboxEncryptionService>(), mockk(relaxed = true))
 
     private val account = MailAccountEntity(
         id = UUID.randomUUID(),

@@ -1,6 +1,7 @@
 package pl.detailing.crm.communication
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -61,7 +62,7 @@ class OutboundCommunicationGatewaySendWindowTest {
         smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver, capabilityService,
         SimpleMeterRegistry(), mockk<BusinessEventPublisher>(relaxed = true), redirectService,
         RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
-        SendWindow.DEFAULT, queue, Clock.fixed(now, SendWindow.DEFAULT.zone)
+        SendWindow.DEFAULT, queue, noRolePreview(), Clock.fixed(now, SendWindow.DEFAULT.zone)
     )
 
     private fun stubEnqueue(): Pair<UUID, io.mockk.CapturingSlot<OutboundMessageDraft>> {
@@ -300,7 +301,7 @@ class OutboundCommunicationGatewaySendWindowTest {
             smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver, capabilityService,
             SimpleMeterRegistry(), mockk<BusinessEventPublisher>(relaxed = true), redirectService,
             RecipientWhitelist(RecipientWhitelistProperties(enabled = true, phones = listOf("+48111222333"))),
-            SendWindow.DEFAULT, queue, Clock.fixed(warsaw(12, 0), SendWindow.DEFAULT.zone)
+            SendWindow.DEFAULT, queue, noRolePreview(), Clock.fixed(warsaw(12, 0), SendWindow.DEFAULT.zone)
         )
         val entity = OutboundMessageEntity(
             id = UUID.randomUUID(), studioId = studioId, customerId = null, channel = CommunicationChannel.SMS,
@@ -338,7 +339,7 @@ class OutboundCommunicationGatewaySendWindowTest {
             smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver, capabilityService,
             SimpleMeterRegistry(), events, redirectService,
             RecipientWhitelist(RecipientWhitelistProperties(enabled = false)),
-            SendWindow.DEFAULT, queue, Clock.fixed(warsaw(21, 0), SendWindow.DEFAULT.zone)
+            SendWindow.DEFAULT, queue, noRolePreview(), Clock.fixed(warsaw(21, 0), SendWindow.DEFAULT.zone)
         )
 
         gateway.sendSms(customerId, studioId, "+48600700800", "Auto gotowe")
@@ -362,3 +363,7 @@ class OutboundCommunicationGatewaySendWindowTest {
         assertFalse(outcome.retryable)
     }
 }
+
+/** Zwykłe studio: bezpiecznik piaskownicy podglądu roli niczego nie zatrzymuje. */
+private fun noRolePreview(): RolePreviewOutboundGuard =
+    mockk { every { intercepts(any(), any(), any(), any()) } returns false }

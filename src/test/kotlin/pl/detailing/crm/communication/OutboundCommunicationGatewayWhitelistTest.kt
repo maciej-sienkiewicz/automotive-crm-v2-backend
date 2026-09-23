@@ -1,6 +1,7 @@
 package pl.detailing.crm.communication
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -55,7 +56,7 @@ class OutboundCommunicationGatewayWhitelistTest {
     private fun gateway(whitelist: RecipientWhitelist) = OutboundCommunicationGateway(
         smsProvider, emailProvider, consentChecker, smsCreditService, senderNameResolver,
         capabilityService, meterRegistry, mockk<BusinessEventPublisher>(relaxed = true), redirectService, whitelist,
-        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>()
+        SendWindow.ALWAYS_OPEN, mockk<OutboundMessageQueue>(), noRolePreview()
     )
 
     private fun inForce(phones: List<String> = listOf(listedPhone), emails: List<String> = listOf(listedEmail)) =
@@ -265,3 +266,7 @@ class OutboundCommunicationGatewayWhitelistTest {
         }
     }
 }
+
+/** Zwykłe studio: bezpiecznik piaskownicy podglądu roli niczego nie zatrzymuje. */
+private fun noRolePreview(): RolePreviewOutboundGuard =
+    mockk { every { intercepts(any(), any(), any(), any()) } returns false }

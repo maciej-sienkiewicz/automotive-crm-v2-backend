@@ -16,6 +16,8 @@ import pl.detailing.crm.product.notes.NoteDto
 import pl.detailing.crm.product.notes.ProductNoteService
 import pl.detailing.crm.product.rating.ProductRatingService
 import pl.detailing.crm.role.domain.Permission
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.Pagination
@@ -39,7 +41,8 @@ class ProductController(
     private val barcodeImageExtractionService: BarcodeImageExtractionService,
     private val noteService: ProductNoteService,
     private val ratingService: ProductRatingService,
-    private val permissionCheckService: PermissionCheckService
+    private val permissionCheckService: PermissionCheckService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private fun canSeeCosts(): Boolean {
         val p = SecurityContextHelper.getCurrentUser()
@@ -105,7 +108,20 @@ class ProductController(
     @RequiresPermission(Permission.PRODUCTS_MANAGE)
     fun lookup(@RequestBody req: LookupRequest): ResponseEntity<LookupResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
-        val resolution = resolutionService.resolve(req.barcode)
+        // Piaskownica podglądu roli szuka tylko w naszym katalogu - do sieci (wyszukiwarka AI)
+        // nie pyta. Brak w katalogu zapisujemy w panelu podglądu jako „system szukałby w sieci".
+        val resolution = if (rolePreviewGuard.isSandbox(principal.studioId.value)) {
+            resolutionService.resolveLocally(req.barcode).also {
+                if (it.status == ProductResolution.Status.NOT_FOUND) {
+                    rolePreviewGuard.intercepts(
+                        principal.studioId.value, SimulatedEffectChannel.WEB_SEARCH, null,
+                        "Wyszukanie w sieci produktu o kodzie ${req.barcode.trim()}"
+                    )
+                }
+            }
+        } else {
+            resolutionService.resolve(req.barcode)
+        }
         val response = when (resolution.status) {
             ProductResolution.Status.FOUND_LOCAL -> {
                 // Produkt siedzi w cache — oddaj pełną kartę i zapisz, że to studio też go ma.
@@ -155,6 +171,10 @@ class ProductController(
     @PostMapping("/barcode/extract", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     @RequiresPermission(Permission.PRODUCTS_MANAGE)
     fun extractBarcode(@RequestParam("image") image: MultipartFile): ResponseEntity<BarcodeExtractResponse> = runBlocking {
+        rolePreviewGuard.requireOutsideSandbox(
+            SecurityContextHelper.getCurrentUser().studioId.value, SimulatedEffectChannel.AI,
+            "zdjęcie trafiłoby do modelu AI, który odczytałby z niego kod kreskowy"
+        )
         if (image.isEmpty || image.size > MAX_BARCODE_IMAGE_BYTES) {
             return@runBlocking ResponseEntity.badRequest().body(BarcodeExtractResponse(null))
         }

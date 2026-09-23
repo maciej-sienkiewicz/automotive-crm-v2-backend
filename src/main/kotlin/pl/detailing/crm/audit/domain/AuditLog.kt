@@ -348,6 +348,10 @@ enum class AuditAction(
     LOGIN_SUCCESS("Zalogowanie", "Zalogowano się", AuditIcon.SECURITY, AuditSeverity.LOW),
     ACCOUNT_LOCKED("Zablokowanie konta", "Zablokowano konto", AuditIcon.SECURITY, AuditSeverity.CRITICAL),
 
+    // ── Podgląd roli (piaskownica z danymi przykładowymi) ───────────────────
+    ROLE_PREVIEW_STARTED("Otwarcie podglądu roli", "Otwarto podgląd roli", AuditIcon.VIEW),
+    ROLE_PREVIEW_ENDED("Zakończenie podglądu roli", "Zakończono podgląd roli", AuditIcon.VIEW, AuditSeverity.LOW),
+
     // ── Account reset (factory wipe) ────────────────────────────────────────
     ACCOUNT_RESET_STARTED("Zlecenie wyczyszczenia konta", "Zlecono wyczyszczenie konta", AuditIcon.SECURITY, AuditSeverity.CRITICAL),
     ACCOUNT_RESET_COMPLETED("Wyczyszczenie konta", "Wyczyszczono konto", AuditIcon.DELETE, AuditSeverity.CRITICAL),

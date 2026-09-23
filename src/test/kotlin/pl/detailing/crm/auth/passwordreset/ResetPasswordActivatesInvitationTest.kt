@@ -1,5 +1,6 @@
 package pl.detailing.crm.auth.passwordreset
 
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -52,10 +53,14 @@ class ResetPasswordActivatesInvitationTest {
 
         ResetPasswordHandler(
             userRepository, tokenService, passwordEncoder, mockk<PasswordPolicy>(relaxed = true),
-            redisTemplate, TransactionTemplate(ImmediateTransactionManager())
+            redisTemplate, TransactionTemplate(ImmediateTransactionManager()), regularStudios()
         ).handle(ResetPasswordRequest(token = "INVITE", password = "Haslo123!", confirmPassword = "Haslo123!"))
 
         assertEquals("bcrypt", saved.captured.passwordHash)
         assertFalse(saved.captured.invitationPending)
     }
 }
+
+/** Zwykłe studia - żadne nie jest piaskownicą podglądu roli. */
+private fun regularStudios(): RolePreviewStudios =
+    mockk { every { isRolePreview(any()) } returns false }

@@ -1,5 +1,7 @@
 package pl.detailing.crm.smscampaigns.sendername
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -28,7 +30,8 @@ import java.time.format.DateTimeFormatter
 class SmsAuthorizationNotifier(
     private val emailProvider: EmailProvider,
     private val studioRepository: StudioRepository,
-    @Value("\${support.report.recipient-email}") private val recipientEmail: String
+    @Value("\${support.report.recipient-email}") private val recipientEmail: String,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -52,6 +55,13 @@ class SmsAuthorizationNotifier(
         fileBytes: ByteArray,
         contentType: String
     ) {
+        // Upoważnienie złożone w oknie podglądu roli nie trafia do supportu.
+        if (rolePreviewGuard.intercepts(
+                principal.studioId.value, SimulatedEffectChannel.EMAIL, recipientEmail,
+                "Upoważnienie nadawcy SMS „${senderName ?: "brak nazwy"}\" do weryfikacji w DetailBoost"
+            )
+        ) return
+
         val studioName = studioRepository.findByStudioId(principal.studioId.value)?.name ?: "(nieznane studio)"
 
         val body = buildString {

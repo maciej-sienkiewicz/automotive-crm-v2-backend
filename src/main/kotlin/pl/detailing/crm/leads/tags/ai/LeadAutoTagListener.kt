@@ -1,5 +1,6 @@
 package pl.detailing.crm.leads.tags.ai
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -43,7 +44,8 @@ class LeadAutoTagListener(
     private val tagCatalog: LeadTagCatalogService,
     private val suggestionService: LeadTagSuggestionService,
     private val eventPublisher: ApplicationEventPublisher,
-    @Value("\${crm.ai.lead-tags.enabled:true}") private val enabled: Boolean
+    @Value("\${crm.ai.lead-tags.enabled:true}") private val enabled: Boolean,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -56,6 +58,8 @@ class LeadAutoTagListener(
         if (!enabled) return
 
         val lead = leadRepository.findById(event.leadId.value).orElse(null) ?: return
+        // Piaskownica podglądu roli nie pyta modelu AI o tagi.
+        if (rolePreviewGuard.isSandbox(lead.studioId)) return
 
         // Tagi wybrane w oknie tworzenia leada są decyzją człowieka — kończymy.
         if (tagService.tagsOf(lead.id).isNotEmpty()) return

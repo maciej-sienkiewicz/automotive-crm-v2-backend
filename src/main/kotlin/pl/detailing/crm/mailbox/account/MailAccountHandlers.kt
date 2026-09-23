@@ -1,5 +1,7 @@
 package pl.detailing.crm.mailbox.account
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import jakarta.mail.AuthenticationFailedException
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +27,11 @@ import java.util.UUID
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
 
-data class DetectMailProviderQuery(val email: String)
+data class DetectMailProviderQuery(
+    val email: String,
+    /** Studio pytającego - piaskownica podglądu roli nie sonduje cudzych serwerów pocztowych. */
+    val studioId: StudioId? = null
+)
 
 data class ConnectMailAccountCommand(
     val studioId: StudioId,
@@ -51,15 +57,25 @@ class MailAccountService(
     private val autodiscoverService: MailAutodiscoverService,
     private val encryptionService: MailboxEncryptionService,
     private val eventPublisher: ApplicationEventPublisher,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun detect(query: DetectMailProviderQuery): MailProviderDetection =
-        autodiscoverService.detect(query.email.trim())
+    fun detect(query: DetectMailProviderQuery): MailProviderDetection {
+        rolePreviewGuard.requireOutsideSandbox(
+            query.studioId?.value, SimulatedEffectChannel.MAILBOX, "sprawdzenie ustawień skrzynki ${query.email.trim()}"
+        )
+        return autodiscoverService.detect(query.email.trim())
+    }
 
     @Transactional
     suspend fun connect(command: ConnectMailAccountCommand): MailAccountEntity = withContext(Dispatchers.IO) {
+        // Piaskownica podglądu roli nie łączy się z żadną skrzynką: podłączona skrzynka
+        // ściągałaby do piaskownicy prawdziwą pocztę i wysyłała z niej wiadomości.
+        rolePreviewGuard.requireOutsideSandbox(
+            command.studioId.value, SimulatedEffectChannel.MAILBOX, "podłączenie skrzynki ${command.email.trim()}"
+        )
         val email = command.email.trim().lowercase()
         if (!email.contains('@')) throw ValidationException("Podaj poprawny adres e-mail")
 

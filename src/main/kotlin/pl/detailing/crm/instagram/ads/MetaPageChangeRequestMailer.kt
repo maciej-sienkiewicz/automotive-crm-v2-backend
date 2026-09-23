@@ -1,5 +1,7 @@
 package pl.detailing.crm.instagram.ads
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -37,7 +39,8 @@ class MetaPageChangeRequestMailer(
     private val emailProvider: EmailProvider,
     private val studioRepository: StudioRepository,
     private val studioProfileRepository: StudioInstagramProfileRepository,
-    @Value("\${support.report.recipient-email}") private val recipientEmail: String
+    @Value("\${support.report.recipient-email}") private val recipientEmail: String,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -65,6 +68,13 @@ class MetaPageChangeRequestMailer(
         profile: InstagramProfileEntity,
         newPageId: String?
     ): Boolean {
+        // Zgłoszenie z okna podglądu roli nie trafia do administratora platformy.
+        if (rolePreviewGuard.intercepts(
+                requestedBy.studioId.value, SimulatedEffectChannel.EMAIL, recipientEmail,
+                "Prośba o zmianę strony Facebooka dla @${profile.username}"
+            )
+        ) return true
+
         val key = "${requestedBy.studioId.value}:${profile.id}:${newPageId ?: "-"}"
         val now = Instant.now()
         val previous = lastRequestAt.put(key, now)

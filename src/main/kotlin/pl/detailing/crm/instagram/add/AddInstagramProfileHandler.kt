@@ -11,6 +11,8 @@ import java.time.Instant
 import java.util.*
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 
 data class AddInstagramProfileResult(
     val studioProfileId: StudioInstagramProfileId,
@@ -23,7 +25,8 @@ data class AddInstagramProfileResult(
 class AddInstagramProfileHandler(
     private val profileRepository: InstagramProfileRepository,
     private val studioProfileRepository: StudioInstagramProfileRepository,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     /** Dopuszczalne znaki w nazwie użytkownika Instagram: litery, cyfry, _ i . */
@@ -39,6 +42,13 @@ class AddInstagramProfileHandler(
                 "Dozwolone znaki: litery, cyfry, _ i . (maks. 30 znaków)."
             )
         }
+
+        // Profil jest wierszem wspólnym dla wszystkich studiów, a obserwowany profil pobiera
+        // posty z zewnętrznego API - piaskownica podglądu roli nie robi żadnej z tych rzeczy.
+        rolePreviewGuard.requireOutsideSandbox(
+            command.studioId.value, SimulatedEffectChannel.INSTAGRAM,
+            "profil @$normalised trafiłby do obserwowanych, a system zacząłby pobierać jego posty z Instagrama"
+        )
 
         // Kont prywatnych nie monitorujemy (decyzja prawna – analizujemy wyłącznie
         // publiczną działalność marketingową firm)

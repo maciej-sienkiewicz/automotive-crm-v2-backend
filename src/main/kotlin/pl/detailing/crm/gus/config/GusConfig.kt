@@ -1,5 +1,6 @@
 package pl.detailing.crm.gus.config
 
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import io.github.resilience4j.retry.Retry
@@ -105,7 +106,8 @@ class GusConfig {
     )
 
     @Bean
-    fun gusCompanyService(provider: CompanyDataProvider) = GusCompanyService(provider)
+    fun gusCompanyService(provider: CompanyDataProvider, rolePreviewGuard: RolePreviewOutboundGuard) =
+        GusCompanyService(provider, rolePreviewGuard)
 
     // ─── Cache (Redis) ────────────────────────────────────────────────────────
 

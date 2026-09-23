@@ -5,6 +5,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import pl.detailing.crm.livemetrics.domain.BusinessEvent
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 
@@ -23,12 +24,16 @@ import java.time.Instant
  */
 @Component
 class BusinessEventPublisher(
-    private val applicationEventPublisher: ApplicationEventPublisher
+    private val applicationEventPublisher: ApplicationEventPublisher,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
     private val log = LoggerFactory.getLogger(BusinessEventPublisher::class.java)
 
     fun publish(event: BusinessEvent) {
         try {
+            // Piaskownica podglądu roli nie jest klientem: to, co ktoś w niej przeklika,
+            // nie trafia do metryk platformy.
+            if (rolePreviewStudios.isRolePreview(event.tenantId.value)) return
             applicationEventPublisher.publishEvent(event)
         } catch (e: Exception) {
             log.warn("[LIVE-METRICS] Dropped {} for tenant {}: {}", event.type, event.tenantId.value, e.toString())

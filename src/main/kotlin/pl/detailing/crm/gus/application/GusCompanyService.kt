@@ -1,5 +1,8 @@
 package pl.detailing.crm.gus.application
 
+import java.util.UUID
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.cache.annotation.Cacheable
@@ -20,7 +23,8 @@ import java.time.Instant
  * Całą komunikację deleguje do [CompanyDataProvider].
  */
 open class GusCompanyService(
-    private val companyDataProvider: CompanyDataProvider
+    private val companyDataProvider: CompanyDataProvider,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -32,6 +36,12 @@ open class GusCompanyService(
     open fun getCompanyByNip(nip: String, requestedByStudioId: String): CompanyInfo {
         val normalizedNip = nip.replace("-", "").trim()
         validateNip(normalizedNip)
+        // Piaskownica podglądu roli nie pyta GUS (wynik z pamięci podręcznej wraca bez tego pytania).
+        rolePreviewGuard.requireOutsideSandbox(
+            runCatching { UUID.fromString(requestedByStudioId) }.getOrNull(),
+            SimulatedEffectChannel.COMPANY_REGISTRY,
+            "zapytanie do rejestru GUS o firmę z NIP $normalizedNip"
+        )
 
         val start = Instant.now()
 

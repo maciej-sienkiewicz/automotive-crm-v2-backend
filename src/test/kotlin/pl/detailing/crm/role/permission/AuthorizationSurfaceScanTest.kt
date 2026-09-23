@@ -7,6 +7,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.core.type.filter.AnnotationTypeFilter
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import pl.detailing.crm.rolepreview.RequiresRolePreviewSession
 import java.lang.reflect.Method
 import org.junit.jupiter.api.Assertions.fail
 
@@ -14,8 +15,10 @@ import org.junit.jupiter.api.Assertions.fail
  * Fail-closed guarantee for the whole REST surface.
  *
  * Every handler method of every `@RestController` must resolve to an authorization
- * declaration: `@RequiresPermission` or `@RequiresOwner` (method- or class-level) — or be
- * explicitly listed here with a justification. A new controller added without a gate and
+ * declaration: `@RequiresPermission` or `@RequiresOwner` (method- or class-level), or
+ * `@RequiresRolePreviewSession` for the role-preview window (only the sandbox employee's own
+ * session gets through; every other session gets 404) — or be explicitly listed here with
+ * a justification. A new controller added without a gate and
  * without a conscious allowlist entry fails the build.
  *
  * This mirrors the approach of PiiResponseSurfaceScanTest: the security property is
@@ -46,6 +49,7 @@ class AuthorizationSurfaceScanTest {
         "PublicUserSignatureController" to ALL_METHODS,   // opaque URL token
         "PublicVisitCardController" to ALL_METHODS,       // opaque URL token
         "PublicBrandingController" to ALL_METHODS,        // logo studia pod adresem z hashem treści (permitAll)
+        "RolePreviewSandboxController" to setOf("enter"), // jednorazowy kod wejścia do podglądu roli (permitAll), tylko pod adresem podglądu
         // TOKEN — Redis-token authenticated device flows
         "TabletSignatureController" to ALL_METHODS,       // X-Tablet-Token
         "MobileUploadController" to ALL_METHODS,          // X-Upload-Token
@@ -101,14 +105,16 @@ class AuthorizationSurfaceScanTest {
                 if (allowedMethods != null) staleAllowlist.remove(controller.simpleName)
 
                 val classGated = controller.isAnnotationPresent(RequiresPermission::class.java) ||
-                    controller.isAnnotationPresent(RequiresOwner::class.java)
+                    controller.isAnnotationPresent(RequiresOwner::class.java) ||
+                    controller.isAnnotationPresent(RequiresRolePreviewSession::class.java)
 
                 controller.declaredMethods
                     .filter { it.isHandlerMethod() }
                     .forEach { method ->
                         val gated = classGated ||
                             method.isAnnotationPresent(RequiresPermission::class.java) ||
-                            method.isAnnotationPresent(RequiresOwner::class.java)
+                            method.isAnnotationPresent(RequiresOwner::class.java) ||
+                            method.isAnnotationPresent(RequiresRolePreviewSession::class.java)
                         val allowlisted = allowedMethods === ALL_METHODS ||
                             allowedMethods?.contains(method.name) == true
 

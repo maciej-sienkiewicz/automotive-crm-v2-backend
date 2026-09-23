@@ -9,6 +9,8 @@ import org.springframework.web.multipart.MultipartFile
 import pl.detailing.crm.auth.SecurityContextHelper
 import pl.detailing.crm.product.MAX_BARCODE_IMAGE_BYTES
 import pl.detailing.crm.product.adapter.ai.BarcodeImageExtractionService
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.role.permission.RequiresPermission
@@ -59,7 +61,8 @@ class ProductScanController(
 @RequestMapping("/api/mobile/products/scan")
 class MobileProductScanController(
     private val scanSessionService: ProductScanSessionService,
-    private val barcodeImageExtractionService: BarcodeImageExtractionService
+    private val barcodeImageExtractionService: BarcodeImageExtractionService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     @GetMapping("/{handoffToken}")
     fun context(@PathVariable handoffToken: String): ResponseEntity<MobileScanContext> {
@@ -106,6 +109,10 @@ class MobileProductScanController(
         }
         val contentType = image.contentType?.takeIf { it.startsWith("image/") }
             ?: throw ValidationException("Oczekiwano pliku obrazu.")
+        rolePreviewGuard.requireOutsideSandbox(
+            runCatching { java.util.UUID.fromString(session.studioId) }.getOrNull(), SimulatedEffectChannel.AI,
+            "zdjęcie trafiłoby do modelu AI, który odczytałby z niego kod kreskowy"
+        )
 
         val gtin = barcodeImageExtractionService.extractGtin(image.bytes, contentType)
         val updated = if (gtin != null) scanSessionService.submitCodes(handoffToken, listOf(gtin.value)) else session

@@ -14,6 +14,7 @@ import pl.detailing.crm.leads.tags.LeadTagCatalogService
 import pl.detailing.crm.leads.update.LeadStatusService
 import pl.detailing.crm.leads.update.LeadTagService
 import pl.detailing.crm.leads.vehicle.LeadTextAttachedEvent
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import pl.detailing.crm.shared.LeadId
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.LeadStatus
@@ -52,7 +53,8 @@ class HandleFormSubmissionHandler(
     private val tagCatalog: LeadTagCatalogService,
     private val soleUserResolver: SoleUserResolver,
     private val catalogMatcher: VehicleCatalogMatcher,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -62,6 +64,11 @@ class HandleFormSubmissionHandler(
         form: MappedForm,
         defaultTagCodes: List<String>
     ): FormSubmissionResult {
+        // Formularz założony w piaskownicy podglądu roli nie przyjmuje zgłoszeń z zewnątrz:
+        // piaskownica jest zamknięta od świata w obie strony.
+        if (rolePreviewGuard.isSandbox(webhook.studioId)) {
+            return FormSubmissionResult.Rejected("Formularz należy do podglądu roli — zgłoszenia z zewnątrz nie są przyjmowane")
+        }
         val studioId = StudioId(webhook.studioId)
         val email = form[LeadFormField.EMAIL]?.trim()?.lowercase()?.takeIf { it.contains('@') }
         val phone = form[LeadFormField.PHONE]?.trim()?.takeIf { it.any(Char::isDigit) }

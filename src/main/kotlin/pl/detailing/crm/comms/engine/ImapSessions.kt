@@ -1,5 +1,7 @@
 package pl.detailing.crm.comms.engine
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import jakarta.mail.Folder
 import jakarta.mail.Session
 import jakarta.mail.Store
@@ -19,10 +21,16 @@ import java.util.Properties
  */
 @Service
 class ImapSessions(
-    private val encryptionService: MailboxEncryptionService
+    private val encryptionService: MailboxEncryptionService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     fun openStore(account: MailAccountEntity, forIdle: Boolean = false): Store {
+        // Druga linia za blokadą podłączania skrzynek: piaskownica podglądu roli nie łączy
+        // się z żadnym serwerem pocztowym - ani do synchronizacji, ani do IDLE, ani do zapisu.
+        rolePreviewGuard.requireOutsideSandbox(
+            account.studioId, SimulatedEffectChannel.MAILBOX, "połączenie ze skrzynką ${account.emailAddress}"
+        )
         val host = account.imapHost?.takeIf { it.isNotBlank() }
             ?: throw ValidationException("Skrzynka ${account.emailAddress} nie ma skonfigurowanego serwera IMAP")
         val port = account.imapPort ?: DEFAULT_IMAPS_PORT

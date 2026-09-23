@@ -1,5 +1,7 @@
 package pl.detailing.crm.smscampaigns.reminder
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -36,10 +38,14 @@ data class GenerateSmsContentResult(
 class GenerateSmsContentHandler(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
-    private val generator: SmsContentGeneratorService
+    private val generator: SmsContentGeneratorService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: GenerateSmsContentCommand): GenerateSmsContentResult {
+        rolePreviewGuard.requireOutsideSandbox(
+            command.studioId.value, SimulatedEffectChannel.AI, "napisanie treści SMS przez asystenta AI"
+        )
         val visitEntity = visitRepository.findByIdAndStudioId(
             id = command.visitId.value,
             studioId = command.studioId.value

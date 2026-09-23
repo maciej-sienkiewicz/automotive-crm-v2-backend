@@ -1,5 +1,7 @@
 package pl.detailing.crm.comms.api
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import pl.detailing.crm.shared.pii.Pii
 import kotlinx.coroutines.runBlocking
 import org.springframework.data.domain.PageRequest
@@ -119,7 +121,8 @@ class CommsController(
     private val attachmentRepository: CommAttachmentRepository,
     private val accountRepository: MailAccountRepository,
     private val syncEngine: ImapSyncEngine,
-    private val syncProgressRegistry: SyncProgressRegistry
+    private val syncProgressRegistry: SyncProgressRegistry,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     @GetMapping("/accounts")
@@ -273,7 +276,10 @@ class CommsController(
      */
     @PostMapping("/proofread")
     fun proofread(@RequestBody request: ProofreadRequest): ResponseEntity<ProofreadResponse> = runBlocking {
-        SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.AI, "korekta językowa wiadomości przez asystenta AI"
+        )
         ResponseEntity.ok(
             ProofreadResponse(
                 proofreadService.proofread(request.text, html = request.format.equals("html", ignoreCase = true))

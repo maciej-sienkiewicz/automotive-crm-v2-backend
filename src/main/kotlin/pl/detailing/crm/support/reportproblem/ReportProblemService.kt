@@ -1,5 +1,7 @@
 package pl.detailing.crm.support.reportproblem
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -20,11 +22,19 @@ import java.time.format.DateTimeFormatter
 class ReportProblemService(
     private val emailProvider: EmailProvider,
     private val studioRepository: StudioRepository,
-    @Value("\${support.report.recipient-email}") private val recipientEmail: String
+    @Value("\${support.report.recipient-email}") private val recipientEmail: String,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     fun sendReport(reportedBy: UserPrincipal, description: String, attachments: List<MultipartFile>) {
+        // Zgłoszenie z okna podglądu roli nie trafia do supportu - podgląd niczego nie wysyła.
+        if (rolePreviewGuard.intercepts(
+                reportedBy.studioId.value, SimulatedEffectChannel.EMAIL, recipientEmail,
+                "Zgłoszenie problemu do zespołu DetailBoost"
+            )
+        ) return
+
         val studioName = studioRepository.findByStudioId(reportedBy.studioId.value)?.name ?: "(nieznane studio)"
         val timestamp = TIMESTAMP_FORMATTER.format(Instant.now())
 

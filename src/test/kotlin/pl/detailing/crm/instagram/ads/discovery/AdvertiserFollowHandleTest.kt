@@ -35,7 +35,8 @@ class AdvertiserFollowHandleTest {
 
     private val service = AdDiscoveryReadService(
         fetchService, phraseRepository, adRepository, client, instagramResolver,
-        blockService, settingsService, advertiserRepository, igLookupService, 10
+        blockService, settingsService, advertiserRepository, igLookupService, 10,
+        rolePreviewGuard = mockk(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())

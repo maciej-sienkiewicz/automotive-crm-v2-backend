@@ -9,6 +9,7 @@ import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.shared.ForbiddenException
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.UnauthorizedException
@@ -32,7 +33,8 @@ class SwitchUserViaPinHandler(
     private val subscriptionService: SubscriptionService,
     private val permissionCheckService: PermissionCheckService,
     private val studioSettingsRepository: StudioSettingsRepository,
-    private val redisTemplate: StringRedisTemplate
+    private val redisTemplate: StringRedisTemplate,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
     companion object {
         /** Okno, w którym liczą się nieudane próby; po nim licznik znika sam. */
@@ -46,6 +48,11 @@ class SwitchUserViaPinHandler(
     ): Pair<UnifiedAuthResponse, UserPrincipal> = withContext(Dispatchers.IO) {
         val user = userRepository.findByIdAndStudioId(targetUserId, studioId)
             ?: throw NotFoundException("Użytkownik nie istnieje w tym studiu")
+
+        // Piaskownica podglądu roli nie ma przełączania kont - jedyne wejście to kod podglądu.
+        if (rolePreviewStudios.isRolePreview(user.studioId)) {
+            throw ForbiddenException("Przełączanie kont nie działa w podglądzie roli")
+        }
 
         if (!user.isActive) {
             throw ForbiddenException("Konto użytkownika jest nieaktywne")

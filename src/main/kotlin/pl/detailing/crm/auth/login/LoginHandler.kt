@@ -11,6 +11,7 @@ import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.pin.pinAttemptsKey
 import pl.detailing.crm.role.permission.PermissionCheckService
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.shared.UnauthorizedException
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
@@ -25,7 +26,8 @@ class LoginHandler(
     private val meterRegistry: MeterRegistry,
     private val permissionCheckService: PermissionCheckService,
     private val studioSettingsRepository: StudioSettingsRepository,
-    private val redisTemplate: StringRedisTemplate
+    private val redisTemplate: StringRedisTemplate,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
 
     suspend fun handle(request: LoginRequest): Pair<UnifiedAuthResponse, UserPrincipal> =
@@ -40,6 +42,14 @@ class LoginHandler(
             }
 
             val userEntity = userRepository.findByEmail(email)
+
+            // Konta piaskownic podglądu roli nie logują się niczym poza jednorazowym kodem
+            // wejścia. Sprawdzenie stoi przed porównaniem hasła, więc żadne hasło go nie obejdzie.
+            if (userEntity != null && rolePreviewStudios.isRolePreview(userEntity.studioId)) {
+                recordAttempt("failure")
+                throw UnauthorizedException("Nieprawidłowy adres e-mail lub hasło")
+            }
+
             val passwordMatches = userEntity != null &&
                 passwordEncoder.matches(request.password, userEntity.passwordHash)
 

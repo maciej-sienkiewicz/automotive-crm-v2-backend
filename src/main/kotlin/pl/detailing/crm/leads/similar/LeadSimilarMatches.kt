@@ -169,7 +169,8 @@ interface LeadSimilarMatchesRepository : JpaRepository<LeadSimilarMatchesEntity,
 class LeadSimilarPrecomputeListener(
     private val handler: SimilarVisitsHandler,
     private val suggestionService: LeadServiceSuggestionService,
-    private val visionService: pl.detailing.crm.leads.similar.vision.LeadAttachmentVisionService
+    private val visionService: pl.detailing.crm.leads.similar.vision.LeadAttachmentVisionService,
+    private val rolePreviewGuard: pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -177,6 +178,8 @@ class LeadSimilarPrecomputeListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onVehicleResolved(event: LeadVehicleResolvedEvent) {
+        // Piaskownica podglądu roli nie pyta modelu AI (zdjęcia, dobór, sugestie).
+        if (rolePreviewGuard.isSandbox(event.studioId)) return
         val studioId = pl.detailing.crm.shared.StudioId(event.studioId)
         // Kolejność jest istotna trzykrotnie: fakty ze zdjęć zasilają odczyt potrzeby,
         // potrzeba zasila dobór, a sugestie czerpią ceny „wyceny niestandardowej"

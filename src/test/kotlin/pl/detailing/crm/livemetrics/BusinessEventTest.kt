@@ -57,7 +57,7 @@ class BusinessEventTest {
         val spring = mockk<ApplicationEventPublisher>()
         val captured = slot<Any>()
         every { spring.publishEvent(capture(captured)) } answers { }
-        val publisher = BusinessEventPublisher(spring)
+        val publisher = BusinessEventPublisher(spring, regularStudios())
 
         publisher.publish(tenant, BusinessEventType.SERVICE_CREATED, dimensionValue = "SERVICE", attributes = mapOf("name" to "Wosk"))
         val event = captured.captured as BusinessEvent
@@ -70,7 +70,7 @@ class BusinessEventTest {
     fun `publisher swallows invalid events and downstream failures`() {
         val spring = mockk<ApplicationEventPublisher>()
         every { spring.publishEvent(any<Any>()) } throws IllegalStateException("broker down")
-        val publisher = BusinessEventPublisher(spring)
+        val publisher = BusinessEventPublisher(spring, regularStudios())
 
         publisher.publish(tenant, BusinessEventType.VISIT_CREATED, dimensionValue = "NOPE") // invalid: not forwarded
         verify(exactly = 0) { spring.publishEvent(any<Any>()) }
@@ -79,3 +79,6 @@ class BusinessEventTest {
         verify(exactly = 1) { spring.publishEvent(any<Any>()) }
     }
 }
+
+private fun regularStudios(): pl.detailing.crm.rolepreview.RolePreviewStudios =
+    mockk { every { isRolePreview(any()) } returns false }

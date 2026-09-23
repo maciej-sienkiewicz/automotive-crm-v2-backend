@@ -1,5 +1,7 @@
 package pl.detailing.crm.instagram.ads
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.SecurityContextHelper
@@ -26,7 +28,8 @@ import java.util.UUID
 class MetaAdsController(
     private val readService: MetaAdsReadService,
     private val syncService: MetaAdsSyncService,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     /** Kalendarz roku: kto, kiedy i jak długo się reklamował. */
@@ -78,6 +81,9 @@ class MetaAdsController(
         @RequestBody request: LinkFacebookPageRequest
     ): ResponseEntity<Map<String, Any>> {
         val principal = SecurityContextHelper.getCurrentUser()
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.INSTAGRAM, "powiązanie profilu ze stroną na Facebooku i pobranie reklam z Meta"
+        )
         return when (val outcome = readService.linkFacebookPage(principal, profileId, request)) {
             is PageLinkOutcome.Rejected ->
                 ResponseEntity.badRequest().body(mapOf("status" to "REJECTED"))
@@ -109,7 +115,11 @@ class MetaAdsController(
      */
     @GetMapping("/page-search")
     fun searchPages(@RequestParam q: String): ResponseEntity<Map<String, List<PageCandidateDto>>> {
-        SecurityContextHelper.getCurrentUser()
+        val principal = SecurityContextHelper.getCurrentUser()
+        // Piaskownica podglądu roli nie odpytuje Meta - wyszukiwarka stron zwraca pustą listę.
+        if (rolePreviewGuard.intercepts(principal.studioId.value, SimulatedEffectChannel.INSTAGRAM, null, "Wyszukanie stron na Facebooku: „$q\"")) {
+            return ResponseEntity.ok(mapOf("candidates" to emptyList()))
+        }
         return ResponseEntity.ok(mapOf("candidates" to readService.searchPages(q)))
     }
 

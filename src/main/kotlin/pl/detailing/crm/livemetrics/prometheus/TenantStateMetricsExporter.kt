@@ -239,9 +239,12 @@ class TenantStateMetricsExporter(
      * `LiveMetricsStore.tenants()` zna wyłącznie tenantów, u których COŚ się wydarzyło po
      * wdrożeniu metryk — czyli pomija dokładnie tych, o których pyta dashboard adopcji:
      * studia, które niczego nie skonfigurowały i nic nie robią.
+     *
+     * Bez piaskownic podglądu roli: to nie klienci, a każda dałaby serię metryk żyjącą
+     * kilkadziesiąt minut.
      */
     private fun loadTenants(): List<Pair<UUID, Tags>> =
-        jdbc.query("SELECT id, name FROM studios") { rs, _ ->
+        jdbc.query("SELECT id, name FROM studios WHERE kind <> 'ROLE_PREVIEW'") { rs, _ ->
             val id = rs.getObject("id", UUID::class.java)
             id to Tags.of("tenant_id", id.toString(), "tenant", rs.getString("name") ?: id.toString().take(8))
         }

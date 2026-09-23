@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
@@ -29,10 +30,15 @@ class S3StudioPurgerTest {
     @Test
     fun `usuwa wszystkie obiekty spod prefiksu studia, stronami`() {
         val listRequests = mutableListOf<ListObjectsV2Request>()
-        every { s3Client.listObjectsV2(capture(listRequests)) } returnsMany listOf(
-            listing(listOf("$studioId/visits/a.jpg", "$studioId/protocols/b.pdf"), nextToken = "token-2"),
-            listing(listOf("$studioId/logo.png"))
-        )
+        every { s3Client.listObjectsV2(capture(listRequests)) } answers {
+            val request = firstArg<ListObjectsV2Request>()
+            when {
+                request.prefix() == "$studioId/" && request.continuationToken() == null ->
+                    listing(listOf("$studioId/visits/a.jpg", "$studioId/protocols/b.pdf"), nextToken = "token-2")
+                request.prefix() == "$studioId/" -> listing(listOf("$studioId/logo.png"))
+                else -> listing(emptyList())
+            }
+        }
         val deleteRequests = mutableListOf<DeleteObjectsRequest>()
         every { s3Client.deleteObjects(capture(deleteRequests)) } returns
             DeleteObjectsResponse.builder().build()
@@ -41,11 +47,39 @@ class S3StudioPurgerTest {
 
         assertEquals(3, deleted)
         // Każda strona listowania jest zawężona do prefiksu studia — nic spoza tenanta.
-        assertEquals(listOf("$studioId/", "$studioId/"), listRequests.map { it.prefix() })
-        assertEquals("token-2", listRequests[1].continuationToken())
+        assertTrue(listRequests.all { it.prefix().contains("$studioId/") })
+        assertEquals("token-2", listRequests.first { it.continuationToken() != null }.continuationToken())
         assertEquals(
             listOf(listOf("$studioId/visits/a.jpg", "$studioId/protocols/b.pdf"), listOf("$studioId/logo.png")),
             deleteRequests.map { req -> req.delete().objects().map { it.key() } }
+        )
+    }
+
+    @Test
+    fun `usuwa tez miniatury i pliki tymczasowe studia, ktore leza poza jego folderem`() {
+        val keysByPrefix = mapOf(
+            "thumbs/$studioId/" to listOf("thumbs/$studioId/visits/v/photos/p.jpg.jpg"),
+            "temp/$studioId/" to listOf("temp/$studioId/sessions/s/p.jpg"),
+            "temp/uploads/$studioId/" to listOf("temp/uploads/$studioId/c/p.jpg")
+        )
+        val listRequests = mutableListOf<ListObjectsV2Request>()
+        every { s3Client.listObjectsV2(capture(listRequests)) } answers {
+            listing(keysByPrefix[firstArg<ListObjectsV2Request>().prefix()].orEmpty())
+        }
+        val deleteRequests = mutableListOf<DeleteObjectsRequest>()
+        every { s3Client.deleteObjects(capture(deleteRequests)) } returns
+            DeleteObjectsResponse.builder().build()
+
+        val deleted = purger.purge(studioId)
+
+        assertEquals(3, deleted)
+        assertEquals(
+            listOf("$studioId/", "thumbs/$studioId/", "temp/$studioId/", "temp/uploads/$studioId/"),
+            listRequests.map { it.prefix() }
+        )
+        assertEquals(
+            keysByPrefix.values.flatten().toSet(),
+            deleteRequests.flatMap { req -> req.delete().objects().map { it.key() } }.toSet()
         )
     }
 

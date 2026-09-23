@@ -1,5 +1,7 @@
 package pl.detailing.crm.leads
 
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import kotlinx.coroutines.runBlocking
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -161,7 +163,8 @@ class LeadsController(
     private val callbackHandler: RecordLeadCallbackHandler,
     private val similarVisitsHandler: SimilarVisitsHandler,
     private val suggestionService: LeadServiceSuggestionService,
-    private val anchorOutcomeService: pl.detailing.crm.leads.similar.feedback.AnchorOutcomeService
+    private val anchorOutcomeService: pl.detailing.crm.leads.similar.feedback.AnchorOutcomeService,
+    private val rolePreviewGuard: RolePreviewOutboundGuard
 ) {
 
     @GetMapping
@@ -272,6 +275,10 @@ class LeadsController(
     @GetMapping("/{id}/similar-visits")
     fun similarVisits(@PathVariable id: String): ResponseEntity<SimilarVisitsDto> {
         val principal = SecurityContextHelper.getCurrentUser()
+        // Piaskownica podglądu roli nie pyta modelu AI o podobne zlecenia - lista jest pusta.
+        if (rolePreviewGuard.isSandbox(principal.studioId.value)) {
+            return ResponseEntity.ok(SimilarVisitsDto(emptyList(), 0))
+        }
         return ResponseEntity.ok(
             similarVisitsHandler.findFor(principal.studioId, UUID.fromString(id))
         )
@@ -285,6 +292,9 @@ class LeadsController(
     @PostMapping("/{id}/similar-visits/refresh")
     fun refreshSimilarVisits(@PathVariable id: String): ResponseEntity<SimilarVisitsDto> {
         val principal = SecurityContextHelper.getCurrentUser()
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.AI, "dobór podobnych zleceń przez asystenta AI"
+        )
         return ResponseEntity.ok(
             similarVisitsHandler.refresh(principal.studioId, UUID.fromString(id))
         )
@@ -566,6 +576,9 @@ class LeadsController(
     @PostMapping("/{id}/services/suggestions/refresh")
     fun refreshSuggestions(@PathVariable id: String): ResponseEntity<LeadDto> {
         val principal = SecurityContextHelper.getCurrentUser()
+        rolePreviewGuard.requireOutsideSandbox(
+            principal.studioId.value, SimulatedEffectChannel.AI, "podpowiedzi usług do leada od asystenta AI"
+        )
         suggestionService.recompute(principal.studioId, UUID.fromString(id), force = true)
         return ResponseEntity.ok(queryHandlers.get(principal.studioId, UUID.fromString(id)))
     }

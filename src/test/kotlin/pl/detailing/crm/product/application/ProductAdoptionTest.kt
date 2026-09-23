@@ -40,7 +40,8 @@ class ProductAdoptionTest {
         visitProductRepository = mockk(relaxed = true),
         mapper = mockk(relaxed = true),
         objectMapper = com.fasterxml.jackson.databind.ObjectMapper(),
-        resolutionService = mockk(relaxed = true)
+        resolutionService = mockk(relaxed = true),
+        rolePreviewGuard = mockk(relaxed = true)
     )
 
     @Test

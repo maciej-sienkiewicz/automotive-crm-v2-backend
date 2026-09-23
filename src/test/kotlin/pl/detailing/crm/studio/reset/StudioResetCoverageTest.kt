@@ -65,6 +65,10 @@ class StudioResetCoverageTest {
         "MetaPageIgLookupEntity" to "nazwa profilu IG strony reklamodawcy, współdzielona między studiami",
         // Infrastruktura samego resetu i kont demo.
         "DemoAccountEntity" to "rejestr kont demo prowadzi DemoCleanupJob",
+        // Podgląd roli pracuje na OSOBNYM studiu-piaskownicy, nie na danych studia, z którego
+        // go otwarto. Piaskownicę razem z jej wpisem w rejestrze usuwa RolePreviewSandboxEraser
+        // (zamknięcie podglądu albo RolePreviewCleanupJob po czasie życia), niezależnie od resetu.
+        "RolePreviewSandboxEntity" to "rejestr piaskownic podglądu roli prowadzi RolePreviewCleanupJob",
         "StudioResetJobEntity" to "przebieg resetu musi przeżyć własne wykonanie"
     )
 

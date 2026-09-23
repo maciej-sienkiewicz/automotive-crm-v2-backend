@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.email.provider.EmailProvider
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.user.infrastructure.UserRepository
 
 /**
@@ -17,7 +18,8 @@ class RequestPasswordResetHandler(
     private val userRepository: UserRepository,
     private val tokenService: PasswordResetTokenService,
     private val emailProvider: EmailProvider,
-    private val properties: PasswordResetProperties
+    private val properties: PasswordResetProperties,
+    private val rolePreviewStudios: RolePreviewStudios
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -31,6 +33,12 @@ class RequestPasswordResetHandler(
         if (userEntity == null || !userEntity.isActive) {
             // Never disclose whether the address is registered or active.
             logger.info("Password reset requested for unknown/inactive account")
+            return@withContext
+        }
+
+        // Konto piaskownicy podglądu roli nie ma hasła i nie dostaje linku do jego ustawienia.
+        if (rolePreviewStudios.isRolePreview(userEntity.studioId)) {
+            logger.info("Password reset requested for a role-preview sandbox account - ignored")
             return@withContext
         }
 

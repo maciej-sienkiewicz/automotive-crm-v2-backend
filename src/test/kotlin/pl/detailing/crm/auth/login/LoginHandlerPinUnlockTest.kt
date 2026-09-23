@@ -1,5 +1,6 @@
 package pl.detailing.crm.auth.login
 
+import pl.detailing.crm.rolepreview.RolePreviewStudios
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -42,7 +43,8 @@ class LoginHandlerPinUnlockTest {
 
     private val handler = LoginHandler(
         userRepository, passwordEncoder, subscriptionService, accountLockoutService,
-        SimpleMeterRegistry(), permissionCheckService, studioSettingsRepository, redisTemplate
+        SimpleMeterRegistry(), permissionCheckService, studioSettingsRepository, redisTemplate,
+        regularStudios()
     )
 
     private val studioId = UUID.randomUUID()
@@ -102,3 +104,7 @@ class LoginHandlerPinUnlockTest {
         verify(exactly = 0) { redisTemplate.delete(any<String>()) }
     }
 }
+
+/** Zwykłe studia - żadne nie jest piaskownicą podglądu roli. */
+private fun regularStudios(): RolePreviewStudios =
+    mockk { every { isRolePreview(any()) } returns false }

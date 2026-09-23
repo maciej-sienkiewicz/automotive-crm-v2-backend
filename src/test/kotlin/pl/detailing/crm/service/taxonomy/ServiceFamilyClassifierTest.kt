@@ -27,7 +27,7 @@ class ServiceFamilyClassifierTest {
     private val repository = mockk<ServiceFamilyRepository>()
 
     private val userMessages = mutableListOf<String>()
-    private val classifier = ServiceFamilyClassifier(chatClient, repository)
+    private val classifier = ServiceFamilyClassifier(chatClient, repository, mockk(relaxed = true))
     private val studioId = UUID.randomUUID()
 
     @BeforeEach
