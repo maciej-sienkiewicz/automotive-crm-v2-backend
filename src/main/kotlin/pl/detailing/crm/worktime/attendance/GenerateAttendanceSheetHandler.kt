@@ -9,6 +9,7 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.pdmodel.font.PDFont
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
@@ -18,9 +19,11 @@ import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.shared.pdf.LogoTrim
+import pl.detailing.crm.studio.logo.CompanyLogoService
+import pl.detailing.crm.studio.logo.DocumentLogoPlacement
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
-import pl.detailing.crm.visit.infrastructure.DocumentStorageService
 import pl.detailing.crm.worktime.formatMinutes
 import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import pl.detailing.crm.worktime.infrastructure.WorkTimeEntryRepository
@@ -56,11 +59,13 @@ class GenerateAttendanceSheetHandler(
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
     private val studioSettingsRepository: StudioSettingsRepository,
-    private val documentStorageService: DocumentStorageService,
+    private val companyLogoService: CompanyLogoService,
     private val workTimeEntryRepository: WorkTimeEntryRepository,
     private val workTimePeriodRepository: WorkTimePeriodRepository,
     private val employeeLeaveRepository: EmployeeLeaveRepository
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     companion object {
         /** Tyle kolumn mieści się na stronie, żeby liczby dało się przeczytać. */
         private const val MAX_EMPLOYEES_PER_PAGE = 7
@@ -128,9 +133,7 @@ class GenerateAttendanceSheetHandler(
         }
 
         val settings = studioSettingsRepository.findById(command.studioId.value).orElse(null)
-        val logoBytes = settings?.logoS3Key?.let { key ->
-            runCatching { documentStorageService.downloadBytes(key) }.getOrNull()
-        }
+        val logoPng = loadLogo(command.studioId)
 
         // Godziny biorą się z tych samych wpisów, które pracownik widzi w module
         // Czasu pracy — arkusz jest ich wydrukiem, a nie osobnym źródłem prawdy.
@@ -170,9 +173,21 @@ class GenerateAttendanceSheetHandler(
             period = command.period,
             columns = columns,
             studioName = settings?.name?.trim()?.ifBlank { null },
-            logoBytes = logoBytes
+            logoPng = logoPng
         )
     }
+
+    /**
+     * Logo z dokumentów studia — wariant do druku, a nie miniatura z aplikacji, i tylko
+     * wtedy, gdy studio nie wyłączyło logo na dokumentach. Tak samo jak protokoły, faktury
+     * i certyfikaty: lista obecności to jeden z dokumentów studia, nie wyjątek od nich.
+     * Brak logo nie może zablokować arkusza — arkusz bez logo to mniejsza szkoda.
+     */
+    private fun loadLogo(studioId: StudioId): ByteArray? = runCatching {
+        companyLogoService.loadDocumentLogo(studioId.value)?.printPng
+    }.onFailure {
+        logger.warn("Nie udało się wczytać logo studia na listę obecności: ${it.message}")
+    }.getOrNull()
 
     private fun hasWorkTimeModule(userId: UUID?, studioId: StudioId): Boolean {
         val user = userId?.let { userRepository.findByIdAndStudioId(it, studioId.value) } ?: return false
@@ -187,7 +202,7 @@ class GenerateAttendanceSheetHandler(
         period: YearMonth,
         columns: List<EmployeeColumn>,
         studioName: String?,
-        logoBytes: ByteArray?
+        logoPng: ByteArray?
     ): ByteArray {
         val document = PDDocument()
 
@@ -208,6 +223,10 @@ class GenerateAttendanceSheetHandler(
         val left = 30.24f
         val right = pageWidth - 29.76f
 
+        // Jeden obraz na cały dokument: każda strona rysuje ten sam obiekt, więc logo
+        // w rozdzielczości do druku trafia do pliku raz, a nie tyle razy, ile jest stron.
+        val logo = logoPng?.let { placeLogo(document, it, pageHeight) }
+
         val chunks = columns.chunked(MAX_EMPLOYEES_PER_PAGE)
         chunks.forEachIndexed { index, pageColumns ->
             val page = PDPage(PDRectangle.A4)
@@ -215,13 +234,12 @@ class GenerateAttendanceSheetHandler(
             PDPageContentStream(document, page).use { cs ->
                 drawPage(
                     cs = cs,
-                    document = document,
                     regular = regular,
                     bold = bold,
                     period = period,
                     columns = pageColumns,
                     studioName = studioName,
-                    logoBytes = logoBytes,
+                    logo = logo,
                     left = left,
                     right = right,
                     pageHeight = pageHeight,
@@ -238,15 +256,37 @@ class GenerateAttendanceSheetHandler(
         return output.toByteArray()
     }
 
+    /**
+     * Logo w nagłówku dokładnie tak jak na protokole wydania pojazdu: najpierw odcinamy
+     * niewidoczne tło wtopione w plik ([LogoTrim]) — inaczej skaluje się razem ze znakiem
+     * i znak siada w rogu kartki wielkości znaczka — a potem wpisujemy je w ten sam slot
+     * ([DocumentLogoPlacement.Slot.PROTOCOL]: do 200 × 56 pt, od 29,30 pt z lewej).
+     *
+     * Slot mieści się w nagłówku arkusza: kończy się najniżej na 70,42 pt od góry kartki,
+     * a tytuł listy zaczyna się na 90,97 pt; ramka „USŁUGODAWCA" stoi od 439,2 pt, a slot
+     * kończy się na 229,3 pt.
+     *
+     * Plik, którego nie da się osadzić, nie blokuje arkusza — lista bez logo to mniejsza
+     * szkoda niż lista, której nie da się wygenerować.
+     */
+    private fun placeLogo(document: PDDocument, logoPng: ByteArray, pageHeight: Float): PlacedLogo? = runCatching {
+        val image = PDImageXObject.createFromByteArray(document, LogoTrim.trim(logoPng), "studio-logo")
+        PlacedLogo(
+            image = image,
+            box = DocumentLogoPlacement.fit(image.width, image.height, pageHeight, DocumentLogoPlacement.Slot.PROTOCOL)
+        )
+    }.onFailure {
+        logger.warn("Nie udało się osadzić logo studia na liście obecności: ${it.message}")
+    }.getOrNull()
+
     private fun drawPage(
         cs: PDPageContentStream,
-        document: PDDocument,
         regular: PDFont,
         bold: PDFont,
         period: YearMonth,
         columns: List<EmployeeColumn>,
         studioName: String?,
-        logoBytes: ByteArray?,
+        logo: PlacedLogo?,
         left: Float,
         right: Float,
         pageHeight: Float,
@@ -260,22 +300,7 @@ class GenerateAttendanceSheetHandler(
         // ── Nagłówek: logo studia po lewej, belka USŁUGODAWCA po prawej ──────
         val providerWidth = 126.48f
         val providerX = right - providerWidth
-        if (logoBytes != null) {
-            runCatching {
-                val image = PDImageXObject.createFromByteArray(document, logoBytes, "logo")
-                val maxW = 120f
-                val maxH = 34f
-                val aspect = image.width.toFloat() / image.height
-                val drawW: Float
-                val drawH: Float
-                if (aspect > maxW / maxH) {
-                    drawW = maxW; drawH = maxW / aspect
-                } else {
-                    drawW = maxH * aspect; drawH = maxH
-                }
-                cs.drawImage(image, left, y - drawH, drawW, drawH)
-            }
-        }
+        logo?.let { cs.drawImage(it.image, it.box.x, it.box.y, it.box.width, it.box.height) }
         drawTab(cs, bold, "USŁUGODAWCA", providerX, y - 13.92f, providerWidth)
         drawBox(cs, providerX, y - 34.62f, providerWidth, 18.42f)
         drawText(cs, studioName ?: "-", regular, 7f, providerX + 2f, y - 28.5f, INK, providerWidth - 4f)
@@ -543,6 +568,9 @@ private data class EmployeeColumn(
 ) {
     val totalMinutes: Int get() = minutesByDay.values.sum()
 }
+
+/** Logo osadzone raz w dokumencie razem z miejscem, w którym staje na każdej stronie. */
+private class PlacedLogo(val image: PDImageXObject, val box: DocumentLogoPlacement.Box)
 
 data class GenerateAttendanceSheetCommand(
     val studioId: StudioId,
