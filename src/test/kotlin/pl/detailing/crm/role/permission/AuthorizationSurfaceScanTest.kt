@@ -49,6 +49,7 @@ class AuthorizationSurfaceScanTest {
         "PublicUserSignatureController" to ALL_METHODS,   // opaque URL token
         "PublicVisitCardController" to ALL_METHODS,       // opaque URL token
         "PublicBrandingController" to ALL_METHODS,        // logo studia pod adresem z hashem treści (permitAll)
+        "PublicMailSignatureController" to ALL_METHODS,   // obrazki stopek e-mail pod adresem z hashem treści (permitAll)
         "RolePreviewSandboxController" to setOf("enter"), // jednorazowy kod wejścia do podglądu roli (permitAll), tylko pod adresem podglądu
         // TOKEN — Redis-token authenticated device flows
         "TabletSignatureController" to ALL_METHODS,       // X-Tablet-Token

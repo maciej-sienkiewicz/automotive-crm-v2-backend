@@ -15,6 +15,7 @@ import pl.detailing.crm.comms.infrastructure.CommOutboxEntity
 import pl.detailing.crm.comms.infrastructure.CommOutboxRepository
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.comms.infrastructure.EmailHtmlSanitizer
+import pl.detailing.crm.comms.signature.UserMailSignature
 import pl.detailing.crm.comms.signature.UserMailSignatureService
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.mailbox.domain.MailAccountStatus
@@ -217,37 +218,47 @@ class SendMailHandler(
         )
     }
 
-    /**
-     * Signature markup appended to the body. The `--` separator is the long-standing
-     * convention every mail client understands as "signature starts here", which also
-     * lets our own quote-stripping recognise it later.
-     */
     private fun signatureBlock(command: SendMailCommand): String {
         if (!command.appendSignature) return ""
-        val signature = signatureService.get(command.studioId, command.userId).bodyHtml
-            ?.let(::trimTrailingBlanks)
-        if (signature.isNullOrBlank()) return ""
-        return """<div class="crm-signature" style="margin-top:16px"><div>--</div>$signature</div>"""
-    }
-
-    /**
-     * Ucina puste ogony treści: końcowe <br>, puste akapity i białe znaki. Edytor łatwo
-     * zbiera je przy pisaniu (kilka Enterów przed wysłaniem), a w skrzynce odbiorcy
-     * zostawiają pustą przestrzeń, przez którą wiadomość wygląda na uciętą w pół słowa.
-     */
-    private fun trimTrailingBlanks(html: String): String {
-        var result = html.trim()
-        var previous: String
-        do {
-            previous = result
-            result = result
-                .replace(TRAILING_BLANK_TAIL, "")
-                .trim()
-        } while (result != previous)
-        return result
+        return signatureMarkup(signatureService.get(command.studioId, command.userId))
     }
 
     companion object {
+        /**
+         * Signature markup appended to the body. The `--` separator is the long-standing
+         * convention every mail client understands as "signature starts here", which also
+         * lets our own quote-stripping recognise it later.
+         *
+         * Stopka z konfiguratora idzie bez `--`: to zamknięta karta z własną ramą i kolorem,
+         * kreska nad nią wygląda jak pozostałość po edycji. Podgląd w kreatorze rysuje ją
+         * dokładnie tak — to, co użytkownik zatwierdził, ma dojść do odbiorcy.
+         */
+        internal fun signatureMarkup(stored: UserMailSignature): String {
+            val signature = stored.bodyHtml?.let(::trimTrailingBlanks)
+            if (signature.isNullOrBlank()) return ""
+            if (stored.design != null) {
+                return """<div class="crm-signature" style="margin-top:16px">$signature</div>"""
+            }
+            return """<div class="crm-signature" style="margin-top:16px"><div>--</div>$signature</div>"""
+        }
+
+        /**
+         * Ucina puste ogony treści: końcowe <br>, puste akapity i białe znaki. Edytor łatwo
+         * zbiera je przy pisaniu (kilka Enterów przed wysłaniem), a w skrzynce odbiorcy
+         * zostawiają pustą przestrzeń, przez którą wiadomość wygląda na uciętą w pół słowa.
+         */
+        private fun trimTrailingBlanks(html: String): String {
+            var result = html.trim()
+            var previous: String
+            do {
+                previous = result
+                result = result
+                    .replace(TRAILING_BLANK_TAIL, "")
+                    .trim()
+            } while (result != previous)
+            return result
+        }
+
         /** Końcowe <br>, &nbsp; i puste bloki — powtarzalnie, bo bywają zagnieżdżone. */
         private val TRAILING_BLANK_TAIL = Regex(
             """(?:\s|&nbsp;|<br\s*/?>|<p>(?:\s|&nbsp;|<br\s*/?>)*</p>|<div>(?:\s|&nbsp;|<br\s*/?>)*</div>)+${'$'}""",

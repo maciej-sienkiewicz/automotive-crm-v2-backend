@@ -70,7 +70,11 @@ class PiiResponseSurfaceScanTest {
             // Podpis listy obecności na własnym telefonie: numer Z KONTA ZALOGOWANEGO (jego
             // własny, nie klienta), już zamaskowany do trzech ostatnich cyfr - @Pii ukryłby
             // go w całości przed kierownikiem bez dostępu do danych klientów:
-            "pl.detailing.crm.worktime.attendance.AttendanceSigningOptions"
+            "pl.detailing.crm.worktime.attendance.AttendanceSigningOptions",
+            // Stopka e-mail: wizytówka ZALOGOWANEGO użytkownika (jego telefon i adres, które
+            // sam wpisał do stopki albo które podpowiadamy z jego konta) - maska zepsułaby
+            // kreator i zapisała w stopce gwiazdki zamiast numeru:
+            "pl.detailing.crm.comms.signature."
         )
 
         private val MAPPING_ANNOTATIONS = listOf(
