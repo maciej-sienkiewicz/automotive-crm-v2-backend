@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test
 import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.domain.MailAddressBook
 import pl.detailing.crm.comms.domain.MailAddressDirectory
-import pl.detailing.crm.comms.engine.ImapSyncEngine
 import pl.detailing.crm.comms.infrastructure.CommThreadEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.leads.formmail.FormThreadAutoUntangler
@@ -16,7 +15,6 @@ import pl.detailing.crm.mailbox.domain.MailAccountStatus
 import pl.detailing.crm.mailbox.domain.MailAuthType
 import pl.detailing.crm.mailbox.domain.MailProviderType
 import pl.detailing.crm.mailbox.infrastructure.MailAccountEntity
-import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 import java.util.UUID
@@ -55,9 +53,7 @@ class FormThreadAutoUntanglerTest {
             MailAddressBook(ownAddresses = setOf("biuro@carslab.pl"), formSenders = setOf("wordpress@carslab.pl"))
     }
 
-    private val auto = FormThreadAutoUntangler(
-        threadRepository, mockk<MailAccountRepository>(), directory, untangler, mockk<ImapSyncEngine>()
-    )
+    private val auto = FormThreadAutoUntangler(threadRepository, directory, untangler)
 
     private fun thread() = CommThreadEntity(
         id = UUID.randomUUID(),

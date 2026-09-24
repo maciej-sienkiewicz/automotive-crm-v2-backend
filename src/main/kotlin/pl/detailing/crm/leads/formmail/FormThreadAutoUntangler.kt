@@ -30,16 +30,14 @@ data class FormMailSourceRegisteredEvent(val studioId: UUID)
  *
  * Kandydatem jest zwykły wątek, którego drugą stroną jest adres po naszej stronie:
  * skrzynka studia (WP Mail SMTP wysyła „od studia do studia") albo oznaczony robot
- * formularza. Oznaczenie nowego robota uruchamia synchronizację od razu — jego stary
- * wątek ma się rozplątać teraz, a nie przy następnym przebiegu.
+ * formularza. Oznaczenie nowego robota uruchamia synchronizację od razu
+ * ([FormMailSourceSyncTrigger]).
  */
 @Component
 class FormThreadAutoUntangler(
     private val threadRepository: CommThreadRepository,
-    private val accountRepository: MailAccountRepository,
     private val addressDirectory: MailAddressDirectory,
-    private val untangler: FormThreadUntangler,
-    private val syncEngine: ImapSyncEngine
+    private val untangler: FormThreadUntangler
 ) : AccountSyncFollowUp {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -64,6 +62,27 @@ class FormThreadAutoUntangler(
                 .onFailure { log.warn("[FORM_MAIL] Rozplątanie wątku {} nieudane: {}", thread.id, it.message) }
         }
     }
+}
+
+/**
+ * Oznaczenie nowego robota formularza uruchamia synchronizację od razu — jego stary
+ * wątek ma się rozplątać teraz, a nie przy następnym przebiegu ([FormThreadAutoUntangler]
+ * robi to w kroku po synchronizacji).
+ *
+ * Osobny bean, a nie metoda [FormThreadAutoUntangler]: tamten implementuje
+ * [AccountSyncFollowUp], a `@Async` przy `@EnableAsync` z domyślnym `proxyTargetClass = false`
+ * owija bean z interfejsem w proxy JDK, które wystawia TYLKO metody interfejsu. Nasłuch
+ * zadeklarowany obok był dla niego niewidoczny i Spring odmawiał startu aplikacji:
+ * „Need to invoke method 'onSourceRegistered' … not found in any interface(s) of the
+ * exposed proxy type". Pilnuje tego AsyncProxyVisibilityTest.
+ */
+@Component
+class FormMailSourceSyncTrigger(
+    private val accountRepository: MailAccountRepository,
+    private val syncEngine: ImapSyncEngine
+) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
