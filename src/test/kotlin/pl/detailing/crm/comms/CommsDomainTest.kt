@@ -205,6 +205,187 @@ class EmailTextCleanerTest {
         assertTrue(cleaned.contains("proszę o wycenę obejmującą:"), "zjedzono akapit: <$cleaned>")
     }
 
+    // ── Wiadomość przekazana (Fwd) ───────────────────────────────────────────
+    //
+    // Zgłoszenie z produkcji (23.09): lead „oklejenie Ford Transit L3H3" został bez
+    // auta. Klientka przekazała swoje zapytanie i skasowała nagłówek przekazania.
+    // Gmail zostawił całą treść w div.gmail_quote, cleaner wyciął go jako historię
+    // i wersja czysta wyszła PUSTA — przy 1627 znakach w części tekstowej. Model
+    // rozpoznający auto dostał sam napis „Klient:". Dane klientki zmienione.
+
+    private val forwardedPlain = "Dzień dobry,\r\n\r\n" +
+        "proszę przygotowanie wyceny na wykonanie usługi oklejenia samochodu Ford\r\n" +
+        "Transit L3H3 (V363). Zależy nam na wykonaniu aplikacji folii na wybranych\r\n" +
+        "elementach samochodu.\r\n\r\n" +
+        "Wszystkie folie w kolorze czarnym matowym.\r\n\r\n" +
+        "Pozdrawiam,\r\n\r\n" +
+        "--\r\n" +
+        "Anna Nowak\r\n\r\n" +
+        "600100200\r\n"
+
+    private val forwardedHtml = """
+        <div dir="ltr"><div class="gmail_quote gmail_quote_container"><div dir="ltr">
+        <div>Dzień dobry,</div><div><br></div>
+        <div>proszę przygotowanie wyceny na wykonanie usługi oklejenia samochodu Ford Transit L3H3 (V363). Zależy nam na wykonaniu aplikacji folii na wybranych elementach samochodu.</div>
+        <div><br></div><div>Wszystkie folie w kolorze czarnym matowym.</div>
+        <div><br></div><div>Pozdrawiam,</div><div><br></div>
+        <span class="gmail_signature_prefix">-- </span><br>
+        <div dir="ltr" class="gmail_signature">Anna Nowak<div>600100200</div></div>
+        </div></div></div>
+    """.trimIndent()
+
+    @Test
+    fun `przekazanie ze skasowanym naglowkiem - tresc wraca z czesci tekstowej`() {
+        assertEquals("", cleaner.clean(forwardedHtml, null), "warunek testu: sam HTML nie zostawia nic, jak na produkcji")
+
+        val cleaned = cleaner.clean(forwardedHtml, forwardedPlain)
+
+        assertTrue(cleaned.contains("Ford"), "zgubiono markę: <$cleaned>")
+        assertTrue(cleaned.contains("Transit L3H3"), "zgubiono model: <$cleaned>")
+        assertFalse(cleaned.contains("Anna Nowak"), "stopka nie jest treścią")
+        assertFalse(cleaned.contains("600100200"))
+        assertFalse(cleaned.contains('\r'))
+    }
+
+    /** Recepcja przesyła zapytanie klienta: dopisek z własną stopką, pod nim przekazanie. */
+    private val forwardWithNoteHtml = """
+        <div dir="ltr">Dzień dobry, przesyłam zapytanie klienta poniżej.<div><br></div>
+        <span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature">Ewa, recepcja</div><br>
+        <div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>Od: <strong class="gmail_sendername" dir="auto">Jan Kowalski</strong> <span dir="auto">&lt;jan.kowalski@example.com&gt;</span><br>Date: pon., 21 wrz 2026 o 10:00<br>Subject: Wycena oklejenia<br>To: &lt;biuro@example.com&gt;<br></div><br><br>
+        <div dir="ltr"><div>Dzień dobry,</div><div>proszę o wycenę oklejenia Ford Transit L3H3 na czarny mat.</div><div><br></div><div>Pozdrawiam,</div><div>Jan Kowalski</div></div>
+        </div></div>
+    """.trimIndent()
+
+    private val forwardWithNotePlain = """
+        Dzień dobry, przesyłam zapytanie klienta poniżej.
+
+        --
+        Ewa, recepcja
+
+        ---------- Forwarded message ---------
+        Od: Jan Kowalski <jan.kowalski@example.com>
+        Date: pon., 21 wrz 2026 o 10:00
+        Subject: Wycena oklejenia
+        To: <biuro@example.com>
+
+
+        Dzień dobry,
+        proszę o wycenę oklejenia Ford Transit L3H3 na czarny mat.
+
+        Pozdrawiam,
+        Jan Kowalski
+    """.trimIndent()
+
+    private fun assertForwardWithNote(cleaned: String) {
+        assertTrue(cleaned.contains("przesyłam zapytanie klienta"), "zgubiono dopisek: <$cleaned>")
+        assertTrue(cleaned.contains("Ford Transit L3H3"), "zgubiono przekazane zapytanie: <$cleaned>")
+        assertFalse(cleaned.contains("Forwarded message"), "znacznik przekazania to nie treść: <$cleaned>")
+        assertFalse(cleaned.contains("Subject:"), "nagłówek przekazania to nie treść: <$cleaned>")
+        assertFalse(cleaned.contains("jan.kowalski@example.com"))
+        assertFalse(cleaned.contains("Jan Kowalski"), "ani nagłówek, ani stopka przekazanej wiadomości: <$cleaned>")
+        assertFalse(cleaned.contains("Ewa, recepcja"), "stopka pod dopiskiem nie jest treścią: <$cleaned>")
+    }
+
+    @Test
+    fun `przekazanie z dopiskiem w html - zostaje dopisek i przekazane zapytanie`() {
+        // Część tekstowa celowo pusta: HTML zostawia dopisek, więc zejście do niej
+        // by nie zadziałało — przekazanie musi przeżyć w samym HTML-u.
+        assertForwardWithNote(cleaner.clean(forwardWithNoteHtml, null))
+    }
+
+    @Test
+    fun `przekazanie z dopiskiem w czesci tekstowej - znacznik nie ucina zapytania`() {
+        assertForwardWithNote(cleaner.clean(null, forwardWithNotePlain))
+    }
+
+    @Test
+    fun `odpowiedz na przekazana wiadomosc nie wciaga przekazania z cytatu`() {
+        val html = """
+            <div dir="ltr">Dziękuję, zapisuję na piątek.</div><br>
+            <div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">W dniu pon., 21 wrz 2026 o 12:00 Studio &lt;biuro@example.com&gt; napisał(a):<br></div>
+            <blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">
+            <div dir="ltr">Zapraszamy w piątek.</div>
+            <div class="gmail_quote"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>Od: Jan Kowalski</div><div>proszę o wycenę oklejenia Ford Transit</div></div>
+            </blockquote></div>
+        """.trimIndent()
+        val plain = """
+            Dziękuję, zapisuję na piątek.
+
+            W dniu pon., 21 wrz 2026 o 12:00 Studio <biuro@example.com> napisał(a):
+            > Zapraszamy w piątek.
+            >
+            > ---------- Forwarded message ---------
+            > Od: Jan Kowalski <jan.kowalski@example.com>
+            > proszę o wycenę oklejenia Ford Transit
+        """.trimIndent()
+
+        assertEquals("Dziękuję, zapisuję na piątek.", cleaner.clean(html, plain))
+        assertEquals("Dziękuję, zapisuję na piątek.", cleaner.clean(null, plain))
+    }
+
+    @Test
+    fun `przekazanie pod znacznikiem cytatu jest historia, nawet bez znaku cytatu`() {
+        val text = """
+            Dziękuję.
+
+            -----Original Message-----
+            From: Studio
+            ---------- Forwarded message ---------
+            proszę o wycenę oklejenia Ford Transit
+        """.trimIndent()
+
+        assertEquals("Dziękuję.", cleaner.clean(null, text))
+    }
+
+    @Test
+    fun `odpowiedz z outlooka na watek zaczety przekazaniem nie dokleja starego zapytania`() {
+        // Outlook cytuje bez „>" i bez „napisał(a)", więc dla czyszczenia to zwykły
+        // tekst. Przekazanie pod jego nagłówkiem jest historią — wynik nie może być
+        // gorszy niż przed rozpoznawaniem przekazań.
+        val text = """
+            Dziękuję, termin pasuje.
+
+            ________________________________
+            Od: Studio <biuro@example.com>
+            Wysłano: poniedziałek, 21 września 2026 12:00
+            Temat: RE: Fwd: Wycena oklejenia
+
+            Zapraszamy w piątek.
+
+            ---------- Forwarded message ---------
+            Od: Jan Kowalski <jan.kowalski@example.com>
+
+            proszę o wycenę oklejenia Ford Transit
+        """.trimIndent()
+
+        val cleaned = cleaner.clean(null, text)
+
+        assertTrue(cleaned.startsWith("Dziękuję, termin pasuje."), "zgubiono odpowiedź: <$cleaned>")
+        assertFalse(cleaned.contains("Ford Transit"), "przekazanie z historii wróciło do treści: <$cleaned>")
+    }
+
+    @Test
+    fun `czesc tekstowa nie zastepuje html-a, ktory cos zostawil`() {
+        val cleaned = cleaner.clean(
+            "<div>Nowa treść</div><div class=\"gmail_quote\">stara korespondencja</div>",
+            "Nowa treść\n\nstara korespondencja bez znacznika cytatu"
+        )
+
+        assertEquals("Nowa treść", cleaned)
+    }
+
+    @Test
+    fun `zejscie do czesci tekstowej nie przywraca samego cytatu`() {
+        // Odpowiedź bez własnego słowa: HTML pusty, bo to sam cytat. Część tekstowa
+        // też jest samym cytatem — pusto ma zostać pusto, a nie zamienić się w historię.
+        val html = """
+            <div class="gmail_quote"><div dir="ltr" class="gmail_attr">W dniu 21.09.2026 o 11:17 klient@example.com napisał(a):<br></div><blockquote class="gmail_quote">Dzień dobry, proszę o wycenę.</blockquote></div>
+        """.trimIndent()
+        val plain = "W dniu 21.09.2026 o 11:17 klient@example.com napisał(a):\n> Dzień dobry, proszę o wycenę."
+
+        assertEquals("", cleaner.clean(html, plain))
+    }
+
     @Test
     fun `snippet is single line and bounded`() {
         val snippet = cleaner.snippet(null, "linia1\nlinia2\n" + "x".repeat(500))
