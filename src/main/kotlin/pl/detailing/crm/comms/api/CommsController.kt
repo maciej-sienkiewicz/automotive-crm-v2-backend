@@ -40,11 +40,13 @@ import pl.detailing.crm.comms.send.SendMailCommand
 import pl.detailing.crm.comms.send.SendMailHandler
 import pl.detailing.crm.comms.proofread.MailProofreadService
 import pl.detailing.crm.comms.signature.UserMailSignatureService
+import pl.detailing.crm.leads.conversation.LeadConversationBinder
 import pl.detailing.crm.mailbox.infrastructure.MailAccountRepository
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.ValidationException
+import java.time.Instant
 import java.util.UUID
 
 data class SendMailRequest(
@@ -55,7 +57,12 @@ data class SendMailRequest(
     val subject: String?,
     val bodyHtml: String,
     /** Append the sender's saved signature — composed server-side, see SendMailHandler. */
-    val appendSignature: Boolean = false
+    val appendSignature: Boolean = false,
+    /**
+     * Wiadomość pisana z leada, który nie ma jeszcze wątku (webhook formularza, telefon).
+     * Wątek powstały z tej wysyłki zostaje przypięty do leada — patrz LeadConversationBinder.
+     */
+    val leadId: String? = null
 )
 
 data class MailSignatureResponse(val bodyHtml: String?, val enabledByDefault: Boolean)
@@ -122,7 +129,8 @@ class CommsController(
     private val accountRepository: MailAccountRepository,
     private val syncEngine: ImapSyncEngine,
     private val syncProgressRegistry: SyncProgressRegistry,
-    private val rolePreviewGuard: RolePreviewOutboundGuard
+    private val rolePreviewGuard: RolePreviewOutboundGuard,
+    private val leadConversationBinder: LeadConversationBinder
 ) {
 
     @GetMapping("/accounts")
@@ -252,6 +260,8 @@ class CommsController(
 
     private fun send(request: SendMailRequest, attachments: List<OutgoingAttachment>): ResponseEntity<SendMailResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
+        val leadId = request.leadId?.let(UUID::fromString)
+        leadId?.let { leadConversationBinder.requireLead(principal.studioId, it) }
         val result = sendMailHandler.handle(
             SendMailCommand(
                 studioId = principal.studioId,
@@ -266,6 +276,7 @@ class CommsController(
                 attachments = attachments
             )
         )
+        leadId?.let { leadConversationBinder.bind(principal.studioId, it, result.threadId, Instant.now()) }
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(SendMailResponse(result.messageId.toString(), result.threadId.toString()))
     }

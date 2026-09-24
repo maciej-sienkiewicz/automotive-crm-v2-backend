@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
+import pl.detailing.crm.comms.domain.MailAddressBook
+import pl.detailing.crm.comms.domain.MailAddressDirectory
 import pl.detailing.crm.comms.domain.ParsedAttachment
 import pl.detailing.crm.comms.domain.ParsedEmail
 import pl.detailing.crm.comms.engine.CommsIngestService
@@ -65,7 +67,8 @@ class SendMailHandler(
     private val sanitizer: EmailHtmlSanitizer,
     private val ingestService: CommsIngestService,
     private val signatureService: UserMailSignatureService,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val addressDirectory: MailAddressDirectory
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -78,6 +81,7 @@ class SendMailHandler(
             threadRepository.findByIdAndStudioId(it, command.studioId.value)
                 ?: throw NotFoundException("Nie znaleziono wątku")
         }
+        if (thread != null) requireClientRecipients(command)
 
         val accountId = command.accountId ?: thread?.accountId
             ?: throw ValidationException("Wybierz skrzynkę, z której chcesz wysłać wiadomość")
@@ -189,6 +193,28 @@ class SendMailHandler(
 
         log.info("[COMMS] Wiadomość wysłana i zapisana | thread={} message={}", saved.threadId, saved.id)
         return SendMailResult(messageId = saved.id, threadId = saved.threadId)
+    }
+
+    /**
+     * Bezpiecznik odpowiedzi: w rozmowie z klientem adresatem nie może być adres po
+     * naszej stronie — skrzynka studia, robot formularza, serwer poczty.
+     *
+     * Dokładnie tak ginęły wyceny: odpowiedź na zgłoszenie z formularza szła na adres
+     * robota, a robotem bywa adres samego studia, więc serwer przyjmował ją bez błędu
+     * i wycena lądowała we własnej skrzynce. Nikt tego nie zauważał, bo „wysłało się".
+     * Nowa wiadomość (bez wątku) bezpiecznika nie ma — tam adres wpisuje człowiek
+     * świadomie, choćby do siebie.
+     *
+     * Sprawdzamy tylko pole „Do": kopia do biura w „DW" to zwyczaj, nie pomyłka.
+     */
+    private fun requireClientRecipients(command: SendMailCommand) {
+        val book = addressDirectory.addressBook(command.studioId.value)
+        val misdirected = command.to.map(MailAddressBook::normalize).firstOrNull { book.isNotAClient(it) }
+            ?: return
+        throw ValidationException(
+            "Odpowiedź poszłaby na $misdirected — to adres po stronie studia (Twoja skrzynka, " +
+                "formularz na stronie albo serwer poczty), a nie klienta. Wpisz adres klienta."
+        )
     }
 
     /**

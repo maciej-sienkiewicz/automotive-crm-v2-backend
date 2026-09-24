@@ -26,6 +26,7 @@ class MimeEmailParser {
 
     fun parse(message: MimeMessage, imapUid: Long?): ParsedEmail {
         val from = runCatching { message.from?.firstOrNull() }.getOrNull() as? InternetAddress
+        val replyTo = replyToOf(message)
         val sentAt = (message.sentDate ?: message.receivedDate)?.toInstant() ?: Instant.now()
         val body = BodyAccumulator()
         runCatching { walk(message, body) }
@@ -46,8 +47,21 @@ class MimeEmailParser {
             attachments = body.attachments,
             imapUid = imapUid,
             seen = runCatching { message.isSet(Flags.Flag.SEEN) }.getOrDefault(false),
-            headers = extractFilterHeaders(message)
+            headers = extractFilterHeaders(message),
+            replyToEmail = replyTo?.address?.lowercase()?.trim()?.take(320),
+            replyToName = replyTo?.personal?.let { decodeText(it) }?.trim()?.take(255)?.takeIf { it.isNotEmpty() }
         )
+    }
+
+    /**
+     * Pierwszy adres z `Reply-To`, a nie z [MimeMessage.getReplyTo] — tamto przy braku
+     * nagłówka oddaje `From`, a nam brak nagłówka mówi coś innego niż jego obecność.
+     */
+    private fun replyToOf(message: MimeMessage): InternetAddress? {
+        val raw = firstHeader(message, "Reply-To")?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { InternetAddress.parseHeader(raw, false).firstOrNull() }
+            .getOrNull()
+            ?.takeIf { !it.address.isNullOrBlank() && it.address.contains('@') }
     }
 
     fun normalizeId(value: String?): String? =
@@ -162,7 +176,10 @@ class MimeEmailParser {
             "List-Unsubscribe", "List-Id", "Auto-Submitted", "Precedence",
             // Nagłówki autoodpowiedzi: bez nich „urlop do 15.09" z folderu Wysłane
             // liczyłby się jako reakcja na leada.
-            "X-Autoreply", "X-Auto-Response-Suppress"
+            "X-Autoreply", "X-Auto-Response-Suppress",
+            // Rozpoznanie zwrotów serwera pocztowego i maili z wtyczek formularzy —
+            // patrz DeliveryReportDetector i FormMailerSignature.
+            "Content-Type", "X-Failed-Recipients", "X-Mailer", "User-Agent"
         )
     }
 }

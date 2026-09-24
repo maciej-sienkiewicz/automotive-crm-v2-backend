@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository
 import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
+import pl.detailing.crm.comms.domain.CommThreadKind
 import java.time.Instant
 import java.util.UUID
 
@@ -28,6 +29,9 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
              AND (:onlyLeads = FALSE OR t.leadId IS NOT NULL)
              AND (:requireInbound = FALSE OR t.inboundCount > 0)
              AND (:requireOutbound = FALSE OR t.outboundCount > 0)
+             AND (:screened IS NULL
+                  OR (:screened = TRUE AND t.screening IS NOT NULL)
+                  OR (:screened = FALSE AND t.screening IS NULL))
              AND (:query IS NULL
                   OR LOWER(t.participantEmail) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
                   OR LOWER(COALESCE(t.participantName, '')) LIKE CONCAT('%', LOWER(CAST(:query AS string)), '%')
@@ -45,6 +49,11 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
         @Param("requireInbound") requireInbound: Boolean,
         /** Folder Wysłane: przynajmniej jedna wiadomość od nas. */
         @Param("requireOutbound") requireOutbound: Boolean,
+        /**
+         * Werdykt automatu o zgłoszeniu z formularza: TRUE — tylko „Odrzucone" (spam,
+         * testy), FALSE — bez nich (Odebrane, Wysłane), null — bez ograniczenia.
+         */
+        @Param("screened") screened: Boolean?,
         @Param("query") query: String?,
         pageable: Pageable
     ): Page<CommThreadEntity>
@@ -65,6 +74,47 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
         @Param("since") since: Instant
     ): List<CommThreadEntity>
 
+    /**
+     * Kandydaci do rozplątania: zwykłe wątki, których drugą stroną jest adres po naszej
+     * stronie (skrzynka studia, robot formularza) — tak wyglądały wielkie wątki
+     * formularzy sprzed V157. Jeszcze nieprzejrzane i z czym więcej niż jedną wiadomością.
+     */
+    @Query(
+        """SELECT t FROM CommThreadEntity t
+           WHERE t.accountId = :accountId
+             AND t.kind = pl.detailing.crm.comms.domain.CommThreadKind.DIRECT
+             AND t.untangledAt IS NULL
+             AND t.messageCount >= 2
+             AND t.participantEmail IN :addresses"""
+    )
+    fun findUntangleCandidates(
+        @Param("accountId") accountId: UUID,
+        @Param("addresses") addresses: Collection<String>
+    ): List<CommThreadEntity>
+
+    /** Wątek zwrotów serwera pocztowego — jeden na skrzynkę. */
+    fun findFirstByAccountIdAndKindOrderByCreatedAtAsc(accountId: UUID, kind: CommThreadKind): CommThreadEntity?
+
+    /**
+     * Świeże zgłoszenie tej samej osoby przez ten sam formularz — kandydat na dopisanie
+     * duplikatu (klient kliknął „Wyślij" drugi raz, bo poprawił treść).
+     */
+    @Query(
+        """SELECT t FROM CommThreadEntity t
+           WHERE t.accountId = :accountId
+             AND t.kind = pl.detailing.crm.comms.domain.CommThreadKind.FORM
+             AND t.participantEmail = :participantEmail
+             AND t.relayEmail = :relayEmail
+             AND t.lastMessageAt >= :since
+           ORDER BY t.lastMessageAt DESC"""
+    )
+    fun findRecentFormThreads(
+        @Param("accountId") accountId: UUID,
+        @Param("participantEmail") participantEmail: String,
+        @Param("relayEmail") relayEmail: String,
+        @Param("since") since: Instant
+    ): List<CommThreadEntity>
+
     fun findByStudioIdAndParticipantEmailOrderByLastMessageAtDesc(
         studioId: UUID,
         participantEmail: String,
@@ -74,7 +124,11 @@ interface CommThreadRepository : JpaRepository<CommThreadEntity, UUID> {
     /** Ile rozmów prowadziliśmy z tym adresem — badge w nagłówku podaje liczbę, nie listę. */
     fun countByStudioIdAndParticipantEmail(studioId: UUID, participantEmail: String): Long
 
-    @Query("SELECT COALESCE(SUM(t.unreadCount), 0) FROM CommThreadEntity t WHERE t.studioId = :studioId AND t.archived = FALSE")
+    /** Odrzucone przez automat (spam, testy) nie wołają o uwagę licznikiem nieprzeczytanych. */
+    @Query(
+        "SELECT COALESCE(SUM(t.unreadCount), 0) FROM CommThreadEntity t " +
+            "WHERE t.studioId = :studioId AND t.archived = FALSE AND t.screening IS NULL"
+    )
     fun countUnread(@Param("studioId") studioId: UUID): Long
 }
 

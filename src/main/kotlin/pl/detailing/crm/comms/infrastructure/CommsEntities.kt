@@ -13,6 +13,8 @@ import pl.detailing.crm.comms.domain.CommOutboxStatus
 import pl.detailing.crm.comms.domain.CommOutboxType
 import pl.detailing.crm.comms.domain.CommReadSource
 import pl.detailing.crm.comms.domain.CommSendStatus
+import pl.detailing.crm.comms.domain.CommThreadKind
+import pl.detailing.crm.comms.domain.CommThreadScreening
 import java.time.Instant
 import java.util.UUID
 
@@ -100,7 +102,44 @@ class CommThreadEntity(
     var archived: Boolean = false,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /** Zwykła rozmowa, zgłoszenie z formularza czy zwroty serwera — patrz [CommThreadKind]. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, length = 10)
+    var kind: CommThreadKind = CommThreadKind.DIRECT,
+
+    /**
+     * Adres robota, przez który przyszło zgłoszenie z formularza (często adres samego
+     * studia). Tylko dla [CommThreadKind.FORM]; drugą stroną rozmowy jest klient.
+     */
+    @Column(name = "relay_email", length = 320)
+    var relayEmail: String? = null,
+
+    /**
+     * Krótki tytuł sprawy odczytany z treści zgłoszenia („Toyota RAV4 · folia PPF na
+     * progi"). Temat robota formularza jest dla wszystkich zgłoszeń ten sam, więc na
+     * liście nie odróżniał niczego. Oryginalny temat zostaje w [subject] — to on idzie
+     * w „Re:" odpowiedzi, żeby program pocztowy klienta nie rozbił mu wątku.
+     */
+    @Column(name = "title", length = 300)
+    var title: String? = null,
+
+    /** Automat uznał zgłoszenie za spam albo test ze studia — zakładka „Odrzucone". */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "screening", length = 20)
+    var screening: CommThreadScreening? = null,
+
+    @Column(name = "screening_reason", length = 300)
+    var screeningReason: String? = null,
+
+    /**
+     * Automat rozplątywania wielkich wątków formularzy (sprzed V157) już ten wątek
+     * przejrzał. Bez znacznika wątek z resztkami, których nie dało się przypisać,
+     * wracałby do kolejki przy każdej synchronizacji skrzynki.
+     */
+    @Column(name = "untangled_at")
+    var untangledAt: Instant? = null
 )
 
 @Entity
@@ -124,8 +163,9 @@ class CommMessageEntity(
     @Column(name = "account_id", nullable = false, columnDefinition = "uuid")
     val accountId: UUID,
 
+    /** Zmienny wyłącznie dla rozplątania wielkich wątków formularzy (FormThreadUntangler). */
     @Column(name = "thread_id", nullable = false, columnDefinition = "uuid")
-    val threadId: UUID,
+    var threadId: UUID,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "direction", nullable = false, length = 10)
@@ -203,7 +243,18 @@ class CommMessageEntity(
     var sendStatus: CommSendStatus,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /**
+     * Pierwszy adres z nagłówka `Reply-To` — tam odpowiada każdy program pocztowy
+     * i tam formularz na stronie wpisuje klienta. Null, gdy nagłówka nie było (oraz
+     * dla wiadomości zaimportowanych przed V157).
+     */
+    @Column(name = "reply_to_email", length = 320)
+    var replyToEmail: String? = null,
+
+    @Column(name = "reply_to_name", length = 255)
+    var replyToName: String? = null
 )
 
 /**

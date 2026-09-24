@@ -13,7 +13,12 @@ import pl.detailing.crm.comms.domain.CommReadSource
 import pl.detailing.crm.comms.domain.CommSendStatus
 import pl.detailing.crm.comms.domain.CommInboundMessageStoredEvent
 import pl.detailing.crm.comms.domain.CommThreadChangedEvent
+import pl.detailing.crm.comms.domain.CommThreadKind
 import pl.detailing.crm.comms.domain.EmailTextCleaner
+import pl.detailing.crm.comms.domain.InboundRoute
+import pl.detailing.crm.comms.domain.InboundRouter
+import pl.detailing.crm.comms.domain.MailAddressBook
+import pl.detailing.crm.comms.domain.MailAddressDirectory
 import pl.detailing.crm.comms.domain.ParsedEmail
 import pl.detailing.crm.comms.infrastructure.CommAttachmentEntity
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
@@ -40,7 +45,8 @@ class CommsIngestService(
     private val attachmentRepository: CommAttachmentRepository,
     private val htmlSanitizer: EmailHtmlSanitizer,
     private val textCleaner: EmailTextCleaner,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val addressDirectory: MailAddressDirectory
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -82,11 +88,25 @@ class CommsIngestService(
 
         val direction =
             if (folderKind == CommFolderKind.SENT) CommDirection.OUTBOUND else CommDirection.INBOUND
-        val participantEmail = participantOf(account, parsed, direction)
-        val participantName =
-            if (direction == CommDirection.INBOUND) parsed.fromName else null
+        val book = addressDirectory.addressBook(account.studioId)
+        // Czym jest przychodzący mail, rozstrzygamy PRZED wyborem wątku — zgłoszenie
+        // z formularza i zwrot serwera mają inne reguły niż zwykła korespondencja.
+        val route = if (direction == CommDirection.INBOUND) InboundRouter.route(parsed, book) else null
+        val participantEmail = when (route) {
+            // Drugą stroną zgłoszenia jest klient z Reply-To, nie robot formularza.
+            is InboundRoute.FormRelay -> route.clientEmail
+            else -> participantOf(account, parsed, direction)
+        }
+        val participantName = when (route) {
+            is InboundRoute.FormRelay -> route.clientName
+            // Podpis robota („Carslab"), studia albo serwera („Mail Delivery System")
+            // nie jest nazwą klienta i nie może zostać nazwą rozmowy.
+            is InboundRoute.FormRobot, InboundRoute.DeliveryReport, InboundRoute.OwnMailbox -> null
+            InboundRoute.Direct -> parsed.fromName
+            null -> null
+        }
 
-        val thread = resolveThread(account, parsed, participantEmail, participantName)
+        val thread = resolveThread(account, parsed, route, book, participantEmail, participantName)
         val messageId = UUID.randomUUID()
 
         val savedAttachments = parsed.attachments.map { att ->
@@ -141,11 +161,13 @@ class CommsIngestService(
             isRead = isRead,
             readSource = if (isRead && direction == CommDirection.INBOUND) CommReadSource.EXTERNAL else null,
             readAt = if (isRead) parsed.sentAt else null,
-            sendStatus = if (direction == CommDirection.OUTBOUND) CommSendStatus.SENT else CommSendStatus.RECEIVED
+            sendStatus = if (direction == CommDirection.OUTBOUND) CommSendStatus.SENT else CommSendStatus.RECEIVED,
+            replyToEmail = parsed.replyToEmail,
+            replyToName = parsed.replyToName
         )
         messageRepository.save(message)
 
-        refreshThreadAggregates(thread, message, participantName)
+        refreshThreadAggregates(thread, message, participantName, route)
 
         // „Nowa wiadomość" znaczy: przyszła do nas. Wiadomość WYCHODZĄCA trafia tu
         // dwiema drogami — wysyłka z CRM-a (SendMailHandler zapisuje kopię tą samą
@@ -158,7 +180,10 @@ class CommsIngestService(
             CommThreadChangedEvent(
                 studioId = account.studioId,
                 threadId = thread.id,
-                newMessage = !backfill && direction == CommDirection.INBOUND
+                // Zwrot serwera pocztowego nie jest wiadomością, dla której warto
+                // kogokolwiek zaczepiać — trafia prosto do archiwum.
+                newMessage = !backfill && direction == CommDirection.INBOUND &&
+                    route != InboundRoute.DeliveryReport
             )
         )
         // Po zatwierdzeniu tej transakcji automat formularzy sprawdzi nadawcę —
@@ -200,7 +225,8 @@ class CommsIngestService(
             }
         }
 
-        if (direction == CommDirection.INBOUND) {
+        // Zwrot serwera nie jest niczyim zapytaniem — automaty leadów nie mają go czytać.
+        if (direction == CommDirection.INBOUND && route != InboundRoute.DeliveryReport) {
             eventPublisher.publishEvent(
                 CommInboundMessageStoredEvent(
                     studioId = account.studioId,
@@ -212,7 +238,10 @@ class CommsIngestService(
                     // Ostatni moment, w którym nagłówki jeszcze istnieją — dalej zostaje
                     // po nich tylko ten boolean. Automatyczna klasyfikacja leadów odsiewa
                     // po nim newslettery, zanim zapłaci za nie modelowi.
-                    automated = AutomatedMailDetector.isAutomated(parsed.headers)
+                    automated = AutomatedMailDetector.isAutomated(parsed.headers),
+                    formSubmission = thread.kind == CommThreadKind.FORM &&
+                        (route is InboundRoute.FormRelay || route is InboundRoute.FormRobot),
+                    fromOwnMailbox = book.isOwn(parsed.fromEmail)
                 )
             )
         }
@@ -239,41 +268,109 @@ class CommsIngestService(
     /**
      * Threading cascade: RFC 5322 ancestry (References / In-Reply-To) first, then
      * normalised subject + same participant within the recency window, else new thread.
+     *
+     * Dwa wyjątki od kaskady, oba przez formularze na stronach studiów:
+     *
+     *  • ZGŁOSZENIE Z FORMULARZA zawsze zaczyna własny wątek. Nie jest odpowiedzią na nic,
+     *    a jego temat i nadawca są wspólne dla wszystkich zgłoszeń — dopasowanie po
+     *    temacie skleiło u jednego studia 38 różnych klientów w jedną rozmowę. Jedyny
+     *    powód, by dopisać je do istniejącego wątku, to duplikat: ta sama osoba wysłała
+     *    formularz drugi raz, zanim zdążyliśmy odpisać.
+     *
+     *  • ZWROT SERWERA POCZTOWEGO idzie do wątku systemowego skrzynki. Niesie w
+     *    `References` identyfikator maila, którego dotyczy, więc po przodkach wpinał się
+     *    w rozmowę z klientem. Z tego samego powodu wątek systemowy nigdy nie jest celem
+     *    dopasowania po przodkach dla innych wiadomości (przekazanie zwrotu dalej to już
+     *    zwykła korespondencja).
+     *
+     * Dopasowanie po temacie odpada też wtedy, gdy drugą stroną jest adres po naszej
+     * stronie (skrzynka studia, robot formularza): dla takiego adresu temat nie
+     * odróżnia rozmów, bo wszystkie jego maile mają ten sam.
      */
     private fun resolveThread(
         account: MailAccountEntity,
         parsed: ParsedEmail,
+        route: InboundRoute?,
+        book: MailAddressBook,
         participantEmail: String,
         participantName: String?
     ): CommThreadEntity {
+        when (route) {
+            InboundRoute.DeliveryReport -> return systemThread(account, parsed)
+            is InboundRoute.FormRelay -> {
+                val since = parsed.sentAt.minus(DUPLICATE_SUBMISSION_WINDOW_HOURS, ChronoUnit.HOURS)
+                threadRepository
+                    .findRecentFormThreads(account.id, participantEmail, route.relayEmail, since)
+                    .firstOrNull { it.outboundCount == 0 }
+                    ?.let { return it }
+                return createThread(
+                    account, parsed, participantEmail, participantName,
+                    kind = CommThreadKind.FORM, relayEmail = route.relayEmail
+                )
+            }
+            // Klienta poznamy dopiero z treści — do tego czasu drugą stroną jest robot,
+            // a procesor formularza przepnie wątek po odczycie.
+            is InboundRoute.FormRobot -> return createThread(
+                account, parsed, participantEmail, participantName,
+                kind = CommThreadKind.FORM, relayEmail = route.relayEmail
+            )
+            else -> Unit
+        }
+
         val ancestry = (parsed.references + listOfNotNull(parsed.inReplyTo)).distinct()
         if (ancestry.isNotEmpty()) {
-            val relative = messageRepository
-                .findByAccountIdAndMessageIdHdrIn(account.id, ancestry)
-                .firstOrNull()
-            if (relative != null) {
-                return threadRepository.findById(relative.threadId).orElse(null)
-                    ?: createThread(account, parsed, participantEmail, participantName)
+            val relatives = messageRepository.findByAccountIdAndMessageIdHdrIn(account.id, ancestry)
+            for (relative in relatives) {
+                val relativeThread = threadRepository.findById(relative.threadId).orElse(null) ?: continue
+                if (relativeThread.kind != CommThreadKind.SYSTEM) return relativeThread
             }
         }
 
         val subjectNorm = normalizeSubject(parsed.subject)
-        if (subjectNorm != null) {
+        if (subjectNorm != null && !book.isNotAClient(participantEmail)) {
             val since = Instant.now().minus(SUBJECT_MATCH_WINDOW_DAYS, ChronoUnit.DAYS)
             threadRepository
                 .findRecentBySubjectAndParticipant(account.id, subjectNorm, participantEmail, since)
-                .firstOrNull()
+                .firstOrNull { it.kind != CommThreadKind.SYSTEM }
                 ?.let { return it }
         }
 
         return createThread(account, parsed, participantEmail, participantName)
     }
 
+    /**
+     * Wątek zwrotów serwera pocztowego — jeden na skrzynkę, od razu w archiwum: zwroty
+     * nie mają nic do zrobienia w „Odebranych" ani w liczniku nieprzeczytanych, ale
+     * zostają do wglądu, gdy ktoś zapyta „czemu klient nie dostał maila".
+     */
+    private fun systemThread(account: MailAccountEntity, parsed: ParsedEmail): CommThreadEntity =
+        threadRepository.findFirstByAccountIdAndKindOrderByCreatedAtAsc(account.id, CommThreadKind.SYSTEM)
+            ?: threadRepository.save(
+                CommThreadEntity(
+                    id = UUID.randomUUID(),
+                    studioId = account.studioId,
+                    accountId = account.id,
+                    subjectNorm = null,
+                    subject = SYSTEM_THREAD_SUBJECT,
+                    participantEmail = MailAddressBook.normalize(parsed.fromEmail),
+                    participantName = SYSTEM_THREAD_PARTICIPANT,
+                    lastMessageAt = parsed.sentAt,
+                    lastDirection = CommDirection.INBOUND,
+                    lastSnippet = null,
+                    leadId = null,
+                    labelId = null,
+                    archived = true,
+                    kind = CommThreadKind.SYSTEM
+                )
+            )
+
     private fun createThread(
         account: MailAccountEntity,
         parsed: ParsedEmail,
         participantEmail: String,
-        participantName: String?
+        participantName: String?,
+        kind: CommThreadKind = CommThreadKind.DIRECT,
+        relayEmail: String? = null
     ): CommThreadEntity = threadRepository.save(
         CommThreadEntity(
             id = UUID.randomUUID(),
@@ -287,14 +384,17 @@ class CommsIngestService(
             lastDirection = CommDirection.INBOUND,
             lastSnippet = null,
             leadId = null,
-            labelId = null
+            labelId = null,
+            kind = kind,
+            relayEmail = relayEmail
         )
     )
 
     private fun refreshThreadAggregates(
         thread: CommThreadEntity,
         message: CommMessageEntity,
-        participantName: String?
+        participantName: String?,
+        route: InboundRoute?
     ) {
         thread.messageCount += 1
         if (message.direction == CommDirection.INBOUND) thread.inboundCount += 1 else thread.outboundCount += 1
@@ -315,23 +415,15 @@ class CommsIngestService(
             thread.subject = message.subject
             thread.subjectNorm = normalizeSubject(message.subject)
         }
-        threadRepository.save(thread)
-    }
-
-    private fun normalizeSubject(subject: String?): String? {
-        if (subject.isNullOrBlank()) return null
-        var value = subject.trim()
-        var changed = true
-        while (changed) {
-            changed = false
-            for (prefix in SUBJECT_PREFIXES) {
-                if (value.startsWith(prefix, ignoreCase = true)) {
-                    value = value.removeRange(0, prefix.length).trim()
-                    changed = true
-                }
-            }
+        // Werdykt „spam / test" dotyczył zgłoszenia. Odpis klienta albo nasza odpowiedź
+        // znaczą, że to jednak rozmowa — wątek wraca do Odebranych bez klikania.
+        if (thread.screening != null &&
+            (message.direction == CommDirection.OUTBOUND || route == InboundRoute.Direct)
+        ) {
+            thread.screening = null
+            thread.screeningReason = null
         }
-        return value.lowercase().take(500).takeIf { it.isNotBlank() }
+        threadRepository.save(thread)
     }
 
     /**
@@ -343,8 +435,36 @@ class CommsIngestService(
         return "synthetic-${UUID.nameUUIDFromBytes("$accountId|$basis".toByteArray())}@crm.local"
     }
 
-    private companion object {
+    companion object {
         const val SUBJECT_MATCH_WINDOW_DAYS = 30L
-        val SUBJECT_PREFIXES = listOf("re:", "odp:", "odp.:", "fwd:", "fw:", "pd:")
+
+        /**
+         * Ile czasu drugie zgłoszenie tej samej osoby przez ten sam formularz dopisuje się
+         * do pierwszego (o ile nikt jeszcze nie odpisał). Klient poprawiający treść wysyła
+         * formularz ponownie po kilku minutach — to jedna sprawa, nie dwa leady.
+         */
+        const val DUPLICATE_SUBMISSION_WINDOW_HOURS = 48L
+
+        const val SYSTEM_THREAD_SUBJECT = "Zwroty i powiadomienia serwera poczty"
+        const val SYSTEM_THREAD_PARTICIPANT = "Serwer poczty"
+
+        /** Temat bez „Re:/Fwd:/Odp:", małymi literami — klucz dopasowania po temacie. */
+        fun normalizeSubject(subject: String?): String? {
+            if (subject.isNullOrBlank()) return null
+            var value = subject.trim()
+            var changed = true
+            while (changed) {
+                changed = false
+                for (prefix in SUBJECT_PREFIXES) {
+                    if (value.startsWith(prefix, ignoreCase = true)) {
+                        value = value.removeRange(0, prefix.length).trim()
+                        changed = true
+                    }
+                }
+            }
+            return value.lowercase().take(500).takeIf { it.isNotBlank() }
+        }
+
+        private val SUBJECT_PREFIXES = listOf("re:", "odp:", "odp.:", "fwd:", "fw:", "pd:")
     }
 }

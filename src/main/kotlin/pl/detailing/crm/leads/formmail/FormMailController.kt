@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
+import pl.detailing.crm.comms.domain.MailAddressDirectory
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.role.permission.RequiresPermission
 import pl.detailing.crm.shared.NotFoundException
@@ -43,7 +44,8 @@ data class MarkMailAsFormLeadResponse(
 @RequiresPermission(Permission.LEADS_MANAGE)
 class FormMailController(
     private val markHandler: MarkMailAsFormLeadHandler,
-    private val sourceRepository: FormMailSourceRepository
+    private val sourceRepository: FormMailSourceRepository,
+    private val addressDirectory: MailAddressDirectory
 ) {
 
     /**
@@ -93,6 +95,7 @@ class FormMailController(
             ?: throw NotFoundException("Nie znaleziono oznaczonego nadawcy")
         source.active = false
         sourceRepository.save(source)
+        addressDirectory.invalidate(principal.studioId.value)
         return ResponseEntity.noContent().build()
     }
 

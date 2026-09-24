@@ -6,6 +6,7 @@ import pl.detailing.crm.comms.domain.CommDirection
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.leads.formmail.FormMailExtractionRepository
+import pl.detailing.crm.leads.formmail.FormMailLeadProcessor
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import java.time.Instant
 import java.util.UUID
@@ -114,10 +115,24 @@ class FormLeadConversation(
         }.toMap()
     }
 
+    /**
+     * Zgłoszenie, które założyło leada, o ile NIE leży w wątku leada — przypadek leada
+     * z wielkiego wątku formularza, który wątek dostał później (pierwsza odpowiedź
+     * wysłana z leada, [LeadConversationBinder]).
+     */
+    @Transactional(readOnly = true)
+    fun originOutsideThread(lead: LeadEntity): CommMessageEntity? {
+        val threadId = lead.threadId ?: return null
+        return originMessage(lead)?.takeIf { it.threadId != threadId }
+    }
+
     private fun originMessage(lead: LeadEntity): CommMessageEntity? = originMessages(listOf(lead))[lead.id]
 
     private fun originMessages(leads: Collection<LeadEntity>): Map<UUID, CommMessageEntity> {
         val byMessage = extractionRepository.findByLeadIdIn(leads.map { it.id })
+            // Tylko zgłoszenie, które leada ZAŁOŻYŁO — duplikat dopisany później też
+            // niesie leadId, ale nie jest początkiem sprawy.
+            .filter { it.status == FormMailLeadProcessor.STATUS_CREATED }
             .mapNotNull { extraction -> extraction.leadId?.let { it to extraction.messageId } }
             .toMap()
         if (byMessage.isEmpty()) return emptyMap()

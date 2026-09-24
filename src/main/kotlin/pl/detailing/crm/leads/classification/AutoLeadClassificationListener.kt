@@ -90,6 +90,10 @@ class AutoLeadClassificationListener(
         }
 
         val formSource = formSourceFor(event)
+        // Robotem formularza bywa adres samego studia (WP Mail SMTP wysyła „od studia do
+        // studia"). Mail z tego adresu bez klienta w Reply-To to notatka do siebie albo
+        // test, a nie zgłoszenie — nie ma czego czytać.
+        if (formSource != null && event.fromOwnMailbox && !event.formSubmission) return
         val thread = threadRepository.findById(event.threadId).orElse(null) ?: return
 
         if (formSource == null) {

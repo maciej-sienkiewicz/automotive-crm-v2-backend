@@ -8,6 +8,7 @@ import jakarta.mail.Store
 import jakarta.mail.UIDFolder
 import jakarta.mail.internet.MimeMessage
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import pl.detailing.crm.comms.domain.CommFolderKind
@@ -44,7 +45,8 @@ class ImapSyncEngine(
     private val ingestService: CommsIngestService,
     private val readService: CommsReadService,
     private val outboxRepository: pl.detailing.crm.comms.infrastructure.CommOutboxRepository,
-    private val progressRegistry: SyncProgressRegistry
+    private val progressRegistry: SyncProgressRegistry,
+    private val followUps: ObjectProvider<AccountSyncFollowUp>
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -78,6 +80,13 @@ class ImapSyncEngine(
             val account = accountRepository.findById(accountId).orElse(null) ?: return
             if (account.status == MailAccountStatus.DISABLED) return
             doSync(account)
+            // Pod tą samą blokadą co import: porządki w wątkach skrzynki nie mogą się
+            // przeplatać z wpinaniem do nich nowej poczty.
+            followUps.orderedStream().forEach { followUp ->
+                runCatching { followUp.afterSync(account) }.onFailure {
+                    log.error("Porządki po synchronizacji skrzynki {} nieudane: {}", account.emailAddress, it.message, it)
+                }
+            }
         } finally {
             lock.set(false)
         }

@@ -45,8 +45,48 @@ data class ExtractedFormLead(
     /** Usługa, o którą pyta — dosłownie tak, jak stoi w mailu. */
     val service: String?,
     val vehicleBrand: String?,
-    val vehicleModel: String?
-)
+    val vehicleModel: String?,
+    /**
+     * Krótki tytuł sprawy do listy rozmów („Toyota RAV4 · folia PPF na progi"). Temat
+     * robota formularza jest dla wszystkich zgłoszeń ten sam i niczego nie odróżnia.
+     */
+    val title: String? = null,
+    /**
+     * Model uznał, że to nie jest zapytanie klienta: reklama, oferta pozycjonowania,
+     * wymiana linków, bot, wiadomość testowa. Zgłoszenie nie zostaje leadem, a wątek
+     * trafia do zakładki „Odrzucone" — z możliwością cofnięcia.
+     */
+    val notAnInquiry: Boolean = false,
+    val notAnInquiryReason: String? = null
+) {
+    /**
+     * Wynik odczytu przycięty do tego, co naprawdę stoi w treści.
+     *
+     * Adres e-mail i telefon to jedyne pola, których pomyłka kosztuje więcej niż brak:
+     * wymyślony adres to wycena wysłana obcej osobie (czyli wyciek danych osobowych),
+     * wymyślony numer — telefon do przypadkowego człowieka. Prompt zabrania zgadywania,
+     * ale zakaz w prompcie to prośba, nie gwarancja. Tu jest gwarancja: kontakt, którego
+     * nie da się znaleźć w treści dosłownie, znika z wyniku.
+     *
+     * Telefon porównujemy po cyfrach (ostatnie 9), bo model wolno mu sformatować
+     * inaczej („+48 511 038 420" z „511038420"), ale nie wolno mu go wymyślić.
+     */
+    fun groundedIn(source: String): ExtractedFormLead {
+        val haystack = source.lowercase()
+        val digits = source.filter(Char::isDigit)
+        val groundedEmail = email?.takeIf { haystack.contains(it.lowercase()) }
+        val groundedPhone = phone?.takeIf { value ->
+            val phoneDigits = value.filter(Char::isDigit).takeLast(PHONE_SIGNIFICANT_DIGITS)
+            phoneDigits.length >= MIN_PHONE_DIGITS && digits.contains(phoneDigits)
+        }
+        return copy(email = groundedEmail, phone = groundedPhone)
+    }
+
+    private companion object {
+        const val PHONE_SIGNIFICANT_DIGITS = 9
+        const val MIN_PHONE_DIGITS = 7
+    }
+}
 
 /**
  * Odczytuje dane klienta z maila wygenerowanego przez formularz na stronie.
@@ -70,6 +110,8 @@ class FormMailExtractionService(
     suspend fun extract(subject: String?, body: String): ExtractedFormLead? {
         val text = body.trim().take(MAX_INPUT_LENGTH)
         if (text.isEmpty()) return null
+        // Kontakt sprawdzamy w tym samym tekście, który czytał model (plus temat).
+        val source = "${subject.orEmpty()}\n$text"
 
         return withContext(Dispatchers.IO) {
             try {
@@ -79,6 +121,7 @@ class FormMailExtractionService(
                     .call()
                     .entity(RawAnswer::class.java)
                     ?.toExtracted()
+                    ?.groundedIn(source)
             } catch (e: Exception) {
                 // Awaria odczytu nie może zgubić maila — dziennik odnotuje FAILED,
                 // a wiadomość zostaje w skrzynce do ręcznego oznaczenia.
@@ -106,7 +149,10 @@ $body
         @JsonProperty("message") val message: String? = null,
         @JsonProperty("service") val service: String? = null,
         @JsonProperty("vehicleBrand") val vehicleBrand: String? = null,
-        @JsonProperty("vehicleModel") val vehicleModel: String? = null
+        @JsonProperty("vehicleModel") val vehicleModel: String? = null,
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("notAnInquiry") val notAnInquiry: Boolean? = null,
+        @JsonProperty("notAnInquiryReason") val notAnInquiryReason: String? = null
     ) {
         fun toExtracted() = ExtractedFormLead(
             customerName = customerName?.trim()?.takeIf { it.isNotEmpty() },
@@ -115,12 +161,17 @@ $body
             message = message?.trim()?.takeIf { it.isNotEmpty() },
             service = service?.trim()?.takeIf { it.isNotEmpty() },
             vehicleBrand = vehicleBrand?.trim()?.takeIf { it.isNotEmpty() },
-            vehicleModel = vehicleModel?.trim()?.takeIf { it.isNotEmpty() }
+            vehicleModel = vehicleModel?.trim()?.takeIf { it.isNotEmpty() },
+            title = title?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_TITLE_LENGTH),
+            notAnInquiry = notAnInquiry == true,
+            notAnInquiryReason = notAnInquiryReason?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_REASON_LENGTH)
         )
     }
 
     companion object {
         private const val MAX_INPUT_LENGTH = 8_000
+        private const val MAX_TITLE_LENGTH = 120
+        private const val MAX_REASON_LENGTH = 250
 
         private val SYSTEM_PROMPT = """
 Czytasz automatyczne powiadomienie e-mail, które formularz kontaktowy ze strony
@@ -135,6 +186,17 @@ POLA:
   bez etykiet pól i bez ozdobników szablonu.
 - service: usługa, o którą pyta (np. „Powłoka ceramiczna"), dosłownie z maila.
 - vehicleBrand / vehicleModel: marka i model auta, jeśli je podano.
+- title: krótki tytuł sprawy dla listy rozmów, do 60 znaków, po polsku, w formie
+  „Auto · czego dotyczy", np. „Toyota RAV4 · folia PPF na progi i klamki",
+  „Porsche Macan · zmiana koloru folią". Bez auta — sama sprawa („Renowacja
+  skóry fotela"). Nie wymyślaj niczego, czego nie ma w treści.
+- notAnInquiry: true, gdy to NIE jest zapytanie klienta o usługę studia: reklama,
+  oferta pozycjonowania lub wymiany linków, bot, spam w obcym języku bez związku
+  z autem, wiadomość testowa („test", „testowa wiadomość"). Pytanie o usługę,
+  której studio może nie świadczyć (lakiernik, tapicer), NADAL jest zapytaniem
+  klienta — wtedy false. W razie wątpliwości: false.
+- notAnInquiryReason: jedno krótkie zdanie po polsku, czemu to nie jest zapytanie
+  (tylko gdy notAnInquiry = true).
 
 ZASADY:
 - Nadawca tego maila to robot formularza, NIE klient. Adresów z nagłówków,

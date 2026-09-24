@@ -25,6 +25,7 @@ import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.formmail.FormMailLeadProcessor
 import pl.detailing.crm.leads.formmail.FormMailProcessResult
 import pl.detailing.crm.leads.formmail.FormMailSourceEntity
+import pl.detailing.crm.leads.formmail.FormSubmissionThreads
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadStatusService
@@ -56,6 +57,7 @@ class AutoLeadProcessorTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val transactionTemplate = mockk<TransactionTemplate>()
     private val attachmentLinker = mockk<LeadAttachmentLinker>(relaxed = true)
+    private val submissionThreads = mockk<FormSubmissionThreads>(relaxed = true)
 
     private val studioId = UUID.randomUUID()
     private val threadId = UUID.randomUUID()
@@ -66,7 +68,7 @@ class AutoLeadProcessorTest {
     private fun processor(minConfidence: Double = 0.7) = AutoLeadProcessor(
         classifier, classificationRepository, rateLimiter, formMailLeadProcessor,
         leadRepository, threadRepository, customerRepository, statusService,
-        soleUserResolver, attachmentLinker, eventPublisher, transactionTemplate, minConfidence
+        soleUserResolver, attachmentLinker, eventPublisher, transactionTemplate, submissionThreads, minConfidence
     )
 
     private fun thread() = CommThreadEntity(

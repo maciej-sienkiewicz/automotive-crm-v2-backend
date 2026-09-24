@@ -43,7 +43,16 @@ data class CommThreadDto(
     val hasAttachments: Boolean,
     val leadId: String?,
     val labelId: String?,
-    val archived: Boolean
+    val archived: Boolean,
+    /** DIRECT | FORM | SYSTEM — patrz [pl.detailing.crm.comms.domain.CommThreadKind]. */
+    val kind: String = "DIRECT",
+    /** Robot formularza, przez który przyszło zgłoszenie (tylko FORM). */
+    val relayEmail: String? = null,
+    /** Krótki tytuł sprawy z odczytu zgłoszenia; lista pokazuje go zamiast tematu robota. */
+    val title: String? = null,
+    /** SPAM | INTERNAL — automat uznał zgłoszenie za niebędące zapytaniem klienta. */
+    val screening: String? = null,
+    val screeningReason: String? = null
 )
 
 data class CommThreadPageDto(
@@ -75,7 +84,9 @@ data class CommMessageDto(
      * zbiera zgłoszenia wielu klientów pod wspólnym tematem, więc lead wisi przy
      * konkretnej wiadomości, a nie przy wątku.
      */
-    val formLeadId: String? = null
+    val formLeadId: String? = null,
+    /** Adres z nagłówka Reply-To — tam odpowiada każdy program pocztowy. */
+    val replyToEmail: String? = null
 )
 
 data class CommAttachmentDto(
@@ -88,7 +99,14 @@ data class CommAttachmentDto(
 
 data class CommThreadDetailDto(
     val thread: CommThreadDto,
-    val messages: List<CommMessageDto>
+    val messages: List<CommMessageDto>,
+    /**
+     * Dokąd pójdzie odpowiedź — ustalone na serwerze
+     * ([pl.detailing.crm.comms.domain.ReplyAddressResolver]). Null: nie wiemy, adres
+     * trzeba wpisać ręcznie. Nigdy nie jest adresem skrzynki studia ani robota formularza.
+     */
+    val replyAddress: String? = null,
+    val replyName: String? = null
 )
 
 data class CommLabelDto(
@@ -131,7 +149,12 @@ fun CommThreadEntity.toDto() = CommThreadDto(
     hasAttachments = hasAttachments,
     leadId = leadId?.toString(),
     labelId = labelId?.toString(),
-    archived = archived
+    archived = archived,
+    kind = kind.name,
+    relayEmail = relayEmail,
+    title = title,
+    screening = screening?.name,
+    screeningReason = screeningReason
 )
 
 fun CommMessageEntity.toDto(
@@ -162,7 +185,8 @@ fun CommMessageEntity.toDto(
             isInline = it.isInline
         )
     },
-    formLeadId = formLeadId?.toString()
+    formLeadId = formLeadId?.toString(),
+    replyToEmail = replyToEmail
 )
 
 fun CommLabelEntity.toDto() = CommLabelDto(
