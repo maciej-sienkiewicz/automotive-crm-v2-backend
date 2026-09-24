@@ -2,6 +2,7 @@ package pl.detailing.crm.comms.domain
 
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
 import org.jsoup.safety.Safelist
 import org.springframework.stereotype.Service
@@ -20,7 +21,7 @@ class EmailTextCleaner {
         Regex("^W dniu .{0,160}napisa[łl](a)?\\s*(:|\\(a\\):)", RegexOption.IGNORE_CASE),
         Regex("^Dnia .{0,160}(napisa[łl](a)?|pisze)\\s*:", RegexOption.IGNORE_CASE),
         Regex("^On .{0,160}wrote:", RegexOption.IGNORE_CASE),
-        Regex("^-{2,}\\s*(Original Message|Wiadomość oryginalna|Forwarded message|Wiadomość przekazana)", RegexOption.IGNORE_CASE),
+        Regex("^-{2,}\\s*(Original Message|Wiadomość oryginalna|Forwarded message|Wiadomość przekazana|Przekazana wiadomość)", RegexOption.IGNORE_CASE),
         Regex("^(pon|wt|śr|sr|czw|pt|sob|niedz)\\.,? .{0,160}napisa[łl](a)?\\s*(:|\\(a\\):)", RegexOption.IGNORE_CASE)
     )
 
@@ -33,17 +34,46 @@ class EmailTextCleaner {
         Regex("^(Wysłane z|Sent from) ", RegexOption.IGNORE_CASE)
     )
 
+    /**
+     * Początek wiadomości PRZEKAZANEJ. Stoi też w [quoteMarkers], bo pod cytatem
+     * (przekazanie, na które ktoś odpisał) nadal jest historią — treścią staje się
+     * dopiero wtedy, gdy nad nim nie zaczął się żaden cytat. Patrz [forwardStart].
+     */
+    private val forwardMarkers = listOf(
+        Regex("^-{2,}\\s*(Forwarded message|Wiadomość przekazana|Przekazana wiadomość)", RegexOption.IGNORE_CASE)
+    )
+
+    /** Linia nagłówka przekazanej wiadomości: „Od: …", „Subject: …" i reszta. */
+    private val forwardHeaderLine = Regex(
+        "^\\*?(Od|From|Data|Date|Wysłano|Sent|Temat|Subject|Do|To|DW|Cc|UDW|Bcc)\\s*:",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Pola otwierające nagłówek cytowanej wiadomości Outlooka — patrz [isHistoryHeader]. */
+    private val outlookSeparator = Regex("^_{10,}$")
+    private val historyFromLine = Regex("^\\*?(Od|From)\\s*:", RegexOption.IGNORE_CASE)
+    private val historySentLine = Regex("^\\*?(Wysłano|Sent|Data|Date)\\s*:", RegexOption.IGNORE_CASE)
+
+    /**
+     * Najpierw HTML, a gdy z niego nic nie zostaje — część tekstowa.
+     *
+     * Pusty wynik z HTML-a nie znaczy „wiadomość jest pusta", tylko „wszystko, co w niej
+     * było, siedziało w kontenerze cytatu". Zgłoszenie z produkcji: klientka przekazała
+     * (Fwd) swoje zapytanie i skasowała nagłówek przekazania. Gmail zostawił treść
+     * w `div.gmail_quote`, ten wyleciał w całości i wiadomość z „Ford Transit L3H3"
+     * miała pustą wersję czystą — a rozpoznanie auta czytało właśnie ją i dostało
+     * od modelu „brak marki". Część tekstowa tego samego maila była w porządku.
+     */
     fun clean(html: String?, plainText: String?): String {
-        val text = when {
-            !html.isNullOrBlank() -> htmlToText(html)
-            !plainText.isNullOrBlank() -> plainText
-            else -> return ""
-        }
-        return stripQuotedHistory(text).take(MAX_CLEAN_LENGTH).trim()
+        val fromHtml = html?.takeIf { it.isNotBlank() }?.let { finish(htmlToText(it)) }.orEmpty()
+        if (fromHtml.isNotEmpty()) return fromHtml
+        return plainText?.takeIf { it.isNotBlank() }?.let { finish(it) }.orEmpty()
     }
 
     fun snippet(html: String?, plainText: String?, maxLength: Int = 160): String =
         clean(html, plainText).replace(Regex("\\s+"), " ").take(maxLength)
+
+    private fun finish(text: String): String = stripQuotedHistory(text).take(MAX_CLEAN_LENGTH).trim()
 
     private fun htmlToText(html: String): String {
         val document = Jsoup.parse(html)
@@ -51,7 +81,7 @@ class EmailTextCleaner {
         // Quoted-history containers used by the major clients.
         document.select(
             "div.gmail_quote, blockquote, div#divRplyFwdMsg, div.moz-cite-prefix, div.yahoo_quoted"
-        ).remove()
+        ).filterNot { isForwardContainer(it) }.forEach { it.remove() }
         document.select("[style~=(?i)display:\\s*none]").remove()
         document.select("br, p, div, li, tr").before(LINE_BREAK_TOKEN)
 
@@ -62,6 +92,28 @@ class EmailTextCleaner {
             Document.OutputSettings().prettyPrint(false)
         )
         return Parser.unescapeEntities(stripped, false).replace(LINE_BREAK_TOKEN, "\n")
+    }
+
+    /**
+     * Czy ten kontener niesie wiadomość PRZEKAZANĄ, a nie cytat odpowiedzi.
+     *
+     * Gmail używa `div.gmail_quote` do dwóch różnych rzeczy: przy odpowiedzi to
+     * historia rozmowy, przy przekazaniu — treść, dla której ktoś w ogóle pisze.
+     * Recepcja przesyłająca zapytanie klienta dopisuje „przesyłam poniżej", a samo
+     * zapytanie (auto, zakres, termin) stoi w tym kontenerze. Wycięcie go zostawiało
+     * z leada sam dopisek.
+     *
+     * Rozpoznajemy wyłącznie po nagłówku, który Gmail wstawia w `div.gmail_attr`
+     * („---------- Forwarded message ---------"). Kształt kontenera nie wystarczy:
+     * gdy ktoś nagłówek skasuje, przekazanie niczym nie różni się od cytatu, a wtedy
+     * lepiej stracić treść (wraca przez część tekstową w [clean]) niż wciągnąć do
+     * wyniku historię cudzej rozmowy. `blockquote` nigdy nie jest przekazaniem —
+     * w nim leży cytat także wtedy, gdy cytowana wiadomość sama była przekazaniem.
+     */
+    private fun isForwardContainer(element: Element): Boolean {
+        if (!element.hasClass("gmail_quote") || element.tagName() != "div") return false
+        val header = element.children().firstOrNull { it.hasClass("gmail_attr") }?.text()?.trim() ?: return false
+        return forwardMarkers.any { it.containsMatchIn(header) }
     }
 
     /**
@@ -83,12 +135,74 @@ class EmailTextCleaner {
      * jednego znaku, próbujemy drugiego: wyrzuć cytat i znaczniki, zatrzymaj to, co
      * zostało pod spodem. Kolejność nie jest dowolna — przy top-postingu drugi przebieg
      * wciągnąłby ogon cudzej wiadomości, który nie jest oznaczony „>".
+     *
+     * Przekazanie idzie osobną drogą: dopisek nad nim i przekazana wiadomość to DWIE
+     * treści, każda z własną stopką. Czyścimy je osobno i sklejamy — inaczej „Pozdrawiam"
+     * pod dopiskiem albo sam znacznik przekazania ucinałyby zapytanie klienta.
      */
-    private fun stripQuotedHistory(text: String): String {
-        val lines = text.replace("\r\n", "\n").split('\n')
+    private fun stripQuotedHistory(text: String): String =
+        stripQuotedHistory(text.replace("\r\n", "\n").split('\n'))
+
+    private fun stripQuotedHistory(lines: List<String>): String {
+        val forwardAt = forwardStart(lines)
+        if (forwardAt != null) {
+            val note = stripQuotedHistory(lines.subList(0, forwardAt))
+            val forwarded = stripQuotedHistory(withoutForwardHeader(lines.subList(forwardAt + 1, lines.size)))
+            return listOf(note, forwarded).filter { it.isNotBlank() }.joinToString("\n\n")
+        }
         val aboveQuote = collectAboveQuote(lines)
         if (aboveQuote.isNotBlank()) return aboveQuote
         return collectBelowQuote(lines)
+    }
+
+    /**
+     * Indeks znacznika przekazania, o ile stoi PRZED jakimkolwiek cytatem.
+     *
+     * Przekazanie pod „W dniu … napisał(a):" to fragment cytowanej historii — ktoś
+     * odpisał na przekazaną wiadomość — i musi zniknąć razem z nią. Stąd przerwanie
+     * na pierwszym znaczniku cytatu, a nie szukanie przekazania w całym tekście.
+     */
+    private fun forwardStart(lines: List<String>): Int? {
+        for ((index, line) in lines.withIndex()) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith(">")) continue
+            if (forwardMarkers.any { it.containsMatchIn(trimmed) }) return index
+            if (quoteMarkers.any { it.containsMatchIn(trimmed) } || isQuoteIntro(lines, index)) return null
+            if (isHistoryHeader(lines, index)) return null
+        }
+        return null
+    }
+
+    /**
+     * Nagłówek cytowanej wiadomości w stylu Outlooka — bez „>" i bez „napisał(a)":
+     * kreska z podkreślników albo „Od: …" z „Wysłano: …" tuż pod spodem.
+     *
+     * Dla zwykłego czyszczenia to tekst jak każdy inny (zwykle ucina go wcześniej
+     * stopka). Ale przekazanie stojące POD takim nagłówkiem jest historią wątku,
+     * który zaczął się od przekazania — bez tego zatrzymania [forwardStart] doszedłby
+     * do niego i dokleił stare zapytanie do nowej odpowiedzi.
+     */
+    private fun isHistoryHeader(lines: List<String>, index: Int): Boolean {
+        val line = lines[index].trim()
+        if (outlookSeparator.matches(line)) return true
+        if (!historyFromLine.containsMatchIn(line)) return false
+        val next = lines.drop(index + 1).firstOrNull { it.isNotBlank() }?.trim() ?: return false
+        return historySentLine.containsMatchIn(next)
+    }
+
+    /**
+     * Przekazana wiadomość bez swojego nagłówka („Od:", „Date:", „Subject:", „To:").
+     *
+     * Puste linie wewnątrz nagłówka są przeskakiwane, bo z HTML-a Gmaila każde pole
+     * wychodzi w osobnym wierszu przedzielonym pustym. Pierwsza linia, która nie jest
+     * ani pusta, ani polem nagłówka, zaczyna treść.
+     */
+    private fun withoutForwardHeader(lines: List<String>): List<String> {
+        val bodyStart = lines.indexOfFirst { line ->
+            val trimmed = line.trim()
+            trimmed.isNotEmpty() && !forwardHeaderLine.containsMatchIn(trimmed)
+        }
+        return if (bodyStart < 0) emptyList() else lines.subList(bodyStart, lines.size)
     }
 
     /**

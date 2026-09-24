@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.comms.domain.CommDirection
+import pl.detailing.crm.comms.domain.EmailTextCleaner
+import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
@@ -54,6 +56,7 @@ data class LeadThreadAttachedEvent(
 class LeadVehicleExtractionListener(
     private val leadRepository: LeadRepository,
     private val messageRepository: CommMessageRepository,
+    private val textCleaner: EmailTextCleaner,
     private val extractionService: LeadVehicleExtractionService,
     private val segmentService: VehicleSegmentService,
     private val eventPublisher: ApplicationEventPublisher,
@@ -78,20 +81,25 @@ class LeadVehicleExtractionListener(
         }
 
         val conversation = messageRepository.findByThreadIdOrderBySentAtAsc(event.threadId)
-            .joinToString("\n\n") { message ->
+            .mapNotNull { message ->
+                val body = readableBody(message) ?: return@mapNotNull null
                 val who = if (message.direction == CommDirection.OUTBOUND) "Studio" else "Klient"
-                // Tekst bez cytatów i stopek — inaczej model czyta w kółko tę samą
-                // historię rozmowy i auta z cudzych podpisów.
-                "$who: ${message.bodyTextClean.orEmpty()}"
+                "$who: $body"
             }
-            .trim()
+            .joinToString("\n\n")
 
         // Cokolwiek się wydarzy — także brak treści i awaria modelu — lead musi wyjść
         // ze stanu PENDING. Inaczej w tabeli zostaje spinner, który kręci się na zawsze.
         val vehicle = if (conversation.isBlank()) null else runBlocking { extractionService.extract(conversation) }
 
         if (vehicle?.brand == null) {
-            log.debug("[LEAD_VEHICLE] W wątku {} nie rozpoznano auta", event.threadId)
+            // INFO, nie DEBUG: „nie rozpoznano" przy pustym wejściu i przy rozmowie
+            // o aucie bez marki wygląda w tabeli identycznie. Długość wejścia w logu
+            // to jedyny ślad, po którym da się je rozróżnić.
+            log.info(
+                "[LEAD_VEHICLE] Lead {} — nie rozpoznano auta w wątku {} (wejście: {} znaków)",
+                lead.id, event.threadId, conversation.length
+            )
             finish(lead, brand = null, model = null)
             return
         }
@@ -112,7 +120,10 @@ class LeadVehicleExtractionListener(
 
         val vehicle = if (event.text.isBlank()) null else runBlocking { extractionService.extract(event.text) }
         if (vehicle?.brand == null) {
-            log.debug("[LEAD_VEHICLE] W treści leada {} nie rozpoznano auta", event.leadId)
+            log.info(
+                "[LEAD_VEHICLE] Lead {} — nie rozpoznano auta w treści (wejście: {} znaków)",
+                event.leadId, event.text.length
+            )
             finish(lead, brand = null, model = null)
             return
         }
@@ -120,6 +131,20 @@ class LeadVehicleExtractionListener(
         log.info("[LEAD_VEHICLE] Lead {} — rozpoznano {} {}", lead.id, vehicle.brand, vehicle.model ?: "")
         finish(lead, brand = vehicle.brand, model = vehicle.model)
     }
+
+    /**
+     * Treść wiadomości bez cytatów i stopek — inaczej model czyta w kółko tę samą
+     * historię rozmowy i auta z cudzych podpisów. Null, gdy nie ma czego czytać.
+     *
+     * Pusta wersja czysta nie znaczy, że wiadomość jest pusta. Zgłoszenie z produkcji:
+     * przekazany mail z „Ford Transit L3H3" miał `body_text_clean` = '' przy 1627
+     * znakach surowego ciała. Model dostawał sam napis „Klient:" i zgodnie z promptem
+     * („NIE ZGADUJ") odpowiadał „brak marki". Stąd to samo zejście co na osi czasu
+     * leada: czyszczenie na nowo z części tekstowej, a nie surowe ciało z cytatami.
+     */
+    private fun readableBody(message: CommMessageEntity): String? =
+        message.bodyTextClean?.takeIf { it.isNotBlank() }
+            ?: textCleaner.clean(null, message.bodyText).takeIf { it.isNotBlank() }
 
     /**
      * Zamyka rozpoznanie i budzi interfejs. Zdarzenie niesie pełny wiersz leada

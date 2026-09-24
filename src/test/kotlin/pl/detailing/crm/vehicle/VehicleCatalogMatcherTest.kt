@@ -145,4 +145,17 @@ class VehicleCatalogMatcherTest {
         assertEquals("Mercedes-benz", match.brand)
         assertEquals("Klasa G", match.model)
     }
+
+    @Test
+    fun `prawdziwy katalog zna Forda Transita bez pytania modelu`() = runBlocking {
+        // Zgłoszenie z produkcji: lead o „Ford Transit L3H3" został bez auta. Katalog
+        // nie był przyczyną (model dostał pustą treść) — ten test pilnuje, żeby nie
+        // stał się nią po edycji marki_modele_final.json. Katalog prawdziwy, nie mock.
+        val catalogMatcher = VehicleCatalogMatcher(VehicleMetadataService().apply { init() }, chatClient)
+
+        val match = catalogMatcher.resolve("Ford", "Transit")
+
+        assertEquals(VehicleCatalogMatcher.Match("Ford", "Transit"), match)
+        verify(exactly = 0) { chatClient.prompt() }
+    }
 }
