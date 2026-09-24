@@ -51,6 +51,9 @@ class FormMailAutoLeadListener(
         val source = sourceRepository.findByStudioIdAndSenderEmail(event.studioId, senderEmail)
             ?: return
         if (!source.active) return
+        // Robot = adres samego studia: bez klienta w Reply-To to nie zgłoszenie, tylko
+        // mail do siebie (patrz AutoLeadClassificationListener).
+        if (event.fromOwnMailbox && !event.formSubmission) return
         if (event.sentAt.isBefore(source.createdAt)) {
             log.debug(
                 "[FORM_MAIL] Mail {} od {} starszy niż oznaczenie źródła — pomijam (backfill)",

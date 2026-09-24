@@ -7,6 +7,8 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
+import pl.detailing.crm.comms.domain.CommThreadKind
+import pl.detailing.crm.comms.domain.CommThreadScreening
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadEntity
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
@@ -17,6 +19,7 @@ import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
 import pl.detailing.crm.leads.formmail.FormMailLeadProcessor
 import pl.detailing.crm.leads.formmail.FormMailProcessResult
 import pl.detailing.crm.leads.formmail.FormMailSourceEntity
+import pl.detailing.crm.leads.formmail.FormSubmissionThreads
 import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.leads.update.LeadStatusService
@@ -85,6 +88,7 @@ class AutoLeadProcessor(
     private val attachmentLinker: LeadAttachmentLinker,
     private val eventPublisher: ApplicationEventPublisher,
     private val transactionTemplate: TransactionTemplate,
+    private val submissionThreads: FormSubmissionThreads,
     @Value("\${crm.ai.lead-classification.min-confidence:0.7}") private val minConfidence: Double
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -102,6 +106,15 @@ class AutoLeadProcessor(
             ?: message.bodyText?.takeIf { it.isNotBlank() }
             ?: return record(message, thread, STATUS_SKIPPED, reason = "Wiadomość bez treści tekstowej")
 
+        // Zgłoszenie z formularza wysłane z adresu kogoś ze studia to test formularza.
+        // Rozpoznajemy je po adresie — za darmo, zanim zapłacimy za przeczytanie.
+        if (formSource == null && thread.kind == CommThreadKind.FORM &&
+            submissionThreads.isStudioAddress(message.studioId, thread.participantEmail)
+        ) {
+            submissionThreads.screen(thread, CommThreadScreening.INTERNAL, "Test formularza wysłany przez kogoś ze studia")
+            return record(message, thread, STATUS_SKIPPED, reason = "Zgłoszenie z adresu studia — test formularza")
+        }
+
         // Ostatni próg przed pierwszym tokenem. Wyżej odsiewamy za darmo (flaga, nagłówki,
         // wątek z leadem), tutaj kończy się to, co możemy przewidzieć.
         if (!rateLimiter.tryConsume(message.studioId)) {
@@ -112,6 +125,15 @@ class AutoLeadProcessor(
             ?: return record(message, thread, STATUS_FAILED, reason = "Klasyfikacja LLM nie powiodła się")
 
         if (verdict.verdict == LeadClassificationVerdict.NOT_LEAD) {
+            // Zgłoszenie z formularza, które nie jest zapytaniem (spam, SEO, boty) — do
+            // „Odrzuconych", żeby nie zaśmiecało Odebranych. Zwykły mail zostaje, gdzie był:
+            // odrzucenie znaczy tylko „nie lead", a nie „nie czytaj".
+            if (thread.kind == CommThreadKind.FORM) {
+                submissionThreads.screen(
+                    thread, CommThreadScreening.SPAM,
+                    verdict.reasoning?.takeIf { it.isNotBlank() } ?: "Automat: to nie jest zapytanie klienta"
+                )
+            }
             return record(
                 message, thread, STATUS_REJECTED,
                 classification = verdict,
@@ -167,10 +189,13 @@ class AutoLeadProcessor(
             )
             val assignee = soleUserResolver.resolveForStudio(message.studioId)
 
+            // Wątek zgłoszenia z formularza (Reply-To) ma klienta jako drugą stronę, więc
+            // lead powstaje tą samą drogą co z maila — ale źródłem jest formularz.
+            val leadSource = if (thread.kind == CommThreadKind.FORM) LeadSource.FORM else LeadSource.EMAIL
             val lead = LeadEntity(
                 id = UUID.randomUUID(),
                 studioId = message.studioId,
-                source = LeadSource.EMAIL,
+                source = leadSource,
                 status = LeadStatus.NEW,
                 contactIdentifier = thread.participantEmail,
                 customerName = thread.participantName
@@ -201,10 +226,7 @@ class AutoLeadProcessor(
             // do sprawy, nie do skrzynki — patrz [LeadAttachmentLinker].
             attachmentLinker.link(lead.id, message)
 
-            fresh?.let {
-                it.leadId = lead.id
-                threadRepository.save(it)
-            }
+            fresh?.let { submissionThreads.attachLead(it, lead.id) }
 
             // Dziennik w tej samej transakcji co lead: unikalny indeks na message_id jest
             // kluczem idempotencji, więc równoległy przebieg wywróci się TUTAJ i wycofa
@@ -218,7 +240,7 @@ class AutoLeadProcessor(
                     source = this,
                     studioId = StudioId(message.studioId),
                     leadId = LeadId(lead.id),
-                    leadSource = LeadSource.EMAIL,
+                    leadSource = leadSource,
                     contactIdentifier = lead.contactIdentifier,
                     customerName = lead.customerName,
                     estimatedValue = 0,

@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import pl.detailing.crm.comms.domain.CommOutboundSentEvent
+import pl.detailing.crm.leads.infrastructure.LeadEntity
 import pl.detailing.crm.leads.infrastructure.LeadRepository
 import pl.detailing.crm.shared.LeadStatus
 import java.time.Instant
@@ -62,9 +63,19 @@ class LeadFirstResponseListener(
         // kilku leadów; pierwsza reakcja należy do najstarszego z nich. Zapytanie
         // o JEDEN wynik wywracałoby się tutaj na policzalności, a nie na sensie.
         val lead = leadRepository.findByThreadIdOrderByCreatedAtAsc(event.threadId).firstOrNull() ?: return
+        recordResponse(lead, event.sentAt)
+        log.debug("[LEADS] Odpowiedź w wątku {} odnotowana na leadzie {}", event.threadId, lead.id)
+    }
 
+    /**
+     * Księgowanie odpowiedzi na leadzie — wspólne dla nasłuchu i dla pierwszej wiadomości
+     * wysłanej z leada bez wątku ([pl.detailing.crm.leads.conversation.LeadConversationBinder]):
+     * tam wątek powstaje w trakcie wysyłki i nasłuch może go jeszcze nie znać.
+     * Idempotentne — drugi przebieg niczego nie zmienia.
+     */
+    fun recordResponse(lead: LeadEntity, sentAt: Instant) {
         if (lead.firstResponseAt == null) {
-            lead.firstResponseAt = event.sentAt
+            lead.firstResponseAt = sentAt
             lead.updatedAt = Instant.now()
             leadRepository.save(lead)
         }
@@ -80,7 +91,5 @@ class LeadFirstResponseListener(
          * i jedyny, po którym sprawa ma prawo zejść z sekcji „Czeka na Ciebie".
          */
         owedService.settle(lead)
-
-        log.debug("[LEADS] Odpowiedź w wątku {} odnotowana na leadzie {}", event.threadId, lead.id)
     }
 }

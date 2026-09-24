@@ -64,7 +64,10 @@ class LeadTimelineTest {
 
     // Leady z tego zestawu mają własny wątek, więc ta ścieżka nie powinna się
     // odezwać; zaślepka pilnuje, że oś czasu nie zaczęła po cichu z niej korzystać.
-    private val formLeadConversation = mockk<FormLeadConversation>(relaxed = true)
+    private val formLeadConversation = mockk<FormLeadConversation>(relaxed = true) {
+        // Relaksowany mock oddałby atrapę wiadomości — lead z wątkiem nie ma zgłoszenia poza nim.
+        every { originOutsideThread(any()) } returns null
+    }
 
     private val handlers = LeadQueryHandlers(
         leadRepository, itemRepository, historyRepository, tagService, tagCatalog,

@@ -16,6 +16,8 @@ import pl.detailing.crm.comms.domain.CommFolderKind
 import pl.detailing.crm.comms.domain.CommOutboundSentEvent
 import pl.detailing.crm.comms.domain.CommThreadChangedEvent
 import pl.detailing.crm.comms.domain.EmailTextCleaner
+import pl.detailing.crm.comms.domain.MailAddressBook
+import pl.detailing.crm.comms.domain.MailAddressDirectory
 import pl.detailing.crm.comms.domain.ParsedEmail
 import pl.detailing.crm.comms.engine.CommsIngestService
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
@@ -51,7 +53,10 @@ class CommsIngestServiceTest {
     }
     private val service = CommsIngestService(
         threadRepository, messageRepository, attachmentRepository,
-        EmailHtmlSanitizer(), EmailTextCleaner(), eventPublisher
+        EmailHtmlSanitizer(), EmailTextCleaner(), eventPublisher,
+        addressDirectory = object : MailAddressDirectory {
+            override fun addressBook(studioId: UUID) = MailAddressBook(setOf("studio@example.pl"), emptySet())
+        }
     )
 
     private val account = MailAccountEntity(
@@ -334,5 +339,168 @@ class CommsIngestServiceTest {
 
         assertTrue(message.captured.isRead)
         assertEquals(pl.detailing.crm.comms.domain.CommReadSource.EXTERNAL, message.captured.readSource)
+    }
+
+    // ── Zgłoszenia z formularza i zwroty serwera (V157) ─────────────────────────────
+
+    private fun formSubmission(messageId: String, client: String) = parsed(
+        messageId = messageId,
+        from = account.emailAddress
+    ).copy(
+        subject = "Formularz kontaktowy - carslab - kontakt",
+        replyToEmail = client,
+        fromName = "Carslab"
+    )
+
+    private fun formThread(client: String, outboundCount: Int = 0) = CommThreadEntity(
+        id = UUID.randomUUID(),
+        studioId = account.studioId,
+        accountId = account.id,
+        subjectNorm = "formularz kontaktowy - carslab - kontakt",
+        subject = "Formularz kontaktowy - carslab - kontakt",
+        participantEmail = client,
+        participantName = null,
+        lastMessageAt = Instant.now().minusSeconds(180),
+        lastDirection = CommDirection.INBOUND,
+        lastSnippet = null,
+        leadId = null,
+        labelId = null,
+        messageCount = 1,
+        inboundCount = 1,
+        outboundCount = outboundCount,
+        kind = pl.detailing.crm.comms.domain.CommThreadKind.FORM,
+        relayEmail = account.emailAddress
+    )
+
+    /**
+     * Zgłoszenie z produkcji: robot formularza wysyła „od studia do studia" pod jednym
+     * tematem, więc dopasowanie po temacie skleiło 38 klientów w jeden wątek, a odpowiedź
+     * szła do studia. Zgłoszenie ma dostać własny wątek z klientem jako drugą stroną.
+     */
+    @Test
+    fun `zgloszenie z formularza zaczyna wlasny watek z klientem z Reply-To`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { threadRepository.findRecentFormThreads(any(), any(), any(), any()) } returns emptyList()
+
+        val thread = slot<CommThreadEntity>()
+        every { threadRepository.save(capture(thread)) } answers { firstArg() }
+
+        service.ingest(account, CommFolderKind.INBOX, formSubmission("f1@carslab.pl", "jacek257986@wp.pl"), uidValidity = 7L)
+
+        assertEquals("jacek257986@wp.pl", thread.captured.participantEmail)
+        assertEquals(pl.detailing.crm.comms.domain.CommThreadKind.FORM, thread.captured.kind)
+        assertEquals(account.emailAddress, thread.captured.relayEmail)
+        // Podpis robota („Carslab") nie jest nazwą klienta.
+        assertEquals(null, thread.captured.participantName)
+        // Temat robota jest wspólny dla wszystkich zgłoszeń — nie wolno po nim kleić.
+        verify(exactly = 0) { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `ponowne wyslanie formularza przez te sama osobe dopisuje sie do jej zgloszenia`() {
+        val existing = formThread("kuna199696@gmail.com")
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every {
+            threadRepository.findRecentFormThreads(account.id, "kuna199696@gmail.com", account.emailAddress, any())
+        } returns listOf(existing)
+
+        val message = slot<CommMessageEntity>()
+        every { messageRepository.save(capture(message)) } answers { firstArg() }
+
+        service.ingest(account, CommFolderKind.INBOX, formSubmission("f2@carslab.pl", "kuna199696@gmail.com"), uidValidity = 7L)
+
+        assertEquals(existing.id, message.captured.threadId)
+        assertEquals(2, existing.messageCount)
+    }
+
+    @Test
+    fun `zgloszenie tej samej osoby po naszej odpowiedzi to nowa sprawa`() {
+        val answered = formThread("kuna199696@gmail.com", outboundCount = 1)
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { threadRepository.findRecentFormThreads(any(), any(), any(), any()) } returns listOf(answered)
+
+        val message = slot<CommMessageEntity>()
+        every { messageRepository.save(capture(message)) } answers { firstArg() }
+
+        service.ingest(account, CommFolderKind.INBOX, formSubmission("f3@carslab.pl", "kuna199696@gmail.com"), uidValidity = 7L)
+
+        assertTrue(message.captured.threadId != answered.id)
+    }
+
+    /**
+     * Zwrot niesie w References identyfikator zgłoszenia — po przodkach wpinał się
+     * w rozmowę z klientem (u jednego studia 45 zwrotów w jednym wątku z zapytaniami).
+     */
+    @Test
+    fun `zwrot serwera trafia do archiwalnego watku systemowego i nie karmi automatow leadow`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every {
+            threadRepository.findFirstByAccountIdAndKindOrderByCreatedAtAsc(account.id, pl.detailing.crm.comms.domain.CommThreadKind.SYSTEM)
+        } returns null
+
+        val thread = slot<CommThreadEntity>()
+        every { threadRepository.save(capture(thread)) } answers { firstArg() }
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(
+            account, CommFolderKind.INBOX,
+            parsed(
+                messageId = "bounce@s190",
+                references = listOf("f1@carslab.pl"),
+                from = "mailer-daemon@s190.cyber-folks.pl"
+            ).copy(subject = "Mail delivery failed: returning message to sender"),
+            uidValidity = 7L
+        )
+
+        assertEquals(pl.detailing.crm.comms.domain.CommThreadKind.SYSTEM, thread.captured.kind)
+        assertTrue(thread.captured.archived)
+        verify(exactly = 0) { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) }
+        assertTrue(events.none { it is pl.detailing.crm.comms.domain.CommInboundMessageStoredEvent })
+        assertFalse(events.filterIsInstance<CommThreadChangedEvent>().single().newMessage)
+    }
+
+    @Test
+    fun `mail ze skrzynki studia bez klienta nie klei sie z niczym po temacie`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(any(), any()) } returns emptyList()
+
+        service.ingest(account, CommFolderKind.INBOX, parsed(from = account.emailAddress), uidValidity = 7L)
+
+        verify(exactly = 0) { threadRepository.findRecentBySubjectAndParticipant(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `odpis klienta zdejmuje z watku werdykt automatu o spamie`() {
+        val screened = formThread("klient@example.com").apply {
+            screening = pl.detailing.crm.comms.domain.CommThreadScreening.SPAM
+            screeningReason = "Automat: oferta SEO"
+        }
+        val relative = messageEntity(screened.id, "f1@carslab.pl")
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { messageRepository.findByAccountIdAndMessageIdHdrIn(account.id, listOf("f1@carslab.pl")) } returns listOf(relative)
+        every { threadRepository.findById(screened.id) } returns Optional.of(screened)
+
+        service.ingest(
+            account, CommFolderKind.INBOX,
+            parsed(messageId = "c1@example.com", references = listOf("f1@carslab.pl")),
+            uidValidity = 7L
+        )
+
+        assertEquals(null, screened.screening)
+    }
+
+    @Test
+    fun `zgloszenie niesie flage dla automatow leadow`() {
+        every { messageRepository.findByAccountIdAndMessageIdHdr(any(), any()) } returns null
+        every { threadRepository.findRecentFormThreads(any(), any(), any(), any()) } returns emptyList()
+        val events = mutableListOf<Any>()
+        every { eventPublisher.publishEvent(capture(events)) } just Runs
+
+        service.ingest(account, CommFolderKind.INBOX, formSubmission("f4@carslab.pl", "klient@example.com"), uidValidity = 7L)
+
+        val stored = events.filterIsInstance<pl.detailing.crm.comms.domain.CommInboundMessageStoredEvent>().single()
+        assertTrue(stored.formSubmission)
+        assertTrue(stored.fromOwnMailbox)
     }
 }

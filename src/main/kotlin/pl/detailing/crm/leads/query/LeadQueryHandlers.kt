@@ -138,7 +138,15 @@ class LeadQueryHandlers(
          * na niej nawet zgłoszenia, które go utworzyło.
          */
         val threadMessages = lead.threadId
-            ?.let { messageRepository.findByThreadIdOrderBySentAtAsc(it) }
+            ?.let { threadId ->
+                // Lead z wielkiego wątku formularza sprzed V157 dostaje wątek dopiero
+                // z pierwszą odpowiedzią wysłaną z leada — zgłoszenie, od którego wszystko
+                // się zaczęło, zostało w tamtym wątku i bez tej linijki znikałoby z osi.
+                (messageRepository.findByThreadIdOrderBySentAtAsc(threadId) +
+                    listOfNotNull(formLeadConversation.originOutsideThread(lead)))
+                    .distinctBy { it.id }
+                    .sortedBy { it.sentAt }
+            }
             ?: formLeadConversation.messagesOf(lead)
 
         // Załączniki wiadomości z wątku czytamy wprost ze skrzynki, jednym zapytaniem:

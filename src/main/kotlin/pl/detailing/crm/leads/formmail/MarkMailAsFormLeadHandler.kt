@@ -1,10 +1,12 @@
 package pl.detailing.crm.leads.formmail
 
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.comms.domain.CommDirection
+import pl.detailing.crm.comms.domain.MailAddressDirectory
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
@@ -45,7 +47,9 @@ class MarkMailAsFormLeadHandler(
     private val messageRepository: CommMessageRepository,
     private val sourceRepository: FormMailSourceRepository,
     private val processor: FormMailLeadProcessor,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val addressDirectory: MailAddressDirectory,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -58,6 +62,11 @@ class MarkMailAsFormLeadHandler(
 
         val senderEmail = message.fromEmail.trim().lowercase()
         val source = registerSource(command, senderEmail)
+        // Import ma od następnego maila widzieć ten adres jako robota — bez czekania,
+        // aż książka adresowa sama się odświeży. Stary wątek, w którym ten robot skleił
+        // zgłoszenia wielu klientów, rozplata się zaraz potem (FormThreadAutoUntangler).
+        addressDirectory.invalidate(command.studioId.value)
+        eventPublisher.publishEvent(FormMailSourceRegisteredEvent(command.studioId.value))
 
         return when (val result = processor.process(source, message)) {
             is FormMailProcessResult.Created ->

@@ -3,7 +3,11 @@ package pl.detailing.crm.comms.api
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.comms.domain.MailAddressDirectory
+import pl.detailing.crm.comms.domain.ReplyAddressResolver
+import pl.detailing.crm.comms.domain.ReplyCandidate
 import pl.detailing.crm.comms.infrastructure.CommAttachmentRepository
+import pl.detailing.crm.comms.infrastructure.CommMessageEntity
 import pl.detailing.crm.comms.infrastructure.CommLabelEntity
 import pl.detailing.crm.comms.infrastructure.CommLabelRepository
 import pl.detailing.crm.comms.infrastructure.CommMessageRepository
@@ -23,7 +27,13 @@ enum class ThreadFolder {
     /** Przynajmniej jedna wiadomość od uczestnika. */
     INBOX,
     /** Przynajmniej jedna wiadomość od nas. */
-    SENT
+    SENT,
+    /**
+     * Zgłoszenia z formularza, które automat uznał za spam albo test ze studia. Osobno,
+     * żeby nie zaśmiecały Odebranych — ale na widoku, bo pomyłka automatu ma się dać
+     * cofnąć jednym kliknięciem („To jednak lead").
+     */
+    REJECTED
 }
 
 data class ThreadListFilter(
@@ -45,7 +55,8 @@ class CommsQueryHandlers(
     private val messageRepository: CommMessageRepository,
     private val attachmentRepository: CommAttachmentRepository,
     private val labelRepository: CommLabelRepository,
-    private val formMailExtractionRepository: FormMailExtractionRepository
+    private val formMailExtractionRepository: FormMailExtractionRepository,
+    private val addressDirectory: MailAddressDirectory
 ) {
 
     @Transactional(readOnly = true)
@@ -59,6 +70,11 @@ class CommsQueryHandlers(
             filter.onlyLeads,
             filter.folder == ThreadFolder.INBOX,
             filter.folder == ThreadFolder.SENT,
+            when (filter.folder) {
+                ThreadFolder.REJECTED -> true
+                ThreadFolder.INBOX, ThreadFolder.SENT -> false
+                null -> null
+            },
             filter.query?.trim()?.takeIf { it.isNotBlank() },
             PageRequest.of(filter.page.coerceAtLeast(0), filter.pageSize.coerceIn(1, 100))
         )
@@ -85,11 +101,21 @@ class CommsQueryHandlers(
             .findByMessageIdIn(messages.map { it.id })
             .filter { it.leadId != null }
             .associate { it.messageId to it.leadId!! }
+        val book = addressDirectory.addressBook(studioId.value)
+        val replyTarget = ReplyAddressResolver.resolve(
+            kind = thread.kind,
+            participantEmail = thread.participantEmail,
+            participantName = thread.participantName,
+            messagesChronological = messages.map { it.toReplyCandidate() },
+            book = book
+        )
         return CommThreadDetailDto(
             thread = thread.toDto(),
             messages = messages.map {
                 it.toDto(attachmentsByMessage[it.id].orEmpty(), formLeadByMessage[it.id])
-            }
+            },
+            replyAddress = replyTarget?.email,
+            replyName = replyTarget?.name
         )
     }
 
@@ -145,3 +171,12 @@ class CommsQueryHandlers(
         threadRepository.save(thread)
     }
 }
+
+internal fun CommMessageEntity.toReplyCandidate() = ReplyCandidate(
+    direction = direction,
+    fromEmail = fromEmail,
+    fromName = fromName,
+    replyToEmail = replyToEmail,
+    replyToName = replyToName,
+    toEmails = toEmails?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+)

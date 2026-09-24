@@ -6,7 +6,9 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
+import pl.detailing.crm.comms.domain.CommThreadScreening
 import pl.detailing.crm.comms.infrastructure.CommMessageEntity
+import pl.detailing.crm.comms.infrastructure.CommThreadRepository
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.create.SoleUserResolver
 import pl.detailing.crm.leads.domain.LeadVehicleDetectionStatus
@@ -55,6 +57,7 @@ class FormMailLeadProcessor(
     private val attachmentLinker: LeadAttachmentLinker,
     private val sourceRepository: FormMailSourceRepository,
     private val leadRepository: LeadRepository,
+    private val threadRepository: CommThreadRepository,
     private val customerRepository: CustomerRepository,
     private val statusService: LeadStatusService,
     private val tagService: LeadTagService,
@@ -62,7 +65,8 @@ class FormMailLeadProcessor(
     private val soleUserResolver: SoleUserResolver,
     private val catalogMatcher: VehicleCatalogMatcher,
     private val eventPublisher: ApplicationEventPublisher,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val submissionThreads: FormSubmissionThreads
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -80,11 +84,42 @@ class FormMailLeadProcessor(
         val extracted = runBlocking { extractionService.extract(message.subject, body) }
             ?: return record(source, message, STATUS_FAILED, "Odczyt LLM nie powiódł się")
 
-        val contact = extracted.email ?: extracted.phone
+        // Zgłoszenie z własnym wątkiem (od V157). Wielki wątek sprzed tej zmiany zbiera
+        // zgłoszenia wielu osób — tam lead dalej nie dostaje wątku (FormLeadConversation).
+        val formThread = submissionThreads.formThreadOf(message)
+        // Adres z Reply-To wygrywa z odczytem: ustalony bez modelu, ten sam, na który
+        // odpowiedziałby każdy program pocztowy. Odczyt jest zapasem dla robotów bez
+        // Reply-To — i przeszedł weryfikację „stoi w treści dosłownie".
+        val clientEmail = submissionThreads.deterministicClientEmail(message) ?: extracted.email
+
+        val contact = clientEmail ?: extracted.phone
             ?: return record(
                 source, message, STATUS_REJECTED,
                 "W treści nie znaleziono adresu e-mail ani telefonu klienta"
-            )
+            ) { formThread?.let { submissionThreads.enrich(it, null, extracted.customerName, extracted.title) } }
+
+        // Test formularza przez kogoś ze studia — rozpoznany po adresie, bez pytania modelu.
+        if (submissionThreads.isStudioAddress(source.studioId, clientEmail)) {
+            return record(
+                source, message, STATUS_REJECTED,
+                "Zgłoszenie wysłane z adresu studia — test formularza, nie klient"
+            ) {
+                formThread?.let {
+                    submissionThreads.enrich(it, clientEmail, extracted.customerName, extracted.title)
+                    submissionThreads.screen(it, CommThreadScreening.INTERNAL, "Test formularza wysłany przez kogoś ze studia")
+                }
+            }
+        }
+
+        if (extracted.notAnInquiry) {
+            val why = extracted.notAnInquiryReason ?: "To nie jest zapytanie klienta"
+            return record(source, message, STATUS_REJECTED, "Automat: $why") {
+                formThread?.let {
+                    submissionThreads.enrich(it, clientEmail, extracted.customerName, extracted.title)
+                    submissionThreads.screen(it, CommThreadScreening.SPAM, why)
+                }
+            }
+        }
 
         // Marka z formularza bywa wpisana ręcznie — tabela leadów i wyszukiwanie
         // działają tylko na wartościach z katalogu, jak przy webhookach formularzy.
@@ -94,14 +129,22 @@ class FormMailLeadProcessor(
             runBlocking { catalogMatcher.resolve(extracted.vehicleBrand, extracted.vehicleModel) }
         }
 
-        val initialMessage = composeMessage(extracted, body)
+        val initialMessage = composeMessage(extracted, clientEmail, body)
         // Auto doczytujemy z treści tylko, gdy formularz go nie podał — inaczej
         // płacilibyśmy za pytanie o coś, co już wiemy.
         val needsVehicleExtraction = vehicle.brand == null && initialMessage.isNotBlank()
 
         return try {
             transactionTemplate.execute {
-                val customer = extracted.email
+                // Wątek czytamy w transakcji od nowa: ktoś mógł go w międzyczasie oznaczyć
+                // ręcznie jako leada, a duplikat zgłoszenia trafia do wątku z leadem.
+                val thread = formThread?.let { threadRepository.findById(it.id).orElse(null) }
+                val existingLeadId = thread?.let { it.leadId ?: leadRepository.findByThreadId(it.id)?.id }
+                if (thread != null && existingLeadId != null) {
+                    return@execute recordDuplicate(source, message, existingLeadId)
+                }
+
+                val customer = clientEmail
                     ?.let { customerRepository.findActiveByStudioIdAndEmail(source.studioId, it) }
                 val assignee = soleUserResolver.resolveForStudio(source.studioId)
 
@@ -132,14 +175,19 @@ class FormMailLeadProcessor(
                     assignedUserName = assignee?.name,
                     lostReason = null,
                     stagnantAlertSentAt = null,
-                    // Świadomie bez wątku: wątek należy do robota formularza, a nie do
-                    // klienta, i potrafi zbierać zgłoszenia wielu różnych osób. Odpowiedź
-                    // na leada ma iść na kontakt z treści, nie na no-reply.
-                    threadId = null,
+                    // Wątek zgłoszenia (od V157) należy do jednego klienta i jest pełną
+                    // historią leada: „Odpisz klientowi" pisze do adresu z Reply-To.
+                    // Zgłoszenie z wielkiego wątku sprzed tej zmiany zostaje bez wątku —
+                    // tamten zbiera korespondencję wielu osób (patrz FormLeadConversation).
+                    threadId = thread?.id,
                     category = null,
                     firstResponseAt = null
                 )
                 leadRepository.save(lead)
+                thread?.let {
+                    submissionThreads.enrich(it, clientEmail, lead.customerName, extracted.title)
+                    submissionThreads.attachLead(it, lead.id)
+                }
                 // Zgłoszenie z formularza to najczęstsze miejsce, w którym klient
                 // dokłada zdjęcia — a ten lead świadomie nie ma wątku, więc bez
                 // podpięcia pliki nie miałyby jak trafić do „Przebiegu sprawy".
@@ -204,10 +252,12 @@ class FormMailLeadProcessor(
         source: FormMailSourceEntity,
         message: CommMessageEntity,
         status: String,
-        reason: String
+        reason: String,
+        alsoInTransaction: () -> Unit = {}
     ): FormMailProcessResult {
         try {
             transactionTemplate.execute {
+                alsoInTransaction()
                 extractionRepository.save(
                     FormMailExtractionEntity(
                         studioId = source.studioId,
@@ -232,10 +282,36 @@ class FormMailLeadProcessor(
     }
 
     /**
+     * Drugie zgłoszenie tej samej osoby, dopisane przez import do wątku pierwszego
+     * (klient poprawił treść i kliknął „Wyślij" jeszcze raz). To jedna sprawa, więc
+     * drugiego leada nie ma — pliki z drugiego zgłoszenia trafiają do istniejącego.
+     * Wołane wewnątrz transakcji leada.
+     */
+    private fun recordDuplicate(
+        source: FormMailSourceEntity,
+        message: CommMessageEntity,
+        leadId: UUID
+    ): FormMailProcessResult {
+        attachmentLinker.link(leadId, message)
+        extractionRepository.save(
+            FormMailExtractionEntity(
+                studioId = source.studioId,
+                sourceId = source.id,
+                messageId = message.id,
+                status = STATUS_DUPLICATE,
+                reason = "Kolejne zgłoszenie tej samej osoby — dopisane do istniejącego leada",
+                leadId = leadId
+            )
+        )
+        log.info("[FORM_MAIL] Mail {} to duplikat zgłoszenia — dopisany do leada {}", message.id, leadId)
+        return FormMailProcessResult.AlreadyProcessed(leadId)
+    }
+
+    /**
      * Treść zapytania: wiadomość klienta, a pod nią to, co formularz wiedział ponadto.
      * Lead z maila formularza ma wiedzieć tyle samo co ten mail — nic nie ginie.
      */
-    private fun composeMessage(extracted: ExtractedFormLead, rawBody: String): String {
+    private fun composeMessage(extracted: ExtractedFormLead, clientEmail: String?, rawBody: String): String {
         val parts = mutableListOf<String>()
         extracted.message?.let(parts::add)
 
@@ -244,7 +320,7 @@ class FormMailLeadProcessor(
             val car = listOfNotNull(extracted.vehicleBrand, extracted.vehicleModel).joinToString(" ")
             if (car.isNotBlank()) add("Pojazd: $car")
             extracted.phone?.let { add("Telefon: $it") }
-            extracted.email?.let { add("E-mail: $it") }
+            (extracted.email ?: clientEmail)?.let { add("E-mail: $it") }
         }
         if (details.isNotEmpty()) parts += details.joinToString("\n")
 
@@ -274,6 +350,9 @@ class FormMailLeadProcessor(
         const val STATUS_CREATED = "CREATED"
         const val STATUS_REJECTED = "REJECTED"
         const val STATUS_FAILED = "FAILED"
+
+        /** Kolejne zgłoszenie tej samej osoby w wątku, który już ma leada. */
+        const val STATUS_DUPLICATE = "DUPLICATE"
 
         private const val MAX_MESSAGE = 4000
     }
