@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -98,10 +99,18 @@ class MailSignatureImageService(
 
     private fun key(studioId: UUID, hash: String, extension: String) = "$studioId/mail-signature/$hash.$extension"
 
+    /**
+     * `null`, gdy obiektu nie ma. Adres jest publiczny i bez bazy danych po drodze, więc
+     * zgadywane hashe trafiają prosto do S3 — a S3 bez uprawnienia `s3:ListBucket` odpowiada
+     * na brak obiektu 403 AccessDenied zamiast 404. Bez tej gałęzi każdy skaner dostawałby
+     * 500 i zaśmiecał log. Inne błędy (np. złe klucze) zostają błędami: to awaria, nie brak.
+     */
     private fun download(key: String): ByteArray? = try {
         s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(key).build()).use { it.readAllBytes() }
     } catch (e: NoSuchKeyException) {
         null
+    } catch (e: S3Exception) {
+        if (e.statusCode() == 404 || e.awsErrorDetails()?.errorCode() == "AccessDenied") null else throw e
     }
 }
 

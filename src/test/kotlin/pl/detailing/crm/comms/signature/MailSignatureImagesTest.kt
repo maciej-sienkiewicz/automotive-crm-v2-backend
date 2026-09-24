@@ -25,7 +25,11 @@ import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -148,8 +152,32 @@ class MailSignatureImageServiceTest {
     fun `adres spoza wzorca nie dotyka S3`() {
         assertNull(service.load(studioId.value, "../../x", "jpg"))
         assertNull(service.load(studioId.value, "0123456789abcdef", "svg"))
-        verify(exactly = 0) { s3.getObject(any<software.amazon.awssdk.services.s3.model.GetObjectRequest>()) }
+        verify(exactly = 0) { s3.getObject(any<GetObjectRequest>()) }
     }
+
+    @Test
+    fun `brak obiektu w S3 to brak obrazka, takze gdy S3 odpowiada AccessDenied`() {
+        every { s3.getObject(any<GetObjectRequest>()) } throws
+            NoSuchKeyException.builder().statusCode(404).build() andThenThrows
+            s3Error(403, "AccessDenied")
+
+        assertNull(service.load(studioId.value, "0123456789abcdef", "jpg"))
+        assertNull(service.load(studioId.value, "0123456789abcdef", "jpg"))
+    }
+
+    @Test
+    fun `zle klucze S3 to awaria, a nie brak obrazka`() {
+        every { s3.getObject(any<GetObjectRequest>()) } throws s3Error(403, "InvalidAccessKeyId")
+
+        assertThrows<S3Exception> { service.load(studioId.value, "0123456789abcdef", "jpg") }
+    }
+
+    private fun s3Error(status: Int, code: String): S3Exception =
+        S3Exception.builder()
+            .statusCode(status)
+            .awsErrorDetails(AwsErrorDetails.builder().errorCode(code).build())
+            // awsErrorDetails() zwraca builder klasy bazowej, więc build() daje AwsServiceException.
+            .build() as S3Exception
 
     @Test
     fun `studio bez logo dostaje czytelny komunikat`() {
