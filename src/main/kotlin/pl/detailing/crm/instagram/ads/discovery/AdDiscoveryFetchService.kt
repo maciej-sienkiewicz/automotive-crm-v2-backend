@@ -2,6 +2,7 @@ package pl.detailing.crm.instagram.ads.discovery
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.instagram.ads.MetaAdCodec
@@ -104,7 +105,8 @@ class AdDiscoveryFetchService(
 class AdDiscoveryCacheWriter(
     private val phraseRepository: AdDiscoveryPhraseRepository,
     private val adRepository: AdDiscoveryAdRepository,
-    private val advertiserLedger: AdvertiserLedger
+    private val advertiserLedger: AdvertiserLedger,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     /**
@@ -114,6 +116,11 @@ class AdDiscoveryCacheWriter(
      */
     @Transactional
     fun replacePhrase(phrase: String, ads: List<RawMetaAd>, truncated: Boolean) {
+        // Stan sprzed podmiany - bez niego nie da się powiedzieć, co pojawiło się
+        // NOWEGO, bo odkrywanie nie prowadzi historii (patrz niżej).
+        val previous = phraseRepository.findByPhrase(phrase)
+        val previousAdIds = adRepository.findAdArchiveIdsByPhrase(phrase).toSet()
+
         adRepository.deleteByPhrase(phrase)
 
         val now = Instant.now()
@@ -127,7 +134,9 @@ class AdDiscoveryCacheWriter(
         // o firmach, których kampanie z cache znikną przy następnej podmianie.
         advertiserLedger.record(deduped, now)
 
-        val entity = phraseRepository.findByPhrase(phrase)
+        announceAppeared(phrase, previous, previousAdIds, deduped)
+
+        val entity = previous
         if (entity == null) {
             phraseRepository.save(
                 AdDiscoveryPhraseEntity(
@@ -147,6 +156,27 @@ class AdDiscoveryCacheWriter(
             entity.updatedAt = now
             phraseRepository.save(entity)
         }
+    }
+
+    /**
+     * Reklamy, których poprzednio nie było, dla powiadomień o kampaniach w rejonie
+     * ([AreaCampaignNotifier], po zatwierdzeniu tej transakcji).
+     *
+     * Tylko gdy jest z czym porównać. Pierwsze pobranie frazy (nowa w katalogu, nowe
+     * wdrożenie, pierwsza udana próba po samych błędach) zwróciłoby jako „nowe"
+     * wszystko, co trwa od miesięcy - setki powiadomień o niczym. Pusty poprzedni
+     * stan jest wiarygodny tylko wtedy, gdy wziął się z udanego pobrania.
+     */
+    private fun announceAppeared(
+        phrase: String,
+        previous: AdDiscoveryPhraseEntity?,
+        previousAdIds: Set<String>,
+        current: List<RawMetaAd>
+    ) {
+        val hasBaseline = previousAdIds.isNotEmpty() || previous?.lastStatus == PhraseFetchStatus.OK
+        if (!hasBaseline) return
+        val appeared = current.map { it.adArchiveId }.filterNot { it in previousAdIds }.toSet()
+        if (appeared.isNotEmpty()) eventPublisher.publishEvent(AreaAdsAppearedEvent(phrase, appeared))
     }
 
     /** Zapis samego statusu nieudanej próby — bez ruszania reklam, które już są w cache. */

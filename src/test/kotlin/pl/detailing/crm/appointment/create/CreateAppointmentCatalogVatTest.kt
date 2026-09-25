@@ -44,7 +44,8 @@ class CreateAppointmentCatalogVatTest {
         serviceRepository = serviceRepository,
         auditService = mockk(relaxed = true),
         vehicleResolver = mockk(relaxed = true),
-        businessEventPublisher = mockk(relaxed = true)
+        businessEventPublisher = mockk(relaxed = true),
+        eventPublisher = mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()

@@ -54,7 +54,8 @@ class CreateAppointmentHandlerTest {
         serviceRepository = serviceRepository,
         auditService = auditService,
         vehicleResolver = vehicleResolver,
-        businessEventPublisher = businessEventPublisher
+        businessEventPublisher = businessEventPublisher,
+        eventPublisher = mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()

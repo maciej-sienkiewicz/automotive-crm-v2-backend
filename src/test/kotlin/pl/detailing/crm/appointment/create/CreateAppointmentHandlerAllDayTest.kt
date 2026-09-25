@@ -38,7 +38,8 @@ class CreateAppointmentHandlerAllDayTest {
         serviceRepository = serviceRepository,
         auditService = mockk<AuditService>(relaxed = true),
         vehicleResolver = mockk<AppointmentVehicleResolver>(relaxed = true),
-        businessEventPublisher = mockk(relaxed = true)
+        businessEventPublisher = mockk(relaxed = true),
+        eventPublisher = mockk(relaxed = true)
     )
 
     private val saved = slot<AppointmentEntity>()

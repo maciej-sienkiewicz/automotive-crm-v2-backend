@@ -2,12 +2,16 @@ package pl.detailing.crm.visit.transitions.confirm
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.appointment.domain.AppointmentStatus
 import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
+import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.leads.appointment.LeadSyncService
+import pl.detailing.crm.push.notify.PushMessages
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
@@ -26,8 +30,12 @@ class ConfirmVisitHandler(
     private val visitRepository: VisitRepository,
     private val appointmentRepository: AppointmentRepository,
     private val leadSyncService: LeadSyncService,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val customerRepository: CustomerRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
+    private val log = LoggerFactory.getLogger(ConfirmVisitHandler::class.java)
+
     @Transactional
     suspend fun handle(command: ConfirmVisitCommand): ConfirmVisitResult =
         withContext(Dispatchers.IO) {
@@ -76,6 +84,26 @@ class ConfirmVisitHandler(
                     }
                 }
             }
+
+            // „Przyjęto pojazd" pada TU, a nie przy utworzeniu szkicu: szkic przyjęcia
+            // bywa porzucany w połowie, a potwierdzonej wizyty nie da się już anulować.
+            // Po transactionTemplate.execute, więc zmiana statusu jest już zatwierdzona.
+            // Zebranie treści to dodatek - jego błąd gubi powiadomienie, nie przyjęcie.
+            runCatching {
+                val customer = customerRepository.findByIdAndStudioId(visitEntity.customerId, command.studioId.value)
+                eventPublisher.publishEvent(
+                    VehicleCheckedInEvent(
+                        source = this,
+                        studioId = command.studioId,
+                        visitId = command.visitId,
+                        visitNumber = visitEntity.visitNumber,
+                        checkedInByUserId = command.userId,
+                        brandModel = PushMessages.brandModel(visitEntity.brandSnapshot, visitEntity.modelSnapshot),
+                        licensePlate = visitEntity.licensePlateSnapshot,
+                        customerName = customer?.let { PushMessages.personName(it.firstName, it.lastName, it.companyName) }
+                    )
+                )
+            }.onFailure { log.warn("[push] Nie udalo sie przygotowac powiadomienia o przyjeciu pojazdu: {}", it.message) }
 
             // No separate audit entry: DRAFT → IN_PROGRESS is always the tail of the
             // check-in flow, and the flow already logged VISIT_CREATED ("Rozpoczęto

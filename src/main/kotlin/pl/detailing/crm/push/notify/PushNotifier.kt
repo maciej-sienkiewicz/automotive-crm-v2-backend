@@ -23,6 +23,13 @@ import java.time.Instant
  * irrelevant, what matters is who may learn the amount. Owners bypass the check,
  * exactly as `@RequiresPermission` does everywhere else in this codebase.
  *
+ * Personal data follows the same rule as every screen: the customer's name and
+ * contact reach only recipients who may see them (`CUSTOMERS_VIEW`, owners always).
+ * A push goes to one person, so unlike the studio-wide dashboard topic — which is
+ * forcibly masked because its audience is mixed — it can be personalised per
+ * recipient instead of masked for all. Callers pass the masked payload and,
+ * where it differs, the personal one ([PushMessages.Message]).
+ *
  * Delivery is best-effort and never rethrows. These notifications ride on top of
  * a business operation that has already committed — a push service having a bad
  * minute must not turn a closed visit into an error, let alone roll anything back.
@@ -43,13 +50,17 @@ class PushNotifier(
      * @param ttlSeconds how long the push service may hold the message. Six hours
      *        by default: these are informational and still make sense after a spell
      *        with no signal — unlike a click-to-call push, worthless a minute later.
+     * @param excludeUserId the person whose action this reports. Someone who just
+     *        booked a slot or checked a car in does not need their own pocket to tell
+     *        them so; the notification is for everyone else.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun broadcast(
         studioId: StudioId,
         requiredPermission: Permission?,
-        payload: PushPayload,
-        ttlSeconds: Long = 6 * 3600
+        message: PushMessages.Message,
+        ttlSeconds: Long = 6 * 3600,
+        excludeUserId: UserId? = null
     ) {
         if (!webPushSender.isConfigured) return
 
@@ -58,15 +69,19 @@ class PushNotifier(
 
         // One permission check per USER, not per device: someone with a phone and a
         // tablet paired must not cost two identical lookups.
-        val allowedUserIds = devices.map { it.userId }.distinct()
-            .filter { canReceive(UserId(it), studioId, requiredPermission) }
-            .toSet()
-        if (allowedUserIds.isEmpty()) return
+        val recipients = devices.map { it.userId }.distinct()
+            .filter { it != excludeUserId?.value }
+            .mapNotNull { recipient(UserId(it), studioId, requiredPermission) }
+            .associateBy { it.userId }
+        if (recipients.isEmpty()) return
 
-        val json = objectMapper.writeValueAsString(payload)
+        val maskedJson = objectMapper.writeValueAsString(message.masked)
+        val personalJson = message.personal?.let(objectMapper::writeValueAsString) ?: maskedJson
         var delivered = 0
 
-        devices.filter { it.userId in allowedUserIds }.forEach { device ->
+        devices.forEach { device ->
+            val recipient = recipients[device.userId] ?: return@forEach
+            val json = if (recipient.seesPersonalData) personalJson else maskedJson
             when (webPushSender.send(device.toDomain(), json, ttlSeconds)) {
                 PushDeliveryStatus.DELIVERED -> {
                     delivered++
@@ -83,16 +98,22 @@ class PushNotifier(
 
         log.info(
             "[push] {}: odbiorcow={}, urzadzen={}, dostarczono={}",
-            payload.type, allowedUserIds.size, devices.size, delivered
+            message.masked.type, recipients.size, devices.size, delivered
         )
     }
 
-    private fun canReceive(userId: UserId, studioId: StudioId, permission: Permission?): Boolean {
-        val user = userRepository.findByIdAndStudioId(userId.value, studioId.value) ?: return false
+    private data class Recipient(val userId: java.util.UUID, val seesPersonalData: Boolean)
+
+    private fun recipient(userId: UserId, studioId: StudioId, permission: Permission?): Recipient? {
+        val user = userRepository.findByIdAndStudioId(userId.value, studioId.value) ?: return null
         // A deactivated account keeps its rows, including paired devices. It must not
         // keep receiving the studio's revenue on a phone that already walked out.
-        if (!user.isActive) return false
-        if (user.isOwner) return true
-        return permission == null || permissionCheckService.hasPermission(userId, studioId, permission)
+        if (!user.isActive) return null
+        if (user.isOwner) return Recipient(userId.value, seesPersonalData = true)
+        if (permission != null && !permissionCheckService.hasPermission(userId, studioId, permission)) return null
+        return Recipient(
+            userId.value,
+            seesPersonalData = permissionCheckService.hasPermission(userId, studioId, Permission.CUSTOMERS_VIEW)
+        )
     }
 }

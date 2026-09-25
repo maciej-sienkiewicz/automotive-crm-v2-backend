@@ -2,6 +2,8 @@ package pl.detailing.crm.appointment.create
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.appointment.domain.*
@@ -22,6 +24,7 @@ import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import java.time.Instant
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
+import pl.detailing.crm.push.notify.PushMessages
 import pl.detailing.crm.livemetrics.domain.RecordOrigin
 
 @Service
@@ -34,8 +37,10 @@ class CreateAppointmentHandler(
     private val serviceRepository: ServiceRepository,
     private val auditService: AuditService,
     private val vehicleResolver: AppointmentVehicleResolver,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
+    private val log = LoggerFactory.getLogger(CreateAppointmentHandler::class.java)
 
     @Transactional
     suspend fun handle(command: CreateAppointmentCommand): CreateAppointmentResult = withContext(Dispatchers.IO) {
@@ -165,6 +170,11 @@ class CreateAppointmentHandler(
             )
         )
 
+        // Step 6.2: Powiadomienie push („Nowa rezerwacja") - wysyłane po zatwierdzeniu.
+        // Serię liczymy raz: CreateRecurringAppointmentHandler woła ten handler tylko
+        // dla pierwszego wystąpienia, a resztę wstawia hurtem bez zdarzenia.
+        publishReservationCreated(appointment, customerId, vehicleId, command)
+
         // Step 7: Audit log
         auditService.log(LogAuditCommand(
             studioId = command.studioId,
@@ -196,6 +206,37 @@ class CreateAppointmentHandler(
             totalGross = appointment.calculateTotalGross(),
             totalVat = appointment.calculateTotalVat()
         )
+    }
+
+    /**
+     * Treść powiadomienia zbierana TU, w transakcji rezerwacji. Dociąganie pojazdu
+     * i klienta to dodatek - jego błąd ma zgubić powiadomienie, a nie rezerwację.
+     */
+    private fun publishReservationCreated(
+        appointment: Appointment,
+        customerId: CustomerId,
+        vehicleId: VehicleId?,
+        command: CreateAppointmentCommand
+    ) {
+        runCatching {
+            val vehicle = vehicleId?.let { vehicleRepository.findByIdAndStudioId(it.value, command.studioId.value) }
+            val customer = customerRepository.findByIdAndStudioId(customerId.value, command.studioId.value)
+            eventPublisher.publishEvent(
+                ReservationCreatedEvent(
+                    source = this,
+                    studioId = command.studioId,
+                    appointmentId = appointment.id,
+                    createdByUserId = command.userId,
+                    startDateTime = appointment.schedule.startDateTime,
+                    allDay = appointment.schedule.isAllDay,
+                    vehicleLabel = vehicle?.let { PushMessages.vehicleLabel(it.brand, it.model, it.licensePlate) },
+                    serviceNames = appointment.lineItems.map { it.serviceName },
+                    customerName = customer?.let {
+                        PushMessages.personName(it.firstName, it.lastName, it.companyName)
+                    }
+                )
+            )
+        }.onFailure { log.warn("[push] Nie udalo sie przygotowac powiadomienia o rezerwacji: {}", it.message) }
     }
 
     private fun createCustomer(

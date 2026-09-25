@@ -274,17 +274,6 @@ class AdDiscoveryReadService(
         }
     }
 
-    private fun AdDiscoveryAdEntity.toDiscovered() = DiscoveredAd(
-        adArchiveId = adArchiveId,
-        pageId = pageId,
-        pageName = pageName,
-        active = deliveryStop == null,
-        reach = reachEu,
-        locations = MetaAdCodec.decodeLocations(targetLocations),
-        linkCaption = linkCaption,
-        deliveryStart = deliveryStart
-    )
-
     private fun AdvertiserRow.toDto() = AdvertiserRowDto(
         pageId = pageId,
         companyName = companyName,
@@ -307,3 +296,15 @@ class AdDiscoveryReadService(
         lastFetchedAt = entity?.lastFetchedAt?.toString()
     )
 }
+
+/** Wiersz cache jako reklama do podsumowania - wspólne dla tabeli i powiadomień ([AreaCampaignNotifier]). */
+internal fun AdDiscoveryAdEntity.toDiscovered() = DiscoveredAd(
+    adArchiveId = adArchiveId,
+    pageId = pageId,
+    pageName = pageName,
+    active = deliveryStop == null,
+    reach = reachEu,
+    locations = MetaAdCodec.decodeLocations(targetLocations),
+    linkCaption = linkCaption,
+    deliveryStart = deliveryStart
+)

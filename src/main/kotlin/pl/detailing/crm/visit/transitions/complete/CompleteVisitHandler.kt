@@ -17,6 +17,7 @@ import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.push.notify.PushMessages
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
@@ -102,9 +103,12 @@ class CompleteVisitHandler(
                 studioId          = command.studioId,
                 visitId           = updatedVisit.id,
                 totalGrossInCents = updatedVisit.calculateTotalGross().amountInCents,
-                customerName      = customer?.let { listOfNotNull(it.firstName, it.lastName).joinToString(" ").ifBlank { null } },
+                customerName      = customer?.let { PushMessages.personName(it.firstName, it.lastName, it.companyName) },
                 completedByUserId = command.userId,
-                completedAt       = updatedVisit.pickupDate!!
+                completedAt       = updatedVisit.pickupDate!!,
+                vehicleLabel      = PushMessages.vehicleLabel(
+                    updatedVisit.brandSnapshot, updatedVisit.modelSnapshot, updatedVisit.licensePlateSnapshot
+                )
             )
         )
 

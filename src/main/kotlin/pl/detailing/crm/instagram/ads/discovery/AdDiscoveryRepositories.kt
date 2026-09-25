@@ -17,6 +17,10 @@ interface AdDiscoveryPhraseRepository : JpaRepository<AdDiscoveryPhraseEntity, U
 interface AdDiscoveryAdRepository : JpaRepository<AdDiscoveryAdEntity, UUID> {
     fun findByPhraseIn(phrases: Collection<String>): List<AdDiscoveryAdEntity>
 
+    /** Reklamy frazy sprzed podmiany - punkt odniesienia dla „co pojawiło się nowego". */
+    @Query("SELECT a.adArchiveId FROM AdDiscoveryAdEntity a WHERE a.phrase = :phrase")
+    fun findAdArchiveIdsByPhrase(@Param("phrase") phrase: String): List<String>
+
     @Modifying
     @Query("DELETE FROM AdDiscoveryAdEntity a WHERE a.phrase = :phrase")
     fun deleteByPhrase(@Param("phrase") phrase: String)
