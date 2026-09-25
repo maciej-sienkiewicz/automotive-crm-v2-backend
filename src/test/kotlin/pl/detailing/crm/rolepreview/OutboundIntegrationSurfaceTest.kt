@@ -192,6 +192,10 @@ class OutboundIntegrationSurfaceTest {
             why = "treść SMS-a na żądanie użytkownika"
         ),
         "MailProofreadService" to callers("CommsController", why = "korekta treści maila na żądanie użytkownika"),
+        "ReplyDraftService" to callers("ReplyDraftController", why = "szkic odpowiedzi na maila na żądanie użytkownika"),
+        // Uzgadniacz przykładów działa w tle dla wszystkich studiów - piaskownicę rozpoznaje
+        // sam i jej wiadomości oznacza jako odrzuty, bez wysyłania treści do modelu embeddingów.
+        "ReplyExampleIndexer" to Self,
         "VinExtractionService" to callers("BatchOrderController", why = "odczyt VIN ze zdjęcia na żądanie użytkownika"),
         "BarcodeImageExtractionService" to callers(
             "ProductController", "MobileProductScanController",
