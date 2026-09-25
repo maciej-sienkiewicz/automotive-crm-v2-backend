@@ -11,6 +11,8 @@ import pl.detailing.crm.push.infrastructure.PushDeviceRepository
 import pl.detailing.crm.push.register.RegisterPushDeviceCommand
 import pl.detailing.crm.push.register.RegisterPushDeviceHandler
 import pl.detailing.crm.push.send.WebPushSender
+import pl.detailing.crm.push.test.SendTestPushCommand
+import pl.detailing.crm.push.test.SendTestPushHandler
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.UnprocessableEntityException
 import java.time.Instant
@@ -36,7 +38,8 @@ class PushController(
     private val registerPushDeviceHandler: RegisterPushDeviceHandler,
     private val requestCallHandler: RequestCallHandler,
     private val pushDeviceRepository: PushDeviceRepository,
-    private val webPushSender: WebPushSender
+    private val webPushSender: WebPushSender,
+    private val sendTestPushHandler: SendTestPushHandler
 ) {
 
     /**
@@ -73,6 +76,27 @@ class PushController(
         )
 
         ResponseEntity.status(HttpStatus.CREATED).body(device.toDto())
+    }
+
+    /**
+     * POST /api/v1/push/devices/test
+     * Called from the PHONE right after pairing: sends one real notification
+     * through the production path to the device that asked. 204 means the push
+     * service accepted it; 422 carries a reason the wizard shows as is.
+     */
+    @PostMapping("/devices/test")
+    fun sendTestPush(@RequestBody request: SendTestPushRequest): ResponseEntity<Void> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        sendTestPushHandler.handle(
+            SendTestPushCommand(
+                studioId = principal.studioId,
+                userId = principal.userId,
+                endpoint = request.endpoint
+            )
+        )
+
+        ResponseEntity.noContent().build()
     }
 
     /**

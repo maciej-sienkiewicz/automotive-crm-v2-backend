@@ -27,6 +27,11 @@ data class RequestCallRequest(
     val deviceId: String? = null
 )
 
+/** Body of POST /api/v1/push/devices/test — the asking device's own subscription endpoint. */
+data class SendTestPushRequest(
+    val endpoint: String
+)
+
 // ─── Responses ────────────────────────────────────────────────────────────────
 
 data class VapidPublicKeyResponse(

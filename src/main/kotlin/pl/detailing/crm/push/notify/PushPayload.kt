@@ -26,10 +26,16 @@ data class PushPayload(
 
 enum class PushNotificationType {
     VISIT_COMPLETED,
-    NEW_LEAD
+    NEW_LEAD,
+
+    /** Sent on request from the pairing wizard — proof that the whole chain works. */
+    TEST
 }
 
 enum class PushIcon {
     EARNINGS,
-    LEAD
+    LEAD,
+
+    /** The app's own mark — for notifications about the app itself, not a business event. */
+    APP
 }
