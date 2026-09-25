@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.batchorder.contractor.EntryItem
 import pl.detailing.crm.batchorder.contractor.toEntryItem
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderPhotoRepository
 import pl.detailing.crm.batchorder.infrastructure.ServiceItemEmbeddable
 import pl.detailing.crm.shared.BatchOrderEntryId
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -15,7 +16,8 @@ import java.time.LocalDate
 
 @Service
 class UpdateEntryHandler(
-    private val entryRepository: BatchOrderEntryRepository
+    private val entryRepository: BatchOrderEntryRepository,
+    private val photoRepository: BatchOrderPhotoRepository
 ) {
     @Transactional
     suspend fun handle(command: UpdateEntryCommand): EntryItem {
@@ -26,6 +28,7 @@ class UpdateEntryHandler(
 
         val entity = entryRepository.findByIdAndStudioId(command.entryId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Entry not found")
+        ensureEntryEditable(entity.isClosed, LockedEntryAction.UPDATE)
 
         entity.serviceDate = command.serviceDate
         entity.vehicleMake = command.vehicleMake?.trim()?.takeIf { it.isNotBlank() }
@@ -37,11 +40,12 @@ class UpdateEntryHandler(
             .map { ServiceItemEmbeddable(it.name.trim(), it.netAmountCents, it.grossAmountCents, it.vatRate) }
             .toMutableList()
         entity.notes = command.notes?.trim()?.takeIf { it.isNotBlank() }
-        entity.isClosed = false
         entity.updatedAt = Instant.now()
 
         val saved = entryRepository.save(entity)
-        return saved.toEntryItem()
+        return saved.toEntryItem(
+            photoCount = photoRepository.countByEntryIdAndStudioId(saved.id, command.studioId.value).toInt()
+        )
     }
 }
 

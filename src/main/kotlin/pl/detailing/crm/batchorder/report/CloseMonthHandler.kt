@@ -14,6 +14,7 @@ import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.communication.template.MessageTemplateRenderer
 import java.time.Instant
 import java.time.LocalDate
@@ -29,7 +30,9 @@ data class CloseMonthCommand(
     val to: LocalDate,
     val mode: CloseMode,
     val sendEmail: Boolean = false,
-    val emailOverride: String? = null
+    val emailOverride: String? = null,
+    /** Kto rozlicza — imię i nazwisko zapisywane w historii tekstem, jak przy zdjęciach. */
+    val closedByUserName: String? = null
 )
 
 data class CloseMonthResult(
@@ -37,6 +40,8 @@ data class CloseMonthResult(
     val entryCount: Int,
     val totalNetCents: Long,
     val totalGrossCents: Long,
+    /** Użytkownik prosił o wysyłkę — false przy [emailSent] znaczy, że mail nie wyszedł. */
+    val emailRequested: Boolean,
     val emailSent: Boolean
 )
 
@@ -51,7 +56,8 @@ data class CloseHistoryItem(
     val totalGrossCents: Long,
     val emailSent: Boolean,
     val emailTo: String?,
-    val closedAt: String
+    val closedAt: String,
+    val closedByUserName: String?
 )
 
 @Service
@@ -85,8 +91,10 @@ class CloseMonthHandler(
             )
         }
 
+        // Pusty wybór to błąd żądania (zły okres, wszystko już rozliczone), nie brak zasobu —
+        // 404 wyglądało w interfejsie jak zniknięty kontrahent.
         if (entriesToClose.isEmpty()) {
-            throw EntityNotFoundException("Brak wpisów do zamknięcia w wybranym okresie")
+            throw ValidationException("Brak wpisów do rozliczenia w wybranym okresie.")
         }
 
         val historyId = UUID.randomUUID()
@@ -100,6 +108,15 @@ class CloseMonthHandler(
             else -> null
         }
 
+        // Okno rozliczenia obiecuje „Adres zostanie zapisany do karty kontrahenta". Tylko gdy
+        // karta nie ma adresu: jednorazowa wysyłka pod inny adres nie nadpisuje istniejącego.
+        val emailToRemember = command.emailOverride?.trim()
+            ?.takeIf { command.sendEmail && it.isNotEmpty() && contractor.email.isNullOrBlank() }
+
+        val now = Instant.now()
+        // Z tego samego snapshotu powstaje PDF w mailu i później PDF z historii — kontrahent
+        // i pracownia patrzą na ten sam dokument.
+        val snapshot = SettlementSnapshot.of(entriesToClose)
         val historyEntity = BatchOrderCloseHistoryEntity(
             id = historyId,
             studioId = command.studioId.value,
@@ -112,7 +129,9 @@ class CloseMonthHandler(
             totalGrossCents = totalGross,
             emailSent = false,
             emailTo = resolvedEmailTo,
-            closedAt = Instant.now()
+            closedAt = now,
+            snapshotJson = snapshot.toJson(),
+            closedByUserName = command.closedByUserName?.trim()?.takeIf { it.isNotEmpty() }
         )
         // The close record and the entries it closes must land together. Split across
         // two commits — which is what a `@Transactional suspend` function gives you,
@@ -121,12 +140,14 @@ class CloseMonthHandler(
         transactionTemplate.execute {
             closeHistoryRepository.save(historyEntity)
 
-            entriesToClose.forEach { entry ->
-                entry.isClosed = true
-                entry.closeHistoryId = historyId
-                entry.updatedAt = Instant.now()
-            }
+            entriesToClose.forEach { it.markSettled(historyId, now) }
             entryRepository.saveAll(entriesToClose)
+
+            if (emailToRemember != null) {
+                contractor.email = emailToRemember
+                contractor.updatedAt = now
+                contractorRepository.save(contractor)
+            }
         }
 
         var emailSent = false
@@ -137,7 +158,7 @@ class CloseMonthHandler(
                     contractorTaxId = contractor.taxId,
                     from = command.from,
                     to = command.to,
-                    entries = entriesToClose,
+                    rows = snapshot.entries,
                     studioId = command.studioId
                 )
 
@@ -168,23 +189,10 @@ class CloseMonthHandler(
             }.onFailure { /* email failure is non-fatal — history record is already saved */ }
 
             if (emailSent) {
-                closeHistoryRepository.save(
-                    BatchOrderCloseHistoryEntity(
-                        id = historyEntity.id,
-                        studioId = historyEntity.studioId,
-                        contractorId = historyEntity.contractorId,
-                        fromDate = historyEntity.fromDate,
-                        toDate = historyEntity.toDate,
-                        mode = historyEntity.mode,
-                        entryCount = historyEntity.entryCount,
-                        totalNetCents = historyEntity.totalNetCents,
-                        totalGrossCents = historyEntity.totalGrossCents,
-                        emailSent = true,
-                        emailTo = historyEntity.emailTo,
-                        closedAt = historyEntity.closedAt,
-                        createdAt = historyEntity.createdAt
-                    )
-                )
+                // Ten sam rekord, nie przepisana kopia: kopia pole po polu gubiła każdą
+                // kolumnę dodaną później (snapshot, rozliczający) przy pierwszym udanym mailu.
+                historyEntity.emailSent = true
+                closeHistoryRepository.save(historyEntity)
             }
         }
 
@@ -193,6 +201,7 @@ class CloseMonthHandler(
             entryCount = entriesToClose.size,
             totalNetCents = totalNet,
             totalGrossCents = totalGross,
+            emailRequested = command.sendEmail,
             emailSent = emailSent
         )
     }
@@ -214,6 +223,7 @@ class CloseMonthHandler(
         totalGrossCents = totalGrossCents,
         emailSent = emailSent,
         emailTo = emailTo,
-        closedAt = closedAt.toString()
+        closedAt = closedAt.toString(),
+        closedByUserName = closedByUserName
     )
 }

@@ -9,9 +9,9 @@ import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.batchorder.contractor.EntryStatusFilter
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderCloseHistoryRepository
-import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
 import pl.detailing.crm.shared.BatchContractorId
 import pl.detailing.crm.shared.BatchOrderCloseHistoryId
@@ -53,12 +53,13 @@ class GenerateBatchReportHandler(
 
         val logoBytes = loadLogo(command.studioId)
 
+        // Ten sam filtr statusu co lista na ekranie, żeby suma na wydruku była sumą z ekranu.
         return buildPdf(
             contractorName  = contractor.name,
             contractorTaxId = contractor.taxId,
             from            = command.from,
             to              = command.to,
-            entries         = entries,
+            rows            = entries.filter { command.status.matches(it.isClosed) }.map { it.toReportRow() },
             logoBytes       = logoBytes
         )
     }
@@ -69,14 +70,18 @@ class GenerateBatchReportHandler(
             ?: throw EntityNotFoundException("Close history record not found")
         val contractor = contractorRepository.findByIdAndStudioId(history.contractorId, studioId.value)
             ?: throw EntityNotFoundException("Contractor not found")
-        val entries = entryRepository.findByCloseHistoryId(historyId.value)
+        // Dokument rozliczenia składa się z pozycji zamrożonych w chwili rozliczenia. Żywe
+        // wpisy to ostateczność dla rekordów sprzed V159 — te zmieniają się razem z wpisami,
+        // bo nic innego się po nich nie zachowało.
+        val rows = history.snapshotJson?.let { SettlementSnapshot.fromJson(it).entries }
+            ?: entryRepository.findByCloseHistoryId(historyId.value).map { it.toReportRow() }
         val logoBytes = loadLogo(studioId)
         return buildPdf(
             contractorName = contractor.name,
             contractorTaxId = contractor.taxId,
             from = history.fromDate,
             to = history.toDate,
-            entries = entries,
+            rows = rows,
             logoBytes = logoBytes
         )
     }
@@ -86,11 +91,11 @@ class GenerateBatchReportHandler(
         contractorTaxId: String?,
         from: LocalDate,
         to: LocalDate,
-        entries: List<BatchOrderEntryEntity>,
+        rows: List<ReportRow>,
         studioId: StudioId
     ): ByteArray {
         val logoBytes = loadLogo(studioId)
-        return buildPdf(contractorName, contractorTaxId, from, to, entries, logoBytes)
+        return buildPdf(contractorName, contractorTaxId, from, to, rows, logoBytes)
     }
 
     private fun loadLogo(studioId: StudioId): ByteArray? =
@@ -103,9 +108,10 @@ class GenerateBatchReportHandler(
         contractorTaxId: String?,
         from: LocalDate?,
         to: LocalDate?,
-        entries: List<BatchOrderEntryEntity>,
+        rows: List<ReportRow>,
         logoBytes: ByteArray?
     ): ByteArray {
+        val entries = rows
         val document = PDDocument()
         val dateFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
@@ -318,5 +324,7 @@ data class GenerateBatchReportCommand(
     val studioId     : StudioId,
     val contractorId : BatchContractorId,
     val from         : LocalDate?,
-    val to           : LocalDate?
+    val to           : LocalDate?,
+    /** Domyślnie ALL — tak działał raport, zanim lista dostała filtr. */
+    val status       : EntryStatusFilter = EntryStatusFilter.ALL
 )

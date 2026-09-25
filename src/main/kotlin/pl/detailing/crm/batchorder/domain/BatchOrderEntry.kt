@@ -28,6 +28,7 @@ data class BatchOrderEntry(
     val notes: String?,
     val isClosed: Boolean = false,
     val closeHistoryId: UUID? = null,
+    val isCorrection: Boolean = false,
     val createdAt: Instant,
     val updatedAt: Instant
 )

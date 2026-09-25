@@ -77,6 +77,14 @@ class BatchOrderEntryEntity(
     @Column(name = "close_history_id", columnDefinition = "uuid")
     var closeHistoryId: UUID? = null,
 
+    /**
+     * Wpis był rozliczony i ktoś odblokował go do korekty. Gaśnie przy ponownym
+     * rozliczeniu. Bez tej flagi odblokowany wpis wyglądałby jak świeży — a to
+     * praca, którą kontrahent już raz widział na zestawieniu.
+     */
+    @Column(name = "is_correction", nullable = false)
+    var isCorrection: Boolean = false,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 
@@ -85,6 +93,31 @@ class BatchOrderEntryEntity(
 ) {
     val netAmountCents: Long get() = services.sumOf { it.netAmountCents }
     val grossAmountCents: Long get() = services.sumOf { it.grossAmountCents }
+
+    /** Wpis wchodzi do rozliczenia [historyId]; korekta, jeśli była, jest tym domknięta. */
+    fun markSettled(historyId: UUID, now: Instant) {
+        isClosed = true
+        closeHistoryId = historyId
+        isCorrection = false
+        updatedAt = now
+    }
+
+    /**
+     * Odblokowuje rozliczony wpis do korekty. Zwraca false, gdy wpis był już otwarty —
+     * wtedy niczego nie rusza, żeby powtórzone kliknięcie nie oznaczyło jako korekty
+     * wpisu, którego nikt nigdy nie rozliczył.
+     *
+     * closeHistoryId znika, bo wpis przestaje należeć do tamtego rozliczenia: jego
+     * dokument trzyma własną kopię pozycji (snapshot_json), a wpis trafi do następnego.
+     */
+    fun reopenForCorrection(now: Instant): Boolean {
+        if (!isClosed) return false
+        isClosed = false
+        isCorrection = true
+        closeHistoryId = null
+        updatedAt = now
+        return true
+    }
 
     fun toDomain(): BatchOrderEntry = BatchOrderEntry(
         id = BatchOrderEntryId(id),
@@ -99,6 +132,7 @@ class BatchOrderEntryEntity(
         notes = notes,
         isClosed = isClosed,
         closeHistoryId = closeHistoryId,
+        isCorrection = isCorrection,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -117,6 +151,7 @@ class BatchOrderEntryEntity(
                 notes = entry.notes,
                 isClosed = entry.isClosed,
                 closeHistoryId = entry.closeHistoryId,
+                isCorrection = entry.isCorrection,
                 createdAt = entry.createdAt,
                 updatedAt = entry.updatedAt
             )

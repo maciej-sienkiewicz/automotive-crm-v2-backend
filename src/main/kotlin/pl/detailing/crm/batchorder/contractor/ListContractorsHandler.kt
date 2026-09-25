@@ -3,36 +3,41 @@ package pl.detailing.crm.batchorder.contractor
 import pl.detailing.crm.shared.pii.Pii
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pl.detailing.crm.batchorder.infrastructure.BatchContractorEntity
 import pl.detailing.crm.batchorder.infrastructure.BatchContractorRepository
+import pl.detailing.crm.batchorder.infrastructure.BatchOrderEntryRepository
+import pl.detailing.crm.batchorder.infrastructure.entryCountsByContractorId
 import pl.detailing.crm.shared.StudioId
 
 @Service
 class ListContractorsHandler(
-    private val contractorRepository: BatchContractorRepository
+    private val contractorRepository: BatchContractorRepository,
+    private val entryRepository: BatchOrderEntryRepository
 ) {
     @Transactional(readOnly = true)
     suspend fun handle(command: ListContractorsCommand): ListContractorsResult {
         val entities = contractorRepository.findActiveByStudioId(command.studioId.value)
-        val items = entities.map { entity ->
-            val entryCount = contractorRepository.countEntriesByContractorId(entity.id, command.studioId.value)
-            ContractorListItem(
-                id = entity.id.toString(),
-                name = entity.name,
-                taxId = entity.taxId,
-                address = entity.address,
-                contactPersonName = entity.contactPersonName,
-                email = entity.email,
-                phone = entity.phone,
-                notes = entity.notes,
-                isActive = entity.isActive,
-                entryCount = entryCount,
-                createdAt = entity.createdAt.toString(),
-                updatedAt = entity.updatedAt.toString()
-            )
-        }
+        // Jedno zapytanie grupujące zamiast COUNT-a na każdego kontrahenta.
+        val entryCounts = entryRepository.entryCountsByContractorId(command.studioId.value)
+        val items = entities.map { it.toListItem(entryCount = entryCounts[it.id] ?: 0L) }
         return ListContractorsResult(contractors = items)
     }
 }
+
+fun BatchContractorEntity.toListItem(entryCount: Long) = ContractorListItem(
+    id = id.toString(),
+    name = name,
+    taxId = taxId,
+    address = address,
+    contactPersonName = contactPersonName,
+    email = email,
+    phone = phone,
+    notes = notes,
+    isActive = isActive,
+    entryCount = entryCount,
+    createdAt = createdAt.toString(),
+    updatedAt = updatedAt.toString()
+)
 
 data class ListContractorsCommand(val studioId: StudioId)
 

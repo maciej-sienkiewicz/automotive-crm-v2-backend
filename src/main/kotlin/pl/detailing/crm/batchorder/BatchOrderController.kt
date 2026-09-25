@@ -16,6 +16,8 @@ import pl.detailing.crm.batchorder.entry.CreateEntryCommand
 import pl.detailing.crm.batchorder.entry.CreateEntryHandler
 import pl.detailing.crm.batchorder.entry.DeleteEntryCommand
 import pl.detailing.crm.batchorder.entry.DeleteEntryHandler
+import pl.detailing.crm.batchorder.entry.ReopenEntryCommand
+import pl.detailing.crm.batchorder.entry.ReopenEntryHandler
 import pl.detailing.crm.batchorder.entry.ServiceItemInput
 import pl.detailing.crm.batchorder.entry.UpdateEntryCommand
 import pl.detailing.crm.batchorder.entry.UpdateEntryHandler
@@ -56,6 +58,8 @@ class BatchOrderController(
     private val createEntryHandler: CreateEntryHandler,
     private val updateEntryHandler: UpdateEntryHandler,
     private val deleteEntryHandler: DeleteEntryHandler,
+    private val reopenEntryHandler: ReopenEntryHandler,
+    private val getContractorsOverviewHandler: GetContractorsOverviewHandler,
     private val generateBatchReportHandler: GenerateBatchReportHandler,
     private val closeMonthHandler: CloseMonthHandler,
     private val vehicleRepository: VehicleRepository,
@@ -106,6 +110,27 @@ class BatchOrderController(
         val principal = SecurityContextHelper.getCurrentUser()
         val result = listContractorsHandler.handle(ListContractorsCommand(principal.studioId))
         ResponseEntity.ok(ContractorsResponse(contractors = result.contractors))
+    }
+
+    /**
+     * Kontrahenci z tym, co u nich czeka na rozliczenie w okresie. Ścieżka literalna —
+     * Spring stawia ją przed wzorcem `/contractors/{contractorId}`, a GET na samym
+     * `{contractorId}` i tak nie istnieje.
+     */
+    @GetMapping("/contractors/overview")
+    fun getContractorsOverview(
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?
+    ): ResponseEntity<ContractorsOverviewResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val items = getContractorsOverviewHandler.handle(
+            GetContractorsOverviewCommand(
+                studioId = principal.studioId,
+                from = from?.let { LocalDate.parse(it) },
+                to = to?.let { LocalDate.parse(it) }
+            )
+        )
+        ResponseEntity.ok(ContractorsOverviewResponse(contractors = items))
     }
 
     @PostMapping("/contractors")
@@ -165,7 +190,8 @@ class BatchOrderController(
         @PathVariable contractorId: String,
         @RequestParam(required = false) from: String?,
         @RequestParam(required = false) to: String?,
-        @RequestParam(required = false, defaultValue = "false") includeSettled: Boolean
+        @RequestParam(required = false, defaultValue = "false") includeSettled: Boolean,
+        @RequestParam(required = false) status: String?
     ): ResponseEntity<ContractorEntriesResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val result = getContractorEntriesHandler.handle(
@@ -174,7 +200,7 @@ class BatchOrderController(
                 contractorId = BatchContractorId.fromString(contractorId),
                 from = from?.let { LocalDate.parse(it) },
                 to = to?.let { LocalDate.parse(it) },
-                includeSettled = includeSettled
+                status = EntryStatusFilter.forEntryList(status, includeSettled)
             )
         )
         ResponseEntity.ok(
@@ -182,7 +208,10 @@ class BatchOrderController(
                 contractor = result.contractor,
                 entries = result.entries,
                 settledCount = result.settledCount,
-                summary = result.summary
+                summary = result.summary,
+                openSummary = result.openSummary,
+                settledSummary = result.settledSummary,
+                lastSettledAt = result.lastSettledAt
             )
         )
     }
@@ -245,6 +274,18 @@ class BatchOrderController(
         ResponseEntity.noContent().build()
     }
 
+    @PostMapping("/entries/{entryId}/reopen")
+    fun reopenEntry(@PathVariable entryId: String): ResponseEntity<EntryItemResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val item = reopenEntryHandler.handle(
+            ReopenEntryCommand(
+                studioId = principal.studioId,
+                entryId = BatchOrderEntryId.fromString(entryId)
+            )
+        )
+        ResponseEntity.ok(EntryItemResponse(entry = item))
+    }
+
     // ── Service catalog ──────────────────────────────────────────────────────
     // Suggestions and their prices for the entry form. Editing a position here never
     // reaches a recorded entry: entries keep their own snapshot of what was performed.
@@ -301,7 +342,8 @@ class BatchOrderController(
     fun generateReport(
         @PathVariable contractorId: String,
         @RequestParam(required = false) from: String?,
-        @RequestParam(required = false) to: String?
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) status: String?
     ): ResponseEntity<ByteArray> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
         val pdfBytes = generateBatchReportHandler.handle(
@@ -309,7 +351,8 @@ class BatchOrderController(
                 studioId = principal.studioId,
                 contractorId = BatchContractorId.fromString(contractorId),
                 from = from?.let { LocalDate.parse(it) },
-                to = to?.let { LocalDate.parse(it) }
+                to = to?.let { LocalDate.parse(it) },
+                status = EntryStatusFilter.resolve(status, default = EntryStatusFilter.ALL)
             )
         )
         val headers = HttpHeaders()
@@ -332,14 +375,18 @@ class BatchOrderController(
                 to = LocalDate.parse(request.to),
                 mode = CloseMode.valueOf(request.mode),
                 sendEmail = request.sendEmail,
-                emailOverride = request.emailOverride?.ifBlank { null }
+                emailOverride = request.emailOverride?.ifBlank { null },
+                closedByUserName = principal.fullName
             )
         )
         ResponseEntity.ok(CloseMonthResponse(
             historyId = result.historyId,
             closedEntryCount = result.entryCount,
             financeEntryCreated = false,
-            emailSent = result.emailSent
+            emailSent = result.emailSent,
+            totalNetCents = result.totalNetCents,
+            totalGrossCents = result.totalGrossCents,
+            emailRequested = result.emailRequested
         ))
     }
 
@@ -364,7 +411,7 @@ class BatchOrderController(
                 emailRequested = it.emailTo != null,
                 emailSent = it.emailSent,
                 emailRecipient = it.emailTo,
-                closedByUserName = null
+                closedByUserName = it.closedByUserName
             )
         }))
     }
@@ -548,8 +595,16 @@ data class ContractorEntriesResponse(
     val entries: List<EntryItem>,
     /** Settled entries in the period, counted even when the list hides them. */
     val settledCount: Int,
-    val summary: EntrySummary
+    /** Totals of [entries] — what the status filter let through. */
+    val summary: EntrySummary,
+    /** Open entries in the period, whatever the status filter. */
+    val openSummary: EntrySummary,
+    /** Settled entries in the period, whatever the status filter. */
+    val settledSummary: EntrySummary,
+    /** ISO instant of the newest settlement overlapping the period; newest overall without one. */
+    val lastSettledAt: String?
 )
+data class ContractorsOverviewResponse(val contractors: List<ContractorOverviewItem>)
 data class EntryItemResponse(val entry: EntryItem)
 
 data class BatchServiceRequest(
@@ -575,7 +630,11 @@ data class CloseMonthResponse(
     val historyId: String,
     val closedEntryCount: Int,
     val financeEntryCreated: Boolean,
-    val emailSent: Boolean
+    val emailSent: Boolean,
+    val totalNetCents: Long,
+    val totalGrossCents: Long,
+    /** Wysyłka była zamówiona; z `emailSent = false` znaczy, że mail nie wyszedł. */
+    val emailRequested: Boolean
 )
 
 data class CloseHistoryRecordDto(

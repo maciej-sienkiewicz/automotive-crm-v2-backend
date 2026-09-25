@@ -68,4 +68,36 @@ interface BatchOrderEntryRepository : JpaRepository<BatchOrderEntryEntity, UUID>
         from: LocalDate,
         to: LocalDate
     ): List<BatchOrderEntryEntity>
+
+    /**
+     * Wszystkie wpisy pracowni w okresie, z usługami w tym samym zapytaniu — przegląd
+     * kontrahentów sumuje kwoty z usług, a osobne ładowanie kolekcji dawałoby zapytanie
+     * na wpis.
+     */
+    @Query("""
+        SELECT DISTINCT e FROM BatchOrderEntryEntity e
+        LEFT JOIN FETCH e.services
+        WHERE e.studioId = :studioId
+          AND e.serviceDate >= :from AND e.serviceDate <= :to
+    """)
+    fun findByStudioIdAndDateRangeWithServices(studioId: UUID, from: LocalDate, to: LocalDate): List<BatchOrderEntryEntity>
+
+    /** Jak [findByStudioIdAndDateRangeWithServices], bez okresu. */
+    @Query("""
+        SELECT DISTINCT e FROM BatchOrderEntryEntity e
+        LEFT JOIN FETCH e.services
+        WHERE e.studioId = :studioId
+    """)
+    fun findByStudioIdWithServices(studioId: UUID): List<BatchOrderEntryEntity>
+
+    /** Liczba wpisów na kontrahenta (od zawsze), jednym zapytaniem. Wiersz = [contractorId, count]. */
+    @Query("""
+        SELECT e.contractorId, COUNT(e) FROM BatchOrderEntryEntity e
+        WHERE e.studioId = :studioId
+        GROUP BY e.contractorId
+    """)
+    fun countGroupedByContractorId(studioId: UUID): List<Array<Any>>
 }
+
+fun BatchOrderEntryRepository.entryCountsByContractorId(studioId: UUID): Map<UUID, Long> =
+    countGroupedByContractorId(studioId).associate { row -> (row[0] as UUID) to (row[1] as Number).toLong() }

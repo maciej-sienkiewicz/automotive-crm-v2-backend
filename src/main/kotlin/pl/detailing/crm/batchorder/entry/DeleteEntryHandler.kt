@@ -15,6 +15,8 @@ class DeleteEntryHandler(
     suspend fun handle(command: DeleteEntryCommand) {
         val entity = entryRepository.findByIdAndStudioId(command.entryId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Entry not found")
+        // Usunięcie rozliczonego wpisu zmieniłoby sumy rozliczenia, które kontrahent już dostał.
+        ensureEntryEditable(entity.isClosed, LockedEntryAction.DELETE)
 
         entryRepository.delete(entity)
     }
