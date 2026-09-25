@@ -60,8 +60,12 @@ class GlobalExceptionHandler(
      * czy niezmiennik `Money` rzucają za wszystkich, a pytanie brzmi, KTO je wywołał.
      */
     private fun origin(ex: Throwable): String {
+        // Dokładna nazwa klasy (plus jej klasy wewnętrzne), nie prefiks: prefiks
+        // „…config.GlobalExceptionHandler" łapał też każdą klasę o nazwie zaczynającej
+        // się tak samo i gubił właściwe źródło wyjątku.
+        val self = GlobalExceptionHandler::class.java.name
         val own = ex.stackTrace.filter {
-            it.className.startsWith(APP_PACKAGE) && !it.className.startsWith(GlobalExceptionHandler::class.java.name)
+            it.className.startsWith(APP_PACKAGE) && it.className != self && !it.className.startsWith("$self$")
         }
         val frame = own.firstOrNull { !it.className.startsWith(SHARED_PACKAGE) } ?: own.firstOrNull()
             ?: return "n/a"
