@@ -55,7 +55,16 @@ data class MailSignatureDesign(
     val tiktok: String? = null,
     val color: String = DEFAULT_COLOR,
     val font: String = DEFAULT_FONT,
+    /**
+     * Dawna „wielkość tekstu" (s/m/l) - projekty sprzed suwaka rozmiaru. Kreator tłumaczy ją
+     * na [scale] przy otwarciu; nowe projekty zapisują „m".
+     */
     val size: String = DEFAULT_SIZE,
+    /**
+     * Rozmiar całej stopki w procentach (tekst, zdjęcie, logo, odstępy). `null` = projekt
+     * sprzed suwaka, kreator wyprowadza go z [size].
+     */
+    val scale: Int? = null,
     val iconStyle: String = DEFAULT_ICON_STYLE
 ) {
 
@@ -72,6 +81,9 @@ data class MailSignatureDesign(
         if (!COLOR.matches(normalizedColor)) throw ValidationException("Kolor przewodni musi mieć postać #RRGGBB")
         if (font !in FONTS) throw ValidationException("Nieznana czcionka stopki")
         if (size !in SIZES) throw ValidationException("Nieznana wielkość tekstu stopki")
+        if (scale != null && scale !in MIN_SCALE..MAX_SCALE) {
+            throw ValidationException("Rozmiar stopki musi mieścić się w zakresie $MIN_SCALE–$MAX_SCALE%")
+        }
         if (iconStyle !in ICON_STYLES) throw ValidationException("Nieznany styl ikon stopki")
 
         val design = copy(
@@ -108,6 +120,14 @@ data class MailSignatureDesign(
         /** Czcionki bezpieczne w poczcie — każda jest na Windowsie, macOS i w webmailach. */
         val FONTS = setOf("arial", "helvetica", "verdana", "trebuchet", "tahoma", "georgia", "times")
         val SIZES = setOf("s", "m", "l")
+
+        /**
+         * Zakres suwaka rozmiaru. Poniżej 70% najmniejszy tekst stopki (kontakt 12 px)
+         * spada pod 9 px i przestaje być czytelny; powyżej 120% motywy z banerem
+         * przestają mieścić się w oknie odpowiedzi w Outlooku.
+         */
+        const val MIN_SCALE = 70
+        const val MAX_SCALE = 120
         val ICON_STYLES = setOf("mono", "color", "color-sq")
 
         const val MAX_LINE = 160

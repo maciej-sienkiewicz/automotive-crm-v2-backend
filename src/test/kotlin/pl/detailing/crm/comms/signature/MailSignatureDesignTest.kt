@@ -50,6 +50,15 @@ class MailSignatureDesignTest {
     }
 
     @Test
+    fun `rozmiar stopki w zakresie suwaka, projekt bez rozmiaru tez przechodzi`() {
+        assertEquals(85, design().copy(scale = 85).normalized().scale)
+        assertEquals(MailSignatureDesign.MIN_SCALE, design().copy(scale = MailSignatureDesign.MIN_SCALE).normalized().scale)
+        assertNull(design().normalized().scale)
+        assertThrows<ValidationException> { design().copy(scale = 50).normalized() }
+        assertThrows<ValidationException> { design().copy(scale = 200).normalized() }
+    }
+
+    @Test
     fun `imie i nazwisko jest wymagane`() {
         assertThrows<ValidationException> { design(fullName = "  ").normalized() }
     }
