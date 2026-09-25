@@ -41,6 +41,33 @@ class GlobalExceptionHandler(
         "studioId=unknown, userId=unknown"
     }
 
+    /**
+     * `POST /api/v1/services/update` - bez query stringa, bo ten niesie frazy
+     * wyszukiwania (imiona, numery telefonów).
+     *
+     * Wcześniej ostrzeżenia 4xx miały tylko studio, użytkownika i komunikat wyjątku.
+     * „Invalid UUID string: temp-1790326210623" nie mówiło, który endpoint i które
+     * pole - przyczynę trzeba było odtwarzać po stronie frontendu, z DevTools klienta.
+     */
+    private fun endpoint(request: HttpServletRequest?): String =
+        request?.let { "${it.method} ${it.requestURI}" } ?: "unknown endpoint"
+
+    /**
+     * Pierwsza ramka NASZEGO kodu, która doprowadziła do wyjątku, np.
+     * `ServiceController$updateService$1.invokeSuspend(ServiceController.kt:271)`.
+     *
+     * Ramki z `shared` są pomijane, o ile dalej jest coś innego: `ServiceId.fromString`
+     * czy niezmiennik `Money` rzucają za wszystkich, a pytanie brzmi, KTO je wywołał.
+     */
+    private fun origin(ex: Throwable): String {
+        val own = ex.stackTrace.filter {
+            it.className.startsWith(APP_PACKAGE) && !it.className.startsWith(GlobalExceptionHandler::class.java.name)
+        }
+        val frame = own.firstOrNull { !it.className.startsWith(SHARED_PACKAGE) } ?: own.firstOrNull()
+            ?: return "n/a"
+        return "${frame.className.substringAfterLast('.')}.${frame.methodName}(${frame.fileName}:${frame.lineNumber})"
+    }
+
     @ExceptionHandler(AuthenticationException::class)
     fun handleAuthenticationException(ex: AuthenticationException): ResponseEntity<ErrorResponse> {
         return ResponseEntity
@@ -75,8 +102,8 @@ class GlobalExceptionHandler(
     }
 
     @ExceptionHandler(ValidationException::class)
-    fun handleValidation(ex: ValidationException): ResponseEntity<ErrorResponse> {
-        log.warn("ValidationException [{}]: {}", resolveContext(), ex.message)
+    fun handleValidation(ex: ValidationException, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        log.warn("ValidationException [{}] {}: {} (at {})", resolveContext(), endpoint(request), ex.message, origin(ex))
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(
@@ -96,14 +123,14 @@ class GlobalExceptionHandler(
 
     /** `@Valid @RequestBody` failures (MethodArgumentNotValidException extends BindException). */
     @ExceptionHandler(BindException::class)
-    fun handleBeanValidation(ex: BindException): ResponseEntity<ValidationErrorResponse> {
+    fun handleBeanValidation(ex: BindException, request: HttpServletRequest): ResponseEntity<ValidationErrorResponse> {
         val fieldErrors = ex.bindingResult.fieldErrors.map { fe ->
             FieldErrorDto(field = fe.field, message = fe.defaultMessage ?: "Nieprawidłowa wartość")
         }
         val globalErrors = ex.bindingResult.globalErrors.map { ge ->
             FieldErrorDto(field = ge.objectName, message = ge.defaultMessage ?: "Nieprawidłowa wartość")
         }
-        log.warn("Bean validation failed [{}]: {}", resolveContext(), fieldErrors + globalErrors)
+        log.warn("Bean validation failed [{}] {}: {}", resolveContext(), endpoint(request), fieldErrors + globalErrors)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ValidationErrorResponse(
@@ -116,11 +143,11 @@ class GlobalExceptionHandler(
 
     /** `@Validated` on request params / path variables. */
     @ExceptionHandler(ConstraintViolationException::class)
-    fun handleConstraintViolation(ex: ConstraintViolationException): ResponseEntity<ValidationErrorResponse> {
+    fun handleConstraintViolation(ex: ConstraintViolationException, request: HttpServletRequest): ResponseEntity<ValidationErrorResponse> {
         val errors = ex.constraintViolations.map { cv ->
             FieldErrorDto(field = cv.propertyPath.toString(), message = cv.message ?: "Nieprawidłowa wartość")
         }
-        log.warn("Constraint violation [{}]: {}", resolveContext(), errors)
+        log.warn("Constraint violation [{}] {}: {}", resolveContext(), endpoint(request), errors)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ValidationErrorResponse(
@@ -142,8 +169,11 @@ class GlobalExceptionHandler(
         MethodArgumentTypeMismatchException::class,
         MissingServletRequestParameterException::class
     )
-    fun handleMalformedRequest(ex: Exception): ResponseEntity<ErrorResponse> {
-        log.warn("Malformed request [{}]: {}", resolveContext(), ex.message?.lineSequence()?.firstOrNull())
+    fun handleMalformedRequest(ex: Exception, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        log.warn(
+            "Malformed request [{}] {}: {}",
+            resolveContext(), endpoint(request), ex.message?.lineSequence()?.firstOrNull()
+        )
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(
@@ -159,8 +189,11 @@ class GlobalExceptionHandler(
      * written for developers and can carry internal state.
      */
     @ExceptionHandler(IllegalArgumentException::class)
-    fun handleIllegalArgument(ex: IllegalArgumentException): ResponseEntity<ErrorResponse> {
-        log.warn("IllegalArgumentException [{}]: {}", resolveContext(), ex.message)
+    fun handleIllegalArgument(ex: IllegalArgumentException, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        log.warn(
+            "IllegalArgumentException [{}] {}: {} (at {})",
+            resolveContext(), endpoint(request), ex.message, origin(ex)
+        )
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(
@@ -456,8 +489,8 @@ class GlobalExceptionHandler(
     }
 
     @ExceptionHandler(Exception::class)
-    fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> {
-        log.error("Unhandled exception [{}]", resolveContext(), ex)
+    fun handleGeneric(ex: Exception, request: HttpServletRequest): ResponseEntity<ErrorResponse> {
+        log.error("Unhandled exception [{}] {}", resolveContext(), endpoint(request), ex)
         return ResponseEntity
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse(
@@ -468,6 +501,9 @@ class GlobalExceptionHandler(
     }
 
     companion object {
+        private const val APP_PACKAGE = "pl.detailing.crm."
+        private const val SHARED_PACKAGE = "pl.detailing.crm.shared."
+
         private val CONSTRAINT_MESSAGES = mapOf(
             "idx_customers_studio_phone" to "Klient z podanym numerem telefonu już istnieje w tym studiu.",
             "idx_customers_studio_email" to "Klient z podanym adresem e-mail już istnieje w tym studiu.",

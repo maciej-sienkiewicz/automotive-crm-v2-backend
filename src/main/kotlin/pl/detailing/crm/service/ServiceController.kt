@@ -268,7 +268,7 @@ class ServiceController(
         val command = UpdateServiceCommand(
             studioId = principal.studioId,
             userId = principal.userId,
-            oldServiceId = ServiceId.fromString(request.originalServiceId),
+            oldServiceId = request.originalServiceIdOrReject(),
             name = request.name,
             basePriceNet = Money.fromCents(request.basePriceNet),
             basePriceGross = request.basePriceGross?.let { Money.fromCents(it) },
