@@ -281,6 +281,10 @@ class StudioDataPurger(
         },
 
         StudioResetStep("Skrzynka i komunikacja") { ctx ->
+            // Pary „pytanie → odpowiedź" do szkiców niosą DOSŁOWNE treści maili klientów
+            // (i ich wektory) — po resecie nie mogą przeżyć samych wiadomości.
+            deleteByStudio("CommReplyExampleEntity", ctx)
+            deleteByStudio("CommReplyDraftPreferenceEntity", ctx)
             deleteByStudio("CommAttachmentEntity", ctx)
             deleteByStudio("CommMessageEntity", ctx)
             deleteByStudio("CommOutboxEntity", ctx)

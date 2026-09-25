@@ -157,6 +157,13 @@ interface CommMessageRepository : JpaRepository<CommMessageEntity, UUID> {
         direction: pl.detailing.crm.comms.domain.CommDirection
     ): CommMessageEntity?
 
+    /** Pytanie klienta, na które odpowiadała nasza wiadomość — para dla szkiców odpowiedzi. */
+    fun findFirstByThreadIdAndDirectionAndSentAtBeforeOrderBySentAtDesc(
+        threadId: UUID,
+        direction: pl.detailing.crm.comms.domain.CommDirection,
+        sentAt: Instant
+    ): CommMessageEntity?
+
     /**
      * Ostatnia wiadomość przychodząca i wychodząca dla każdego z wątków — jednym
      * zapytaniem dla całej strony listy, zamiast odpytywania wątek po wątku.
