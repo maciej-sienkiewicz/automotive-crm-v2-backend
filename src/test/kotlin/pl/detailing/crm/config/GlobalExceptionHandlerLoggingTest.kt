@@ -67,7 +67,15 @@ class GlobalExceptionHandlerLoggingTest {
         handlerLogger.detachAppender(appender)
     }
 
-    private fun lastWarning(): String = appender.list.last().formattedMessage
+    /**
+     * Ostatni wpis z WĄTKU TEGO TESTU. Logger handlera jest wspólny, a klasy testowe
+     * biegną równolegle - bez filtra łapał się wpis z innego testu (`POST /probe/valid`).
+     * MockMvc wykonuje żądanie synchronicznie, na wątku wywołującym.
+     */
+    private fun lastWarning(): String {
+        val thread = Thread.currentThread().name
+        return appender.list.last { it.threadName == thread }.formattedMessage
+    }
 
     @Test
     fun `IllegalArgumentException loguje endpoint i miejsce w naszym kodzie, a nie w ServiceId`() {
