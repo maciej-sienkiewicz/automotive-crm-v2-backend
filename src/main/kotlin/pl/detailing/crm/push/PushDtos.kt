@@ -1,6 +1,7 @@
 package pl.detailing.crm.push
 
 import pl.detailing.crm.push.domain.PushDevice
+import pl.detailing.crm.push.domain.PushDevicePlatform
 import pl.detailing.crm.shared.pii.Pii
 import java.time.Instant
 
@@ -43,7 +44,9 @@ data class PushDeviceDto(
     val deviceName: String,
     val createdAt: Instant,
     val lastUsedAt: Instant?,
-    val active: Boolean
+    val active: Boolean,
+    /** Read from the pairing User-Agent - see [PushDevicePlatform]. */
+    val platform: PushDevicePlatform
 )
 
 data class RequestCallResponse(
@@ -56,5 +59,6 @@ fun PushDevice.toDto(): PushDeviceDto = PushDeviceDto(
     deviceName = deviceName,
     createdAt = createdAt,
     lastUsedAt = lastUsedAt,
-    active = isActive
+    active = isActive,
+    platform = platform
 )
