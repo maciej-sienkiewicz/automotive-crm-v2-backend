@@ -118,6 +118,7 @@ data class MailSignatureDesign(
         private val COLOR = Regex("^#[0-9a-f]{6}$")
         private val SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
         private val CONTROL = Regex("[\\p{Cntrl}&&[^\\n\\t]]")
+        private val LOCAL_HTTP = Regex("^http://(localhost|127\\.0\\.0\\.1)(:\\d+)?/", RegexOption.IGNORE_CASE)
 
         private fun line(value: String?, label: String): String? {
             val trimmed = value?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
@@ -153,11 +154,15 @@ data class MailSignatureDesign(
          * Obrazek musi mieć absolutny adres https: pobiera go klient poczty odbiorcy,
          * więc adres względny nie zadziała nigdzie poza naszą aplikacją, a http blokuje
          * część skrzynek. `data:` odpada, bo Gmail i Outlook go nie wyświetlają.
+         *
+         * Wyjątek: http na localhost - adres obrazka to domena aplikacji, a lokalnie
+         * aplikacja chodzi po http. Taka stopka i tak nie wyjdzie poza komputer dewelopera.
          */
         private fun image(value: String?, label: String): String? {
             val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
             if (trimmed.length > MAX_IMAGE_URL) throw ValidationException("$label: adres obrazka jest za długi")
-            if (!trimmed.startsWith("https://", ignoreCase = true) || trimmed.any { it.isWhitespace() }) {
+            val secure = trimmed.startsWith("https://", ignoreCase = true) || LOCAL_HTTP.containsMatchIn(trimmed)
+            if (!secure || trimmed.any { it.isWhitespace() }) {
                 throw ValidationException("$label: podaj pełny adres obrazka zaczynający się od https://")
             }
             return trimmed

@@ -20,10 +20,20 @@ import java.util.concurrent.ConcurrentHashMap
 class StoredSignatureImage(val bytes: ByteArray, val contentType: String)
 
 /**
- * Obrazki stopki pod stałymi, publicznymi adresami absolutnymi.
+ * Obrazki stopki pod stałymi, publicznymi adresami.
  *
- * Adres musi być absolutny i publiczny, bo obrazek pobiera klient poczty odbiorcy
- * (Gmail, Outlook), który nie zna ani naszej domeny, ani sesji. Musi też być STAŁY:
+ * Serwis zwraca ŚCIEŻKĘ (`/api/public/mail-signature/...`), a adres absolutny składa
+ * frontend z domeny, na której działa aplikacja - tej samej, przez którą rozmawia z API
+ * (reverse proxy kieruje `/api` do backendu). Pierwsza wersja składała adres tutaj,
+ * z BACKEND_BASE_URL, którego wdrożenie nie ustawia: obrazki szły pod domyślny
+ * api.detailboost.pl i nie wyświetlały się ani w podglądzie, ani u odbiorcy. Domena
+ * aplikacji jest jedynym adresem, o którym wiemy na pewno, że prowadzi do tego backendu
+ * (tak samo budowane są linki do Karty Wizyty i podpisu zdalnego). Wyprowadzanie go tu
+ * z żądania (PublicBaseUrl) zależałoby od nagłówków X-Forwarded-* ustawionych przez
+ * proxy; adres z paska przeglądarki takiej zależności nie ma.
+ *
+ * Adres musi być publiczny, bo obrazek pobiera klient poczty odbiorcy (Gmail, Outlook),
+ * który nie zna sesji. Musi też być STAŁY:
  * wysłana wiadomość żyje w cudzej skrzynce latami, więc podmiana zdjęcia w stopce nie
  * może zepsuć obrazka w listach sprzed tygodnia. Dlatego:
  *  - klucz niesie hash treści (`{studioId}/mail-signature/{hash}.jpg|png`) — nowy plik to
@@ -38,8 +48,7 @@ class MailSignatureImageService(
     private val s3Client: S3Client,
     private val processor: MailSignatureImageProcessor,
     private val studioSettingsRepository: StudioSettingsRepository,
-    @Value("\${aws.s3.bucket-name}") private val bucketName: String,
-    @Value("\${comms.signature.public-base-url:https://api.detailboost.pl}") publicBaseUrl: String
+    @Value("\${aws.s3.bucket-name}") private val bucketName: String
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(MailSignatureImageService::class.java)
@@ -49,10 +58,8 @@ class MailSignatureImageService(
         private val EXTENSIONS = mapOf("jpg" to "image/jpeg", "png" to "image/png")
     }
 
-    private val baseUrl = publicBaseUrl.trim().trimEnd('/')
-
-    /** Katalog ikon (telefon, e-mail, social) — renderer frontu dokleja `{zestaw}/{nazwa}.png`. */
-    val iconsBaseUrl: String get() = "$baseUrl$PUBLIC_PATH/icons/${MailSignatureIcons.VERSION}"
+    /** Ścieżka katalogu ikon (telefon, e-mail, social) — renderer frontu dokleja `{zestaw}/{nazwa}.png`. */
+    val iconsPath: String get() = "$PUBLIC_PATH/icons/${MailSignatureIcons.VERSION}"
 
     fun upload(studioId: StudioId, kind: MailSignatureImageKind, bytes: ByteArray): String =
         store(studioId.value, processor.process(bytes, kind))
@@ -94,7 +101,7 @@ class MailSignatureImageService(
             RequestBody.fromBytes(image.bytes)
         )
         logger.info("Mail signature image stored for studio {}: {}", studioId, key)
-        return "$baseUrl$PUBLIC_PATH/$studioId/$hash.${image.extension}"
+        return "$PUBLIC_PATH/$studioId/$hash.${image.extension}"
     }
 
     private fun key(studioId: UUID, hash: String, extension: String) = "$studioId/mail-signature/$hash.$extension"

@@ -29,8 +29,11 @@ data class MailSignatureResponse(
     val enabledByDefault: Boolean,
     /** Projekt z konfiguratora; `null` dla stopki tekstowej i przy braku stopki. */
     val design: MailSignatureDesign?,
-    /** Absolutny katalog ikon stopki — adresy ikon trafiają do HTML-a wysyłanego na zewnątrz. */
-    val iconsBaseUrl: String,
+    /**
+     * Ścieżka katalogu ikon stopki. Adres absolutny (trafia do HTML-a wysyłanych maili)
+     * składa frontend z domeny aplikacji — patrz [MailSignatureImageService].
+     */
+    val iconsPath: String,
     /** Podpowiedzi do pierwszego uruchomienia kreatora: dane z konta i ze studia. */
     val defaults: MailSignatureDefaults
 )
@@ -56,7 +59,8 @@ data class SaveMailSignatureRequest(
     val design: MailSignatureDesign? = null
 )
 
-data class MailSignatureImageResponse(val url: String)
+/** Ścieżka obrazka (`/api/public/mail-signature/...`) — adres absolutny składa frontend. */
+data class MailSignatureImageResponse(val path: String)
 
 /**
  * Stopka nadawcy i jej konfigurator. Stopka należy do zalogowanego użytkownika, nie do
@@ -86,7 +90,7 @@ class MailSignatureController(
                 bodyHtml = signature.bodyHtml,
                 enabledByDefault = signature.enabledByDefault,
                 design = signature.design,
-                iconsBaseUrl = imageService.iconsBaseUrl,
+                iconsPath = imageService.iconsPath,
                 defaults = MailSignatureDefaults(
                     fullName = principal.fullName.trim().ifEmpty { null },
                     email = principal.email.trim().ifEmpty { null },
@@ -120,7 +124,7 @@ class MailSignatureController(
         return ResponseEntity.noContent().build()
     }
 
-    /** Zdjęcie albo logo do stopki; zwraca stały, publiczny adres absolutny. */
+    /** Zdjęcie albo logo do stopki; zwraca ścieżkę stałego, publicznego adresu. */
     @PostMapping("/images", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun uploadImage(
         @RequestPart("file") file: MultipartFile,

@@ -118,20 +118,20 @@ class MailSignatureImageServiceTest {
         s3,
         MailSignatureImageProcessor(CompanyLogoProcessor()),
         settingsRepository,
-        bucketName = "bucket",
-        publicBaseUrl = "https://api.example.pl/"
+        bucketName = "bucket"
     )
 
     @Test
-    fun `wgrany obrazek dostaje absolutny adres z hashem tresci pod prefiksem studia`() {
+    fun `wgrany obrazek dostaje sciezke z hashem tresci pod prefiksem studia`() {
         val request = slot<PutObjectRequest>()
         every { s3.putObject(capture(request), any<RequestBody>()) } returns mockk()
 
-        val url = service.upload(studioId, MailSignatureImageKind.PHOTO, image(400, 400).encode("png"))
+        val path = service.upload(studioId, MailSignatureImageKind.PHOTO, image(400, 400).encode("png"))
 
-        val match = Regex("""^https://api\.example\.pl/api/public/mail-signature/${studioId.value}/([0-9a-f]{16})\.jpg$""")
-            .matchEntire(url)
-        assertTrue(match != null, url)
+        // Ścieżka, nie adres absolutny: domenę dokleja frontend (domena aplikacji).
+        val match = Regex("""^/api/public/mail-signature/${studioId.value}/([0-9a-f]{16})\.jpg$""")
+            .matchEntire(path)
+        assertTrue(match != null, path)
         assertEquals("${studioId.value}/mail-signature/${match!!.groupValues[1]}.jpg", request.captured.key())
         assertEquals("image/jpeg", request.captured.contentType())
         assertEquals("public, max-age=31536000, immutable", request.captured.cacheControl())
@@ -187,8 +187,8 @@ class MailSignatureImageServiceTest {
     }
 
     @Test
-    fun `katalog ikon jest absolutny i wersjonowany`() {
-        assertEquals("https://api.example.pl/api/public/mail-signature/icons/v1", service.iconsBaseUrl)
+    fun `katalog ikon jest wersjonowana sciezka publicznego kontrolera`() {
+        assertEquals("/api/public/mail-signature/icons/v1", service.iconsPath)
     }
 }
 

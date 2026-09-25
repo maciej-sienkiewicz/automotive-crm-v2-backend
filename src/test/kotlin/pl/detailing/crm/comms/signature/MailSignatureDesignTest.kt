@@ -72,6 +72,10 @@ class MailSignatureDesignTest {
         assertEquals(url, design().copy(photoUrl = url).normalized().photoUrl)
 
         assertThrows<ValidationException> { design().copy(photoUrl = "http://firma.pl/foto.jpg").normalized() }
+        // Lokalnie aplikacja chodzi po http, a adres obrazka to jej domena.
+        val local = "http://localhost:5173/api/public/mail-signature/x/0123456789abcdef.jpg"
+        assertEquals(local, design().copy(photoUrl = local).normalized().photoUrl)
+        assertThrows<ValidationException> { design().copy(photoUrl = "http://localhost.evil.pl/x.jpg").normalized() }
         assertThrows<ValidationException> { design().copy(logoUrl = "/api/public/branding/logo.png").normalized() }
         assertThrows<ValidationException> { design().copy(logoUrl = "data:image/png;base64,AAAA").normalized() }
     }
