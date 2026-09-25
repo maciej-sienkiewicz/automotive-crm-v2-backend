@@ -579,6 +579,26 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("from") from: Instant,
         @Param("to") to: Instant
     ): List<VisitEntity>
+
+    /**
+     * Wizyty zamknięte, czyli wydane klientowi w [from, to) — po `pickupDate`, nie po
+     * `actualCompletionDate` (to drugie stawia READY_FOR_PICKUP, a auto może jeszcze stać
+     * dni na placu). ARCHIVED wchodzi, jeśli było wydane: archiwizacja nie cofa sprzedaży,
+     * a wizyta odrzucona nie ma daty wydania.
+     */
+    @Query("""
+        SELECT v FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND v.status IN (pl.detailing.crm.shared.VisitStatus.COMPLETED, pl.detailing.crm.shared.VisitStatus.ARCHIVED)
+        AND v.pickupDate >= :from
+        AND v.pickupDate < :to
+        AND v.deletedAt IS NULL
+    """)
+    fun findHandedOverByStudioIdAndPickupRange(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<VisitEntity>
 }
 
 @Repository

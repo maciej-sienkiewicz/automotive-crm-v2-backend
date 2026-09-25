@@ -56,10 +56,12 @@ class ConfirmVisitHandler(
             // visit could sit against an appointment still short of CONVERTED, and the
             // check-in flow and the delete guard then disagree about the same booking.
             transactionTemplate.execute {
-                // Update visit status to IN_PROGRESS
+                // Update visit status to IN_PROGRESS — to jest chwila rozpoczęcia prac
+                val now = Instant.now()
                 visitEntity.status = VisitStatus.IN_PROGRESS
+                visitEntity.startedAt = now
                 visitEntity.updatedBy = command.userId.value
-                visitEntity.updatedAt = Instant.now()
+                visitEntity.updatedAt = now
                 visitRepository.save(visitEntity)
 
                 // Update appointment status to CONVERTED and sync linked lead

@@ -428,6 +428,15 @@ class StudioDataPurger(
             }
         },
 
+        StudioResetStep("Raport właściciela") { ctx ->
+            // Wysyłka raportu wraca do domyślnego OFF (brak wiersza), a rejestr wysłanych
+            // okresów znika razem z danymi, z których te raporty policzono.
+            deleteByStudio("OwnerReportSettingsEntity", ctx)
+            entityManager.createNativeQuery("DELETE FROM owner_report_dispatches WHERE studio_id = :studioId")
+                .setParameter("studioId", ctx.studioId)
+                .executeUpdate()
+        },
+
         StudioResetStep("Użytkownicy i role") { ctx ->
             // Dane per-użytkownik przed usunięciem użytkowników.
             deleteWhere(

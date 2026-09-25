@@ -37,6 +37,7 @@ class AdDiscoveryReadService(
 
     private companion object {
         const val MAX_PAGE_SIZE = 50
+        const val TOP_ADVERTISERS = 5
     }
 
     /**
@@ -213,6 +214,52 @@ class AdDiscoveryReadService(
             newCampaignAdvertiserNames = withNewCampaign.map { it.companyName },
             latestStart = rows.mapNotNull { it.latestCampaignStart }.max(),
             windowDays = AreaNovelty.WINDOW_DAYS.toInt()
+        )
+    }
+
+    /**
+     * Konkurencja w rejonie studia na potrzeby raportu właściciela: ile firm się tu
+     * reklamuje, ile ma aktywnych reklam i ile kampanii ruszyło w okresie [from]–[to].
+     *
+     * Ta sama arytmetyka co [results] (frazy, rejon, wykluczenia), ale jak [novelty]
+     * czyta wyłącznie to, co już jest w cache: raport generuje się w tle dla wielu
+     * studiów naraz i nie może być tym, co zużywa wspólny limit wywołań Meta.
+     *
+     * Null, gdy studio nie ustawiło rejonu albo katalog fraz jest pusty. Pusty rejon
+     * to „nie wiemy", a nie „nikt się tu nie reklamuje".
+     */
+    fun periodSnapshot(studioId: StudioId, from: java.time.LocalDate, to: java.time.LocalDate): AreaPeriodSnapshot? {
+        val settings = settingsService.get(studioId)
+        val cleanLocations = settings.locations.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (cleanLocations.isEmpty()) return null
+
+        val normalizedPhrases = AdDiscoveryCatalog.phrasesExcept(settings.excludedPhraseIds)
+            .mapNotNull(AdDiscoveryPhrase::normalizeValid)
+            .distinct()
+        if (normalizedPhrases.isEmpty()) return null
+
+        val blocked = blockService.blockedPageIds(studioId)
+        val inArea = adRepository.findByPhraseIn(normalizedPhrases)
+            .distinctBy { it.adArchiveId }
+            .map { it.toDiscovered() }
+            .filter { it.active && it.pageId !in blocked }
+            .filter { AreaLocationMatcher.matches(it.locations, cleanLocations, settings.matchMode) }
+
+        val rows = AreaAdvertiserSummary.summarize(inArea, cleanLocations, settings.matchMode)
+        val known = knownSince(inArea)
+        fun inPeriod(day: java.time.LocalDate) = !day.isBefore(from) && !day.isAfter(to)
+
+        return AreaPeriodSnapshot(
+            advertisers = rows.size,
+            activeAds = rows.sumOf { it.activeAds },
+            campaignsStartedInPeriod = inArea.count { inPeriod(it.deliveryStart) },
+            // Debiut liczymy jak w tabeli: od najwcześniejszego startu, jaki znamy —
+            // z rejestru albo z tego, co widać w cache.
+            newAdvertisers = rows.filter { row ->
+                val seenInCache = inArea.filter { it.pageId == row.pageId }.minOf { it.deliveryStart }
+                inPeriod(listOfNotNull(known[row.pageId], seenInCache).min())
+            }.map { it.companyName },
+            top = rows.sortedByDescending { it.activeAds }.take(TOP_ADVERTISERS).map { it.companyName to it.activeAds }
         )
     }
 

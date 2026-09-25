@@ -35,6 +35,13 @@ data class Visit(
     val actualCompletionDate: Instant?,  // Actual completion date (set when status changes to READY_FOR_PICKUP)
     val pickupDate: Instant?,  // Pickup date (set when status changes to COMPLETED)
 
+    /**
+     * Chwila rozpoczęcia prac: przejście DRAFT → IN_PROGRESS (podpisane dokumenty
+     * przyjęcia). Null, dopóki przyjęcie trwa. Raport właściciela liczy po nim
+     * „wizyty rozpoczęte" — `createdAt` to otwarcie formularza przyjęcia, a nie start.
+     */
+    val startedAt: Instant? = null,
+
     // Arrival details
     val mileageAtArrival: Long?,
     val keysHandedOver: Boolean,

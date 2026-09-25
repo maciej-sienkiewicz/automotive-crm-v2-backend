@@ -160,3 +160,12 @@ data class BlockAdvertiserRequest(
     val pageName: String? = null,
     val reason: String? = null
 )
+
+/** Konkurencja w rejonie na potrzeby raportu właściciela — patrz [AdDiscoveryReadService.periodSnapshot]. */
+data class AreaPeriodSnapshot(
+    val advertisers: Int,
+    val activeAds: Int,
+    val campaignsStartedInPeriod: Int,
+    val newAdvertisers: List<String>,
+    val top: List<Pair<String, Int>>
+)

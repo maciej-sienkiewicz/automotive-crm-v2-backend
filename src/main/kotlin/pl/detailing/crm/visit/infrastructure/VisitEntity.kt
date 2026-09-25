@@ -91,6 +91,10 @@ class VisitEntity(
     @Column(name = "pickup_date", columnDefinition = "timestamp with time zone")
     var pickupDate: Instant?,
 
+    /** Przejście DRAFT → IN_PROGRESS — patrz [Visit.startedAt]. */
+    @Column(name = "started_at", columnDefinition = "timestamp with time zone")
+    var startedAt: Instant? = null,
+
     // Arrival details
     @Column(name = "mileage_at_arrival")
     var mileageAtArrival: Long?,
@@ -181,6 +185,7 @@ class VisitEntity(
         estimatedCompletionDate = estimatedCompletionDate,
         actualCompletionDate = actualCompletionDate,
         pickupDate = pickupDate,
+        startedAt = startedAt,
         mileageAtArrival = mileageAtArrival,
         keysHandedOver = keysHandedOver,
         documentsHandedOver = documentsHandedOver,
@@ -236,6 +241,7 @@ class VisitEntity(
                 estimatedCompletionDate = visit.estimatedCompletionDate,
                 actualCompletionDate = visit.actualCompletionDate,
                 pickupDate = visit.pickupDate,
+                startedAt = visit.startedAt,
                 mileageAtArrival = visit.mileageAtArrival,
                 keysHandedOver = visit.keysHandedOver,
                 documentsHandedOver = visit.documentsHandedOver,
