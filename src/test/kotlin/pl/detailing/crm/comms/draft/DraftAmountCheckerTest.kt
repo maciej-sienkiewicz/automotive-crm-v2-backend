@@ -58,4 +58,22 @@ class DraftAmountCheckerTest {
             DraftAmountChecker.placeholders(text)
         )
     }
+
+    @Test
+    fun `kwota z uwag pracownika jest ustalona przez czlowieka - nie jest podejrzana`() {
+        val lead = DraftLeadContext(null, null, listOf(DraftQuoteLine("Korekta lakieru", 1, 190_000, null)))
+        val allowed = DraftAmountChecker.allowedAmounts(lead, "Daj 1 800 zł za całość")
+        assertEquals(setOf(190_000L, 180_000L), allowed)
+        assertEquals(
+            emptyList<String>(),
+            DraftAmountChecker.unverifiedAmounts("Za całość 1800 zł zamiast 1 900,00 zł.", allowed)
+        )
+    }
+
+    @Test
+    fun `poprawka nie legalizuje kwoty, ktora model wymyslil w poprzedniej wersji`() {
+        // Kwoty z obecnego szkicu nie trafiają do dozwolonych — tylko wycena i uwagi.
+        val allowed = DraftAmountChecker.allowedAmounts(null, "Napisz krócej")
+        assertEquals(listOf("350 zł"), DraftAmountChecker.unverifiedAmounts("Pranie tapicerki 350 zł.", allowed))
+    }
 }

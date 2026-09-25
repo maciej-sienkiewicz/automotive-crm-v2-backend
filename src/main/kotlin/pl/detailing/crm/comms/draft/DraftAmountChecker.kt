@@ -29,6 +29,18 @@ object DraftAmountChecker {
             .distinct()
             .toList()
 
+    /**
+     * Kwoty dozwolone w szkicu: z wyceny leada i z uwag pracownika. Kwota wpisana w uwagach
+     * („daj 1 800 zł za całość") jest ustalona przez człowieka — tak samo wiążąca jak wycena.
+     * Kwot z obecnego szkicu świadomie tu NIE ma: mógł je wymyślić model w poprzedniej wersji,
+     * a poprawka nie może ich po cichu zalegalizować.
+     */
+    fun allowedAmounts(lead: DraftLeadContext?, instructions: String?): Set<Long> =
+        lead?.allowedAmounts().orEmpty() + instructions?.let(::amounts).orEmpty()
+
+    /** Wszystkie kwoty w tekście, w groszach. */
+    fun amounts(text: String): Set<Long> = AMOUNT.findAll(text).map(::toGrosze).toSet()
+
     /** Znaczniki do uzupełnienia („[proponowany termin]") — szkic z nimi nie jest gotowy do wysłania. */
     fun placeholders(text: String): List<String> =
         PLACEHOLDER.findAll(text).map { it.value }.distinct().toList()
