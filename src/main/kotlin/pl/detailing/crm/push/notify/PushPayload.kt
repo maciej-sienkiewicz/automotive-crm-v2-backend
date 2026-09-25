@@ -27,6 +27,11 @@ data class PushPayload(
 enum class PushNotificationType {
     VISIT_COMPLETED,
     NEW_LEAD,
+    RESERVATION_CREATED,
+    VEHICLE_CHECKED_IN,
+
+    /** A company started advertising in the area the studio tracks (competition monitoring). */
+    AREA_CAMPAIGN,
 
     /** Sent on request from the pairing wizard — proof that the whole chain works. */
     TEST
@@ -35,6 +40,9 @@ enum class PushNotificationType {
 enum class PushIcon {
     EARNINGS,
     LEAD,
+    RESERVATION,
+    CHECKIN,
+    CAMPAIGN,
 
     /** The app's own mark — for notifications about the app itself, not a business event. */
     APP

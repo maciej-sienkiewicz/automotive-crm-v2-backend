@@ -123,7 +123,48 @@ class VisitCompletedEvent(
     val totalGrossInCents: Long,
     val customerName: String?,
     val completedByUserId: UserId,
-    val completedAt: Instant
+    val completedAt: Instant,
+    /** "BMW X5, WA 12345" - identifies the job to someone who may not see the customer's name. */
+    val vehicleLabel: String? = null
+) : ApplicationEvent(source)
+
+/**
+ * A reservation (Appointment) was booked - by hand, from a lead, or as the first
+ * occurrence of a series (one event per series: fifty-two notifications for a
+ * weekly wash would be spam, not news).
+ *
+ * Carries everything the notification says, computed inside the transaction that
+ * booked it - listeners run AFTER_COMMIT and must not reload a row that may have
+ * changed since.
+ */
+class ReservationCreatedEvent(
+    source: Any,
+    val studioId: StudioId,
+    val appointmentId: AppointmentId,
+    val createdByUserId: UserId,
+    val startDateTime: Instant,
+    val allDay: Boolean,
+    val vehicleLabel: String?,
+    val serviceNames: List<String>,
+    val customerName: String?
+) : ApplicationEvent(source)
+
+/**
+ * A vehicle was taken in: the check-in visit was confirmed (DRAFT → IN_PROGRESS).
+ *
+ * Deliberately NOT when the DRAFT is created. A draft check-in can still be abandoned
+ * halfway (the desk keeps a list of unfinished ones), and "Przyjęto pojazd" for a car
+ * that never came in would be a false report. Confirmation is the point of no return.
+ */
+class VehicleCheckedInEvent(
+    source: Any,
+    val studioId: StudioId,
+    val visitId: VisitId,
+    val visitNumber: String?,
+    val checkedInByUserId: UserId,
+    val brandModel: String?,
+    val licensePlate: String?,
+    val customerName: String?
 ) : ApplicationEvent(source)
 
 /**

@@ -9,12 +9,10 @@ import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.NewCallReceivedEvent
 import pl.detailing.crm.shared.NewLeadCreatedEvent
+import pl.detailing.crm.shared.ReservationCreatedEvent
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.VehicleCheckedInEvent
 import pl.detailing.crm.shared.VisitCompletedEvent
-import java.math.BigDecimal
-import java.math.RoundingMode
-import java.text.NumberFormat
-import java.util.Locale
 
 /**
  * Turns domain events into Web Push notifications, mirroring how
@@ -25,6 +23,13 @@ import java.util.Locale
  * it cannot be rolled back, deleted or corrected once it has buzzed in someone's
  * pocket. Announcing money for a transaction that later fails would be worse
  * than announcing nothing, so nothing is sent until the transaction is durable.
+ *
+ * The wording lives in [PushMessages]; who receives what (permission, personal
+ * data, the author left out) in [PushNotifier]. This class only connects the two.
+ *
+ * The fifth notification — a competitor's campaign in the tracked area — does not
+ * start from a user action and lives next to its data:
+ * [pl.detailing.crm.instagram.ads.discovery.AreaCampaignNotifier].
  */
 @Component
 class PushEventBridge(
@@ -32,6 +37,7 @@ class PushEventBridge(
 ) {
     private val log = LoggerFactory.getLogger(PushEventBridge::class.java)
 
+    /** d) Pojazd wydany klientowi - studio zarobiło. */
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun onVisitCompleted(event: VisitCompletedEvent) {
@@ -39,27 +45,23 @@ class PushEventBridge(
         // visit, but "you just earned 0,00 zł" is noise dressed up as news.
         if (event.totalGrossInCents <= 0) return
 
-        runCatching {
+        send("zarobku") {
             pushNotifier.broadcast(
                 studioId = event.studioId,
                 requiredPermission = Permission.FINANCE_EARNINGS_NOTIFICATIONS,
-                payload = PushPayload(
-                    type = PushNotificationType.VISIT_COMPLETED,
-                    // The amount carries the message, so it goes in the title — the one
-                    // line every phone shows in full, in bold, on the lock screen. No
-                    // exclamation mark and no emoji: the number is the emphasis.
-                    title = "Właśnie zarobiłeś ${formatMoney(event.totalGrossInCents)}",
-                    body = listOfNotNull("Wizyta zakończona", event.customerName).joinToString(" · "),
-                    url = "/visits/${event.visitId.value}",
-                    icon = PushIcon.EARNINGS,
-                    // Per visit, not per studio: two cars handed over minutes apart are
-                    // two earnings, and collapsing them would hide one.
-                    tag = "visit-completed-${event.visitId.value}"
+                message = PushMessages.visitCompleted(
+                    visitId = event.visitId.value.toString(),
+                    totalGrossInCents = event.totalGrossInCents,
+                    vehicle = event.vehicleLabel,
+                    customerName = event.customerName
                 )
+                // The author is NOT left out here: money coming in is news to the owner
+                // even when the owner handed the car over personally.
             )
-        }.onFailure { log.warn("[push] Nie udalo sie wyslac powiadomienia o zarobku: {}", it.message) }
+        }
     }
 
+    /** a) Nowy lead - z formularza, poczty albo dodany ręcznie. */
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun onNewLeadCreated(event: NewLeadCreatedEvent) {
@@ -89,6 +91,48 @@ class PushEventBridge(
         )
     }
 
+    /** b) Nowa rezerwacja w kalendarzu. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onReservationCreated(event: ReservationCreatedEvent) {
+        send("rezerwacji") {
+            pushNotifier.broadcast(
+                studioId = event.studioId,
+                requiredPermission = Permission.VISITS_VIEW,
+                message = PushMessages.reservationCreated(
+                    appointmentId = event.appointmentId.value.toString(),
+                    start = event.startDateTime,
+                    allDay = event.allDay,
+                    vehicle = event.vehicleLabel,
+                    serviceNames = event.serviceNames,
+                    customerName = event.customerName
+                ),
+                // Whoever booked the slot knows about it; the rest of the team does not.
+                excludeUserId = event.createdByUserId
+            )
+        }
+    }
+
+    /** c) Przyjęcie pojazdu - wizyta potwierdzona po podpisaniu protokołu. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onVehicleCheckedIn(event: VehicleCheckedInEvent) {
+        send("przyjeciu pojazdu") {
+            pushNotifier.broadcast(
+                studioId = event.studioId,
+                requiredPermission = Permission.VISITS_VIEW,
+                message = PushMessages.vehicleCheckedIn(
+                    visitId = event.visitId.value.toString(),
+                    visitNumber = event.visitNumber,
+                    brandModel = event.brandModel,
+                    licensePlate = event.licensePlate,
+                    customerName = event.customerName
+                ),
+                excludeUserId = event.checkedInByUserId
+            )
+        }
+    }
+
     private fun notifyNewLead(
         studioId: StudioId,
         leadId: String,
@@ -96,36 +140,16 @@ class PushEventBridge(
         contact: String?,
         source: LeadSource
     ) {
-        runCatching {
+        send("leadzie") {
             pushNotifier.broadcast(
                 studioId = studioId,
                 requiredPermission = Permission.LEADS_MANAGE,
-                payload = PushPayload(
-                    type = PushNotificationType.NEW_LEAD,
-                    title = name?.takeIf { it.isNotBlank() }?.let { "Nowy lead: $it" } ?: "Nowy lead",
-                    body = listOfNotNull(sourceLabel(source), contact?.takeIf { it.isNotBlank() })
-                        .joinToString(" · "),
-                    url = "/leads",
-                    icon = PushIcon.LEAD,
-                    // Per lead, so a second enquiry never silently replaces the first.
-                    tag = "lead-$leadId"
-                )
+                message = PushMessages.newLead(leadId, name, contact, source)
             )
-        }.onFailure { log.warn("[push] Nie udalo sie wyslac powiadomienia o leadzie: {}", it.message) }
+        }
     }
 
-    private fun sourceLabel(source: LeadSource): String = when (source) {
-        LeadSource.PHONE -> "Telefon"
-        LeadSource.EMAIL -> "E-mail"
-        LeadSource.FORM -> "Formularz na stronie"
-        LeadSource.MANUAL -> "Dodany ręcznie"
+    private inline fun send(what: String, block: () -> Unit) {
+        runCatching(block).onFailure { log.warn("[push] Nie udalo sie wyslac powiadomienia o {}: {}", what, it.message) }
     }
-
-    /**
-     * Polish currency formatting: "1 234,50 zł" — non-breaking spaces and a comma,
-     * straight from the JDK's pl-PL locale rather than hand-rolled string surgery.
-     */
-    private fun formatMoney(amountInCents: Long): String =
-        NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pl-PL"))
-            .format(BigDecimal(amountInCents).divide(BigDecimal(100), 2, RoundingMode.HALF_UP))
 }
