@@ -38,7 +38,11 @@ data class SaveReplyDraftPreferencesRequest(val useSentStyle: Boolean)
  */
 data class DraftReplyRequest(
     val useSentStyle: Boolean? = null,
-    val signatureAppended: Boolean = false
+    val signatureAppended: Boolean = false,
+    /** „Popraw": bieżąca treść z edytora. Null = nowy szkic. */
+    val currentDraft: String? = null,
+    /** Uwagi pracownika — co poprawić. Wymagane, gdy jest [currentDraft]. */
+    val instructions: String? = null
 )
 
 data class ReplyDraftExampleDto(
@@ -127,7 +131,9 @@ class ReplyDraftController(
                 threadId = UUID.fromString(id),
                 senderFullName = principal.fullName,
                 useSentStyle = useSentStyle,
-                signatureAppended = request.signatureAppended
+                signatureAppended = request.signatureAppended,
+                currentDraft = request.currentDraft,
+                instructions = request.instructions
             )
         )
         ResponseEntity.ok(

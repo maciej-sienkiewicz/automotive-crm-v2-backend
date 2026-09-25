@@ -64,7 +64,14 @@ data class DraftReplyCommand(
     /** Flaga trybu: true = w stylu wysłanych wiadomości studia, false = propozycja AI. */
     val useSentStyle: Boolean,
     /** Stopkę dokleja wysyłka — szkic nie może jej wtedy powtarzać. */
-    val signatureAppended: Boolean
+    val signatureAppended: Boolean,
+    /**
+     * „Popraw": treść z edytora (z ręcznymi zmianami pracownika), którą asystent ma poprawić.
+     * Null = nowy szkic.
+     */
+    val currentDraft: String? = null,
+    /** Co poprawić — albo, przy nowym szkicu, o czym asystent ma pamiętać. */
+    val instructions: String? = null
 )
 
 data class ReplyDraftExampleRef(
@@ -121,6 +128,7 @@ class ReplyDraftService(
 
     suspend fun draft(command: DraftReplyCommand): ReplyDraftResult = withContext(Dispatchers.IO) {
         if (!enabled) throw UnprocessableEntityException("Szkice odpowiedzi są chwilowo wyłączone.")
+        val (currentDraft, instructions) = revisionOf(command)
 
         val thread = threadRepository.findByIdAndStudioId(command.threadId, command.studioId)
             ?: throw NotFoundException("Nie znaleziono rozmowy")
@@ -146,7 +154,9 @@ class ReplyDraftService(
             signatureAppended = command.signatureAppended,
             conversation = conversation,
             lead = lead,
-            examples = examples.map { DraftStyleExample(it.inquiryText, it.replyText) }
+            examples = examples.map { DraftStyleExample(it.inquiryText, it.replyText) },
+            currentDraft = currentDraft,
+            instructions = instructions
         )
 
         val reply = try {
@@ -164,8 +174,8 @@ class ReplyDraftService(
             ?: throw UnprocessableEntityException("Asystent nie zwrócił szkicu. Spróbuj ponownie.")
 
         log.info(
-            "[REPLY_DRAFT] Szkic dla wątku {}: styl studia={}, przykładów={}, pozycji wyceny={}",
-            thread.id, command.useSentStyle, examples.size, lead?.lines?.size ?: 0
+            "[REPLY_DRAFT] Szkic dla wątku {}: styl studia={}, przykładów={}, pozycji wyceny={}, poprawka={}",
+            thread.id, command.useSentStyle, examples.size, lead?.lines?.size ?: 0, currentDraft != null
         )
 
         ReplyDraftResult(
@@ -176,7 +186,9 @@ class ReplyDraftService(
                 ReplyDraftExampleRef(it.threadId, it.threadSubject, it.sentAt, (1.0 - it.distance).coerceIn(0.0, 1.0))
             },
             placeholders = DraftAmountChecker.placeholders(body),
-            unverifiedAmounts = DraftAmountChecker.unverifiedAmounts(body, lead?.allowedAmounts().orEmpty()),
+            unverifiedAmounts = DraftAmountChecker.unverifiedAmounts(
+                body, DraftAmountChecker.allowedAmounts(lead, instructions)
+            ),
             notice = notice
         )
     }
@@ -209,6 +221,25 @@ class ReplyDraftService(
             return emptyList<StoredReplyExample>() to STYLE_UNAVAILABLE
         }
         return if (examples.isEmpty()) examples to NO_STYLE_MATERIAL else examples to null
+    }
+
+    /**
+     * Poprawka potrzebuje obu części: bez uwag model nie wie, co zmienić, i oddałby ten sam
+     * tekst (albo przepisał go po swojemu). Uwagi bez szkicu to zwykły szkic z dopiskiem.
+     */
+    private fun revisionOf(command: DraftReplyCommand): Pair<String?, String?> {
+        val instructions = command.instructions?.trim()?.takeIf { it.isNotEmpty() }
+        val currentDraft = command.currentDraft?.trim()?.takeIf { it.isNotEmpty() }
+        if (instructions != null && instructions.length > MAX_INSTRUCTIONS_LENGTH) {
+            throw ValidationException("Uwagi są za długie (limit $MAX_INSTRUCTIONS_LENGTH znaków)")
+        }
+        if (currentDraft != null && currentDraft.length > MAX_CURRENT_DRAFT_LENGTH) {
+            throw ValidationException("Szkic jest za długi do poprawki (limit $MAX_CURRENT_DRAFT_LENGTH znaków)")
+        }
+        if (currentDraft != null && instructions == null) {
+            throw ValidationException("Napisz, co poprawić w szkicu")
+        }
+        return currentDraft to instructions
     }
 
     private fun conversation(messages: List<CommMessageEntity>): List<DraftConversationTurn> {
@@ -252,6 +283,8 @@ class ReplyDraftService(
         private const val MAX_TURN_LENGTH = 1500
         private const val MAX_LAST_TURN_LENGTH = 4000
         private const val FRESH_BATCH = 25
+        const val MAX_INSTRUCTIONS_LENGTH = 1000
+        const val MAX_CURRENT_DRAFT_LENGTH = 8000
 
         const val NO_STYLE_MATERIAL =
             "Nie znaleźliśmy jeszcze wysłanych odpowiedzi, z których można przejąć Twój styl — to jest propozycja asystenta."
