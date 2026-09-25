@@ -96,7 +96,7 @@ class RequestCallHandler(
 
 /**
  * Contract consumed by the Service Worker's `push` handler
- * (frontend: public/sw.js). Field names are part of the API.
+ * (frontend: public/service-worker.js). Field names are part of the API.
  */
 data class ClickToCallPayload(
     val type: String = "CLICK_TO_CALL",

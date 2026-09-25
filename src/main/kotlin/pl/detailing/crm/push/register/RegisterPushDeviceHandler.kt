@@ -8,8 +8,8 @@ import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.push.domain.PushDevice
 import pl.detailing.crm.push.infrastructure.PushDeviceEntity
 import pl.detailing.crm.push.infrastructure.PushDeviceRepository
+import pl.detailing.crm.push.infrastructure.sha256Hex
 import pl.detailing.crm.shared.ValidationException
-import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 
@@ -83,9 +83,4 @@ class RegisterPushDeviceHandler(
         auth = command.auth,
         createdAt = Instant.now()
     )
-
-    private fun sha256Hex(value: String): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(value.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
 }
