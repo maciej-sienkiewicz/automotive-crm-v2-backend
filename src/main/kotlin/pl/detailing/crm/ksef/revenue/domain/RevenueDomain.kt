@@ -26,11 +26,30 @@ enum class KsefRevenueStatus {
     ACCEPTED,
     REJECTED,
     QUEUED_RETRY,
-    NOT_SENT;
+    NOT_SENT,
+
+    /**
+     * Anulowana w poprawce rozliczenia, zanim trafiła do sesji KSeF. Nie istnieje w KSeF
+     * i nie wchodzi do sum; numer zostaje zajęty (luka jest dopuszczalna, powtórzenie nie).
+     * Stan końcowy — nie ponawia się jej wysyłki.
+     */
+    CANCELLED;
 
     /** Statusy, z których wolno ponowić wysyłkę (idempotencja — ACCEPTED/SENDING nigdy). */
-    fun isRetryable(): Boolean =
-        this == PENDING || this == QUEUED_RETRY || this == REJECTED || this == NOT_SENT
+    fun isRetryable(): Boolean = this in RETRYABLE
+
+    companion object {
+        val RETRYABLE: Set<KsefRevenueStatus> = setOf(PENDING, QUEUED_RETRY, REJECTED, NOT_SENT)
+
+        /**
+         * Faktura, która na pewno nie weszła do sesji KSeF — da się ją anulować.
+         * QUEUED_RETRY ma jedno zastrzeżenie: timeout na samym wysłaniu mógł dojść do KSeF.
+         */
+        val CANCELLABLE: Set<KsefRevenueStatus> = setOf(PENDING, QUEUED_RETRY, REJECTED, NOT_SENT)
+
+        /** W drodze: wysyłana albo w sesji, czeka na odpowiedź — nie wolno jej ruszać. */
+        val IN_FLIGHT: Set<KsefRevenueStatus> = setOf(SENDING, SUBMITTED)
+    }
 }
 
 /**

@@ -114,7 +114,7 @@ class GetContactInsightsHandler(
                     phone = it.phone,
                     completedVisitCount = completedVisits.size,
                     totalSpentGross = completedVisits.sumOf { visit ->
-                        visit.serviceItems.sumOf { item -> item.finalPriceGross }
+                        visit.serviceItems.filter { it.countsTowardTotal }.sumOf { item -> item.finalPriceGross }
                     }
                 )
             },

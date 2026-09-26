@@ -38,8 +38,13 @@ class KsefRevenueDispatchService(
                 return repository.save(invoice)
             }
 
+        // Zajęcie warunkowe zamiast zapisu encji: status mógł się zmienić od odczytu
+        // (anulowanie w poprawce rozliczenia, równoległy scheduler). Przegrany wychodzi.
+        if (repository.claimForSending(invoice.id, KsefRevenueStatus.RETRYABLE, java.time.Instant.now()) == 0) {
+            log.info("Dispatch pominięty — faktura {} zmieniła stan przed wysyłką", invoice.invoiceNumber)
+            return repository.findById(invoice.id).orElse(invoice)
+        }
         invoice.markSending()
-        repository.save(invoice)
 
         val outcome = sender.send(StudioId(invoice.studioId), xml)
         applySendOutcome(invoice, outcome)

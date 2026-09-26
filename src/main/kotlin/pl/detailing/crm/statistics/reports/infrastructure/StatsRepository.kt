@@ -30,6 +30,12 @@ data class PeriodVisitRow(
  * ensuring historical accuracy: visits referencing archived/versioned services
  * are correctly counted under the originating service lineage.
  *
+ * Pozycje wizyty liczą się tak jak kwota wizyty (Visit.calculateTotalGross): tylko
+ * CONFIRMED i APPROVED. Statystyki sumowały każdy wiersz, także pozycje odrzucone
+ * i czekające na zgodę klienta, więc przychód w statystykach był wyższy niż suma
+ * kwot tych samych wizyt. Warunek siedzi w ON złączenia, żeby wizyta bez zaliczonych
+ * pozycji dalej liczyła się jako wizyta (LEFT JOIN).
+ *
  * SECURITY NOTE: The only non-parameterized values are granularity.sqlValue and
  * granularity.intervalSql, which are sourced exclusively from the Granularity enum —
  * never from raw user input.
@@ -75,7 +81,7 @@ class StatsRepository(
                     COUNT(DISTINCT v.id)                                             AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
                 FROM visit_service_items vsi
-                INNER JOIN visits v ON vsi.visit_id = v.id
+                INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
                 WHERE v.studio_id = ?
                   AND vsi.service_id IN (SELECT id FROM service_family)
                   AND v.status = 'COMPLETED'
@@ -91,7 +97,7 @@ class StatsRepository(
                     COUNT(DISTINCT v.id)                                             AS order_count,
                     COALESCE(SUM(vsi.final_price_gross), 0)                         AS total_revenue_gross
                 FROM visit_service_items vsi
-                INNER JOIN visits v ON vsi.visit_id = v.id
+                INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
                 INNER JOIN manual_services ms
                     ON ms.service_name = vsi.service_name
                    AND ms.studio_id = ?
@@ -179,7 +185,7 @@ class StatsRepository(
                 COUNT(DISTINCT v.id)                                      AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
+            INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             WHERE v.studio_id = ?
               AND vsi.service_id IN (SELECT id FROM service_family)
               AND v.status = 'COMPLETED'
@@ -224,7 +230,7 @@ class StatsRepository(
                 COALESCE(SUM(vsi.final_price_gross), 0)                  AS total_revenue_gross
             -- LEFT JOIN so visits with no service items are still counted — see getBreakdownOverview.
             FROM visits v
-            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
               AND v.deleted_at IS NULL
@@ -323,7 +329,7 @@ class StatsRepository(
                 -- visit. Under an INNER JOIN it vanished from the chart while the drill-down
                 -- (which already LEFT JOINs) still listed it, so the two disagreed on orderCount.
                 FROM visits v
-                LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+                LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
                 WHERE v.studio_id = ?
                   AND v.status = 'COMPLETED'
                   AND v.deleted_at IS NULL
@@ -394,7 +400,7 @@ class StatsRepository(
                 COUNT(DISTINCT v.id)                    AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0) AS total_revenue_gross
             FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
+            INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             INNER JOIN service_family sf ON sf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
@@ -480,7 +486,7 @@ class StatsRepository(
                 COUNT(DISTINCT v.id)                    AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0) AS total_revenue_gross
             FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
+            INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             INNER JOIN unassigned_family uf ON uf.member_id = vsi.service_id
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
@@ -531,7 +537,7 @@ class StatsRepository(
                 COUNT(DISTINCT v.id)                    AS order_count,
                 COALESCE(SUM(vsi.final_price_gross), 0) AS total_revenue_gross
             FROM visit_service_items vsi
-            INNER JOIN visits v ON vsi.visit_id = v.id
+            INNER JOIN visits v ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             WHERE v.studio_id = ?
               AND vsi.service_id IS NULL
               AND v.status = 'COMPLETED'
@@ -584,7 +590,7 @@ class StatsRepository(
                 vsi.final_price_gross
             FROM visits v
             LEFT JOIN customers c ON c.id = v.customer_id AND c.studio_id = v.studio_id
-            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
               AND v.deleted_at IS NULL
@@ -682,7 +688,7 @@ class StatsRepository(
                 END AS in_category
             FROM visits v
             LEFT JOIN customers c ON c.id = v.customer_id AND c.studio_id = v.studio_id
-            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id
+            LEFT JOIN visit_service_items vsi ON vsi.visit_id = v.id AND vsi.status IN ('CONFIRMED', 'APPROVED')
             WHERE v.studio_id = ?
               AND v.status = 'COMPLETED'
               AND v.deleted_at IS NULL

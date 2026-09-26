@@ -70,7 +70,19 @@ data class CreateFinancialDocumentCommand(
     val dueDate: LocalDate,
     val description: String?,
     val counterpartyName: String?,
-    val counterpartyNip: String?
+    val counterpartyNip: String?,
+    /** Tylko [DocumentType.CORRECTION]: dokument korygowany (storno). */
+    val correctsDocumentId: UUID? = null,
+    /** Poprawka rozliczenia wizyty, w której dokument powstaje. */
+    val settlementCorrectionId: UUID? = null,
+    /** Faktura KSeF, której adnotacją jest dokument (albo której łańcuch koryguje). */
+    val ksefRevenueInvoiceId: UUID? = null,
+    /**
+     * Status płatności narzucony z zewnątrz — storno dziedziczy status dokumentu,
+     * który koryguje (przelew nieopłacony koryguje się jako nieopłacony). Null =
+     * domyślny dla formy płatności.
+     */
+    val statusOverride: DocumentStatus? = null
 )
 
 /**
@@ -100,7 +112,7 @@ class CreateFinancialDocumentHandler(
     fun handle(command: CreateFinancialDocumentCommand): FinancialDocument {
         validate(command)
 
-        val status = command.paymentMethod.defaultStatus()
+        val status = command.statusOverride ?: command.paymentMethod.defaultStatus()
         val paidAt = if (status == DocumentStatus.PAID) Instant.now() else null
         val documentNumber = generateDocumentNumber(
             command.studioId.value, command.documentType, command.issueDate
@@ -131,15 +143,20 @@ class CreateFinancialDocumentHandler(
             counterpartyName  = command.counterpartyName,
             counterpartyNip   = command.counterpartyNip,
             createdBy         = command.userId.value,
-            updatedBy         = command.userId.value
+            updatedBy         = command.userId.value,
+            ksefRevenueInvoiceId = command.ksefRevenueInvoiceId,
+            correctsDocumentId = command.correctsDocumentId,
+            settlementCorrectionId = command.settlementCorrectionId
         )
 
         val saved = documentRepository.save(entity)
+        val isCorrection = command.documentType == DocumentType.CORRECTION
 
         // Live metrics — liczymy wystawione dokumenty przychodowe (z rozbiciem na paragon/
         // fakturę/inny) i zarejestrowane dokumenty kosztowe. Kwota to dokładne brutto
         // ZAPISANE na dokumencie — nigdy odtworzone z netta.
-        when (command.direction) {
+        // Korekty pomijamy: liczniki metryk tylko rosną, a storno ma kwotę ujemną.
+        if (!isCorrection) when (command.direction) {
             DocumentDirection.INCOME -> businessEventPublisher.publish(
                 tenantId = command.studioId,
                 type = BusinessEventType.FINANCIAL_DOC_ISSUED,
@@ -214,7 +231,15 @@ class CreateFinancialDocumentHandler(
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun validate(command: CreateFinancialDocumentCommand) {
-        if (command.totalNet < 0 || command.totalVat < 0 || command.totalGross < 0) {
+        if (command.documentType == DocumentType.CORRECTION) {
+            // Korekta ma jeden znak na wszystkich kwotach: storno (−) albo dopisanie (+)
+            // z faktury korygującej KSeF. Pomieszane znaki to błąd wołającego.
+            if (command.correctsDocumentId == null) {
+                throw ValidationException("Korekta musi wskazywać dokument, który koryguje")
+            }
+            val signs = listOf(command.totalNet, command.totalVat, command.totalGross).filter { it != 0L }.map { it > 0 }.toSet()
+            if (signs.size > 1) throw ValidationException("Kwoty korekty muszą mieć ten sam znak")
+        } else if (command.totalNet < 0 || command.totalVat < 0 || command.totalGross < 0) {
             throw ValidationException("Kwoty dokumentu finansowego nie mogą być ujemne")
         }
         if (command.totalNet + command.totalVat != command.totalGross) {
@@ -291,9 +316,12 @@ class CreateFinancialDocumentHandler(
         cashRegister.updatedAt = Instant.now()
         cashRegisterRepository.save(cashRegister)
 
-        val operationType = when (command.direction) {
-            DocumentDirection.INCOME  -> CashOperationType.PAYMENT_IN
-            DocumentDirection.EXPENSE -> CashOperationType.PAYMENT_OUT
+        val operationType = when {
+            // Storno gotówkowego paragonu to nie „wpłata z minusem" — w historii kasy
+            // stoi jako korekta dokumentu, obok wpłaty, którą cofa.
+            command.documentType == DocumentType.CORRECTION -> CashOperationType.DOCUMENT_CORRECTION
+            command.direction == DocumentDirection.INCOME   -> CashOperationType.PAYMENT_IN
+            else                                            -> CashOperationType.PAYMENT_OUT
         }
 
         // Build a descriptive comment for the cash operation log.
@@ -319,7 +347,8 @@ class CreateFinancialDocumentHandler(
 
         // Live metrics — liczymy ruch w kasie wywołany dokumentem gotówkowym. Kierunek
         // siedzi w wymiarze, więc kwota idzie bez znaku (suma musi rosnąć monotonicznie).
-        businessEventPublisher.publish(
+        // Storno pomijamy: policzone jako obrót zawyżyłoby kasę zamiast ją zmniejszyć.
+        if (operationType != CashOperationType.DOCUMENT_CORRECTION) businessEventPublisher.publish(
             tenantId = command.studioId,
             type = BusinessEventType.CASH_OPERATION,
             dimensionValue = metricsKindOf(savedOperation.operationType).name,
@@ -345,6 +374,8 @@ class CreateFinancialDocumentHandler(
         DocumentType.RECEIPT -> FinancialDocumentKind.RECEIPT
         DocumentType.INVOICE -> FinancialDocumentKind.INVOICE
         DocumentType.OTHER   -> FinancialDocumentKind.OTHER
+        // Tu nie trafia — korekty nie publikują metryk (patrz handle).
+        DocumentType.CORRECTION -> FinancialDocumentKind.OTHER
     }
 
     /** Rodzaj ruchu kasowego w słowniku metryk — mapowanie jawne, jak wyżej. */

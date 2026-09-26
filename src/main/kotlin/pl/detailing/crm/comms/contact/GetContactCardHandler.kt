@@ -100,7 +100,7 @@ class GetContactCardHandler(
                 phone = customer.phone,
                 completedVisitCount = completed.size,
                 totalSpentGross = completed.sumOf { visit ->
-                    visit.serviceItems.sumOf { it.finalPriceGross }
+                    visit.serviceItems.filter { it.countsTowardTotal }.sumOf { it.finalPriceGross }
                 },
                 // „Ostatnia wizyta" znaczy ostatnia odbyta. Jutrzejsza rezerwacja to
                 // nie jest odpowiedź na pytanie „kiedy on tu był".

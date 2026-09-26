@@ -350,6 +350,15 @@ class VisitServiceItemEntity(
     @Column(name = "pending_at", nullable = true, columnDefinition = "timestamp with time zone")
     var pendingAt: Instant?
 ) {
+    /**
+     * Pozycja liczy się do kwoty zamkniętej wizyty — ta sama reguła co
+     * Visit.effectiveGrossAmount (CONFIRMED i APPROVED). Sumy przychodu klienta, pojazdu
+     * i pulpitu dodawały każdy wiersz, także pozycje odrzucone, i rozjeżdżały się
+     * z kwotą tych samych wizyt.
+     */
+    val countsTowardTotal: Boolean
+        get() = status == VisitServiceStatus.CONFIRMED || status == VisitServiceStatus.APPROVED
+
     fun toDomain(): VisitServiceItem {
         val snapshot = confirmedSnapshot?.let { json ->
             val mapper = jacksonObjectMapper()

@@ -115,7 +115,7 @@ class CompleteVisitWithInvoiceAtomicityTest {
         visitId = null, vehicleBrand = null, vehicleModel = null, customerFirstName = null, customerLastName = null,
         documentNumber = number, documentType = DocumentType.RECEIPT, direction = DocumentDirection.INCOME,
         status = DocumentStatus.PAID, paymentMethod = PaymentMethod.CASH,
-        totalNet = Money(5_000), totalVat = Money(1_150), totalGross = Money(6_150), currency = "PLN",
+        totalNet = 5_000, totalVat = 1_150, totalGross = 6_150, currency = "PLN",
         issueDate = LocalDate.now(), dueDate = null, paidAt = Instant.now(), description = null,
         counterpartyName = null, counterpartyNip = null, createdBy = userId, updatedBy = userId,
         createdAt = Instant.now(), updatedAt = Instant.now()

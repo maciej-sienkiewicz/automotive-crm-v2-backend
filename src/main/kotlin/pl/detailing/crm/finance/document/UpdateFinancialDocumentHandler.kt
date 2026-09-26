@@ -141,6 +141,7 @@ class UpdateFinancialDocumentHandler(
     }
 
     private fun validate(command: UpdateFinancialDocumentCommand, document: FinancialDocumentEntity) {
+        requireNotPartOfSettlementCorrection(document)
         if (command.documentType != null && command.documentType != document.documentType) {
             throw ValidationException(
                 "Typu dokumentu nie można zmienić — numer ${document.documentNumber} należy do serii " +

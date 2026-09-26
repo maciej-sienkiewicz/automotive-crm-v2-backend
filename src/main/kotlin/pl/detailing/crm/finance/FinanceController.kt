@@ -86,6 +86,11 @@ class FinanceController(
 
         val documentType = parseEnum<DocumentType>(request.documentType, "documentType")
         val direction = parseEnum<DocumentDirection>(request.direction, "direction")
+        if (documentType == DocumentType.CORRECTION) {
+            throw ValidationException(
+                "Korektę wystawia poprawka rozliczenia wizyty albo faktura korygująca KSeF — nie ręcznie."
+            )
+        }
         if (documentType == DocumentType.INVOICE && direction == DocumentDirection.INCOME) {
             throw ValidationException(
                 "Faktury przychodowe wystawia się przez moduł KSeF — dokument wystawiony tutaj " +
@@ -522,7 +527,11 @@ data class FinancialDocumentResponse(
      * Faktura KSeF, do której należy dokument. Okno edycji blokuje wtedy wszystko poza
      * opisem — fakturę przyjętą w KSeF zmienia się fakturą korygującą.
      */
-    val ksefInvoiceId: String? = null
+    val ksefInvoiceId: String? = null,
+    /** Korekta: dokument, który storno koryguje. */
+    val correctsDocumentId: String? = null,
+    /** Dokument zastąpiony w poprawce rozliczenia wizyty — tylko do odczytu. */
+    val supersededAt: Instant? = null
 )
 
 
@@ -606,9 +615,9 @@ private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     statusLabel       = status.displayName,
     paymentMethod     = paymentMethod.name,
     paymentMethodLabel = paymentMethod.displayName,
-    totalNet          = totalNet.amountInCents,
-    totalVat          = totalVat.amountInCents,
-    totalGross        = totalGross.amountInCents,
+    totalNet          = totalNet,
+    totalVat          = totalVat,
+    totalGross        = totalGross,
     currency          = currency,
     issueDate         = issueDate.toString(),
     dueDate           = dueDate?.toString(),
@@ -625,12 +634,14 @@ private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     createdAt         = createdAt,
     updatedAt         = updatedAt,
     deletedAt         = deletedAt,
-    ksefInvoiceId     = ksefRevenueInvoiceId?.toString()
+    ksefInvoiceId     = ksefRevenueInvoiceId?.toString(),
+    correctsDocumentId = correctsDocumentId?.toString(),
+    supersededAt      = supersededAt
 )
 
 private fun CashRegister.toResponse() = CashRegisterResponse(
     id        = id.toString(),
-    balance   = balance.amountInCents,
+    balance   = balance,
     currency  = currency,
     updatedAt = updatedAt
 )
@@ -638,8 +649,8 @@ private fun CashRegister.toResponse() = CashRegisterResponse(
 private fun CashOperation.toResponse() = CashOperationResponse(
     id                  = id.toString(),
     amount              = amount,
-    balanceBefore       = balanceBefore.amountInCents,
-    balanceAfter        = balanceAfter.amountInCents,
+    balanceBefore       = balanceBefore,
+    balanceAfter        = balanceAfter,
     operationType       = operationType.name,
     operationTypeLabel  = operationType.displayName,
     comment             = comment,

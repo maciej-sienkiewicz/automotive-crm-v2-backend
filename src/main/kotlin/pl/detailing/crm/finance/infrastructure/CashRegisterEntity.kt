@@ -47,7 +47,7 @@ class CashRegisterEntity(
     fun toDomain(): CashRegister = CashRegister(
         id        = CashRegisterId(id),
         studioId  = StudioId(studioId),
-        balance   = Money(balance),
+        balance   = balance,
         currency  = currency,
         updatedAt = updatedAt
     )

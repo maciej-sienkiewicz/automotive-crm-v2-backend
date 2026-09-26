@@ -38,7 +38,7 @@ class GetCustomerRevenueSummaryHandler(
                 val ym = fromMonth.plusMonths(i.toLong())
                 val monthVisits = byMonth[ym] ?: emptyList()
                 val grossAmount = monthVisits.sumOf { visit ->
-                    visit.serviceItems.sumOf { it.finalPriceGross }
+                    visit.serviceItems.filter { it.countsTowardTotal }.sumOf { it.finalPriceGross }
                 }
                 RevenueBucket(
                     year = ym.year,
@@ -50,10 +50,10 @@ class GetCustomerRevenueSummaryHandler(
             }
 
             val totalGross = visits.sumOf { visit ->
-                visit.serviceItems.sumOf { it.finalPriceGross }
+                visit.serviceItems.filter { it.countsTowardTotal }.sumOf { it.finalPriceGross }
             }
             val totalNet = visits.sumOf { visit ->
-                visit.serviceItems.sumOf { it.finalPriceNet }
+                visit.serviceItems.filter { it.countsTowardTotal }.sumOf { it.finalPriceNet }
             }
 
             GetCustomerRevenueSummaryResult(

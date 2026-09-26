@@ -1,7 +1,6 @@
 package pl.detailing.crm.finance.domain
 
 import pl.detailing.crm.shared.CashRegisterId
-import pl.detailing.crm.shared.Money
 import pl.detailing.crm.shared.StudioId
 import java.time.Instant
 
@@ -19,8 +18,12 @@ data class CashRegister(
     val id: CashRegisterId,
     val studioId: StudioId,
 
-    /** Current cash balance in grosz (1/100 PLN). Always ≥ 0. */
-    val balance: Money,
+    /**
+     * Saldo w groszach, ze znakiem. Zwykle ≥ 0, ale storno paragonu gotówkowego po
+     * odprowadzeniu gotówki do banku albo pomyłka w korekcie ręcznej potrafi zejść pod
+     * zero — widok kasy ma to pokazać, a nie wywrócić się na `Money(ujemne)`.
+     */
+    val balance: Long,
 
     /** ISO-4217 currency code; PLN for all domestic registers. */
     val currency: String,

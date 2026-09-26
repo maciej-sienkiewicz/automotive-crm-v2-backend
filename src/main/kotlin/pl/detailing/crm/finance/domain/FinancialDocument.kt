@@ -13,7 +13,13 @@ import java.time.LocalDate
 enum class DocumentType(val prefix: String, val displayName: String) {
     RECEIPT("PAR", "Paragon"),
     INVOICE("FAK", "Faktura"),
-    OTHER("DOK",   "Dokument")
+    OTHER("DOK",   "Dokument"),
+    /**
+     * Storno dokumentu poprawianego w rozliczeniu wizyty (albo odbicie faktury korygującej
+     * KSeF). Kwoty ze znakiem - zwykle ujemne - więc każda suma po dokumentach liczy się
+     * poprawnie bez warunków na typ: paragon + jego korekta = 0.
+     */
+    CORRECTION("KOR", "Korekta")
 }
 
 enum class DocumentDirection(val displayName: String) {
@@ -70,9 +76,10 @@ data class FinancialDocument(
     val direction: DocumentDirection,
     val status: DocumentStatus,
     val paymentMethod: PaymentMethod,
-    val totalNet: Money,
-    val totalVat: Money,
-    val totalGross: Money,
+    /** Grosze ze znakiem: dokument [DocumentType.CORRECTION] ma zwykle kwoty ujemne. */
+    val totalNet: Long,
+    val totalVat: Long,
+    val totalGross: Long,
     val currency: String,
     val issueDate: LocalDate,
     val dueDate: LocalDate?,
@@ -86,10 +93,14 @@ data class FinancialDocument(
     val updatedAt: Instant,
     val deletedAt: Instant? = null,
     /** Faktura KSeF, której adnotacją jest ten dokument; null dla paragonu i dokumentu „inny". */
-    val ksefRevenueInvoiceId: java.util.UUID? = null
+    val ksefRevenueInvoiceId: java.util.UUID? = null,
+    /** Dokument, który ta korekta storno koryguje; tylko dla [DocumentType.CORRECTION]. */
+    val correctsDocumentId: java.util.UUID? = null,
+    /** Dokument zastąpiony w poprawce rozliczenia — zostaje w historii, obok stoi jego korekta. */
+    val supersededAt: Instant? = null
 ) {
     init {
-        require(totalNet.amountInCents + totalVat.amountInCents == totalGross.amountInCents) {
+        require(totalNet + totalVat == totalGross) {
             "Financial integrity: totalNet + totalVat ≠ totalGross"
         }
     }

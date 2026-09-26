@@ -176,6 +176,15 @@ enum class Permission(
         PermissionModule.FINANCE, "Zarządzanie kasą fiskalną",
         parent = FINANCE_INVOICES
     ),
+    // Poprawka rozliczenia wydanej wizyty zmienia pieniądze po fakcie: koryguje
+    // dokumenty, kasę i faktury KSeF. Dziecko faktur, bo bez wglądu w dokumenty nie
+    // da się ocenić skutków — ale osobne, żeby wystawianie nie dawało prawa do korekt.
+    FINANCE_CORRECT_SETTLEMENT(
+        PermissionModule.FINANCE, "Poprawianie rozliczeń po wydaniu pojazdu",
+        parent = FINANCE_INVOICES,
+        description = "Zmiana kwot, stawek VAT, formy płatności i rodzaju dokumentu " +
+            "w wizycie już wydanej. Każda poprawka zostaje w historii wizyty."
+    ),
     FINANCE_VIEW_REPORTS(PermissionModule.FINANCE, "Podgląd raportów finansowych"),
 
     // Sekcja: Powiadomienia — osobny korzeń, celowo NIE dziecko raportów.

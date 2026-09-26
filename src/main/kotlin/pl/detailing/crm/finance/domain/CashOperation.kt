@@ -60,8 +60,9 @@ data class CashOperation(
      */
     val amount: Long,
 
-    val balanceBefore: Money,
-    val balanceAfter: Money,
+    /** Saldo przed i po, ze znakiem — patrz [CashRegister.balance]. */
+    val balanceBefore: Long,
+    val balanceAfter: Long,
 
     val operationType: CashOperationType,
 

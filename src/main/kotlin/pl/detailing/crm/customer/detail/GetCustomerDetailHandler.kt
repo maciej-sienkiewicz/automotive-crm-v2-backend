@@ -50,7 +50,7 @@ class GetCustomerDetailHandler(
             var totalGrossAmount = 0L
 
             completedVisits.forEach { visit ->
-                visit.serviceItems.forEach { serviceItem ->
+                visit.serviceItems.filter { it.countsTowardTotal }.forEach { serviceItem ->
                     totalNetAmount += serviceItem.finalPriceNet
                     totalGrossAmount += serviceItem.finalPriceGross
                 }

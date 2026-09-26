@@ -208,6 +208,17 @@ class KsefRevenueInvoiceEntity(
     @Column(name = "description", columnDefinition = "TEXT")
     val description: String? = null,
 
+    /** Faktura do paragonu (FA(3): FP = 1) — sprzedaż ujęta już na paragonie. */
+    @Column(name = "invoice_to_receipt", nullable = false)
+    var invoiceToReceipt: Boolean = false,
+
+    /** Anulowanie w poprawce rozliczenia — patrz [KsefRevenueStatus.CANCELLED]. */
+    @Column(name = "cancelled_at")
+    var cancelledAt: Instant? = null,
+
+    @Column(name = "cancelled_by", columnDefinition = "uuid")
+    var cancelledBy: UUID? = null,
+
     @Column(name = "note", columnDefinition = "TEXT")
     var note: String? = null,
 

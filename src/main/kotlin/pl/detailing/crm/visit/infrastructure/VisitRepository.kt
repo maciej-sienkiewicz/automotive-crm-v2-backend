@@ -541,7 +541,8 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
 
     /**
      * Calculate total revenue for visits within a date range
-     * Uses service items' finalPriceGross for historical accuracy
+     * Uses service items' finalPriceGross for historical accuracy — tylko pozycje, które
+     * liczą się do kwoty wizyty (CONFIRMED, APPROVED), jak w Visit.calculateTotalGross.
      */
     @Query("""
         SELECT COALESCE(SUM(vsi.finalPriceGross), 0)
@@ -553,6 +554,8 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         AND v.status != 'REJECTED'
         AND v.status != 'ARCHIVED'
         AND v.deletedAt IS NULL
+        AND vsi.status IN (pl.detailing.crm.shared.VisitServiceStatus.CONFIRMED,
+                           pl.detailing.crm.shared.VisitServiceStatus.APPROVED)
     """)
     fun sumRevenueByStudioIdAndDateRange(
         @Param("studioId") studioId: UUID,

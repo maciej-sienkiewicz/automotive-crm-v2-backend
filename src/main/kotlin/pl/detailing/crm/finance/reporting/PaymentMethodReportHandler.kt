@@ -92,7 +92,9 @@ class PaymentMethodReportHandler(
             docs.filter { it.paymentMethod == method }
         }
         return PaymentMethodStats(
-            count      = filtered.size,
+            // Kwoty sumują się ze stornami (paragon + korekta = 0), ale liczba dokumentów
+            // ma mówić, ile rozliczeń jest ważnych: bez korekt i bez dokumentów zastąpionych.
+            count      = filtered.count { it.documentType != DocumentType.CORRECTION && it.supersededAt == null },
             totalNet   = filtered.sumOf { it.totalNet },
             totalGross = filtered.sumOf { it.totalGross }
         )

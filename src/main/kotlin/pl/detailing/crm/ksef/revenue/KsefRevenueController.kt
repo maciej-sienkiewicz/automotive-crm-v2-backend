@@ -64,7 +64,8 @@ class KsefRevenueController(
     private val statisticsHandler: RevenueStatisticsHandler,
     private val qrCodeUrlBuilder: KsefQrCodeUrlBuilder,
     private val invoicePdfService: InvoicePdfService,
-    private val businessEventPublisher: BusinessEventPublisher
+    private val businessEventPublisher: BusinessEventPublisher,
+    private val correctionFinanceMirror: pl.detailing.crm.finance.document.KsefCorrectionFinanceMirror
 ) {
 
     // ── Wystawianie ────────────────────────────────────────────────────────────
@@ -157,6 +158,8 @@ class KsefRevenueController(
                 exemptionLegalBasis = req.exemptionLegalBasis
             )
         )
+        // Raport form płatności czyta dokumenty finansowe — bez odbicia korekta by w nim nie istniała.
+        correctionFinanceMirror.mirror(correction, principal.userId, principal.fullName)
         val items = itemRepository.findByInvoiceIdOrderByLineNumberAsc(correction.id)
         return ResponseEntity.status(HttpStatus.CREATED).body(correction.toResponse(items))
     }
@@ -190,6 +193,9 @@ class KsefRevenueController(
             )
 
             KsefRevenueStatus.SENDING -> throw ValidationException("Wysyłka faktury właśnie trwa")
+            KsefRevenueStatus.CANCELLED -> throw ValidationException(
+                "Faktura została anulowana w poprawce rozliczenia wizyty — nie wysyła się jej do KSeF."
+            )
         }
         val items = itemRepository.findByInvoiceIdOrderByLineNumberAsc(updated.id)
         return ResponseEntity.ok(updated.toResponse(items))

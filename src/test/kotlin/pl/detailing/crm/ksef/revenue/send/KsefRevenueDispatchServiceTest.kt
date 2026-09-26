@@ -30,6 +30,23 @@ class KsefRevenueDispatchServiceTest {
 
     init {
         every { repository.save(any()) } answers { firstArg() }
+        every { repository.claimForSending(any(), any(), any()) } returns 1
+    }
+
+    @Test
+    fun `faktura anulowana miedzy odczytem a wysylka nie idzie do KSeF`() {
+        // Poprawka rozliczenia anulowała fakturę po tym, jak scheduler ją wczytał:
+        // warunkowe zajęcie przegrywa i wysyłka się nie odbywa.
+        val stale = invoice()
+        every { repository.claimForSending(stale.id, any(), any()) } returns 0
+        every { repository.findById(stale.id) } returns java.util.Optional.of(
+            invoice(KsefRevenueStatus.CANCELLED)
+        )
+
+        val result = service.dispatch(stale)
+
+        assertEquals(KsefRevenueStatus.CANCELLED, result.ksefStatus)
+        verify(exactly = 0) { sender.send(any(), any()) }
     }
 
     @Test

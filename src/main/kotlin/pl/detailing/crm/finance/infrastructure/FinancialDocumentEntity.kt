@@ -153,7 +153,25 @@ class FinancialDocumentEntity(
     var excludedAt: Instant? = null,
 
     @Column(name = "excluded_by", columnDefinition = "uuid")
-    var excludedBy: UUID? = null
+    var excludedBy: UUID? = null,
+
+    /** Dokument korygowany przez tę korektę (tylko CORRECTION). */
+    @Column(name = "corrects_document_id", columnDefinition = "uuid")
+    val correctsDocumentId: UUID? = null,
+
+    /**
+     * Poprawka rozliczenia wizyty, w której dokument powstał albo został zastąpiony.
+     * Wiąże storno, nowe dokumenty i wpis historii wizyty jednym identyfikatorem.
+     */
+    @Column(name = "settlement_correction_id", columnDefinition = "uuid")
+    var settlementCorrectionId: UUID? = null,
+
+    /**
+     * Dokument zastąpiony w poprawce rozliczenia. Nie znika i nie jest „usunięty":
+     * obok stoi jego korekta, a sumy wychodzą dobrze z samych kwot.
+     */
+    @Column(name = "superseded_at")
+    var supersededAt: Instant? = null
 
 ) {
     /** Ukryty ręcznie — poza statystykami i domyślną listą. */
@@ -187,9 +205,9 @@ class FinancialDocumentEntity(
         direction         = direction,
         status            = status,
         paymentMethod     = paymentMethod,
-        totalNet          = Money(totalNet),
-        totalVat          = Money(totalVat),
-        totalGross        = Money(totalGross),
+        totalNet          = totalNet,
+        totalVat          = totalVat,
+        totalGross        = totalGross,
         currency          = currency,
         issueDate         = issueDate,
         dueDate           = dueDate,
@@ -202,6 +220,8 @@ class FinancialDocumentEntity(
         createdAt         = createdAt,
         updatedAt         = updatedAt,
         deletedAt         = deletedAt,
-        ksefRevenueInvoiceId = ksefRevenueInvoiceId
+        ksefRevenueInvoiceId = ksefRevenueInvoiceId,
+        correctsDocumentId = correctsDocumentId,
+        supersededAt      = supersededAt
     )
 }

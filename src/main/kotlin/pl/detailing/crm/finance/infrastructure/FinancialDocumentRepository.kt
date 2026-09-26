@@ -21,6 +21,20 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.id = :id AND d.studioId = :studioId")
     fun findByIdAndStudioIdIncludingDeleted(id: UUID, studioId: UUID): FinancialDocumentEntity?
 
+    /**
+     * Dokument-adnotacja faktury KSeF, który nadal obowiązuje: nie usunięty, nie zastąpiony
+     * w poprawce rozliczenia i nie będący sam korektą.
+     */
+    @Query("""
+        SELECT d FROM FinancialDocumentEntity d
+        WHERE d.studioId = :studioId
+          AND d.ksefRevenueInvoiceId = :invoiceId
+          AND d.deletedAt IS NULL
+          AND d.supersededAt IS NULL
+          AND d.documentType <> pl.detailing.crm.finance.domain.DocumentType.CORRECTION
+    """)
+    fun findActiveByKsefInvoice(studioId: UUID, invoiceId: UUID): List<FinancialDocumentEntity>
+
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.visitId = :visitId AND d.studioId = :studioId AND d.deletedAt IS NULL")
     fun findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visitId: UUID, studioId: UUID): List<FinancialDocumentEntity>
 
@@ -165,7 +179,14 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.status     = 'PAID'
           AND d.deleted_at IS NULL
           AND d.excluded_at IS NULL
-          AND (CAST(:documentType AS text) IS NULL OR d.document_type = CAST(:documentType AS text))
+          -- Korekta idzie z typem dokumentu, który koryguje: raport „tylko paragony"
+          -- bez storna paragonów pokazywałby kwoty, których już nie ma.
+          AND (CAST(:documentType AS text) IS NULL
+               OR d.document_type = CAST(:documentType AS text)
+               OR (d.document_type = 'CORRECTION' AND EXISTS (
+                     SELECT 1 FROM financial_documents o
+                     WHERE o.id = d.corrects_document_id
+                       AND o.document_type = CAST(:documentType AS text))))
           AND (CAST(:dateFrom AS text) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))
           AND (CAST(:dateTo   AS text) IS NULL OR d.issue_date <= CAST(:dateTo   AS date))
         ORDER BY d.issue_date ASC

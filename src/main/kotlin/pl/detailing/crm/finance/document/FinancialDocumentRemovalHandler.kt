@@ -63,6 +63,7 @@ class FinancialDocumentRemovalHandler(
     fun delete(command: RemoveFinancialDocumentCommand) {
         val document = documentRepository.findByIdAndStudioId(command.documentId, command.studioId.value)
             ?: throw EntityNotFoundException("Dokument finansowy ${command.documentId} nie istnieje")
+        requireNotPartOfSettlementCorrection(document)
 
         val now = Instant.now()
         document.deletedAt = now

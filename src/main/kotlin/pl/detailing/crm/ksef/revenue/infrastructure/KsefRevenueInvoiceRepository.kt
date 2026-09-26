@@ -3,11 +3,14 @@ package pl.detailing.crm.ksef.revenue.infrastructure
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
 import pl.detailing.crm.ksef.revenue.domain.RevenueSource
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -16,6 +19,53 @@ import java.util.UUID
 interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity, UUID> {
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefRevenueInvoiceEntity?
+
+    /**
+     * Zajęcie faktury do wysyłki: SENDING tylko wtedy, gdy nadal stoi w jednym ze stanów
+     * [from]. Wcześniej wysyłka sprawdzała status na encji wczytanej chwilę wcześniej
+     * i zapisywała całość — anulowanie w poprawce rozliczenia, które wpadło pomiędzy,
+     * zostawało nadpisane i anulowana faktura szła do KSeF. 0 = ktoś był szybszy.
+     */
+    @Modifying
+    @Transactional
+    @Query(
+        """
+        UPDATE KsefRevenueInvoiceEntity i
+        SET i.ksefStatus = pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.SENDING,
+            i.sendAttempts = i.sendAttempts + 1,
+            i.updatedAt = :now
+        WHERE i.id = :id AND i.ksefStatus IN :from
+        """
+    )
+    fun claimForSending(
+        @Param("id") id: UUID,
+        @Param("from") from: Collection<KsefRevenueStatus>,
+        @Param("now") now: Instant
+    ): Int
+
+    /**
+     * Anulowanie faktury, która nie weszła do sesji KSeF — warunkowo, jak [claimForSending]:
+     * jeżeli wysyłka zdążyła ją zająć, zwraca 0 i poprawka rozliczenia musi poczekać.
+     * Wymaga transakcji wołającego (poprawka rozliczenia to jedna transakcja).
+     */
+    @Modifying
+    @Query(
+        """
+        UPDATE KsefRevenueInvoiceEntity i
+        SET i.ksefStatus = pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.CANCELLED,
+            i.cancelledAt = :now,
+            i.cancelledBy = :userId,
+            i.updatedAt = :now
+        WHERE i.id = :id AND i.studioId = :studioId AND i.ksefStatus IN :from
+        """
+    )
+    fun cancelIfNotInSession(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("userId") userId: UUID,
+        @Param("from") from: Collection<KsefRevenueStatus>,
+        @Param("now") now: Instant
+    ): Int
 
     fun findByStudioIdAndKsefNumber(studioId: UUID, ksefNumber: String): KsefRevenueInvoiceEntity?
 
@@ -44,7 +94,10 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         WHERE i.studioId = :studioId
           AND i.invoiceNumber = :invoiceNumber
           AND i.ksefNumber IS NULL
-          AND i.ksefStatus <> pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.REJECTED
+          AND i.ksefStatus NOT IN (
+              pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.REJECTED,
+              pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.CANCELLED
+          )
         """
     )
     fun findAwaitingConfirmationByNumber(
@@ -208,7 +261,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
             COUNT(CASE WHEN i.source = 'EXTERNAL' THEN 1 END)           AS external_count
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
-          AND i.ksef_status <> 'REJECTED'
+          AND i.ksef_status NOT IN ('REJECTED', 'CANCELLED')
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
@@ -235,7 +288,7 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
             COUNT(CASE WHEN i.source = 'EXTERNAL' THEN 1 END)           AS external_count
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
-          AND i.ksef_status <> 'REJECTED'
+          AND i.ksef_status NOT IN ('REJECTED', 'CANCELLED')
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND i.issue_date >= CAST(:dateFrom AS date)
@@ -278,7 +331,9 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         FROM ksef_revenue_invoices i
         WHERE i.studio_id = :studioId
           AND i.payment_status = CAST(:paymentStatus AS text)
-          AND i.ksef_status <> 'REJECTED'
+          AND i.ksef_status NOT IN ('REJECTED', 'CANCELLED')
+          -- Faktura do paragonu nie jest drugą sprzedażą: kwota weszła już paragonem.
+          AND i.invoice_to_receipt = FALSE
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL
           AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))

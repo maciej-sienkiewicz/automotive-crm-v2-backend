@@ -43,7 +43,7 @@ class GetDashboardRevenueSummaryHandler(
 
             val grossForMonth = { monthStart: LocalDate ->
                 (byMonth[monthStart] ?: emptyList()).sumOf { visit ->
-                    visit.serviceItems.sumOf { it.finalPriceGross }
+                    visit.serviceItems.filter { it.countsTowardTotal }.sumOf { it.finalPriceGross }
                 }
             }
 

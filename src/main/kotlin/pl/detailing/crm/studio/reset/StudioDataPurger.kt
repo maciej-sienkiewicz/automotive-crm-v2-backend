@@ -264,6 +264,7 @@ class StudioDataPurger(
             // Liczniki numeracji idą razem z dokumentami: reset to nowy start, tak jak
             // numeracja faktur KSeF, która liczy od najwyższego zachowanego numeru.
             deleteByStudio("FinancialDocumentNumberSequenceEntity", ctx)
+            deleteByStudio("VisitSettlementCorrectionEntity", ctx)
         },
 
         StudioResetStep("KSeF") { ctx ->
