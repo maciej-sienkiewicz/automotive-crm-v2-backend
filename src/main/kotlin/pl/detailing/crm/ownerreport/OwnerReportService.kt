@@ -9,9 +9,11 @@ import pl.detailing.crm.instagram.ads.discovery.AdDiscoveryReadService
 import pl.detailing.crm.ownerreport.domain.ClosedVisits
 import pl.detailing.crm.ownerreport.domain.CompetitorMetrics
 import pl.detailing.crm.ownerreport.domain.EmailMetrics
+import pl.detailing.crm.ownerreport.domain.MetricsMedian
 import pl.detailing.crm.ownerreport.domain.OwnerReport
 import pl.detailing.crm.ownerreport.domain.PeriodMetrics
 import pl.detailing.crm.ownerreport.domain.ReplyTimes
+import pl.detailing.crm.ownerreport.domain.ReportComparison
 import pl.detailing.crm.ownerreport.domain.ReportPeriod
 import pl.detailing.crm.ownerreport.domain.SnapshotMetrics
 import pl.detailing.crm.ownerreport.infrastructure.OwnerReportQueries
@@ -47,17 +49,17 @@ class OwnerReportService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    fun generate(studioId: StudioId, period: ReportPeriod): OwnerReportFile {
-        val report = build(studioId, period)
+    fun generate(studioId: StudioId, period: ReportPeriod, comparison: ReportComparison): OwnerReportFile {
+        val report = build(studioId, period, comparison)
         val bytes = renderer.render(report)
         logger.info(
-            "Owner report generated: studio={} period={}..{} bytes={}",
-            studioId.value, period.from, period.to, bytes.size
+            "Owner report generated: studio={} period={}..{} comparison={} bytes={}",
+            studioId.value, period.from, period.to, comparison, bytes.size
         )
         return OwnerReportFile(bytes, fileName(period))
     }
 
-    fun build(studioId: StudioId, period: ReportPeriod): OwnerReport {
+    fun build(studioId: StudioId, period: ReportPeriod, comparison: ReportComparison): OwnerReport {
         val settings = studioSettingsRepository.findById(studioId.value).orElse(null)
         return OwnerReport(
             studioName = settings?.name?.trim()?.takeIf { it.isNotBlank() } ?: "Twoje studio",
@@ -69,7 +71,13 @@ class OwnerReportService(
             logoPng = loadLogo(studioId),
             period = period,
             current = metrics(studioId, period),
-            previous = metrics(studioId, period.previous()),
+            comparison = comparison,
+            baseline = when (comparison) {
+                ReportComparison.PREVIOUS -> metrics(studioId, period.previous())
+                ReportComparison.MEDIAN -> MetricsMedian.of(
+                    period.precedingPeriods(ReportPeriod.MEDIAN_PERIODS).map { metrics(studioId, it) }
+                )
+            },
             snapshot = snapshot(studioId, period),
             generatedAt = Instant.now()
         )
@@ -112,7 +120,7 @@ class OwnerReportService(
         transactionTemplate.execute {
             val visits = visitRepository
                 .findHandedOverByStudioIdAndPickupRange(studioId.value, period.startInclusive, period.endExclusive)
-                .map { it.toDomain() }
+                .map { it.toDomain(withPhotos = false) }
             ClosedVisits(
                 count = visits.size,
                 grossCents = visits.sumOf { it.calculateTotalGross().amountInCents },

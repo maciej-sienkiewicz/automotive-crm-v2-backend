@@ -13,6 +13,8 @@ import pl.detailing.crm.ownerreport.domain.InstagramMetrics
 import pl.detailing.crm.ownerreport.domain.OwnerReport
 import pl.detailing.crm.ownerreport.domain.PeriodMetrics
 import pl.detailing.crm.ownerreport.domain.ReplyTimes
+import pl.detailing.crm.ownerreport.domain.ReportComparison
+import pl.detailing.crm.ownerreport.domain.ReportLength
 import pl.detailing.crm.ownerreport.domain.ReportPeriod
 import pl.detailing.crm.ownerreport.domain.SnapshotMetrics
 import pl.detailing.crm.ownerreport.domain.UpsellMetrics
@@ -46,6 +48,8 @@ class OwnerReportPdfRendererTest {
     private fun report(
         current: PeriodMetrics = metrics(),
         previous: PeriodMetrics = metrics(closedGross = 150000, closedNet = 121951),
+        comparison: ReportComparison = ReportComparison.PREVIOUS,
+        length: ReportLength = ReportLength.WEEK,
         competitors: CompetitorMetrics? = CompetitorMetrics(
             advertisers = 7,
             activeAds = 23,
@@ -57,9 +61,10 @@ class OwnerReportPdfRendererTest {
         studioName = "Studio Detailingu Żółć Sp. z o.o.",
         studioAddress = "ul. Kwiatowa 5, 30-001 Kraków",
         logoPng = null,
-        period = ReportPeriod(LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 20)),
+        period = ReportPeriod.containing(length, LocalDate.of(2026, 9, 14)),
         current = current,
-        previous = previous,
+        comparison = comparison,
+        baseline = previous,
         snapshot = SnapshotMetrics(batchUnsettledVehicles = 6, batchUnsettledGrossCents = 2340000, competitors = competitors),
         generatedAt = Instant.parse("2026-09-21T05:00:00Z")
     )
@@ -93,10 +98,29 @@ class OwnerReportPdfRendererTest {
     }
 
     @Test
-    fun `strata jest pokazana ze znakiem minus`() {
-        // Koszty 2500,00 zł netto przy sprzedaży netto 1544,72 zł.
+    fun `kafel mowi, z czym porownuje - takze gdy poprzednio bylo zero`() {
+        val zero = metrics(closedGross = 0, closedNet = 0)
+        val text = textOf(renderer.render(report(previous = zero)))
+        assertTrue(text.contains("poprzednio 0,00 zł"), "brak wartości odniesienia w kaflu: $text")
+        assertFalse(text.contains("nowe"), "słowo nowe bez punktu odniesienia nic nie mówi")
+        assertFalse(text.contains("vs poprzedni okres"))
+    }
+
+    @Test
+    fun `bez sredniej wartosci wizyty i bez sprzedazy minus koszty`() {
         val text = textOf(renderer.render(report()))
-        assertTrue(text.contains("-955,28 zł"), "zgubiony znak straty w: $text")
+        assertFalse(text.contains("Średnia wartość wizyty"))
+        assertFalse(text.contains("minus koszty"))
+    }
+
+    @Test
+    fun `porownanie z mediana i raport miesieczny`() {
+        val text = textOf(renderer.render(report(comparison = ReportComparison.MEDIAN, length = ReportLength.MONTH)))
+        assertTrue(text.contains("RAPORT MIESIĘCZNY"), "brak tytułu: $text")
+        assertTrue(text.contains("Mediana 6 poprzednich miesięcy"))
+        assertTrue(text.contains("MEDIANA"))
+        assertTrue(text.contains("mediana 1 500,00 zł"), "kafel ma mówić o medianie: $text")
+        assertTrue(text.contains("01.09–30.09.2026"))
     }
 
     @Test

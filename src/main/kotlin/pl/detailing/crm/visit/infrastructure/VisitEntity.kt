@@ -165,7 +165,12 @@ class VisitEntity(
     @Column(name = "deleted_at", columnDefinition = "timestamp with time zone")
     var deletedAt: Instant? = null
 ) {
-    fun toDomain(): Visit = Visit(
+    /**
+     * @param withPhotos false = bez dociągania leniwej kolekcji zdjęć. Dla odczytów,
+     *   które liczą tylko kwoty (raport właściciela z mediany kilku miesięcy), zdjęcia
+     *   byłyby osobnym zapytaniem na każdą wizytę.
+     */
+    fun toDomain(withPhotos: Boolean = true): Visit = Visit(
         id = VisitId(id),
         studioId = StudioId(studioId),
         visitNumber = visitNumber,
@@ -210,7 +215,7 @@ class VisitEntity(
             )
         } else null,
         serviceItems = serviceItems.map { it.toDomain() },
-        photos = photos.map { it.toDomain() },
+        photos = if (withPhotos) photos.map { it.toDomain() } else emptyList(),
         damageMapFileId = damageMapFileId,
         smsReminderSuppressed = smsReminderSuppressed,
         createdBy = UserId(createdBy),

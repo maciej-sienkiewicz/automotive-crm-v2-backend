@@ -19,7 +19,7 @@ class ReportFormatTest {
         assertEquals("+18%", ReportFormat.change(118, 100))
         assertEquals("-25%", ReportFormat.change(75, 100))
         assertEquals("bez zmian", ReportFormat.change(5, 5))
-        assertEquals("nowe", ReportFormat.change(3, 0))
+        assertEquals("—", ReportFormat.change(3, 0))
         // Przy małych liczbach różnica w sztukach, nie procent.
         assertEquals("+1", ReportFormat.change(3, 2, smallCountThreshold = 10))
         assertEquals("-2", ReportFormat.change(4, 6, smallCountThreshold = 10))

@@ -33,6 +33,9 @@ enum class PushNotificationType {
     /** A company started advertising in the area the studio tracks (competition monitoring). */
     AREA_CAMPAIGN,
 
+    /** Domknął się okres, za który użytkownik chce raport (Statystyki → Raport PDF). */
+    OWNER_REPORT_READY,
+
     /** Sent on request from the pairing wizard — proof that the whole chain works. */
     TEST
 }

@@ -4,6 +4,9 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.springframework.stereotype.Service
 import pl.detailing.crm.ownerreport.domain.OwnerReport
 import pl.detailing.crm.ownerreport.domain.PeriodMetrics
+import pl.detailing.crm.ownerreport.domain.ReportComparison
+import pl.detailing.crm.ownerreport.domain.ReportLength
+import pl.detailing.crm.ownerreport.domain.ReportPeriod
 import pl.detailing.crm.shared.pdf.DocumentSheet
 import pl.detailing.crm.shared.pdf.DocumentStyle
 import java.awt.Color
@@ -37,7 +40,7 @@ class OwnerReportPdfRenderer {
             metaRow(
                 listOf(
                     "OKRES" to ReportFormat.range(report.period.from, report.period.to),
-                    "PORÓWNANIE Z" to report.period.previous().let { ReportFormat.range(it.from, it.to) },
+                    "PORÓWNANIE Z" to baselineDescription(report),
                     "WYGENEROWANO" to GENERATED.format(report.generatedAt.atZone(ZONE))
                 )
             )
@@ -51,22 +54,58 @@ class OwnerReportPdfRenderer {
         sheet.finish()
     }
 
-    private fun titleFor(report: OwnerReport): String = when (report.period.days) {
-        7L -> "RAPORT TYGODNIOWY"
-        14L -> "RAPORT DWUTYGODNIOWY"
-        else -> "RAPORT ZA OKRES"
+    private fun titleFor(report: OwnerReport): String = when (report.period.length) {
+        ReportLength.WEEK -> "RAPORT TYGODNIOWY"
+        ReportLength.TWO_WEEKS -> "RAPORT DWUTYGODNIOWY"
+        ReportLength.MONTH -> "RAPORT MIESIĘCZNY"
+    }
+
+    private fun baselineDescription(report: OwnerReport): String = when (report.comparison) {
+        ReportComparison.PREVIOUS -> report.period.previous().let { ReportFormat.range(it.from, it.to) }
+        ReportComparison.MEDIAN -> "Mediana ${ReportPeriod.MEDIAN_PERIODS} " + when (report.period.length) {
+            ReportLength.WEEK -> "poprzednich tygodni"
+            ReportLength.TWO_WEEKS -> "poprzednich okresów 2-tyg."
+            ReportLength.MONTH -> "poprzednich miesięcy"
+        }
+    }
+
+    /** Podpis wartości odniesienia w kaflu: „poprzednio 4 832,10 zł" albo „mediana 4 832,10 zł". */
+    private fun baselineWord(report: OwnerReport): String = when (report.comparison) {
+        ReportComparison.PREVIOUS -> "poprzednio"
+        ReportComparison.MEDIAN -> "mediana"
     }
 
     // ── Kafle ────────────────────────────────────────────────────────────────
 
+    /**
+     * Kafel mówi wprost, z czym porównuje: sama strzałka „+18%" bez liczby odniesienia
+     * (albo „nowe", gdy poprzednio było zero) zostawiała pytanie „względem czego?".
+     */
     private fun kpiTiles(s: DocumentSheet, r: OwnerReport) {
         val c = r.current
-        val p = r.previous
+        val p = r.baseline
+        val word = baselineWord(r)
         val tiles = listOf(
-            Tile("SPRZEDAŻ BRUTTO", ReportFormat.money(c.closed.grossCents), change(c.closed.grossCents, p.closed.grossCents, Direction.UP)),
-            Tile("WIZYTY ROZPOCZĘTE", ReportFormat.count(c.visitsStarted), change(c.visitsStarted, p.visitsStarted, Direction.UP)),
-            Tile("NOWE REZERWACJE", ReportFormat.count(c.reservationsCreated), change(c.reservationsCreated, p.reservationsCreated, Direction.UP)),
-            Tile("KOSZTY NETTO", ReportFormat.money(c.costsNetCents), change(c.costsNetCents, p.costsNetCents, Direction.NEUTRAL))
+            Tile(
+                "SPRZEDAŻ BRUTTO", ReportFormat.money(c.closed.grossCents),
+                "$word ${ReportFormat.money(p.closed.grossCents)}",
+                change(c.closed.grossCents, p.closed.grossCents, Direction.UP)
+            ),
+            Tile(
+                "WIZYTY ROZPOCZĘTE", ReportFormat.count(c.visitsStarted),
+                "$word ${ReportFormat.count(p.visitsStarted)}",
+                change(c.visitsStarted, p.visitsStarted, Direction.UP)
+            ),
+            Tile(
+                "NOWE REZERWACJE", ReportFormat.count(c.reservationsCreated),
+                "$word ${ReportFormat.count(p.reservationsCreated)}",
+                change(c.reservationsCreated, p.reservationsCreated, Direction.UP)
+            ),
+            Tile(
+                "KOSZTY NETTO", ReportFormat.money(c.costsNetCents),
+                "$word ${ReportFormat.money(p.costsNetCents)}",
+                change(c.costsNetCents, p.costsNetCents, Direction.NEUTRAL)
+            )
         )
 
         s.y -= 14f
@@ -81,7 +120,18 @@ class OwnerReportPdfRenderer {
             s.rect(x, boxTop - boxH, w, boxH, DocumentStyle.GRAY)
             val valueSize = fitSize(s, tile.value, w - 8f, 15f)
             s.text(s.bold, valueSize, x + 4f, boxTop - 19f, tile.value, DocumentStyle.NAVY)
-            s.text(s.regular, DocumentStyle.NOTE_FONT, x + 4f, boxTop - 33f, "${tile.change.text} vs poprzedni okres", tile.change.color)
+            // Zmiana przed wartością odniesienia: „+18%" czyta się pierwsze, a podpis
+            // obok mówi, od czego te procenty.
+            var noteX = x + 4f
+            // „Bez zmian" i „—" mówi sama wartość odniesienia obok — nie powtarzamy.
+            if (tile.change.text != ReportFormat.NO_CHANGE_BASE && tile.change.text != ReportFormat.UNCHANGED) {
+                s.text(s.bold, DocumentStyle.NOTE_FONT, noteX, boxTop - 33f, tile.change.text, tile.change.color)
+                noteX += s.widthOf(s.bold, DocumentStyle.NOTE_FONT, tile.change.text) + 5f
+            }
+            s.text(
+                s.regular, DocumentStyle.NOTE_FONT, noteX, boxTop - 33f,
+                s.ellipsize(tile.baseline, s.regular, DocumentStyle.NOTE_FONT, x + w - 4f - noteX), DocumentStyle.MUTED
+            )
         }
         s.y = top - DocumentStyle.TAB_H - 2.5f - boxH
     }
@@ -96,24 +146,12 @@ class OwnerReportPdfRenderer {
 
     private fun finance(s: DocumentSheet, r: OwnerReport) {
         val c = r.current
-        val p = r.previous
-        val table = Table(s, "FINANSE I SPRZEDAŻ", rows = 10)
+        val p = r.baseline
+        val table = Table(s, "FINANSE I SPRZEDAŻ", r, rows = 8)
         table.row("Wizyty zamknięte (wydane klientom)", c.closed.count, p.closed.count, Direction.UP)
         table.moneyRow("Wartość zamkniętych wizyt brutto", c.closed.grossCents, p.closed.grossCents, Direction.UP)
         table.moneyRow("Wartość zamkniętych wizyt netto", c.closed.netCents, p.closed.netCents, Direction.UP)
-        table.row(
-            "Średnia wartość wizyty brutto",
-            c.closed.averageGrossCents?.let(ReportFormat::money) ?: "—",
-            p.closed.averageGrossCents?.let(ReportFormat::money) ?: "—",
-            changeOrNull(c.closed.averageGrossCents, p.closed.averageGrossCents, Direction.UP)
-        )
         table.moneyRow("Koszty netto (dokumenty z okresu)", c.costsNetCents, p.costsNetCents, Direction.NEUTRAL)
-        table.moneyRow(
-            "Sprzedaż netto minus koszty netto",
-            c.closed.netCents - c.costsNetCents,
-            p.closed.netCents - p.costsNetCents,
-            Direction.UP
-        )
         table.row(
             "Propozycje upsellu (usługi / wizyty)",
             "${ReportFormat.count(c.upsell.suggested)} / ${ReportFormat.count(c.upsell.visitsWithSuggestions)}",
@@ -127,8 +165,8 @@ class OwnerReportPdfRenderer {
 
     private fun operations(s: DocumentSheet, r: OwnerReport) {
         val c = r.current
-        val p = r.previous
-        val table = Table(s, "OPERACJE NA HALI", rows = 7)
+        val p = r.baseline
+        val table = Table(s, "OPERACJE NA HALI", r, rows = 7)
         table.row("Wizyty rozpoczęte", c.visitsStarted, p.visitsStarted, Direction.UP)
         table.row("Rezerwacje utworzone", c.reservationsCreated, p.reservationsCreated, Direction.UP)
         table.row("Karty wizyt wysłane klientom", c.visitCardsSent, p.visitCardsSent, Direction.UP)
@@ -145,8 +183,8 @@ class OwnerReportPdfRenderer {
 
     private fun communication(s: DocumentSheet, r: OwnerReport) {
         val c = r.current.emails
-        val p = r.previous.emails
-        val table = Table(s, "KOMUNIKACJA Z KLIENTAMI", rows = 6)
+        val p = r.baseline.emails
+        val table = Table(s, "KOMUNIKACJA Z KLIENTAMI", r, rows = 6)
         table.row("Maile napisane przez zespół", c.sentByTeam, p.sentByTeam, Direction.NEUTRAL)
         table.row("Maile wysłane automatycznie przez CRM", c.sentAutomated, p.sentAutomated, Direction.NEUTRAL)
         table.row("Zapytania klientów (maile czekające na nas)", c.replies.inquiries, p.replies.inquiries, Direction.NEUTRAL)
@@ -167,8 +205,8 @@ class OwnerReportPdfRenderer {
 
     private fun marketing(s: DocumentSheet, r: OwnerReport) {
         val c = r.current
-        val p = r.previous
-        val table = Table(s, "MARKETING", rows = 8)
+        val p = r.baseline
+        val table = Table(s, "MARKETING", r, rows = 8)
         val ig = c.instagram
         if (ig == null) {
             table.note("Instagram: wskaż własny profil w module Marketing, żeby raport liczył posty.")
@@ -214,12 +252,12 @@ class OwnerReportPdfRenderer {
 
     private data class Change(val text: String, val color: Color)
 
-    private data class Tile(val label: String, val value: String, val change: Change)
+    private data class Tile(val label: String, val value: String, val baseline: String, val change: Change)
 
     private fun change(current: Long, previous: Long, direction: Direction, threshold: Long = 0): Change {
         val text = ReportFormat.change(current, previous, threshold)
         val color = when {
-            current == previous || direction == Direction.NEUTRAL -> DocumentStyle.MUTED
+            current == previous || previous == 0L || direction == Direction.NEUTRAL -> DocumentStyle.MUTED
             (current > previous) == (direction == Direction.UP) -> GOOD
             else -> BAD
         }
@@ -237,7 +275,7 @@ class OwnerReportPdfRenderer {
      *   nie jest dzielony: pół tabeli marketingu na dole kartki i pół na następnej
      *   czyta się jak dwa różne moduły.
      */
-    private inner class Table(private val s: DocumentSheet, label: String, rows: Int) {
+    private inner class Table(private val s: DocumentSheet, label: String, report: OwnerReport, rows: Int) {
         private var shade = false
 
         init {
@@ -249,7 +287,11 @@ class OwnerReportPdfRenderer {
             s.tab(DocumentStyle.LEFT, top, label)
             val baseline = top - DocumentStyle.TAB_H + 4.2f
             s.textRight(s.regular, DocumentStyle.META_FONT, COL_VALUE, baseline, "TEN OKRES", DocumentStyle.MUTED)
-            s.textRight(s.regular, DocumentStyle.META_FONT, COL_PREV, baseline, "POPRZEDNI", DocumentStyle.MUTED)
+            val baselineHeader = when (report.comparison) {
+                ReportComparison.PREVIOUS -> "POPRZEDNI"
+                ReportComparison.MEDIAN -> "MEDIANA"
+            }
+            s.textRight(s.regular, DocumentStyle.META_FONT, COL_PREV, baseline, baselineHeader, DocumentStyle.MUTED)
             s.textRight(s.regular, DocumentStyle.META_FONT, COL_CHANGE, baseline, "ZMIANA", DocumentStyle.MUTED)
             s.y = top - DocumentStyle.TAB_H - 3f
         }
@@ -313,7 +355,8 @@ class OwnerReportPdfRenderer {
         val FOOTNOTES = listOf(
             "Sprzedaż = wartość wizyt wydanych klientom w okresie, z cen zapisanych na wizytach (brutto co do grosza). " +
                 "Koszty = dokumenty kosztowe wystawione w okresie, opłacone i nieopłacone, netto. " +
-                "Wizyta rozpoczęta = podpisane przyjęcie auta. Rezerwacja cykliczna liczy się raz.",
+                "Wizyta rozpoczęta = podpisane przyjęcie auta. Rezerwacja cykliczna liczy się raz. " +
+                "Mediana = środkowa wartość z ${ReportPeriod.MEDIAN_PERIODS} poprzednich okresów tej samej długości.",
             "Czas odpowiedzi liczymy zegarowo (z nocami i weekendami) od pierwszego maila klienta po naszej ostatniej " +
                 "odpowiedzi do naszej kolejnej, tylko w rozmowach z klientami — bez newsletterów i spamu. " +
                 "Kampanie konkurencji: Biblioteka reklam Meta, reklamy wyświetlane w Twoim rejonie."
