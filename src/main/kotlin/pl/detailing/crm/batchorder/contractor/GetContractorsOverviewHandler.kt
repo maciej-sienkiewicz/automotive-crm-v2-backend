@@ -72,12 +72,15 @@ fun buildContractorsOverview(
             val own = entriesByContractor[contractor.id].orEmpty()
             val (settled, open) = own.partition { it.isClosed }
             val openSummary = summarize(open)
+            val settledSummary = summarize(settled)
             ContractorOverviewItem(
                 contractor = contractor.toListItem(entryCount = entryCounts[contractor.id] ?: 0L),
                 openCount = openSummary.entryCount,
                 openNetCents = openSummary.totalNetCents,
                 openGrossCents = openSummary.totalGrossCents,
                 settledCount = settled.size,
+                settledNetCents = settledSummary.totalNetCents,
+                settledGrossCents = settledSummary.totalGrossCents,
                 lastSettledAt = lastSettledAt(stampsByContractor[contractor.id].orEmpty(), period)?.toString()
             )
         }
@@ -99,5 +102,12 @@ data class ContractorOverviewItem(
     val openNetCents: Long,
     val openGrossCents: Long,
     val settledCount: Int,
+    /**
+     * Sumy wpisów okresu już ujętych w zestawieniach. Nagłówek listy mówi, na ile
+     * wykonano usług w okresie — bez nich pokazywałby tylko to, co jeszcze nie
+     * rozliczone, i kwota malała po każdym zestawieniu.
+     */
+    val settledNetCents: Long,
+    val settledGrossCents: Long,
     val lastSettledAt: String?
 )

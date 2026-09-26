@@ -37,6 +37,8 @@ class ContractorsOverviewTest {
         assertEquals(2 * 154_472L, first.openNetCents)
         assertEquals(2 * 190_000L, first.openGrossCents)
         assertEquals(1, first.settledCount)
+        assertEquals(154_472L, first.settledNetCents)
+        assertEquals(190_000L, first.settledGrossCents, "brutto rozliczonych sumowane z wpisów, nie z netta")
         assertNull(first.lastSettledAt)
         assertEquals(40L, first.contractor.entryCount, "entryCount jak w liście kontrahentów — od zawsze")
 
