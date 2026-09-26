@@ -195,6 +195,9 @@ class SettlementCorrectionService(
         var cloneDocuments = false
 
         val nothingButMethod = !itemsChanged && !typeChanged && !buyerChanged
+        // Wizyta wydana bez dokumentu (np. zanim studio miało moduł Finanse): sam wybór
+        // rodzaju dokumentu to zmiana — dopisuje brakujący paragon albo fakturę.
+        val missingDocument = currentType == null && state.activeInvoices.isEmpty() && hasFinance && grossAfter > 0
         when {
             // Tylko forma płatności: faktury zostają, dokumenty wracają z nową formą.
             nothingButMethod && methodChanged -> {
@@ -215,7 +218,7 @@ class SettlementCorrectionService(
                     cloneDocuments = true
                 }
             }
-            nothingButMethod -> return block("Nic się nie zmienia — popraw cenę, stawkę VAT, formę płatności albo rodzaj dokumentu.")
+            nothingButMethod && !missingDocument -> return block("Nic się nie zmienia — popraw cenę, stawkę VAT, formę płatności albo rodzaj dokumentu.")
             else -> {
                 documentsToReplace = state.activeDocuments
                 invoicesToTreat = state.activeInvoices
