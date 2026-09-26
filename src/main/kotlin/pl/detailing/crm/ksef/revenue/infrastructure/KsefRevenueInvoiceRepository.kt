@@ -325,6 +325,9 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
      *
      * Zakres dat po issue_date — jak w [FinancialDocumentRepository.sumNet],
      * żeby obie strony sumy mówiły o tym samym okresie.
+     *
+     * Faktura do paragonu (invoice_to_receipt) nie jest drugą sprzedażą: kwota weszła
+     * już paragonem.
      */
     @Query(
         value = """
@@ -335,7 +338,6 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         WHERE i.studio_id = :studioId
           AND i.payment_status = CAST(:paymentStatus AS text)
           AND i.ksef_status NOT IN ('REJECTED', 'CANCELLED')
-          -- Faktura do paragonu nie jest drugą sprzedażą: kwota weszła już paragonem.
           AND i.invoice_to_receipt = FALSE
           AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
           AND i.excluded_at IS NULL

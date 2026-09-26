@@ -172,6 +172,14 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     """)
     fun markOverdueBatch(studioId: UUID, today: LocalDate, newStatus: DocumentStatus): Int
 
+    /**
+     * Korekta idzie z typem dokumentu, który koryguje: raport „tylko paragony" bez
+     * storna paragonów pokazywałby kwoty, których już nie ma.
+     *
+     * Uzasadnienie celowo stoi tu, a nie jako `--` w SQL: Spring Data liczy cudzysłowy
+     * także wewnątrz komentarzy SQL, a niedomknięty `"` wywraca start aplikacji
+     * (patrz QueryQuotesTest).
+     */
     @Query(value = """
         SELECT * FROM financial_documents d
         WHERE d.studio_id  = CAST(:studioId AS uuid)
@@ -179,8 +187,6 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.status     = 'PAID'
           AND d.deleted_at IS NULL
           AND d.excluded_at IS NULL
-          -- Korekta idzie z typem dokumentu, który koryguje: raport „tylko paragony"
-          -- bez storna paragonów pokazywałby kwoty, których już nie ma.
           AND (CAST(:documentType AS text) IS NULL
                OR d.document_type = CAST(:documentType AS text)
                OR (d.document_type = 'CORRECTION' AND EXISTS (
