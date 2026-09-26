@@ -87,7 +87,6 @@ class OutboundIntegrationSurfaceTest {
         "ReportProblemService" to Self,
         "SmsAuthorizationNotifier" to Self,
         "MetaPageChangeRequestMailer" to Self,
-        "OwnerReportScheduler" to Self,
 
         // ── Płatności, GUS, poczta studia ───────────────────────────────────────
         "CheckoutService" to Self,

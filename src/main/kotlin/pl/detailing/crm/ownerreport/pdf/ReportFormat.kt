@@ -17,6 +17,11 @@ import kotlin.math.roundToLong
  */
 object ReportFormat {
 
+    /** Zmiana względem zera nie ma procentu — pokazujemy samą wartość odniesienia. */
+    const val NO_CHANGE_BASE = "—"
+
+    const val UNCHANGED = "bez zmian"
+
     private val DAY = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     private val DAY_SHORT = DateTimeFormatter.ofPattern("dd.MM")
 
@@ -58,12 +63,13 @@ object ReportFormat {
      * Zmiana względem poprzedniego okresu.
      *
      * Procent tylko wtedy, gdy jest od czego go liczyć: z zera na 5 to nie „+∞%",
-     * tylko „nowe"; przy małych liczbach (np. 2 → 3 wizyty) procent też nic nie mówi,
-     * więc do tego progu pokazujemy różnicę w sztukach.
+     * tylko [NO_CHANGE_BASE] — obok stoi wartość odniesienia (0), która mówi resztę.
+     * „Nowe" zostawiało pytanie „względem czego?". Przy małych liczbach (np. 2 → 3
+     * wizyty) procent też nic nie mówi, więc do tego progu pokazujemy różnicę w sztukach.
      */
     fun change(current: Long, previous: Long, smallCountThreshold: Long = 0): String = when {
-        current == previous -> "bez zmian"
-        previous == 0L -> "nowe"
+        current == previous -> UNCHANGED
+        previous == 0L -> NO_CHANGE_BASE
         abs(previous) < smallCountThreshold || abs(current) < smallCountThreshold ->
             (if (current > previous) "+" else "-") + grouped(abs(current - previous))
         else -> {

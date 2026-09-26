@@ -16,13 +16,18 @@ data class OwnerReport(
     val logoPng: ByteArray?,
     val period: ReportPeriod,
     val current: PeriodMetrics,
-    val previous: PeriodMetrics,
+    val comparison: ReportComparison,
+    /**
+     * Punkt odniesienia: poprzedni okres albo mediana z [ReportPeriod.MEDIAN_PERIODS]
+     * poprzednich — patrz [comparison].
+     */
+    val baseline: PeriodMetrics,
     /** Stan „na dziś", bez porównania: tego nie da się policzyć wstecz. */
     val snapshot: SnapshotMetrics,
     val generatedAt: Instant
 )
 
-/** Liczby, które da się policzyć dla dowolnego okresu — więc i dla poprzedniego. */
+/** Liczby, które da się policzyć dla dowolnego okresu — więc i dla poprzednich. */
 data class PeriodMetrics(
     /** Wizyty, w których prace ruszyły w okresie (DRAFT → IN_PROGRESS, `started_at`). */
     val visitsStarted: Int,
@@ -45,11 +50,7 @@ data class ClosedVisits(
     val count: Int,
     val grossCents: Long,
     val netCents: Long
-) {
-    /** Średnia wartość wizyty brutto; null, gdy nie zamknięto żadnej. */
-    val averageGrossCents: Long?
-        get() = if (count == 0) null else Math.floorDiv(grossCents + count / 2, count.toLong())
-}
+)
 
 data class EmailMetrics(
     /** Napisane przez zespół ze skrzynki studia (także poza CRM — synchronizacja folderu Wysłane). */

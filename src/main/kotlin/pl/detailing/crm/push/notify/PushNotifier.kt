@@ -102,6 +102,50 @@ class PushNotifier(
         )
     }
 
+    /**
+     * Powiadomienie dla JEDNEJ osoby — na wszystkie jej sparowane urządzenia, o ile
+     * konto jest aktywne i ma choć jedno z [anyOf] (właściciel zawsze). Dla powiadomień,
+     * które ktoś sam dla siebie włączył („Dostępny nowy raport"), a nie dla zdarzeń,
+     * o których ma wiedzieć każdy uprawniony w studiu.
+     *
+     * @return true, gdy dotarło na co najmniej jedno urządzenie.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun notifyUser(
+        studioId: StudioId,
+        userId: UserId,
+        anyOf: List<Permission>,
+        payload: PushPayload,
+        ttlSeconds: Long = 6 * 3600
+    ): Boolean {
+        if (!webPushSender.isConfigured) return false
+        // Bez danych klientów w treści, więc jedna wersja dla każdego odbiorcy —
+        // [recipient] rozstrzyga tylko, czy w ogóle wolno mu to dostać.
+        if (anyOf.none { recipient(userId, studioId, it) != null }) return false
+
+        val devices = pushDeviceRepository.findByStudioIdAndUserIdAndRevokedAtIsNull(studioId.value, userId.value)
+        if (devices.isEmpty()) return false
+
+        val json = objectMapper.writeValueAsString(payload)
+        var delivered = 0
+        devices.forEach { device ->
+            when (webPushSender.send(device.toDomain(), json, ttlSeconds)) {
+                PushDeliveryStatus.DELIVERED -> {
+                    delivered++
+                    device.lastUsedAt = Instant.now()
+                    pushDeviceRepository.save(device)
+                }
+                PushDeliveryStatus.SUBSCRIPTION_GONE -> {
+                    device.revokedAt = Instant.now()
+                    pushDeviceRepository.save(device)
+                }
+                PushDeliveryStatus.FAILED -> Unit
+            }
+        }
+        log.info("[push] {}: uzytkownik={}, urzadzen={}, dostarczono={}", payload.type, userId.value, devices.size, delivered)
+        return delivered > 0
+    }
+
     private data class Recipient(val userId: java.util.UUID, val seesPersonalData: Boolean)
 
     private fun recipient(userId: UserId, studioId: StudioId, permission: Permission?): Recipient? {
