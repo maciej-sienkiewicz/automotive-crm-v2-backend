@@ -47,7 +47,8 @@ class CompleteVisitIdempotencyTest {
 
     private val handler = CompleteVisitHandler(
         visitRepository, customerRepository, auditService, createFinancialDocumentHandler,
-        capabilityService, mockk(relaxed = true), financialDocumentRepository
+        capabilityService, mockk(relaxed = true), financialDocumentRepository,
+        pl.detailing.crm.shared.RecordingTransactionManager().template()
     )
 
     private val studioId = StudioId.random()
@@ -55,6 +56,7 @@ class CompleteVisitIdempotencyTest {
 
     private fun givenVisitInStatus(status: VisitStatus): VisitId {
         val visit = VisitFixtures.visit(studioId = studioId, status = status)
+        every { visitRepository.lockForUpdate(visit.id.value, studioId.value) } returns visit.id.value
         every { visitRepository.findByIdAndStudioIdWithPhotos(visit.id.value, studioId.value) } returns
             VisitEntity.fromDomain(visit)
         every { visitRepository.save(any()) } answers { firstArg() }

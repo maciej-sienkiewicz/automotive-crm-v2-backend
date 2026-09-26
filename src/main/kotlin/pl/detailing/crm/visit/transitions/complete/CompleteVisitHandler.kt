@@ -5,7 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.customer.infrastructure.CustomerEntity
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -27,6 +27,19 @@ import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.LocalDate
 
+/**
+ * Wydanie pojazdu: zmiana statusu wizyty, dokument finansowy i ruch w kasie.
+ *
+ * Wszystko to dzieje się w JEDNEJ prawdziwej transakcji ([TransactionTemplate]).
+ * Wcześniej `@Transactional` stało na funkcji `suspend`, której ciało biegło na
+ * `Dispatchers.IO` - poza transakcją zarządzaną przez interceptor (patrz
+ * [pl.detailing.crm.visit.transitions.cancel.CancelDraftVisitHandler]). Każdy `save`
+ * był osobnym commitem, więc awaria w połowie zostawiała wizytę wydaną bez paragonu
+ * albo z paragonem bez wpisu w kasie.
+ *
+ * Wiersz wizyty jest blokowany na czas transakcji ([VisitRepository.lockForUpdate]):
+ * dwa równoległe wydania tej samej wizyty nie mogą oba zobaczyć READY_FOR_PICKUP.
+ */
 @Service
 class CompleteVisitHandler(
     private val visitRepository: VisitRepository,
@@ -35,12 +48,23 @@ class CompleteVisitHandler(
     private val createFinancialDocumentHandler: CreateFinancialDocumentHandler,
     private val capabilityService: CapabilityService,
     private val eventPublisher: ApplicationEventPublisher,
-    private val financialDocumentRepository: FinancialDocumentRepository
+    private val financialDocumentRepository: FinancialDocumentRepository,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
-    @Transactional
-    suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult = withContext(Dispatchers.IO) {
+    suspend fun handle(command: CompleteVisitCommand): CompleteVisitResult =
+        complete(command) { _, _ -> }.result
+
+    /**
+     * Wydaje pojazd. [alsoInTransaction] dokłada zapisy, które muszą stać albo upaść
+     * razem z wydaniem (orkiestrator faktury: paragon na resztę kwoty) - wołany tylko
+     * przy wydaniu świeżym, nigdy przy powtórce.
+     */
+    suspend fun <T> complete(
+        command: CompleteVisitCommand,
+        alsoInTransaction: (visit: Visit, customer: CustomerEntity?) -> T
+    ): Completion<T> {
         // Completing a visit is a BASIC operation; issuing a financial document is the
         // finance module. An EXPLICIT invoice request without the module is a 402
         // (the UI shows the upsell instead of the invoice form); the default receipt
@@ -48,6 +72,23 @@ class CompleteVisitHandler(
         if (command.documentType == DocumentType.INVOICE) {
             capabilityService.requireCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)
         }
+
+        val completion = withContext(Dispatchers.IO) {
+            transactionTemplate.execute { completeLocked(command, alsoInTransaction) }!!
+        }
+
+        // Audyt po commicie: pisze we własnej transakcji (REQUIRES_NEW), więc zapisany
+        // wewnątrz zostałby w Aktywności także po wycofaniu wydania.
+        completion.audit?.let { auditService.log(it) }
+        return completion
+    }
+
+    private fun <T> completeLocked(
+        command: CompleteVisitCommand,
+        alsoInTransaction: (Visit, CustomerEntity?) -> T
+    ): Completion<T> {
+        visitRepository.lockForUpdate(command.visitId.value, command.studioId.value)
+            ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
 
         val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
             ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
@@ -64,13 +105,17 @@ class CompleteVisitHandler(
             val existingDocument = financialDocumentRepository
                 .findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, command.studioId.value)
                 .firstOrNull()
-            return@withContext CompleteVisitResult(
-                visitId                 = visit.id,
-                newStatus               = visit.status,
-                completedAt             = visit.pickupDate ?: visitEntity.updatedAt,
-                financialDocumentId     = existingDocument?.let { FinancialDocumentId(it.id) },
-                financialDocumentNumber = existingDocument?.documentNumber,
-                alreadyInTargetState    = true
+            return Completion(
+                result = CompleteVisitResult(
+                    visitId                 = visit.id,
+                    newStatus               = visit.status,
+                    completedAt             = visit.pickupDate ?: visitEntity.updatedAt,
+                    financialDocumentId     = existingDocument?.let { FinancialDocumentId(it.id) },
+                    financialDocumentNumber = existingDocument?.documentNumber,
+                    alreadyInTargetState    = true
+                ),
+                extra = null,
+                audit = null
             )
         }
 
@@ -78,17 +123,6 @@ class CompleteVisitHandler(
 
         val updatedEntity = VisitEntity.fromDomain(updatedVisit)
         visitRepository.save(updatedEntity)
-
-        auditService.log(LogAuditCommand(
-            studioId          = command.studioId,
-            userId            = command.userId,
-            userDisplayName   = command.userName ?: "",
-            module            = AuditModule.VISIT,
-            entityId          = command.visitId.value.toString(),
-            entityDisplayName = visit.auditDisplayName,
-            action            = AuditAction.VISIT_COMPLETED,
-            changes           = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
-        ))
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
 
@@ -112,10 +146,26 @@ class CompleteVisitHandler(
             )
         )
 
-        when (command.documentType) {
+        val result = when (command.documentType) {
             DocumentType.INVOICE -> handleInvoiceCompletion(command, updatedVisit, customer)
             else                 -> handleReceiptCompletion(command, updatedVisit, customer)
         }
+        val extra = alsoInTransaction(updatedVisit, customer)
+
+        return Completion(
+            result = result,
+            extra = extra,
+            audit = LogAuditCommand(
+                studioId          = command.studioId,
+                userId            = command.userId,
+                userDisplayName   = command.userName ?: "",
+                module            = AuditModule.VISIT,
+                entityId          = command.visitId.value.toString(),
+                entityDisplayName = visit.auditDisplayName,
+                action            = AuditAction.VISIT_COMPLETED,
+                changes           = listOf(FieldChange("status", visit.status.name, updatedVisit.status.name))
+            )
+        )
     }
 
     private fun handleInvoiceCompletion(
@@ -264,6 +314,13 @@ data class CompleteVisitCommand(
      * przez [CompleteVisitInvoiceOrchestrator]). Null → kwoty liczone z usług wizyty.
      */
     val documentTotalsOverride: DocumentTotals? = null
+)
+
+/** Wynik wydania: odpowiedź, to, co dołożył wołający, i wpis audytu do zapisania po commicie. */
+data class Completion<T>(
+    val result: CompleteVisitResult,
+    val extra: T?,
+    internal val audit: LogAuditCommand?
 )
 
 /** Kwoty dokumentu w groszach; niezmiennik net + vat == gross. */

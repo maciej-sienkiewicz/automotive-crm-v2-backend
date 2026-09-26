@@ -43,7 +43,8 @@ class CompleteVisitHandlerTest {
         createFinancialDocumentHandler,
         capabilityService,
         eventPublisher = mockk(relaxed = true),
-        financialDocumentRepository = mockk(relaxed = true)
+        financialDocumentRepository = mockk(relaxed = true),
+        transactionTemplate = pl.detailing.crm.shared.RecordingTransactionManager().template()
     )
 
     private val studioId = StudioId.random()
@@ -52,6 +53,8 @@ class CompleteVisitHandlerTest {
 
     @BeforeEach
     fun setUp() {
+        // Blokada wiersza wizyty przed wydaniem - istnieje, jeśli istnieje wizyta.
+        every { visitRepository.lockForUpdate(any(), any()) } answers { firstArg() }
         coEvery { customerRepository.findByIdAndStudioId(any(), any()) } returns null
         every { createFinancialDocumentHandler.handle(any()) } returns financialDocument()
         // Plan z modułem finansów: bez tego handler pomija wystawienie dokumentu.

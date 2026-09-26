@@ -252,7 +252,12 @@ class IssueRevenueInvoiceHandler(
 
     // ── Private ────────────────────────────────────────────────────────────────
 
-    private fun validate(command: IssueRevenueInvoiceCommand) {
+    /**
+     * Walidacja bez skutków ubocznych. Publiczna, bo orkiestrator wydania woła ją PRZED
+     * zakończeniem wizyty: faktura wystawiana jest po commicie wydania, więc błąd
+     * wykryty dopiero tutaj zostawiłby wizytę wydaną bez faktury.
+     */
+    fun validate(command: IssueRevenueInvoiceCommand) {
         if (command.items.isEmpty()) {
             throw ValidationException("Faktura musi mieć co najmniej jedną pozycję")
         }

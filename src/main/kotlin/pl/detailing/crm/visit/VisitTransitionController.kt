@@ -161,20 +161,25 @@ class VisitTransitionController(
                     sendToKsef          = invoiceDetails.sendToKsef
                 )
             )
-            scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
+            // Jak niżej: powtórka nie nadpisuje decyzji o podziękowaniu z pierwszego wydania.
+            if (!result.completion.alreadyInTargetState) {
+                scheduleThankYouSms(request, principal.studioId, visitIdValue, principal.userId)
+            }
 
             return@runBlocking ResponseEntity.ok(
                 CompleteVisitResponse(
                     visitId                 = result.completion.visitId.value.toString(),
                     newStatus               = mapVisitStatus(result.completion.newStatus),
-                    message                 = "Visit completed successfully",
+                    message                 = if (result.completion.alreadyInTargetState) "Visit was already completed"
+                                              else "Visit completed successfully",
                     financialDocumentId     = result.completion.financialDocumentId?.toString(),
                     financialDocumentNumber = result.completion.financialDocumentNumber,
-                    ksefInvoiceId           = result.ksefInvoice.id.toString(),
-                    ksefInvoiceNumber       = result.ksefInvoice.invoiceNumber,
-                    ksefStatus              = result.ksefInvoice.ksefStatus.name,
+                    ksefInvoiceId           = result.ksefInvoice?.id?.toString(),
+                    ksefInvoiceNumber       = result.ksefInvoice?.invoiceNumber,
+                    ksefStatus              = result.ksefInvoice?.ksefStatus?.name,
                     remainderDocumentNumber = result.remainderDocumentNumber,
-                    ksefError               = result.ksefInvoice.lastSendError
+                    ksefError               = result.ksefInvoice?.lastSendError,
+                    alreadyInTargetState    = result.completion.alreadyInTargetState
                 )
             )
         }

@@ -13,11 +13,13 @@ import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
 import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
+import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.domain.VatRate
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceEntity
+import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceCommand
 import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceHandler
 import pl.detailing.crm.ksef.revenue.issue.RevenueInvoiceBuyerCommand
@@ -25,8 +27,10 @@ import pl.detailing.crm.ksef.revenue.issue.RevenueInvoiceItemCommand
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.shared.VisitStatus
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
+import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -80,7 +84,11 @@ data class CompleteInvoiceDetails(
 
 data class CompleteVisitWithInvoiceResult(
     val completion: CompleteVisitResult,
-    val ksefInvoice: KsefRevenueInvoiceEntity,
+    /**
+     * Faktura wizyty. Przy powtórzonym wydaniu ([CompleteVisitResult.alreadyInTargetState])
+     * - ta z pierwszego wydania; null, gdy wizytę wydano wtedy bez faktury.
+     */
+    val ksefInvoice: KsefRevenueInvoiceEntity?,
     val remainderDocumentId: java.util.UUID?,
     val remainderDocumentNumber: String?
 )
@@ -94,14 +102,19 @@ data class CompleteVisitWithInvoiceResult(
  * Nie istnieje ścieżka, w której część kwoty pozostaje bez dokumentu.
  *
  * Kolejność wykonania (świadoma):
+ * - Wizyta już wydana → zwracamy fakturę z pierwszego wydania i NIC nie
+ *    wystawiamy. Wcześniej ta ścieżka nie sprawdzała statusu: dwuklik albo
+ *    ponowienie żądania po zerwanym połączeniu dawało drugą fakturę w KSeF,
+ *    drugi paragon na resztę i drugi SMS z podziękowaniem.
  * 1. Pre-walidacja wszystkiego, co mogłoby się nie powieść (dane firmy, kwoty,
- *    pozycje) — ZANIM wizyta zmieni status,
- * 2. zakończenie wizyty + zapis dokumentu FinancialDocument INVOICE na kwotę
- *    fakturowaną (adnotacja w module finansów, jak dotychczas),
- * 3. dokument FinancialDocument RECEIPT na resztę (gotówka → wpis do kasy),
- * 4. wystawienie i wysyłka faktury do KSeF — operacja sieciowa na końcu, poza
- *    transakcjami; błąd łączności nie cofa zakończenia wizyty, bo faktura
- *    trafia do kolejki offline24 i jest dosyłana automatycznie.
+ *    pozycje, pełna walidacja faktury KSeF) — ZANIM wizyta zmieni status,
+ * 2. w JEDNEJ transakcji: zakończenie wizyty + FinancialDocument INVOICE na kwotę
+ *    fakturowaną + FinancialDocument RECEIPT na resztę (gotówka → wpis do kasy).
+ *    Wszystko albo nic - nie ma wizyty wydanej bez dokumentu reszty,
+ * 3. wystawienie i wysyłka faktury do KSeF — po commicie, bo numer faktury ma
+ *    własny mechanizm kolizji (indeks unikalny + ponowienie), który w cudzej
+ *    transakcji oznaczyłby ją do wycofania; błąd łączności nie cofa zakończenia
+ *    wizyty, bo faktura trafia do kolejki offline24 i jest dosyłana automatycznie.
  */
 @Service
 class CompleteVisitInvoiceOrchestrator(
@@ -113,7 +126,8 @@ class CompleteVisitInvoiceOrchestrator(
     private val visitRepository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val capabilityService: CapabilityService,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val invoiceRepository: KsefRevenueInvoiceRepository
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitInvoiceOrchestrator::class.java)
 
@@ -126,6 +140,7 @@ class CompleteVisitInvoiceOrchestrator(
         capabilityService.requireCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)
 
         // ── 1. Pre-walidacja (nic jeszcze nie zmieniamy) ───────────────────────
+        // Pozycje najpierw: czysta walidacja payloadu, powtórka wysyła ten sam.
         if (invoice.items.isEmpty()) {
             throw ValidationException("Faktura musi mieć co najmniej jedną pozycję")
         }
@@ -141,6 +156,17 @@ class CompleteVisitInvoiceOrchestrator(
                 .getOrElse { throw ValidationException("Pozycja ${i + 1}: ${it.message}") }
         }
 
+        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
+            ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
+        val visit = visitEntity.toDomain()
+
+        // ── Powtórka na wizycie już wydanej: nic nie wystawiamy ────────────────
+        // Przed walidacją danych firmy: powtórzone żądanie ma dostać to samo, co
+        // pierwsze, nawet jeśli od tamtej pory ktoś zmienił ustawienia studia.
+        if (visit.status == VisitStatus.COMPLETED) {
+            return alreadyCompleted(command, completeVisitHandler.handle(command))
+        }
+
         val settings = settingsRepository.findById(command.studioId.value).orElse(null)
         if (settings?.taxId.isNullOrBlank() || settings?.name.isNullOrBlank()) {
             throw ValidationException(
@@ -148,10 +174,6 @@ class CompleteVisitInvoiceOrchestrator(
                     "Uzupełnij dane firmy w ustawieniach studia i spróbuj ponownie."
             )
         }
-
-        val visitEntity = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
-            ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
-        val visit = visitEntity.toDomain()
 
         val invoiceTotals = computeInvoiceTotals(invoice.items)
         val visitGross = visit.calculateTotalGross().amountInCents
@@ -175,8 +197,48 @@ class CompleteVisitInvoiceOrchestrator(
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
 
-        // ── 2. Zakończenie wizyty + FinancialDocument INVOICE (kwota fakturowana) ─
-        val completion = completeVisitHandler.handle(
+        val buyerNip = invoice.buyer.nip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+            ?: customer?.companyNip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+        val buyerName = invoice.buyer.name?.trim()?.ifBlank { null }
+            ?: customer?.companyName?.takeIf { it.isNotBlank() && buyerNip != null }
+            ?: listOfNotNull(customer?.firstName, customer?.lastName).joinToString(" ").ifBlank { null }
+
+        val issueCommand = IssueRevenueInvoiceCommand(
+            studioId = command.studioId,
+            userId = command.userId,
+            buyer = RevenueInvoiceBuyerCommand(
+                nip          = buyerNip,
+                name         = buyerName,
+                addressLine1 = invoice.buyer.addressLine1,
+                addressLine2 = invoice.buyer.addressLine2,
+                email        = invoice.buyer.email ?: customer?.email
+            ),
+            items = invoice.items.map {
+                RevenueInvoiceItemCommand(
+                    name           = it.name.trim(),
+                    unit           = "szt.",
+                    quantity       = it.quantity,
+                    unitPriceNet   = it.unitPriceNet,
+                    unitPriceGross = it.unitPriceGross,
+                    vatRate        = it.vatRate
+                )
+            },
+            saleDate            = LocalDate.now(),
+            paymentForm         = toPaymentForm(command.paymentMethod)?.name,
+            isPaid              = command.paymentMethod != PaymentMethod.TRANSFER,
+            paymentDueDate      = command.dueDate,
+            exemptionLegalBasis = invoice.exemptionLegalBasis,
+            visitId             = visit.id.value,
+            customerId          = visit.customerId.value,
+            description         = "Wizyta #${visit.visitNumber}",
+            sendToKsef          = invoice.sendToKsef ?: (settings?.ksefAutoSendDefault ?: true)
+        )
+        // Faktura powstaje po commicie wydania - to, co by ją odrzuciło (NIP nabywcy,
+        // podstawa zwolnienia), musi wyjść teraz, póki wizyta nie jest jeszcze wydana.
+        issueInvoiceHandler.validate(issueCommand)
+
+        // ── 2. Jedna transakcja: wydanie + dokument faktury + paragon reszty ───
+        val completion = completeVisitHandler.complete(
             command.copy(
                 documentType = DocumentType.INVOICE,
                 documentTotalsOverride = DocumentTotals(
@@ -185,85 +247,20 @@ class CompleteVisitInvoiceOrchestrator(
                     gross = invoiceTotals.gross
                 )
             )
-        )
-
-        // ── 3. Dokument reszty (paragon) — kasa aktualizowana przy gotówce ─────
-        var remainderId: java.util.UUID? = null
-        var remainderNumber: String? = null
-        if (remainderGross > 0) {
-            val remainderNet = remainderNetCents(visit.calculateTotalNet().amountInCents, invoiceTotals.net, remainderGross)
-            val remainderDoc = createFinancialDocumentHandler.handle(
-                CreateFinancialDocumentCommand(
-                    studioId          = command.studioId,
-                    userId            = command.userId,
-                    userDisplayName   = command.userName ?: "",
-                    source            = DocumentSource.VISIT,
-                    visitId           = visit.id,
-                    vehicleBrand      = visit.brandSnapshot,
-                    vehicleModel      = visit.modelSnapshot,
-                    customerFirstName = customer?.firstName,
-                    customerLastName  = customer?.lastName,
-                    documentType      = DocumentType.RECEIPT,
-                    direction         = DocumentDirection.INCOME,
-                    paymentMethod     = invoice.remainderPaymentMethod!!,
-                    totalNet          = remainderNet,
-                    totalVat          = remainderGross - remainderNet,
-                    totalGross        = remainderGross,
-                    issueDate         = LocalDate.now(),
-                    dueDate           = LocalDate.now(),
-                    description       = "Wizyta #${visit.visitNumber} — reszta kwoty poza fakturą",
-                    counterpartyName  = listOfNotNull(customer?.firstName, customer?.lastName)
-                        .joinToString(" ").ifBlank { null },
-                    counterpartyNip   = null
-                )
-            )
-            remainderId = remainderDoc.id.value
-            remainderNumber = remainderDoc.documentNumber
-            log.info(
-                "Reszta kwoty wizyty {} udokumentowana paragonem {} ({} gr, {})",
-                visit.visitNumber, remainderNumber, remainderGross, invoice.remainderPaymentMethod
-            )
+        ) { completedVisit, _ ->
+            if (remainderGross > 0) issueRemainderDocument(command, invoice, completedVisit, customer, invoiceTotals, remainderGross)
+            else null
         }
 
-        // ── 4. Faktura KSeF (sieć na końcu; błąd łączności → offline24) ────────
-        val buyerNip = invoice.buyer.nip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
-            ?: customer?.companyNip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
-        val buyerName = invoice.buyer.name?.trim()?.ifBlank { null }
-            ?: customer?.companyName?.takeIf { it.isNotBlank() && buyerNip != null }
-            ?: listOfNotNull(customer?.firstName, customer?.lastName).joinToString(" ").ifBlank { null }
+        // Wyścig przegrany na blokadzie wiersza: ktoś wydał wizytę między naszym
+        // odczytem a transakcją. Jego faktura jest tą właściwą - naszej nie wystawiamy.
+        if (completion.result.alreadyInTargetState) {
+            return alreadyCompleted(command, completion.result)
+        }
+        val remainderDoc = completion.extra
 
-        val ksefInvoice = issueInvoiceHandler.handle(
-            IssueRevenueInvoiceCommand(
-                studioId = command.studioId,
-                userId = command.userId,
-                buyer = RevenueInvoiceBuyerCommand(
-                    nip          = buyerNip,
-                    name         = buyerName,
-                    addressLine1 = invoice.buyer.addressLine1,
-                    addressLine2 = invoice.buyer.addressLine2,
-                    email        = invoice.buyer.email ?: customer?.email
-                ),
-                items = invoice.items.map {
-                    RevenueInvoiceItemCommand(
-                        name           = it.name.trim(),
-                        unit           = "szt.",
-                        quantity       = it.quantity,
-                        unitPriceNet   = it.unitPriceNet,
-                        unitPriceGross = it.unitPriceGross,
-                        vatRate        = it.vatRate
-                    )
-                },
-                saleDate            = LocalDate.now(),
-                paymentForm         = toPaymentForm(command.paymentMethod)?.name,
-                isPaid              = command.paymentMethod != PaymentMethod.TRANSFER,
-                paymentDueDate      = command.dueDate,
-                exemptionLegalBasis = invoice.exemptionLegalBasis,
-                visitId             = visit.id.value,
-                customerId          = visit.customerId.value,
-                description         = "Wizyta #${visit.visitNumber}",
-                sendToKsef          = invoice.sendToKsef ?: (settings?.ksefAutoSendDefault ?: true)
-            )
-        )
+        // ── 3. Faktura KSeF (sieć na końcu; błąd łączności → offline24) ────────
+        val ksefInvoice = issueInvoiceHandler.handle(issueCommand)
 
         // ── 5. Dane nabywcy wracają do kartoteki klienta ───────────────────────
         // Kto uzupełnia NIP i nazwę firmy na fakturze, robi to raz — następne
@@ -280,7 +277,7 @@ class CompleteVisitInvoiceOrchestrator(
 
         // Powiązanie dokumentu finansowego z fakturą KSeF — zunifikowana lista
         // dokumentów przychodowych prezentuje wtedy jeden rekord zamiast dwóch
-        completion.financialDocumentId?.let { documentId ->
+        completion.result.financialDocumentId?.let { documentId ->
             financialDocumentRepository.findById(documentId.value).ifPresent { document ->
                 document.ksefRevenueInvoiceId = ksefInvoice.id
                 financialDocumentRepository.save(document)
@@ -288,14 +285,67 @@ class CompleteVisitInvoiceOrchestrator(
         }
 
         return CompleteVisitWithInvoiceResult(
-            completion = completion,
+            completion = completion.result,
             ksefInvoice = ksefInvoice,
-            remainderDocumentId = remainderId,
-            remainderDocumentNumber = remainderNumber
+            remainderDocumentId = remainderDoc?.id?.value,
+            remainderDocumentNumber = remainderDoc?.documentNumber
         )
     }
 
     // ── Private ────────────────────────────────────────────────────────────────
+
+    /** Powtórka: to, co wystawiło pierwsze wydanie - bez żadnego nowego dokumentu. */
+    private fun alreadyCompleted(command: CompleteVisitCommand, completion: CompleteVisitResult) =
+        CompleteVisitWithInvoiceResult(
+            completion = completion,
+            ksefInvoice = invoiceRepository.findFirstByVisitIdAndStudioIdOrderByCreatedAtAsc(
+                command.visitId.value, command.studioId.value
+            ),
+            remainderDocumentId = null,
+            remainderDocumentNumber = null
+        )
+
+    /** Paragon na resztę kwoty, której faktura nie objęła — gotówka trafia do kasy. */
+    private fun issueRemainderDocument(
+        command: CompleteVisitCommand,
+        invoice: CompleteInvoiceDetails,
+        visit: Visit,
+        customer: CustomerEntity?,
+        invoiceTotals: InvoiceTotals,
+        remainderGross: Long
+    ): FinancialDocument {
+        val remainderNet = remainderNetCents(visit.calculateTotalNet().amountInCents, invoiceTotals.net, remainderGross)
+        val remainderDoc = createFinancialDocumentHandler.handle(
+            CreateFinancialDocumentCommand(
+                studioId          = command.studioId,
+                userId            = command.userId,
+                userDisplayName   = command.userName ?: "",
+                source            = DocumentSource.VISIT,
+                visitId           = visit.id,
+                vehicleBrand      = visit.brandSnapshot,
+                vehicleModel      = visit.modelSnapshot,
+                customerFirstName = customer?.firstName,
+                customerLastName  = customer?.lastName,
+                documentType      = DocumentType.RECEIPT,
+                direction         = DocumentDirection.INCOME,
+                paymentMethod     = invoice.remainderPaymentMethod!!,
+                totalNet          = remainderNet,
+                totalVat          = remainderGross - remainderNet,
+                totalGross        = remainderGross,
+                issueDate         = LocalDate.now(),
+                dueDate           = LocalDate.now(),
+                description       = "Wizyta #${visit.visitNumber} — reszta kwoty poza fakturą",
+                counterpartyName  = listOfNotNull(customer?.firstName, customer?.lastName)
+                    .joinToString(" ").ifBlank { null },
+                counterpartyNip   = null
+            )
+        )
+        log.info(
+            "Reszta kwoty wizyty {} udokumentowana paragonem {} ({} gr, {})",
+            visit.visitNumber, remainderDoc.documentNumber, remainderGross, invoice.remainderPaymentMethod
+        )
+        return remainderDoc
+    }
 
     /**
      * Nadpisuje dane firmowe klienta danymi nabywcy z faktury.

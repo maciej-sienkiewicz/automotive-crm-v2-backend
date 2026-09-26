@@ -37,6 +37,26 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
     ): VisitEntity?
 
     /**
+     * Blokuje wiersz wizyty do końca bieżącej transakcji (SELECT … FOR UPDATE).
+     *
+     * Wydanie pojazdu sprawdza „czy już wydana?" i dopiero potem wystawia dokumenty.
+     * Bez blokady dwa równoległe żądania (dwuklik, ponowienie po zerwanym połączeniu)
+     * oba widziały READY_FOR_PICKUP i oba wystawiały paragon i fakturę. Z blokadą drugie
+     * czeka na commit pierwszego i widzi już COMPLETED.
+     *
+     * Osobne zapytanie, bo FOR UPDATE nie łączy się w Postgresie z LEFT JOIN FETCH
+     * zdjęć. Wymaga aktywnej transakcji — poza nią blokada puszcza od razu.
+     */
+    @Query(
+        value = "SELECT id FROM visits WHERE id = :id AND studio_id = :studioId AND deleted_at IS NULL FOR UPDATE",
+        nativeQuery = true
+    )
+    fun lockForUpdate(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): UUID?
+
+    /**
      * Find visit by ID with studio isolation, eagerly fetching photos (excludes soft-deleted)
      */
     @Query("SELECT v FROM VisitEntity v LEFT JOIN FETCH v.photos WHERE v.id = :id AND v.studioId = :studioId AND v.deletedAt IS NULL")

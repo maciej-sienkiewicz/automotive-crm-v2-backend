@@ -68,6 +68,8 @@ class CompleteVisitE2ETest {
 
     @BeforeEach
     fun setUp() {
+        // Blokada wiersza wizyty przed wydaniem - istnieje, jeśli istnieje wizyta.
+        every { visitRepository.lockForUpdate(any(), any()) } answers { firstArg() }
         val capabilityService =
             mockk<pl.detailing.crm.subscription.entitlement.capability.CapabilityService>(relaxed = true)
         // Plan z modułem finansów: bez tego handler pomija wystawienie dokumentu.
@@ -80,7 +82,8 @@ class CompleteVisitE2ETest {
             createFinancialDocumentHandler,
             capabilityService,
             eventPublisher = mockk(relaxed = true),
-            financialDocumentRepository = mockk(relaxed = true)
+            financialDocumentRepository = mockk(relaxed = true),
+            transactionTemplate = pl.detailing.crm.shared.RecordingTransactionManager().template()
         )
 
         val controller = VisitTransitionController(

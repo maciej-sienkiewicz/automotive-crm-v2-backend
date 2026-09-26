@@ -20,6 +20,9 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.shared.VisitStatus
+import pl.detailing.crm.visit.domain.VisitFixtures
+import pl.detailing.crm.visit.infrastructure.VisitEntity
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.math.BigDecimal
 import java.util.Optional
@@ -43,7 +46,7 @@ class CompleteVisitInvoiceOrchestratorTest {
     private val orchestrator = CompleteVisitInvoiceOrchestrator(
         completeVisitHandler, issueInvoiceHandler, createFinancialDocumentHandler,
         financialDocumentRepository, settingsRepository, visitRepository, customerRepository,
-        capabilityService, auditService = mockk(relaxed = true)
+        capabilityService, auditService = mockk(relaxed = true), invoiceRepository = mockk(relaxed = true)
     )
 
     private val studioId = StudioId(UUID.randomUUID())
@@ -134,6 +137,8 @@ class CompleteVisitInvoiceOrchestratorTest {
 
     @Test
     fun `blokuje wystawienie gdy brak danych firmy - zanim wizyta zostanie zakonczona`() {
+        every { visitRepository.findByIdAndStudioIdWithPhotos(any(), studioId.value) } returns
+            VisitEntity.fromDomain(VisitFixtures.visit(studioId = studioId, status = VisitStatus.READY_FOR_PICKUP))
         every { settingsRepository.findById(studioId.value) } returns Optional.of(
             StudioSettingsEntity(studioId = studioId.value, name = null, taxId = null)
         )
