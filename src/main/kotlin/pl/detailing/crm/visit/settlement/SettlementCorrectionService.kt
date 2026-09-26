@@ -27,8 +27,6 @@ import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
-import pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType
-import pl.detailing.crm.ksef.revenue.domain.RevenueSource
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceEntity
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.ksef.revenue.issue.IssueCorrectionCommand
@@ -117,14 +115,7 @@ class SettlementCorrectionService(
             .filter { it.supersededAt == null && it.documentType != DocumentType.CORRECTION && it.direction == DocumentDirection.INCOME }
             .sortedBy { it.createdAt }
         val invoices = invoiceRepository.findByStudioIdAndVisitIdOrderByCreatedAtAsc(studioId, visitId)
-        val corrections = invoices.filter { it.invoiceType == RevenueInvoiceType.KOR && it.ksefStatus !in DEAD }
-        val active = invoices.filter { invoice ->
-            invoice.invoiceType == RevenueInvoiceType.VAT &&
-                invoice.source == RevenueSource.CRM &&
-                invoice.ksefStatus !in DEAD &&
-                // Faktura wyzerowana korektą przestała obowiązywać — zostaje tylko w historii.
-                invoice.totalGross + corrections.filter { it.originalInvoiceId == invoice.id }.sumOf { it.totalGross } != 0L
-        }
+        val active = LiveRevenueInvoices.of(invoices)
         val main = documents.firstOrNull { it.documentType == DocumentType.INVOICE } ?: documents.firstOrNull()
         return SettlementState(
             activeDocuments = documents,
@@ -718,11 +709,6 @@ class SettlementCorrectionService(
         finalPriceNet != other.finalPriceNet || finalPriceGross != other.finalPriceGross || vatRate != other.vatRate
 
     private fun vatCode(rate: VatRate): String = if (rate == VatRate.VAT_ZW) "zw" else rate.rate.toString()
-
-    private companion object {
-        /** Faktury, które nie istnieją jako sprzedaż: odrzucone przez KSeF i anulowane. */
-        val DEAD = setOf(KsefRevenueStatus.REJECTED, KsefRevenueStatus.CANCELLED)
-    }
 }
 
 /** Odpowiedź podglądu. */
