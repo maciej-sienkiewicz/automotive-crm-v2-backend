@@ -137,7 +137,7 @@ class OwnerReportPdfRenderer {
         table.row("Zlecenia zbiorcze: kontrahenci", c.batch.contractors, p.batch.contractors, Direction.NEUTRAL)
         table.row(
             "Do rozliczenia z kontrahentami (stan na dziś)",
-            "${ReportFormat.count(r.snapshot.batchUnsettledVehicles)} aut · ${ReportFormat.money(r.snapshot.batchUnsettledGrossCents)}",
+            "${ReportFormat.count(r.snapshot.batchUnsettledVehicles)} aut, ${ReportFormat.money(r.snapshot.batchUnsettledGrossCents)}",
             "",
             null
         )

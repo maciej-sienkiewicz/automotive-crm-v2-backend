@@ -29,12 +29,12 @@ data class UpdateOwnerReportSettingsRequest(val frequency: ReportFrequency)
 /**
  * Raport właściciela: podgląd PDF na żądanie i ustawienie wysyłki mailem.
  *
- * Raport niesie koszty i przychód firmy, więc wymaga uprawnienia do raportów
- * finansowych (właściciel ma je zawsze).
+ * Raport mieszka w Statystykach obok zakładki „Koszta" i pokazuje te same kwoty,
+ * więc dostęp jest ten sam co do kosztów: statystyki ALBO raporty finansowe.
  */
 @RestController
 @RequestMapping("/api/v1/owner-report")
-@RequiresPermission(Permission.FINANCE_VIEW_REPORTS)
+@RequiresPermission(Permission.STATISTICS_VIEW, Permission.FINANCE_VIEW_REPORTS)
 class OwnerReportController(
     private val service: OwnerReportService,
     private val settingsRepository: OwnerReportSettingsRepository

@@ -78,7 +78,7 @@ class OwnerReportScheduler(
                 w załączniku raport z działania studia za okres ${ReportFormat.range(period.from, period.to)}:
                 sprzedaż i koszty, wizyty i rezerwacje, komunikacja z klientami oraz marketing.
 
-                Raport za dowolny okres pobierzesz też w aplikacji. Wysyłkę mailem wyłączysz w ustawieniach raportu.
+                Raport za dowolny okres pobierzesz i wysyłkę wyłączysz w aplikacji: Statystyki, zakładka Raport.
             """.trimIndent()
             val attachment = EmailAttachment(file.fileName, file.bytes, "application/pdf")
             recipients.count { to ->
