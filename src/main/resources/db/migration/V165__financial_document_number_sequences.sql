@@ -1,6 +1,10 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Numeracja dokumentów finansowych: licznik zamiast COUNT + 1.
 --
+-- (Pierwotnie V162 — przenumerowana, bo V162 zajęła równolegle
+-- V162__owner_report_push_notifications.sql. IF NOT EXISTS: bezpieczna także tam,
+-- gdzie tabela już powstała przez Hibernate.)
+--
 -- Numer PAR/{rok}/{n} był liczony jako „liczba nieusuniętych dokumentów w roku + 1".
 -- Po usunięciu dokumentu następny dostawał numer już wydany, a dwa równoległe
 -- wystawienia dostawały ten sam numer. Licznik rośnie tylko w górę; aplikacja

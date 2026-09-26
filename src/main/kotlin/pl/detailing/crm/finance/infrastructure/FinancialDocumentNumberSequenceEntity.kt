@@ -21,7 +21,7 @@ import java.util.UUID
  * pod blokadą wiersza (upsert), więc numer raz wydany nie wraca nigdy.
  *
  * Encja istnieje głównie po to, by Hibernate (`ddl-auto=update`) zakładał tabelę
- * lokalnie; na wdrożeniach zakłada ją V162. Odczyt i zapis idą natywnym upsertem.
+ * lokalnie; na wdrożeniach zakłada ją V165. Odczyt i zapis idą natywnym upsertem.
  */
 @Entity
 @Table(name = "financial_document_number_sequences")
