@@ -84,7 +84,9 @@ data class FinancialDocument(
     val updatedBy: UserId,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val deletedAt: Instant? = null
+    val deletedAt: Instant? = null,
+    /** Faktura KSeF, której adnotacją jest ten dokument; null dla paragonu i dokumentu „inny". */
+    val ksefRevenueInvoiceId: java.util.UUID? = null
 ) {
     init {
         require(totalNet.amountInCents + totalVat.amountInCents == totalGross.amountInCents) {

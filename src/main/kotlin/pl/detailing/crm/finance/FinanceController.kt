@@ -517,7 +517,12 @@ data class FinancialDocumentResponse(
     val createdBy: String,
     val createdAt: Instant,
     val updatedAt: Instant,
-    val deletedAt: Instant?
+    val deletedAt: Instant?,
+    /**
+     * Faktura KSeF, do której należy dokument. Okno edycji blokuje wtedy wszystko poza
+     * opisem — fakturę przyjętą w KSeF zmienia się fakturą korygującą.
+     */
+    val ksefInvoiceId: String? = null
 )
 
 
@@ -619,7 +624,8 @@ private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     createdBy         = createdBy.toString(),
     createdAt         = createdAt,
     updatedAt         = updatedAt,
-    deletedAt         = deletedAt
+    deletedAt         = deletedAt,
+    ksefInvoiceId     = ksefRevenueInvoiceId?.toString()
 )
 
 private fun CashRegister.toResponse() = CashRegisterResponse(

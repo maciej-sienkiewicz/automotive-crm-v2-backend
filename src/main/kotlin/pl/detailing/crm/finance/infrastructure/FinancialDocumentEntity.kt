@@ -201,6 +201,7 @@ class FinancialDocumentEntity(
         updatedBy         = UserId(updatedBy),
         createdAt         = createdAt,
         updatedAt         = updatedAt,
-        deletedAt         = deletedAt
+        deletedAt         = deletedAt,
+        ksefRevenueInvoiceId = ksefRevenueInvoiceId
     )
 }
