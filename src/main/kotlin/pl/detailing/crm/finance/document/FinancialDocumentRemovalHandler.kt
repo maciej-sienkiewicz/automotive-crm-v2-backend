@@ -14,10 +14,7 @@ import pl.detailing.crm.audit.domain.LogAuditCommand
 import pl.detailing.crm.audit.domain.auditMoney
 import pl.detailing.crm.finance.domain.CashOperationType
 import pl.detailing.crm.finance.domain.FinancialDocument
-import pl.detailing.crm.finance.infrastructure.CashOperationEntity
 import pl.detailing.crm.finance.infrastructure.CashOperationRepository
-import pl.detailing.crm.finance.infrastructure.CashRegisterEntity
-import pl.detailing.crm.finance.infrastructure.CashRegisterRepository
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.shared.EntityNotFoundException
@@ -47,7 +44,7 @@ data class RemoveFinancialDocumentCommand(
  *    wystawiono, ale nie to, że ktoś go usunął.
  *
  * Kasa jest dziennikiem dopisywanym: nic nie jest kasowane ani nadpisywane. Usunięcie
- * dopisuje wpis [CashOperationType.DOCUMENT_CORRECTION] równy MINUS temu, co dokument
+ * dopisuje wpis [CashOperationType.DOCUMENT_CORRECTION] ([DocumentCashCorrections]) równy MINUS temu, co dokument
  * faktycznie wniósł do kasy (suma jego wpisów, nie kwota dokumentu - dokument sprzed
  * modułu kasy nie ma wpisu i nie ma czego cofać). Przywrócenie cofa dokładnie te korekty.
  * Dzięki temu usunięcie i przywrócenie w dowolnej kolejności wracają do tego samego salda.
@@ -55,8 +52,8 @@ data class RemoveFinancialDocumentCommand(
 @Service
 class FinancialDocumentRemovalHandler(
     private val documentRepository: FinancialDocumentRepository,
-    private val cashRegisterRepository: CashRegisterRepository,
     private val cashOperationRepository: CashOperationRepository,
+    private val cashCorrections: DocumentCashCorrections,
     private val visitRepository: VisitRepository,
     private val auditService: AuditService
 ) {
@@ -113,32 +110,7 @@ class FinancialDocumentRemovalHandler(
         document: FinancialDocumentEntity,
         amount: Long,
         comment: String
-    ) {
-        val register = cashRegisterRepository.findByStudioIdForUpdate(command.studioId.value)
-            ?: cashRegisterRepository.save(CashRegisterEntity(studioId = command.studioId.value, balance = 0L))
-
-        val balanceBefore = register.balance
-        register.balance = balanceBefore + amount
-        register.updatedAt = Instant.now()
-        cashRegisterRepository.save(register)
-
-        // Bez zdarzenia metryk na żywo: liczniki tylko rosną, więc storno policzone jako
-        // „wypłata" zawyżyłoby obrót kasy zamiast go zmniejszyć.
-        cashOperationRepository.save(
-            CashOperationEntity(
-                id                  = UUID.randomUUID(),
-                studioId            = command.studioId.value,
-                cashRegisterId      = register.id,
-                amount              = amount,
-                balanceBefore       = balanceBefore,
-                balanceAfter        = register.balance,
-                operationType       = CashOperationType.DOCUMENT_CORRECTION,
-                comment             = comment,
-                financialDocumentId = document.id,
-                createdBy           = command.userId.value
-            )
-        )
-    }
+    ) = cashCorrections.record(command.studioId.value, command.userId.value, document.id, amount, comment)
 
     private fun audit(
         command: RemoveFinancialDocumentCommand,

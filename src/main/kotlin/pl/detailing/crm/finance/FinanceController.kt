@@ -23,6 +23,8 @@ import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
 import pl.detailing.crm.finance.document.FinancialDocumentRemovalHandler
 import pl.detailing.crm.finance.document.RemoveFinancialDocumentCommand
 import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
+import pl.detailing.crm.finance.document.UpdateFinancialDocumentCommand
+import pl.detailing.crm.finance.document.UpdateFinancialDocumentHandler
 import pl.detailing.crm.finance.domain.CashOperation
 import pl.detailing.crm.finance.domain.CashRegister
 import pl.detailing.crm.finance.domain.DocumentDirection
@@ -59,6 +61,7 @@ class FinanceController(
     private val createDocumentHandler: CreateFinancialDocumentHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
     private val removalHandler: FinancialDocumentRemovalHandler,
+    private val updateDocumentHandler: UpdateFinancialDocumentHandler,
     private val documentRepository: FinancialDocumentRepository,
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
@@ -116,6 +119,38 @@ class FinanceController(
             )
         )
         return ResponseEntity.status(HttpStatus.CREATED).body(result.toResponse())
+    }
+
+    /**
+     * Edycja dokumentu. PUT /api/v1/finance/documents/{id}
+     * Reguły (typ, faktury KSeF, dokumenty z wizyty, kasa) — [UpdateFinancialDocumentHandler].
+     */
+    @PutMapping("/documents/{id}")
+    fun updateDocument(
+        @PathVariable id: UUID,
+        @RequestBody request: UpdateDocumentRequest
+    ): ResponseEntity<FinancialDocumentResponse> {
+        requireManagerOrOwner()
+        val principal = SecurityContextHelper.getCurrentUser()
+        val result = updateDocumentHandler.handle(
+            UpdateFinancialDocumentCommand(
+                studioId         = principal.studioId,
+                userId           = principal.userId,
+                userDisplayName  = principal.fullName,
+                documentId       = id,
+                documentType     = request.documentType?.let { parseEnum<DocumentType>(it, "documentType") },
+                paymentMethod    = parseEnum<PaymentMethod>(request.paymentMethod, "paymentMethod"),
+                totalNet         = request.totalNet,
+                totalVat         = request.totalVat,
+                totalGross       = request.totalGross,
+                issueDate        = request.issueDate,
+                dueDate          = request.dueDate,
+                description      = request.description,
+                counterpartyName = request.counterpartyName,
+                counterpartyNip  = request.counterpartyNip
+            )
+        )
+        return ResponseEntity.ok(result.toResponse())
     }
 
     /**
@@ -410,6 +445,20 @@ class FinanceController(
 }
 
 // ── Request DTOs ───────────────────────────────────────────────────────────────
+
+/** Treść dokumentu po edycji — kwoty w groszach, [totalGross] zapisywane bez przeliczania. */
+data class UpdateDocumentRequest(
+    val documentType: String? = null,
+    val paymentMethod: String,
+    val totalNet: Long,
+    val totalVat: Long,
+    val totalGross: Long,
+    val issueDate: LocalDate,
+    val dueDate: LocalDate? = null,
+    val description: String? = null,
+    val counterpartyName: String? = null,
+    val counterpartyNip: String? = null
+)
 
 data class CreateDocumentRequest(
     val documentType: String,

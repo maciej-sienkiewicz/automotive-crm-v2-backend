@@ -61,7 +61,9 @@ class FinancialDocumentRemovalHandlerTest {
     private val auditService: AuditService = mockk(relaxed = true)
 
     private val handler = FinancialDocumentRemovalHandler(
-        documentRepository, cashRegisterRepository, cashOperationRepository, mockk(relaxed = true), auditService
+        documentRepository, cashOperationRepository,
+        DocumentCashCorrections(cashRegisterRepository, cashOperationRepository),
+        mockk(relaxed = true), auditService
     )
 
     /** Paragon gotówkowy na 190,00 zł, który wpłynął do kasy (saldo 190,00 zł). */
