@@ -261,6 +261,9 @@ class StudioDataPurger(
             deleteByStudio("SupplierAutoRuleEntity", ctx)
             deleteByStudio("DocumentDuplicateLinkEntity", ctx)
             deleteByStudio("FinancialDocumentEntity", ctx)
+            // Liczniki numeracji idą razem z dokumentami: reset to nowy start, tak jak
+            // numeracja faktur KSeF, która liczy od najwyższego zachowanego numeru.
+            deleteByStudio("FinancialDocumentNumberSequenceEntity", ctx)
         },
 
         StudioResetStep("KSeF") { ctx ->

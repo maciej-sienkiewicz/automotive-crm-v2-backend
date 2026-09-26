@@ -23,6 +23,7 @@ import pl.detailing.crm.finance.infrastructure.CashOperationRepository
 import pl.detailing.crm.finance.infrastructure.CashRegisterEntity
 import pl.detailing.crm.finance.infrastructure.CashRegisterRepository
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentNumberSequenceRepository
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.livemetrics.BusinessEventPublisher
 import pl.detailing.crm.livemetrics.domain.BusinessEventType
@@ -88,6 +89,7 @@ class CreateFinancialDocumentHandler(
     private val documentRepository: FinancialDocumentRepository,
     private val cashRegisterRepository: CashRegisterRepository,
     private val cashOperationRepository: CashOperationRepository,
+    private val numberSequenceRepository: FinancialDocumentNumberSequenceRepository,
     private val visitRepository: VisitRepository,
     private val auditService: AuditService,
     private val businessEventPublisher: BusinessEventPublisher
@@ -233,20 +235,24 @@ class CreateFinancialDocumentHandler(
     }
 
     /**
-     * Generates a human-readable document number: `{PREFIX}/{YEAR}/{SEQ:04d}`.
-     * Example: `PAR/2024/0001`, `FAK/2024/0012`.
+     * Numer `{PREFIX}/{YEAR}/{SEQ:04d}`, np. `PAR/2026/0001` — z licznika, nie z COUNT + 1.
+     *
+     * COUNT + 1 wydawał numer ponownie po usunięciu dokumentu i ten sam numer dwóm
+     * równoległym wystawieniom. Licznik rośnie tylko w górę, pod blokadą wiersza do końca
+     * transakcji dokumentu. Seria bez licznika (sprzed jego wprowadzenia) startuje od
+     * najwyższego numeru już zapisanego na dokumentach, także usuniętych.
      */
     private fun generateDocumentNumber(
         studioId: UUID,
         type: DocumentType,
         issueDate: LocalDate
     ): String {
-        val year      = issueDate.year
-        val yearStart = LocalDate.of(year, 1, 1)
-        val yearEnd   = LocalDate.of(year + 1, 1, 1)
-        val count = documentRepository.countByStudioTypeAndYear(studioId, type, yearStart, yearEnd)
-        val seq   = (count + 1).toString().padStart(4, '0')
-        return "${type.prefix}/$year/$seq"
+        val year = issueDate.year
+        // Prefiksy to same litery (PAR, FAK, DOK) — nie wymagają escapowania w regexie.
+        val pattern = "^${type.prefix}/$year/([0-9]+)$"
+        val seed = numberSequenceRepository.maxIssuedSequence(studioId, pattern) + 1
+        val seq  = numberSequenceRepository.nextValue(studioId, type.prefix, year, seed)
+        return "${type.prefix}/$year/${seq.toString().padStart(4, '0')}"
     }
 
     /**

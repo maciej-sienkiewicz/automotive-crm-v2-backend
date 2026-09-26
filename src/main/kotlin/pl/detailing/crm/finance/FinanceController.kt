@@ -138,6 +138,16 @@ class FinanceController(
         val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
             ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
 
+        // Numer dokumentu przychodowego identyfikuje go wobec klienta i księgowości —
+        // dwa paragony o tym samym numerze to ten sam problem, który usuwał licznik
+        // numeracji. Koszty zostają bez sprawdzenia: numer nadaje tam dostawca.
+        if (entity.direction == DocumentDirection.INCOME &&
+            trimmed != entity.documentNumber &&
+            documentRepository.isNumberTaken(principal.studioId.value, DocumentDirection.INCOME, trimmed, entity.id)
+        ) {
+            throw ValidationException("Numer $trimmed ma już inny dokument przychodowy")
+        }
+
         val oldNumber = entity.documentNumber
         entity.documentNumber = trimmed
         entity.updatedBy      = principal.userId.value

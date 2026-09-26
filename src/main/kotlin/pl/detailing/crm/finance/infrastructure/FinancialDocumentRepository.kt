@@ -24,20 +24,23 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     @Query("SELECT d FROM FinancialDocumentEntity d WHERE d.visitId = :visitId AND d.studioId = :studioId AND d.deletedAt IS NULL")
     fun findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visitId: UUID, studioId: UUID): List<FinancialDocumentEntity>
 
+    /**
+     * Czy numer jest już zajęty przez inny dokument przychodowy studia — także usunięty,
+     * bo jego numer został wydany. Pilnuje ręcznej zmiany numeru.
+     */
     @Query("""
-        SELECT COUNT(d) FROM FinancialDocumentEntity d
+        SELECT COUNT(d) > 0 FROM FinancialDocumentEntity d
         WHERE d.studioId = :studioId
-          AND d.documentType = :documentType
-          AND d.issueDate >= :yearStart
-          AND d.issueDate < :yearEnd
-          AND d.deletedAt IS NULL
+          AND d.direction = :direction
+          AND d.documentNumber = :documentNumber
+          AND d.id <> :excludedId
     """)
-    fun countByStudioTypeAndYear(
+    fun isNumberTaken(
         studioId: UUID,
-        documentType: DocumentType,
-        yearStart: LocalDate,
-        yearEnd: LocalDate
-    ): Long
+        direction: DocumentDirection,
+        documentNumber: String,
+        excludedId: UUID
+    ): Boolean
 
     @Query("""
         SELECT d FROM FinancialDocumentEntity d
