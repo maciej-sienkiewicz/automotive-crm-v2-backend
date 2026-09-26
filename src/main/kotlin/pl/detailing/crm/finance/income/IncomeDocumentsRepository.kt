@@ -29,7 +29,14 @@ class IncomeDocumentsRepository(
      * 0 id, 1 sourceKind, 2 documentType, 3 documentNumber, 4 issueDate,
      * 5 counterpartyName, 6 counterpartyNip, 7 totalNet, 8 totalVat, 9 totalGross,
      * 10 currency, 11 paymentStatus, 12 paymentLabel, 13 ksefStatus, 14 ksefNumber,
-     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt, 19 excluded, 20 note
+     * 15 origin, 16 duplicateStatus, 17 visitId, 18 createdAt, 19 excluded, 20 note,
+     * 21 settlementState
+     *
+     * settlementState mówi, że dokument przestał obowiązywać po poprawce rozliczenia wizyty:
+     * CANCELLED (faktura anulowana, zanim trafiła do KSeF), ZEROED (faktura wyzerowana
+     * korektą KOR), SUPERSEDED (dokument finansowy zastąpiony nowym). Bez tego stara
+     * faktura wyglądała na liście jak żywa: pełna kwota, „Opłacona”, a jej storno
+     * (przypięte do tej samej faktury) jest z listy celowo odfiltrowane.
      */
     /**
      * UWAGA: w natywnych zapytaniach nie wolno używać postgresowej składni rzutowania `::`,
@@ -59,8 +66,18 @@ class IncomeDocumentsRepository(
             CAST(i.visit_id AS text)                AS visit_id,
             i.created_at                            AS created_at,
             (i.excluded_at IS NOT NULL)             AS is_excluded,
-            i.note                                  AS note
+            i.note                                  AS note,
+            CASE
+                WHEN i.ksef_status = 'CANCELLED' THEN 'CANCELLED'
+                WHEN i.invoice_type = 'VAT' AND kor.gross IS NOT NULL AND i.total_gross + kor.gross = 0 THEN 'ZEROED'
+            END                                     AS settlement_state
         FROM ksef_revenue_invoices i
+        LEFT JOIN (SELECT k.original_invoice_id, SUM(k.total_gross) AS gross
+                   FROM ksef_revenue_invoices k
+                   WHERE k.invoice_type = 'KOR'
+                     AND k.ksef_status NOT IN ('REJECTED', 'CANCELLED')
+                     AND k.original_invoice_id IS NOT NULL
+                   GROUP BY k.original_invoice_id) kor ON kor.original_invoice_id = i.id
         WHERE i.studio_id = CAST(:studioId AS uuid)
           AND (CAST(:documentType AS text) IS NULL
                OR (CAST(:documentType AS text) = 'INVOICE'    AND i.invoice_type = 'VAT')
@@ -111,7 +128,8 @@ class IncomeDocumentsRepository(
             CAST(d.visit_id AS text),
             d.created_at,
             (d.excluded_at IS NOT NULL),
-            d.note
+            d.note,
+            CASE WHEN d.superseded_at IS NOT NULL THEN 'SUPERSEDED' END
         FROM financial_documents d
         WHERE d.studio_id = CAST(:studioId AS uuid)
           AND d.direction = 'INCOME'

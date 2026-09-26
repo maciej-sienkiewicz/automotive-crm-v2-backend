@@ -216,7 +216,8 @@ class IncomeDocumentsController(
         visitId          = visitId,
         createdAt        = createdAt,
         excluded         = excluded,
-        note             = note
+        note             = note,
+        settlementState  = settlementState
     )
 }
 
@@ -245,7 +246,13 @@ data class IncomeDocumentResponse(
     /** Ukryty ręcznie ze statystyk — widoczny tylko przy includeExcluded=true. */
     val excluded: Boolean,
     /** Odręczna notatka operatora; null = brak. */
-    val note: String? = null
+    val note: String? = null,
+    /**
+     * Dokument przestał obowiązywać po poprawce rozliczenia wizyty: CANCELLED (faktura
+     * anulowana przed KSeF), ZEROED (faktura wyzerowana korektą), SUPERSEDED (dokument
+     * zastąpiony nowym). null = obowiązuje.
+     */
+    val settlementState: String? = null
 )
 
 data class UpsertIncomeNoteRequest(val note: String = "")
