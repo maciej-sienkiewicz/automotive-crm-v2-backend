@@ -20,6 +20,8 @@ import pl.detailing.crm.finance.cash.GetCashRegisterQuery
 import pl.detailing.crm.finance.document.CreateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
 import pl.detailing.crm.finance.document.UpdateDocumentStatusCommand
+import pl.detailing.crm.finance.document.FinancialDocumentRemovalHandler
+import pl.detailing.crm.finance.document.RemoveFinancialDocumentCommand
 import pl.detailing.crm.finance.document.UpdateDocumentStatusHandler
 import pl.detailing.crm.finance.domain.CashOperation
 import pl.detailing.crm.finance.domain.CashRegister
@@ -56,6 +58,7 @@ import pl.detailing.crm.subscription.entitlement.capability.RequiresCapability
 class FinanceController(
     private val createDocumentHandler: CreateFinancialDocumentHandler,
     private val updateStatusHandler: UpdateDocumentStatusHandler,
+    private val removalHandler: FinancialDocumentRemovalHandler,
     private val documentRepository: FinancialDocumentRepository,
     private val adjustCashHandler: AdjustCashBalanceHandler,
     private val getCashRegisterHandler: GetCashRegisterHandler,
@@ -186,56 +189,39 @@ class FinanceController(
         return ResponseEntity.ok(result.toResponse())
     }
 
-    /** Soft-delete. DELETE /api/v1/finance/documents/{id} */
+    /**
+     * Soft-delete. DELETE /api/v1/finance/documents/{id}
+     * Cofa skutek dokumentu w kasie i zapisuje usunięcie w Aktywności — patrz
+     * [FinancialDocumentRemovalHandler].
+     */
     @DeleteMapping("/documents/{id}")
-    @Transactional
     fun deleteDocument(@PathVariable id: UUID): ResponseEntity<Void> {
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może usuwać dokumenty finansowe")
         }
-
-        val entity = documentRepository.findByIdAndStudioId(id, principal.studioId.value)
-            ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
-
-        entity.deletedAt = Instant.now()
-        entity.updatedBy = principal.userId.value
-        entity.updatedAt = Instant.now()
-        documentRepository.save(entity)
+        removalHandler.delete(removalCommand(id))
         return ResponseEntity.noContent().build()
     }
 
     /** POST /api/v1/finance/documents/{id}/restore */
     @PostMapping("/documents/{id}/restore")
-    @Transactional
     fun restoreDocument(@PathVariable id: UUID): ResponseEntity<FinancialDocumentResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         if (!principal.isOwner) {
             throw ForbiddenException("Tylko właściciel może przywracać dokumenty finansowe")
         }
+        return ResponseEntity.ok(removalHandler.restore(removalCommand(id)).toResponse())
+    }
 
-        val entity = documentRepository.findByIdAndStudioIdIncludingDeleted(id, principal.studioId.value)
-            ?: throw EntityNotFoundException("Dokument finansowy $id nie istnieje")
-
-        if (entity.deletedAt == null) throw ValidationException("Dokument $id nie jest usunięty")
-
-        entity.deletedAt = null
-        entity.updatedBy = principal.userId.value
-        entity.updatedAt = Instant.now()
-        val saved = documentRepository.save(entity)
-
-        auditService.logSync(
-            LogAuditCommand(
-                studioId          = principal.studioId,
-                userId            = principal.userId,
-                userDisplayName   = principal.fullName,
-                module            = AuditModule.FINANCE,
-                entityId          = id.toString(),
-                entityDisplayName = entity.documentNumber,
-                action            = AuditAction.DOCUMENT_RESTORED
-            )
+    private fun removalCommand(id: UUID): RemoveFinancialDocumentCommand {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return RemoveFinancialDocumentCommand(
+            studioId        = principal.studioId,
+            userId          = principal.userId,
+            userDisplayName = principal.fullName,
+            documentId      = id
         )
-        return ResponseEntity.ok(saved.toDomain().toResponse())
     }
 
     // ── Cash Register ─────────────────────────────────────────────────────────

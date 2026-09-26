@@ -19,11 +19,16 @@ import java.time.Instant
  * PAYMENT_OUT       – automatic entry when a CASH EXPENSE document is created.
  * MANUAL_ADJUSTMENT – manual entry (start-of-day float, bank deposit, withdrawal,
  *                     discrepancy correction, etc.); always requires a [CashOperation.comment].
+ * DOCUMENT_CORRECTION – automatyczny wpis, gdy dokument gotówkowy zostaje usunięty
+ *                     (cofa jego wpłatę/wypłatę) albo przywrócony (cofa to cofnięcie).
+ *                     Wcześniej usunięcie paragonu zostawiało jego gotówkę w saldzie kasy
+ *                     na zawsze - a saldo to zapisana liczba, nie suma wpisów.
  */
 enum class CashOperationType(val displayName: String) {
     PAYMENT_IN("Wpłata"),
     PAYMENT_OUT("Wypłata"),
-    MANUAL_ADJUSTMENT("Korekta manualna")
+    MANUAL_ADJUSTMENT("Korekta manualna"),
+    DOCUMENT_CORRECTION("Korekta dokumentu")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

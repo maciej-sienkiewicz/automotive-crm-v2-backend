@@ -346,6 +346,8 @@ class CreateFinancialDocumentHandler(
         CashOperationType.PAYMENT_IN        -> CashOperationKind.PAYMENT_IN
         CashOperationType.PAYMENT_OUT       -> CashOperationKind.PAYMENT_OUT
         CashOperationType.MANUAL_ADJUSTMENT -> CashOperationKind.MANUAL_ADJUSTMENT
+        // Tu nie powstaje - korekty dokumentu nie trafiają do metryk (patrz FinancialDocumentRemovalHandler).
+        CashOperationType.DOCUMENT_CORRECTION -> CashOperationKind.MANUAL_ADJUSTMENT
     }
 
     private fun getOrCreateCashRegister(studioId: UUID): CashRegisterEntity {
