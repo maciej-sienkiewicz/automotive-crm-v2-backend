@@ -26,6 +26,15 @@ import java.util.Locale
  * No middle dot as a separator (CLAUDE.md §4 in the frontend): a lock screen breaks
  * lines anywhere, and "·" at the start of a line reads as nothing. Commas and
  * sentences say how the facts relate.
+ *
+ * Every notification reads as a REPORT of something that happened in the studio,
+ * never as a pitch. Chrome on Android (since 2025) runs an on-device model over the
+ * title, body and button texts of every web notification and hides the ones that
+ * look like scams behind "Możliwy spam" - with no allowlist for senders and no way
+ * to appeal. Studios started seeing that warning; "Właśnie zarobiłeś 1 900,00 zł"
+ * was word for word the shape of a money scam. So: no "you won / you earned", no urgency words, no
+ * exclamation marks, no emoji, no imperative next to a phone number. The amount
+ * stays - as a fact about a visit, not as a promise.
  */
 object PushMessages {
 
@@ -120,9 +129,10 @@ object PushMessages {
         val base = PushPayload(
             type = PushNotificationType.VISIT_COMPLETED,
             // The amount carries the message, so it goes in the title — the one line
-            // every phone shows in full, in bold, on the lock screen. No exclamation
-            // mark and no emoji: the number is the emphasis.
-            title = "Właśnie zarobiłeś ${formatMoney(totalGrossInCents)}",
+            // every phone shows in full, in bold, on the lock screen. Stated as the
+            // visit's total, not as "you just earned": that wording is what Chrome's
+            // spam model flags (see the class comment).
+            title = "Wizyta zakończona: ${formatMoney(totalGrossInCents)}",
             body = vehicle?.let { "Pojazd wydany: $it." } ?: "Pojazd wydany klientowi.",
             url = "/visits/$visitId",
             icon = PushIcon.EARNINGS,

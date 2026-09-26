@@ -58,7 +58,7 @@ class PushMessagesTest {
     @Test
     fun `wydanie pojazdu - kwota w tytule, klient tylko dla uprawnionych`() {
         val message = PushMessages.visitCompleted("v1", 190000, "BMW X5, WA 12345", "Jan Kowalski")
-        assertTrue(message.masked.title.startsWith("Właśnie zarobiłeś 1"))
+        assertTrue(message.masked.title.startsWith("Wizyta zakończona: 1"))
         assertTrue(message.masked.title.contains("900,00"))
         assertEquals("Pojazd wydany: BMW X5, WA 12345.", message.masked.body)
         assertEquals("Pojazd wydany: Jan Kowalski, BMW X5, WA 12345.", message.personal!!.body)
@@ -106,6 +106,31 @@ class PushMessagesTest {
         ).flatMap(::all)
         messages.forEach { payload ->
             assertFalse(payload.title.contains('·') || payload.body.contains('·'), payload.toString())
+        }
+    }
+
+    /**
+     * Chrome na Androidzie ukrywa za „Możliwy spam" powiadomienia, których treść
+     * przypomina oszustwo - ocenia to lokalny model, bez listy zaufanych nadawców.
+     * Studia zaczęły dostawać to ostrzeżenie, a „Właśnie zarobiłeś 1 900,00 zł" miało
+     * dokładnie kształt oszustwa finansowego. Ten test nie odtworzy
+     * modelu, ale pilnuje, żeby nie wróciły wzorce, które są w nim na pewno.
+     */
+    @Test
+    fun `tresci nie brzmia jak oszustwo`() {
+        val scammy = Regex("zarobiłeś|wygrałeś|wygrana|za darmo|darmow|pilne|natychmiast|kliknij|!", RegexOption.IGNORE_CASE)
+        val payloads = listOf(
+            PushMessages.newLead("l", "Jan", "jan@x.pl", LeadSource.EMAIL),
+            PushMessages.reservationCreated("a", Instant.now(), true, "BMW", listOf("A"), "Jan", today),
+            PushMessages.vehicleCheckedIn("v", "1", "BMW", "WA 1", "Jan"),
+            PushMessages.visitCompleted("v", 190000, "BMW", "Jan")
+        ).flatMap(::all) + listOfNotNull(
+            PushMessages.areaCampaigns(listOf(PushMessages.AreaAdvertiser("p", "Firma", 2, true)), today)
+        )
+        payloads.forEach { payload ->
+            assertFalse(scammy.containsMatchIn(payload.title + " " + payload.body), payload.toString())
+            // Emoji (poza BMP i w zakresie symboli) - też sygnał spamu.
+            assertFalse((payload.title + payload.body).any { Character.isSurrogate(it) }, payload.toString())
         }
     }
 
