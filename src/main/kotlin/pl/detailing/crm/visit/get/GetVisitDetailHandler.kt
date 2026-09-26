@@ -131,8 +131,11 @@ class GetVisitDetailHandler(
         // 9. Rozliczenie wizyty: typ dokumentu z modułu finansów + ewentualna
         // faktura KSeF. Czytane osobno, bo dokument finansowy typu INVOICE może
         // istnieć bez rekordu KSeF (adnotacja bez wysyłki) i odwrotnie.
+        // Po poprawce rozliczenia obowiązują tylko dokumenty niezastąpione i nie-korekty —
+        // stary paragon zostaje w historii, ale wizyta pokazuje to, co jest teraz.
         val settlementDocuments = financialDocumentRepository
             .findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, command.studioId.value)
+            .filter { it.supersededAt == null && it.documentType != DocumentType.CORRECTION }
 
         // Faktura ma pierwszeństwo nad pozostałymi dokumentami: gdy wizytę
         // rozliczono dwoma dokumentami (część na fakturę, reszta na paragon),
@@ -143,9 +146,21 @@ class GetVisitDetailHandler(
                 ?: settlementDocuments.firstOrNull()
             )?.documentType?.name
 
-        val revenueInvoiceId = revenueInvoiceRepository
-            .findFirstByVisitIdAndStudioIdOrderByCreatedAtAsc(visit.id.value, command.studioId.value)
-            ?.id?.toString()
+        // Podgląd faktury: faktura, która obowiązuje — najpierw ta z dokumentu faktury,
+        // inaczej najnowsza nieanulowana i nieodrzucona faktura VAT wizyty (np. faktura do
+        // paragonu). Najstarsza (dawna reguła) po poprawce byłaby fakturą wyzerowaną korektą.
+        val visitInvoices = revenueInvoiceRepository
+            .findByStudioIdAndVisitIdOrderByCreatedAtAsc(command.studioId.value, visit.id.value)
+        val linkedInvoiceId = settlementDocuments.firstNotNullOfOrNull { it.ksefRevenueInvoiceId }
+        val revenueInvoiceId = (
+            visitInvoices.firstOrNull { it.id == linkedInvoiceId }
+                ?: visitInvoices.lastOrNull {
+                    it.invoiceType == pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType.VAT &&
+                        it.ksefStatus != pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.CANCELLED &&
+                        it.ksefStatus != pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.REJECTED
+                }
+                ?: visitInvoices.firstOrNull()
+            )?.id?.toString()
 
         val settlement = if (settlementDocumentType == null && revenueInvoiceId == null) null
             else VisitSettlementInfo(

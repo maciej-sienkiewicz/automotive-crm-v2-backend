@@ -289,6 +289,7 @@ enum class AuditAction(
     DOCUMENT_STATUS_CHANGED("Zmiana statusu dokumentu", "Zmieniono status dokumentu", AuditIcon.MONEY, AuditSeverity.HIGH),
     DOCUMENT_NUMBER_UPDATED("Aktualizacja numeru dokumentu", "Zmieniono numer dokumentu", AuditIcon.EDIT, AuditSeverity.HIGH),
     DOCUMENT_UPDATED("Edycja dokumentu", "Zmieniono dokument", AuditIcon.EDIT, AuditSeverity.HIGH),
+    SETTLEMENT_CORRECTED("Poprawka rozliczenia", "Poprawiono rozliczenie wizyty", AuditIcon.MONEY, AuditSeverity.CRITICAL),
     DOCUMENT_DELETED("Usunięcie dokumentu", "Usunięto dokument", AuditIcon.DELETE, AuditSeverity.CRITICAL),
     DOCUMENT_RESTORED("Przywrócenie dokumentu", "Przywrócono dokument", AuditIcon.RESTORE, AuditSeverity.HIGH),
     CASH_ADJUSTED("Korekta kasy", "Skorygowano stan kasy", AuditIcon.MONEY, AuditSeverity.CRITICAL),

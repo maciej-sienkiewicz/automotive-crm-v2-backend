@@ -347,6 +347,36 @@ data class Visit(
         )
     }
 
+    /**
+     * Poprawka rozliczenia po wydaniu pojazdu — jedyna droga zmiany cen wizyty wydanej.
+     *
+     * Blokada [requireServicesEditable] zostaje: zwykła edycja usług zamkniętej wizyty
+     * rozjeżdżała ją z wystawionym dokumentem. Tu zmiana idzie w parze z korektą dokumentów
+     * (SettlementCorrectionService) i wpisem w historii rozliczenia, więc wizyta i dokumenty
+     * zmieniają się razem. Status wizyty się nie zmienia; pozycje zostają zatwierdzone.
+     *
+     * Cena podana jest wprost (bez rabatu): brutto, jeśli ktoś je wpisał, zostaje co do
+     * grosza (CLAUDE.md §1), inaczej wynika z netta.
+     */
+    fun correctSettledPrices(
+        prices: Map<VisitServiceItemId, SettledPrice>,
+        updatedBy: UserId,
+        now: Instant = Instant.now()
+    ): Visit {
+        if (status != VisitStatus.COMPLETED) {
+            throw IllegalStateTransitionException("Rozliczenie można poprawić tylko w wizycie wydanej klientowi.")
+        }
+        val counted = serviceItems.filter { it.countsTowardSettlement }.map { it.id }.toSet()
+        prices.keys.firstOrNull { it !in counted }?.let {
+            throw ValidationException("Pozycja $it nie należy do rozliczenia tej wizyty")
+        }
+        return copy(
+            serviceItems = serviceItems.map { item -> prices[item.id]?.let { item.withSettledPrice(it, now) } ?: item },
+            updatedBy = updatedBy,
+            updatedAt = now
+        )
+    }
+
     companion object {
         /** Statusy, w których lista usług jest zamrożona (patrz requireServicesEditable). */
         val SERVICES_LOCKED_STATUSES = setOf(VisitStatus.COMPLETED, VisitStatus.REJECTED, VisitStatus.ARCHIVED)
@@ -377,6 +407,12 @@ data class ConfirmedServiceSnapshot(
  * Service prices are frozen at the moment of adding to visit, ensuring
  * future price changes don't affect ongoing work.
  */
+/**
+ * Cena pozycji w poprawce rozliczenia. [gross] tylko wtedy, gdy człowiek wpisał cenę od
+ * strony brutto — wtedy jest źródłem prawdy; null = cena od strony netta.
+ */
+data class SettledPrice(val net: Long, val gross: Long?, val vatRate: VatRate)
+
 data class VisitServiceItem(
     val id: VisitServiceItemId,
     val serviceId: ServiceId?,
@@ -415,6 +451,36 @@ data class VisitServiceItem(
      */
     val basePriceGross: Money? = null
 ) {
+    /** Pozycja wchodzi do kwoty zamkniętej wizyty — ta sama reguła co [Visit.effectiveGrossAmount]. */
+    val countsTowardSettlement: Boolean
+        get() = status == VisitServiceStatus.CONFIRMED || status == VisitServiceStatus.APPROVED
+
+    /** Cena po poprawce rozliczenia: wprost, bez rabatu, stawka i strona wpisana jak podano. */
+    fun withSettledPrice(price: SettledPrice, now: Instant): VisitServiceItem {
+        if (price.net < 0) throw ValidationException("Pozycja „$serviceName\": cena netto nie może być ujemna")
+        val baseGross = price.gross?.let {
+            val derived = price.vatRate.calculateGrossAmount(Money(price.net)).amountInCents
+            if (it < 0 || Math.abs(it - derived) > 1) {
+                throw ValidationException(
+                    "Pozycja „$serviceName\": brutto $it gr nie odpowiada netto ${price.net} gr przy stawce ${price.vatRate.rate}%"
+                )
+            }
+            Money(it)
+        }
+        val net = Money(price.net)
+        val gross = PriceCalculator.calculateFinalGross(net, net, price.vatRate, AdjustmentType.FIXED_NET, 0, baseGross)
+        return copy(
+            basePriceNet = net,
+            basePriceGross = baseGross,
+            vatRate = price.vatRate,
+            adjustmentType = AdjustmentType.FIXED_NET,
+            adjustmentValue = 0,
+            finalPriceNet = net,
+            finalPriceGross = gross,
+            confirmedAt = confirmedAt ?: now
+        )
+    }
+
     companion object {
         fun createPending(
             serviceId: ServiceId?,

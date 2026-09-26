@@ -79,7 +79,12 @@ data class IssueRevenueInvoiceCommand(
      * wysyłana do KSeF; ląduje w stanie NOT_SENT, skąd użytkownik może ją wysłać
      * ręcznie. Wystawienie i wysyłka to dwie różne decyzje.
      */
-    val sendToKsef: Boolean = true
+    val sendToKsef: Boolean = true,
+    /**
+     * Faktura do paragonu (FA(3): FP = 1). Sprzedaż jest już zaewidencjonowana
+     * paragonem, więc faktura nie wchodzi drugi raz do sum przychodu.
+     */
+    val invoiceToReceipt: Boolean = false
 )
 
 /** Pozycja faktury z policzonymi kwotami (grosze). */
@@ -211,6 +216,7 @@ class IssueRevenueInvoiceHandler(
                     ?: throw EntityNotFoundException("Klient nie został znaleziony: $cid")
             },
             description        = command.description?.trim()?.ifBlank { null },
+            invoiceToReceipt   = command.invoiceToReceipt,
             createdBy          = command.userId.value
         )
 

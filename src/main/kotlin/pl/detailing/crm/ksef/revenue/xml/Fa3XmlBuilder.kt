@@ -208,6 +208,10 @@ class Fa3XmlBuilder {
             w.writeEndElement()
         }
 
+        // Faktura do paragonu: FP stoi po elementach korekty i ZaliczkaCzesciowa,
+        // a przed TP / DodatkowyOpis / FaWiersz (kolejność sekwencji Fa w schemacie FA(3)).
+        if (invoice.invoiceToReceipt) el(w, "FP", "1")
+
         items.forEach { writeLine(w, it) }
         writePayment(w, invoice)
 

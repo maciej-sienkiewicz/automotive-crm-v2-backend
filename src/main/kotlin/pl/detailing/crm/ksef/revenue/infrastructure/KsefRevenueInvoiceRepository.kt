@@ -20,6 +20,9 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
 
     fun findByIdAndStudioId(id: UUID, studioId: UUID): KsefRevenueInvoiceEntity?
 
+    /** Wszystkie faktury i korekty wystawione do wizyty — stan rozliczenia i jego historia. */
+    fun findByStudioIdAndVisitIdOrderByCreatedAtAsc(studioId: UUID, visitId: UUID): List<KsefRevenueInvoiceEntity>
+
     /**
      * Zajęcie faktury do wysyłki: SENDING tylko wtedy, gdy nadal stoi w jednym ze stanów
      * [from]. Wcześniej wysyłka sprawdzała status na encji wczytanej chwilę wcześniej
