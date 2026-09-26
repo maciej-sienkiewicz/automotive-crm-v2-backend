@@ -3,6 +3,7 @@ package pl.detailing.crm.visit.get
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.visit.settlement.LiveRevenueInvoices
 import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.visit.infrastructure.*
 import pl.detailing.crm.customer.infrastructure.CustomerRepository
@@ -146,21 +147,13 @@ class GetVisitDetailHandler(
                 ?: settlementDocuments.firstOrNull()
             )?.documentType?.name
 
-        // Podgląd faktury: faktura, która obowiązuje — najpierw ta z dokumentu faktury,
-        // inaczej najnowsza nieanulowana i nieodrzucona faktura VAT wizyty (np. faktura do
-        // paragonu). Najstarsza (dawna reguła) po poprawce byłaby fakturą wyzerowaną korektą.
-        val visitInvoices = revenueInvoiceRepository
-            .findByStudioIdAndVisitIdOrderByCreatedAtAsc(command.studioId.value, visit.id.value)
-        val linkedInvoiceId = settlementDocuments.firstNotNullOfOrNull { it.ksefRevenueInvoiceId }
-        val revenueInvoiceId = (
-            visitInvoices.firstOrNull { it.id == linkedInvoiceId }
-                ?: visitInvoices.lastOrNull {
-                    it.invoiceType == pl.detailing.crm.ksef.revenue.domain.RevenueInvoiceType.VAT &&
-                        it.ksefStatus != pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.CANCELLED &&
-                        it.ksefStatus != pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus.REJECTED
-                }
-                ?: visitInvoices.firstOrNull()
-            )?.id?.toString()
+        // Podgląd faktury: tylko faktura, która wciąż obowiązuje — ta sama reguła co
+        // w poprawce rozliczenia. Faktura wyzerowana korektą albo anulowana nie wraca
+        // do nagłówka wizyty po zmianie faktury na paragon.
+        val revenueInvoiceId = LiveRevenueInvoices.previewInvoiceId(
+            invoices = revenueInvoiceRepository.findByStudioIdAndVisitIdOrderByCreatedAtAsc(command.studioId.value, visit.id.value),
+            linkedInvoiceId = settlementDocuments.firstNotNullOfOrNull { it.ksefRevenueInvoiceId }
+        )?.toString()
 
         val settlement = if (settlementDocumentType == null && revenueInvoiceId == null) null
             else VisitSettlementInfo(
