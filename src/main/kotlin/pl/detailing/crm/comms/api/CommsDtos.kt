@@ -128,7 +128,14 @@ fun MailAccountEntity.toStateDto(
     // nie ma, pierwszy import trwa (albo zaraz ruszy po podłączeniu konta).
     // Tylko ACTIVE: konto z odrzuconym hasłem nigdy się nie zsynchronizuje i ma
     // pokazywać swój błąd, a nie wieczny ekran „trwa synchronizacja".
-    initialSyncInProgress = lastSyncAt == null && status.name == "ACTIVE",
+    //
+    // Nieudany pierwszy przebieg (timeout, błąd IMAP) zostawiał konto ACTIVE bez
+    // lastSyncAt, czyli „synchronizacja trwa" NA ZAWSZE: ekran postępu nie znikał,
+    // a każda otwarta karta odpytywała konta co kilka sekund - to wpychało całe
+    // biuro w limit żądań. Z błędem na koncie synchronizacja „trwa" tylko wtedy,
+    // gdy kolejny przebieg faktycznie idzie (jest postęp); inaczej konto pokazuje błąd.
+    initialSyncInProgress = lastSyncAt == null && status.name == "ACTIVE" &&
+        (lastError == null || progress != null),
     syncTotal = progress?.total,
     syncProcessed = progress?.processed
 )

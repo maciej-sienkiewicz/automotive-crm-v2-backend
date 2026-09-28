@@ -211,8 +211,12 @@ class SecurityConfig(
         configuration.allowedHeaders = listOf("*")
         configuration.allowCredentials = true
         configuration.maxAge = 3600L
-        // X-Pii-Access: frontend reads it to render blur states for masked personal data
-        configuration.exposedHeaders = listOf("Set-Cookie", "X-Pii-Access")
+        // X-Pii-Access: frontend reads it to render blur states for masked personal data.
+        // Retry-After: po „Przekroczono limit żądań" front czeka tyle, ile każe serwer -
+        // bez tego nagłówek jest dla przeglądarki niewidoczny (CORS go nie przepuszcza).
+        configuration.exposedHeaders = listOf(
+            "Set-Cookie", "X-Pii-Access", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"
+        )
 
         val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", configuration)
