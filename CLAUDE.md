@@ -78,6 +78,14 @@ ręką.
   przy stawce cennika: przy innej stawce brutto wpisane od strony brutto zostaje,
   a w każdym innym przypadku zostaje netto (`catalogLinePrice`). Ta sama stawka
   nie zmienia niczego.
+- **Sprzedaż fakturowana przez księgowość nie jest przychodem w CRM.** W trybie
+  „Faktury wystawia księgowość" (`studio_settings.invoices_issued_externally`) dokument
+  z `invoiced_externally = true` jest tylko zapisem płatności (kasa, forma, status),
+  a przychód niesie faktura księgowości pobrana z KSeF. Każda nowa suma przychodu
+  z `financial_documents` musi go pomijać razem z jego stornami — inaczej ta sama
+  sprzedaż liczy się dwa razy. Pilnuje tego `InvoicedExternallyQueriesTest`. Z fakturą
+  z KSeF nic nie łączy się samo (decyzja biznesu): zgłoszenia na liście „Do zafakturowania"
+  (`external_invoice_requests`) odhacza człowiek.
 - **Rabat kwotowy (`FIXED_NET`, `FIXED_GROSS`) jest ODEJMOWANY**, `v > 0` to rabat.
   Jeden silnik cen (`PriceCalculator`) liczy rezerwację, wizytę i upsell — nie pisz
   drugiego.

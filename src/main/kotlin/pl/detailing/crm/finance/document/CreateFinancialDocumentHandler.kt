@@ -82,7 +82,9 @@ data class CreateFinancialDocumentCommand(
      * który koryguje (przelew nieopłacony koryguje się jako nieopłacony). Null =
      * domyślny dla formy płatności.
      */
-    val statusOverride: DocumentStatus? = null
+    val statusOverride: DocumentStatus? = null,
+    /** Przychód niesie faktura księgowości (patrz [FinancialDocumentEntity.invoicedExternally]). */
+    val invoicedExternally: Boolean = false
 )
 
 /**
@@ -146,7 +148,8 @@ class CreateFinancialDocumentHandler(
             updatedBy         = command.userId.value,
             ksefRevenueInvoiceId = command.ksefRevenueInvoiceId,
             correctsDocumentId = command.correctsDocumentId,
-            settlementCorrectionId = command.settlementCorrectionId
+            settlementCorrectionId = command.settlementCorrectionId,
+            invoicedExternally = command.invoicedExternally
         )
 
         val saved = documentRepository.save(entity)

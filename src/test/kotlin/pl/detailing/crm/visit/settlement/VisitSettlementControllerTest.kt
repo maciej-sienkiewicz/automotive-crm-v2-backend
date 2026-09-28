@@ -35,7 +35,9 @@ class VisitSettlementControllerTest {
 
     @BeforeEach
     fun setUp() {
-        val controller = VisitSettlementController(h.service, h.documentRepository, h.invoiceRepository, h.correctionRepository)
+        val controller = VisitSettlementController(
+            h.service, h.documentRepository, h.invoiceRepository, h.correctionRepository, h.requestRepository, h.settingsRepository
+        )
         mvc = MockMvcBuilders.standaloneSetup(controller)
             .setControllerAdvice(GlobalExceptionHandler(mockk(relaxed = true)))
             .build()

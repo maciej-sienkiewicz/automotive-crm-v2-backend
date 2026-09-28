@@ -99,6 +99,15 @@ class StudioSettingsEntity(
     var ksefAutoSendDefault: Boolean = true,
 
     /**
+     * „Faktury wystawia księgowość": wybór „Faktura" przy wydaniu pojazdu i w poprawce
+     * rozliczenia nie tworzy faktury w CRM. Powstaje zapis płatności poza przychodem
+     * i zgłoszenie na liście „Do zafakturowania"; przychód niesie faktura księgowości
+     * pobrana z KSeF. Bez automatycznego łączenia faktur — decyzja biznesu (V167).
+     */
+    @Column(name = "invoices_issued_externally", nullable = false, columnDefinition = "boolean not null default false")
+    var invoicesIssuedExternally: Boolean = false,
+
+    /**
      * Automatyczne tworzenie leadów: każda nowa wiadomość przychodząca idzie do
      * klasyfikacji LLM-em (LEAD / NIE-LEAD), a z zapytań klientów powstają leady
      * bez udziału człowieka. Wyłączona = system zachowuje się dokładnie jak dawniej.

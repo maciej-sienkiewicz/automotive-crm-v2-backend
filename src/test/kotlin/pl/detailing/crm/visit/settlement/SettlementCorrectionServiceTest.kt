@@ -127,7 +127,7 @@ class SettlementCorrectionServiceTest {
     private val service = SettlementCorrectionService(
         visitRepository, documentRepository, invoiceRepository, correctionRepository, createHandler,
         issueInvoiceHandler, correctionHandler, orchestrator, customers, settings, capabilities,
-        mockk(relaxed = true), ObjectMapper(), transactions.template()
+        mockk(relaxed = true), ObjectMapper(), transactions.template(), mockk(relaxed = true), mockk(relaxed = true)
     )
 
     private fun entity(

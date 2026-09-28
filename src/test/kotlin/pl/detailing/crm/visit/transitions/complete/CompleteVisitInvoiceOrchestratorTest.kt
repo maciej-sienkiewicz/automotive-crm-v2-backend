@@ -51,6 +51,14 @@ class CompleteVisitInvoiceOrchestratorTest {
 
     private val studioId = StudioId(UUID.randomUUID())
 
+    init {
+        // Faktura z CRM (tryb domyślny). Walidacja pozycji dotyczy tylko jej - przy fakturze
+        // od księgowości pozycji się nie podaje. Testy danych firmy nadpisują ten odczyt.
+        every { settingsRepository.findById(studioId.value) } returns Optional.of(
+            StudioSettingsEntity(studioId = studioId.value, name = "Studio", taxId = "5261040828")
+        )
+    }
+
     private fun command() = CompleteVisitCommand(
         studioId = studioId,
         userId = UserId(UUID.randomUUID()),

@@ -97,6 +97,10 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
      * Dokumenty ukryte ręcznie (excludedAt) nie wchodzą do sum — o to chodzi
      * w ukrywaniu: pozycja znika ze statystyk, zostając w bazie.
      *
+     * Dokumenty sprzedaży fakturowanej przez księgowość (invoicedExternally) też są
+     * pomijane, razem ze swoimi stornami: przychód niesie faktura księgowości pobrana
+     * z KSeF i liczona po stronie ledgera. Oba zapisy naraz to ta sama sprzedaż dwa razy.
+     *
      * [statuses] jest zbiorem, a nie pojedynczą wartością, bo należność
      * przeterminowana to wciąż należność: OVERDUE musi sumować się razem
      * z PENDING. Wcześniejsza wersja przyjmowała jeden status i dokument
@@ -131,6 +135,7 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
           AND d.deletedAt IS NULL
           AND d.excludedAt IS NULL
           AND d.ksefRevenueInvoiceId IS NULL
+          AND d.invoicedExternally = false
           AND d.issueDate >= COALESCE(:dateFrom, d.issueDate)
           AND d.issueDate <= COALESCE(:dateTo,   d.issueDate)
     """)
@@ -142,12 +147,18 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
         dateTo: LocalDate?
     ): Long
 
+    /**
+     * Liczba przeterminowanych dokumentów do kafla — spójnie z [sumNet]: sprzedaż
+     * fakturowana przez księgowość jest tam pominięta, więc i tu. Jej płatność
+     * widać na liście „Do zafakturowania".
+     */
     @Query("""
         SELECT COUNT(d) FROM FinancialDocumentEntity d
         WHERE d.studioId  = :studioId
           AND d.status    = 'OVERDUE'
           AND d.deletedAt IS NULL
           AND d.excludedAt IS NULL
+          AND d.invoicedExternally = false
           AND (:direction IS NULL OR d.direction = :direction)
     """)
     fun countOverdue(studioId: UUID, direction: DocumentDirection?): Long
@@ -175,6 +186,10 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     /**
      * Korekta idzie z typem dokumentu, który koryguje: raport „tylko paragony" bez
      * storna paragonów pokazywałby kwoty, których już nie ma.
+     *
+     * Dokumenty sprzedaży fakturowanej przez księgowość (invoiced_externally) zostają:
+     * raport mówi, JAK klienci płacili, a faktura księgowości z KSeF do niego nie
+     * wchodzi — to ten dokument jest jedynym zapisem płatności tej sprzedaży.
      *
      * Uzasadnienie celowo stoi tu, a nie jako `--` w SQL: Spring Data liczy cudzysłowy
      * także wewnątrz komentarzy SQL, a niedomknięty `"` wywraca start aplikacji

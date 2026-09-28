@@ -23,7 +23,9 @@ enum class SettlementKsefAction(val displayName: String) {
     CORRECT_AND_REISSUE("Korekta do zera i nowa faktura"),
     CORRECT("Korekta faktury do zera"),
     ISSUE("Nowa faktura"),
-    INVOICE_TO_RECEIPT("Faktura do paragonu")
+    INVOICE_TO_RECEIPT("Faktura do paragonu"),
+    EXTERNAL_INVOICE("Faktura do wystawienia przez księgowość"),
+    EXTERNAL_INVOICE_TO_RECEIPT("Faktura do paragonu do wystawienia przez księgowość")
 }
 
 /**

@@ -16,7 +16,11 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
+import pl.detailing.crm.finance.external.ExternalInvoiceKind
+import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
+import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.push.notify.PushMessages
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
@@ -49,7 +53,9 @@ class CompleteVisitHandler(
     private val capabilityService: CapabilityService,
     private val eventPublisher: ApplicationEventPublisher,
     private val financialDocumentRepository: FinancialDocumentRepository,
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    private val settingsRepository: StudioSettingsRepository,
+    private val externalInvoices: ExternalInvoiceRequestService
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -112,6 +118,7 @@ class CompleteVisitHandler(
                     completedAt             = visit.pickupDate ?: visitEntity.updatedAt,
                     financialDocumentId     = existingDocument?.let { FinancialDocumentId(it.id) },
                     financialDocumentNumber = existingDocument?.documentNumber,
+                    invoicedExternally      = existingDocument?.invoicedExternally == true,
                     alreadyInTargetState    = true
                 ),
                 extra = null,
@@ -179,7 +186,8 @@ class CompleteVisitHandler(
             newStatus               = visit.status,
             completedAt             = visit.pickupDate!!,
             financialDocumentId     = financialDocument?.id,
-            financialDocumentNumber = financialDocument?.documentNumber
+            financialDocumentNumber = financialDocument?.documentNumber,
+            invoicedExternally      = financialDocument?.invoicedExternally == true
         )
     }
 
@@ -198,7 +206,8 @@ class CompleteVisitHandler(
             newStatus               = visit.status,
             completedAt             = visit.pickupDate!!,
             financialDocumentId     = financialDocument?.id,
-            financialDocumentNumber = financialDocument?.documentNumber
+            financialDocumentNumber = financialDocument?.documentNumber,
+            invoicedExternally      = financialDocument?.invoicedExternally == true
         )
     }
 
@@ -232,7 +241,17 @@ class CompleteVisitHandler(
             return null
         }
 
-        return createFinancialDocumentHandler.handle(
+        // „Faktury wystawia księgowość": faktury w CRM nie ma. Dokument zostaje zapisem
+        // płatności poza przychodem, a księgowość dostaje zgłoszenie z danymi nabywcy.
+        // Czytane tutaj, a nie tylko w orkiestratorze: wydanie bez szczegółów faktury
+        // (starszy klient) też nie może zapisać faktury liczonej do przychodu.
+        val invoicedExternally = command.documentType == DocumentType.INVOICE &&
+            settingsRepository.findById(command.studioId.value).orElse(null)?.invoicesIssuedExternally == true
+        val buyer = if (invoicedExternally) {
+            command.invoiceBuyer?.takeUnless { it.isEmpty } ?: buyerFromCustomer(customer)
+        } else null
+
+        val document = createFinancialDocumentHandler.handle(
             CreateFinancialDocumentCommand(
                 studioId          = command.studioId,
                 userId            = command.userId,
@@ -253,10 +272,36 @@ class CompleteVisitHandler(
                 issueDate         = LocalDate.now(),
                 dueDate           = command.dueDate ?: LocalDate.now().plusDays(14),
                 description       = "Wizyta #${visit.visitNumber} – ${buildVehicleLabel(visit)}",
-                counterpartyName  = resolveBuyerName(customer),
-                counterpartyNip   = customer?.companyNip
+                counterpartyName  = buyer?.name?.trim()?.ifBlank { null } ?: resolveBuyerName(customer),
+                counterpartyNip   = if (buyer != null) buyer.normalizedNip else customer?.companyNip,
+                invoicedExternally = invoicedExternally
             )
         )
+        if (buyer != null) {
+            externalInvoices.open(document, ExternalInvoiceKind.INVOICE, buyer, command.userId.value)
+        }
+        return document
+    }
+
+    /** Nabywca z kartoteki: firma, gdy klient ma NIP, inaczej osoba. */
+    private fun buyerFromCustomer(customer: CustomerEntity?): ExternalInvoiceBuyer {
+        val nip = customer?.companyNip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+        return if (nip != null) {
+            ExternalInvoiceBuyer(
+                nip = nip,
+                name = customer.companyName?.takeIf { it.isNotBlank() } ?: resolveBuyerName(customer),
+                addressLine1 = customer.companyAddressStreet,
+                addressLine2 = listOfNotNull(customer.companyAddressPostalCode, customer.companyAddressCity)
+                    .joinToString(" ").ifBlank { null },
+                email = customer.email
+            )
+        } else {
+            ExternalInvoiceBuyer(
+                name = listOfNotNull(customer?.firstName, customer?.lastName).filter { it.isNotBlank() }
+                    .joinToString(" ").ifBlank { null },
+                email = customer?.email
+            )
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -313,7 +358,13 @@ data class CompleteVisitCommand(
      * pokrywa tylko część kwoty wizyty (reszta jest dokumentowana osobnym dokumentem
      * przez [CompleteVisitInvoiceOrchestrator]). Null → kwoty liczone z usług wizyty.
      */
-    val documentTotalsOverride: DocumentTotals? = null
+    val documentTotalsOverride: DocumentTotals? = null,
+
+    /**
+     * Nabywca z formularza wydania — tylko w trybie „Faktury wystawia księgowość", gdzie
+     * trafia do zgłoszenia dla księgowości. Null → nabywca z kartoteki klienta.
+     */
+    val invoiceBuyer: ExternalInvoiceBuyer? = null
 )
 
 /** Wynik wydania: odpowiedź, to, co dołożył wołający, i wpis audytu do zapisania po commicie. */
@@ -346,5 +397,8 @@ data class CompleteVisitResult(
      * bez ponownego audytu i BEZ efektów ubocznych: klient nie dostaje drugiego SMS-a,
      * a księgowość drugiego dokumentu.
      */
-    val alreadyInTargetState: Boolean = false
+    val alreadyInTargetState: Boolean = false,
+
+    /** Faktury nie ma w CRM: wystawi ją księgowość (zgłoszenie na liście „Do zafakturowania"). */
+    val invoicedExternally: Boolean = false
 )

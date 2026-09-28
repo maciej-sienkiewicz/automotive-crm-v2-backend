@@ -15,6 +15,7 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.domain.VatRate
@@ -90,7 +91,9 @@ data class CompleteVisitWithInvoiceResult(
      */
     val ksefInvoice: KsefRevenueInvoiceEntity?,
     val remainderDocumentId: java.util.UUID?,
-    val remainderDocumentNumber: String?
+    val remainderDocumentNumber: String?,
+    /** Faktury nie ma w CRM: wystawi ją księgowość (tryb „Faktury wystawia księgowość"). */
+    val invoicedExternally: Boolean = false
 )
 
 /**
@@ -138,6 +141,10 @@ class CompleteVisitInvoiceOrchestrator(
         // Point-of-effect (W1): issuing a KSeF invoice is the finance module.
         // Checked before any state changes — the caller receives 402 with upsell.
         capabilityService.requireCapability(command.studioId, CapabilityKey.FINANCE_INVOICE_ISSUE)
+
+        if (settingsRepository.findById(command.studioId.value).orElse(null)?.invoicesIssuedExternally == true) {
+            return handleInvoicedExternally(command, invoice)
+        }
 
         // ── 1. Pre-walidacja (nic jeszcze nie zmieniamy) ───────────────────────
         // Pozycje najpierw: czysta walidacja payloadu, powtórka wysyła ten sam.
@@ -259,6 +266,18 @@ class CompleteVisitInvoiceOrchestrator(
         }
         val remainderDoc = completion.extra
 
+        // Flagę „Faktury wystawia księgowość" włączono między naszym odczytem a transakcją:
+        // wydanie zapisało już sprzedaż dla księgowości, więc faktura z CRM byłaby drugą.
+        if (completion.result.invoicedExternally) {
+            return CompleteVisitWithInvoiceResult(
+                completion = completion.result,
+                ksefInvoice = null,
+                remainderDocumentId = remainderDoc?.id?.value,
+                remainderDocumentNumber = remainderDoc?.documentNumber,
+                invoicedExternally = true
+            )
+        }
+
         // ── 3. Faktura KSeF (sieć na końcu; błąd łączności → offline24) ────────
         val ksefInvoice = issueInvoiceHandler.handle(issueCommand)
 
@@ -294,6 +313,70 @@ class CompleteVisitInvoiceOrchestrator(
 
     // ── Private ────────────────────────────────────────────────────────────────
 
+    /**
+     * „Faktury wystawia księgowość": wydanie bez faktury w CRM.
+     *
+     * Całą kwotę wizyty obejmuje jeden dokument — zapis płatności poza przychodem —
+     * i jedno zgłoszenie dla księgowości z danymi nabywcy. Pozycje faktury z formularza
+     * są pomijane: fakturę układa księgowość, a podział na fakturę i paragon reszty
+     * wymagałby od niej faktury na kwotę, której CRM nie potrafi potem sprawdzić.
+     * Dane firmy studia i ważność tokenu KSeF nie są potrzebne — CRM niczego nie wysyła.
+     */
+    private suspend fun handleInvoicedExternally(
+        command: CompleteVisitCommand,
+        invoice: CompleteInvoiceDetails
+    ): CompleteVisitWithInvoiceResult {
+        val visit = visitRepository.findByIdAndStudioIdWithPhotos(command.visitId.value, command.studioId.value)
+            ?.toDomain()
+            ?: throw EntityNotFoundException("Visit with ID '${command.visitId}' not found")
+        if (visit.status == VisitStatus.COMPLETED) {
+            return alreadyCompleted(command, completeVisitHandler.handle(command))
+        }
+        if (command.paymentMethod == PaymentMethod.TRANSFER && command.dueDate == null) {
+            throw ValidationException("Płatność przelewem wymaga terminu płatności")
+        }
+
+        val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
+        val buyerNip = invoice.buyer.nip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+            ?: customer?.companyNip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+        val buyerName = invoice.buyer.name?.trim()?.ifBlank { null }
+            ?: customer?.companyName?.takeIf { it.isNotBlank() && buyerNip != null }
+            ?: listOfNotNull(customer?.firstName, customer?.lastName).joinToString(" ").ifBlank { null }
+        if (buyerNip == null && buyerName == null) {
+            throw ValidationException("Faktura wymaga nabywcy: podaj NIP firmy albo imię i nazwisko klienta.")
+        }
+        val buyer = ExternalInvoiceBuyer(
+            nip = buyerNip,
+            name = buyerName,
+            addressLine1 = invoice.buyer.addressLine1,
+            addressLine2 = invoice.buyer.addressLine2,
+            email = invoice.buyer.email ?: customer?.email
+        )
+
+        val completion = completeVisitHandler.complete(
+            command.copy(documentType = DocumentType.INVOICE, invoiceBuyer = buyer)
+        ) { _, _ -> }
+        if (completion.result.alreadyInTargetState) {
+            return alreadyCompleted(command, completion.result)
+        }
+
+        runCatching { persistBuyerToCustomer(command, customer, invoice.buyer, buyerNip) }
+            .onFailure {
+                log.warn(
+                    "Nie udało się zapisać danych nabywcy do kartoteki klienta {}: {}",
+                    visit.customerId, it.message
+                )
+            }
+
+        return CompleteVisitWithInvoiceResult(
+            completion = completion.result,
+            ksefInvoice = null,
+            remainderDocumentId = null,
+            remainderDocumentNumber = null,
+            invoicedExternally = completion.result.invoicedExternally
+        )
+    }
+
     /** Powtórka: to, co wystawiło pierwsze wydanie - bez żadnego nowego dokumentu. */
     private fun alreadyCompleted(command: CompleteVisitCommand, completion: CompleteVisitResult) =
         CompleteVisitWithInvoiceResult(
@@ -302,7 +385,8 @@ class CompleteVisitInvoiceOrchestrator(
                 command.visitId.value, command.studioId.value
             ),
             remainderDocumentId = null,
-            remainderDocumentNumber = null
+            remainderDocumentNumber = null,
+            invoicedExternally = completion.invoicedExternally
         )
 
     /** Paragon na resztę kwoty, której faktura nie objęła — gotówka trafia do kasy. */

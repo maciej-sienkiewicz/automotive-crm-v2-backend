@@ -55,7 +55,8 @@ class FinancialDocumentRemovalHandler(
     private val cashOperationRepository: CashOperationRepository,
     private val cashCorrections: DocumentCashCorrections,
     private val visitRepository: VisitRepository,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val externalInvoices: pl.detailing.crm.finance.external.ExternalInvoiceRequestService
 ) {
     private val log = LoggerFactory.getLogger(FinancialDocumentRemovalHandler::class.java)
 
@@ -66,6 +67,9 @@ class FinancialDocumentRemovalHandler(
         requireNotPartOfSettlementCorrection(document)
 
         val now = Instant.now()
+        // Sprzedaż czekająca na fakturę księgowości znika z listy „Do zafakturowania" razem
+        // z dokumentem; wystawionej faktury usunięcie w CRM nie cofnie (patrz serwis).
+        externalInvoices.withdrawForDeletedDocument(command.studioId.value, document.id, now)
         document.deletedAt = now
         document.updatedBy = command.userId.value
         document.updatedAt = now
@@ -94,6 +98,7 @@ class FinancialDocumentRemovalHandler(
         document.updatedBy = command.userId.value
         document.updatedAt = Instant.now()
         val saved = documentRepository.save(document)
+        externalInvoices.reopenForRestoredDocument(command.studioId.value, document.id)
 
         val corrections = cashOperationRepository.findByDocumentId(command.studioId.value, document.id)
             .filter { it.operationType == CashOperationType.DOCUMENT_CORRECTION }

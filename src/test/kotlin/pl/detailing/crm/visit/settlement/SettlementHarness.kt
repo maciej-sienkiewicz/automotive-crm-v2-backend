@@ -16,6 +16,10 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
+import pl.detailing.crm.finance.external.ExternalInvoiceRequestEntity
+import pl.detailing.crm.finance.external.ExternalInvoiceRequestRepository
+import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
+import pl.detailing.crm.finance.external.ExternalInvoiceStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
@@ -75,10 +79,13 @@ class SettlementHarness {
     val audits = mutableListOf<LogAuditCommand>()
     val issuedInvoices = mutableListOf<IssueRevenueInvoiceCommand>()
     val issuedCorrections = mutableListOf<IssueCorrectionCommand>()
+    /** Zgłoszenia dla księgowości (tryb „Faktury wystawia księgowość"). */
+    val requests = mutableListOf<ExternalInvoiceRequestEntity>()
 
     var hasFinance = true
     var companyComplete = true
     var ksefAutoSend = true
+    var invoicesExternal = false
     var customer: CustomerEntity? = null
     /** 0 = wysyłka zajęła fakturę między planem a anulowaniem. */
     var cancelResult = 1
@@ -142,20 +149,21 @@ class SettlementHarness {
                 totalGross = cmd.totalGross, issueDate = cmd.issueDate, dueDate = cmd.dueDate, paidAt = Instant.now(),
                 description = cmd.description, counterpartyName = cmd.counterpartyName, counterpartyNip = cmd.counterpartyNip,
                 createdBy = userId.value, updatedBy = userId.value, ksefRevenueInvoiceId = cmd.ksefRevenueInvoiceId,
-                correctsDocumentId = cmd.correctsDocumentId, settlementCorrectionId = cmd.settlementCorrectionId
+                correctsDocumentId = cmd.correctsDocumentId, settlementCorrectionId = cmd.settlementCorrectionId,
+                invoicedExternally = cmd.invoicedExternally
             )
             documents += doc
             doc.toDomain()
         }
     }
-    private val settingsRepository: StudioSettingsRepository = mockk {
+    val settingsRepository: StudioSettingsRepository = mockk {
         every { findById(any()) } answers {
             Optional.of(
                 StudioSettingsEntity(
                     studioId = studioId.value,
                     name = if (companyComplete) "Studio Detailingu" else null,
                     taxId = if (companyComplete) "5261040828" else null
-                ).also { it.ksefAutoSendDefault = ksefAutoSend }
+                ).also { it.ksefAutoSendDefault = ksefAutoSend; it.invoicesIssuedExternally = invoicesExternal }
             )
         }
     }
@@ -195,6 +203,20 @@ class SettlementHarness {
         io.mockk.coEvery { log(any()) } answers { audits += firstArg<LogAuditCommand>() }
     }
 
+    val requestRepository: ExternalInvoiceRequestRepository = mockk {
+        every { save(any()) } answers {
+            firstArg<ExternalInvoiceRequestEntity>().also { r -> if (requests.none { it.id == r.id }) requests += r }
+        }
+        every { findActiveByDocuments(any(), any()) } answers {
+            val ids = secondArg<Collection<UUID>>()
+            requests.filter { it.financialDocumentId in ids && it.status != ExternalInvoiceStatus.WITHDRAWN }
+        }
+        every { findByStudioIdAndVisitIdOrderByCreatedAtAsc(any(), any()) } answers {
+            requests.filter { it.visitId == secondArg<UUID>() }
+        }
+    }
+    val externalInvoices = ExternalInvoiceRequestService(requestRepository, mockk(relaxed = true))
+
     val service = SettlementCorrectionService(
         visitRepository, documentRepository, invoiceRepository, correctionRepository, createHandler,
         issueInvoiceHandler, correctionHandler,
@@ -204,7 +226,7 @@ class SettlementHarness {
             mockk(relaxed = true), mockk(relaxed = true)
         ),
         customerRepository, settingsRepository, capabilityService, auditService, ObjectMapper(),
-        transactions.template()
+        transactions.template(), externalInvoices, requestRepository
     )
 
     // ── Budowanie stanu ──────────────────────────────────────────────────────
@@ -223,7 +245,8 @@ class SettlementHarness {
         net: Long = 50_000,
         ksefId: UUID? = null,
         status: DocumentStatus = method.defaultStatus(),
-        direction: DocumentDirection = DocumentDirection.INCOME
+        direction: DocumentDirection = DocumentDirection.INCOME,
+        invoicedExternally: Boolean = false
     ) = FinancialDocumentEntity(
         id = UUID.randomUUID(), studioId = studioId.value, source = DocumentSource.VISIT, visitId = visit.id.value,
         vehicleBrand = null, vehicleModel = null, customerFirstName = null, customerLastName = null,
@@ -231,7 +254,7 @@ class SettlementHarness {
         direction = direction, status = status, paymentMethod = method, totalNet = net, totalVat = gross - net,
         totalGross = gross, issueDate = LocalDate.now(), dueDate = null, paidAt = Instant.now(), description = null,
         counterpartyName = null, counterpartyNip = null, createdBy = userId.value, updatedBy = userId.value,
-        ksefRevenueInvoiceId = ksefId
+        ksefRevenueInvoiceId = ksefId, invoicedExternally = invoicedExternally
     ).also { documents += it }
 
     fun invoice(
@@ -258,6 +281,38 @@ class SettlementHarness {
         val inv = invoice(status)
         return inv to document(DocumentType.INVOICE, method, ksefId = inv.id)
     }
+
+    /**
+     * Sprzedaż fakturowana przez księgowość: zapis płatności poza przychodem i zgłoszenie
+     * (czekające albo odhaczone jako wystawione, z numerem faktury księgowości).
+     */
+    fun externalInvoice(
+        method: PaymentMethod = PaymentMethod.CARD,
+        type: DocumentType = DocumentType.INVOICE,
+        issuedNumber: String? = null,
+        buyerName: String = "Jan Kowalski"
+    ): Pair<FinancialDocumentEntity, ExternalInvoiceRequestEntity> {
+        val doc = document(type, method, invoicedExternally = true)
+        val request = externalInvoices.open(
+            doc.toDomain(),
+            if (type == DocumentType.INVOICE) pl.detailing.crm.finance.external.ExternalInvoiceKind.INVOICE
+            else pl.detailing.crm.finance.external.ExternalInvoiceKind.INVOICE_TO_RECEIPT,
+            pl.detailing.crm.finance.external.ExternalInvoiceBuyer(name = buyerName),
+            userId.value
+        )
+        if (issuedNumber != null) {
+            request.status = ExternalInvoiceStatus.ISSUED
+            request.externalInvoiceNumber = issuedNumber
+        }
+        return doc to request
+    }
+
+    /**
+     * Przychód w Finansach z dokumentów CRM — tak jak liczy go sumNet: bez dokumentów
+     * powiązanych z fakturą KSeF i bez sprzedaży fakturowanej przez księgowość.
+     */
+    val financeRevenueNet: Long
+        get() = documents.filter { !it.invoicedExternally && it.ksefRevenueInvoiceId == null }.sumOf { it.totalNet }
 
     // ── Polecenia ────────────────────────────────────────────────────────────
 

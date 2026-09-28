@@ -51,7 +51,8 @@ class SettlementDocumentGuardsTest {
     ).also { documents[it.id] = it }
 
     private val removal = FinancialDocumentRemovalHandler(
-        repository, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true)
+        repository, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
+        mockk(relaxed = true)
     )
     private val update = UpdateFinancialDocumentHandler(repository, mockk(relaxed = true), mockk(relaxed = true))
 
