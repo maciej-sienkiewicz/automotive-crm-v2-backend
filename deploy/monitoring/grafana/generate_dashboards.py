@@ -12,7 +12,7 @@ Cztery dashboardy, dwa różne pytania:
   crm-live-platform / crm-live-tenant   „ile dzieje się TERAZ"  — increase() na liczniku
   crm-engagement-tenant                 „ile łącznie od wdrożenia" — trwała suma z Redisa
   crm-adoption-platform                 „kto z tego korzysta"     — stany z bazy + ranking
-  crm-storage                           „kto ile zajmuje w S3"    — skan bucketu co godzinę
+  crm-storage                           „kto ile zajmuje w S3"    — skan bucketu raz dziennie
 
 Rozdział jest istotny: `increase()` rysuje impulsy (zdarzenie → pik → zero), a nie krzywą
 narastającą. Mieszanie obu w jednym panelu było źródłem „krótkotrwałych pików", przez które
@@ -600,10 +600,10 @@ def adoption_header(y):
 
 # ── Dashboard „Miejsce w S3" ────────────────────────────────────────────────
 #
-# Źródło: StorageMetricsExporter — pełny listing bucketu co godzinę, klucz → studio.
+# Źródło: StorageMetricsExporter — pełny listing bucketu raz dziennie, klucz → studio.
 # Gauge'e zmieniają się raz na skan, więc wykresy są schodkowe, a domyślny zakres to 30 dni.
 
-STORAGE_DESC = ("Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. "
+STORAGE_DESC = ("Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. "
                 "Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać "
                 "tylko w CloudWatch / na rachunku AWS.")
 
@@ -680,12 +680,12 @@ def storage_panels():
                                 + STORAGE_DESC)]
     age = stat("Wiek pomiaru", "time() - max(crm_storage_refreshed_seconds)", "text", 20, 1,
                desc="Ile sekund temu skończył się ostatni UDANY skan bucketu. Nieudany skan zostawia "
-                    "poprzednie wartości — powyżej ~2 h znaczy awarię (alert StorageGaugesStale).")
+                    "poprzednie wartości — powyżej ~26 h znaczy awarię (alert StorageGaugesStale).")
     age["fieldConfig"]["defaults"].update({"unit": "s", "decimals": 0, "color": {"mode": "thresholds"},
                                            "thresholds": {"mode": "absolute", "steps": [
                                                {"color": "green", "value": None},
-                                               {"color": "orange", "value": 5400},
-                                               {"color": "red", "value": 10800}]}})
+                                               {"color": "orange", "value": 93600},
+                                               {"color": "red", "value": 108000}]}})
     p.append(age)
     p.append(bytes_chart("Zajętość bucketu w czasie",
                          [target("max(crm_storage_bucket_bytes)", "Bucket")], 0, 5))

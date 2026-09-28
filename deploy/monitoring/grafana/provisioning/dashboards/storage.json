@@ -1,7 +1,7 @@
 {
   "uid": "crm-storage",
   "title": "Miejsce w S3",
-  "description": "Ile miejsca w buckecie S3 zajmuje każde studio i cała platforma. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+  "description": "Ile miejsca w buckecie S3 zajmuje każde studio i cała platforma. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
   "tags": [
     "crm",
     "live-metrics"
@@ -120,7 +120,7 @@
       "id": 2,
       "type": "stat",
       "title": "Zajęte miejsce",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -178,7 +178,7 @@
       "id": 3,
       "type": "stat",
       "title": "Obiekty",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -294,7 +294,7 @@
       "id": 5,
       "type": "stat",
       "title": "Osierocone (usunięte studia)",
-      "description": "Pliki pod katalogami studiów, których nie ma już w bazie. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pliki pod katalogami studiów, których nie ma już w bazie. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -352,7 +352,7 @@
       "id": 6,
       "type": "stat",
       "title": "Wspólne (bez studia)",
-      "description": "Obiekty spoza katalogów studiów (np. wspólne ikony podpisu maila). Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Obiekty spoza katalogów studiów (np. wspólne ikony podpisu maila). Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -410,7 +410,7 @@
       "id": 7,
       "type": "stat",
       "title": "Wiek pomiaru",
-      "description": "Ile sekund temu skończył się ostatni UDANY skan bucketu. Nieudany skan zostawia poprzednie wartości — powyżej ~2 h znaczy awarię (alert StorageGaugesStale).",
+      "description": "Ile sekund temu skończył się ostatni UDANY skan bucketu. Nieudany skan zostawia poprzednie wartości — powyżej ~26 h znaczy awarię (alert StorageGaugesStale).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -453,11 +453,11 @@
               },
               {
                 "color": "orange",
-                "value": 5400
+                "value": 93600
               },
               {
                 "color": "red",
-                "value": 10800
+                "value": 108000
               }
             ]
           }
@@ -484,7 +484,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Zajętość bucketu w czasie",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -551,7 +551,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Zajętość per studio w czasie (top 10)",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -641,7 +641,7 @@
         "x": 0,
         "y": 14
       },
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "targets": [
         {
           "datasource": {
@@ -697,7 +697,7 @@
         "x": 12,
         "y": 14
       },
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "targets": [
         {
           "datasource": {
@@ -760,7 +760,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Ile każde studio zajmuje w każdym obszarze (drugi segment klucza: visits, protocols, customers…; `thumbs` = miniatury, `temp` = pliki tymczasowe). `(usunięte) …` to katalogi studiów, których nie ma już w bazie — osierocone pliki, za które nadal płacimy. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Ile każde studio zajmuje w każdym obszarze (drugi segment klucza: visits, protocols, customers…; `thumbs` = miniatury, `temp` = pliki tymczasowe). `(usunięte) …` to katalogi studiów, których nie ma już w bazie — osierocone pliki, za które nadal płacimy. Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "gridPos": {
         "h": 14,
         "w": 24,
@@ -874,7 +874,7 @@
       "id": 15,
       "type": "stat",
       "title": "Zajęte miejsce",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -932,7 +932,7 @@
       "id": 16,
       "type": "stat",
       "title": "Obiekty",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -990,7 +990,7 @@
       "id": 17,
       "type": "stat",
       "title": "Udział w buckecie",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1048,7 +1048,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Obszary w czasie",
-      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany co godzinę. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
+      "description": "Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać tylko w CloudWatch / na rachunku AWS.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
