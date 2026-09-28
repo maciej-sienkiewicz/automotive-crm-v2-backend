@@ -166,41 +166,63 @@ class OwnerReportPdfRenderer {
     private fun operations(s: DocumentSheet, r: OwnerReport) {
         val c = r.current
         val p = r.baseline
-        val table = Table(s, "OPERACJE NA HALI", r, rows = 7)
+        val table = Table(s, "OPERACJE NA HALI", r, rows = 6)
         table.row("Wizyty rozpoczęte", c.visitsStarted, p.visitsStarted, Direction.UP)
         table.row("Rezerwacje utworzone", c.reservationsCreated, p.reservationsCreated, Direction.UP)
         table.row("Karty wizyt wysłane klientom", c.visitCardsSent, p.visitCardsSent, Direction.UP)
         table.row("Zlecenia zbiorcze: auta obsłużone", c.batch.vehicles, p.batch.vehicles, Direction.UP)
         table.moneyRow("Zlecenia zbiorcze: wartość brutto", c.batch.grossCents, p.batch.grossCents, Direction.UP)
         table.row("Zlecenia zbiorcze: kontrahenci", c.batch.contractors, p.batch.contractors, Direction.NEUTRAL)
-        table.row(
-            "Do rozliczenia z kontrahentami (stan na dziś)",
-            "${ReportFormat.count(r.snapshot.batchUnsettledVehicles)} aut, ${ReportFormat.money(r.snapshot.batchUnsettledGrossCents)}",
-            "",
-            null
-        )
     }
 
+    /**
+     * Maile zespołu i odpowiedzi liczą się dopiero od podłączenia skrzynki - historia
+     * dociągnięta przy podłączaniu powstała poza CRM-em (zapytania w OwnerReportQueries).
+     * Okres, w którym poczty jeszcze nie było, nie ma zer, tylko brak danych: porównanie
+     * z nim pokazałoby „wzrost" zespołu, który po prostu zaczął pracować w CRM.
+     */
     private fun communication(s: DocumentSheet, r: OwnerReport) {
         val c = r.current.emails
         val p = r.baseline.emails
+        val connectedAt = r.snapshot.mailboxConnectedAt
         val table = Table(s, "KOMUNIKACJA Z KLIENTAMI", r, rows = 6)
-        table.row("Maile napisane przez zespół", c.sentByTeam, p.sentByTeam, Direction.NEUTRAL)
         table.row("Maile wysłane automatycznie przez CRM", c.sentAutomated, p.sentAutomated, Direction.NEUTRAL)
-        table.row("Zapytania klientów (maile czekające na nas)", c.replies.inquiries, p.replies.inquiries, Direction.NEUTRAL)
+        if (connectedAt == null || !connectedAt.isBefore(r.period.endExclusive)) {
+            table.note(
+                "Maile zespołu i czasy odpowiedzi liczymy od dnia podłączenia skrzynki pocztowej" +
+                    if (connectedAt == null) " - poczta nie jest podłączona." else ", a w tym okresie jeszcze jej nie było."
+            )
+            return
+        }
+        val baselineStart = when (r.comparison) {
+            ReportComparison.PREVIOUS -> r.period.previous().startInclusive
+            ReportComparison.MEDIAN -> r.period.precedingPeriods(ReportPeriod.MEDIAN_PERIODS).last().startInclusive
+        }
+        val comparable = !connectedAt.isAfter(baselineStart)
+        fun count(label: String, current: Int, previous: Int, direction: Direction) =
+            if (comparable) table.row(label, current, previous, direction)
+            else table.row(label, ReportFormat.count(current), "—", null)
+
+        count("Maile napisane przez zespół", c.sentByTeam, p.sentByTeam, Direction.NEUTRAL)
+        count("Zapytania klientów (maile czekające na nas)", c.replies.inquiries, p.replies.inquiries, Direction.NEUTRAL)
         table.row(
             "Mediana czasu odpowiedzi",
             c.replies.medianMinutes?.let(ReportFormat::duration) ?: "—",
-            p.replies.medianMinutes?.let(ReportFormat::duration) ?: "—",
-            changeOrNull(c.replies.medianMinutes, p.replies.medianMinutes, Direction.DOWN)
+            if (comparable) p.replies.medianMinutes?.let(ReportFormat::duration) ?: "—" else "—",
+            if (comparable) changeOrNull(c.replies.medianMinutes, p.replies.medianMinutes, Direction.DOWN) else null
         )
         table.row(
             "Odpowiedź w ciągu 1 godziny",
             ReportFormat.percent(c.replies.answeredWithinHour, c.replies.inquiries),
-            ReportFormat.percent(p.replies.answeredWithinHour, p.replies.inquiries),
+            if (comparable) ReportFormat.percent(p.replies.answeredWithinHour, p.replies.inquiries) else "—",
             null
         )
-        table.row("Zapytania wciąż bez odpowiedzi", c.replies.unanswered, p.replies.unanswered, Direction.DOWN)
+        count("Zapytania wciąż bez odpowiedzi", c.replies.unanswered, p.replies.unanswered, Direction.DOWN)
+        if (connectedAt.isAfter(r.period.startInclusive)) {
+            table.note("Poczta podłączona ${ReportFormat.day(connectedAt.atZone(ZONE).toLocalDate())}: liczymy wiadomości od tego dnia, bez historii pobranej przy podłączaniu.")
+        } else if (!comparable) {
+            table.note("Porównania brak: w okresie odniesienia poczta nie była jeszcze podłączona.")
+        }
     }
 
     private fun marketing(s: DocumentSheet, r: OwnerReport) {

@@ -50,6 +50,7 @@ class OwnerReportPdfRendererTest {
         previous: PeriodMetrics = metrics(closedGross = 150000, closedNet = 121951),
         comparison: ReportComparison = ReportComparison.PREVIOUS,
         length: ReportLength = ReportLength.WEEK,
+        mailboxConnectedAt: Instant? = Instant.parse("2025-01-01T00:00:00Z"),
         competitors: CompetitorMetrics? = CompetitorMetrics(
             advertisers = 7,
             activeAds = 23,
@@ -65,7 +66,7 @@ class OwnerReportPdfRendererTest {
         current = current,
         comparison = comparison,
         baseline = previous,
-        snapshot = SnapshotMetrics(batchUnsettledVehicles = 6, batchUnsettledGrossCents = 2340000, competitors = competitors),
+        snapshot = SnapshotMetrics(mailboxConnectedAt = mailboxConnectedAt, competitors = competitors),
         generatedAt = Instant.parse("2026-09-21T05:00:00Z")
     )
 
@@ -155,5 +156,45 @@ class OwnerReportPdfRendererTest {
         val text = textOf(renderer.render(report(current = empty, previous = empty, competitors = null)))
         assertTrue(text.contains("RAPORT TYGODNIOWY"))
         assertTrue(text.contains("bez zmian"))
+    }
+
+    @Test
+    fun `bez wiersza rozliczen z kontrahentami`() {
+        val text = textOf(renderer.render(report()))
+
+        assertFalse(text.contains("Do rozliczenia z kontrahentami"))
+        assertTrue(text.contains("Zlecenia zbiorcze: kontrahenci"))
+    }
+
+    @Test
+    fun `poczta podlaczona w trakcie okresu - liczby od podlaczenia, bez porownania z okresem sprzed poczty`() {
+        // Tydzień 14.09-20.09.2026, poczta podłączona w środę.
+        val text = textOf(renderer.render(report(mailboxConnectedAt = Instant.parse("2026-09-16T08:00:00Z"))))
+
+        assertTrue(text.contains("Poczta podłączona 16.09.2026"), "brak informacji o podłączeniu: $text")
+        assertTrue(text.contains("Maile napisane przez zespół"))
+        assertTrue(text.contains("bez historii pobranej przy podłączaniu"))
+    }
+
+    @Test
+    fun `poczta podlaczona po okresie albo wcale - bez liczb zespolu, tylko informacja`() {
+        listOf(Instant.parse("2026-09-25T08:00:00Z"), null).forEach { connectedAt ->
+            val text = textOf(renderer.render(report(mailboxConnectedAt = connectedAt)))
+
+            assertFalse(text.contains("Maile napisane przez zespół"), "liczby zespołu bez poczty: $text")
+            assertFalse(text.contains("Mediana czasu odpowiedzi"))
+            assertTrue(text.contains("od dnia podłączenia skrzynki pocztowej"))
+            assertTrue(text.contains("Maile wysłane automatycznie przez CRM"), "maile CRM nie zależą od skrzynki")
+        }
+    }
+
+    @Test
+    fun `mediana z okresow sprzed poczty - porownania brak`() {
+        // Poczta od 01.09.2026: sześć tygodni przed 14.09 sięga sierpnia.
+        val text = textOf(
+            renderer.render(report(comparison = ReportComparison.MEDIAN, mailboxConnectedAt = Instant.parse("2026-09-01T08:00:00Z")))
+        )
+
+        assertTrue(text.contains("Porównania brak: w okresie odniesienia poczta nie była jeszcze podłączona."), text)
     }
 }

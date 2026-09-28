@@ -129,13 +129,11 @@ class OwnerReportService(
         }!!
 
     private fun snapshot(studioId: StudioId, period: ReportPeriod): SnapshotMetrics {
-        val (unsettledVehicles, unsettledGross) = queries.batchUnsettled(studioId.value)
         val competitors = runCatching { adDiscoveryReadService.periodSnapshot(studioId, period.from, period.to) }
             .onFailure { logger.warn("Owner report: brak danych o konkurencji dla studia {}: {}", studioId.value, it.message) }
             .getOrNull()
         return SnapshotMetrics(
-            batchUnsettledVehicles = unsettledVehicles,
-            batchUnsettledGrossCents = unsettledGross,
+            mailboxConnectedAt = queries.mailboxConnectedAt(studioId.value),
             competitors = competitors?.let {
                 CompetitorMetrics(
                     advertisers = it.advertisers,
