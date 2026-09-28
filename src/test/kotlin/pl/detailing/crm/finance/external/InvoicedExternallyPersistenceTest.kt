@@ -108,6 +108,18 @@ class InvoicedExternallyPersistenceTest {
     }
 
     @Test
+    fun `naleznosci - nieoplacony przelew za fakture ksiegowosci nie jest naleznoscia w CRM`() {
+        document(DocumentType.INVOICE, 10_000, 12_300, external = true, status = DocumentStatus.PENDING, method = PaymentMethod.TRANSFER)
+        document(DocumentType.RECEIPT, 20_000, 24_600, external = false, status = DocumentStatus.PENDING, method = PaymentMethod.TRANSFER)
+
+        val outstanding = documents.sumNet(
+            studioId, DocumentDirection.INCOME, listOf(DocumentStatus.PENDING, DocumentStatus.OVERDUE), null, null
+        )
+
+        assertEquals(20_000, outstanding, "należność niesie faktura księgowości z KSeF, gdy przyjdzie")
+    }
+
+    @Test
     fun `przeterminowane - zapis platnosci przelewem nie trafia do kafla`() {
         document(DocumentType.INVOICE, 10_000, 12_300, external = true, status = DocumentStatus.OVERDUE, method = PaymentMethod.TRANSFER)
         document(DocumentType.RECEIPT, 10_000, 12_300, external = false, status = DocumentStatus.OVERDUE, method = PaymentMethod.TRANSFER)

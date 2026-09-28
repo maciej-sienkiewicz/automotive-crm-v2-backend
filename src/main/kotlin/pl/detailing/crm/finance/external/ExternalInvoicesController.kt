@@ -77,6 +77,7 @@ class ExternalInvoicesController(
                         statusLabel = request.status.displayName,
                         visitId = request.visitId?.toString(),
                         visitNumber = visit?.visitNumber,
+                        visitDeleted = visit?.deletedAt != null,
                         vehicleLabel = listOfNotNull(visit?.brandSnapshot, visit?.modelSnapshot)
                             .joinToString(" ").ifBlank { null },
                         licensePlate = visit?.licensePlateSnapshot,
@@ -175,6 +176,12 @@ data class ExternalInvoiceRowResponse(
     val statusLabel: String,
     val visitId: String?,
     val visitNumber: String?,
+    /**
+     * Wizytę usunięto, a sprzedaż została: usunięcie wizyty nie rusza Finansów (zapis
+     * płatności i kasa zostają). Lista mówi to wprost, zamiast linkować do wizyty, której
+     * nie ma; czy fakturę jednak wystawić, czy usunąć zapis płatności, decyduje człowiek.
+     */
+    val visitDeleted: Boolean = false,
     val vehicleLabel: String?,
     val licensePlate: String?,
     val documentId: String,
