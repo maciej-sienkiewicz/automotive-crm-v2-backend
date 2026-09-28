@@ -45,13 +45,19 @@ class OwnerReportQueries(private val jdbc: JdbcTemplate) {
     /**
      * Maile napisane przez ludzi ze skrzynki studia. Wątek SYSTEM to zwroty serwera
      * pocztowego, nie korespondencja.
+     *
+     * Tylko od chwili podłączenia skrzynki (mail_accounts.created_at): podłączenie
+     * dociąga 90 dni historii, a tamte maile pisano bez CRM-a - raport mówi o pracy
+     * zespołu w CRM, więc ich nie liczy (to samo w [customerWaitMinutes]).
      */
     fun countTeamEmailsSent(studioId: UUID, from: Instant, to: Instant): Int = count(
         """
         SELECT COUNT(*) FROM comm_messages m
         JOIN comm_threads t ON t.id = m.thread_id
+        JOIN mail_accounts a ON a.id = m.account_id
         WHERE m.studio_id = ? AND m.direction = 'OUTBOUND' AND m.send_status = 'SENT'
           AND t.kind <> 'SYSTEM'
+          AND m.sent_at >= a.created_at
           AND m.sent_at >= ? AND m.sent_at < ?
         """,
         studioId, ts(from), ts(to)
@@ -80,10 +86,18 @@ class OwnerReportQueries(private val jdbc: JdbcTemplate) {
      * nikt na nie nie odpisuje i nie powinien — bez tego filtra każdy z nich byłby
      * „klientem bez odpowiedzi". Spam i testy odrzucone przez automat też odpadają.
      */
+    /** Najwcześniejsze podłączenie skrzynki studia; null = poczta niepodłączona. */
+    fun mailboxConnectedAt(studioId: UUID): Instant? = jdbc.query(
+        "SELECT MIN(created_at) AS connected_at FROM mail_accounts WHERE studio_id = ?",
+        { rs, _ -> rs.getTimestamp("connected_at")?.toInstant() },
+        studioId
+    ).firstOrNull()
+
     fun customerWaitMinutes(studioId: UUID, from: Instant, to: Instant): List<Long?> = jdbc.query(
         """
         WITH conversation AS (
-            SELECT t.id FROM comm_threads t
+            SELECT t.id, a.created_at AS connected_at FROM comm_threads t
+            JOIN mail_accounts a ON a.id = t.account_id
             WHERE t.studio_id = ?
               AND t.kind <> 'SYSTEM'
               AND t.screening IS NULL
@@ -91,11 +105,12 @@ class OwnerReportQueries(private val jdbc: JdbcTemplate) {
               AND EXISTS (
                   SELECT 1 FROM comm_messages i
                   WHERE i.thread_id = t.id AND i.direction = 'INBOUND'
+                    AND i.sent_at >= a.created_at
                     AND i.sent_at >= ? AND i.sent_at < ?
               )
         ),
         ordered AS (
-            SELECT m.thread_id, m.direction, m.sent_at,
+            SELECT m.thread_id, m.direction, m.sent_at, c.connected_at,
                    LAG(m.direction) OVER (PARTITION BY m.thread_id ORDER BY m.sent_at, m.id) AS prev_direction
             FROM comm_messages m
             JOIN conversation c ON c.id = m.thread_id
@@ -106,6 +121,7 @@ class OwnerReportQueries(private val jdbc: JdbcTemplate) {
             FROM ordered
             WHERE direction = 'INBOUND'
               AND (prev_direction IS NULL OR prev_direction = 'OUTBOUND')
+              AND sent_at >= connected_at
               AND sent_at >= ? AND sent_at < ?
         )
         SELECT EXTRACT(EPOCH FROM (
@@ -185,20 +201,6 @@ class OwnerReportQueries(private val jdbc: JdbcTemplate) {
             studioId, from, to
         )
         return BatchMetrics(int(row["vehicles"]), long(row["gross"]), int(row["contractors"]))
-    }
-
-    /** Wykonane, a jeszcze nierozliczone z kontrahentem — stan na teraz. */
-    fun batchUnsettled(studioId: UUID): Pair<Int, Long> {
-        val row = jdbc.queryForMap(
-            """
-            SELECT COUNT(DISTINCT e.id) AS vehicles, COALESCE(SUM(s.gross_amount_cents), 0) AS gross
-            FROM batch_order_entries e
-            LEFT JOIN batch_order_entry_services s ON s.entry_id = e.id
-            WHERE e.studio_id = ? AND e.is_closed = FALSE
-            """,
-            studioId
-        )
-        return int(row["vehicles"]) to long(row["gross"])
     }
 
     /** Posty na własnym profilu studia; null, gdy studio go nie wskazało. */

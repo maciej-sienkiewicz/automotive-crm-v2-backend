@@ -123,9 +123,12 @@ data class InstagramMetrics(
 )
 
 data class SnapshotMetrics(
-    /** Zlecenia zbiorcze wykonane, a jeszcze nierozliczone z kontrahentem. */
-    val batchUnsettledVehicles: Int,
-    val batchUnsettledGrossCents: Long,
+    /**
+     * Najwcześniejsze podłączenie skrzynki pocztowej. Sekcja komunikacji liczy maile
+     * zespołu i odpowiedzi dopiero od tej chwili - historia dociągnięta przy podłączaniu
+     * powstała poza CRM-em. Null: poczta niepodłączona.
+     */
+    val mailboxConnectedAt: Instant? = null,
     /** Null: studio nie ustawiło rejonu w monitoringu reklam. */
     val competitors: CompetitorMetrics?
 )
