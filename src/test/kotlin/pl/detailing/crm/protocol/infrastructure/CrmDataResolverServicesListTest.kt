@@ -47,4 +47,16 @@ class CrmDataResolverServicesListTest {
 
         assertEquals(visit.calculateTotalGross().amountInCents, listed)
     }
+
+    @Test
+    fun `wariant zwiezly - po przecinku, cena bez slowa brutto przy kazdej pozycji`() {
+        assertEquals(
+            "Powłoka ceramiczna 3 lata (1900.00 PLN), Folia PPF - pakiet przód (bez lusterek) (3690.00 PLN)",
+            CrmDataResolver.servicesListInline(visit, withPrices = true)
+        )
+        assertEquals(
+            "Powłoka ceramiczna 3 lata, Folia PPF - pakiet przód (bez lusterek)",
+            CrmDataResolver.servicesListInline(visit, withPrices = false)
+        )
+    }
 }
