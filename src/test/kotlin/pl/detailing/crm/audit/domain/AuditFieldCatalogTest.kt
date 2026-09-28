@@ -38,6 +38,15 @@ class AuditFieldCatalogTest {
     }
 
     @Test
+    fun `termin bez godziny - polnoc albo koniec dnia - to sama data`() {
+        // Rezerwacja całodniowa: północ czasu polskiego, a nie wizyta o 00:00.
+        assertEquals("23.09.2026", AuditFieldCatalog.formatValue("2026-09-22T22:00:00Z", AuditValueType.DATE_TIME))
+        assertEquals("23.09.2026", AuditFieldCatalog.formatValue("2026-09-23T21:59:59Z", AuditValueType.DATE_TIME))
+        // Prawdziwa godzina tuż po północy zostaje.
+        assertEquals("23.09.2026, 01:24", AuditFieldCatalog.formatValue("2026-09-22T23:24:00Z", AuditValueType.DATE_TIME))
+    }
+
+    @Test
     fun `booleans and known enums are translated`() {
         assertEquals("Tak", AuditFieldCatalog.formatValue("true", AuditValueType.BOOLEAN))
         assertEquals("Nie", AuditFieldCatalog.formatValue("false", AuditValueType.BOOLEAN))
