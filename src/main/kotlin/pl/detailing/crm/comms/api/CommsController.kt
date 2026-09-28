@@ -318,6 +318,11 @@ class CommsController(
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "$effectiveDisposition; filename=\"$safeName\"")
             .header("X-Content-Type-Options", "nosniff")
+            // Załącznik pod danym id nigdy się nie zmienia. Bez tego każde pokazanie
+            // wiadomości z obrazkami w treści pobierało je od nowa - kolejne żądania
+            // z tego samego limitu co cała poczta. `private`: dane klienta zostają
+            // w przeglądarce użytkownika, nie w pamięci pośredników.
+            .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400, immutable")
             .contentType(
                 runCatching { MediaType.parseMediaType(attachment.contentType) }
                     .getOrDefault(MediaType.APPLICATION_OCTET_STREAM)
