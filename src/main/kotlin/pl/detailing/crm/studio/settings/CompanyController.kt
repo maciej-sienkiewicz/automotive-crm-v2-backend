@@ -232,6 +232,40 @@ class CompanyController(
         hasLogo = settings?.logoS3Key != null
     )
 
+    /** Czyta każdy, kto otwiera wizytę: od tego zależy, czy lista usług ma pola do odhaczania. */
+    @GetMapping("/visit-view-config")
+    fun getVisitViewConfig(): ResponseEntity<VisitViewConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        ResponseEntity.ok(VisitViewConfigResponse(serviceChecklistEnabled = settings?.serviceChecklistEnabled ?: false))
+    }
+
+    /**
+     * „Odhaczanie wykonanych usług na widoku wizyty". Wyłączenie chowa pola do odhaczania,
+     * ale nie kasuje odhaczeń ani historii - po ponownym włączeniu wracają.
+     */
+    @PatchMapping("/visit-view-config")
+    @RequiresOwner
+    fun updateVisitViewConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateVisitViewConfigRequest
+    ): ResponseEntity<VisitViewConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+        settings.serviceChecklistEnabled = request.serviceChecklistEnabled
+        settings.updatedAt = Instant.now()
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+        logger.info("Service checklist for studio={} set to {}", studioId, saved.serviceChecklistEnabled)
+        ResponseEntity.ok(VisitViewConfigResponse(serviceChecklistEnabled = saved.serviceChecklistEnabled))
+    }
+
     @GetMapping("/protocol-content-config")
     fun getProtocolContentConfig(): ResponseEntity<ProtocolContentConfigResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -575,6 +609,13 @@ data class ProtocolContentConfigResponse(
 )
 
 data class UpdateProtocolContentConfigRequest(val showServicePrices: Boolean)
+
+data class VisitViewConfigResponse(
+    /** Odhaczanie wykonanych usług na widoku wizyty; domyślnie wyłączone. */
+    val serviceChecklistEnabled: Boolean
+)
+
+data class UpdateVisitViewConfigRequest(val serviceChecklistEnabled: Boolean)
 
 data class EmailAliasResponse(val emailAlias: String?)
 

@@ -210,6 +210,8 @@ enum class AuditAction(
     COMMENT_UPDATED("Edycja komentarza", "Zmieniono komentarz", AuditIcon.COMMENT, AuditSeverity.LOW),
     COMMENT_DELETED("Usunięcie komentarza", "Usunięto komentarz", AuditIcon.COMMENT),
     NOTE_ADDED("Dodanie notatki", "Dodano notatkę", AuditIcon.NOTE, AuditSeverity.LOW),
+    SERVICE_CHECKED("Odhaczenie usługi", "Odhaczono usługę jako zrobioną", AuditIcon.APPROVE, AuditSeverity.LOW),
+    SERVICE_UNCHECKED("Odznaczenie usługi", "Odznaczono usługę jako niezrobioną", AuditIcon.EDIT, AuditSeverity.LOW),
     NOTE_UPDATED("Edycja notatki", "Zmieniono notatkę", AuditIcon.NOTE, AuditSeverity.LOW),
     NOTE_DELETED("Usunięcie notatki", "Usunięto notatkę", AuditIcon.NOTE),
 

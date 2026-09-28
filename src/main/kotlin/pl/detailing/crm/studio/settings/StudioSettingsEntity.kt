@@ -107,6 +107,13 @@ class StudioSettingsEntity(
     var servicePricesOnProtocol: Boolean = false,
 
     /**
+     * Odhaczanie wykonanych usług na widoku wizyty (np. tablet na hali). Tylko znak dla
+     * ludzi, bez żadnej weryfikacji; domyślnie wyłączone, bo potrzebuje go część studiów (V169).
+     */
+    @Column(name = "service_checklist_enabled", nullable = false, columnDefinition = "boolean not null default false")
+    var serviceChecklistEnabled: Boolean = false,
+
+    /**
      * „Faktury wystawia księgowość": wybór „Faktura" przy wydaniu pojazdu i w poprawce
      * rozliczenia nie tworzy faktury w CRM. Powstaje zapis płatności poza przychodem
      * i zgłoszenie na liście „Do zafakturowania"; przychód niesie faktura księgowości
