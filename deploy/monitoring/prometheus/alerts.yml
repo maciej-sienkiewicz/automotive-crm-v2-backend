@@ -110,17 +110,17 @@ groups:
             wartości zamrożone w przeszłości. Sprawdź logi TenantStateMetricsExporter —
             najczęstsza przyczyna to błąd SQL po migracji schematu.
 
-      # Skan bucketu idzie co godzinę; trzy godziny bez udanego skanu to co najmniej dwa
-      # nieudane cykle z rzędu. `for: 30m` przeczekuje start aplikacji (0 do pierwszego skanu).
+      # Skan bucketu idzie raz na dobę; 30 godzin bez udanego skanu znaczy, że ostatni
+      # zaplanowany skan się nie udał. `for: 30m` przeczekuje start aplikacji (0 do pierwszego skanu).
       - alert: StorageGaugesStale
         expr: |
-          time() - max(crm_storage_refreshed_seconds) > 10800
+          time() - max(crm_storage_refreshed_seconds) > 108000
         for: 30m
         labels:
           severity: warning
           team: backend
         annotations:
-          summary: "Zajętość S3 nie odświeżyła się od 3 godzin"
+          summary: "Zajętość S3 nie odświeżyła się od ponad doby"
           description: >
             Dashboard „Miejsce w S3" pokazuje wartości zamrożone w przeszłości. Sprawdź logi
             StorageMetricsExporter ([STORAGE-METRICS]) — najczęstsza przyczyna to brak

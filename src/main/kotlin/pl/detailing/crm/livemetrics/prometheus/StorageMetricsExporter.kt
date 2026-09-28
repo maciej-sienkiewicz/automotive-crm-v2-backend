@@ -38,8 +38,11 @@ import java.util.concurrent.atomic.AtomicLong
  * nie ma już w bazie, do tenanta `(usunięte) xxxxxxxx` — to osierocone pliki, za które
  * nadal płacimy, więc mają być widoczne, a nie połknięte.
  *
+ * Skan idzie raz na dobę, licząc od startu aplikacji, oraz kilka minut po każdym starcie —
+ * inaczej po wdrożeniu dashboard byłby pusty do następnego dnia.
+ *
  * Koszt: jedno żądanie LIST na 1000 obiektów (~0,005 USD za 1000 żądań). Milion plików
- * skanowany co godzinę to ~0,12 USD dziennie.
+ * skanowany raz dziennie to ~0,005 USD dziennie.
  *
  * ### Czego tu NIE ma
  *
@@ -122,7 +125,7 @@ class StorageMetricsExporter(
     }
 
     @Scheduled(
-        fixedDelayString = "\${crm.storage-metrics.refresh-minutes:60}",
+        fixedDelayString = "\${crm.storage-metrics.refresh-minutes:1440}",
         initialDelayString = "\${crm.storage-metrics.initial-delay-minutes:3}",
         timeUnit = TimeUnit.MINUTES
     )
