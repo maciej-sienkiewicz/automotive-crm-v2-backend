@@ -80,7 +80,8 @@ class AuthorizationSurfaceScanTest {
         "EmployeeLeaveController" to setOf("leaveCalendar"), // per-day on-leave counts for the shared calendar
         "CompanyController" to setOf(                     // read-only studio branding/config
             "getCompanySettings", "getEmailAlias", "getLeadAlertConfig", "getIdleTimeout",
-            "getVisitNumberingConfig", "getAutoLeadConfig", "getDocumentLogoConfig"
+            "getVisitNumberingConfig", "getAutoLeadConfig", "getDocumentLogoConfig",
+            "getProtocolContentConfig"
         ),
         "SubscriptionController" to ALL_METHODS,          // status for gates; mutations owner-checked inline
         "EntitlementsController" to ALL_METHODS,          // entitlements drive the UI gates; mutations owner-checked inline

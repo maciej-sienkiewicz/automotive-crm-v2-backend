@@ -8,6 +8,8 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.shared.CrmDataKey
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VisitId
+import pl.detailing.crm.shared.VisitServiceStatus
+import pl.detailing.crm.visit.domain.Visit
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -48,6 +50,30 @@ class CrmDataResolver(
          */
         internal fun formatMoney(amountInCents: Long, label: String): String =
             "${BigDecimal.valueOf(amountInCents, 2).toPlainString()} PLN ($label)"
+
+        /**
+         * Lista usług na protokole: jedna usługa w linii, notatka w nawiasie.
+         *
+         * [withPrices] (ustawienie studia, domyślnie wyłączone) dokłada cenę usługi
+         * w drugim nawiasie. To brutto pozycji z tej samej reguły co kwota łączna
+         * ([Visit.effectiveGrossAmount]), wzięte wprost, nie przeliczone z netto: cena
+         * wpisana jako 1900,00 zł zostaje 1900,00, a ceny w nawiasach sumują się co do
+         * grosza do „Łącznego kosztu usług" (CLAUDE.md §1). Format liczby jak w polu
+         * kwoty łącznej (kropka dziesiętna), ale bez drugiego nawiasu w nawiasie.
+         */
+        internal fun servicesList(visit: Visit, withPrices: Boolean): String =
+            visit.serviceItems
+                .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
+                .joinToString("\n") { service ->
+                    buildString {
+                        append(service.serviceName)
+                        if (!service.customNote.isNullOrBlank()) append(" (${service.customNote})")
+                        if (withPrices) {
+                            val gross = visit.effectiveGrossAmount(service) ?: service.finalPriceGross
+                            append(" (${BigDecimal.valueOf(gross.amountInCents, 2).toPlainString()} PLN brutto)")
+                        }
+                    }
+                }
 
         /**
          * Ramka USŁUGODAWCA to wizytówka wystawcy, więc obok nazwy idzie adres siedziby
@@ -135,18 +161,8 @@ class CrmDataResolver(
                 put(CrmDataKey.TOTAL_GROSS_AMOUNT, formatMoney(totalGross.amountInCents, "brutto"))
                 put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents, "VAT"))
 
-                // Services list - one per line with notes in parentheses
-                val servicesList = visitDomain.serviceItems
-                    .filter { it.status == pl.detailing.crm.shared.VisitServiceStatus.CONFIRMED ||
-                             it.status == pl.detailing.crm.shared.VisitServiceStatus.APPROVED }
-                    .joinToString("\n") { service ->
-                        if (service.customNote.isNullOrBlank()) {
-                            service.serviceName
-                        } else {
-                            "${service.serviceName} (${service.customNote})"
-                        }
-                    }
-                put(CrmDataKey.SERVICES_LIST, servicesList)
+                // Services list - one per line with notes in parentheses, prices on request
+                put(CrmDataKey.SERVICES_LIST, servicesList(visitDomain, studioSettings?.servicePricesOnProtocol == true))
                 put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
 
                 /*
