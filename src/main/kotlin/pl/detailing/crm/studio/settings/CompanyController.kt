@@ -232,6 +232,39 @@ class CompanyController(
         hasLogo = settings?.logoS3Key != null
     )
 
+    @GetMapping("/protocol-content-config")
+    fun getProtocolContentConfig(): ResponseEntity<ProtocolContentConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(principal.studioId.value).orElse(null)
+        }
+        ResponseEntity.ok(ProtocolContentConfigResponse(showServicePrices = settings?.servicePricesOnProtocol ?: false))
+    }
+
+    /**
+     * „Czy pokazywać ceny usług na protokole przyjęcia?". Jak logo: dotyczy protokołów
+     * wypełnianych OD TEJ CHWILI - wygenerowane i podpisane zostają, jakie były.
+     */
+    @PatchMapping("/protocol-content-config")
+    @RequiresOwner
+    fun updateProtocolContentConfig(
+        @org.springframework.web.bind.annotation.RequestBody request: UpdateProtocolContentConfigRequest
+    ): ResponseEntity<ProtocolContentConfigResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val studioId = principal.studioId.value
+
+        val settings = withContext(Dispatchers.IO) {
+            studioSettingsRepository.findById(studioId).orElse(null)
+                ?: StudioSettingsEntity(studioId = studioId)
+        }
+        settings.servicePricesOnProtocol = request.showServicePrices
+        settings.updatedAt = Instant.now()
+
+        val saved = withContext(Dispatchers.IO) { studioSettingsRepository.save(settings) }
+        logger.info("Service prices on protocol for studio={} set to {}", studioId, saved.servicePricesOnProtocol)
+        ResponseEntity.ok(ProtocolContentConfigResponse(showServicePrices = saved.servicePricesOnProtocol))
+    }
+
     @GetMapping("/lead-alert-config")
     fun getLeadAlertConfig(): ResponseEntity<LeadAlertConfigResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
@@ -535,6 +568,13 @@ data class DocumentLogoConfigResponse(
 )
 
 data class UpdateDocumentLogoConfigRequest(val showLogoOnDocuments: Boolean)
+
+data class ProtocolContentConfigResponse(
+    /** Cena każdej usługi w nawiasie na protokole przyjęcia; domyślnie wyłączone. */
+    val showServicePrices: Boolean
+)
+
+data class UpdateProtocolContentConfigRequest(val showServicePrices: Boolean)
 
 data class EmailAliasResponse(val emailAlias: String?)
 

@@ -99,6 +99,14 @@ class StudioSettingsEntity(
     var ksefAutoSendDefault: Boolean = true,
 
     /**
+     * Cena każdej usługi w nawiasie na protokole przyjęcia (pole listy usług). Wyłączone
+     * = same nazwy i jedna kwota łączna - tak wyglądał protokół przed tym ustawieniem
+     * i tak chce go część studiów (V168).
+     */
+    @Column(name = "service_prices_on_protocol", nullable = false, columnDefinition = "boolean not null default false")
+    var servicePricesOnProtocol: Boolean = false,
+
+    /**
      * „Faktury wystawia księgowość": wybór „Faktura" przy wydaniu pojazdu i w poprawce
      * rozliczenia nie tworzy faktury w CRM. Powstaje zapis płatności poza przychodem
      * i zgłoszenie na liście „Do zafakturowania"; przychód niesie faktura księgowości
