@@ -22,6 +22,9 @@ object ReportFormat {
 
     const val UNCHANGED = "bez zmian"
 
+    /** Poniżej tylu sztuk procent nic nie mówi — pokazujemy różnicę w sztukach. */
+    const val SMALL_COUNT = 10L
+
     private val DAY = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     private val DAY_SHORT = DateTimeFormatter.ofPattern("dd.MM")
 
