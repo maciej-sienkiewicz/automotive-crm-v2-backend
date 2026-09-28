@@ -156,6 +156,12 @@ class AuditFeedRenderer {
             }
         }
 
+        // Odhaczenie na liście kontrolnej wizyty: tytuł mówi „odhaczono usługę", a to,
+        // KTÓRĄ, jest całą treścią wpisu - na hali odhacza się ich kilka pod rząd.
+        if (log.action == AuditAction.SERVICE_CHECKED || log.action == AuditAction.SERVICE_UNCHECKED) {
+            log.metadata["serviceName"]?.takeIf { it.isNotBlank() }?.let { parts += "Usługa: $it" }
+        }
+
         /*
          * Mapa uszkodzeń zmieniona w trakcie wizyty. Liczba oznaczeń jest tu treścią
          * wpisu — po niej poznaje się, czy doszło uszkodzenie, czy tylko poprawiono

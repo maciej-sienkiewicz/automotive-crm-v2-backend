@@ -81,7 +81,7 @@ class AuthorizationSurfaceScanTest {
         "CompanyController" to setOf(                     // read-only studio branding/config
             "getCompanySettings", "getEmailAlias", "getLeadAlertConfig", "getIdleTimeout",
             "getVisitNumberingConfig", "getAutoLeadConfig", "getDocumentLogoConfig",
-            "getProtocolContentConfig"
+            "getProtocolContentConfig", "getVisitViewConfig"
         ),
         "SubscriptionController" to ALL_METHODS,          // status for gates; mutations owner-checked inline
         "EntitlementsController" to ALL_METHODS,          // entitlements drive the UI gates; mutations owner-checked inline

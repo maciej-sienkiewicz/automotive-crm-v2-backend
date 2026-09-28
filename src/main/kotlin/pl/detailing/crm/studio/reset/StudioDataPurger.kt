@@ -87,6 +87,7 @@ class StudioDataPurger(
             deleteByStudio("SignatureRequestEntity", ctx)
             deleteByStudio("VisitProtocolEntity", ctx)
             deleteByStudio("VisitTechnicalNoteHistoryEntity", ctx)
+            deleteByStudio("VisitServiceCheckEntity", ctx)
         },
 
         StudioResetStep("Zdjęcia i pozycje wizyt") { ctx ->
