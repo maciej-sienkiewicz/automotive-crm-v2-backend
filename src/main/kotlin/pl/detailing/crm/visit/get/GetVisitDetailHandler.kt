@@ -28,7 +28,8 @@ class GetVisitDetailHandler(
     private val doorToDoorRepository: DoorToDoorRepository,
     private val userRepository: UserRepository,
     private val financialDocumentRepository: FinancialDocumentRepository,
-    private val revenueInvoiceRepository: KsefRevenueInvoiceRepository
+    private val revenueInvoiceRepository: KsefRevenueInvoiceRepository,
+    private val externalRequestRepository: pl.detailing.crm.finance.external.ExternalInvoiceRequestRepository
 ) {
 
     @Transactional(readOnly = true)
@@ -155,10 +156,18 @@ class GetVisitDetailHandler(
             linkedInvoiceId = settlementDocuments.firstNotNullOfOrNull { it.ksefRevenueInvoiceId }
         )?.toString()
 
+        // Faktura od księgowości: zgłoszenie sprzedaży (nie korekty) przy obowiązującym dokumencie.
+        val externalRequest = settlementDocuments.filter { it.invoicedExternally }.map { it.id }
+            .takeIf { it.isNotEmpty() }
+            ?.let { ids -> externalRequestRepository.findActiveByDocuments(command.studioId.value, ids) }
+            ?.lastOrNull { it.kind != pl.detailing.crm.finance.external.ExternalInvoiceKind.CORRECTION }
+
         val settlement = if (settlementDocumentType == null && revenueInvoiceId == null) null
             else VisitSettlementInfo(
                 documentType = settlementDocumentType,
-                revenueInvoiceId = revenueInvoiceId
+                revenueInvoiceId = revenueInvoiceId,
+                externalInvoiceStatus = externalRequest?.status?.name,
+                externalInvoiceNumber = externalRequest?.externalInvoiceNumber
             )
 
         return GetVisitDetailResult(

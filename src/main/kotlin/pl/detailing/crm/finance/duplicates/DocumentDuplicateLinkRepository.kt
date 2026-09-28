@@ -49,6 +49,10 @@ interface DocumentDuplicateLinkRepository : JpaRepository<DocumentDuplicateLinkE
      * Dokumenty finansowe powiązane z fakturą przez ksef_revenue_invoice_id są
      * pominięte: one już nie liczą się do sum, więc nie ma czego wykluczać.
      *
+     * Tak samo dokumenty sprzedaży fakturowanej przez księgowość (invoiced_externally):
+     * poza sumami są z założenia, a wyciszenie ukryłoby je także z listy „Do zafakturowania".
+     * Parowania z fakturą księgowości biznes nie chce w ogóle — odhacza ją człowiek.
+     *
      * Kolumny wyniku: winner_id, loser_id, total_gross, issue_date, day_gap
      */
     @Query(
@@ -66,6 +70,7 @@ interface DocumentDuplicateLinkRepository : JpaRepository<DocumentDuplicateLinkE
           AND d.deleted_at  IS NULL
           AND d.excluded_at IS NULL
           AND d.ksef_revenue_invoice_id IS NULL
+          AND d.invoiced_externally = FALSE
           AND d.total_net   = r.total_net
           AND d.total_vat   = r.total_vat
           AND d.total_gross = r.total_gross

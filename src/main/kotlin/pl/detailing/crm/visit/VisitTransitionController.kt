@@ -179,7 +179,8 @@ class VisitTransitionController(
                     ksefStatus              = result.ksefInvoice?.ksefStatus?.name,
                     remainderDocumentNumber = result.remainderDocumentNumber,
                     ksefError               = result.ksefInvoice?.lastSendError,
-                    alreadyInTargetState    = result.completion.alreadyInTargetState
+                    alreadyInTargetState    = result.completion.alreadyInTargetState,
+                    invoicedExternally      = result.invoicedExternally
                 )
             )
         }
@@ -200,7 +201,8 @@ class VisitTransitionController(
                                           else "Visit completed successfully",
                 financialDocumentId     = result.financialDocumentId?.toString(),
                 financialDocumentNumber = result.financialDocumentNumber,
-                alreadyInTargetState    = result.alreadyInTargetState
+                alreadyInTargetState    = result.alreadyInTargetState,
+                invoicedExternally      = result.invoicedExternally
             )
         )
     }
@@ -496,5 +498,11 @@ data class CompleteVisitResponse(
      * Bez niego użytkownik przy statusie REJECTED wie tylko, że coś poszło nie tak,
      * i musi szukać przyczyny w module finansów.
      */
-    val ksefError: String? = null
+    val ksefError: String? = null,
+
+    /**
+     * Tryb „Faktury wystawia księgowość": faktury w CRM nie ma, sprzedaż czeka na liście
+     * „Do zafakturowania". Ekran wydania mówi to wprost zamiast pokazywać numer faktury.
+     */
+    val invoicedExternally: Boolean = false
 )

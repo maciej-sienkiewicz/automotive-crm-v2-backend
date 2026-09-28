@@ -171,7 +171,16 @@ class FinancialDocumentEntity(
      * obok stoi jego korekta, a sumy wychodzą dobrze z samych kwot.
      */
     @Column(name = "superseded_at")
-    var supersededAt: Instant? = null
+    var supersededAt: Instant? = null,
+
+    /**
+     * Przychód tej sprzedaży niesie faktura wystawiona poza CRM (tryb „Faktury wystawia
+     * księgowość") i to ona, pobrana z KSeF, wchodzi do sum. Dokument zostaje zapisem
+     * płatności: forma, status, termin, kasa. Liczony razem z fakturą księgowości
+     * dawałby tę samą sprzedaż dwa razy.
+     */
+    @Column(name = "invoiced_externally", nullable = false, columnDefinition = "boolean not null default false")
+    val invoicedExternally: Boolean = false
 
 ) {
     /** Ukryty ręcznie — poza statystykami i domyślną listą. */
@@ -222,6 +231,7 @@ class FinancialDocumentEntity(
         deletedAt         = deletedAt,
         ksefRevenueInvoiceId = ksefRevenueInvoiceId,
         correctsDocumentId = correctsDocumentId,
-        supersededAt      = supersededAt
+        supersededAt      = supersededAt,
+        invoicedExternally = invoicedExternally
     )
 }

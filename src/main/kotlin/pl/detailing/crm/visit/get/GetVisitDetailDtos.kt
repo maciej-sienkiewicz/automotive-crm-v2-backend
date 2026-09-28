@@ -65,7 +65,13 @@ data class VisitResponse(
  */
 data class VisitSettlementResponse(
     val documentType: String?,
-    val revenueInvoiceId: String?
+    val revenueInvoiceId: String?,
+    /**
+     * Fakturę wystawia księgowość: PENDING (czeka) | ISSUED (odhaczona). Null = faktura
+     * z CRM albo brak faktury.
+     */
+    val externalInvoiceStatus: String? = null,
+    val externalInvoiceNumber: String? = null
 )
 
 data class DoorToDoorInfoResponse(
@@ -252,7 +258,9 @@ data class GetVisitDetailResult(
 /** Dane rozliczenia zebrane z modułu finansów i z ledgera faktur KSeF. */
 data class VisitSettlementInfo(
     val documentType: String?,
-    val revenueInvoiceId: String?
+    val revenueInvoiceId: String?,
+    val externalInvoiceStatus: String? = null,
+    val externalInvoiceNumber: String? = null
 )
 
 /**

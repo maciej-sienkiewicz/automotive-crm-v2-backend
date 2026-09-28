@@ -140,15 +140,17 @@ class KsefController(
                 permissionsKnown = permissions != null,
                 canIssueInvoices = permissions?.contains("InvoiceWrite") == true,
                 checkedAt        = credentials?.lastVerifiedAt,
-                autoSendDefault  = settings?.ksefAutoSendDefault ?: true
+                autoSendDefault  = settings?.ksefAutoSendDefault ?: true,
+                invoicesIssuedExternally = settings?.invoicesIssuedExternally ?: false
             )
         )
     }
 
     /**
-     * Domyślna pozycja przełącznika „Wyślij fakturę do KSeF" przy wydaniu pojazdu.
-     * Ustawienie studia, więc zmienia je właściciel; sama decyzja o konkretnej
-     * fakturze pozostaje przy osobie wydającej pojazd.
+     * Ustawienia fakturowania przy wydaniu pojazdu: domyślna pozycja przełącznika
+     * „Wyślij fakturę do KSeF" i tryb „Faktury wystawia księgowość". Ustawienia studia,
+     * więc zmienia je właściciel; decyzja o konkretnej fakturze zostaje przy osobie
+     * wydającej pojazd.
      */
     @PatchMapping("/invoicing-settings")
     @Transactional
@@ -160,11 +162,17 @@ class KsefController(
         val settings = studioSettingsRepository.findById(studioId).orElse(null)
             ?: StudioSettingsEntity(studioId = studioId)
 
-        settings.ksefAutoSendDefault = req.autoSendDefault
+        req.autoSendDefault?.let { settings.ksefAutoSendDefault = it }
+        req.invoicesIssuedExternally?.let { settings.invoicesIssuedExternally = it }
         settings.updatedAt = Instant.now()
         val saved = studioSettingsRepository.save(settings)
 
-        return ResponseEntity.ok(KsefInvoicingSettingsResponse(autoSendDefault = saved.ksefAutoSendDefault))
+        return ResponseEntity.ok(
+            KsefInvoicingSettingsResponse(
+                autoSendDefault = saved.ksefAutoSendDefault,
+                invoicesIssuedExternally = saved.invoicesIssuedExternally
+            )
+        )
     }
 
     // ── Sync ───────────────────────────────────────────────────────────────────
@@ -643,12 +651,21 @@ data class KsefInvoicingStatusResponse(
     val permissionsKnown: Boolean,
     val canIssueInvoices: Boolean,
     val checkedAt: Instant?,
-    val autoSendDefault: Boolean
+    val autoSendDefault: Boolean,
+    /** Tryb „Faktury wystawia księgowość" — ekran wydania nie proponuje wtedy faktury z CRM. */
+    val invoicesIssuedExternally: Boolean = false
 )
 
-data class UpdateKsefInvoicingSettingsRequest(val autoSendDefault: Boolean)
+/** Pole null = bez zmiany: każdy przełącznik zapisuje się osobno. */
+data class UpdateKsefInvoicingSettingsRequest(
+    val autoSendDefault: Boolean? = null,
+    val invoicesIssuedExternally: Boolean? = null
+)
 
-data class KsefInvoicingSettingsResponse(val autoSendDefault: Boolean)
+data class KsefInvoicingSettingsResponse(
+    val autoSendDefault: Boolean,
+    val invoicesIssuedExternally: Boolean = false
+)
 
 data class KsefSyncStatusResponse(
     val syncStatus: String,

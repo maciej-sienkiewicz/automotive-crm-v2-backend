@@ -97,7 +97,9 @@ data class FinancialDocument(
     /** Dokument, który ta korekta storno koryguje; tylko dla [DocumentType.CORRECTION]. */
     val correctsDocumentId: java.util.UUID? = null,
     /** Dokument zastąpiony w poprawce rozliczenia — zostaje w historii, obok stoi jego korekta. */
-    val supersededAt: Instant? = null
+    val supersededAt: Instant? = null,
+    /** Przychód niesie faktura wystawiona poza CRM — dokument jest tylko zapisem płatności. */
+    val invoicedExternally: Boolean = false
 ) {
     init {
         require(totalNet + totalVat == totalGross) {

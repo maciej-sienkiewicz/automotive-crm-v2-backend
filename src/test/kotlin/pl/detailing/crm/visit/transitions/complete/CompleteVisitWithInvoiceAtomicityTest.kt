@@ -79,7 +79,8 @@ class CompleteVisitWithInvoiceAtomicityTest {
 
     private val handler = CompleteVisitHandler(
         visitRepository, customerRepository, mockk(relaxed = true), createFinancialDocumentHandler,
-        capabilityService, mockk(relaxed = true), financialDocumentRepository, transactions.template()
+        capabilityService, mockk(relaxed = true), financialDocumentRepository, transactions.template(),
+        settingsRepository, mockk(relaxed = true)
     )
 
     private val orchestrator = CompleteVisitInvoiceOrchestrator(
@@ -199,7 +200,8 @@ class CompleteVisitWithInvoiceAtomicityTest {
         val auditService = mockk<pl.detailing.crm.audit.domain.AuditService>(relaxed = true)
         val receiptHandler = CompleteVisitHandler(
             visitRepository, customerRepository, auditService, createFinancialDocumentHandler,
-            capabilityService, mockk(relaxed = true), financialDocumentRepository, transactions.template()
+            capabilityService, mockk(relaxed = true), financialDocumentRepository, transactions.template(),
+            settingsRepository, mockk(relaxed = true)
         )
         val visitId = givenVisit(VisitStatus.READY_FOR_PICKUP)
         every { createFinancialDocumentHandler.handle(any()) } throws IllegalStateException("kasa niedostępna")

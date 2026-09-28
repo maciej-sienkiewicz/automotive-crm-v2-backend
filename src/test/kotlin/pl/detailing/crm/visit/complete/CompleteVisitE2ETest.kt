@@ -83,7 +83,9 @@ class CompleteVisitE2ETest {
             capabilityService,
             eventPublisher = mockk(relaxed = true),
             financialDocumentRepository = mockk(relaxed = true),
-            transactionTemplate = pl.detailing.crm.shared.RecordingTransactionManager().template()
+            transactionTemplate = pl.detailing.crm.shared.RecordingTransactionManager().template(),
+            settingsRepository = mockk(relaxed = true),
+            externalInvoices = mockk(relaxed = true)
         )
 
         val controller = VisitTransitionController(

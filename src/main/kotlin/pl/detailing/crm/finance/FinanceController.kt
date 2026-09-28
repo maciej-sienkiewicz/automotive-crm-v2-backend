@@ -531,7 +531,9 @@ data class FinancialDocumentResponse(
     /** Korekta: dokument, który storno koryguje. */
     val correctsDocumentId: String? = null,
     /** Dokument zastąpiony w poprawce rozliczenia wizyty — tylko do odczytu. */
-    val supersededAt: Instant? = null
+    val supersededAt: Instant? = null,
+    /** Przychód niesie faktura księgowości — dokument jest tylko zapisem płatności. */
+    val invoicedExternally: Boolean = false
 )
 
 
@@ -636,7 +638,8 @@ private fun FinancialDocument.toResponse() = FinancialDocumentResponse(
     deletedAt         = deletedAt,
     ksefInvoiceId     = ksefRevenueInvoiceId?.toString(),
     correctsDocumentId = correctsDocumentId?.toString(),
-    supersededAt      = supersededAt
+    supersededAt      = supersededAt,
+    invoicedExternally = invoicedExternally
 )
 
 private fun CashRegister.toResponse() = CashRegisterResponse(

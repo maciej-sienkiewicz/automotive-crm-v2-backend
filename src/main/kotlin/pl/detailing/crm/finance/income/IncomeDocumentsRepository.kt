@@ -15,6 +15,9 @@ import java.util.UUID
  *    Faktury powiązane z rekordem KSeF (ksef_revenue_invoice_id) są pomijane,
  *    bo reprezentuje je już źródło 1; faktury bez powiązania to dokumenty
  *    sprzed wdrożenia KSeF i prezentujemy je jako faktury spoza KSeF.
+ *    Dokumenty sprzedaży fakturowanej przez księgowość (invoiced_externally) też są
+ *    pomijane: dokumentem przychodowym jest faktura księgowości z KSeF (źródło 1),
+ *    a zapis płatności ma własną listę „Do zafakturowania".
  *
  * Zapytanie natywne z UNION ALL, bo tylko ono pozwala sortować i stronicować
  * po obu źródłach naraz (sortowanie/limit po stronie bazy, nie w pamięci).
@@ -135,6 +138,7 @@ class IncomeDocumentsRepository(
           AND d.direction = 'INCOME'
           AND d.deleted_at IS NULL
           AND d.ksef_revenue_invoice_id IS NULL
+          AND d.invoiced_externally = FALSE
           AND (CAST(:documentType AS text) IS NULL OR d.document_type = CAST(:documentType AS text))
           AND (CAST(:paymentStatus AS text) IS NULL OR d.status = CAST(:paymentStatus AS text))
           AND (CAST(:dateFrom AS date) IS NULL OR d.issue_date >= CAST(:dateFrom AS date))

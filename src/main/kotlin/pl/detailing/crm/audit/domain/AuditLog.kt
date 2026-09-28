@@ -290,6 +290,8 @@ enum class AuditAction(
     DOCUMENT_NUMBER_UPDATED("Aktualizacja numeru dokumentu", "Zmieniono numer dokumentu", AuditIcon.EDIT, AuditSeverity.HIGH),
     DOCUMENT_UPDATED("Edycja dokumentu", "Zmieniono dokument", AuditIcon.EDIT, AuditSeverity.HIGH),
     SETTLEMENT_CORRECTED("Poprawka rozliczenia", "Poprawiono rozliczenie wizyty", AuditIcon.MONEY, AuditSeverity.CRITICAL),
+    EXTERNAL_INVOICE_MARKED("Faktura księgowości", "Oznaczono fakturę księgowości jako wystawioną", AuditIcon.MONEY, AuditSeverity.HIGH),
+    EXTERNAL_INVOICE_UNMARKED("Cofnięcie faktury księgowości", "Cofnięto oznaczenie faktury księgowości", AuditIcon.MONEY, AuditSeverity.HIGH),
     DOCUMENT_DELETED("Usunięcie dokumentu", "Usunięto dokument", AuditIcon.DELETE, AuditSeverity.CRITICAL),
     DOCUMENT_RESTORED("Przywrócenie dokumentu", "Przywrócono dokument", AuditIcon.RESTORE, AuditSeverity.HIGH),
     CASH_ADJUSTED("Korekta kasy", "Skorygowano stan kasy", AuditIcon.MONEY, AuditSeverity.CRITICAL),
