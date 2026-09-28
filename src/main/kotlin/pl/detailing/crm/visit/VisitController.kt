@@ -744,9 +744,7 @@ class VisitController(
             settlement = settlement?.let {
                 VisitSettlementResponse(
                     documentType = it.documentType,
-                    revenueInvoiceId = it.revenueInvoiceId,
-                    externalInvoiceStatus = it.externalInvoiceStatus,
-                    externalInvoiceNumber = it.externalInvoiceNumber
+                    revenueInvoiceId = it.revenueInvoiceId
                 )
             },
             createdAt = visit.createdAt,

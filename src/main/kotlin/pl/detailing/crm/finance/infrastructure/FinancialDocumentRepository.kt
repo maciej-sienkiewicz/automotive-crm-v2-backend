@@ -149,8 +149,8 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
 
     /**
      * Liczba przeterminowanych dokumentów do kafla — spójnie z [sumNet]: sprzedaż
-     * fakturowana przez księgowość jest tam pominięta, więc i tu. Jej płatność
-     * widać na liście „Do zafakturowania".
+     * fakturowana przez księgowość jest tam pominięta, więc i tu. Należność niesie
+     * faktura księgowości pobrana z KSeF.
      */
     @Query("""
         SELECT COUNT(d) FROM FinancialDocumentEntity d

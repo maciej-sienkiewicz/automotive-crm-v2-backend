@@ -501,8 +501,8 @@ data class CompleteVisitResponse(
     val ksefError: String? = null,
 
     /**
-     * Tryb „Faktury wystawia księgowość": faktury w CRM nie ma, sprzedaż czeka na liście
-     * „Do zafakturowania". Ekran wydania mówi to wprost zamiast pokazywać numer faktury.
+     * Tryb „Faktury wystawia księgowość": faktury w CRM nie ma, wystawi ją księgowość.
+     * Ekran wydania mówi to wprost zamiast pokazywać numer faktury.
      */
     val invoicedExternally: Boolean = false
 )

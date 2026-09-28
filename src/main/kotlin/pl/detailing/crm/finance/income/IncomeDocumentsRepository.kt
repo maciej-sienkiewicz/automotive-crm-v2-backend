@@ -17,7 +17,7 @@ import java.util.UUID
  *    sprzed wdrożenia KSeF i prezentujemy je jako faktury spoza KSeF.
  *    Dokumenty sprzedaży fakturowanej przez księgowość (invoiced_externally) też są
  *    pomijane: dokumentem przychodowym jest faktura księgowości z KSeF (źródło 1),
- *    a zapis płatności ma własną listę „Do zafakturowania".
+ *    a zapis płatności byłby tą samą sprzedażą drugi raz.
  *
  * Zapytanie natywne z UNION ALL, bo tylko ono pozwala sortować i stronicować
  * po obu źródłach naraz (sortowanie/limit po stronie bazy, nie w pamięci).

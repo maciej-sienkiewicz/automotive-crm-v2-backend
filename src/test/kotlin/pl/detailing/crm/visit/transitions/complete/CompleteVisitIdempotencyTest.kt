@@ -49,7 +49,7 @@ class CompleteVisitIdempotencyTest {
         visitRepository, customerRepository, auditService, createFinancialDocumentHandler,
         capabilityService, mockk(relaxed = true), financialDocumentRepository,
         pl.detailing.crm.shared.RecordingTransactionManager().template(),
-        mockk(relaxed = true), mockk(relaxed = true)
+        mockk(relaxed = true)
     )
 
     private val studioId = StudioId.random()

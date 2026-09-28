@@ -115,9 +115,9 @@ class StudioSettingsEntity(
 
     /**
      * „Faktury wystawia księgowość": wybór „Faktura" przy wydaniu pojazdu i w poprawce
-     * rozliczenia nie tworzy faktury w CRM. Powstaje zapis płatności poza przychodem
-     * i zgłoszenie na liście „Do zafakturowania"; przychód niesie faktura księgowości
-     * pobrana z KSeF. Bez automatycznego łączenia faktur — decyzja biznesu (V167).
+     * rozliczenia nie tworzy faktury w CRM. Powstaje zapis płatności poza przychodem;
+     * przychód niesie faktura księgowości pobrana z KSeF. Bez automatycznego łączenia
+     * faktur i bez listy „do zafakturowania" — decyzje biznesu (V167, V170).
      */
     @Column(name = "invoices_issued_externally", nullable = false, columnDefinition = "boolean not null default false")
     var invoicesIssuedExternally: Boolean = false,

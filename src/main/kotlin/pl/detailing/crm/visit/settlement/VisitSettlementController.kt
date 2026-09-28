@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.auth.SecurityContextHelper
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestRepository
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.role.domain.Permission
@@ -40,7 +39,6 @@ class VisitSettlementController(
     private val documentRepository: FinancialDocumentRepository,
     private val invoiceRepository: KsefRevenueInvoiceRepository,
     private val correctionRepository: VisitSettlementCorrectionRepository,
-    private val externalRequestRepository: ExternalInvoiceRequestRepository,
     private val settingsRepository: StudioSettingsRepository
 ) {
 
@@ -74,20 +72,6 @@ class VisitSettlementController(
                     invoicedExternally = it.invoicedExternally
                 )
             }
-        val externalInvoices = externalRequestRepository.findByStudioIdAndVisitIdOrderByCreatedAtAsc(studioId, id.value).map {
-            SettlementExternalInvoiceResponse(
-                id = it.id.toString(),
-                documentId = it.financialDocumentId.toString(),
-                kind = it.kind.name,
-                kindLabel = it.kind.displayName,
-                status = it.status.name,
-                statusLabel = it.status.displayName,
-                externalInvoiceNumber = it.externalInvoiceNumber,
-                totalGross = it.totalGross,
-                buyerNip = it.buyerNip,
-                buyerName = it.buyerName
-            )
-        }
         val invoices = invoiceRepository.findByStudioIdAndVisitIdOrderByCreatedAtAsc(studioId, id.value).map {
             SettlementInvoiceResponse(
                 id = it.id.toString(),
@@ -141,13 +125,12 @@ class VisitSettlementController(
                 paymentMethod = state.paymentMethod?.name,
                 buyer = lastInvoice?.let {
                     SettlementBuyerDto(it.buyerNip, it.buyerName, it.buyerAddressLine1, it.buyerAddressLine2, it.buyerEmail)
-                } ?: state.requestBuyer?.let {
+                } ?: state.externalBuyer?.let {
                     SettlementBuyerDto(it.nip, it.name, it.addressLine1, it.addressLine2, it.email)
                 },
                 services = services,
                 documents = documents,
                 invoices = invoices,
-                externalInvoices = externalInvoices,
                 invoicesIssuedExternally = settingsRepository.findById(studioId).orElse(null)
                     ?.invoicesIssuedExternally == true,
                 history = history
@@ -258,22 +241,6 @@ data class SettlementDocumentResponse(
     val invoicedExternally: Boolean = false
 )
 
-/** Zgłoszenie dla księgowości (tryb „Faktury wystawia księgowość"). */
-data class SettlementExternalInvoiceResponse(
-    val id: String,
-    val documentId: String,
-    /** INVOICE | INVOICE_TO_RECEIPT | CORRECTION */
-    val kind: String,
-    val kindLabel: String,
-    /** PENDING | ISSUED | WITHDRAWN */
-    val status: String,
-    val statusLabel: String,
-    val externalInvoiceNumber: String?,
-    val totalGross: Long,
-    @Pii val buyerNip: String?,
-    @Pii val buyerName: String?
-)
-
 data class SettlementInvoiceResponse(
     val id: String,
     val number: String,
@@ -315,8 +282,6 @@ data class SettlementViewResponse(
     val services: List<SettlementServiceResponse>,
     val documents: List<SettlementDocumentResponse>,
     val invoices: List<SettlementInvoiceResponse>,
-    /** Zgłoszenia dla księgowości tej wizyty, także wycofane — historia. */
-    val externalInvoices: List<SettlementExternalInvoiceResponse> = emptyList(),
     /** Tryb studia: faktura w poprawce trafia do księgowości, CRM jej nie wystawia. */
     val invoicesIssuedExternally: Boolean = false,
     val history: List<SettlementHistoryResponse>

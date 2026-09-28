@@ -2,16 +2,9 @@ package pl.detailing.crm.finance.external
 
 import io.mockk.every
 import io.mockk.mockk
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
-import org.springframework.data.domain.PageImpl
-import org.springframework.security.core.context.SecurityContextHolder
-import org.springframework.security.core.context.SecurityContextImpl
-import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.finance.document.UpdateFinancialDocumentCommand
 import pl.detailing.crm.finance.document.UpdateFinancialDocumentHandler
 import pl.detailing.crm.finance.domain.DocumentDirection
@@ -21,23 +14,16 @@ import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
-import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
-import pl.detailing.crm.shared.ValidationException
-import pl.detailing.crm.visit.domain.VisitFixtures
-import pl.detailing.crm.visit.infrastructure.VisitEntity
-import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.visitcard.visitCardPaymentStatus
 import java.time.Instant
 import java.time.LocalDate
-import java.util.Optional
 import java.util.UUID
 
 /**
  * Przypadki brzegowe trybu „Faktury wystawia księgowość" poza wydaniem i poprawką:
- * ręczna edycja zapisu płatności w Finansach, karta wizyty dla klienta, usunięta wizyta
- * na liście „Do zafakturowania" i oddzielenie studiów.
+ * ręczna edycja zapisu płatności w Finansach i karta wizyty dla klienta.
  */
 class ExternalInvoicingEdgeCasesTest {
 
@@ -71,9 +57,6 @@ class ExternalInvoicingEdgeCasesTest {
         invoicedExternally = external
     ).also { documents[it.id] = it }
 
-    @AfterEach
-    fun tearDown() = SecurityContextHolder.clearContext()
-
     // ── Ręczna edycja zapisu płatności w Finansach ────────────────────────────
 
     private val update = UpdateFinancialDocumentHandler(documentRepository, mockk(relaxed = true), mockk(relaxed = true))
@@ -85,13 +68,13 @@ class ExternalInvoicingEdgeCasesTest {
         )
 
     @Test
-    fun `nabywcy faktury ksiegowosci nie zmienia sie w Finansach, bo ksiegowosc by o tym nie wiedziala`() {
+    fun `nabywce zapisu platnosci da sie poprawic w Finansach, dokument zostaje poza przychodem`() {
         val placeholder = doc()
 
-        val error = assertThrows<ValidationException> { update.handle(updateCmd(placeholder, buyer = "Anna Nowak")) }
+        update.handle(updateCmd(placeholder, buyer = "Anna Nowak"))
 
-        assertTrue(error.message!!.contains("Popraw rozliczenie"))
-        assertEquals("Jan Kowalski", placeholder.counterpartyName)
+        assertEquals("Anna Nowak", placeholder.counterpartyName)
+        assertTrue(placeholder.invoicedExternally)
     }
 
     @Test
@@ -121,55 +104,5 @@ class ExternalInvoicingEdgeCasesTest {
         assertEquals("PENDING", visitCardPaymentStatus(listOf(doc(method = PaymentMethod.TRANSFER))))
         assertEquals("OVERDUE", visitCardPaymentStatus(listOf(doc(status = DocumentStatus.OVERDUE))))
         assertEquals(null, visitCardPaymentStatus(emptyList()))
-    }
-
-    // ── Usunięta wizyta na liście „Do zafakturowania" ─────────────────────────
-
-    private fun request(document: FinancialDocumentEntity, owner: StudioId = studioId) = ExternalInvoiceRequestEntity(
-        studioId = owner.value, visitId = document.visitId, financialDocumentId = document.id,
-        kind = ExternalInvoiceKind.INVOICE, buyerNip = null, buyerName = "Jan Kowalski", buyerAddressLine1 = null,
-        buyerAddressLine2 = null, buyerEmail = null, totalNet = document.totalNet, totalVat = document.totalVat,
-        totalGross = document.totalGross, createdBy = userId.value
-    )
-
-    @Test
-    fun `usunieta wizyta - sprzedaz zostaje na liscie z informacja, ze wizyty juz nie ma`() {
-        val deletedVisit = VisitEntity.fromDomain(VisitFixtures.visit(studioId = studioId)).also { it.deletedAt = Instant.now() }
-        val liveVisit = VisitEntity.fromDomain(VisitFixtures.visit(studioId = studioId))
-        val onDeleted = request(doc(visitId = deletedVisit.id))
-        val onLive = request(doc(visitId = liveVisit.id))
-        val repository: ExternalInvoiceRequestRepository = mockk {
-            every { findPage(any(), any(), any()) } returns PageImpl(listOf(onDeleted, onLive))
-            every { findAllById(any()) } returns emptyList()
-        }
-        val visits: VisitRepository = mockk { every { findAllById(any()) } returns listOf(deletedVisit, liveVisit) }
-        SecurityContextHolder.setContext(SecurityContextImpl(
-            UserPrincipal(userId = userId, studioId = studioId, isOwner = true, email = "o@studio.pl",
-                fullName = "Anna Kowalska", phoneNumber = "+48600000000")
-        ))
-
-        val items = ExternalInvoicesController(repository, mockk(), documentRepository, visits)
-            .list("PENDING", 1, 20).body!!.items
-
-        assertTrue(items.single { it.id == onDeleted.id.toString() }.visitDeleted)
-        assertFalse(items.single { it.id == onLive.id.toString() }.visitDeleted)
-        assertEquals(deletedVisit.visitNumber, items.single { it.id == onDeleted.id.toString() }.visitNumber)
-    }
-
-    // ── Oddzielenie studiów ──────────────────────────────────────────────────
-
-    @Test
-    fun `zgloszenia innego studia nie da sie odhaczyc ani cofnac`() {
-        val foreign = request(doc(), owner = StudioId.random())
-        val repository: ExternalInvoiceRequestRepository = mockk {
-            every { findByIdAndStudioId(any(), any()) } answers {
-                foreign.takeIf { it.id == firstArg<UUID>() && it.studioId == secondArg<UUID>() }
-            }
-        }
-        val service = ExternalInvoiceRequestService(repository, mockk(relaxed = true))
-
-        assertThrows<NotFoundException> { service.markIssued(studioId, foreign.id, "FV 1", userId, "Anna") }
-        assertThrows<NotFoundException> { service.unmarkIssued(studioId, foreign.id, userId, "Anna") }
-        assertEquals(ExternalInvoiceStatus.PENDING, foreign.status)
     }
 }

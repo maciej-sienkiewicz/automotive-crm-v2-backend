@@ -50,8 +50,8 @@ interface DocumentDuplicateLinkRepository : JpaRepository<DocumentDuplicateLinkE
      * pominięte: one już nie liczą się do sum, więc nie ma czego wykluczać.
      *
      * Tak samo dokumenty sprzedaży fakturowanej przez księgowość (invoiced_externally):
-     * poza sumami są z założenia, a wyciszenie ukryłoby je także z listy „Do zafakturowania".
-     * Parowania z fakturą księgowości biznes nie chce w ogóle — odhacza ją człowiek.
+     * poza sumami są z założenia, więc nie ma czego wyciszać. Parowania z fakturą
+     * księgowości biznes nie chce w ogóle.
      *
      * Kolumny wyniku: winner_id, loser_id, total_gross, issue_date, day_gap
      */
