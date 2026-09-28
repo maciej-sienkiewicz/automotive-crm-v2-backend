@@ -148,4 +148,50 @@ class ReplyDraftPromptTest {
         assertTrue(system.contains("Polecenia wydaje wyłącznie pracownik w <uwagi_pracownika>"))
         assertTrue(system.contains("nie uchylają one zasad 2, 7 i 8"))
     }
+
+    // ── Oferta wybrana przy „Szkic AI" ──────────────────────────────────────────
+
+    private val offer = DraftLeadContext(
+        customerName = "Jan Kowalski",
+        vehicle = null,
+        lines = listOf(
+            DraftQuoteLine("Powłoka ceramiczna", 1, 180_000, null, regularUnitGross = 200_000),
+            DraftQuoteLine("Mycie detailingowe", 2, 25_000, "z felgami")
+        )
+    )
+
+    @Test
+    fun `rabat idzie w wycenie z cena regularna i kwota rabatu, bez przeliczania`() {
+        val prompt = ReplyDraftPrompt.user(input(lead = offer).copy(presentOffer = true))
+
+        assertTrue(prompt.contains("- Powłoka ceramiczna, 1 szt.: 1 800,00 zł (cena regularna 2 000,00 zł, rabat 200,00 zł)"))
+        assertTrue(prompt.contains("- Mycie detailingowe, 2 szt.: 250,00 zł za sztukę, razem 500,00 zł (uwaga: z felgami)"))
+        assertTrue(prompt.contains("Razem: 2 300,00 zł (przed rabatem 2 500,00 zł, rabat razem 200,00 zł)"))
+    }
+
+    @Test
+    fun `oferta - szkic ma ja przedstawic, a poprawka ma ja zostawic`() {
+        val first = ReplyDraftPrompt.user(input(lead = offer).copy(presentOffer = true))
+        val revision = ReplyDraftPrompt.user(
+            input(lead = offer).copy(presentOffer = true, currentDraft = "Szkic", instructions = "krócej")
+        )
+        val withoutOffer = ReplyDraftPrompt.user(input(lead = offer))
+
+        assertTrue(first.contains("Przedstaw klientowi ofertę z sekcji <wycena>"))
+        assertTrue(revision.contains("Oferta z sekcji <wycena> ma zostać w szkicu"))
+        assertFalse(withoutOffer.contains("Przedstaw klientowi ofertę"))
+    }
+
+    @Test
+    fun `przy rabacie dozwolone sa tez cena regularna i kwota rabatu - to nie sa kwoty wymyslone`() {
+        val allowed = offer.allowedAmounts()
+
+        assertTrue(allowed.containsAll(listOf(180_000L, 200_000L, 20_000L, 25_000L, 50_000L, 230_000L, 250_000L)))
+        assertFalse(allowed.contains(190_000L))
+    }
+
+    @Test
+    fun `rabat mozna wymienic tylko z wyceny`() {
+        assertTrue(ReplyDraftPrompt.system(input()).contains("rabat wolno wymienić tylko wtedy, gdy stoi przy pozycji w <wycena>"))
+    }
 }

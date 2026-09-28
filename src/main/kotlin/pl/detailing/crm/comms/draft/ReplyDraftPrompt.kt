@@ -13,14 +13,25 @@ data class DraftConversationTurn(
 /**
  * Pozycja wyceny leada. [unitGross] to brutto w groszach DOKŁADNIE tak, jak zapisał je
  * człowiek (lead_service_items.price_gross) — null, gdy pozycja czeka na kwotę.
+ *
+ * [regularUnitGross] — cena przed rabatem, tylko w ofercie wybranej przy „Szkic AI"
+ * (rabat nadany w oknie oferty). Obie kwoty liczył front jedną funkcją (applyAdjustment),
+ * tu nic nie jest przeliczane.
  */
 data class DraftQuoteLine(
     val name: String,
     val quantity: Int,
     val unitGross: Long?,
-    val note: String?
+    val note: String?,
+    val regularUnitGross: Long? = null
 ) {
     val totalGross: Long? get() = unitGross?.let { it * quantity }
+
+    /** Rabat na pozycji w groszach (za wszystkie sztuki); null bez rabatu. */
+    val discountGross: Long?
+        get() = if (unitGross != null && regularUnitGross != null && regularUnitGross > unitGross) {
+            (regularUnitGross - unitGross) * quantity
+        } else null
 }
 
 data class DraftLeadContext(
@@ -35,13 +46,29 @@ data class DraftLeadContext(
     val totalGross: Long?
         get() = if (lines.isNotEmpty() && lines.all { it.unitGross != null }) lines.sumOf { it.totalGross!! } else null
 
-    /** Kwoty, które szkic może wymienić — wszystkie inne są dla [DraftAmountChecker] podejrzane. */
+    /** Suma rabatów oferty; null, gdy żadna pozycja nie ma rabatu. */
+    val totalDiscountGross: Long?
+        get() = lines.mapNotNull { it.discountGross }.takeIf { it.isNotEmpty() }?.sum()
+
+    /**
+     * Kwoty, które szkic może wymienić — wszystkie inne są dla [DraftAmountChecker] podejrzane.
+     * Przy rabacie także cena regularna i kwota rabatu: to kwoty z oferty, nie wymyślone.
+     */
     fun allowedAmounts(): Set<Long> = buildSet {
         lines.forEach { line ->
             line.unitGross?.let(::add)
             line.totalGross?.let(::add)
+            line.discountGross?.let { discount ->
+                add(discount)
+                add(line.regularUnitGross!!)
+                add(line.regularUnitGross * line.quantity)
+            }
         }
         totalGross?.let(::add)
+        totalDiscountGross?.let { discount ->
+            add(discount)
+            totalGross?.let { add(it + discount) }
+        }
     }
 }
 
@@ -60,6 +87,11 @@ data class ReplyDraftPromptInput(
     val examples: List<DraftStyleExample>,
     /** „Popraw": treść, którą pracownik ma teraz w edytorze — z jego ręcznymi zmianami. */
     val currentDraft: String? = null,
+    /**
+     * Pracownik wybrał przy „Szkic AI", że wiadomość ma zawierać ofertę — pozycje z <wycena>
+     * mają trafić do treści jako lista z cenami, a nie tylko być dozwolone.
+     */
+    val presentOffer: Boolean = false,
     /** Uwagi pracownika — co zmienić w szkicu (albo o czym pamiętać przy pierwszym szkicu). */
     val instructions: String? = null
 ) {
@@ -152,6 +184,17 @@ object ReplyDraftPrompt {
         if (!input.isRevision && input.instructions != null) {
             append(" Uwzględnij uwagi pracownika.")
         }
+        if (input.presentOffer && input.lead?.lines.orEmpty().isNotEmpty()) {
+            append(
+                if (input.isRevision) {
+                    " Oferta z sekcji <wycena> ma zostać w szkicu z tymi samymi pozycjami i kwotami."
+                } else {
+                    " Przedstaw klientowi ofertę z sekcji <wycena>: wymień wszystkie pozycje jako listę " +
+                        "z cenami zapisanymi dokładnie tak jak w wycenie. Przy pozycji z rabatem podaj cenę " +
+                        "regularną i cenę po rabacie. Na końcu listy podaj sumę."
+                }
+            )
+        }
     }.trim()
 
     /** Kwota w zapisie, który ma trafić do klienta bez zmian: „1 900,00 zł". */
@@ -178,10 +221,20 @@ object ReplyDraftPrompt {
                     "${formatGross(line.unitGross)} za sztukę, razem ${formatGross(line.totalGross!!)}"
                 else -> formatGross(line.unitGross)
             }
+            val discount = line.discountGross?.let {
+                " (cena regularna ${formatGross(line.regularUnitGross!!)}${if (line.quantity > 1) " za sztukę" else ""}, " +
+                    "rabat ${formatGross(it)})"
+            }.orEmpty()
             val note = line.note?.trim()?.takeIf { it.isNotEmpty() }?.let { " (uwaga: $it)" }.orEmpty()
-            appendLine("- ${line.name}, ${line.quantity} szt.: $price$note")
+            appendLine("- ${line.name}, ${line.quantity} szt.: $price$discount$note")
         }
-        lead!!.totalGross?.let { appendLine("Razem: ${formatGross(it)}") }
+        lead!!.totalGross?.let { total ->
+            val discount = lead.totalDiscountGross
+            appendLine(
+                if (discount != null) "Razem: ${formatGross(total)} (przed rabatem ${formatGross(total + discount)}, rabat razem ${formatGross(discount)})"
+                else "Razem: ${formatGross(total)}"
+            )
+        }
     }
 
     private fun core(input: ReplyDraftPromptInput): String {
@@ -198,7 +251,8 @@ pisania, a nie podejmować za niego decyzji.
 
 ZASADY BEZWZGLĘDNE
 1. Fakty wyłącznie z danych w wiadomości: rozmowy, wyceny, uwag pracownika i nazwy studia. Nie wymyślaj
-   terminów, dostępności, czasu realizacji, gwarancji, adresu, godzin otwarcia, rabatów ani promocji.
+   terminów, dostępności, czasu realizacji, gwarancji, adresu, godzin otwarcia, rabatów ani promocji
+   (rabat wolno wymienić tylko wtedy, gdy stoi przy pozycji w <wycena>, z tamtą kwotą).
 2. Kwoty podajesz WYŁĄCZNIE z sekcji <wycena> albo <uwagi_pracownika> (tam kwotę ustalił człowiek),
    zapisane dokładnie tak jak tam (np. „1 900,00 zł"). Nie zaokrąglaj, nie dodawaj kwot po swojemu,
    nie przeliczaj netto i brutto, nie licz rabatów, nie podawaj widełek. Gdy kwoty nie ma w żadnym
