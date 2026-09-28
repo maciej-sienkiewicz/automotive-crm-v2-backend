@@ -307,15 +307,50 @@ nie wyłapie żadnego z tych przypadków, bo po drugiej stronie jest JSON. Test 
 że kafle „dziś” dotyczą wyłącznie typów `daily`, panele kwotowe wyłącznie typów `monetary`,
 a pod-serie — zadeklarowanych wartości wymiaru.
 
-Wdrożenie na serwer jest ręczne — Jenkins buduje wyłącznie obraz backendu i nie dotyka
-`deploy/monitoring`. Grafana montuje provisioning z katalogu na hoście
-(`/opt/apps/prod/app-backend/monitoring/grafana/provisioning`), a jej własna baza
-(`app-backend_grafana_data`) przeżywa restarty i potrafi serwować STARĄ wersję dashboardu mimo
-nowego pliku na dysku. Po aktualizacji plików zweryfikuj, co Grafana naprawdę oddaje, i w razie
-rozjazdu zrestartuj kontener:
+### Wdrożenie na serwer
+
+Wdrożenie jest ręczne — Jenkins buduje wyłącznie obraz backendu i nie dotyka
+`deploy/monitoring`. Na serwerze pliki leżą w `/opt/apps/prod/app-backend/monitoring/`:
+
+| Kontener | Montuje z hosta |
+|---|---|
+| `detailing-crm-grafana` | katalog `monitoring/grafana/provisioning` → `/etc/grafana/provisioning` |
+| `detailing-crm-prometheus` | PLIKI `monitoring/prometheus/prometheus.yml` i `alerts.yml` |
+
+**Po każdym skopiowaniu `monitoring/` zrestartuj OBA kontenery.** Samo podmienienie plików
+nie wystarcza i to nie jest kwestia cache:
+
+- Bind mount Dockera wiąże się z i-węzłem katalogu/pliku w chwili startu kontenera, nie
+  z jego ścieżką. Wdrożenie, które kasuje i tworzy katalog od nowa (albo podmienia plik
+  przez `scp`/`git`, czyli zapisuje nowy i-węzeł), zostawia działający kontener
+  z widokiem na STARY, usunięty obiekt. Tak było 28.09.2026: na hoście leżał
+  `storage.json`, a w kontenerze Grafany `/etc/grafana/provisioning/dashboards/` nie
+  istniał wcale — dashboard „Miejsce w S3" nie pojawiał się, choć backend i Prometheus
+  miały już dane. Grafana nie mówi o tym nic, bo `GF_LOG_FILTERS` wycisza provisioning.
+- Grafana ma ponadto własną bazę (`app-backend_grafana_data`), która przeżywa restarty
+  i serwuje ostatnią wczytaną wersję dashboardu, więc „stare wykresy" wyglądają na
+  działające.
+- Prometheus ma `--web.enable-lifecycle`, ale `POST /-/reload` nie pomoże: przeładuje
+  ten sam, stary plik `alerts.yml`, który widzi kontener.
 
 ```bash
-curl -s http://localhost:3000/api/dashboards/uid/crm-live-tenant | grep -c tenant_id
+# na serwerze, po skopiowaniu plików
+docker restart detailing-crm-grafana detailing-crm-prometheus
+
+# weryfikacja: kontener widzi pliki, Grafana zna dashboard, Prometheus zna reguły
+docker exec detailing-crm-grafana ls /etc/grafana/provisioning/dashboards/
+curl -s http://localhost:3000/api/dashboards/uid/crm-storage | grep -o '"title":"[^"]*"'
+curl -s http://localhost:9090/api/v1/rules | grep -o StorageGaugesStale | head -1
+```
+
+Gdy dashboard nadal się nie pojawia, sprawdzaj po kolei od źródła — pierwszy pusty krok
+wskazuje winnego:
+
+```bash
+curl -s http://localhost:8445/actuator/prometheus | grep '^crm_storage_bucket_bytes'   # backend liczy?
+curl -s 'http://localhost:9090/api/v1/query?query=crm_storage_bucket_bytes' | head -c 200  # Prometheus zebrał?
+ls /opt/apps/prod/app-backend/monitoring/grafana/provisioning/dashboards/              # plik na hoście?
+docker exec detailing-crm-grafana ls /etc/grafana/provisioning/dashboards/             # kontener go widzi?
 ```
 
 ## Konfiguracja (`crm.live-metrics.*`)
