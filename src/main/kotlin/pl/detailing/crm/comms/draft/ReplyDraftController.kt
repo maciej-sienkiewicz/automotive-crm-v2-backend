@@ -42,7 +42,26 @@ data class DraftReplyRequest(
     /** „Popraw": bieżąca treść z edytora. Null = nowy szkic. */
     val currentDraft: String? = null,
     /** Uwagi pracownika — co poprawić. Wymagane, gdy jest [currentDraft]. */
-    val instructions: String? = null
+    val instructions: String? = null,
+    /**
+     * Oferta wybrana przy „Szkic AI": pozycje, które szkic ma przedstawić klientowi. Null =
+     * bez oferty (szkic może wtedy użyć kwot z wyceny leada, ale jej nie wypisuje).
+     * Front zapisuje te same pozycje na leadzie, zanim poprosi o szkic.
+     */
+    val offer: List<DraftOfferLineRequest>? = null
+)
+
+/**
+ * Pozycja oferty w szkicu. Kwoty w groszach brutto, policzone na froncie jedną funkcją
+ * cen (applyAdjustment) z dokładnym brutto — backend ich nie przelicza (CLAUDE.md §1).
+ */
+data class DraftOfferLineRequest(
+    val name: String,
+    val quantity: Int = 1,
+    val priceGross: Long,
+    /** Cena przed rabatem; null albo równa [priceGross] = bez rabatu. */
+    val regularPriceGross: Long? = null,
+    val note: String? = null
 )
 
 data class ReplyDraftExampleDto(
@@ -59,7 +78,9 @@ data class ReplyDraftDto(
     val examples: List<ReplyDraftExampleDto>,
     val placeholders: List<String>,
     val unverifiedAmounts: List<String>,
-    val notice: String?
+    val notice: String?,
+    /** Szkic przedstawia ofertę (pozycje z okna oferty). */
+    val offerIncluded: Boolean = false
 )
 
 @Service
@@ -133,7 +154,8 @@ class ReplyDraftController(
                 useSentStyle = useSentStyle,
                 signatureAppended = request.signatureAppended,
                 currentDraft = request.currentDraft,
-                instructions = request.instructions
+                instructions = request.instructions,
+                offer = request.offer?.let(::offerLines)
             )
         )
         ResponseEntity.ok(
@@ -146,8 +168,32 @@ class ReplyDraftController(
                 },
                 placeholders = result.placeholders,
                 unverifiedAmounts = result.unverifiedAmounts,
-                notice = result.notice
+                notice = result.notice,
+                offerIncluded = result.offerIncluded
             )
         )
+    }
+
+    private fun offerLines(lines: List<DraftOfferLineRequest>): List<DraftQuoteLine> {
+        if (lines.isEmpty()) throw ValidationException("Oferta nie ma żadnej usługi")
+        if (lines.size > MAX_OFFER_LINES) throw ValidationException("Oferta może mieć najwyżej $MAX_OFFER_LINES pozycji")
+        return lines.map { line ->
+            val name = line.name.trim().take(200)
+            if (name.isEmpty()) throw ValidationException("Pozycja oferty nie ma nazwy")
+            if (line.priceGross < 0) throw ValidationException("Pozycja „$name\": cena nie może być ujemna")
+            if (line.quantity !in 1..99) throw ValidationException("Pozycja „$name\": nieprawidłowa ilość")
+            DraftQuoteLine(
+                name = name,
+                quantity = line.quantity,
+                unitGross = line.priceGross,
+                note = line.note?.trim()?.take(500)?.ifBlank { null },
+                // Cena „regularna" niższa albo równa cenie oferty to nie rabat - pomijamy ją.
+                regularUnitGross = line.regularPriceGross?.takeIf { it > line.priceGross }
+            )
+        }
+    }
+
+    private companion object {
+        const val MAX_OFFER_LINES = 50
     }
 }

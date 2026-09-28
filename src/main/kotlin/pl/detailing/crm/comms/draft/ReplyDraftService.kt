@@ -71,7 +71,12 @@ data class DraftReplyCommand(
      */
     val currentDraft: String? = null,
     /** Co poprawić — albo, przy nowym szkicu, o czym asystent ma pamiętać. */
-    val instructions: String? = null
+    val instructions: String? = null,
+    /**
+     * Oferta wybrana przy „Szkic AI". Zastępuje w <wycena> pozycje leada (front zapisał je
+     * na leadzie tuż przed prośbą o szkic) i każe je przedstawić klientowi. Null = bez oferty.
+     */
+    val offer: List<DraftQuoteLine>? = null
 )
 
 data class ReplyDraftExampleRef(
@@ -93,7 +98,9 @@ data class ReplyDraftResult(
     /** Kwoty ze szkicu, których nie ma w wycenie leada — do sprawdzenia przed wysłaniem. */
     val unverifiedAmounts: List<String>,
     /** Wyjaśnienie dla użytkownika, gdy tryb nie dał się zastosować tak, jak wybrał. */
-    val notice: String?
+    val notice: String?,
+    /** Szkic przedstawia ofertę wybraną przy „Szkic AI". */
+    val offerIncluded: Boolean = false
 )
 
 /**
@@ -147,7 +154,13 @@ class ReplyDraftService(
             emptyList<StoredReplyExample>() to null
         }
 
-        val lead = leadContext(command.studioId, thread)
+        val lead = leadContext(command.studioId, thread).let { context ->
+            val offer = command.offer ?: return@let context
+            // Oferta ma pierwszeństwo przed zapisaną wyceną: ma rabaty (cena regularna),
+            // których wycena leada nie przechowuje - tam jest tylko cena po rabacie.
+            (context ?: DraftLeadContext(thread.participantName?.takeIf { it.isNotBlank() }, null, emptyList()))
+                .copy(lines = offer)
+        }
         val input = ReplyDraftPromptInput(
             studioName = studioRepository.findById(command.studioId).map { it.name }.orElse("studio detailingu"),
             senderFirstName = command.senderFullName.trim().substringBefore(' ').takeIf { it.isNotBlank() },
@@ -156,7 +169,8 @@ class ReplyDraftService(
             lead = lead,
             examples = examples.map { DraftStyleExample(it.inquiryText, it.replyText) },
             currentDraft = currentDraft,
-            instructions = instructions
+            instructions = instructions,
+            presentOffer = command.offer != null
         )
 
         val reply = try {
@@ -189,7 +203,8 @@ class ReplyDraftService(
             unverifiedAmounts = DraftAmountChecker.unverifiedAmounts(
                 body, DraftAmountChecker.allowedAmounts(lead, instructions)
             ),
-            notice = notice
+            notice = notice,
+            offerIncluded = command.offer != null
         )
     }
 
