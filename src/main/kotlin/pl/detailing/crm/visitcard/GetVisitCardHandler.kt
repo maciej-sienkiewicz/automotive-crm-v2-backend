@@ -11,6 +11,8 @@ import pl.detailing.crm.customer.infrastructure.CustomerRepository
 import pl.detailing.crm.vehicle.infrastructure.VehicleRepository
 import pl.detailing.crm.finance.domain.DocumentDirection
 import pl.detailing.crm.finance.domain.DocumentStatus
+import pl.detailing.crm.finance.domain.DocumentType
+import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.protocol.infrastructure.ProtocolTemplateRepository
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
@@ -327,16 +329,9 @@ class GetVisitCardHandler(
                 )
             }
 
-        val incomeDocs = financialDocumentRepository
-            .findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, studioId)
-            .filter { it.direction == DocumentDirection.INCOME }
-
-        val paymentStatus = when {
-            incomeDocs.isEmpty() -> null
-            incomeDocs.any { it.status == DocumentStatus.OVERDUE } -> DocumentStatus.OVERDUE.name
-            incomeDocs.any { it.status == DocumentStatus.PENDING } -> DocumentStatus.PENDING.name
-            else -> DocumentStatus.PAID.name
-        }
+        val paymentStatus = visitCardPaymentStatus(
+            financialDocumentRepository.findAllByVisitIdAndStudioIdAndDeletedAtIsNull(visit.id.value, studioId)
+        )
 
         return VisitCardCompletion(
             readyForPickupDate = visit.actualCompletionDate,
@@ -435,4 +430,24 @@ internal fun lineDiscountGross(
     if (isNoOp) return 0L
     val originalGross = basePriceGross ?: vatRate.calculateGrossAmount(Money.fromCents(basePriceNet)).amountInCents
     return maxOf(0L, originalGross - finalPriceGross)
+}
+
+/**
+ * Status płatności na karcie wizyty dla klienta, z dokumentów, które OBOWIĄZUJĄ.
+ *
+ * Po poprawce rozliczenia zastąpiony przelew i jego storno zostają w bazie jako „czeka na
+ * płatność" - liczone tutaj, pokazałyby klientowi, który zapłacił kartą, że wciąż czekamy
+ * na przelew. Zapis płatności sprzedaży fakturowanej przez księgowość liczy się normalnie:
+ * to on mówi, czy klient zapłacił.
+ */
+internal fun visitCardPaymentStatus(documents: List<FinancialDocumentEntity>): String? {
+    val incomeDocs = documents.filter {
+        it.direction == DocumentDirection.INCOME && it.supersededAt == null && it.documentType != DocumentType.CORRECTION
+    }
+    return when {
+        incomeDocs.isEmpty() -> null
+        incomeDocs.any { it.status == DocumentStatus.OVERDUE } -> DocumentStatus.OVERDUE.name
+        incomeDocs.any { it.status == DocumentStatus.PENDING } -> DocumentStatus.PENDING.name
+        else -> DocumentStatus.PAID.name
+    }
 }

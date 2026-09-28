@@ -178,6 +178,19 @@ class UpdateFinancialDocumentHandler(
                 )
             }
         }
+        // Nabywca sprzedaży fakturowanej przez księgowość żyje w zgłoszeniu dla księgowości -
+        // to z niego przepisuje się dane na fakturę. Zmiana tylko tutaj rozjechałaby się
+        // z tym, co księgowość wystawi (albo już wystawiła, a wtedy trzeba korekty).
+        if (document.invoicedExternally) {
+            val buyerChanged = command.counterpartyName?.trim()?.ifBlank { null } != document.counterpartyName ||
+                command.counterpartyNip?.trim()?.ifBlank { null } != document.counterpartyNip
+            if (buyerChanged) {
+                throw ValidationException(
+                    "Fakturę do tej sprzedaży wystawia księgowość. Nabywcę zmień przez „Popraw rozliczenie” " +
+                        "w wizycie - wtedy zgłoszenie dla księgowości dostanie nowe dane albo zgłoszenie korekty."
+                )
+            }
+        }
         if (document.source == DocumentSource.VISIT && amountsChanged) {
             throw ValidationException(
                 "Kwoty dokumentu wystawionego przy wydaniu pojazdu muszą zgadzać się z kwotą wizyty — " +
