@@ -9,7 +9,6 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Import
-import org.springframework.data.domain.PageRequest
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -57,7 +56,6 @@ class InvoicedExternallyPersistenceTest {
     @Autowired lateinit var invoices: KsefRevenueInvoiceRepository
     @Autowired lateinit var income: IncomeDocumentsRepository
     @Autowired lateinit var duplicates: DocumentDuplicateLinkRepository
-    @Autowired lateinit var requests: ExternalInvoiceRequestRepository
 
     private val studioId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
@@ -157,29 +155,5 @@ class InvoicedExternallyPersistenceTest {
         val rows = documents.findPaidIncomeForReport(studioId, null, null, null)
 
         assertEquals(listOf(placeholder.id), rows.map { it.id })
-    }
-
-    @Test
-    fun `zgloszenia - czekajace, wystawione, wycofane`() {
-        val doc = document(DocumentType.INVOICE, 154_472, 190_000, external = true)
-        fun request(status: ExternalInvoiceStatus) = requests.save(
-            ExternalInvoiceRequestEntity(
-                studioId = studioId, visitId = doc.visitId, financialDocumentId = doc.id, kind = ExternalInvoiceKind.INVOICE,
-                status = status, buyerNip = null, buyerName = "Auto Serwis", buyerAddressLine1 = null,
-                buyerAddressLine2 = null, buyerEmail = null, totalNet = 154_472, totalVat = 35_528,
-                totalGross = 190_000, createdBy = userId
-            )
-        )
-        val pending = request(ExternalInvoiceStatus.PENDING)
-        val issued = request(ExternalInvoiceStatus.ISSUED)
-        val withdrawn = request(ExternalInvoiceStatus.WITHDRAWN)
-
-        assertEquals(setOf(pending.id, issued.id), requests.findActiveByDocuments(studioId, listOf(doc.id)).map { it.id }.toSet())
-        assertEquals(listOf(withdrawn.id), requests.findWithdrawnByDocument(studioId, doc.id).map { it.id })
-        assertEquals(1, requests.countByStudioIdAndStatus(studioId, ExternalInvoiceStatus.PENDING))
-        val page = requests.findPage(
-            studioId, listOf(ExternalInvoiceStatus.PENDING, ExternalInvoiceStatus.ISSUED), PageRequest.of(0, 20)
-        )
-        assertEquals(2, page.totalElements)
     }
 }

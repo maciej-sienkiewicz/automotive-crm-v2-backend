@@ -16,10 +16,6 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestEntity
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestRepository
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
-import pl.detailing.crm.finance.external.ExternalInvoiceStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
@@ -80,7 +76,6 @@ class SettlementHarness {
     val issuedInvoices = mutableListOf<IssueRevenueInvoiceCommand>()
     val issuedCorrections = mutableListOf<IssueCorrectionCommand>()
     /** Zgłoszenia dla księgowości (tryb „Faktury wystawia księgowość"). */
-    val requests = mutableListOf<ExternalInvoiceRequestEntity>()
 
     var hasFinance = true
     var companyComplete = true
@@ -203,20 +198,6 @@ class SettlementHarness {
         io.mockk.coEvery { log(any()) } answers { audits += firstArg<LogAuditCommand>() }
     }
 
-    val requestRepository: ExternalInvoiceRequestRepository = mockk {
-        every { save(any()) } answers {
-            firstArg<ExternalInvoiceRequestEntity>().also { r -> if (requests.none { it.id == r.id }) requests += r }
-        }
-        every { findActiveByDocuments(any(), any()) } answers {
-            val ids = secondArg<Collection<UUID>>()
-            requests.filter { it.financialDocumentId in ids && it.status != ExternalInvoiceStatus.WITHDRAWN }
-        }
-        every { findByStudioIdAndVisitIdOrderByCreatedAtAsc(any(), any()) } answers {
-            requests.filter { it.visitId == secondArg<UUID>() }
-        }
-    }
-    val externalInvoices = ExternalInvoiceRequestService(requestRepository, mockk(relaxed = true))
-
     val service = SettlementCorrectionService(
         visitRepository, documentRepository, invoiceRepository, correctionRepository, createHandler,
         issueInvoiceHandler, correctionHandler,
@@ -226,7 +207,7 @@ class SettlementHarness {
             mockk(relaxed = true), mockk(relaxed = true)
         ),
         customerRepository, settingsRepository, capabilityService, auditService, ObjectMapper(),
-        transactions.template(), externalInvoices, requestRepository
+        transactions.template()
     )
 
     // ── Budowanie stanu ──────────────────────────────────────────────────────
@@ -282,29 +263,15 @@ class SettlementHarness {
         return inv to document(DocumentType.INVOICE, method, ksefId = inv.id)
     }
 
-    /**
-     * Sprzedaż fakturowana przez księgowość: zapis płatności poza przychodem i zgłoszenie
-     * (czekające albo odhaczone jako wystawione, z numerem faktury księgowości).
-     */
+    /** Sprzedaż fakturowana przez księgowość: zapis płatności poza przychodem z nabywcą faktury. */
     fun externalInvoice(
         method: PaymentMethod = PaymentMethod.CARD,
         type: DocumentType = DocumentType.INVOICE,
-        issuedNumber: String? = null,
-        buyerName: String = "Jan Kowalski"
-    ): Pair<FinancialDocumentEntity, ExternalInvoiceRequestEntity> {
-        val doc = document(type, method, invoicedExternally = true)
-        val request = externalInvoices.open(
-            doc.toDomain(),
-            if (type == DocumentType.INVOICE) pl.detailing.crm.finance.external.ExternalInvoiceKind.INVOICE
-            else pl.detailing.crm.finance.external.ExternalInvoiceKind.INVOICE_TO_RECEIPT,
-            pl.detailing.crm.finance.external.ExternalInvoiceBuyer(name = buyerName),
-            userId.value
-        )
-        if (issuedNumber != null) {
-            request.status = ExternalInvoiceStatus.ISSUED
-            request.externalInvoiceNumber = issuedNumber
-        }
-        return doc to request
+        buyerName: String = "Jan Kowalski",
+        buyerNip: String? = null
+    ): FinancialDocumentEntity = document(type, method, invoicedExternally = true).also {
+        it.counterpartyName = buyerName
+        it.counterpartyNip = buyerNip
     }
 
     /**

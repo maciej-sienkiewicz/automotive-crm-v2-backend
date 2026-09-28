@@ -2,9 +2,6 @@ package pl.detailing.crm.visit.settlement
 
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
-import pl.detailing.crm.finance.external.ExternalInvoiceKind
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceEntity
 import pl.detailing.crm.shared.StudioId
@@ -24,13 +21,6 @@ data class SettlementBuyer(
     val email: String? = null
 ) {
     val normalizedNip: String? get() = nip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
-
-    fun toExternal() = ExternalInvoiceBuyer(nip, name, addressLine1, addressLine2, email)
-
-    companion object {
-        fun of(buyer: ExternalInvoiceBuyer) =
-            SettlementBuyer(buyer.nip, buyer.name, buyer.addressLine1, buyer.addressLine2, buyer.email)
-    }
 }
 
 /**
@@ -59,23 +49,18 @@ internal data class SettlementState(
     val activeInvoices: List<KsefRevenueInvoiceEntity>,
     /** Rodzaj rozliczenia: faktura, jeśli jest dokument faktury; inaczej rodzaj głównego dokumentu. */
     val documentType: DocumentType?,
-    val paymentMethod: PaymentMethod?,
-    /**
-     * Zgłoszenia dla księgowości przypięte do obowiązujących dokumentów (bez wycofanych) —
-     * tryb „Faktury wystawia księgowość". Czekające i już wystawione.
-     */
-    val activeRequests: List<ExternalInvoiceRequestEntity> = emptyList()
+    val paymentMethod: PaymentMethod?
 ) {
     /** Faktury powiązane z dokumentem faktury (nie faktury do paragonu). */
     val invoiceDocuments: List<FinancialDocumentEntity>
         get() = activeDocuments.filter { it.documentType == DocumentType.INVOICE }
 
-    fun requestsOf(documentId: UUID): List<ExternalInvoiceRequestEntity> =
-        activeRequests.filter { it.financialDocumentId == documentId }
-
-    /** Nabywca z ostatniego zgłoszenia sprzedaży (nie korekty) — odpowiednik nabywcy faktury. */
-    val requestBuyer: SettlementBuyer?
-        get() = activeRequests.lastOrNull { it.kind != ExternalInvoiceKind.CORRECTION }?.let { SettlementBuyer.of(it.buyer) }
+    /**
+     * Nabywca sprzedaży, do której fakturę wystawia księgowość — z ostatniego obowiązującego
+     * zapisu płatności. Odpowiednik nabywcy faktury z CRM przy porównaniu „czy nabywca się zmienił".
+     */
+    val externalBuyer: SettlementBuyer?
+        get() = activeDocuments.lastOrNull { it.invoicedExternally }?.let { SettlementBuyer(it.counterpartyNip, it.counterpartyName) }
 }
 
 /** Co zrobić z jedną obowiązującą fakturą KSeF. */
@@ -101,14 +86,13 @@ internal data class SettlementPlan(
     val cloneDocuments: Boolean,
     /**
      * Fakturę wystawia księgowość: nowy dokument faktury jest zapisem płatności poza
-     * przychodem ze zgłoszeniem na liście „Do zafakturowania" (tryb z ustawień studia).
+     * przychodem (tryb z ustawień studia).
      */
     val newDocumentExternal: Boolean = false,
     /**
      * Czy kopie z [cloneDocuments] liczą się poza przychodem. null = jak dokument, który
-     * zastępują (zmiana samej formy płatności: zgłoszenia przechodzą na kopie). true =
-     * faktura do paragonu od księgowości; false = paragon wraca do przychodu, bo fakturę
-     * do niego wystawia teraz CRM.
+     * zastępują (zmiana samej formy płatności). true = faktura do paragonu od księgowości;
+     * false = paragon wraca do przychodu, bo fakturę do niego wystawia teraz CRM.
      */
     val cloneExternal: Boolean? = null,
     val ksefAction: SettlementKsefAction,

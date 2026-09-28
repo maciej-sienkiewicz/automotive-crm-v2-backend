@@ -15,7 +15,6 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.domain.PaymentForm
 import pl.detailing.crm.ksef.revenue.domain.VatRate
@@ -316,8 +315,8 @@ class CompleteVisitInvoiceOrchestrator(
     /**
      * „Faktury wystawia księgowość": wydanie bez faktury w CRM.
      *
-     * Całą kwotę wizyty obejmuje jeden dokument — zapis płatności poza przychodem —
-     * i jedno zgłoszenie dla księgowości z danymi nabywcy. Pozycje faktury z formularza
+     * Całą kwotę wizyty obejmuje jeden dokument — zapis płatności poza przychodem
+     * z nabywcą jako kontrahentem. Pozycje faktury z formularza
      * są pomijane: fakturę układa księgowość, a podział na fakturę i paragon reszty
      * wymagałby od niej faktury na kwotę, której CRM nie potrafi potem sprawdzić.
      * Dane firmy studia i ważność tokenu KSeF nie są potrzebne — CRM niczego nie wysyła.
@@ -345,13 +344,7 @@ class CompleteVisitInvoiceOrchestrator(
         if (buyerNip == null && buyerName == null) {
             throw ValidationException("Faktura wymaga nabywcy: podaj NIP firmy albo imię i nazwisko klienta.")
         }
-        val buyer = ExternalInvoiceBuyer(
-            nip = buyerNip,
-            name = buyerName,
-            addressLine1 = invoice.buyer.addressLine1,
-            addressLine2 = invoice.buyer.addressLine2,
-            email = invoice.buyer.email ?: customer?.email
-        )
+        val buyer = InvoiceBuyer(nip = buyerNip, name = buyerName)
 
         val completion = completeVisitHandler.complete(
             command.copy(documentType = DocumentType.INVOICE, invoiceBuyer = buyer)

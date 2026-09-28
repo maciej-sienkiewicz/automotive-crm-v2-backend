@@ -24,10 +24,6 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentStatus
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceKind
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestRepository
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
-import pl.detailing.crm.finance.external.ExternalInvoiceStatus
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentEntity
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.domain.KsefRevenueStatus
@@ -84,10 +80,9 @@ data class SettlementCorrectionResult(
  * Zmiana samej formy płatności nie rusza faktury: zmieniają się dokumenty w CRM i kasa.
  *
  * Tryb „Faktury wystawia księgowość" (ustawienie studia): CRM nie wystawia faktur.
- * Faktura w poprawce to zapis płatności poza przychodem i zgłoszenie dla księgowości;
- * zgłoszenie, które przestaje obowiązywać, jest wycofywane (czekało) albo rodzi zgłoszenie
- * korekty (księgowość już wystawiła). Faktury wystawione wcześniej w CRM poprawia się
- * po staremu — korektą albo anulowaniem w KSeF.
+ * Faktura w poprawce to zapis płatności poza przychodem. Fakturę księgowości koryguje
+ * księgowość — podgląd poprawki mówi, że trzeba jej przekazać zmianę. Faktury wystawione
+ * wcześniej w CRM poprawia się po staremu — korektą albo anulowaniem w KSeF.
  *
  * Pieniądze w bazie zmieniają się w jednej transakcji z blokadą wiersza wizyty (ceny,
  * storna, nowe dokumenty, kasa, anulowanie faktury). Operacje sieciowe KSeF — korekta
@@ -109,9 +104,7 @@ class SettlementCorrectionService(
     private val capabilityService: CapabilityService,
     private val auditService: AuditService,
     private val objectMapper: ObjectMapper,
-    private val transactionTemplate: TransactionTemplate,
-    private val externalInvoices: ExternalInvoiceRequestService,
-    private val externalRequestRepository: ExternalInvoiceRequestRepository
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val log = LoggerFactory.getLogger(SettlementCorrectionService::class.java)
 
@@ -129,14 +122,11 @@ class SettlementCorrectionService(
         val invoices = invoiceRepository.findByStudioIdAndVisitIdOrderByCreatedAtAsc(studioId, visitId)
         val active = LiveRevenueInvoices.of(invoices)
         val main = documents.firstOrNull { it.documentType == DocumentType.INVOICE } ?: documents.firstOrNull()
-        val requests = if (documents.isEmpty()) emptyList()
-            else externalRequestRepository.findActiveByDocuments(studioId, documents.map { it.id })
         return SettlementState(
             activeDocuments = documents,
             activeInvoices = active,
             documentType = main?.documentType,
-            paymentMethod = main?.paymentMethod,
-            activeRequests = requests
+            paymentMethod = main?.paymentMethod
         )
     }
 
@@ -180,11 +170,12 @@ class SettlementCorrectionService(
         val methodChanged = state.paymentMethod != null && command.paymentMethod != state.paymentMethod
         val linkedInvoiceIds = state.invoiceDocuments.mapNotNull { it.ksefRevenueInvoiceId }.toSet()
         val receiptInvoices = state.activeInvoices.filter { it.id !in linkedInvoiceIds }
-        val receiptRequests = state.activeRequests.filter { it.kind == ExternalInvoiceKind.INVOICE_TO_RECEIPT }
-        // Nabywca faktury z CRM albo zgłoszenia dla księgowości — co jest nowsze w tej wizycie.
+        // Paragon, do którego fakturę wystawia już księgowość (zapis płatności poza przychodem).
+        val receiptExternallyInvoiced = state.activeDocuments.any { it.invoicedExternally && it.documentType != DocumentType.INVOICE }
+        // Nabywca faktury z CRM albo faktury księgowości — co jest w tej wizycie.
         val currentBuyer = state.activeInvoices.lastOrNull()?.let {
             SettlementBuyer(it.buyerNip, it.buyerName, it.buyerAddressLine1, it.buyerAddressLine2, it.buyerEmail)
-        } ?: state.requestBuyer
+        } ?: state.externalBuyer
         val buyerChanged = command.documentType == DocumentType.INVOICE &&
             currentBuyer != null && !sameBuyer(currentBuyer, command.buyer)
 
@@ -218,15 +209,15 @@ class SettlementCorrectionService(
                 documentsToReplace = state.activeDocuments
                 cloneDocuments = true
             }
-            // Paragon → faktura bez zmiany kwot, fakturę wystawia księgowość: paragon przechodzi
-            // na listę „Do zafakturowania" i wypada z przychodu — przychód niesie faktura do
-            // paragonu od księgowości, pobrana z KSeF. Jak każda zmiana dokumentu: storno
-            // i kopia, a nie przestawienie flagi na dokumencie, który już obowiązywał.
+            // Paragon → faktura bez zmiany kwot, fakturę wystawia księgowość: paragon wypada
+            // z przychodu — przychód niesie faktura do paragonu od księgowości, pobrana z KSeF.
+            // Jak każda zmiana dokumentu: storno i kopia, a nie przestawienie flagi na
+            // dokumencie, który już obowiązywał.
             external && currentType != null && currentType != DocumentType.INVOICE &&
                 command.documentType == DocumentType.INVOICE && !itemsChanged -> {
-                if ((receiptInvoices.isNotEmpty() || receiptRequests.isNotEmpty()) && !buyerChanged && !methodChanged) {
+                if ((receiptInvoices.isNotEmpty() || receiptExternallyInvoiced) && !buyerChanged && !methodChanged) {
                     return block(
-                        if (receiptRequests.isNotEmpty()) "Do tego paragonu księgowość ma już zgłoszoną fakturę z tymi samymi danymi."
+                        if (receiptExternallyInvoiced) "Fakturę do tego paragonu z tymi samymi danymi wystawia już księgowość."
                         else "Do tego paragonu jest już faktura z tymi samymi danymi."
                     )
                 }
@@ -375,21 +366,20 @@ class SettlementCorrectionService(
         if (plan.cloneDocuments) {
             steps += "Nowe dokumenty z tymi samymi kwotami, płatność: ${command.paymentMethod.displayName.lowercase()}."
         }
-        describeRequests(plan, state).forEach { steps += it }
+        describeAccountantInvoices(plan).forEach { steps += it }
         plan.newDocumentType?.let {
             steps += if (plan.newDocumentExternal) {
-                "Sprzedaż na ${m(plan.totalGrossAfter)} trafia na listę „Do zafakturowania”, " +
-                    "płatność: ${command.paymentMethod.displayName.lowercase()}. Fakturę wystawia księgowość, " +
-                    "CRM jej nie tworzy. Przychód w Finansach pokaże faktura księgowości pobrana z KSeF."
+                "Zapis płatności na ${m(plan.totalGrossAfter)}, płatność: ${command.paymentMethod.displayName.lowercase()}. " +
+                    "Fakturę wystawia księgowość, CRM jej nie tworzy. Przychód w Finansach pokaże faktura " +
+                    "księgowości pobrana z KSeF."
             } else {
                 "Nowy dokument (${it.displayName.lowercase()}) na ${m(plan.totalGrossAfter)}, " +
                     "płatność: ${command.paymentMethod.displayName.lowercase()}."
             }
         }
         if (plan.cloneExternal == true) {
-            steps += "Fakturę do paragonu na ${m(plan.totalGrossAfter)} wystawia księgowość: zgłoszenie trafia na listę " +
-                "„Do zafakturowania”. Do tego czasu paragon nie liczy się do przychodu w Finansach, " +
-                "po wystawieniu przychód pokaże faktura księgowości pobrana z KSeF."
+            steps += "Fakturę do paragonu na ${m(plan.totalGrossAfter)} wystawia księgowość. Paragon nie liczy się " +
+                "już do przychodu w Finansach, przychód pokaże faktura księgowości pobrana z KSeF."
         }
         if (plan.cloneExternal == false) {
             steps += "Paragon czekał na fakturę od księgowości. Teraz fakturę do paragonu wystawia CRM, " +
@@ -424,24 +414,17 @@ class SettlementCorrectionService(
         return steps
     }
 
-    /** Co dzieje się ze zgłoszeniami dla księgowości przy dokumentach, które poprawka zastępuje. */
-    private fun describeRequests(plan: SettlementPlan, state: SettlementState): List<String> {
+    /**
+     * Dokumenty, do których fakturę wystawiała księgowość: CRM jej nie skoryguje, więc
+     * podgląd mówi wprost, że zmianę trzeba przekazać księgowości. Zmiana samej formy
+     * płatności faktury nie dotyczy.
+     */
+    private fun describeAccountantInvoices(plan: SettlementPlan): List<String> {
+        if (plan.cloneDocuments && plan.cloneExternal == null) return emptyList()
         val m = PushMessages::formatMoney
-        val moving = plan.cloneDocuments && plan.cloneExternal == null
-        return plan.documentsToReplace.flatMap { state.requestsOf(it.id) }.map { request ->
-            val what = if (request.kind == ExternalInvoiceKind.CORRECTION) "korekta" else request.kind.displayName.lowercase()
-            when {
-                moving -> "Zgłoszenie dla księgowości ($what na ${m(request.totalGross)}) zostaje bez zmian, " +
-                    "zmienia się tylko forma płatności w CRM."
-                request.status == ExternalInvoiceStatus.PENDING ->
-                    "Zgłoszenie dla księgowości ($what na ${m(request.totalGross)}) zostaje wycofane: " +
-                        "nie było oznaczone jako wystawione. Jeśli księgowość zdążyła je wystawić, potrzebna będzie korekta."
-                else -> {
-                    val number = request.externalInvoiceNumber?.let { " $it" } ?: ""
-                    "Faktura księgowości$number (${m(request.totalGross)}) wymaga korekty. Wystawia ją księgowość: " +
-                        "zgłoszenie korekty trafi na listę „Do zafakturowania”."
-                }
-            }
+        return plan.documentsToReplace.filter { it.invoicedExternally }.map {
+            "Fakturę do dokumentu ${it.documentNumber} (${m(it.totalGross)}) wystawia księgowość. " +
+                "Przekaż jej tę zmianę: CRM nie wystawi korekty tej faktury."
         }
     }
 
@@ -528,13 +511,9 @@ class SettlementCorrectionService(
 
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
 
-        // Zgłoszenia dla księgowości przechodzą na kopie, gdy zmienia się tylko forma płatności;
-        // w każdym innym przypadku przestają obowiązywać razem ze swoim dokumentem.
-        val moveRequests = plan.cloneDocuments && plan.cloneExternal == null
-
         // Storna i zastąpienie — dokument zostaje, obok staje jego korekta.
         plan.documentsToReplace.forEach { old ->
-            val storno = createDocumentHandler.handle(
+            createDocumentHandler.handle(
                 baseDocument(command, visit, customer, correctionId).copy(
                     documentType = DocumentType.CORRECTION,
                     paymentMethod = old.paymentMethod,
@@ -553,9 +532,6 @@ class SettlementCorrectionService(
                     invoicedExternally = old.invoicedExternally
                 )
             )
-            if (!moveRequests) state.requestsOf(old.id).forEach { request ->
-                externalInvoices.retire(request, storno.id.value, command.userId.value, correctionId, now)
-            }
             old.supersededAt = now
             old.settlementCorrectionId = correctionId
             old.updatedBy = command.userId.value
@@ -566,7 +542,7 @@ class SettlementCorrectionService(
         val buyer = effectiveBuyer(command, state, visit)
         if (plan.cloneDocuments) {
             plan.documentsToReplace.forEach { old ->
-                val clone = createDocumentHandler.handle(
+                createDocumentHandler.handle(
                     baseDocument(command, visit, customer, correctionId).copy(
                         documentType = old.documentType,
                         totalNet = old.totalNet,
@@ -579,14 +555,6 @@ class SettlementCorrectionService(
                         invoicedExternally = plan.cloneExternal ?: old.invoicedExternally
                     )
                 )
-                when {
-                    moveRequests -> state.requestsOf(old.id).forEach {
-                        externalInvoices.moveTo(it, clone.id.value, correctionId, now)
-                    }
-                    plan.cloneExternal == true -> externalInvoices.open(
-                        clone, ExternalInvoiceKind.INVOICE_TO_RECEIPT, buyer.toExternal(), command.userId.value, correctionId, now
-                    )
-                }
             }
             // Faktura zostaje, ale jej status płatności idzie za nową formą płatności.
             val paid = command.paymentMethod != PaymentMethod.TRANSFER
@@ -635,9 +603,7 @@ class SettlementCorrectionService(
                     invoicedExternally = plan.newDocumentExternal
                 )
             )
-            if (plan.newDocumentExternal) {
-                externalInvoices.open(document, ExternalInvoiceKind.INVOICE, buyer.toExternal(), command.userId.value, correctionId, now)
-            } else if (type == DocumentType.INVOICE) {
+            if (type == DocumentType.INVOICE && !plan.newDocumentExternal) {
                 invoiceDocumentId = document.id.value
             }
         }
@@ -740,15 +706,15 @@ class SettlementCorrectionService(
             ?: listOfNotNull(customer?.firstName, customer?.lastName).joinToString(" ").ifBlank { null }
 
     /**
-     * Nabywca: z formularza, inaczej z obowiązującej faktury albo zgłoszenia dla księgowości,
-     * inaczej z kartoteki klienta.
+     * Nabywca: z formularza, inaczej z obowiązującej faktury albo zapisu płatności faktury
+     * księgowości, inaczej z kartoteki klienta.
      */
     private fun effectiveBuyer(command: SettlementCorrectionCommand, state: SettlementState, visit: Visit): SettlementBuyer {
         command.buyer?.let { return it }
         state.activeInvoices.lastOrNull()?.let {
             return SettlementBuyer(it.buyerNip, it.buyerName, it.buyerAddressLine1, it.buyerAddressLine2, it.buyerEmail)
         }
-        state.requestBuyer?.let { return it }
+        state.externalBuyer?.let { return it }
         val customer = customerRepository.findByIdAndStudioId(visit.customerId.value, command.studioId.value)
         return SettlementBuyer(
             nip = customer?.companyNip,

@@ -16,9 +16,6 @@ import pl.detailing.crm.finance.domain.DocumentSource
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
-import pl.detailing.crm.finance.external.ExternalInvoiceKind
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.push.notify.PushMessages
@@ -54,8 +51,7 @@ class CompleteVisitHandler(
     private val eventPublisher: ApplicationEventPublisher,
     private val financialDocumentRepository: FinancialDocumentRepository,
     private val transactionTemplate: TransactionTemplate,
-    private val settingsRepository: StudioSettingsRepository,
-    private val externalInvoices: ExternalInvoiceRequestService
+    private val settingsRepository: StudioSettingsRepository
 ) {
     private val log = LoggerFactory.getLogger(CompleteVisitHandler::class.java)
 
@@ -242,7 +238,7 @@ class CompleteVisitHandler(
         }
 
         // „Faktury wystawia księgowość": faktury w CRM nie ma. Dokument zostaje zapisem
-        // płatności poza przychodem, a księgowość dostaje zgłoszenie z danymi nabywcy.
+        // płatności poza przychodem, z nabywcą, któremu księgowość wystawi fakturę.
         // Czytane tutaj, a nie tylko w orkiestratorze: wydanie bez szczegółów faktury
         // (starszy klient) też nie może zapisać faktury liczonej do przychodu.
         val invoicedExternally = command.documentType == DocumentType.INVOICE &&
@@ -277,29 +273,18 @@ class CompleteVisitHandler(
                 invoicedExternally = invoicedExternally
             )
         )
-        if (buyer != null) {
-            externalInvoices.open(document, ExternalInvoiceKind.INVOICE, buyer, command.userId.value)
-        }
         return document
     }
 
     /** Nabywca z kartoteki: firma, gdy klient ma NIP, inaczej osoba. */
-    private fun buyerFromCustomer(customer: CustomerEntity?): ExternalInvoiceBuyer {
+    private fun buyerFromCustomer(customer: CustomerEntity?): InvoiceBuyer {
         val nip = customer?.companyNip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
         return if (nip != null) {
-            ExternalInvoiceBuyer(
-                nip = nip,
-                name = customer.companyName?.takeIf { it.isNotBlank() } ?: resolveBuyerName(customer),
-                addressLine1 = customer.companyAddressStreet,
-                addressLine2 = listOfNotNull(customer.companyAddressPostalCode, customer.companyAddressCity)
-                    .joinToString(" ").ifBlank { null },
-                email = customer.email
-            )
+            InvoiceBuyer(nip = nip, name = customer.companyName?.takeIf { it.isNotBlank() } ?: resolveBuyerName(customer))
         } else {
-            ExternalInvoiceBuyer(
+            InvoiceBuyer(
                 name = listOfNotNull(customer?.firstName, customer?.lastName).filter { it.isNotBlank() }
-                    .joinToString(" ").ifBlank { null },
-                email = customer?.email
+                    .joinToString(" ").ifBlank { null }
             )
         }
     }
@@ -362,10 +347,17 @@ data class CompleteVisitCommand(
 
     /**
      * Nabywca z formularza wydania — tylko w trybie „Faktury wystawia księgowość", gdzie
-     * trafia do zgłoszenia dla księgowości. Null → nabywca z kartoteki klienta.
+     * trafia na zapis płatności. Null → nabywca z kartoteki klienta.
      */
-    val invoiceBuyer: ExternalInvoiceBuyer? = null
+    val invoiceBuyer: InvoiceBuyer? = null
 )
+
+/** Nabywca faktury, którą wystawia księgowość — zapisany na dokumencie jako kontrahent. */
+data class InvoiceBuyer(val nip: String? = null, val name: String? = null) {
+    val normalizedNip: String? get() = nip?.replace(Regex("[^0-9]"), "")?.ifBlank { null }
+
+    val isEmpty: Boolean get() = normalizedNip == null && name.isNullOrBlank()
+}
 
 /** Wynik wydania: odpowiedź, to, co dołożył wołający, i wpis audytu do zapisania po commicie. */
 data class Completion<T>(
@@ -399,6 +391,6 @@ data class CompleteVisitResult(
      */
     val alreadyInTargetState: Boolean = false,
 
-    /** Faktury nie ma w CRM: wystawi ją księgowość (zgłoszenie na liście „Do zafakturowania"). */
+    /** Faktury nie ma w CRM: wystawi ją księgowość. */
     val invoicedExternally: Boolean = false
 )

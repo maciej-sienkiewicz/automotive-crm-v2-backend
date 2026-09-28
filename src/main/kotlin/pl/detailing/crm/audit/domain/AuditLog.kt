@@ -292,6 +292,8 @@ enum class AuditAction(
     DOCUMENT_NUMBER_UPDATED("Aktualizacja numeru dokumentu", "Zmieniono numer dokumentu", AuditIcon.EDIT, AuditSeverity.HIGH),
     DOCUMENT_UPDATED("Edycja dokumentu", "Zmieniono dokument", AuditIcon.EDIT, AuditSeverity.HIGH),
     SETTLEMENT_CORRECTED("Poprawka rozliczenia", "Poprawiono rozliczenie wizyty", AuditIcon.MONEY, AuditSeverity.CRITICAL),
+    // Lista „Do zafakturowania" usunięta (V170); wartości zostają, bo wpisy audytu sprzed
+    // usunięcia muszą się dalej wczytywać.
     EXTERNAL_INVOICE_MARKED("Faktura księgowości", "Oznaczono fakturę księgowości jako wystawioną", AuditIcon.MONEY, AuditSeverity.HIGH),
     EXTERNAL_INVOICE_UNMARKED("Cofnięcie faktury księgowości", "Cofnięto oznaczenie faktury księgowości", AuditIcon.MONEY, AuditSeverity.HIGH),
     DOCUMENT_DELETED("Usunięcie dokumentu", "Usunięto dokument", AuditIcon.DELETE, AuditSeverity.CRITICAL),

@@ -84,8 +84,8 @@ ręką.
   a przychód niesie faktura księgowości pobrana z KSeF. Każda nowa suma przychodu
   z `financial_documents` musi go pomijać razem z jego stornami — inaczej ta sama
   sprzedaż liczy się dwa razy. Pilnuje tego `InvoicedExternallyQueriesTest`. Z fakturą
-  z KSeF nic nie łączy się samo (decyzja biznesu): zgłoszenia na liście „Do zafakturowania"
-  (`external_invoice_requests`) odhacza człowiek.
+  z KSeF nic nie łączy się samo i CRM nie prowadzi listy „do zafakturowania" dla
+  księgowości (decyzje biznesu, V170) — nie dokładaj jej z powrotem.
 - **Rabat kwotowy (`FIXED_NET`, `FIXED_GROSS`) jest ODEJMOWANY**, `v > 0` to rabat.
   Jeden silnik cen (`PriceCalculator`) liczy rezerwację, wizytę i upsell — nie pisz
   drugiego.

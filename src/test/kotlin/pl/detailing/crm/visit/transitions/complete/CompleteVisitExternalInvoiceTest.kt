@@ -2,7 +2,6 @@ package pl.detailing.crm.visit.transitions.complete
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,9 +16,6 @@ import pl.detailing.crm.finance.document.CreateFinancialDocumentHandler
 import pl.detailing.crm.finance.domain.DocumentType
 import pl.detailing.crm.finance.domain.FinancialDocument
 import pl.detailing.crm.finance.domain.PaymentMethod
-import pl.detailing.crm.finance.external.ExternalInvoiceBuyer
-import pl.detailing.crm.finance.external.ExternalInvoiceKind
-import pl.detailing.crm.finance.external.ExternalInvoiceRequestService
 import pl.detailing.crm.finance.infrastructure.FinancialDocumentRepository
 import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.ksef.revenue.issue.IssueRevenueInvoiceHandler
@@ -43,7 +39,7 @@ import java.util.Optional
  *
  * Zgłoszenie biznesu: faktura wybrana przy wydaniu, niewysłana do KSeF, a potem wystawiona
  * przez księgowość dawała w CRM tę samą sprzedaż dwa razy. W tym trybie CRM nie tworzy
- * faktury: jest zapis płatności poza przychodem i zgłoszenie dla księgowości.
+ * faktury: jest zapis płatności poza przychodem z nabywcą, któremu fakturę wystawi księgowość.
  */
 class CompleteVisitExternalInvoiceTest {
 
@@ -96,13 +92,12 @@ class CompleteVisitExternalInvoiceTest {
         every { hasCapability(any(), any()) } answers { financeModule }
     }
     private val documentRepository: FinancialDocumentRepository = mockk(relaxed = true)
-    private val externalInvoices: ExternalInvoiceRequestService = mockk(relaxed = true)
     private val transactions = RecordingTransactionManager()
 
     private val handler = CompleteVisitHandler(
         visitRepository, customerRepository, mockk(relaxed = true), createFinancialDocumentHandler,
         capabilityService, mockk(relaxed = true), documentRepository,
-        transactions.template(), settingsRepository, externalInvoices
+        transactions.template(), settingsRepository
     )
     private val orchestrator = CompleteVisitInvoiceOrchestrator(
         handler, issueInvoiceHandler, createFinancialDocumentHandler, mockk(relaxed = true),
@@ -130,10 +125,8 @@ class CompleteVisitExternalInvoiceTest {
     )
 
     @Test
-    fun `faktura przy wydaniu - bez faktury w CRM, zapis platnosci poza przychodem i zgloszenie dla ksiegowosci`() = runBlocking {
+    fun `faktura przy wydaniu - bez faktury w CRM, zapis platnosci poza przychodem z nabywca`() = runBlocking {
         val visitId = givenVisit()
-        val buyer = slot<ExternalInvoiceBuyer>()
-        every { externalInvoices.open(any(), ExternalInvoiceKind.INVOICE, capture(buyer), any(), any(), any()) } returns mockk()
 
         val result = orchestrator.handle(
             command(visitId, PaymentMethod.TRANSFER),
@@ -158,20 +151,17 @@ class CompleteVisitExternalInvoiceTest {
         assertEquals(10_000, document.totalNet)
         assertEquals(PaymentMethod.TRANSFER, document.paymentMethod)
         assertEquals("5261040828", document.counterpartyNip)
-        assertEquals("5261040828", buyer.captured.normalizedNip)
-        assertEquals("Polna 1", buyer.captured.addressLine1)
+        assertEquals("Auto Serwis sp. z o.o.", document.counterpartyName)
     }
 
     @Test
     fun `wydanie bez szczegolow faktury (starszy klient) tez nie liczy faktury do przychodu`() = runBlocking {
         val visitId = givenVisit()
-        every { externalInvoices.open(any(), any(), any(), any(), any(), any()) } returns mockk()
 
         val result = handler.handle(command(visitId))
 
         assertTrue(result.invoicedExternally)
         assertTrue(created.single().invoicedExternally)
-        verify(exactly = 1) { externalInvoices.open(any(), ExternalInvoiceKind.INVOICE, any(), any(), any(), any()) }
     }
 
     @Test
@@ -181,18 +171,16 @@ class CompleteVisitExternalInvoiceTest {
         handler.handle(command(visitId).copy(documentType = DocumentType.RECEIPT, paymentMethod = PaymentMethod.CASH))
 
         assertFalse(created.single().invoicedExternally)
-        verify(exactly = 0) { externalInvoices.open(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
-    fun `tryb wylaczony - faktura jak dotad, bez zgloszenia dla ksiegowosci`() = runBlocking {
+    fun `tryb wylaczony - faktura jak dotad`() = runBlocking {
         external = false
         val visitId = givenVisit()
 
         handler.handle(command(visitId))
 
         assertFalse(created.single().invoicedExternally)
-        verify(exactly = 0) { externalInvoices.open(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -206,13 +194,12 @@ class CompleteVisitExternalInvoiceTest {
 
         assertTrue(result.completion.alreadyInTargetState)
         assertTrue(created.isEmpty())
-        verify(exactly = 0) { externalInvoices.open(any(), any(), any(), any(), any(), any()) }
     }
 
     // ── Przypadki brzegowe ────────────────────────────────────────────────────
 
     @Test
-    fun `cena wpisana jako brutto 1900,00 - zapis i zgloszenie dokladnie na 1900,00, VAT to roznica`() = runBlocking {
+    fun `cena wpisana jako brutto 1900,00 - zapis dokladnie na 1900,00, VAT to roznica`() = runBlocking {
         val typed = VisitFixtures.serviceItem(finalPriceNet = 154_472, finalPriceGross = 190_000)
             .copy(basePriceGross = pl.detailing.crm.shared.Money(190_000))
         val visitId = givenVisit(items = listOf(typed))
@@ -237,29 +224,27 @@ class CompleteVisitExternalInvoiceTest {
     }
 
     @Test
-    fun `wizyta za darmo - nie ma dokumentu ani zgloszenia dla ksiegowosci`() = runBlocking {
+    fun `wizyta za darmo - nie ma dokumentu`() = runBlocking {
         val visitId = givenVisit(items = listOf(VisitFixtures.serviceItem(finalPriceNet = 0, finalPriceGross = 0)))
 
         val result = handler.handle(command(visitId))
 
         assertTrue(created.isEmpty())
         assertFalse(result.invoicedExternally)
-        verify(exactly = 0) { externalInvoices.open(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
-    fun `studio bez modulu Finanse - wizyta wydana bez dokumentu i bez zgloszenia`() = runBlocking {
+    fun `studio bez modulu Finanse - wizyta wydana bez dokumentu`() = runBlocking {
         financeModule = false
         val visitId = givenVisit()
 
         handler.handle(command(visitId))
 
         assertTrue(created.isEmpty())
-        verify(exactly = 0) { externalInvoices.open(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
-    fun `bez danych nabywcy z formularza - nabywca z kartoteki, firma z adresem`() = runBlocking {
+    fun `bez danych nabywcy z formularza - nabywca z kartoteki`() = runBlocking {
         customer = mockk(relaxed = true) {
             every { companyNip } returns "526-104-08-28"
             every { companyName } returns "Auto Serwis sp. z o.o."
@@ -268,16 +253,11 @@ class CompleteVisitExternalInvoiceTest {
             every { companyAddressCity } returns "Warszawa"
             every { email } returns "faktury@autoserwis.pl"
         }
-        val buyer = slot<ExternalInvoiceBuyer>()
-        every { externalInvoices.open(any(), any(), capture(buyer), any(), any(), any()) } returns mockk()
         val visitId = givenVisit()
 
         handler.handle(command(visitId))
 
-        assertEquals("5261040828", buyer.captured.normalizedNip)
-        assertEquals("Auto Serwis sp. z o.o.", buyer.captured.name)
-        assertEquals("Polna 1", buyer.captured.addressLine1)
-        assertEquals("00-001 Warszawa", buyer.captured.addressLine2)
+        assertEquals("5261040828", created.single().counterpartyNip)
         assertEquals("Auto Serwis sp. z o.o.", created.single().counterpartyName)
     }
 
