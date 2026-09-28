@@ -12,6 +12,7 @@ Cztery dashboardy, dwa różne pytania:
   crm-live-platform / crm-live-tenant   „ile dzieje się TERAZ"  — increase() na liczniku
   crm-engagement-tenant                 „ile łącznie od wdrożenia" — trwała suma z Redisa
   crm-adoption-platform                 „kto z tego korzysta"     — stany z bazy + ranking
+  crm-storage                           „kto ile zajmuje w S3"    — skan bucketu raz dziennie
 
 Rozdział jest istotny: `increase()` rysuje impulsy (zdarzenie → pik → zero), a nie krzywą
 narastającą. Mieszanie obu w jednym panelu było źródłem „krótkotrwałych pików", przez które
@@ -597,6 +598,116 @@ def adoption_header(y):
     y += 8
     return panels, y
 
+# ── Dashboard „Miejsce w S3" ────────────────────────────────────────────────
+#
+# Źródło: StorageMetricsExporter — pełny listing bucketu raz dziennie, klucz → studio.
+# Gauge'e zmieniają się raz na skan, więc wykresy są schodkowe, a domyślny zakres to 30 dni.
+
+STORAGE_DESC = ("Pomiar z pełnego listingu bucketu (bieżące wersje obiektów), odświeżany raz dziennie. "
+                "Nie obejmuje wersji niebieżących ani porzuconych multipart uploadów — te widać "
+                "tylko w CloudWatch / na rachunku AWS.")
+
+# `max by` zamiast `sum`: przy rolling deployu dwie instancje eksportują ten sam pomiar.
+def storage_bytes(extra="", by="tenant_id"):
+    return f'max by ({by}, area) (crm_storage_tenant_bytes{{{extra}}})' if extra else \
+        f'max by ({by}, area) (crm_storage_tenant_bytes)'
+
+def bytes_stat(title, expr, x, y, w=4, desc=STORAGE_DESC, color="text"):
+    p = stat(title, expr, color, x, y, w=w, desc=desc)
+    p["fieldConfig"]["defaults"].update({"unit": "bytes", "decimals": 1})
+    return p
+
+def bytes_chart(title, targets, x, y, w=12, h=8, desc=STORAGE_DESC, stacked=False):
+    p = cumulative_chart(title, targets, x, y, w, h, desc, stacked=stacked)
+    p["fieldConfig"]["defaults"].update({"unit": "bytes", "decimals": 1})
+    p["interval"] = "1h"
+    return p
+
+def storage_ranking(y):
+    expr = f'topk(20, sum by (tenant) ({storage_bytes(by="tenant_id, tenant")}))'
+    return {"id": nid(), "type": "bargauge", "title": "Kto zajmuje najwięcej miejsca (top 20)",
+            "datasource": DS, "gridPos": {"h": 12, "w": 12, "x": 0, "y": y}, "description": STORAGE_DESC,
+            "targets": [target(expr, legend="{{tenant}}", instant=True)],
+            "fieldConfig": {"defaults": {"unit": "bytes", "decimals": 1, "min": 0, "noValue": "—",
+                                         "color": {"mode": "continuous-BlPu"}}, "overrides": []},
+            "options": {"displayMode": "gradient", "orientation": "horizontal",
+                        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                        "showUnfilled": True, "valueMode": "color"}}
+
+def storage_share(y):
+    expr = f'sum by (tenant) ({storage_bytes(by="tenant_id, tenant")})'
+    return {"id": nid(), "type": "piechart", "title": "Udział w buckecie", "datasource": DS,
+            "gridPos": {"h": 12, "w": 12, "x": 12, "y": y}, "description": STORAGE_DESC,
+            "targets": [target(expr, legend="{{tenant}}", instant=True)],
+            "fieldConfig": {"defaults": {"unit": "bytes", "decimals": 1, "color": {"mode": "palette-classic"}},
+                            "overrides": []},
+            "options": {"pieType": "donut", "displayLabels": ["percent"],
+                        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                        "legend": {"displayMode": "table", "placement": "right", "showLegend": True,
+                                   "values": ["value", "percent"], "sortBy": "Value", "sortDesc": True},
+                        "tooltip": {"mode": "single", "sort": "none"}}}
+
+def storage_table(y):
+    """Studio × obszar, z kolumną „Razem". Jedno zapytanie + pivot, jak tabele adopcji."""
+    p = matrix_table("Studia × obszary", f'sum by (tenant, area) ({storage_bytes(by="tenant_id, tenant")})',
+                     "area", {}, y,
+                     desc="Ile każde studio zajmuje w każdym obszarze (drugi segment klucza: visits, "
+                          "protocols, customers…; `thumbs` = miniatury, `temp` = pliki tymczasowe). "
+                          "`(usunięte) …` to katalogi studiów, których nie ma już w bazie — osierocone "
+                          "pliki, za które nadal płacimy. " + STORAGE_DESC)
+    p["transformations"] += [
+        {"id": "calculateField", "options": {"mode": "reduceRow", "reduce": {"reducer": "sum"},
+                                             "alias": "Razem", "replaceFields": False}},
+        {"id": "sortBy", "options": {"sort": [{"field": "Razem", "desc": True}]}}]
+    p["fieldConfig"]["defaults"].update({"unit": "bytes", "decimals": 1, "noValue": "—"})
+    return p
+
+def storage_panels():
+    _id[0] = 0
+    one = 'tenant_id="$tenant_id"'
+    orphan = 'tenant=~"[(]usunięte[)].*"'
+    shared = 'tenant_id="_shared"'
+    p = [row("Cały bucket", 0),
+         bytes_stat("Zajęte miejsce", "max(crm_storage_bucket_bytes)", 0, 1, color="blue"),
+         stat("Obiekty", "max(crm_storage_bucket_objects)", "text", 4, 1, desc=STORAGE_DESC),
+         stat("Studia z plikami",
+              'count(sum by (tenant_id) (max by (tenant_id, area) (crm_storage_tenant_bytes{tenant_id!="_shared"})))',
+              "text", 8, 1, desc="Studia (także usunięte), które mają w buckecie choć jeden obiekt."),
+         bytes_stat("Osierocone (usunięte studia)", f"sum({storage_bytes(orphan)})", 12, 1, color="orange",
+                    desc="Pliki pod katalogami studiów, których nie ma już w bazie. " + STORAGE_DESC),
+         bytes_stat("Wspólne (bez studia)", f"sum({storage_bytes(shared)})",
+                    16, 1, desc="Obiekty spoza katalogów studiów (np. wspólne ikony podpisu maila). "
+                                + STORAGE_DESC)]
+    age = stat("Wiek pomiaru", "time() - max(crm_storage_refreshed_seconds)", "text", 20, 1,
+               desc="Ile sekund temu skończył się ostatni UDANY skan bucketu. Nieudany skan zostawia "
+                    "poprzednie wartości — powyżej ~26 h znaczy awarię (alert StorageGaugesStale).")
+    age["fieldConfig"]["defaults"].update({"unit": "s", "decimals": 0, "color": {"mode": "thresholds"},
+                                           "thresholds": {"mode": "absolute", "steps": [
+                                               {"color": "green", "value": None},
+                                               {"color": "orange", "value": 93600},
+                                               {"color": "red", "value": 108000}]}})
+    p.append(age)
+    p.append(bytes_chart("Zajętość bucketu w czasie",
+                         [target("max(crm_storage_bucket_bytes)", "Bucket")], 0, 5))
+    p.append(bytes_chart("Zajętość per studio w czasie (top 10)",
+                         [target(f'topk(10, sum by (tenant) ({storage_bytes(by="tenant_id, tenant")}))',
+                                 "{{tenant}}")], 12, 5))
+    p.append(row("Per studio", 13))
+    p.append(storage_ranking(14))
+    p.append(storage_share(14))
+    p.append(storage_table(26))
+    p.append(row("Wybrane studio — $tenant_name", 40))
+    p.append(bytes_stat("Zajęte miejsce", f"sum({storage_bytes(one)})", 0, 41, w=6, color="blue"))
+    p.append(stat("Obiekty", f'sum(max by (tenant_id, area) (crm_storage_tenant_objects{{{one}}}))',
+                  "text", 6, 41, w=6, desc=STORAGE_DESC))
+    share = stat("Udział w buckecie", f"sum({storage_bytes(one)}) / max(crm_storage_bucket_bytes)",
+                 "text", 12, 41, w=6, desc=STORAGE_DESC)
+    share["fieldConfig"]["defaults"].update({"unit": "percentunit", "decimals": 1})
+    p.append(share)
+    p.append(bytes_chart("Obszary w czasie", [target(f"sum by (area) ({storage_bytes(one)})", "{{area}}")],
+                         0, 45, w=24, stacked=True))
+    return p
+
 # ── Szkielet dashboardu ─────────────────────────────────────────────────────
 
 def dashboard(uid, title, desc, panels, templating, refresh="10s", time_from="now-6h"):
@@ -609,7 +720,8 @@ def dashboard(uid, title, desc, panels, templating, refresh="10s", time_from="no
             "links": [{"title": "Platforma — na żywo", "type": "link", "url": "/d/crm-live-platform"},
                       {"title": "Tenant — na żywo", "type": "link", "url": "/d/crm-live-tenant"},
                       {"title": "Zaangażowanie tenanta", "type": "link", "url": "/d/crm-engagement-tenant"},
-                      {"title": "Adopcja — platforma", "type": "link", "url": "/d/crm-adoption-platform"}],
+                      {"title": "Adopcja — platforma", "type": "link", "url": "/d/crm-adoption-platform"},
+                      {"title": "Miejsce w S3", "type": "link", "url": "/d/crm-storage"}],
             "panels": panels}
 
 def query_var(name, label, query, hide=0):
@@ -685,4 +797,22 @@ write("adoption-platform.json", engagement_dashboard(
     "ranking zaangażowania i te same liczniki narastające dla całej platformy.",
     "", [], header_panels=adoption_header))
 
-print(f"ok — {len(TYPES)} typów, {len(STATE_LABELS)} stanów, {len(INVENTORY_LABELS)} wielkości, 4 dashboardy")
+# Wybierak po nazwie studia, wartością jest tenant_id — filtr nigdy nie idzie po nazwie
+# (patrz TENANT_SEL). Etykiety w serii są posortowane, więc `tenant` stoi tuż przed `tenant_id`.
+STORAGE_VARS = [
+    {"name": "tenant_id", "label": "Studio", "type": "query", "datasource": DS,
+     "query": {"query": "query_result(max by (tenant, tenant_id) (crm_storage_tenant_bytes))", "refId": "tenant_id"},
+     "definition": "query_result(max by (tenant, tenant_id) (crm_storage_tenant_bytes))",
+     "regex": '/tenant="(?<text>[^"]*)",\\s*tenant_id="(?<value>[^"]*)"/',
+     "refresh": 2, "sort": 1, "includeAll": False, "multi": False, "current": {}, "options": [], "hide": 0},
+    query_var("tenant_name", "Nazwa studia",
+              'label_values(crm_storage_tenant_bytes{tenant_id="$tenant_id"}, tenant)', hide=2),
+]
+
+# ── miejsce w S3 — platforma + wybrane studio ───────────────────────────────
+write("storage.json", dashboard(
+    "crm-storage", "Miejsce w S3",
+    "Ile miejsca w buckecie S3 zajmuje każde studio i cała platforma. " + STORAGE_DESC,
+    storage_panels(), STORAGE_VARS, refresh="5m", time_from="now-30d"))
+
+print(f"ok — {len(TYPES)} typów, {len(STATE_LABELS)} stanów, {len(INVENTORY_LABELS)} wielkości, 5 dashboardów")
