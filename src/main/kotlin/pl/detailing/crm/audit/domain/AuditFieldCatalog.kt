@@ -5,6 +5,7 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
@@ -243,8 +244,20 @@ object AuditFieldCatalog {
         ?.let { DATE_FORMAT.format(it.atZone(WARSAW)) }
         ?: raw
 
+    /**
+     * Termin bez godziny - rezerwacja całodniowa zaczyna się o północy, a koniec dnia to
+     * 23:59:59 - pokazujemy samą datą. „Data rezerwacji: 23.09.2026, 00:00" wyglądało
+     * jak wizyta umówiona w nocy. Znacznik czasu (np. usunięcie) nie trafia dokładnie
+     * w pełną sekundę północy, więc prawdziwa godzina zostaje.
+     */
     private fun formatDateTime(raw: String): String = parseTemporal(raw)
-        ?.let { DATE_TIME_FORMAT.format(it.atZone(WARSAW)) }
+        ?.let { instant ->
+            val local = instant.atZone(WARSAW)
+            val time = local.toLocalTime()
+            val dateOnly = time == LocalTime.MIDNIGHT ||
+                (time.hour == 23 && time.minute == 59 && time.second == 59)
+            if (dateOnly) DATE_FORMAT.format(local) else DATE_TIME_FORMAT.format(local)
+        }
         ?: raw
 
     /** Handlers stringify dates as `Instant`, `LocalDateTime` or `LocalDate`. Accept all three. */
