@@ -110,15 +110,7 @@ data class Visit(
      * THIS rule (visit_service_signatures.line_price_gross), so the sum of signatures
      * always equals [calculateTotalGross] — one money rule, never a second copy.
      */
-    fun effectiveGrossAmount(item: VisitServiceItem): Money? = when {
-        item.status == VisitServiceStatus.CONFIRMED -> item.finalPriceGross
-        item.status == VisitServiceStatus.APPROVED -> item.finalPriceGross
-        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
-            item.confirmedSnapshot?.finalPriceGross
-        item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
-            item.finalPriceGross
-        else -> null  // PENDING/ADD or REJECTED — excluded
-    }
+    fun effectiveGrossAmount(item: VisitServiceItem): Money? = settledGross(item)
 
     /**
      * Calculate total VAT amount
@@ -380,6 +372,21 @@ data class Visit(
     companion object {
         /** Statusy, w których lista usług jest zamrożona (patrz requireServicesEditable). */
         val SERVICES_LOCKED_STATUSES = setOf(VisitStatus.COMPLETED, VisitStatus.REJECTED, VisitStatus.ARCHIVED)
+
+        /**
+         * Reguła [effectiveGrossAmount] bez obiektu wizyty — dla sum po wielu wizytach
+         * naraz (tabela raportów), które czytają same pozycje, a nie całe wizyty. Ta
+         * sama funkcja, nie kopia: tabela i PDF raportu muszą pokazać tę samą kwotę.
+         */
+        fun settledGross(item: VisitServiceItem): Money? = when {
+            item.status == VisitServiceStatus.CONFIRMED -> item.finalPriceGross
+            item.status == VisitServiceStatus.APPROVED -> item.finalPriceGross
+            item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.EDIT ->
+                item.confirmedSnapshot?.finalPriceGross
+            item.status == VisitServiceStatus.PENDING && item.pendingOperation == PendingOperation.DELETE ->
+                item.finalPriceGross
+            else -> null  // PENDING/ADD or REJECTED — excluded
+        }
     }
 }
 

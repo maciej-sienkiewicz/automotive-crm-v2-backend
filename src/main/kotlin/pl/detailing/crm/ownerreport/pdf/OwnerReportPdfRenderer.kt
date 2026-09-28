@@ -349,8 +349,8 @@ class OwnerReportPdfRenderer {
         val COL_VALUE = RIGHT - 165f
         val LABEL_W = COL_VALUE - 110f - DocumentStyle.LEFT - 4f
 
-        /** Poniżej tylu sztuk procent nic nie mówi — pokazujemy różnicę w sztukach. */
-        const val SMALL_COUNT = 10L
+        /** Wspólny z tabelą raportów w Statystykach — ten sam napis zmiany w obu miejscach. */
+        const val SMALL_COUNT = ReportFormat.SMALL_COUNT
 
         val FOOTNOTES = listOf(
             "Sprzedaż = wartość wizyt wydanych klientom w okresie, z cen zapisanych na wizytach (brutto co do grosza). " +

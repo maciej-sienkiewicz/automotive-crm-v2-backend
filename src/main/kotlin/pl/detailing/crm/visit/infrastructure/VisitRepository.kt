@@ -622,6 +622,43 @@ interface VisitRepository : JpaRepository<VisitEntity, UUID> {
         @Param("from") from: Instant,
         @Param("to") to: Instant
     ): List<VisitEntity>
+
+    /**
+     * Te same wizyty co [findHandedOverByStudioIdAndPickupRange], ale bez ładowania encji:
+     * tabela raportów liczy wizyty zamknięte od założenia konta i nie może ciągnąć
+     * całych wizyt (EAGER pozycje = zapytanie na wizytę). [0] = id, [1] = pickupDate.
+     */
+    @Query("""
+        SELECT v.id, v.pickupDate FROM VisitEntity v
+        WHERE v.studioId = :studioId
+        AND v.status IN (pl.detailing.crm.shared.VisitStatus.COMPLETED, pl.detailing.crm.shared.VisitStatus.ARCHIVED)
+        AND v.pickupDate >= :from
+        AND v.pickupDate < :to
+        AND v.deletedAt IS NULL
+    """)
+    fun findHandedOverPickups(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<Array<Any>>
+
+    /**
+     * Pozycje wizyt z [findHandedOverPickups] — kwotę wizyty liczy z nich
+     * [pl.detailing.crm.visit.domain.Visit.settledGross], jak PDF raportu. [0] = id wizyty, [1] = pozycja.
+     */
+    @Query("""
+        SELECT v.id, i FROM VisitServiceItemEntity i JOIN i.visit v
+        WHERE v.studioId = :studioId
+        AND v.status IN (pl.detailing.crm.shared.VisitStatus.COMPLETED, pl.detailing.crm.shared.VisitStatus.ARCHIVED)
+        AND v.pickupDate >= :from
+        AND v.pickupDate < :to
+        AND v.deletedAt IS NULL
+    """)
+    fun findHandedOverItems(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant
+    ): List<Array<Any>>
 }
 
 @Repository
