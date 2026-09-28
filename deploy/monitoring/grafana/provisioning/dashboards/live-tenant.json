@@ -94,6 +94,11 @@
       "title": "Adopcja — platforma",
       "type": "link",
       "url": "/d/crm-adoption-platform"
+    },
+    {
+      "title": "Miejsce w S3",
+      "type": "link",
+      "url": "/d/crm-storage"
     }
   ],
   "panels": [
