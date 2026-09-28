@@ -105,12 +105,18 @@ class PdfProcessingService(
      * @param logoPng studio logo (PNG, print variant) stamped into the reserved header
      *        slot of page 1 — see [DocumentLogoPlacement]; null = no logo
      */
+    /**
+     * @param compactValues zwięzłe warianty wartości (nazwa pola → tekst), używane tylko
+     *        wtedy, gdy wartość z [fieldMappings] nie mieści się w polu w bazowym rozmiarze
+     *        pisma - np. lista usług po przecinku zamiast jednej usługi w linii
+     */
     fun fillPdfForm(
         templateS3Key: String,
         fieldMappings: Map<String, String>,
         outputS3Key: String,
         logoPng: ByteArray? = null,
-        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT,
+        compactValues: Map<String, String> = emptyMap()
     ): String {
         // Download template from S3
         val downloadStart = System.currentTimeMillis()
@@ -119,7 +125,7 @@ class PdfProcessingService(
 
         // Fill the form
         val fillStart = System.currentTimeMillis()
-        val filledPdfBytes = fillForm(templateBytes, fieldMappings, logoPng, logoSlot = logoSlot)
+        val filledPdfBytes = fillForm(templateBytes, fieldMappings, logoPng, logoSlot = logoSlot, compactValues = compactValues)
         logger.info("[PERF]     - PDF form filling (PDFBox): ${System.currentTimeMillis() - fillStart}ms (${fieldMappings.size} fields)")
 
         // Upload filled PDF to S3
@@ -194,7 +200,8 @@ class PdfProcessingService(
         fieldMappings: Map<String, String>,
         logoPng: ByteArray?,
         typography: FieldTypography = FieldTypography.DEFAULT,
-        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT
+        logoSlot: DocumentLogoPlacement.Slot = DocumentLogoPlacement.Slot.CONSENT,
+        compactValues: Map<String, String> = emptyMap()
     ): ByteArray {
         return ByteArrayInputStream(pdfBytes).use { inputStream ->
             Loader.loadPDF(inputStream.readBytes()).use { document ->
@@ -223,10 +230,11 @@ class PdfProcessingService(
                 // Fill each field
                 var filledCount = 0
                 var missedCount = 0
-                fieldMappings.forEach { (fieldName, value) ->
+                fieldMappings.forEach { (fieldName, fullValue) ->
                     try {
                         val field = acroForm.getField(fieldName)
                         if (field != null) {
+                            val value = chooseValue(field, fullValue, compactValues[fieldName], fieldFont, typography.fontSize)
                             if (field is org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox) {
                                 when (value.uppercase()) {
                                     "YES", "ON", "TRUE", "1" -> {
@@ -249,7 +257,7 @@ class PdfProcessingService(
                             }
                             filledCount++
                         } else {
-                            logger.warn("PDF field not found in AcroForm: '$fieldName' (value='${value.take(40)}') — skipping")
+                            logger.warn("PDF field not found in AcroForm: '$fieldName' (value='${fullValue.take(40)}') — skipping")
                             missedCount++
                         }
                     } catch (e: Exception) {
@@ -366,6 +374,23 @@ class PdfProcessingService(
         acroForm.needAppearances = true
         acroForm.defaultAppearance = "/Helv 0 Tf 0 g"
         return null
+    }
+
+    /**
+     * Wartość do wpisania w pole: pełna, a gdy w bazowym rozmiarze pisma się nie mieści
+     * i jest wariant zwięzły (lista usług po przecinku) - zwięzła. Dopiero ona schodzi
+     * z rozmiarem, jeśli i tak jest za długa ([fittingFontSize]).
+     */
+    private fun chooseValue(
+        field: org.apache.pdfbox.pdmodel.interactive.form.PDField,
+        full: String,
+        compact: String?,
+        fieldFont: EmbeddedFieldFont?,
+        base: Float
+    ): String {
+        if (compact == null || compact == full || fieldFont == null) return full
+        if (field !is org.apache.pdfbox.pdmodel.interactive.form.PDVariableText) return full
+        return if (fittingFontSize(field, full, fieldFont.font, base) < base) compact else full
     }
 
     /** Najmniejszy rozmiar, do którego schodzi [fittingFontSize]; poniżej wpis jest nieczytelny na wydruku. */

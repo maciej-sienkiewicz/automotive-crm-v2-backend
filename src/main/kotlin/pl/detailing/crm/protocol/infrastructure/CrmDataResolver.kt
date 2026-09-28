@@ -21,6 +21,16 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
+ * Dane wizyty do protokołu. [compact] to zwięzłe warianty wartości (lista usług po
+ * przecinku) - wypełnianie PDF bierze je tylko wtedy, gdy wartość z [values] nie mieści
+ * się w polu w bazowym rozmiarze pisma.
+ */
+data class VisitCrmData(
+    val values: Map<CrmDataKey, String>,
+    val compact: Map<CrmDataKey, String> = emptyMap()
+)
+
+/**
  * Service for resolving CRM data values for PDF form filling.
  *
  * This service extracts data from various domain entities (Visit, Customer, Vehicle, Studio)
@@ -61,19 +71,29 @@ class CrmDataResolver(
          * grosza do „Łącznego kosztu usług" (CLAUDE.md §1). Format liczby jak w polu
          * kwoty łącznej (kropka dziesiętna), ale bez drugiego nawiasu w nawiasie.
          */
-        internal fun servicesList(visit: Visit, withPrices: Boolean): String =
+        internal fun servicesList(visit: Visit, withPrices: Boolean, inline: Boolean = false): String =
             visit.serviceItems
                 .filter { it.status == VisitServiceStatus.CONFIRMED || it.status == VisitServiceStatus.APPROVED }
-                .joinToString("\n") { service ->
+                .joinToString(if (inline) ", " else "\n") { service ->
                     buildString {
                         append(service.serviceName)
                         if (!service.customNote.isNullOrBlank()) append(" (${service.customNote})")
                         if (withPrices) {
                             val gross = visit.effectiveGrossAmount(service) ?: service.finalPriceGross
-                            append(" (${BigDecimal.valueOf(gross.amountInCents, 2).toPlainString()} PLN brutto)")
+                            val amount = BigDecimal.valueOf(gross.amountInCents, 2).toPlainString()
+                            append(if (inline) " ($amount PLN)" else " ($amount PLN brutto)")
                         }
                     }
                 }
+
+        /**
+         * Ta sama lista w wariancie zwięzłym: usługi po przecinku, cena bez słowa „brutto"
+         * przy każdej pozycji. Idzie na protokół, gdy lista w liniach nie mieści się w polu
+         * (patrz [VisitCrmData.compact]). „Brutto" przy dziesięciu cenach to dziesięć razy to
+         * samo słowo w ciasnym polu - kwotę łączną brutto protokół i tak podpisuje wprost.
+         */
+        internal fun servicesListInline(visit: Visit, withPrices: Boolean): String =
+            servicesList(visit, withPrices, inline = true)
 
         /**
          * Ramka USŁUGODAWCA to wizytówka wystawcy, więc obok nazwy idzie adres siedziby
@@ -98,6 +118,10 @@ class CrmDataResolver(
      * @return Map of CrmDataKey to formatted string value
      */
     suspend fun resolveVisitData(visitId: VisitId, studioId: StudioId): Map<CrmDataKey, String> =
+        resolveVisitDataWithCompact(visitId, studioId).values
+
+    /** Jak [resolveVisitData], razem ze zwięzłymi wariantami wartości dla ciasnych pól PDF. */
+    suspend fun resolveVisitDataWithCompact(visitId: VisitId, studioId: StudioId): VisitCrmData =
         withContext(Dispatchers.IO) {
             val dbStart = System.currentTimeMillis()
 
@@ -124,8 +148,9 @@ class CrmDataResolver(
             logger.info("[PERF]     - Total DB queries: ${System.currentTimeMillis() - dbStart}ms")
 
             val visitDomain = visit.toDomain()
+            val servicePrices = studioSettings?.servicePricesOnProtocol == true
 
-            buildMap {
+            val values = buildMap {
                 // Vehicle data (from visit snapshot)
                 put(CrmDataKey.VEHICLE_PLATE, visit.licensePlateSnapshot ?: "")
                 put(CrmDataKey.VEHICLE_BRAND, visit.brandSnapshot)
@@ -162,7 +187,7 @@ class CrmDataResolver(
                 put(CrmDataKey.TOTAL_VAT_AMOUNT, formatMoney(totalVat.amountInCents, "VAT"))
 
                 // Services list - one per line with notes in parentheses, prices on request
-                put(CrmDataKey.SERVICES_LIST, servicesList(visitDomain, studioSettings?.servicePricesOnProtocol == true))
+                put(CrmDataKey.SERVICES_LIST, servicesList(visitDomain, servicePrices))
                 put(CrmDataKey.NOTES, visitDomain.technicalNotes ?: "")
 
                 /*
@@ -204,6 +229,10 @@ class CrmDataResolver(
                 put(CrmDataKey.VEHICLE_KEYS_RECEIVED, if (visit.keysHandedOver) "Yes" else "Off")
                 put(CrmDataKey.VEHICLE_DOCUMENTS_RECEIVED, if (visit.documentsHandedOver) "Yes" else "Off")
             }
+            VisitCrmData(
+                values = values,
+                compact = mapOf(CrmDataKey.SERVICES_LIST to servicesListInline(visitDomain, servicePrices))
+            )
         }
 
     private fun formatDate(instant: Instant): String {

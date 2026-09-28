@@ -52,7 +52,10 @@ class DefaultTemplateFillPipelineTest {
         "provider" to "Studio Detailingowe Test"
     )
 
-    private fun runFillPipeline(): ByteArray {
+    private fun runFillPipeline(
+        values: Map<String, String> = fieldValues,
+        compactValues: Map<String, String> = emptyMap()
+    ): ByteArray {
         val templateBytes = javaClass.getResourceAsStream("/templates/protokol_przyjecia_pojazdu_default.pdf")!!
             .use { it.readBytes() }
 
@@ -66,7 +69,7 @@ class DefaultTemplateFillPipelineTest {
         every { s3Client.putObject(any<PutObjectRequest>(), capture(uploadedBytes)) } returns
             PutObjectResponse.builder().build()
 
-        service.fillPdfForm("template.pdf", fieldValues, "filled.pdf")
+        service.fillPdfForm("template.pdf", values, "filled.pdf", compactValues = compactValues)
 
         val bytes = uploadedBytes.captured.contentStreamProvider().newStream().readAllBytes()
         // debug artifact for structural analysis outside the JVM
@@ -117,5 +120,37 @@ class DefaultTemplateFillPipelineTest {
                 assertTrue(text.contains(expected), "flattened page text must contain '$expected'")
             }
         }
+    }
+
+    // ── Lista usług: w liniach, a gdy się nie mieści - po przecinku ─────────────
+
+    private val services = (1..9).map { "Usługa numer $it (1900.00 PLN brutto)" }
+    private val servicesCompact = (1..9).joinToString(", ") { "Usługa numer $it (1900.00 PLN)" }
+
+    private fun pageText(filled: ByteArray): String =
+        Loader.loadPDF(filled).use { PDFTextStripper().getText(it) }.replace(Regex("\\s+"), " ")
+
+    @Test
+    fun `lista, ktora sie miesci, zostaje w liniach z dopiskiem brutto`() {
+        val two = services.take(2)
+        val text = pageText(runFillPipeline(
+            fieldValues + ("services" to two.joinToString("\n")),
+            mapOf("services" to "Usługa numer 1 (1900.00 PLN), Usługa numer 2 (1900.00 PLN)")
+        ))
+
+        assertTrue(text.contains("Usługa numer 1 (1900.00 PLN brutto)"), text)
+        assertTrue(!text.contains("PLN), Usługa"), "krótka lista nie przechodzi na przecinki")
+    }
+
+    @Test
+    fun `lista, ktora sie nie miesci, idzie po przecinku i bez slowa brutto`() {
+        val text = pageText(runFillPipeline(
+            fieldValues + ("services" to services.joinToString("\n")),
+            mapOf("services" to servicesCompact)
+        ))
+
+        assertTrue(text.contains("PLN), Usługa numer"), text)
+        assertTrue(!text.contains("brutto)"), "przy liście po przecinku nie ma „brutto” przy cenach")
+        assertTrue(text.contains("Usługa numer 9"), "wszystkie usługi są na protokole")
     }
 }

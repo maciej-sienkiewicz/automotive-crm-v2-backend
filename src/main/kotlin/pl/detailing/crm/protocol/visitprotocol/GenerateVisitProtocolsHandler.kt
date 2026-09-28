@@ -284,7 +284,8 @@ class GenerateVisitProtocolsHandler(
         val templateId = visitProtocol.templateId ?: return visitProtocol
 
         return try {
-            val crmData = crmDataResolver.resolveVisitData(visitProtocol.visitId, studioId)
+            val resolved = crmDataResolver.resolveVisitDataWithCompact(visitProtocol.visitId, studioId)
+            val crmData = resolved.values
 
             val fieldMappings = protocolFieldMappingRepository.findAllByTemplateIdAndStudioId(
                 templateId.value, studioId.value
@@ -292,6 +293,10 @@ class GenerateVisitProtocolsHandler(
             val fieldValues = fieldMappings.associate { mapping ->
                 mapping.pdfFieldName to (crmData[mapping.crmDataKey] ?: "")
             } + checkOutValues(visitProtocol, studioId, visitNumber, releasedByName)
+            // Lista usług, która nie mieści się w polu PDF w liniach, idzie po przecinku.
+            val compactValues = fieldMappings.mapNotNull { mapping ->
+                resolved.compact[mapping.crmDataKey]?.let { mapping.pdfFieldName to it }
+            }.toMap()
 
             val template = protocolTemplateRepository.findByIdAndStudioId(templateId.value, studioId.value)
                 ?.toDomain()
@@ -313,7 +318,7 @@ class GenerateVisitProtocolsHandler(
                     }
                     pdfProcessingService.fillPdfForm(
                         template.s3Key, fieldValues, filledPdfS3Key, logoPng,
-                        DocumentLogoPlacement.Slot.PROTOCOL
+                        DocumentLogoPlacement.Slot.PROTOCOL, compactValues
                     )
                     filledPdfS3Key
                 }
