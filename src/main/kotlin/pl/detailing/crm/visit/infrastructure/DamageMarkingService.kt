@@ -5,15 +5,13 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
-import com.drew.imaging.ImageMetadataReader
-import com.drew.metadata.exif.ExifIFD0Directory
+import pl.detailing.crm.shared.image.ExifOrientation
 import pl.detailing.crm.visit.domain.DamageAnnotationStroke
 import pl.detailing.crm.visit.domain.DamagePoint
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
-import java.awt.geom.AffineTransform
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -184,10 +182,10 @@ class DamageMarkingService {
         // The frontend annotation coordinates are relative to the upright image,
         // so the pixels must be brought upright before drawing or embedding.
         // Rotation only — the image is never cropped or scaled here.
-        val orientation = readExifOrientation(imageBytes)
-        val source = applyExifOrientation(decoded, orientation)
+        val orientation = ExifOrientation.read(imageBytes)
+        val source = ExifOrientation.upright(decoded, orientation)
 
-        if (strokes.isEmpty() && orientation == 1) return@withContext imageBytes
+        if (strokes.isEmpty() && orientation == ExifOrientation.UPRIGHT) return@withContext imageBytes
 
         val output = BufferedImage(source.width, source.height, BufferedImage.TYPE_INT_RGB)
         val graphics = output.createGraphics()
@@ -229,53 +227,5 @@ class DamageMarkingService {
         Color.decode(hex.trim())
     } catch (e: Exception) {
         DAMAGE_CIRCLE_COLOR
-    }
-
-    // ─── EXIF orientation ─────────────────────────────────────────────────────
-
-    /** Reads the EXIF orientation flag (1-8); 1 = upright / unknown. */
-    private fun readExifOrientation(imageBytes: ByteArray): Int = try {
-        ImageMetadataReader.readMetadata(ByteArrayInputStream(imageBytes))
-            .getFirstDirectoryOfType(ExifIFD0Directory::class.java)
-            ?.takeIf { it.containsTag(ExifIFD0Directory.TAG_ORIENTATION) }
-            ?.getInt(ExifIFD0Directory.TAG_ORIENTATION)
-            ?: 1
-    } catch (e: Exception) {
-        1
-    }
-
-    /**
-     * Physically rotates/mirrors the pixels so the image is upright, matching how
-     * browsers display it. Pure rotation/mirroring — no cropping, no scaling.
-     */
-    private fun applyExifOrientation(image: BufferedImage, orientation: Int): BufferedImage {
-        if (orientation <= 1 || orientation > 8) return image
-
-        val w = image.width
-        val h = image.height
-        val swapDimensions = orientation in setOf(5, 6, 7, 8)
-        val outW = if (swapDimensions) h else w
-        val outH = if (swapDimensions) w else h
-
-        val transform = AffineTransform()
-        when (orientation) {
-            2 -> { transform.scale(-1.0, 1.0); transform.translate(-w.toDouble(), 0.0) }
-            3 -> { transform.translate(w.toDouble(), h.toDouble()); transform.rotate(Math.PI) }
-            4 -> { transform.scale(1.0, -1.0); transform.translate(0.0, -h.toDouble()) }
-            5 -> { transform.rotate(Math.PI / 2); transform.scale(1.0, -1.0) }
-            6 -> { transform.translate(h.toDouble(), 0.0); transform.rotate(Math.PI / 2) }
-            7 -> { transform.scale(-1.0, 1.0); transform.translate(-h.toDouble(), 0.0); transform.translate(0.0, w.toDouble()); transform.rotate(3 * Math.PI / 2) }
-            8 -> { transform.translate(0.0, w.toDouble()); transform.rotate(3 * Math.PI / 2) }
-        }
-
-        val output = BufferedImage(outW, outH, BufferedImage.TYPE_INT_RGB)
-        val graphics = output.createGraphics()
-        try {
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-            graphics.drawImage(image, transform, null)
-        } finally {
-            graphics.dispose()
-        }
-        return output
     }
 }
