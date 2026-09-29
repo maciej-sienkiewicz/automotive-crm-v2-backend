@@ -197,6 +197,29 @@ interface KsefInvoiceRepository : JpaRepository<KsefInvoiceEntity, UUID> {
         @Param("dateTo") dateTo: java.time.LocalDate?
     ): Long
 
+    /**
+     * [sumNetByPaymentStatus] brutto - do kafla zobowiązań: dostawcy przelewa się
+     * kwotę z faktury, z VAT-em. Brak brutto odtwarzamy z netto + VAT, a przy
+     * samym netto - z netto.
+     */
+    @Query(value = """
+        SELECT COALESCE(SUM(
+            COALESCE(gross_amount, net_amount + COALESCE(vat_amount, 0), 0)
+        ), 0)
+        FROM ksef_invoices
+        WHERE studio_id      = CAST(:studioId AS uuid)
+          AND payment_status = :paymentStatus
+          AND status        NOT IN ('CANCELLED', 'EXCLUDED')
+          AND (CAST(:dateFrom AS date) IS NULL OR issue_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR issue_date <= CAST(:dateTo   AS date))
+    """, nativeQuery = true)
+    fun sumGrossByPaymentStatus(
+        @Param("studioId") studioId: UUID,
+        @Param("paymentStatus") paymentStatus: String,
+        @Param("dateFrom") dateFrom: java.time.LocalDate?,
+        @Param("dateTo") dateTo: java.time.LocalDate?
+    ): Long
+
     // ── Statistics (native SQL for performance) ───────────────────────────────
 
     /**

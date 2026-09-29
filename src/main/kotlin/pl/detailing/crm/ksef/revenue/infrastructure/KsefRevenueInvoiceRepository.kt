@@ -352,6 +352,34 @@ interface KsefRevenueInvoiceRepository : JpaRepository<KsefRevenueInvoiceEntity,
         @Param("dateTo") dateTo: LocalDate?
     ): Long
 
+    /**
+     * [sumNetByPaymentStatus] brutto - do kafla należności: klient jest winien kwotę
+     * z faktury, z VAT-em. Te same filtry. Brak brutto (starsze wpisy) odtwarzamy
+     * z netto + VAT.
+     */
+    @Query(
+        value = """
+        SELECT COALESCE(SUM(
+            CASE WHEN i.total_gross <> 0 THEN i.total_gross ELSE i.total_net + i.total_vat END
+        ), 0)
+        FROM ksef_revenue_invoices i
+        WHERE i.studio_id = :studioId
+          AND i.payment_status = CAST(:paymentStatus AS text)
+          AND i.ksef_status NOT IN ('REJECTED', 'CANCELLED')
+          AND i.invoice_to_receipt = FALSE
+          AND i.duplicate_status <> 'CONFIRMED_DUPLICATE'
+          AND i.excluded_at IS NULL
+          AND (CAST(:dateFrom AS date) IS NULL OR i.issue_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo   AS date) IS NULL OR i.issue_date <= CAST(:dateTo   AS date))
+    """, nativeQuery = true
+    )
+    fun sumGrossByPaymentStatus(
+        @Param("studioId") studioId: UUID,
+        @Param("paymentStatus") paymentStatus: String,
+        @Param("dateFrom") dateFrom: LocalDate?,
+        @Param("dateTo") dateTo: LocalDate?
+    ): Long
+
     fun countByStudioIdAndSourceAndKsefStatus(
         studioId: UUID,
         source: RevenueSource,

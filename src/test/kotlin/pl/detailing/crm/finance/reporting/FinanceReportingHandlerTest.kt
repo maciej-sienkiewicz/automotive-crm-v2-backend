@@ -43,7 +43,11 @@ class FinanceReportingHandlerTest {
         revenuePaid: Long = 0,
         revenuePending: Long = 0,
         ksefCostsPaid: Long = 0,
-        ksefCostsPending: Long = 0
+        ksefCostsPending: Long = 0,
+        docsIncomePendingGross: Long = 0,
+        docsExpensePendingGross: Long = 0,
+        revenuePendingGross: Long = 0,
+        ksefCostsPendingGross: Long = 0
     ) {
         // Handler pyta o listy statusów: PAID jako „rozliczone", PENDING+OVERDUE jako
         // „nierozliczone" — zaległy dokument nie znika z należności.
@@ -65,6 +69,14 @@ class FinanceReportingHandlerTest {
         every { revenueInvoiceRepository.sumNetByPaymentStatus(any(), "PENDING", any(), any()) } returns revenuePending
         every { ksefInvoiceRepository.sumNetByPaymentStatus(any(), "PAID", any(), any()) } returns ksefCostsPaid
         every { ksefInvoiceRepository.sumNetByPaymentStatus(any(), "PENDING", any(), any()) } returns ksefCostsPending
+        every {
+            documentRepository.sumGross(any(), DocumentDirection.INCOME, outstanding, any(), any())
+        } returns docsIncomePendingGross
+        every {
+            documentRepository.sumGross(any(), DocumentDirection.EXPENSE, outstanding, any(), any())
+        } returns docsExpensePendingGross
+        every { revenueInvoiceRepository.sumGrossByPaymentStatus(any(), "PENDING", any(), any()) } returns revenuePendingGross
+        every { ksefInvoiceRepository.sumGrossByPaymentStatus(any(), "PENDING", any(), any()) } returns ksefCostsPendingGross
         every { documentRepository.countOverdue(any(), any()) } returns 0
     }
 
@@ -142,5 +154,24 @@ class FinanceReportingHandlerTest {
         verify(exactly = 2) { documentRepository.sumNet(any(), DocumentDirection.EXPENSE, any(), any(), any()) }
         verify(exactly = 2) { revenueInvoiceRepository.sumNetByPaymentStatus(any(), any(), any(), any()) }
         verify(exactly = 2) { ksefInvoiceRepository.sumNetByPaymentStatus(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `naleznosci i zobowiazania brutto sumuja nierozliczone dokumenty z obu zrodel`() {
+        // Klient jest winien kwotę z faktury, z VAT-em: 1 000,00 netto to 1 230,00 do zapłaty.
+        stub(
+            docsIncomePending = 100_000, docsIncomePendingGross = 123_000,
+            revenuePending = 50_000, revenuePendingGross = 61_500,
+            docsExpensePending = 20_000, docsExpensePendingGross = 24_600,
+            ksefCostsPending = 10_000, ksefCostsPendingGross = 12_300,
+        )
+        val result = summary()
+
+        assertEquals(184_500, result.pendingReceivablesGross)
+        assertEquals(36_900, result.pendingPayablesGross)
+        // Netto zostaje obok - raporty dalej liczą bez VAT.
+        assertEquals(150_000, result.pendingReceivables)
+        assertEquals(30_000, result.pendingPayables)
+        verify { documentRepository.sumGross(any(), DocumentDirection.INCOME, listOf(DocumentStatus.PENDING, DocumentStatus.OVERDUE), any(), any()) }
     }
 }
