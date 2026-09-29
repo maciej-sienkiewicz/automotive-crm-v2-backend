@@ -12,6 +12,7 @@ import pl.detailing.crm.ksef.revenue.infrastructure.KsefRevenueInvoiceRepository
 import pl.detailing.crm.shared.AmountInWords
 import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.qr.QrCodeImageFactory
 import pl.detailing.crm.studio.logo.CompanyLogoService
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository

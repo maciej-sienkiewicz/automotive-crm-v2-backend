@@ -116,8 +116,11 @@ dependencies {
     implementation("org.apache.xmlgraphics:batik-transcoder:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
     implementation("org.apache.xmlgraphics:batik-codec:1.17") { exclude(group = "xml-apis", module = "xml-apis") }
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.10.1")
-    // Kod QR na wizualizacji faktury KSeF: od 2026 r. wizualizacja udostępniana poza
-    // systemem musi go nieść, żeby odbiorca mógł zweryfikować dokument u MF.
+    // Kody QR rysowane u nas, nigdy przez zewnętrzne API (treścią są dane finansowe):
+    //  - weryfikacyjny na wizualizacji faktury KSeF (obowiązkowy od 2026 r.),
+    //  - przelewu ZBP 2D przy fakturze kosztowej (ksef/transfer).
+    // Wystarcza `core`: PNG składa QrCodeImageFactory przez ImageIO z JDK, więc moduł
+    // `javase` (MatrixToImageWriter) nie jest potrzebny.
     implementation("com.google.zxing:core:3.5.3")
 
     // jsoup – HTML e-mail denoising (quoted history + signature stripping before storage and LLM calls)
