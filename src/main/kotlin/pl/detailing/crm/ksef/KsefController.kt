@@ -22,6 +22,8 @@ import pl.detailing.crm.ksef.statistics.KsefStatisticsHandler
 import pl.detailing.crm.ksef.statistics.KsefStatisticsQuery
 import pl.detailing.crm.ksef.sync.KsefSyncCursorRepository
 import pl.detailing.crm.ksef.sync.KsefSyncService
+import pl.detailing.crm.ksef.transfer.BankQrCodeGenerator
+import pl.detailing.crm.ksef.transfer.ExpenseTransfer
 import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.settings.StudioSettingsEntity
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
@@ -48,7 +50,8 @@ class KsefController(
     private val syncService: KsefSyncService,
     private val syncCursorRepository: KsefSyncCursorRepository,
     private val statisticsHandler: KsefStatisticsHandler,
-    private val studioSettingsRepository: StudioSettingsRepository
+    private val studioSettingsRepository: StudioSettingsRepository,
+    private val bankQrCodeGenerator: BankQrCodeGenerator
 ) {
 
     // ── Credentials ────────────────────────────────────────────────────────────
@@ -275,6 +278,21 @@ class KsefController(
         val entity = findExpenseOrThrow(id, principal.studioId.value)
         val items = invoiceItemRepository.findByInvoiceIdOrderByLineNumberAsc(entity.id)
         return ResponseEntity.ok(entity.toDetailResponse(items))
+    }
+
+    /**
+     * Dane do przelewu i kod QR w standardzie ZBP 2D - skan w dowolnej polskiej aplikacji
+     * bankowej wypełnia przelew. Obrazek powstaje na serwerze (ZXing), żadne dane
+     * rachunku nie wychodzą do zewnętrznego generatora.
+     *
+     * Osobny endpoint zamiast pola w szczegółach: okno faktury prosi o niego tylko dla
+     * faktury czekającej na płatność, a lista i szczegóły nie noszą niepotrzebnie PNG.
+     */
+    @GetMapping("/expenses/{id}/transfer")
+    fun getExpenseTransfer(@PathVariable id: UUID): ResponseEntity<ExpenseTransferResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val entity = findExpenseOrThrow(id, principal.studioId.value)
+        return ResponseEntity.ok(bankQrCodeGenerator.generate(entity).toResponse())
     }
 
     /** Create a manual expense document (for invoices not received via KSeF). */
@@ -541,6 +559,18 @@ class KsefController(
         note           = note
     )
 
+    private fun ExpenseTransfer.toResponse() = ExpenseTransferResponse(
+        recipientName       = recipientName,
+        recipientNip        = recipientNip,
+        accountNumber       = accountNumber,
+        accountNumberValid  = accountNumberValid,
+        amount              = groszToZloty(amountGrosze),
+        currency            = currency,
+        title               = title,
+        qrPngBase64         = qrPngBase64,
+        qrUnavailableReason = qrUnavailableReason
+    )
+
     private fun KsefInvoiceEntity.toDetailResponse(items: List<KsefInvoiceItemEntity>) = ExpenseDetailResponse(
         id             = id.toString(),
         source         = source,
@@ -712,6 +742,23 @@ data class ExpensePaymentResponse(
     val status: String,         // PAID | PENDING
     val dueDate: LocalDate?,
     val bankAccount: String?
+)
+
+/**
+ * Dane do przelewu za dokument kosztowy. [qrPngBase64] to PNG gotowy do Data URI
+ * (`data:image/png;base64,…`); null znaczy, że kodu nie ma, a powód stoi w
+ * [qrUnavailableReason]. Dane do przelewu wracają także bez kodu.
+ */
+data class ExpenseTransferResponse(
+    val recipientName: String?,
+    val recipientNip: String?,
+    val accountNumber: String?,         // 26 cyfr NRB albo numer z faktury, gdy niepoprawny
+    val accountNumberValid: Boolean,
+    val amount: Double?,                // brutto do zapłaty, zł
+    val currency: String,
+    val title: String,                  // dokładnie taki jak w kodzie
+    val qrPngBase64: String?,
+    val qrUnavailableReason: String?
 )
 
 /** Pozycja faktury (wiersz FaWiersz z KSeF). */

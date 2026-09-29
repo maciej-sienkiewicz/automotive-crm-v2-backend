@@ -4,6 +4,7 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import pl.detailing.crm.shared.qr.QrCodeImageFactory
 import java.math.BigDecimal
 
 /**
