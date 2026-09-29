@@ -25,8 +25,17 @@ interface BatchOrderPhotoRepository : JpaRepository<BatchOrderPhotoEntity, UUID>
     """)
     fun countGroupedByEntryId(studioId: UUID, ids: Collection<UUID>): List<Array<Any>>
 
-    /** Photos without a generated thumbnail, newest first — consumed by the thumbnail backfill job. */
-    @Query("SELECT p FROM BatchOrderPhotoEntity p WHERE p.thumbnailFileId IS NULL ORDER BY p.uploadedAt DESC")
+    /**
+     * Zdjęcia do (ponownego) wygenerowania miniatury, dla ThumbnailBackfillJob: najpierw bez
+     * miniatury, potem z miniaturą sprzed poprawki orientacji EXIF (klucz bez `.upright.jpg`);
+     * w obu grupach najnowsze pierwsze.
+     */
+    @Query(
+        "SELECT p FROM BatchOrderPhotoEntity p " +
+        "WHERE p.thumbnailFileId IS NULL " +
+        "   OR (p.thumbnailFileId LIKE 'thumbs/%' AND p.thumbnailFileId NOT LIKE '%.upright.jpg') " +
+        "ORDER BY CASE WHEN p.thumbnailFileId IS NULL THEN 0 ELSE 1 END, p.uploadedAt DESC"
+    )
     fun findMissingThumbnails(pageable: Pageable): List<BatchOrderPhotoEntity>
 }
 
