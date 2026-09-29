@@ -134,8 +134,10 @@ class TabletSignatureController(
      */
     private fun activeQueueFor(session: TabletSession): List<TabletSignatureRequestDto> {
         val now = Instant.now()
-        return signatureRequestRepository
+        val active = signatureRequestRepository
             .findActiveForTablet(java.util.UUID.fromString(session.tenantId), session.tabletId, now)
+        // Żądanie usuniętej wizyty stałoby na czele kolejki (FIFO) i blokowało tablet.
+        return lifecycleService.withoutOrphaned(active)
             .mapNotNull { entity ->
                 val request = entity.toDomain()
                 val challenge = documentIntegrityService.peekChallenge(request.id.value)

@@ -240,6 +240,24 @@ interface SignatureRequestRepository : JpaRepository<SignatureRequestEntity, UUI
         @Param("now") now: Instant
     ): List<SignatureRequestEntity>
 
+    /**
+     * Aktywne żądania podpisu dokumentów danej wizyty - do anulowania, gdy wizyta
+     * znika (anulowany szkic przyjęcia). Bez filtra wygaśnięcia: żądanie po TTL,
+     * którego nikt jeszcze nie oznaczył jako EXPIRED, też ma zejść z kolejki.
+     */
+    @Query(
+        """
+        SELECT r FROM SignatureRequestEntity r
+        WHERE r.studioId = :studioId
+          AND r.visitId = :visitId
+          AND r.status IN ('PENDING_DISPLAY', 'DISPLAYED')
+        """
+    )
+    fun findActiveForVisit(
+        @Param("studioId") studioId: UUID,
+        @Param("visitId") visitId: UUID
+    ): List<SignatureRequestEntity>
+
     /** Najnowsze żądanie podpisu listy obecności, w dowolnym stanie. */
     fun findFirstByStudioIdAndAttendanceSheetIdOrderByCreatedAtDesc(
         studioId: UUID,
