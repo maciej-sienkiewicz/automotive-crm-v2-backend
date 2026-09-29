@@ -148,6 +148,31 @@ interface FinancialDocumentRepository : JpaRepository<FinancialDocumentEntity, U
     ): Long
 
     /**
+     * To samo co [sumNet], ale brutto - do kafla należności i zobowiązań. Dług to
+     * kwota, którą ktoś faktycznie przeleje: z VAT-em. Te same filtry, żeby obie
+     * sumy mówiły o tych samych dokumentach.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(d.totalGross), 0) FROM FinancialDocumentEntity d
+        WHERE d.studioId  = :studioId
+          AND d.direction = :direction
+          AND d.status    IN :statuses
+          AND d.deletedAt IS NULL
+          AND d.excludedAt IS NULL
+          AND d.ksefRevenueInvoiceId IS NULL
+          AND d.invoicedExternally = false
+          AND d.issueDate >= COALESCE(:dateFrom, d.issueDate)
+          AND d.issueDate <= COALESCE(:dateTo,   d.issueDate)
+    """)
+    fun sumGross(
+        studioId: UUID,
+        direction: DocumentDirection,
+        statuses: Collection<DocumentStatus>,
+        dateFrom: LocalDate?,
+        dateTo: LocalDate?
+    ): Long
+
+    /**
      * Liczba przeterminowanych dokumentów do kafla — spójnie z [sumNet]: sprzedaż
      * fakturowana przez księgowość jest tam pominięta, więc i tu. Należność niesie
      * faktura księgowości pobrana z KSeF.

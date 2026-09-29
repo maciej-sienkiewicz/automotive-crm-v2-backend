@@ -57,6 +57,15 @@ data class FinanceSummaryResult(
     /** Sum of EXPENSE PENDING documents – money we still owe. */
     val pendingPayables: Long,
 
+    // ── Outstanding amounts (brutto) ───────────────────────────────────────
+    // Kafel „Należności" / „Zobowiązania": dług to kwota, która faktycznie przejdzie
+    // przelewem, czyli z VAT-em. Netto wyżej zostaje dla raportów.
+    /** Brutto dokumentów przychodowych, których klienci jeszcze nie zapłacili. */
+    val pendingReceivablesGross: Long,
+
+    /** Brutto dokumentów kosztowych, których studio jeszcze nie zapłaciło. */
+    val pendingPayablesGross: Long,
+
     // ── Overdue counts ─────────────────────────────────────────────────────
     /** Count of INCOME OVERDUE documents (invoices not paid by customer). */
     val overdueReceivables: Long,
@@ -117,6 +126,13 @@ class FinanceReportingHandler(
         val ksefPendingPayablesCents = ksefInvoiceRepository.sumNetByPaymentStatus(sid, "PENDING", from, to)
         val pendingPayablesCents = financialDocPendingPayablesCents + ksefPendingPayablesCents
 
+        val pendingReceivablesGrossCents =
+            documentRepository.sumGross(sid, DocumentDirection.INCOME, OUTSTANDING, from, to) +
+                revenueInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
+        val pendingPayablesGrossCents =
+            documentRepository.sumGross(sid, DocumentDirection.EXPENSE, OUTSTANDING, from, to) +
+                ksefInvoiceRepository.sumGrossByPaymentStatus(sid, "PENDING", from, to)
+
         val overdueReceivables = documentRepository.countOverdue(sid, DocumentDirection.INCOME)
         val overduePayables    = documentRepository.countOverdue(sid, DocumentDirection.EXPENSE)
 
@@ -130,6 +146,8 @@ class FinanceReportingHandler(
             profit               = totalRevenueCents - totalCostsCents,
             pendingReceivables   = pendingReceivablesCents,
             pendingPayables      = pendingPayablesCents,
+            pendingReceivablesGross = pendingReceivablesGrossCents,
+            pendingPayablesGross    = pendingPayablesGrossCents,
             overdueReceivables   = overdueReceivables,
             overduePayables      = overduePayables
         )

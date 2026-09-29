@@ -384,6 +384,8 @@ class FinanceController(
                 profit             = result.profit,
                 pendingReceivables = result.pendingReceivables,
                 pendingPayables    = result.pendingPayables,
+                pendingReceivablesGross = result.pendingReceivablesGross,
+                pendingPayablesGross    = result.pendingPayablesGross,
                 overdueReceivables = result.overdueReceivables,
                 overduePayables    = result.overduePayables
             )
@@ -572,6 +574,10 @@ data class FinanceSummaryResponse(
     val profit: Long,
     val pendingReceivables: Long,
     val pendingPayables: Long,
+    /** Brutto: ile klienci są winni studiu (kafel „Należności"). */
+    val pendingReceivablesGross: Long,
+    /** Brutto: ile studio jest winne dostawcom (kafel „Zobowiązania"). */
+    val pendingPayablesGross: Long,
     val overdueReceivables: Long,
     val overduePayables: Long
 )
