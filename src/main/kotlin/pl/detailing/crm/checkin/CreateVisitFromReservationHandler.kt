@@ -421,6 +421,19 @@ class CreateVisitFromReservationHandler(
     @Transactional
     suspend fun handleWalkIn(command: WalkInVisitCommand): ReservationToVisitResult =
         withContext(Dispatchers.IO) {
+            // Step 0: Validate before the first write. `@Transactional` does not cover the body
+            // of this suspend function (it runs on Dispatchers.IO), so nothing written below is
+            // rolled back: a missing color used to fail only after the customer and vehicle had
+            // been created, and the retry then hit "Klient z podanym numerem telefonu już istnieje".
+            if (command.customer == null) {
+                throw ValidationException("Dane klienta są wymagane podczas przyjęcia pojazdu")
+            }
+            requireStudioColor(
+                command.appointmentColorId
+                    ?: throw ValidationException("appointmentColorId jest wymagany dla wizyty walk-in"),
+                command.studioId
+            )
+
             // Step 1: Handle customer
             val customerId = when (val customerData = command.customer) {
                 null -> throw ValidationException("Dane klienta są wymagane podczas przyjęcia pojazdu")
