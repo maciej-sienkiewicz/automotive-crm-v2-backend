@@ -9,6 +9,7 @@ import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
 import pl.detailing.crm.shared.*
+import pl.detailing.crm.signing.SignatureRequestLifecycleService
 import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitDocumentRepository
 import pl.detailing.crm.visit.infrastructure.VisitJournalEntryRepository
@@ -44,7 +45,8 @@ class CancelDraftVisitHandler(
     private val s3ProtocolStorageService: S3ProtocolStorageService,
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val transactionTemplate: TransactionTemplate,
-    private val auditService: AuditService
+    private val auditService: AuditService,
+    private val signatureRequestLifecycleService: SignatureRequestLifecycleService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -101,6 +103,18 @@ class CancelDraftVisitHandler(
                 // This allows the appointment to be converted to a new visit later
                 result
             }!!
+
+            // Żądania podpisu protokołów tej wizyty schodzą z tabletu. Inaczej klient
+            // dostawał do podpisu dokument wizyty, której już nie ma, a tablet
+            // podawał go przed dokumentami nowego przyjęcia (kolejka od najstarszego).
+            try {
+                signatureRequestLifecycleService.cancelActiveForVisit(
+                    command.studioId, command.visitId.value, command.userName ?: "System"
+                )
+            } catch (e: Exception) {
+                // Siatka w kolejce tabletu (withoutOrphaned) i tak je odrzuci.
+                logger.error("Failed to cancel signature requests of visit ${command.visitId}: ${e.message}", e)
+            }
 
             // Phase 2 (post-commit, best-effort): remove files from S3
             db.protocolS3Keys.forEach { s3Key ->

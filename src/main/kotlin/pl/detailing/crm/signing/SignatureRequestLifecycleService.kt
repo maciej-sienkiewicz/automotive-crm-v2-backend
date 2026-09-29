@@ -7,7 +7,9 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.signing.domain.SignatureAuditEventType
 import pl.detailing.crm.signing.domain.SignatureRequest
 import pl.detailing.crm.signing.infrastructure.*
+import pl.detailing.crm.visit.infrastructure.VisitRepository
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Non-happy-path transitions of a signing session: employee cancellation,
@@ -19,7 +21,8 @@ class SignatureRequestLifecycleService(
     private val signatureRequestRepository: SignatureRequestRepository,
     private val documentIntegrityService: DocumentIntegrityService,
     private val auditTrailService: SignatureAuditTrailService,
-    private val eventPublisher: SignatureEventPublisher
+    private val eventPublisher: SignatureEventPublisher,
+    private val visitRepository: VisitRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -103,4 +106,42 @@ class SignatureRequestLifecycleService(
 
     fun isEffectivelyExpired(request: SignatureRequest, now: Instant = Instant.now()): Boolean =
         request.isExpired(now)
+
+    /**
+     * Anuluje żądania podpisu dokumentów wizyty, której już nie ma.
+     *
+     * Zgłoszenie z 29.09: pracownik porzucił przyjęcie (szkic wizyty usunięty razem
+     * z protokołami) i przyjął auto od nowa z rezerwacji. Żądania podpisu pierwszej
+     * wizyty zostały aktywne, a tablet podaje kolejkę od najstarszego - klient dostał
+     * do podpisu protokół skasowanej wizyty i każda próba kończyła się „Wizyta nie
+     * została znaleziona", aż żądania wygasły po 15 minutach. Anulowanie wysyła na
+     * tablet SIGNATURE_CANCELLED, więc dokument znika z ekranu od razu.
+     */
+    @Transactional
+    fun cancelActiveForVisit(studioId: StudioId, visitId: UUID, cancelledBy: String): Int {
+        val active = signatureRequestRepository.findActiveForVisit(studioId.value, visitId)
+        active.forEach { cancel(studioId, SignatureRequestId(it.id), cancelledBy, null) }
+        if (active.isNotEmpty()) {
+            logger.info("Cancelled {} signature request(s) of deleted visit {}", active.size, visitId)
+        }
+        return active.size
+    }
+
+    /**
+     * Kolejka tabletu bez żądań, których wizyty już nie ma - te są przy okazji
+     * anulowane. Siatka bezpieczeństwa dla [cancelActiveForVisit]: łapie żądania
+     * osierocone inną drogą (albo sprzed tej poprawki), zanim zablokują tablet.
+     */
+    @Transactional
+    fun withoutOrphaned(active: List<SignatureRequestEntity>): List<SignatureRequestEntity> {
+        val visitIds = active.mapNotNull { it.visitId }.toSet()
+        if (visitIds.isEmpty()) return active
+        val existing = visitRepository.findAllById(visitIds).map { it.id }.toSet()
+        val (orphaned, kept) = active.partition { it.visitId != null && it.visitId !in existing }
+        orphaned.forEach { cancel(StudioId(it.studioId), SignatureRequestId(it.id), "System", null) }
+        if (orphaned.isNotEmpty()) {
+            logger.warn("Dropped {} orphaned signature request(s) from tablet queue: {}", orphaned.size, orphaned.map { it.id })
+        }
+        return kept
+    }
 }
