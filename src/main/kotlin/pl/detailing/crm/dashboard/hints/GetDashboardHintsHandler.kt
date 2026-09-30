@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.comms.infrastructure.CommThreadRepository
+import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestRepository
 import pl.detailing.crm.instagram.ads.discovery.AdDiscoveryReadService
 import pl.detailing.crm.instagram.ads.discovery.AreaNoveltyDto
 import pl.detailing.crm.instagram.analytics.MetricsCalculator
@@ -51,7 +52,8 @@ class GetDashboardHintsHandler(
     private val visitRepository: VisitRepository,
     private val dismissalRepository: DashboardHintDismissalRepository,
     private val permissionCheckService: PermissionCheckService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val leaveRequestRepository: LeaveRequestRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val warsawZone = ZoneId.of("Europe/Warsaw")
@@ -68,6 +70,19 @@ class GetDashboardHintsHandler(
          * świeże konto demo nie potrzebuje zachęty do automatyzacji faktur.
          */
         const val KSEF_MIN_COMPLETED_VISITS = 3
+
+        /**
+         * „1 wniosek urlopowy czeka", „3 wnioski urlopowe czekają", „5 wniosków urlopowych
+         * czeka" — liczebnik rządzi i rzeczownikiem, i czasownikiem (12–14 jak 5).
+         */
+        fun leaveRequestsPendingText(count: Int): String {
+            val few = count % 10 in 2..4 && count % 100 !in 12..14
+            return when {
+                count == 1 -> "1 wniosek urlopowy czeka"
+                few -> "$count wnioski urlopowe czekają"
+                else -> "$count wniosków urlopowych czeka"
+            } + "."
+        }
     }
 
     suspend fun handle(principal: UserPrincipal): List<DashboardHint> =
@@ -94,6 +109,7 @@ class GetDashboardHintsHandler(
             // (w tym pytanie o nieużywaną funkcję kart — to rozmowa o konfiguracji,
             // nie zaległość).
             safely("leads-awaiting") { leadsAwaitingHint(principal) }
+            safely("leave-requests-pending") { leaveRequestsPendingHint(principal) }
             safely("worktime-missing") { worktime?.takeIf { it.kind == DashboardHintKind.WORKTIME_MISSING } }
             safely("competitor") { competitorStandoutHint(principal, digest) }
             safely("area-new-ads") { areaNewAdsHint(principal) }
@@ -187,6 +203,40 @@ class GetDashboardHintsHandler(
         else -> "czeka $days dni"
     }
 
+    // ── Wnioski urlopowe ─────────────────────────────────────────────────────
+
+    /**
+     * Wnioski urlopowe czekające na decyzję TEJ osoby — właściciela albo kogoś
+     * z EMPLOYEES_LEAVES_APPROVE. Własne wnioski się nie liczą: nikt nie rozpatruje
+     * własnego, więc podpowiedź wołałaby o decyzję, której podjąć nie wolno.
+     *
+     * Termin urlopu biegnie niezależnie od tego, czy ktoś zajrzał do kolejki — wniosek,
+     * którego nikt nie rozpatrzy przed startem, wygasa. Stąd miejsce tuż pod leadami.
+     *
+     * Klucz niesie chwilę złożenia najświeższego wniosku: zamknięcie ucisza podpowiedź,
+     * ale nowy wniosek to nowy klucz i pasek odzywa się znowu.
+     */
+    private fun leaveRequestsPendingHint(principal: UserPrincipal): DashboardHint? {
+        if (!principal.isOwner && !hasPermission(principal, Permission.EMPLOYEES_LEAVES_APPROVE)) return null
+
+        val studioId = principal.studioId.value
+        val count = leaveRequestRepository.countPendingDecidableBy(studioId, principal.userId.value).toInt()
+        if (count == 0) return null
+        val latest = leaveRequestRepository.latestPendingSubmissionFor(studioId, principal.userId.value)
+
+        return DashboardHint(
+            key = "LEAVE_REQUESTS_PENDING_${latest?.epochSecond ?: 0}",
+            kind = DashboardHintKind.LEAVE_REQUESTS_PENDING,
+            text = leaveRequestsPendingText(count),
+            action = DashboardHintAction(
+                label = "Rozpatrz",
+                type = DashboardHintActionType.NAVIGATE,
+                url = "/employees/leave-requests"
+            ),
+            permanentDismiss = false
+        )
+    }
+
     // ── Karty Czasu Pracy ────────────────────────────────────────────────────
 
     private fun worktimeHint(principal: UserPrincipal, today: LocalDate): DashboardHint? {
@@ -245,7 +295,7 @@ class GetDashboardHintsHandler(
             action = DashboardHintAction(
                 label = "Zobacz pracowników",
                 type = DashboardHintActionType.NAVIGATE,
-                url = "/settings?tab=team"
+                url = "/employees/worktime"
             ),
             permanentDismiss = false
         )
@@ -436,6 +486,7 @@ class GetDashboardHintsHandler(
     }
 
     // ── Wspólne ──────────────────────────────────────────────────────────────
+
 
     private fun hasPermission(principal: UserPrincipal, permission: Permission): Boolean =
         permissionCheckService.hasPermission(principal.userId, principal.studioId, permission)

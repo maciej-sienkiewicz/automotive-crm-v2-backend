@@ -45,7 +45,8 @@ class GetDashboardHintsHandlerTest {
         visitRepository = mockk(relaxed = true),
         dismissalRepository = mockk(relaxed = true),
         permissionCheckService = permissionCheckService,
-        objectMapper = mockk(relaxed = true)
+        objectMapper = mockk(relaxed = true),
+        leaveRequestRepository = mockk(relaxed = true)
     )
 
     private val principal = UserPrincipal(
