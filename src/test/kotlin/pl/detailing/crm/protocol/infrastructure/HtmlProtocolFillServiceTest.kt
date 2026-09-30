@@ -91,7 +91,8 @@ class HtmlProtocolFillServiceTest {
             "/templates/protokol_przyjecia_pojazdu.html",
             "/templates/protokol_wydania_pojazdu.html",
             "/templates/oswiadczenie_rodo.html",
-            "/templates/zgody_marketingowe.html"
+            "/templates/zgody_marketingowe.html",
+            "/templates/wniosek_urlopowy.html"
         ).forEach { resource ->
             val html = javaClass.getResourceAsStream(resource)!!.use { String(it.readBytes(), Charsets.UTF_8) }
             val filled = service.fill(html, emptyMap(), trustedMarkup = mapOf("companylogo" to "<img src=\"data:x\">"))
