@@ -65,7 +65,8 @@ class PinBruteForceAndSessionTest {
         mockk<PermissionCheckService>(relaxed = true),
         studioSettingsRepository,
         redis,
-        regularStudios()
+        regularStudios(),
+        mockk(relaxed = true)
     )
 
     init {

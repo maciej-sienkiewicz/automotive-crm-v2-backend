@@ -38,6 +38,7 @@ object PermissionHierarchy {
         Permission.FINANCE_EARNINGS_NOTIFICATIONS to setOf(Permission.VISITS_CREATE),
         Permission.EMPLOYEES_MANAGE to setOf(Permission.VISITS_CREATE),
         Permission.EMPLOYEES_PAYROLL to setOf(Permission.VISITS_CREATE),
+        Permission.EMPLOYEES_LEAVES_APPROVE to setOf(Permission.VISITS_CREATE),
         Permission.COMMUNICATION_SEND to setOf(Permission.VISITS_CREATE),
         Permission.MARKETING_MANAGE to setOf(Permission.VISITS_CREATE),
         Permission.STATISTICS_VIEW to setOf(Permission.VISITS_CREATE),

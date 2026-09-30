@@ -27,5 +27,10 @@ data class UserData(
     /** True when the user's role has "track work time" enabled — shows the Czas pracy sidebar entry. */
     val trackWorkTime: Boolean = false,
     /** Seconds of inactivity before the client-side lock screen fires. 0 = disabled. */
-    val idleTimeoutSeconds: Int = 0
+    val idleTimeoutSeconds: Int = 0,
+    /**
+     * Rekord pracownika powiązany z kontem albo null. Front pokazuje pozycję „Urlop"
+     * (wnioski urlopowe w samoobsłudze) tylko wtedy, gdy nie jest null.
+     */
+    val employeeId: String? = null
 )

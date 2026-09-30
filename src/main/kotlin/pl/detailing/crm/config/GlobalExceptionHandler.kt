@@ -113,7 +113,8 @@ class GlobalExceptionHandler(
             .body(ErrorResponse(
                 error = "Błąd walidacji",
                 message = ex.message ?: "Nieprawidłowe dane żądania",
-                timestamp = Instant.now().toString()
+                timestamp = Instant.now().toString(),
+                field = ex.field
             ))
     }
 
@@ -543,7 +544,12 @@ data class ErrorResponse(
      * decyzji (np. `VISIT_ALREADY_IN_STATE` — cel osiągnięty, nie ma czego naprawiać).
      * Null tam, gdzie treść odpowiedzi mówi wszystko.
      */
-    val code: String? = null
+    val code: String? = null,
+    /**
+     * Pole żądania, którego dotyczy błąd walidacji ([pl.detailing.crm.shared.ValidationException.field]).
+     * Null, gdy błąd nie dotyczy jednego pola.
+     */
+    val field: String? = null
 )
 
 /** 400 z listą pól, które nie przeszły walidacji JSR-380. */
