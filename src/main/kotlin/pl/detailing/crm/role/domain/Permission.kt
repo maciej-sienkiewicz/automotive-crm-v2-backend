@@ -212,6 +212,13 @@ enum class Permission(
         PermissionModule.EMPLOYEES, "Płace (podgląd i zarządzanie)",
         description = "Pensje to najbardziej wrażliwe dane w firmie — osobno od kadr."
     ),
+    // Osobny korzeń, a nie dziecko EMPLOYEES_MANAGE: kierownik zmiany ma rozpatrywać
+    // urlopy zespołu, ale nie zakładać kont ani nie czytać danych kadrowych.
+    EMPLOYEES_LEAVES_APPROVE(
+        PermissionModule.EMPLOYEES, "Akceptacja wniosków urlopowych",
+        description = "Rozpatrywanie i podpisywanie wniosków urlopowych zespołu. " +
+            "Bez dostępu do kadr, kont logowania i płac — dla kierownika zmiany."
+    ),
 
     // ── Komunikacja ──────────────────────────────────────────────────────────
     // Viewing the history rides on CUSTOMERS_VIEW (it is part of the customer card);

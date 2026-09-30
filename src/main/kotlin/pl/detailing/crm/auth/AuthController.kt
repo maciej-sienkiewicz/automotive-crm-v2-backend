@@ -22,6 +22,7 @@ import pl.detailing.crm.auth.passwordreset.ResetPasswordRequest
 import pl.detailing.crm.auth.passwordreset.ValidateResetTokenResponse
 import pl.detailing.crm.auth.signup.SignupHandler
 import pl.detailing.crm.auth.signup.SignupRequest
+import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.studio.settings.StudioSettingsRepository
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.user.infrastructure.UserRepository
@@ -45,7 +46,8 @@ class AuthController(
     private val permissionCheckService: PermissionCheckService,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val rolePreviewStudios: RolePreviewStudios,
-    private val rolePreviewService: RolePreviewService
+    private val rolePreviewService: RolePreviewService,
+    private val employeeRepository: EmployeeRepository
 ) {
 
     @PostMapping("/signup")
@@ -180,6 +182,9 @@ class AuthController(
             val idleTimeoutSeconds = withContext(Dispatchers.IO) {
                 studioSettingsRepository.findById(principal.studioId.value).orElse(null)?.idleTimeoutSeconds ?: 0
             }
+            val employeeId = withContext(Dispatchers.IO) {
+                employeeRepository.findByStudioIdAndUserId(principal.studioId.value, principal.userId.value)?.id?.toString()
+            }
 
             ResponseEntity.ok(UnifiedAuthResponse(
                 success = true,
@@ -198,7 +203,8 @@ class AuthController(
                     mobileToken = mobileToken,
                     permissions = permissions,
                     trackWorkTime = trackWorkTime,
-                    idleTimeoutSeconds = idleTimeoutSeconds
+                    idleTimeoutSeconds = idleTimeoutSeconds,
+                    employeeId = employeeId
                 )
             ))
         } catch (e: Exception) {

@@ -63,7 +63,8 @@ FINANSE (feature: FINANCE)
 
 PRACOWNICY
 ├─ EMPLOYEES_MANAGE                Kadry + konta logowania
-└─ EMPLOYEES_PAYROLL               Płace (podgląd i zarządzanie)
+├─ EMPLOYEES_PAYROLL               Płace (podgląd i zarządzanie)
+└─ EMPLOYEES_LEAVES_APPROVE        Akceptacja wniosków urlopowych (docs/api-leave-requests.md)
 
 KOMUNIKACJA (feature: SMS_EMAIL)
 └─ COMMUNICATION_SEND              Wysyłanie SMS i e-maili (implies: CUSTOMERS_VIEW)

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.pin.pinAttemptsKey
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.rolepreview.RolePreviewStudios
@@ -27,7 +28,8 @@ class LoginHandler(
     private val permissionCheckService: PermissionCheckService,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val redisTemplate: StringRedisTemplate,
-    private val rolePreviewStudios: RolePreviewStudios
+    private val rolePreviewStudios: RolePreviewStudios,
+    private val employeeRepository: EmployeeRepository
 ) {
 
     suspend fun handle(request: LoginRequest): Pair<UnifiedAuthResponse, UserPrincipal> =
@@ -121,7 +123,9 @@ class LoginHandler(
                         .getTrackWorkTime(user.id, user.studioId),
                     idleTimeoutSeconds = withContext(Dispatchers.IO) {
                         studioSettingsRepository.findById(user.studioId.value).orElse(null)?.idleTimeoutSeconds ?: 0
-                    }
+                    },
+                    employeeId = employeeRepository
+                        .findByStudioIdAndUserId(user.studioId.value, user.id.value)?.id?.toString()
                 )
             )
 

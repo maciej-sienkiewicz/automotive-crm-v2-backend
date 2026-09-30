@@ -811,7 +811,11 @@ sealed class BusinessException(message: String) : RuntimeException(message)
 
 class UnauthorizedException(message: String = "Unauthorized access") : BusinessException(message)
 class ForbiddenException(message: String = "Access denied") : BusinessException(message)
-class ValidationException(message: String) : BusinessException(message)
+/**
+ * 400 z komunikatem po polsku. [field] — nazwa pola żądania, którego dotyczy błąd, gdy
+ * dotyczy jednego pola: front pokazuje wtedy komunikat przy tym polu, a nie w toaście.
+ */
+class ValidationException(message: String, val field: String? = null) : BusinessException(message)
 class EntityNotFoundException(message: String) : BusinessException(message)
 class NotFoundException(message: String) : BusinessException(message)
 class ConflictException(message: String) : BusinessException(message)

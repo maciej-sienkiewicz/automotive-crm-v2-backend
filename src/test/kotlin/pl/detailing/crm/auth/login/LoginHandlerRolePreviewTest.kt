@@ -27,7 +27,7 @@ class LoginHandlerRolePreviewTest {
 
     private val handler = LoginHandler(
         userRepository, passwordEncoder, mockk(), accountLockoutService,
-        SimpleMeterRegistry(), mockk(), mockk(), mockk(), studios
+        SimpleMeterRegistry(), mockk(), mockk(), mockk(), studios, mockk(relaxed = true)
     )
 
     @Test

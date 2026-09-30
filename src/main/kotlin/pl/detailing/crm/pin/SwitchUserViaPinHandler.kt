@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service
 import pl.detailing.crm.auth.UnifiedAuthResponse
 import pl.detailing.crm.auth.UserData
 import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.role.permission.PermissionCheckService
 import pl.detailing.crm.rolepreview.RolePreviewStudios
 import pl.detailing.crm.shared.ForbiddenException
@@ -34,7 +35,8 @@ class SwitchUserViaPinHandler(
     private val permissionCheckService: PermissionCheckService,
     private val studioSettingsRepository: StudioSettingsRepository,
     private val redisTemplate: StringRedisTemplate,
-    private val rolePreviewStudios: RolePreviewStudios
+    private val rolePreviewStudios: RolePreviewStudios,
+    private val employeeRepository: EmployeeRepository
 ) {
     companion object {
         /** Okno, w którym liczą się nieudane próby; po nim licznik znika sam. */
@@ -127,7 +129,8 @@ class SwitchUserViaPinHandler(
                 trackWorkTime = permissionCheckService
                     .getTrackWorkTime(userId, studioIdTyped),
                 idleTimeoutSeconds = studioSettingsRepository
-                    .findById(user.studioId).orElse(null)?.idleTimeoutSeconds ?: 0
+                    .findById(user.studioId).orElse(null)?.idleTimeoutSeconds ?: 0,
+                employeeId = employeeRepository.findByStudioIdAndUserId(user.studioId, user.id)?.id?.toString()
             )
         )
 

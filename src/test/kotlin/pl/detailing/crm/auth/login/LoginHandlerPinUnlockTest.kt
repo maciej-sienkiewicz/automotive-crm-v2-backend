@@ -44,7 +44,7 @@ class LoginHandlerPinUnlockTest {
     private val handler = LoginHandler(
         userRepository, passwordEncoder, subscriptionService, accountLockoutService,
         SimpleMeterRegistry(), permissionCheckService, studioSettingsRepository, redisTemplate,
-        regularStudios()
+        regularStudios(), mockk(relaxed = true)
     )
 
     private val studioId = UUID.randomUUID()
