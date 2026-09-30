@@ -5,6 +5,8 @@ import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
+import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestDecidedEvent
+import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestSubmittedEvent
 import pl.detailing.crm.role.domain.Permission
 import pl.detailing.crm.shared.LeadSource
 import pl.detailing.crm.shared.NewCallReceivedEvent
@@ -129,6 +131,50 @@ class PushEventBridge(
                     customerName = event.customerName
                 ),
                 excludeUserId = event.checkedInByUserId
+            )
+        }
+    }
+
+    /** e) Pracownik złożył wniosek urlopowy — do wszystkich, którzy mogą go rozpatrzyć. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onLeaveRequestSubmitted(event: LeaveRequestSubmittedEvent) {
+        send("wniosku urlopowym") {
+            pushNotifier.broadcast(
+                studioId = event.studioId,
+                requiredPermission = Permission.EMPLOYEES_LEAVES_APPROVE,
+                message = PushMessages.leaveRequestSubmitted(
+                    requestId = event.requestId.toString(),
+                    employeeName = event.employeeName,
+                    kindLabel = event.kindLabel,
+                    startDate = event.startDate,
+                    endDate = event.endDate,
+                    workingDays = event.workingDays
+                ),
+                // Wnioskodawca nie rozpatruje własnego wniosku — także właściciel z rekordem
+                // pracownika — więc powiadomienie „czeka na Twoją decyzję" nie jest dla niego.
+                excludeUserId = event.employeeUserId
+            )
+        }
+    }
+
+    /** f) Decyzja we wniosku urlopowym (albo odwołanie urlopu) — do pracownika. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onLeaveRequestDecided(event: LeaveRequestDecidedEvent) {
+        send("decyzji urlopowej") {
+            pushNotifier.notifyUser(
+                studioId = event.studioId,
+                userId = event.employeeUserId,
+                anyOf = emptyList(),
+                payload = PushMessages.leaveRequestDecided(
+                    requestId = event.requestId.toString(),
+                    outcome = event.outcome.name,
+                    kindLabel = event.kindLabel,
+                    startDate = event.startDate,
+                    endDate = event.endDate,
+                    decidedByName = event.decidedByName
+                )
             )
         }
     }

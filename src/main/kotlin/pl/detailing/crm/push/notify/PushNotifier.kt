@@ -108,6 +108,9 @@ class PushNotifier(
      * które ktoś sam dla siebie włączył („Dostępny nowy raport"), a nie dla zdarzeń,
      * o których ma wiedzieć każdy uprawniony w studiu.
      *
+     * Puste [anyOf] = bez wymaganego uprawnienia, tylko aktywne konto: wiadomość o WŁASNEJ
+     * sprawie adresata (decyzja w jego wniosku urlopowym) należy mu się bez względu na rolę.
+     *
      * @return true, gdy dotarło na co najmniej jedno urządzenie.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -121,7 +124,12 @@ class PushNotifier(
         if (!webPushSender.isConfigured) return false
         // Bez danych klientów w treści, więc jedna wersja dla każdego odbiorcy —
         // [recipient] rozstrzyga tylko, czy w ogóle wolno mu to dostać.
-        if (anyOf.none { recipient(userId, studioId, it) != null }) return false
+        val allowed = if (anyOf.isEmpty()) {
+            recipient(userId, studioId, null) != null
+        } else {
+            anyOf.any { recipient(userId, studioId, it) != null }
+        }
+        if (!allowed) return false
 
         val devices = pushDeviceRepository.findByStudioIdAndUserIdAndRevokedAtIsNull(studioId.value, userId.value)
         if (devices.isEmpty()) return false

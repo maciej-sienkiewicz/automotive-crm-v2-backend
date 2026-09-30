@@ -36,6 +36,12 @@ enum class PushNotificationType {
     /** Domknął się okres, za który użytkownik chce raport (Statystyki → Raport PDF). */
     OWNER_REPORT_READY,
 
+    /** Pracownik złożył wniosek urlopowy — do rozpatrujących (właściciel, EMPLOYEES_LEAVES_APPROVE). */
+    LEAVE_REQUEST_SUBMITTED,
+
+    /** Wniosek urlopowy rozpatrzony albo zatwierdzony urlop odwołany — do pracownika. */
+    LEAVE_REQUEST_DECIDED,
+
     /** Sent on request from the pairing wizard — proof that the whole chain works. */
     TEST
 }

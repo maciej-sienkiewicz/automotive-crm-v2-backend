@@ -137,6 +137,66 @@ object PushMessages {
         )
     }
 
+    // ─── Wnioski urlopowe ────────────────────────────────────────────────────
+
+    private val leaveDate = DateTimeFormatter.ofPattern("dd.MM", polish)
+    private val leaveDateWithYear = DateTimeFormatter.ofPattern("dd.MM.yyyy", polish)
+
+    /**
+     * Do rozpatrujących. Nazwisko pracownika w tytule: to dane kadrowe, nie klienta, więc
+     * nie ma wariantu maskowanego — uprawnienie do rozpatrywania i tak je obejmuje.
+     */
+    fun leaveRequestSubmitted(
+        requestId: String,
+        employeeName: String,
+        kindLabel: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        workingDays: Int
+    ): Message = Message(
+        PushPayload(
+            type = PushNotificationType.LEAVE_REQUEST_SUBMITTED,
+            title = "Wniosek urlopowy: ${employeeName.ifBlank { "pracownik" }}",
+            body = "${kindLabel.replaceFirstChar(Char::uppercase)}, ${leaveRange(startDate, endDate)}, " +
+                "${plural(workingDays, "dzień roboczy", "dni robocze", "dni roboczych")}. Czeka na Twoją decyzję.",
+            url = "/employees/leave-requests?request=$requestId",
+            icon = PushIcon.APP,
+            tag = "leave-request-$requestId"
+        )
+    )
+
+    /** Do pracownika: wynik jego wniosku, z tym, kto zdecydował. */
+    fun leaveRequestDecided(
+        requestId: String,
+        outcome: String,
+        kindLabel: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        decidedByName: String
+    ): PushPayload {
+        val title = when (outcome) {
+            "APPROVED" -> "Urlop zatwierdzony"
+            "REJECTED" -> "Wniosek urlopowy odrzucony"
+            else -> "Urlop odwołany"
+        }
+        val who = decidedByName.takeIf { it.isNotBlank() }?.let { " Decyzja: $it." } ?: ""
+        return PushPayload(
+            type = PushNotificationType.LEAVE_REQUEST_DECIDED,
+            title = title,
+            body = "${kindLabel.replaceFirstChar(Char::uppercase)}, ${leaveRange(startDate, endDate)}.$who",
+            url = "/me/leave",
+            icon = PushIcon.APP,
+            tag = "leave-request-$requestId"
+        )
+    }
+
+    /** „03.11–07.11.2026" albo „03.11.2026" — rok raz, na końcu. */
+    private fun leaveRange(from: LocalDate, to: LocalDate): String = when {
+        from == to -> from.format(leaveDateWithYear)
+        from.year == to.year -> "${from.format(leaveDate)}–${to.format(leaveDateWithYear)}"
+        else -> "${from.format(leaveDateWithYear)}–${to.format(leaveDateWithYear)}"
+    }
+
     // ─── e) Kampania konkurencji w rejonie ───────────────────────────────────
 
     /** One studio's news from one refresh; [debut] = the company had never advertised before. */

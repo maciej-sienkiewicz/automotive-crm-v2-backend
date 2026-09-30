@@ -31,6 +31,8 @@ data class DashboardHint(
 
 enum class DashboardHintKind {
     LEADS_AWAITING,
+    /** Wnioski urlopowe czekają na decyzję użytkownika (właściciel albo EMPLOYEES_LEAVES_APPROVE). */
+    LEAVE_REQUESTS_PENDING,
     WORKTIME_MISSING,
     WORKTIME_UNUSED,
     COMPETITOR_STANDOUT,
