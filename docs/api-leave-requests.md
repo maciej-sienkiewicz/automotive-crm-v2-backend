@@ -127,3 +127,44 @@ kalendarzowym; `reason` wymagany przy `SPECIAL`; `substituteEmployeeId` ≠ wnio
 - Podpowiedź na Tablicy dla rozpatrujących: „N wniosków urlopowych czeka”, url
   `/employees/leave-requests`. Podpowiedź WORKTIME_MISSING zmienia url z
   `/settings?tab=team` na `/employees/worktime`.
+
+## Doprecyzowania z implementacji backendu
+
+Uzupełnienia i jedno ograniczenie wynikające z implementacji. Pola i ścieżki bez zmian.
+
+- **Błąd walidacji (400)**: ciało jak wszędzie (`{ error, message, timestamp }`) plus
+  `field: string | null` — nazwa pola żądania (`leaveType`, `onDemand`, `startDate`,
+  `endDate`, `reason`, `substituteEmployeeId`, `declarationAccepted`, `signatureImageBase64`,
+  `useSavedSignature`, `note`, `documentSha256`, `challenge`), gdy błąd dotyczy jednego pola.
+- **Limit długości (nowe ograniczenie)**: `reason` przy tworzeniu wniosku i `note` przy
+  decyzji — najwyżej **250 znaków** (400 z `field`). Tyle mieści się w polu na wniosku PDF,
+  którego układ jest stały, bo podpisy stempluje się w stałe miejsca. `reason` przy
+  odwołaniu (`/cancel`) — najwyżej 1000 znaków.
+- `startDate` = dziś jest dozwolone wyłącznie przy `onDemand: true`; zwykły wniosek
+  najwcześniej od jutra (400, `field: "startDate"`).
+- `POST /api/v1/my/leave-requests` odpowiada **201**.
+- `GET /api/v1/my/leave-requests/preview`: `holidays` zawiera tylko święta wypadające
+  w dni powszednie zakresu (te, które faktycznie skróciły urlop).
+- `summary.usedWorkingDays`: dni robocze urlopu wypoczynkowego (także na żądanie
+  i wpisanego ręcznie) w bieżącym roku, liczone z `employee_leaves`.
+- `GET /api/v1/leave-requests` bez `status` = `PENDING`. `pendingCount` = wszystkie
+  oczekujące w studiu (licznik zakładki). `GET /pending-count` = oczekujące, które
+  **bieżący użytkownik może rozpatrzyć** (bez jego własnych) — licznik przy „Pracownicy".
+- Oba `GET …/{id}/document` zwracają nagłówek `X-Document-Sha256` (dodany do
+  `Access-Control-Expose-Headers`). Rozpatrujący dostaje 404 dla szkiców (`DRAFT`).
+- Kody: brak powiązanego pracownika → 404; cudzy wniosek → 404; własny wniosek
+  u rozpatrującego → 403 `"Własnego wniosku urlopowego nie można rozpatrzyć"`; brak
+  uprawnienia w chwili decyzji → 403 `"Brak uprawnienia: Akceptacja wniosków urlopowych"`;
+  wniosek już rozpatrzony → 409 `"Wniosek został już rozpatrzony (…)"`; zużyty token →
+  409; niezgodny skrót → 409 `"Dokument został odświeżony. Sprawdź go i podpisz ponownie."`.
+- Zatwierdzenie odmawia (409), gdy pracownik ma już w tym terminie wpis w
+  `employee_leaves` (np. L4 wpisane po złożeniu wniosku).
+- Wpisu w `employee_leaves` utworzonego z wniosku nie da się usunąć przez
+  `DELETE /api/v1/employees/{id}/leaves/{leaveId}` (400) — zdejmuje go `/cancel` wniosku.
+- Push `LEAVE_REQUEST_DECIDED` idzie także po odwołaniu urlopu (`/cancel`), z tytułem
+  „Urlop odwołany". Ikona obu powiadomień: `APP`.
+- Podpowiedź na Tablicy: `kind: "LEAVE_REQUESTS_PENDING"`, tekst „1 wniosek urlopowy
+  czeka." / „3 wnioski urlopowe czekają." / „5 wniosków urlopowych czeka.", akcja
+  `NAVIGATE` „Rozpatrz" → `/employees/leave-requests`, klucz
+  `LEAVE_REQUESTS_PENDING_{epochSecond najnowszego złożenia}` (drzemka 7 dni, nowy wniosek
+  = nowy klucz).
