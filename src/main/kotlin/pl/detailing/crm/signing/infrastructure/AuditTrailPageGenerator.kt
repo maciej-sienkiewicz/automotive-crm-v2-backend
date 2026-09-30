@@ -151,6 +151,55 @@ class AuditTrailPageGenerator {
         }
     }
 
+    /**
+     * Karta podpisów dokumentu podpisywanego w aplikacji przez KILKA osób po kolei (wniosek
+     * urlopowy: pracownik przy złożeniu, rozpatrujący przy decyzji).
+     *
+     * Osobna od [appendAuditPage], bo tamta opisuje jedną sesję z tabletu albo linku SMS
+     * ([SignatureRequest] i jej dziennik zdarzeń). Tutaj każdy podpis to osobna sesja
+     * w zalogowanej aplikacji, z własnym skrótem dokumentu, który podpisujący widział —
+     * i karta ma pokazać cały łańcuch tych skrótów.
+     */
+    fun appendSignatureCard(
+        document: PDDocument,
+        documentName: String,
+        identification: List<Pair<String, String>>,
+        signatures: List<SignatureCardEntry>,
+        integrityNote: String
+    ) {
+        val regular = loadFont(document, "/fonts/LiberationSans-Regular.ttf")
+        val bold = loadFont(document, "/fonts/LiberationSans-Bold.ttf") ?: regular
+        val page = PDPage(PDRectangle.A4)
+        document.addPage(page)
+
+        PDPageContentStream(document, page).use { cs ->
+            var y = page.mediaBox.height - MARGIN
+            y = writeLine(cs, bold, TITLE_SIZE, MARGIN, y, "KARTA PODPISÓW — ŚCIEŻKA AUDYTU")
+            y = writeLine(cs, regular, LABEL_SIZE, MARGIN, y - 2, "Integralna część dokumentu.")
+            y -= 10f
+
+            y = section(cs, bold, y, "IDENTYFIKACJA DOKUMENTU")
+            y = field(cs, regular, bold, y, "Nazwa dokumentu", documentName)
+            identification.forEach { (label, value) -> y = field(cs, regular, bold, y, label, value) }
+            y -= 6f
+
+            signatures.forEachIndexed { index, entry ->
+                y = section(cs, bold, y, "PODPIS ${index + 1}: ${entry.role.uppercase()}")
+                y = field(cs, regular, bold, y, "Osoba podpisująca", entry.signerName)
+                y = field(cs, regular, bold, y, "Sposób złożenia podpisu", entry.method)
+                y = field(cs, regular, bold, y, "Czas podpisu (Europe/Warsaw)", formatInstant(entry.signedAt))
+                y = field(cs, regular, bold, y, "Adres IP", entry.ipAddress ?: "—")
+                y = field(cs, regular, bold, y, "Urządzenie (przeglądarka)", entry.device ?: "—")
+                y = field(cs, regular, bold, y, "Skrót SHA-256 podpisanego dokumentu (${entry.documentLabel})", entry.documentSha256)
+                entry.declaration?.let { y = paragraph(cs, regular, LABEL_SIZE, y, "Oświadczenie: „$it”", page) }
+                y -= 6f
+            }
+
+            y = section(cs, bold, y, "ZABEZPIECZENIE INTEGRALNOŚCI")
+            paragraph(cs, regular, LABEL_SIZE, y, integrityNote, page)
+        }
+    }
+
     private fun describeEvent(event: SignatureAuditEventEntity): String {
         val base = when (event.eventType) {
             pl.detailing.crm.signing.domain.SignatureAuditEventType.REQUEST_CREATED ->
@@ -277,6 +326,21 @@ class AuditTrailPageGenerator {
             }
         }
 }
+
+/** Jeden podpis na karcie podpisów dokumentu podpisywanego po kolei przez kilka osób. */
+data class SignatureCardEntry(
+    val role: String,
+    val signerName: String,
+    val method: String,
+    val signedAt: Instant,
+    val ipAddress: String?,
+    val device: String?,
+    /** Skrót dokumentu, który ta osoba widziała i podpisała. */
+    val documentSha256: String,
+    /** Która wersja dokumentu — np. „wniosek bez podpisów". */
+    val documentLabel: String,
+    val declaration: String? = null
+)
 
 /**
  * Jak dokument jest opisany na karcie podpisu - zależy od tego, co podpisano: protokół

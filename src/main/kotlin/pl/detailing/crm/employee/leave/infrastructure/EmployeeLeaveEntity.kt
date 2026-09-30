@@ -45,7 +45,14 @@ class EmployeeLeaveEntity(
     val createdBy: UUID,
 
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /**
+     * Wniosek urlopowy, z którego zatwierdzenia powstał wpis (V171); null dla nieobecności
+     * wpisanej ręcznie (np. L4). Odwołanie wniosku usuwa wpis po tym odnośniku.
+     */
+    @Column(name = "leave_request_id", columnDefinition = "uuid")
+    val leaveRequestId: UUID? = null
 ) {
     fun toDomain(): EmployeeLeave = EmployeeLeave(
         id = id,
@@ -56,7 +63,8 @@ class EmployeeLeaveEntity(
         endDate = endDate,
         note = note,
         createdBy = UserId(createdBy),
-        createdAt = createdAt
+        createdAt = createdAt,
+        leaveRequestId = leaveRequestId
     )
 
     companion object {
@@ -69,7 +77,8 @@ class EmployeeLeaveEntity(
             endDate = leave.endDate,
             note = leave.note,
             createdBy = leave.createdBy.value,
-            createdAt = leave.createdAt
+            createdAt = leave.createdAt,
+            leaveRequestId = leave.leaveRequestId
         )
     }
 }

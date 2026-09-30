@@ -41,4 +41,21 @@ interface EmployeeRepository : JpaRepository<EmployeeEntity, UUID> {
         @Param("studioId") studioId: UUID,
         @Param("userId") userId: UUID
     ): EmployeeEntity?
+
+    /**
+     * Blokuje wiersz pracownika do końca bieżącej transakcji (SELECT … FOR UPDATE).
+     *
+     * Wnioski urlopowe jednej osoby nie mogą się nakładać, a sprawdzenie „czy termin wolny"
+     * i zapis to dwa kroki. Bez blokady dwa równoległe złożenia (albo złożenie i decyzja)
+     * na ten sam termin oba widziałyby wolne. EXCLUDE USING gist odpada: wymagałby
+     * btree_gist i warunku na wartościach enuma (NoEnumCheckConstraintsTest).
+     */
+    @Query(
+        value = "SELECT id FROM employees WHERE id = :id AND studio_id = :studioId FOR UPDATE",
+        nativeQuery = true
+    )
+    fun lockForUpdate(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID
+    ): UUID?
 }
