@@ -222,8 +222,11 @@ class SecurityConfig(
         // X-Pii-Access: frontend reads it to render blur states for masked personal data.
         // Retry-After: po „Przekroczono limit żądań" front czeka tyle, ile każe serwer -
         // bez tego nagłówek jest dla przeglądarki niewidoczny (CORS go nie przepuszcza).
+        // X-Document-Sha256: skrót PDF-u do podpisu (wnioski urlopowe) - front porównuje go
+        // z sesją podpisu, zanim pokaże dokument.
         configuration.exposedHeaders = listOf(
-            "Set-Cookie", "X-Pii-Access", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"
+            "Set-Cookie", "X-Pii-Access", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining",
+            "X-Document-Sha256"
         )
 
         val source = UrlBasedCorsConfigurationSource()

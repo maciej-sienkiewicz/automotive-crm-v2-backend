@@ -24,7 +24,9 @@ data class EmployeeLeave(
     val endDate: LocalDate,
     val note: String?,
     val createdBy: UserId,
-    val createdAt: Instant
+    val createdAt: Instant,
+    /** Wniosek urlopowy, którego zatwierdzenie utworzyło wpis; null dla wpisu ręcznego. */
+    val leaveRequestId: UUID? = null
 ) {
     /** Liczba dni kalendarzowych urlopu (włącznie z oboma krańcami). */
     fun daysCount(): Long = ChronoUnit.DAYS.between(startDate, endDate) + 1

@@ -31,6 +31,16 @@ class DeleteEmployeeLeaveHandler(
             throw NotFoundException("Urlop nie istnieje")
         }
 
+        // Urlop z zatwierdzonego wniosku zdejmuje się odwołaniem wniosku, nie kasowaniem
+        // wpisu: inaczej w kalendarzu urlopu by nie było, a podpisany wniosek dalej
+        // mówiłby „zatwierdzony" i nikt by nie wiedział, kto i dlaczego go cofnął.
+        if (leaveEntity.leaveRequestId != null) {
+            throw ValidationException(
+                "Ten urlop wynika z zatwierdzonego wniosku urlopowego. Odwołaj wniosek w zakładce " +
+                    "„Wnioski urlopowe”, a wpis zniknie z kalendarza."
+            )
+        }
+
         val employeeEntity = employeeRepository.findByIdAndStudioId(employeeId.value, studioId.value)
         val employeeName = employeeEntity?.let { "${it.firstName} ${it.lastName}" } ?: ""
 

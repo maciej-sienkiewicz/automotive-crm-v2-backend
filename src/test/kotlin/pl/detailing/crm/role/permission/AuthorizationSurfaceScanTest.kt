@@ -71,6 +71,7 @@ class AuthorizationSurfaceScanTest {
         "CardDavProvisioningController" to ALL_METHODS,   // pairs/revokes the caller's own phones only
 
         "MyWorkTimeController" to ALL_METHODS,
+        "MyLeaveRequestController" to ALL_METHODS,        // własne wnioski urlopowe: pracownik = rekord zalogowanego konta
         "PinController" to ALL_METHODS,                   // PIN user switching; unlock is owner-checked inline
         "MyTasksController" to ALL_METHODS,               // only tasks visible to the caller (TaskVisibility)
         "PushController" to ALL_METHODS,                  // rejestracja/odpinanie WŁASNYCH urządzeń push

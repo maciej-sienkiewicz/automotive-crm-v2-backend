@@ -357,6 +357,11 @@ class StudioDataPurger(
         },
 
         StudioResetStep("Pracownicy i czas pracy") { ctx ->
+            // Wnioski urlopowe przed urlopami: zatwierdzony wniosek wskazuje na swój wpis
+            // w employee_leaves. Licznik numeracji też idzie — po czyszczeniu konta
+            // numeracja WU/{rok}/… zaczyna się od nowa, jak każda inna w studiu.
+            deleteByStudio("LeaveRequestEntity", ctx)
+            deleteByStudio("LeaveRequestCounterEntity", ctx)
             deleteByStudio("EmployeeLeaveEntity", ctx)
             deleteByStudio("WorkTimeEntryEntity", ctx)
             deleteByStudio("WorkTimePeriodEntity", ctx)
