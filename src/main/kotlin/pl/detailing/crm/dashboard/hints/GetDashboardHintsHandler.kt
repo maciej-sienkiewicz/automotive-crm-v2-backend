@@ -58,6 +58,9 @@ class GetDashboardHintsHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val warsawZone = ZoneId.of("Europe/Warsaw")
 
+    /** Zegar „dziś" (okno końca miesiąca dla kart czasu pracy) — podmieniany w testach. */
+    var clock: java.time.Clock = java.time.Clock.system(warsawZone)
+
     companion object {
         /** Od którego dnia przed końcem miesiąca przypominamy o kartach czasu pracy. */
         const val WORKTIME_WINDOW_DAYS = 5
@@ -83,11 +86,24 @@ class GetDashboardHintsHandler(
                 else -> "$count wniosków urlopowych czeka"
             } + "."
         }
+
+        /**
+         * „1 karta czasu pracy czeka na zatwierdzenie", „3 karty czasu pracy czekają…",
+         * „5 kart czasu pracy czeka…" — ta sama reguła liczebnika co przy wnioskach urlopowych.
+         */
+        fun worktimeCardsPendingText(count: Int): String {
+            val few = count % 10 in 2..4 && count % 100 !in 12..14
+            return when {
+                count == 1 -> "1 karta czasu pracy czeka"
+                few -> "$count karty czasu pracy czekają"
+                else -> "$count kart czasu pracy czeka"
+            } + " na zatwierdzenie"
+        }
     }
 
     suspend fun handle(principal: UserPrincipal): List<DashboardHint> =
         withContext(Dispatchers.IO) {
-            val today = LocalDate.now(warsawZone)
+            val today = LocalDate.now(clock)
             val hints = mutableListOf<DashboardHint>()
 
             val safely: (String, () -> DashboardHint?) -> Unit = { name, rule ->
@@ -110,6 +126,7 @@ class GetDashboardHintsHandler(
             // nie zaległość).
             safely("leads-awaiting") { leadsAwaitingHint(principal) }
             safely("leave-requests-pending") { leaveRequestsPendingHint(principal) }
+            safely("worktime-cards-pending") { worktimeCardsPendingHint(principal) }
             safely("worktime-missing") { worktime?.takeIf { it.kind == DashboardHintKind.WORKTIME_MISSING } }
             safely("competitor") { competitorStandoutHint(principal, digest) }
             safely("area-new-ads") { areaNewAdsHint(principal) }
@@ -239,10 +256,42 @@ class GetDashboardHintsHandler(
 
     // ── Karty Czasu Pracy ────────────────────────────────────────────────────
 
+    /**
+     * Karty złożone i czekające na decyzję TEJ osoby — właściciela albo kogoś
+     * z EMPLOYEES_MANAGE. Własna karta się nie liczy (zasada czterech oczu).
+     *
+     * Akcja prowadzi do NAJSTARSZEGO miesiąca z kartą do decyzji: zaległość z sierpnia
+     * jest pilniejsza niż wrzesień, a z listy wrześniowej nikt by jej nie zobaczył.
+     * Klucz niesie chwilę najświeższego złożenia — nowa karta odzywa się mimo zamknięcia.
+     */
+    private fun worktimeCardsPendingHint(principal: UserPrincipal): DashboardHint? {
+        if (!principal.isOwner && !hasPermission(principal, Permission.EMPLOYEES_MANAGE)) return null
+
+        val pending = workTimePeriodRepository
+            .findByStudioIdAndStatus(principal.studioId.value, PeriodStatus.SUBMITTED)
+            .filter { it.userId != principal.userId.value }
+        if (pending.isEmpty()) return null
+        val oldestPeriod = pending.minOf { it.period }
+        val latest = pending.mapNotNull { it.submittedAt }.maxOrNull()
+
+        return DashboardHint(
+            key = "WORKTIME_CARDS_PENDING_${latest?.epochSecond ?: 0}",
+            kind = DashboardHintKind.WORKTIME_CARDS_PENDING,
+            text = worktimeCardsPendingText(pending.size),
+            action = DashboardHintAction(
+                label = "Przejrzyj",
+                type = DashboardHintActionType.NAVIGATE,
+                url = "/employees/worktime?period=$oldestPeriod"
+            ),
+            permanentDismiss = false
+        )
+    }
+
     private fun worktimeHint(principal: UserPrincipal, today: LocalDate): DashboardHint? {
-        // Rozliczenie pracowników to sprawa właściciela; pracownikowi ta
-        // podpowiedź mówiłaby o cudzych zaległościach.
-        if (!principal.isOwner) return null
+        // Rozliczenie pracowników to sprawa właściciela i osób zarządzających pracownikami
+        // (EMPLOYEES_MANAGE — to one zatwierdzają karty); pracownikowi ta podpowiedź
+        // mówiłaby o cudzych zaległościach.
+        if (!principal.isOwner && !hasPermission(principal, Permission.EMPLOYEES_MANAGE)) return null
 
         val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
         if (today.isBefore(monthEnd.minusDays((WORKTIME_WINDOW_DAYS - 1).toLong()))) return null
@@ -253,8 +302,9 @@ class GetDashboardHintsHandler(
             .toSet()
         if (trackedRoleIds.isEmpty()) return null
 
+        // Własnej karty menedżer nie „pogania" — o niej przypomina mu jego własny widok.
         val trackedUsers = userRepository.findActiveByStudioId(principal.studioId.value)
-            .filter { it.customRoleId in trackedRoleIds }
+            .filter { it.customRoleId in trackedRoleIds && it.id != principal.userId.value }
         if (trackedUsers.isEmpty()) return null
 
         val period = today.format(DateTimeFormatter.ofPattern("yyyy-MM"))
@@ -264,7 +314,9 @@ class GetDashboardHintsHandler(
         }
         if (missing.isEmpty()) return null
 
-        if (missing.size == trackedUsers.size) {
+        // Pytanie o wyłączenie funkcji jest dla właściciela — tylko on może ją wyłączyć.
+        // Menedżer w tej samej sytuacji dostaje zwykłą listę zaległości.
+        if (missing.size == trackedUsers.size && principal.isOwner) {
             // Nikt nie korzysta: zamiast poganiać, pytamy czy funkcja w ogóle
             // jest potrzebna. Stąd przycisk wyłączenia, nie link do listy.
             return DashboardHint(
