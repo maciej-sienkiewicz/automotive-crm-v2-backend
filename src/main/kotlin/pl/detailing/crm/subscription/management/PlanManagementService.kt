@@ -65,8 +65,10 @@ class PlanManagementService(
      * Does NOT make any changes — safe to call from a confirmation dialog.
      * For UPGRADE the frontend should follow up with POST /checkout (PLAN_UPGRADE).
      */
-    fun previewPlanChange(studioId: StudioId, newPlanKey: PlanKey): PlanChangePreview {
-        val current = entitlementService.getEntitlements(studioId)
+    fun previewPlanChange(studioId: StudioId, newPlanKey: PlanKey): PlanChangePreview =
+        previewPlanChange(studioId, newPlanKey, entitlementService.getEntitlements(studioId))
+
+    private fun previewPlanChange(studioId: StudioId, newPlanKey: PlanKey, current: StudioEntitlements): PlanChangePreview {
         val currentPlan = planRepository.findByKey(current.planKey)
             ?: throw EntityNotFoundException("Bieżący plan nie został znaleziony: ${current.planKey}")
         val newPlan = planRepository.findByKey(newPlanKey)
@@ -192,17 +194,20 @@ class PlanManagementService(
     fun schedulePlanDowngrade(studioId: StudioId, newPlanKey: PlanKey): StudioEntitlements {
         studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
-        val preview = previewPlanChange(studioId, newPlanKey)
+        // Pod blokadą decyduje stan z bazy, nie wpis z cache'u: ten mógł powstać sprzed
+        // zatwierdzonej właśnie zmiany (np. upgrade'u), której unieważnienie jeszcze nie doszło.
+        val current = entitlementService.readCurrent(studioId)
+        val preview = previewPlanChange(studioId, newPlanKey, current)
 
         when (preview.changeType) {
-            ChangeType.NO_CHANGE -> return entitlementService.getEntitlements(studioId)
+            ChangeType.NO_CHANGE -> return current
             ChangeType.UPGRADE -> throw ValidationException(
                 "Przejście na droższy pakiet wymaga płatności — użyj POST /api/v1/subscription/checkout (PLAN_UPGRADE)."
             )
             ChangeType.DOWNGRADE -> Unit
         }
 
-        val currentPlanKey = entitlementService.getEntitlements(studioId).planKey
+        val currentPlanKey = current.planKey
         // Zastępuje wcześniejszy plan zmiany; częściowy unikat pilnuje, że PENDING jest jeden.
         pendingPlanChangeRepository.cancelPendingForStudio(studioId.value)
 
@@ -224,7 +229,7 @@ class PlanManagementService(
             log(studioId, newPlanKey, "Downgrade do planu ${preview.newPlanName} zaplanowany na ${BillingDates.format(periodEndsAt)}")
             logger.info("Studio={} scheduled downgrade from={} to={} effectiveAt={}", studioId, currentPlanKey, newPlanKey, periodEndsAt)
         }
-        return entitlementService.getEntitlements(studioId)
+        return entitlementService.readCurrent(studioId)
     }
 
     /**
@@ -265,7 +270,7 @@ class PlanManagementService(
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
         val addOn = addOnRepository.findByKey(addOnKey)
         val cancelAt = prorationService.runningPeriodEnd(studioId)
-        val currentPlanKey = entitlementService.getEntitlements(studioId).planKey
+        val currentPlanKey = entitlementService.readCurrent(studioId).planKey
 
         val result = entitlementService.cancelAddOn(studioId, addOnKey, cancelAt)
         if (result == AddOnCancellationResult.NOT_ACTIVE) return result
@@ -295,7 +300,7 @@ class PlanManagementService(
         if (!entitlementService.resumeAddOn(studioId, addOnKey)) {
             throw EntityNotFoundException("Moduł nie jest aktywny: $addOnKey")
         }
-        val entitlements = entitlementService.getEntitlements(studioId)
+        val entitlements = entitlementService.readCurrent(studioId)
         val addOn = addOnRepository.findByKey(addOnKey)
         paymentLogRepository.save(
             SubscriptionPaymentLogEntity(

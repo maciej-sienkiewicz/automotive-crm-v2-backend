@@ -59,13 +59,24 @@ interface StudioRepository : JpaRepository<StudioEntity, UUID> {
      * Studia z należnym przejściem cyklu życia (trial minął, okres minął, karencja minęła).
      * Same ID, porcjami: job decyduje dopiero pod blokadą wiersza, a granica czasu (`<=`)
      * jest ta sama, co w [pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle].
+     *
+     * PAST_DUE bez `grace_ends_at` (wiersz sprzed V172) kończy karencję razem z
+     * `subscription_ends_at + karencja` — [graceCutoff] to `now − karencja`. Bez tego warunku
+     * takie studio wracałoby w każdej porcji przez cały okres karencji i przy pełnych porcjach
+     * blokowało przejścia pozostałych.
      */
     @Query("""
         SELECT s.id FROM StudioEntity s
         WHERE (s.subscriptionStatus = 'TRIALING' AND s.trialEndsAt <= :now)
            OR (s.subscriptionStatus = 'ACTIVE' AND s.subscriptionEndsAt <= :now)
-           OR (s.subscriptionStatus = 'PAST_DUE' AND (s.graceEndsAt IS NULL OR s.graceEndsAt <= :now))
+           OR (s.subscriptionStatus = 'PAST_DUE' AND s.graceEndsAt <= :now)
+           OR (s.subscriptionStatus = 'PAST_DUE' AND s.graceEndsAt IS NULL
+               AND (s.subscriptionEndsAt IS NULL OR s.subscriptionEndsAt <= :graceCutoff))
         ORDER BY s.id
     """)
-    fun findIdsDueForLifecycleTransition(@Param("now") now: Instant, pageable: Pageable): List<UUID>
+    fun findIdsDueForLifecycleTransition(
+        @Param("now") now: Instant,
+        @Param("graceCutoff") graceCutoff: Instant,
+        pageable: Pageable
+    ): List<UUID>
 }

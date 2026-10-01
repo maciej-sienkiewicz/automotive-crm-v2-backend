@@ -308,10 +308,12 @@ abstract class SubscriptionIntegrationTestBase {
         planKey: PlanKey? = null,
         addOns: List<AddOnKey> = emptyList(),
         status: PaymentOrderStatus = PaymentOrderStatus.PENDING,
-        p24OrderId: Long? = null
+        p24OrderId: Long? = null,
+        sessionId: String = "CRM-${UUID.randomUUID()}",
+        token: String? = null
     ): PaymentOrderEntity = orderRepository.save(
         PaymentOrderEntity(
-            studioId = studioId, sessionId = "CRM-${UUID.randomUUID()}", type = type, planKey = planKey,
+            studioId = studioId, sessionId = sessionId, type = type, planKey = planKey, p24Token = token,
             addOnKeysRaw = PaymentOrderEntity.encodeAddOnKeys(addOns), amountCents = amount, description = type.displayName,
             createdAt = clock.instant(), status = status, p24OrderId = p24OrderId,
             paidAt = if (status.isPaid) clock.instant() else null

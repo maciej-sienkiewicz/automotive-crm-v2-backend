@@ -12,6 +12,7 @@ import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.shared.EntityNotFoundException
 import pl.detailing.crm.shared.PaymentsUnavailableException
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.SubscriptionConflictException
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.studio.infrastructure.StudioRepository
@@ -192,6 +193,15 @@ class CheckoutService(
         )
         open.firstOrNull { it.p24Token != null && it.amountCents == draft.amountCents && it.createdAt.isAfter(reusableSince) }
             ?.let { return@execute OpenOrder.Reused(it) }
+        // Zamówienie bez tokenu sprzed chwili = pierwsze kliknięcie właśnie rejestruje się w P24.
+        // Wygaszenie go tutaj dałoby dwie żywe strony płatności na ten sam zakup (pierwsza
+        // dostaje token już po wygaszeniu) — drugie kliknięcie ma poczekać, nie zastąpić pierwsze.
+        if (open.any { it.p24Token == null && it.createdAt.isAfter(now.minus(REGISTRATION_IN_PROGRESS)) }) {
+            throw SubscriptionConflictException(
+                code = "CHECKOUT_IN_PROGRESS",
+                message = "Płatność za ten zakup jest właśnie przygotowywana. Spróbuj ponownie za chwilę."
+            )
+        }
         open.forEach { it.expire("Zastąpione nowszym zamówieniem na ten sam zakup") }
         orderRepository.flush()
 
@@ -361,6 +371,11 @@ class CheckoutService(
         if (!addOn.isAvailable) throw ValidationException("Moduł '${addOn.name}' nie jest jeszcze dostępny.")
         if (addOn.monthlyPriceGrossCents == null) throw ValidationException("Moduł '${addOn.name}' nie ma ustalonej ceny.")
         addOn
+    }
+
+    companion object {
+        /** Ile czeka drugie kliknięcie, zanim uzna rejestrację pierwszego za porzuconą. */
+        private val REGISTRATION_IN_PROGRESS: Duration = Duration.ofMinutes(1)
     }
 }
 

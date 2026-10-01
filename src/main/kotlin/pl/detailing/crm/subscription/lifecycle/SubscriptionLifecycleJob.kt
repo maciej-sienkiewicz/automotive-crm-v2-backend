@@ -46,7 +46,7 @@ class SubscriptionLifecycleJob(
     @Scheduled(cron = "0 */10 * * * *")
     fun advanceDueSubscriptions() {
         val now = accessPolicy.now()
-        val due = studioRepository.findIdsDueForLifecycleTransition(now, PageRequest.of(0, BATCH_SIZE))
+        val due = studioRepository.findIdsDueForLifecycleTransition(now, now.minus(accessPolicy.gracePeriod), PageRequest.of(0, BATCH_SIZE))
         if (due.isEmpty()) return
 
         var advanced = 0

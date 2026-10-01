@@ -40,7 +40,11 @@ class OutboundCommunicationGatewayWhitelistTest {
     private val emailProvider: EmailProvider = mockk()
     private val redirectService: CommunicationRedirectService = mockk()
     private val consentChecker: MarketingConsentChecker = mockk()
-    private val capabilityService: CapabilityService = mockk { every { hasCapability(any(), any()) } returns true }
+    private val capabilityService: CapabilityService = mockk {
+        every { hasCapability(any(), any()) } returns true
+        // Subskrypcja opłacona: odmowa capability w tych testach znaczy „brak modułu".
+        every { isSubscriptionUsable(any()) } returns true
+    }
     private val smsCreditService: SmsCreditService = mockk(relaxed = true) { every { tryDeductCredit(any()) } returns true }
     private val senderNameResolver: SmsSenderNameResolver = mockk { every { resolve(any<UUID>()) } returns null }
     private val meterRegistry = SimpleMeterRegistry()
@@ -254,6 +258,17 @@ class OutboundCommunicationGatewayWhitelistTest {
             assertFalse(result.success)
             assertTrue(result.errorMessage!!.contains("nie jest aktywny"), result.errorMessage)
             assertEquals(0.0, blockedCount("SMS"))
+        }
+
+        @Test
+        fun `a studio whose subscription lapsed is told so, not sent to buy a module it already has`() {
+            every { capabilityService.hasCapability(any(), any()) } returns false
+            every { capabilityService.isSubscriptionUsable(any()) } returns false
+            every { redirectService.activeFor(any()) } returns null
+            val result = gateway(inForce()).sendTransactionalSms(studioId, customerPhone, "x")
+            assertFalse(result.success)
+            assertTrue(result.errorMessage!!.contains("Subskrypcja studia nie jest aktywna"), result.errorMessage)
+            verify(exactly = 0) { smsProvider.send(any(), any(), any()) }
         }
 
         @Test

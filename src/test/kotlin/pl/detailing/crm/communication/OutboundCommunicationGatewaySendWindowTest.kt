@@ -46,7 +46,11 @@ class OutboundCommunicationGatewaySendWindowTest {
     private val smsProvider: SmsProvider = mockk()
     private val emailProvider: EmailProvider = mockk()
     private val consentChecker: MarketingConsentChecker = mockk()
-    private val capabilityService: CapabilityService = mockk { every { hasCapability(any(), any()) } returns true }
+    private val capabilityService: CapabilityService = mockk {
+        every { hasCapability(any(), any()) } returns true
+        // Subskrypcja opłacona: odmowa capability w tych testach znaczy „brak modułu".
+        every { isSubscriptionUsable(any()) } returns true
+    }
     private val smsCreditService: SmsCreditService = mockk(relaxed = true) { every { tryDeductCredit(any()) } returns true }
     private val senderNameResolver: SmsSenderNameResolver = mockk { every { resolve(any<UUID>()) } returns null }
     private val redirectService: CommunicationRedirectService = mockk { every { activeFor(any()) } returns null }
