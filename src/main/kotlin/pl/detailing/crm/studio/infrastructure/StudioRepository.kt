@@ -14,7 +14,7 @@ import java.time.Instant
 import java.util.UUID
 
 @Repository
-interface StudioRepository : JpaRepository<StudioEntity, UUID> {
+interface StudioRepository : JpaRepository<StudioEntity, UUID>, StudioRowLocks {
 
     @Query("SELECT s FROM StudioEntity s WHERE s.id = :id")
     fun findByStudioId(@Param("id") id: UUID): StudioEntity?
@@ -34,16 +34,6 @@ interface StudioRepository : JpaRepository<StudioEntity, UUID> {
 
     @Query("SELECT s FROM StudioEntity s WHERE s.emailAlias = :emailAlias")
     fun findByEmailAlias(@Param("emailAlias") emailAlias: String): StudioEntity?
-
-    /**
-     * Wiersz studia z blokadą (`SELECT … FOR UPDATE`). Każda mutacja subskrypcji zaczyna od
-     * niej — zakupy, zmiany planu, przejścia cyklu życia i realizacje zamówień jednego studia
-     * idą po kolei, a decyzja zapada na stanie odczytanym POD blokadą (audyt, inwariant 2).
-     * Kolejność blokad w całym module: studio → plan → moduły → zamówienie.
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT s FROM StudioEntity s WHERE s.id = :id")
-    fun lockById(@Param("id") id: UUID): StudioEntity?
 
     /**
      * Jak [lockById], ale z `SKIP LOCKED`: zajęty wiersz zwraca null zamiast czekać. Dla

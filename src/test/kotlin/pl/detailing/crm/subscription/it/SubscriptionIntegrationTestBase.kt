@@ -48,6 +48,7 @@ import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.smscampaigns.CommunicationOnboardingService
+import pl.detailing.crm.studio.domain.StudioKind
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.StudioProvisioningService
@@ -292,14 +293,16 @@ abstract class SubscriptionIntegrationTestBase {
         status: SubscriptionStatus,
         trialEndsAt: Instant? = null,
         endsAt: Instant? = null,
-        graceEndsAt: Instant? = null
+        graceEndsAt: Instant? = null,
+        kind: StudioKind = StudioKind.REGULAR
     ): UUID {
         val id = UUID.randomUUID()
         studioRepository.save(
             StudioEntity(
                 id = id, name = "Studio $id", subscriptionStatus = status, trialEndsAt = trialEndsAt,
                 subscriptionEndsAt = endsAt, trialUsed = trialEndsAt != null,
-                emailAlias = id.toString().replace("-", ""), createdAt = clock.instant(), graceEndsAt = graceEndsAt
+                emailAlias = id.toString().replace("-", ""), createdAt = clock.instant(), graceEndsAt = graceEndsAt,
+                kind = kind
             )
         )
         return id

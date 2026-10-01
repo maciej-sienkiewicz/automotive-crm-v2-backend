@@ -144,9 +144,16 @@ class PaymentReconciliationJob(
                 tx.executeWithoutResult { orderRepository.lockById(orderId)?.lastReconciledAt = now }
                 return
             }
-            // Odrzucona (inna kwota), do przeglądu albo czeka na ponowienie: zamówienie nie jest
-            // opłacone. Dalej jak nieopłacone — sprawdzone i po czasie wygaszone — zamiast wracać
-            // w każdym przebiegu i zjadać limit zapytań innym zamówieniom.
+            if (outcome == NotificationOutcome.RETRY_SCHEDULED) {
+                // P24 ma pieniądze, czeka tylko nasza weryfikacja (dzierżawa, ponowienie) — to nie
+                // porzucone zamówienie i nie wolno go wygasić z powodem „brak płatności".
+                logger.warn("Rekoncyliacja: zamówienie {} opłacone w P24, weryfikacja czeka na ponowienie", orderId)
+                tx.executeWithoutResult { orderRepository.lockById(orderId)?.lastReconciledAt = now }
+                return
+            }
+            // Odrzucona (inna kwota) albo do przeglądu: zamówienie nie jest opłacone. Dalej jak
+            // nieopłacone — sprawdzone i po czasie wygaszone — zamiast wracać w każdym przebiegu
+            // i zjadać limit zapytań innym zamówieniom.
             logger.warn("Rekoncyliacja: płatność P24 za zamówienie {} nierozstrzygnięta ({})", orderId, outcome)
         }
         expireIfAbandoned(orderId, now, gatewayState = state?.status, checked = true)

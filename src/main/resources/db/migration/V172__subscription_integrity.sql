@@ -54,6 +54,17 @@ UPDATE payment_orders
 SET status = 'FULFILLED', fulfilled_at = COALESCE(fulfilled_at, paid_at)
 WHERE status = 'PAID';
 
+-- Studia wygaszone przed V172 nie miały karencji: dostęp kończył się co do sekundy
+-- subscription_ends_at (dawne Studio.isAccessible i SubscriptionLifecycleScheduler).
+-- grace_ends_at = subscription_ends_at znaczy „karencji nie wykorzystano" — inaczej pierwsza
+-- zapłata po wdrożeniu odliczyłaby od nowego okresu 7 dni, których klient nie dostał
+-- (SubscriptionLifecycle.paidPeriodStart).
+UPDATE studios
+SET grace_ends_at = subscription_ends_at
+WHERE subscription_status = 'EXPIRED'
+  AND subscription_ends_at IS NOT NULL
+  AND grace_ends_at IS NULL;
+
 -- ── 3. Jeden PENDING downgrade na studio ──────────────────────────────────────
 
 -- Duplikaty mogły powstać przez wyścig dwóch żądań zmiany planu. Zostaje najnowszy —
@@ -72,11 +83,24 @@ WHERE p.status = 'PENDING'
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_plan_changes_one_pending
     ON pending_plan_changes (studio_id) WHERE status = 'PENDING';
 
+-- Downgrade zaplanowany przed V172, po którym właściciel opłacił odnowienie: dawne odnowienie
+-- liczyło cenę BIEŻĄCEGO planu (audyt, S1), więc cały opłacony czas należy do planu wyższego.
+-- Nowy kod czyta `effective_at < subscription_ends_at` jako „kolejny okres opłacony w planie
+-- docelowym" (zmiana zamrożona, bez odwołania) — klient straciłby opłacony plan w połowie
+-- okresu. Zmiana przesuwa się na koniec opłaconego czasu i da się ją odwołać.
+UPDATE pending_plan_changes p
+SET effective_at = s.subscription_ends_at
+FROM studios s
+WHERE p.studio_id = s.id
+  AND p.status = 'PENDING'
+  AND s.subscription_ends_at > p.effective_at;
+
 -- ── 4. Jedno otwarte zamówienie na produkt ────────────────────────────────────
 
 -- Nic dotąd nie zamykało porzuconych koszyków, więc starsze PENDING na ten sam produkt
 -- przechodzą w EXPIRED. To nie zamyka drogi pieniądzom: EXPIRED przyjmuje spóźnioną płatność,
--- a puste `last_reconciled_at` każe workerowi raz sprawdzić każde takie zamówienie w P24.
+-- a puste `last_reconciled_at` każe workerowi raz sprawdzić każde takie zamówienie w P24 —
+-- bez względu na wiek (PaymentOrderRepository.findExpiredDueForCheck).
 UPDATE payment_orders o
 SET status = 'EXPIRED',
     failure_reason = 'V172: zastąpione nowszym zamówieniem na ten sam produkt'

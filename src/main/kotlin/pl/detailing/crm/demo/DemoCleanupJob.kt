@@ -248,13 +248,18 @@ class DemoCleanupJob(
             """DELETE FROM StudioAddOnEntity a WHERE a.studioSubscriptionPlan.id IN
                (SELECT p.id FROM StudioSubscriptionPlanEntity p WHERE p.studioId = :studioId)"""
         ).setParameter("studioId", studioId).executeUpdate()
-        listOf(
-            "StudioSubscriptionPlanEntity",
-            "PendingPlanChangeEntity",
-            "SubscriptionPaymentLogEntity",
-            "PaymentNotificationEntity",
-            "PaymentOrderEntity"
-        ).forEach { entity ->
+        // Zapis pieniędzy nie znika razem z demo: checkout odmawia kontom DEMO, ale gdyby
+        // płatność jednak przyszła, studio zostaje jako jej zapis (klucz obcy RESTRICT i tak
+        // nie pozwoliłby go usunąć), a ERROR każe ją wyjaśnić i zwrócić.
+        val paidOrders = entityManager.createQuery(
+            "SELECT COUNT(o) FROM PaymentOrderEntity o WHERE o.studioId = :studioId AND o.paidAt IS NOT NULL",
+            java.lang.Long::class.java
+        ).setParameter("studioId", studioId).singleResult.toLong()
+        val billingEntities = if (paidOrders == 0L)
+            listOf("StudioSubscriptionPlanEntity", "PendingPlanChangeEntity", "SubscriptionPaymentLogEntity", "PaymentNotificationEntity", "PaymentOrderEntity")
+        else
+            listOf("StudioSubscriptionPlanEntity", "PendingPlanChangeEntity")
+        billingEntities.forEach { entity ->
             entityManager.createQuery("DELETE FROM $entity e WHERE e.studioId = :studioId")
                 .setParameter("studioId", studioId)
                 .executeUpdate()
@@ -262,8 +267,15 @@ class DemoCleanupJob(
         entityManager.flush()
 
         // 24. Delete studio
-        studioRepository.deleteById(studioId)
-        entityManager.flush()
+        if (paidOrders == 0L) {
+            studioRepository.deleteById(studioId)
+            entityManager.flush()
+        } else {
+            logger.error(
+                "Demo studio {} has {} paid order(s) — studio kept as the payment record, refund it manually",
+                studioId, paidOrders
+            )
+        }
 
         // 25. Delete demo account record
         demoAccountRepository.delete(demo)

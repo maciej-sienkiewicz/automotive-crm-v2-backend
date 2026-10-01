@@ -80,18 +80,34 @@ class EntitlementService(
      * może pochodzić sprzed chwili, w której inna transakcja zatwierdziła zmianę, a jeszcze
      * nie zdążyła go unieważnić.
      */
-    @Transactional(readOnly = true)
-    fun readCurrent(studioId: StudioId): StudioEntitlements = load(studioId)
+    @Transactional
+    fun readCurrent(studioId: StudioId): StudioEntitlements = load(studioId, fresh = true)
 
-    private fun load(studioId: StudioId): StudioEntitlements {
+    /**
+     * [fresh]: encje mogą już siedzieć w kontekście persystencji (open-session-in-view trzyma go
+     * przez całe żądanie HTTP), a zapytanie — także z `JOIN FETCH` — zwraca wtedy obiekt sprzed
+     * cudzego commitu, z nieodświeżoną kolekcją modułów. Dla decyzji pieniężnych odświeżamy
+     * jawnie (`flush` przed `refresh`, żeby nie zgubić zmian tej transakcji).
+     */
+    private fun load(studioId: StudioId, fresh: Boolean = false): StudioEntitlements {
         logger.debug("Loading entitlements from DB for studio={}", studioId)
 
         // Brak wiersza studia (usunięte konto) = brak dostępu, nie „nieznany stan".
-        val billing = studioRepository.findByStudioId(studioId.value)?.billing()
-            ?: BillingSnapshot(SubscriptionStatus.NO_PLAN, null, null, null)
+        val studio = studioRepository.findByStudioId(studioId.value)
+        if (fresh) {
+            entityManager.flush()
+            studio?.let(entityManager::refresh)
+        }
+        val billing = studio?.billing() ?: BillingSnapshot(SubscriptionStatus.NO_PLAN, null, null, null)
 
-        val subscription = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
+        val cached = studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
             ?: return degradedEntitlements(studioId, billing)
+        val subscription = if (!fresh) cached else {
+            // Odłączenie i ponowny odczyt, nie `refresh` — patrz [lockedSubscription].
+            entityManager.detach(cached)
+            studioSubscriptionPlanRepository.findByStudioIdWithAddOns(studioId.value)
+                ?: return degradedEntitlements(studioId, billing)
+        }
 
         val planFeatures = subscription.plan.features.map { it.key }.toSet()
         val addOnFeatures = subscription.activeAddOns.flatMap { it.addOn.features.map { f -> f.key } }.toSet()
@@ -262,18 +278,20 @@ class EntitlementService(
     /**
      * Wiersz planu ze świeżym stanem i blokadą.
      *
-     * `flush` przed `refresh`: w tej samej transakcji mogła już zajść zmiana planu
-     * (zakup po wygaśnięciu: [changePlan], potem [activateAddOn]) — refresh bez flushu
-     * zgubiłby ją. `refresh` z blokadą wczytuje wiersz I kolekcję modułów od nowa: zapytanie
+     * `flush` przed odłączeniem: w tej samej transakcji mogła już zajść zmiana planu
+     * (zakup po wygaśnięciu: [changePlan], potem [activateAddOn]) — bez flushu zginęłaby.
+     * Ponowny odczyt z blokadą wczytuje wiersz I kolekcję modułów od nowa: zapytanie
      * z `JOIN FETCH` NIE odświeża kolekcji zainicjalizowanej wcześniej w tej transakcji,
      * więc „czy moduł już jest?" sprawdzane było na stanie sprzed cudzego commitu, a o wyniku
      * rozstrzygał dopiero unikat `uq_studio_add_ons` (audyt, D1, D5).
      */
     private fun lockedSubscription(studioId: StudioId): StudioSubscriptionPlanEntity? {
-        val subscription = studioSubscriptionPlanRepository.findByStudioId(studioId.value) ?: return null
+        val stale = studioSubscriptionPlanRepository.findByStudioId(studioId.value) ?: return null
         entityManager.flush()
-        entityManager.refresh(subscription, LockModeType.PESSIMISTIC_WRITE)
-        return subscription
+        // Odłączenie i ponowny odczyt zamiast `refresh`: refresh kaskaduje na wiersze modułów
+        // i wywraca się na module usuniętym w międzyczasie przez inną transakcję (job wyłączeń).
+        entityManager.detach(stale)
+        return entityManager.find(StudioSubscriptionPlanEntity::class.java, stale.id, LockModeType.PESSIMISTIC_WRITE)
     }
 
     /**

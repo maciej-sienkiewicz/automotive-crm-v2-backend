@@ -10,22 +10,11 @@ import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import java.time.Instant
 import java.util.UUID
 
-interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID> {
+interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID>, PaymentOrderRowLocks {
     fun findBySessionId(sessionId: String): PaymentOrderEntity?
     fun findByIdAndStudioId(id: UUID, studioId: UUID): PaymentOrderEntity?
 
-    /**
-     * Zamówienie z blokadą wiersza (`SELECT … FOR UPDATE`). Każda zmiana stanu zamówienia
-     * idzie przez tę metodę: dwie obsługi tej samej płatności (duplikat notyfikacji, worker
-     * i webhook naraz) czekają na siebie zamiast obie czytać PENDING (audyt, P1).
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT o FROM PaymentOrderEntity o WHERE o.id = :id")
-    fun lockById(@Param("id") id: UUID): PaymentOrderEntity?
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT o FROM PaymentOrderEntity o WHERE o.sessionId = :sessionId")
-    fun lockBySessionId(@Param("sessionId") sessionId: String): PaymentOrderEntity?
 
     @Query("SELECT o.studioId FROM PaymentOrderEntity o WHERE o.id = :id")
     fun findStudioIdById(@Param("id") id: UUID): UUID?
@@ -97,14 +86,16 @@ interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID> {
 
     /**
      * Zamówienia wygaszone, które wciąż mogą zostać opłacone (strona płatności P24 była
-     * wydana): niesprawdzone ani razu (zastąpione nowszym zamówieniem, porządek V172,
-     * wygaszone przy wyłączonej bramce) i — rzadziej — sprawdzone dawniej niż [reconciledBefore].
-     * Spóźniona płatność nie może zależeć wyłącznie od tego, czy dotrze notyfikacja.
+     * wydana): niesprawdzone ani razu — W KAŻDYM WIEKU (zastąpione nowszym zamówieniem przez
+     * porządek V172, wśród nich zamówienia sprzed naprawy z pieniędzmi pobranymi bez realizacji;
+     * wygaszone przy wyłączonej bramce) — i, w oknie [createdAfter], sprawdzone dawniej niż
+     * [reconciledBefore]. Spóźniona płatność nie może zależeć wyłącznie od tego, czy dotrze notyfikacja.
      */
     @Query("""
         SELECT o.id FROM PaymentOrderEntity o
-        WHERE o.status = 'EXPIRED' AND o.p24Token IS NOT NULL AND o.createdAt >= :createdAfter
-          AND (o.lastReconciledAt IS NULL OR o.lastReconciledAt <= :reconciledBefore)
+        WHERE o.status = 'EXPIRED' AND o.p24Token IS NOT NULL
+          AND (o.lastReconciledAt IS NULL
+               OR (o.createdAt >= :createdAfter AND o.lastReconciledAt <= :reconciledBefore))
         ORDER BY o.lastReconciledAt ASC NULLS FIRST, o.createdAt ASC
     """)
     fun findExpiredDueForCheck(

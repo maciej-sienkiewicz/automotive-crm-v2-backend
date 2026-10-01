@@ -15,6 +15,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionConflictException
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.studio.domain.StudioKind
 import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
@@ -106,6 +107,11 @@ class CheckoutService(
         // Zakupy są tylko dla właściciela, którym pracownik piaskownicy nigdy nie jest - to
         // druga linia: podgląd roli nie zakłada zamówień i niczego nie płaci.
         rolePreviewGuard.requireOutsideSandbox(studioId.value, SimulatedEffectChannel.PAYMENT, "płatność za ${request.type.name}")
+        // Konto DEMO jest publiczne i znika po dwóch godzinach razem z danymi — prawdziwa płatność
+        // zostałaby bez konta, któremu miała służyć.
+        if (studioRepository.findKindById(studioId.value) == StudioKind.DEMO) {
+            throw ValidationException("Konto demonstracyjne nie przyjmuje płatności. Załóż własne konto, żeby kupić pakiet.")
+        }
 
         val draft = when (request.type) {
             PaymentOrderType.INITIAL_PURCHASE -> prepareInitialPurchase(studioId, request)
@@ -232,6 +238,16 @@ class CheckoutService(
      * który właśnie stał się aktywny — kończące się zwrotem (przegląd planu naprawczego).
      */
     private fun revalidateUnderLock(studio: StudioEntity, studioId: StudioId, type: PaymentOrderType, draft: OrderDraft) {
+        // Szkic „za darmo w trialu" sprzed blokady, a trial skończył się w międzyczasie (zakup
+        // pakietu właśnie się zrealizował): darmowy upgrade albo moduł na opłacony okres — nie.
+        if ((type == PaymentOrderType.PLAN_UPGRADE || type == PaymentOrderType.ADD_ON_PURCHASE) &&
+            draft.amountCents == 0L && draft.pricedUntil == null && !accessPolicy.isTrialRunning(studio.billing())
+        ) {
+            throw SubscriptionConflictException(
+                code = "PRICE_CHANGED",
+                message = "Okres próbny właśnie się zakończył, więc cena się zmieniła. Odśwież stronę i spróbuj ponownie."
+            )
+        }
         when (type) {
             PaymentOrderType.INITIAL_PURCHASE ->
                 if (studio.subscriptionStatus == SubscriptionStatus.ACTIVE || studio.subscriptionStatus == SubscriptionStatus.PAST_DUE) {

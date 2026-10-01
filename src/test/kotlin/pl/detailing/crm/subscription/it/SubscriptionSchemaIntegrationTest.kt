@@ -55,6 +55,27 @@ class SubscriptionSchemaIntegrationTest : SubscriptionIntegrationTestBase() {
     }
 
     @Test
+    fun `V172 na danych sprzed naprawy - wygasle bez karencji i downgrade po odnowieniu w wyzszym planie`() {
+        val now = clock.instant()
+        val expired = studio(SubscriptionStatus.EXPIRED, endsAt = now.minus(java.time.Duration.ofDays(10)))
+        val renewedEarly = studio(SubscriptionStatus.ACTIVE, endsAt = now.plus(java.time.Duration.ofDays(60)))
+        jdbc.update(
+            """INSERT INTO pending_plan_changes (id, studio_id, from_plan_key, to_plan_key, effective_at, requested_at, status, version)
+               VALUES (?, ?, 'FULL', 'BASIC', ?, ?, 'PENDING', 0)""",
+            UUID.randomUUID(), renewedEarly, Timestamp.from(now.plus(java.time.Duration.ofDays(30))), Timestamp.from(now)
+        )
+
+        val sql = ClassPathResource("db/migration/V172__subscription_integrity.sql").getContentAsString(Charsets.UTF_8)
+        dataSource.connection.use { c -> c.createStatement().use { it.execute(sql) } }
+
+        // Dawny scheduler wygaszał co do sekundy — karencji nie było, więc nie ma czego doliczać.
+        assertEquals(endsAtOf(expired), graceEndsAtOf(expired))
+        // Dawne odnowienie kosztowało cenę FULL — zmiana na BASIC przesuwa się na koniec opłaconego czasu.
+        assertEquals(endsAtOf(renewedEarly),
+            jdbc.queryForObject("SELECT effective_at FROM pending_plan_changes WHERE studio_id = ?", Timestamp::class.java, renewedEarly)!!.toInstant())
+    }
+
+    @Test
     fun `jeden oczekujacy downgrade na studio`() {
         val studioId = studio(SubscriptionStatus.ACTIVE)
         insertPending(studioId)

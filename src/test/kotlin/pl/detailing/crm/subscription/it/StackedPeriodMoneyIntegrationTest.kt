@@ -199,6 +199,63 @@ class StackedPeriodMoneyIntegrationTest : SubscriptionIntegrationTestBase() {
         assertEquals(PlanKey.BASIC, planOf(studioId))
     }
 
+    @Test
+    fun `odnowienie z modulem oplacone po odnowieniu bez modulu - zwrot, a nie modul za darmo`() {
+        val studioId = activeStudio(PlanKey.BASIC, daysLeft = 5, addOns = listOf(AddOnKey.FINANCE_MODULE))
+        val periodEnd = endsAtOf(studioId)!!
+        val withModule = renewal(studioId)                       // 148 zł, karta P24 zostaje otwarta
+        planManagementService.cancelAddOn(StudioId(studioId), AddOnKey.FINANCE_MODULE)
+        pay(renewal(studioId).orderId)                           // 99 zł — kolejny okres bez modułu
+
+        pay(withModule.orderId)
+
+        assertEquals(PaymentOrderStatus.REFUND_REQUIRED, orderStatus(withModule.orderId))
+        assertEquals(periodEnd, cancelAtOf(studioId), "moduł dalej kończy się z opłaconym z nim czasem")
+        assertEquals(periodEnd.plus(Duration.ofDays(30)), endsAtOf(studioId))
+    }
+
+    @Test
+    fun `modul oplacony juz po koncu wycenionego okresu - zwrot, nawet gdy okres przedluzono`() {
+        val studioId = activeStudio(PlanKey.BASIC, daysLeft = 2)
+        val addOn = checkout(studioId, CheckoutRequest(type = PaymentOrderType.ADD_ON_PURCHASE, addOnKeys = listOf(AddOnKey.FINANCE_MODULE)))
+        pay(renewal(studioId).orderId)
+        clock.advance(Duration.ofDays(3))                        // przelew zaksięgowany po terminie
+
+        pay(addOn.orderId)
+
+        assertEquals(PaymentOrderStatus.REFUND_REQUIRED, orderStatus(addOn.orderId))
+        assertEquals(emptySet<AddOnKey>(), addOnsOf(studioId))
+    }
+
+    @Test
+    fun `doplata zaplacona przed koncem okresu przechodzi, choc realizacja przyszla po nim`() {
+        val studioId = activeStudio(PlanKey.BASIC, daysLeft = 1)
+        val periodEnd = endsAtOf(studioId)!!
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 163, planKey = PlanKey.BASIC,
+            addOns = listOf(AddOnKey.FINANCE_MODULE), status = PaymentOrderStatus.PAID, p24OrderId = 77_001)
+        jdbc.update("UPDATE payment_orders SET priced_until = ? WHERE id = ?", Timestamp.from(periodEnd), order.id)
+        clock.advance(Duration.ofDays(1).plusHours(1))
+        lifecycleJob.advanceDueSubscriptions()
+        assertEquals(SubscriptionStatus.PAST_DUE, statusOf(studioId))
+
+        fulfillmentService.fulfillIfPaid(order.id)
+
+        assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id), "zapłata przyszła przed końcem okresu")
+    }
+
+    @Test
+    fun `darmowy modul z trialu realizowany po zakupie pakietu jest anulowany, nie zwracany`() {
+        val studioId = studioWithPlan(SubscriptionStatus.ACTIVE, PlanKey.BASIC, endsAt = clock.instant().plus(Duration.ofDays(30)))
+        val free = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 0, planKey = PlanKey.BASIC,
+            addOns = listOf(AddOnKey.FINANCE_MODULE), status = PaymentOrderStatus.PAID)
+
+        fulfillmentService.fulfillIfPaid(free.id)
+
+        assertEquals(PaymentOrderStatus.CANCELLED, orderStatus(free.id))
+        assertEquals(emptySet<AddOnKey>(), addOnsOf(studioId))
+        assertEquals(0.0, counter("payments.refund.required"))
+    }
+
     // ── Trial i karencja ─────────────────────────────────────────────────────
 
     @Test

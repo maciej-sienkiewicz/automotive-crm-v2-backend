@@ -23,6 +23,7 @@ import pl.detailing.crm.shared.PaymentsUnavailableException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionConflictException
 import pl.detailing.crm.shared.SubscriptionStatus
+import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import java.time.Duration
@@ -195,7 +196,7 @@ class PaymentFlowIntegrationTest : SubscriptionIntegrationTestBase() {
 
         assertEquals("RECEIVED", notificationRow(order.sessionId)["status"], "nadal czeka — nie trafia do przeglądu na zawsze")
         assertTrue(counter("payments.notifications.retry.long") > 0.0, "długie ponawianie jest alarmem")
-        assertEquals(PaymentOrderStatus.EXPIRED, orderStatus(order.id), "zamówienie wygasło, ale przyjmie płatność")
+        assertEquals(PaymentOrderStatus.PENDING, orderStatus(order.id), "P24 ma pieniądze — zamówienie nie wygasa z powodem „brak płatności”")
 
         gateway.verifyFails = false
         clock.advance(Duration.ofMinutes(61))
@@ -203,6 +204,67 @@ class PaymentFlowIntegrationTest : SubscriptionIntegrationTestBase() {
 
         assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
         assertEquals(setOf(AddOnKey.FINANCE_MODULE), addOnsOf(studioId))
+    }
+
+    @Test
+    fun `transakcja zwrocona przez P24 bez weryfikacji trafia do przegladu zamiast ponawiac sie bez konca`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 3_000, planKey = PlanKey.BASIC, addOns = listOf(AddOnKey.FINANCE_MODULE))
+        val p24OrderId = gateway.pay(order.sessionId, order.amountCents)
+        gateway.transactions.getValue(order.sessionId).status = 3
+        gateway.verifyFails = true
+
+        val outcome = notificationProcessor.process(notificationProcessor.record(signedNotification(order.sessionId, order.amountCents, p24OrderId)))
+
+        assertEquals(NotificationOutcome.NEEDS_REVIEW, outcome)
+        assertEquals("NEEDS_REVIEW", notificationRow(order.sessionId)["status"])
+        assertEquals(PaymentOrderStatus.PENDING, orderStatus(order.id))
+    }
+
+    @Test
+    fun `zamowienie PAID zapisane przez kod sprzed V172 nie jest realizowane drugi raz`() {
+        val endsAt = clock.instant().plus(Duration.ofDays(30))
+        val studioId = studioWithPlan(SubscriptionStatus.ACTIVE, PlanKey.BASIC, endsAt = endsAt)
+        // Stary kod: efekt (+30 dni), status PAID i wpis historii bez order_id w jednej transakcji.
+        val legacy = order(studioId, PaymentOrderType.RENEWAL, BASIC_PRICE, planKey = PlanKey.BASIC,
+            status = PaymentOrderStatus.PAID, p24OrderId = 515_151)
+        jdbc.update(
+            """INSERT INTO subscription_payment_log (id, studio_id, event_type, amount_in_cents, currency, transaction_id, description, created_at)
+               VALUES (?, ?, 'SUBSCRIPTION_RENEWAL', ?, 'PLN', '515151', 'stary wpis', now())""",
+            UUID.randomUUID(), studioId, BASIC_PRICE
+        )
+
+        clock.advance(Duration.ofMinutes(2))
+        paymentReconciliationJob.reconcile()
+
+        assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(legacy.id))
+        assertEquals(endsAt, endsAtOf(studioId), "bez drugich 30 dni")
+        assertEquals(1L, ledgerCount(studioId, "SUBSCRIPTION_RENEWAL"))
+    }
+
+    @Test
+    fun `konto demo nie przyjmuje platnosci`() {
+        val studioId = studio(SubscriptionStatus.TRIALING, trialEndsAt = clock.instant().plus(Duration.ofHours(2)),
+            kind = pl.detailing.crm.studio.domain.StudioKind.DEMO)
+
+        assertThrows<ValidationException> {
+            checkoutService.checkout(StudioId(studioId), BUYER, CheckoutRequest(type = PaymentOrderType.INITIAL_PURCHASE, planKey = PlanKey.BASIC))
+        }
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM payment_orders", Long::class.java))
+    }
+
+    @Test
+    fun `wygaszone zamowienie nigdy niesprawdzone jest sprawdzane w P24 bez wzgledu na wiek`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        // Np. zamówienie sprzed miesięcy, zastąpione nowszym przez porządek V172 — z pobranymi pieniędzmi.
+        val old = order(studioId, PaymentOrderType.RENEWAL, BASIC_PRICE, planKey = PlanKey.BASIC,
+            status = PaymentOrderStatus.EXPIRED, token = "TOKEN-old")
+        jdbc.update("UPDATE payment_orders SET created_at = ? WHERE id = ?", java.sql.Timestamp.from(clock.instant().minus(Duration.ofDays(60))), old.id)
+        gateway.pay(old.sessionId, old.amountCents)
+
+        paymentReconciliationJob.reconcile()
+
+        assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(old.id))
     }
 
     @Test

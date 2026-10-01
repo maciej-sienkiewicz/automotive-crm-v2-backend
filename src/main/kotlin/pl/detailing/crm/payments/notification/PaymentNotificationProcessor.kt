@@ -133,6 +133,14 @@ class PaymentNotificationProcessor(
                 // P24 nie dokumentuje odpowiedzi na ponowną weryfikację. Transakcja, którą P24
                 // zgłasza jako zweryfikowaną (status 2) dla tego samego orderId, jest opłacona.
                 val state = runCatching { p24Client.getTransactionBySessionId(verify.sessionId) }.getOrNull()
+                if (state != null && state.orderId == verify.providerOrderId && state.status == P24_STATUS_RETURNED) {
+                    // P24 zwróciło niezweryfikowaną transakcję płatnikowi — `verify` już nigdy się
+                    // nie uda, a ponawianie co godzinę bez końca zjadałoby czas jedynego wątku jobów.
+                    return closeForReview(
+                        notificationId,
+                        "P24 zwróciło transakcję ${verify.providerOrderId} bez weryfikacji (status 3) — płatnik dostał zwrot, do wyjaśnienia z klientem"
+                    )
+                }
                 if (state?.status != P24_STATUS_VERIFIED || state.orderId != verify.providerOrderId) {
                     return scheduleRetry(notificationId, "Weryfikacja w P24 nie powiodła się: ${e.message}", e)
                 }
@@ -222,7 +230,9 @@ class PaymentNotificationProcessor(
 
         when {
             order.status.acceptsPayment -> {
-                order.markPaid(verify.providerOrderId, now)
+                // Chwila zapłaty = przyjście notyfikacji, nie koniec naszej weryfikacji: ponowienia
+                // (do godziny) nie mogą przesunąć płatności za koniec okresu, do którego ją wyceniono.
+                order.markPaid(verify.providerOrderId, minOf(n.receivedAt, now))
                 logger.info("P24 płatność przyjęta: zamówienie {} (sesja {}, orderId {})", order.id, order.sessionId, verify.providerOrderId)
             }
             order.status.isPaid && order.p24OrderId == verify.providerOrderId -> Unit // równoległa obsługa nas wyprzedziła
@@ -250,6 +260,18 @@ class PaymentNotificationProcessor(
         logger.error("Realizacja opłaconego zamówienia {} nie powiodła się — ponowi worker", orderId, e)
         NotificationOutcome.PAID_AWAITING_FULFILLMENT
     }
+
+    private fun closeForReview(notificationId: UUID, reason: String): NotificationOutcome = tx.execute {
+        val n = notificationRepository.lockById(notificationId) ?: return@execute NotificationOutcome.DUPLICATE
+        if (!n.isOpen) return@execute when (n.status) {
+            PaymentNotificationStatus.REJECTED -> NotificationOutcome.REJECTED
+            PaymentNotificationStatus.NEEDS_REVIEW -> NotificationOutcome.NEEDS_REVIEW
+            else -> NotificationOutcome.DUPLICATE
+        }
+        n.markNeedsReview(reason, accessPolicy.now())
+        logger.error("P24 notyfikacja {}: {}", n.id, reason)
+        NotificationOutcome.NEEDS_REVIEW
+    }!!.let(::count)
 
     private fun scheduleRetry(notificationId: UUID, error: String, cause: Exception): NotificationOutcome {
         logger.warn("P24 notyfikacja {}: {} — ponowienie", notificationId, error, cause)
@@ -292,6 +314,8 @@ class PaymentNotificationProcessor(
         const val P24_STATUS_VERIFIED = 2
         /** Stan transakcji w P24: wpłacona, jeszcze niezweryfikowana. */
         const val P24_STATUS_PAID = 1
+        /** Stan transakcji w P24: zwrócona płatnikowi (np. niezweryfikowana w terminie) — `verify` niemożliwy. */
+        const val P24_STATUS_RETURNED = 3
 
         /** Od tylu prób każde kolejne ponowienie jest alarmem (backoff dochodzi już do godziny). */
         private const val LONG_RETRY_AFTER_ATTEMPTS = 12

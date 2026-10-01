@@ -13,6 +13,8 @@ import pl.detailing.crm.subscription.management.AddOnActivationPreview
 import pl.detailing.crm.subscription.management.ChangeType
 import pl.detailing.crm.subscription.management.PlanChangePreview
 import pl.detailing.crm.subscription.management.PlanManagementService
+import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
+import pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle
 import pl.detailing.crm.subscription.pricing.PricingService
 import pl.detailing.crm.subscription.SubscriptionService
 import pl.detailing.crm.subscription.pricing.ProrationService
@@ -156,7 +158,13 @@ data class MyPlanResponse(
     val monthlyCostCents: Long,
     val nextRenewalCostCents: Long?,
     val graceEndsAt: Instant?,
-    val canPurchaseMidPeriod: Boolean
+    val canPurchaseMidPeriod: Boolean,
+    /**
+     * Do kiedy sięgnie okres opłacony odnowieniem zapłaconym TERAZ — ta sama funkcja liczy datę
+     * przy realizacji. Zwykle „koniec okresu + 30 dni" albo „teraz + 30 dni"; tuż po karencji
+     * mniej, bo okres obejmuje wykorzystane dni karencji. Null bez pakietu.
+     */
+    val renewalPeriodEndsAt: Instant? = null
 )
 
 /** Describes a scheduled plan downgrade that has not yet been applied. */
@@ -239,7 +247,8 @@ class EntitlementsController(
     private val planManagementService: PlanManagementService,
     private val subscriptionService: SubscriptionService,
     private val prorationService: ProrationService,
-    private val studioRepository: StudioRepository
+    private val studioRepository: StudioRepository,
+    private val accessPolicy: SubscriptionAccessPolicy
 ) {
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -252,14 +261,17 @@ class EntitlementsController(
     @GetMapping("/api/v1/me/entitlements")
     fun getMyEntitlements(): ResponseEntity<EntitlementsResponse> {
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        val entitlements = entitlementService.getEntitlements(studioId)
+        // Jeden świeży odczyt dla całej odpowiedzi. To jedyna bramka UI (front nie liczy uprawnień
+        // sam), a wpis z cache'u mógł powstać sprzed zapłaty: wtedy „subskrypcja aktywna" z bazy
+        // i mapa uprawnień z cache'u mówiły co innego, a kupiony moduł był dalej „do kupienia".
+        val entitlements = entitlementService.readCurrent(studioId)
         val allAddOns = entitlementService.getAllAddOns()
         val plans = entitlementService.getAllPlans()
 
         val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
-        val subscriptionActive = capabilityService.isSubscriptionUsable(studioId)
+        val subscriptionActive = capabilityService.isSubscriptionUsableFor(entitlements)
         val featureMap = buildFeatureMap(entitlements, allAddOns, subscriptionActive)
-        val capabilityMap = capabilityService.resolve(studioId).decisions.entries.associate { (key, decision) ->
+        val capabilityMap = capabilityService.resolve(entitlements).decisions.entries.associate { (key, decision) ->
             key.name to CapabilityStatusDto(
                 enabled = decision.enabled,
                 displayName = key.displayName,
@@ -305,7 +317,8 @@ class EntitlementsController(
         val studioId = SecurityContextHelper.getCurrentUser().studioId
 
         val billingInfo = subscriptionService.getSubscriptionInfo(studioId)
-        val entitlements = entitlementService.getEntitlements(studioId)
+        // Ekran rozliczeń właściciela — stan z bazy, nie z cache'u (tuż po zakupie ma już go pokazywać).
+        val entitlements = entitlementService.readCurrent(studioId)
         val allAddOns = entitlementService.getAllAddOns()
         val plans = entitlementService.getAllPlans()
 
@@ -354,7 +367,9 @@ class EntitlementsController(
                 monthlyCostCents = monthlyCostCents,
                 nextRenewalCostCents = nextRenewalCostCents,
                 graceEndsAt = billingInfo.graceEndsAt,
-                canPurchaseMidPeriod = prorationService.midPeriodPurchaseMode(studioId) != MidPeriodPurchaseMode.NOT_ALLOWED
+                canPurchaseMidPeriod = prorationService.midPeriodPurchaseMode(studioId) != MidPeriodPurchaseMode.NOT_ALLOWED,
+                renewalPeriodEndsAt = if (studio == null || billingInfo.status == pl.detailing.crm.shared.SubscriptionStatus.NO_PLAN) null
+                    else accessPolicy.paidPeriodStart(studio.billing(), accessPolicy.now()).plus(SubscriptionLifecycle.BILLING_PERIOD)
             )
         )
     }

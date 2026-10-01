@@ -63,6 +63,9 @@ class CapabilityService(
         return capability.missingFeaturesFor(enabled)
     }
 
+    /** [isSubscriptionUsable] dla podanego obrazu uprawnień, bez ponownego odczytu. */
+    fun isSubscriptionUsableFor(entitlements: StudioEntitlements): Boolean = subscriptionUsable(entitlements)
+
     /** Czy studio może teraz korzystać z kupionych modułów (trial, opłacony okres, karencja). */
     fun isSubscriptionUsable(studioId: StudioId): Boolean =
         subscriptionUsable(entitlementService.getEntitlements(studioId)) ||
@@ -116,8 +119,10 @@ class CapabilityService(
      * One entitlement lookup (Redis-cached) + at most one add-on catalog read,
      * fetched lazily only when some capability is disabled and shared by all of them.
      */
-    fun resolve(studioId: StudioId): StudioCapabilities {
-        val entitlements = entitlementService.getEntitlements(studioId)
+    fun resolve(studioId: StudioId): StudioCapabilities = resolve(entitlementService.getEntitlements(studioId))
+
+    /** Mapa dla podanego obrazu uprawnień — żeby odpowiedź HTTP liczyła wszystko z jednego odczytu. */
+    fun resolve(entitlements: StudioEntitlements): StudioCapabilities {
         if (!subscriptionUsable(entitlements)) {
             return StudioCapabilities(CapabilityKey.entries.associateWith { CapabilityDecision.subscriptionInactive(it) })
         }

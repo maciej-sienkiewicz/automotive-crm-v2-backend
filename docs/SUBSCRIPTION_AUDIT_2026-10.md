@@ -928,6 +928,35 @@ odtworzenia z części 3 nie obejmowały, bo dotyczą nowego kodu albo „spięt
   „Aktywuj" kończyło się zwrotem), otwarte zamówienia blokowane przed wygaszeniem, darmowe
   zamówienie bez efektu → CANCELLED zamiast kolejki zwrotów.
 
+Druga runda przeglądu (schemat i migracja, kontrakt API, regresje po poprawkach) — też naprawione,
+z testami (`OpenSessionInViewLockingIntegrationTest`, `StackedPeriodMoneyIntegrationTest`,
+`PaymentFlowIntegrationTest`, `SubscriptionSchemaIntegrationTest`):
+
+- **Blokady pod open-session-in-view** (systemowe): przy domyślnym `spring.jpa.open-in-view=true`
+  kontekst persystencji żyje przez całe żądanie HTTP, a zapytanie z `@Lock` zwraca encję wczytaną
+  wcześniej w tym żądaniu BEZ odświeżenia — „decyzja pod blokadą" w checkoucie, webhooku i zmianach
+  planu szła na stanie sprzed cudzego commitu. Blokady studia, zamówienia i notyfikacji odświeżają
+  teraz stan (`FreshRowLock`), a odczyt do decyzji pieniężnych (`readCurrent`) i blokada planu
+  wczytują wiersz i moduły od nowa.
+- **Dane sprzed V172**: zamówienia wygaszone przez porządek V172 są raz sprawdzane w P24 bez
+  względu na wiek (wśród nich te z pieniędzmi pobranymi bez realizacji — P6); studia wygaszone
+  przez dawny scheduler nie płacą za karencję, której nie miały; downgrade zaplanowany przed
+  wdrożeniem, po którym opłacono odnowienie w wyższym planie, przesuwa się na koniec opłaconego
+  czasu zamiast stać się „zamrożony"; zamówienie PAID zapisane przez starszy obraz (np. po
+  wycofaniu wdrożenia) nie jest realizowane drugi raz.
+- **Konto DEMO nie przyjmuje płatności**, a sprzątanie demo nie kasuje zapisu pieniędzy.
+- **Odnowienie z modułem nie daje modułu za darmo** w czasie opłaconym bez niego; dopłata za
+  moduł opłacona po końcu wycenionego okresu idzie do zwrotu; o tym, czy okres trwał, decydują
+  daty (chwila przyjścia notyfikacji), nie bieżący status.
+- **Rekoncyliacja nie wygasza zamówienia, które P24 ma opłacone**, a czeka tylko nasza
+  weryfikacja; transakcja zwrócona przez P24 bez weryfikacji (status 3) trafia do przeglądu
+  zamiast ponawiać się bez końca.
+- **Darmowe zamówienie z trialu po końcu triala** jest odrzucane (409 `PRICE_CHANGED`) albo
+  anulowane przy realizacji.
+- **`/me/entitlements` i `my-plan` czytają stan z bazy** (jeden obraz dla całej odpowiedzi),
+  a `my-plan` podaje `renewalPeriodEndsAt` — front pokazuje prawdziwą datę końca okresu zamiast
+  „kolejnych 30 dni". Okna wygasłego abonamentu i pierwszego logowania mają „Wyloguj".
+
 ### 5.3 Odstępstwa od planu i decyzje do potwierdzenia
 
 - **0.2: brak poświadczeń P24 nie zatrzymuje startu aplikacji.** CRM ma działać, gdy płatności
@@ -950,8 +979,12 @@ odtworzenia z części 3 nie obejmowały, bo dotyczą nowego kodu albo „spięt
 ### 5.4 Wdrożenie — co musi się stać na produkcji
 
 1. **Przed wdrożeniem**: zapytania Q1–Q6 z części 4. V172 sama porządkuje duplikaty PENDING
-   (downgrade'y → CANCELLED, zamówienia → EXPIRED) i sieroty planów; zduplikowanego
-   `p24_order_id` NIE rusza — wtedy indeks jest pomijany z WARNING, a wiersze trzeba wyjaśnić ręcznie.
+   (downgrade'y → CANCELLED, zamówienia → EXPIRED, sprawdzane potem w P24), sieroty planów,
+   karencję studiów wygaszonych przez dawny scheduler i downgrade'y sprzed odnowienia w wyższym
+   planie; zduplikowanego `p24_order_id` NIE rusza — wtedy indeks jest pomijany z WARNING, a wiersze
+   trzeba wyjaśnić ręcznie. Wycofanie wdrożenia na starszy obraz jest bezpieczne dla pieniędzy
+   (zamówienia PAID ze starego kodu nie są realizowane drugi raz), ale stary obraz nie zna nowych
+   stanów zamówień — wycofanie powinno być krótkie.
 2. **Zmienne środowiskowe** (`deploy/docker-compose*.yaml`): `ENV_P24_MERCHANT_ID`,
    `ENV_P24_POS_ID`, `ENV_P24_CRC`, `ENV_P24_API_KEY`, `ENV_P24_SANDBOX` (produkcja: `false`).
    **Bez nich zakup odpowiada 503** — wcześniej ten sam brak rozdawał pakiety za darmo. Środowisko

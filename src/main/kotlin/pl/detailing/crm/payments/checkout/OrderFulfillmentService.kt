@@ -30,6 +30,7 @@ import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
 import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogRepository
 import pl.detailing.crm.subscription.lifecycle.BillingDates
 import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
+import pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle
 import pl.detailing.crm.subscription.management.PendingPlanChangeEntity
 import pl.detailing.crm.subscription.management.PendingPlanChangeRepository
 import pl.detailing.crm.subscription.management.PendingPlanChangeStatus
@@ -106,6 +107,15 @@ class OrderFulfillmentService(
         }
 
         val now = accessPolicy.now()
+        // PAID zapisany przez kod sprzed V172 (np. po wycofaniu obrazu na starszą wersję) znaczył
+        // „zapłacone I zrealizowane" — efekt i wpis historii (bez order_id) poszły w tej samej
+        // transakcji. Drugie zastosowanie efektu dałoby kolejne 30 dni albo fałszywy zwrot.
+        val legacyTransactionIds = listOfNotNull(order.p24OrderId?.toString(), order.sessionId)
+        if (paymentLogRepository.existsByOrderIdIsNullAndTransactionIdIn(legacyTransactionIds)) {
+            order.markFulfilled(order.paidAt ?: now)
+            logger.warn("Order {} PAID by pre-V172 code (ledger entry exists) — marked FULFILLED without re-applying the effect", order.id)
+            return FulfillmentOutcome.ALREADY_SETTLED
+        }
         val effect = try {
             applyEffect(order, studio)
         } catch (ex: Exception) {
@@ -259,7 +269,23 @@ class OrderFulfillmentService(
             return NextPeriod.Align(alignAddOns = false)
         }
 
-        if (paidPlanKey == current.planKey) return NextPeriod.Align(cancelPending = pending != null)
+        if (paidPlanKey == current.planKey) {
+            // Spiętrzone okresy: czas przed kupowanym okresem opłacono BEZ modułu z zamówienia
+            // (wyłączony przed jego początkiem albo już usunięty). Wznowienie albo włączenie teraz
+            // dałoby moduł za darmo do początku kupowanego okresu, a „włącz dopiero od" model nie
+            // umie zapisać — zwrot, jak przy zamrożonym planie (przegląd planu naprawczego).
+            if (accessPolicy.hasRunningPaidPeriod(studio.billing(), now)) {
+                val notCovered = paidAddOns.filter { key ->
+                    key !in current.activeAddOnKeys || current.addOnCancellations[key]?.isBefore(periodStart) == true
+                }
+                if (notCovered.isNotEmpty()) {
+                    return NextPeriod.Refuse(
+                        "Czas do ${BillingDates.format(periodStart)} opłacono bez modułu ${notCovered.joinToString { it.displayName }} — odnowienie z modułem nie ma gdzie wejść"
+                    )
+                }
+            }
+            return NextPeriod.Align(cancelPending = pending != null)
+        }
         if (pending != null && pending.toPlanKey == paidPlanKey && pending.effectiveAt == periodStart) {
             // Odnowienie wycenione po zaplanowanym downgradzie — zmiana już jest na swoim miejscu.
             return if (paidAddOns.isEmpty()) NextPeriod.Align(alignAddOns = false)
@@ -299,6 +325,7 @@ class OrderFulfillmentService(
     private fun applyPlanUpgrade(order: PaymentOrderEntity, studio: StudioEntity): Effect {
         val planKey = requireNotNull(order.planKey) { "PLAN_UPGRADE order without planKey: ${order.id}" }
         val studioId = StudioId(studio.id)
+        if (trialFreeOrderOutlived(order, studio)) return Effect.NotApplicable("Okres próbny skończył się przed realizacją bezpłatnej zmiany pakietu")
         // Dopłata policzona do końca okresu P: po odnowieniu (okres sięga dalej) albo po jego
         // końcu upgrade dawałby wyższy plan na czas, za który dopłaty nie było.
         when (pricedPeriodState(order, studio)) {
@@ -339,6 +366,7 @@ class OrderFulfillmentService(
         if (alreadyActive.isNotEmpty()) {
             return Effect.NotApplicable("Moduł ${alreadyActive.joinToString { it.displayName }} był już aktywny — opłacony drugi raz")
         }
+        if (trialFreeOrderOutlived(order, studio)) return Effect.NotApplicable("Okres próbny skończył się przed realizacją bezpłatnego modułu")
         // Moduł działa do końca okresu, za który zapłacono — także gdy odnowienie (bez modułu)
         // zostało opłacone wcześniej i okres sięga już dalej.
         val capAt = when (pricedPeriodState(order, studio)) {
@@ -346,6 +374,13 @@ class OrderFulfillmentService(
             PricedPeriod.EXTENDED -> order.pricedUntil
             PricedPeriod.ENDED -> return Effect.NotApplicable(
                 "Okres, do którego policzono dopłatę za moduł (${BillingDates.format(order.pricedUntil!!)}), skończył się przed płatnością"
+            )
+        }
+        // Zapłacone przed końcem wycenionego okresu, ale realizowane już po nim (ponowiona
+        // realizacja), a okres opłacono dalej bez modułu: nie ma już czego dostarczyć.
+        if (capAt != null && !capAt.isAfter(accessPolicy.now())) {
+            return Effect.NotApplicable(
+                "Okres, za który zapłacono moduł (do ${BillingDates.format(capAt)}), minął przed realizacją"
             )
         }
         order.addOnKeys.forEach { key ->
@@ -366,13 +401,27 @@ class OrderFulfillmentService(
 
     private enum class PricedPeriod { NOT_PRICED, SAME, EXTENDED, ENDED }
 
-    /** Czy okres, do którego policzono dopłatę proporcjonalną, w chwili płatności wciąż trwał i się nie wydłużył. */
+    /**
+     * Czy okres, do którego policzono dopłatę proporcjonalną, w chwili płatności wciąż trwał
+     * i czy się od tego czasu nie wydłużył. Decydują DATY (zapłata kontra koniec wycenionego
+     * okresu), nie bieżący status: job cyklu życia przestawia ACTIVE → PAST_DUE niezależnie od
+     * ponawianej realizacji, a ta sama płatność nie może raz przejść, a raz iść do zwrotu
+     * zależnie od tego, czy job zdążył przebiec.
+     */
     private fun pricedPeriodState(order: PaymentOrderEntity, studio: StudioEntity): PricedPeriod {
         val pricedUntil = order.pricedUntil ?: return PricedPeriod.NOT_PRICED
-        val billing = studio.billing()
-        if (!accessPolicy.hasRunningPaidPeriod(billing, order.paidAt!!)) return PricedPeriod.ENDED
-        return if (billing.subscriptionEndsAt!!.isAfter(pricedUntil)) PricedPeriod.EXTENDED else PricedPeriod.SAME
+        if (!pricedUntil.isAfter(order.paidAt!!)) return PricedPeriod.ENDED
+        val endsAt = studio.subscriptionEndsAt ?: return PricedPeriod.ENDED
+        return if (endsAt.isAfter(pricedUntil)) PricedPeriod.EXTENDED else PricedPeriod.SAME
     }
+
+    /**
+     * Darmowe zamówienie z trialu (upgrade, moduł za 0 zł) opłacone już po końcu triala — np.
+     * zakup pakietu zrealizował się w trakcie tego kliknięcia. Za opłacony okres nikt nie zapłacił.
+     */
+    private fun trialFreeOrderOutlived(order: PaymentOrderEntity, studio: StudioEntity): Boolean =
+        order.amountCents == 0L && order.pricedUntil == null &&
+            !accessPolicy.isTrialRunning(studio.billing(), order.paidAt!!)
 
     private fun ledger(order: PaymentOrderEntity, eventType: SubscriptionEventType) {
         paymentLogRepository.save(
@@ -391,7 +440,7 @@ class OrderFulfillmentService(
     }
 
     companion object {
-        const val BILLING_PERIOD_DAYS = 30L
+        val BILLING_PERIOD_DAYS: Long = SubscriptionLifecycle.BILLING_PERIOD.toDays()
     }
 }
 

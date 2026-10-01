@@ -158,6 +158,9 @@ object SubscriptionLifecycle {
     fun billableFrom(billing: BillingSnapshot, now: Instant): Instant =
         billing.trialEndsAt?.takeIf { billing.status == SubscriptionStatus.ACTIVE && it.isAfter(now) } ?: now
 
+    /** Długość okresu kupowanego zakupem pakietu albo odnowieniem. */
+    val BILLING_PERIOD: Duration = Duration.ofDays(30)
+
     /** Ile po końcu karencji zapłata nadal rozlicza wykorzystane dni karencji. */
     val GRACE_RECOVERY_WINDOW: Duration = Duration.ofDays(30)
 

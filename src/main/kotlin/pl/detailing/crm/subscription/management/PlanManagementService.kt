@@ -1,5 +1,7 @@
 package pl.detailing.crm.subscription.management
 
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -47,6 +49,7 @@ import java.time.Instant
  */
 @Service
 class PlanManagementService(
+    @PersistenceContext private val entityManager: EntityManager,
     private val entitlementService: EntitlementService,
     private val prorationService: ProrationService,
     private val planRepository: PlanJpaRepository,
@@ -174,6 +177,16 @@ class PlanManagementService(
         pendingPlanChangeRepository.findByStudioIdAndStatus(studioId.value, PendingPlanChangeStatus.PENDING)
 
     /**
+     * To samo pod blokadą studia, ze świeżym stanem wiersza: przy open-session-in-view zapytanie
+     * może zwrócić obiekt wczytany wcześniej w tym żądaniu, sprzed zmiany wprowadzonej przez job.
+     */
+    private fun lockedPendingDowngrade(studioId: StudioId): PendingPlanChangeEntity? =
+        getPendingDowngrade(studioId)?.also {
+            entityManager.flush()
+            entityManager.refresh(it)
+        }?.takeIf { it.status == PendingPlanChangeStatus.PENDING }
+
+    /**
      * Czy zaplanowany downgrade da się jeszcze odwołać: nie, gdy kolejny okres (zaczynający
      * się w chwili downgrade'u) jest już opłacony — w cenie niższego planu.
      */
@@ -208,7 +221,7 @@ class PlanManagementService(
         // Downgrade, za którego kolejny okres już zapłacono, jest zamrożony. Ponowne zaplanowanie
         // przesuwało go wcześniej na koniec OPŁACONEGO okresu, a nowy wiersz dawał się już
         // odwołać — FULL za cenę BASIC w każdym okresie (przegląd planu naprawczego).
-        getPendingDowngrade(studioId)?.takeIf { !isCancellable(studio, it) }?.let { frozen ->
+        lockedPendingDowngrade(studioId)?.takeIf { !isCancellable(studio, it) }?.let { frozen ->
             if (frozen.toPlanKey == newPlanKey) return entitlementService.readCurrent(studioId)
             throw downgradeAlreadyPaid(frozen)
         }
@@ -262,7 +275,7 @@ class PlanManagementService(
     fun cancelPendingDowngrade(studioId: StudioId): Boolean {
         val studio = studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
-        val pending = getPendingDowngrade(studioId) ?: return false
+        val pending = lockedPendingDowngrade(studioId) ?: return false
 
         if (!isCancellable(studio, pending)) throw downgradeAlreadyPaid(pending)
 
