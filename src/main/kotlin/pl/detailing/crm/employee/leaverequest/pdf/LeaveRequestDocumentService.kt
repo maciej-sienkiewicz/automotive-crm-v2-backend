@@ -64,8 +64,7 @@ class LeaveRequestDocumentService(
         val workingDays: Int,
         val leaveType: LeaveType,
         val onDemand: Boolean,
-        val reason: String?,
-        val substituteName: String?
+        val reason: String?
     )
 
     /** Generuje szkic wniosku (H1) i zapisuje go w S3. */
@@ -91,8 +90,7 @@ class LeaveRequestDocumentService(
                 workingDays = content.workingDays,
                 leaveType = content.leaveType,
                 onDemand = content.onDemand,
-                reason = content.reason,
-                substituteName = content.substituteName
+                reason = content.reason
             )
         )
         return store(studioId, requestId, "draft.pdf", bytes)

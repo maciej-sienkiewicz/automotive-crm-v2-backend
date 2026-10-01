@@ -42,8 +42,7 @@ class LeaveRequestPdfRendererTest {
             workingDays = 4,
             leaveType = leaveType,
             onDemand = onDemand,
-            reason = reason,
-            substituteName = "Tomasz Wiśniewski"
+            reason = reason
         )
 
     private fun text(pdf: ByteArray): String = Loader.loadPDF(pdf).use { PDFTextStripper().getText(it) }
@@ -57,11 +56,13 @@ class LeaveRequestPdfRendererTest {
         val text = text(pdf)
         listOf(
             "PRACODAWCA", "WNIOSEK URLOPOWY", "NR WNIOSKU", "DATA I GODZINA ZŁOŻENIA", "SPOSÓB ZŁOŻENIA",
-            "PRACOWNIK", "TERMIN URLOPU", "RODZAJ URLOPU", "UZASADNIENIE WNIOSKU", "OSOBA ZASTĘPUJĄCA",
+            "PRACOWNIK", "TERMIN URLOPU", "RODZAJ URLOPU", "UZASADNIENIE WNIOSKU",
             "OŚWIADCZENIA PRACOWNIKA", "PODPIS PRACOWNIKA", "DECYZJA PRACODAWCY", "Osoba rozpatrująca",
             "Podstawa uprawnienia", "UZASADNIENIE DECYZJI", "PODPIS OSOBY ROZPATRUJĄCEJ",
-            "WU/2026/0012", "Zażółć Gęślą-Jaźń", "03.11.2026", "Tomasz Wiśniewski", "NIP 7251234567"
+            "WU/2026/0012", "Zażółć Gęślą-Jaźń", "03.11.2026", "NIP 7251234567"
         ).forEach { assertTrue(text.contains(it), "Brak na wniosku: $it") }
+        // Kontrakt v2: wniosek nie wskazuje osoby zastępującej.
+        assertFalse(text.contains("ZASTĘPUJĄCA"), "Na wniosku została osoba zastępująca")
     }
 
     @Test

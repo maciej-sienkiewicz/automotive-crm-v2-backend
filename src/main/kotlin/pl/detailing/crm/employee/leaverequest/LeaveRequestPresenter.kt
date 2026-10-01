@@ -15,7 +15,7 @@ import java.util.UUID
 /**
  * Wniosek w kształcie kontraktu (`LeaveRequestSummary` / `LeaveRequestDetail`).
  *
- * Nazwiska pracownika i zastępcy są czytane na bieżąco z kadr (zmiana nazwiska po ślubie
+ * Nazwisko pracownika jest czytane na bieżąco z kadr (zmiana nazwiska po ślubie
  * ma być widoczna w kolejce), a osoba rozpatrująca — z migawki decyzji, bo tak jest
  * wydrukowana na podpisanym dokumencie.
  *
@@ -56,8 +56,6 @@ class LeaveRequestPresenter(
             workingDays = s.workingDays,
             status = s.status,
             reason = s.reason,
-            substituteEmployeeId = s.substituteEmployeeId,
-            substituteName = s.substituteName,
             createdAt = s.createdAt,
             employeeSignedAt = s.employeeSignedAt,
             decidedAt = s.decidedAt,
@@ -119,8 +117,6 @@ class LeaveRequestPresenter(
         workingDays = request.workingDays,
         status = request.status.name,
         reason = request.reason,
-        substituteEmployeeId = request.substituteEmployeeId?.toString(),
-        substituteName = request.substituteEmployeeId?.let { names[it] },
         createdAt = request.createdAt.toString(),
         employeeSignedAt = request.employeeSignedAt?.toString(),
         decidedAt = request.decidedAt?.toString(),

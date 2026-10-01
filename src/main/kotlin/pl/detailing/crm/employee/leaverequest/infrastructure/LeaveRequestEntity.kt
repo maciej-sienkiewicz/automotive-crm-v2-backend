@@ -73,9 +73,6 @@ class LeaveRequestEntity(
     @Column(name = "reason", length = 1000)
     val reason: String?,
 
-    @Column(name = "substitute_employee_id", columnDefinition = "uuid")
-    val substituteEmployeeId: UUID?,
-
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 40)
     var status: LeaveRequestStatus,

@@ -66,7 +66,7 @@ class SubmitLeaveRequestHandlerTest {
         access = LeaveRequestAccess(employeeRepository, leaveRequestRepository),
         employeeRepository = employeeRepository,
         leaveRequestRepository = leaveRequestRepository,
-        validator = LeaveRequestValidator(leaveRequestRepository, employeeLeaveRepository, employeeRepository),
+        validator = LeaveRequestValidator(leaveRequestRepository, employeeLeaveRepository),
         sessions = LeaveSigningSessions(integrity),
         documents = documents,
         signatureImageProcessor = SignatureImageProcessor(),

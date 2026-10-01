@@ -1,5 +1,6 @@
 package pl.detailing.crm.employee.leaverequest
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import jakarta.servlet.http.HttpServletRequest
 import kotlinx.coroutines.runBlocking
 import org.springframework.beans.factory.annotation.Value
@@ -96,8 +97,7 @@ class MyLeaveRequestController(
                 onDemand = body.onDemand ?: false,
                 startDate = body.startDate,
                 endDate = body.endDate,
-                reason = body.reason,
-                substituteEmployeeId = body.substituteEmployeeId
+                reason = body.reason
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(
@@ -174,13 +174,18 @@ class MyLeaveRequestController(
 // WŁASNEGO nazwiska i nazwiska osoby, która rozpatrzyła jego wniosek.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * `ignoreUnknown` wprost, a nie tylko przez domyślną konfigurację Springa: stary klient
+ * wysyła jeszcze `substituteEmployeeId` (osoba zastępująca usunięta w v2 kontraktu)
+ * i to pole ma przepaść po cichu, a nie dać 400 albo trafić gdziekolwiek.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class CreateLeaveRequestRequest(
     val leaveType: String? = null,
     val onDemand: Boolean? = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
-    val reason: String? = null,
-    val substituteEmployeeId: String? = null
+    val reason: String? = null
 )
 
 data class SubmitLeaveRequestRequest(
@@ -222,8 +227,6 @@ data class LeaveRequestSummaryResponse(
     val workingDays: Int,
     val status: String,
     val reason: String?,
-    val substituteEmployeeId: String?,
-    val substituteName: String?,
     val createdAt: String,
     val employeeSignedAt: String?,
     val decidedAt: String?,
@@ -254,8 +257,6 @@ data class LeaveRequestDetailResponse(
     val workingDays: Int,
     val status: String,
     val reason: String?,
-    val substituteEmployeeId: String?,
-    val substituteName: String?,
     val createdAt: String,
     val employeeSignedAt: String?,
     val decidedAt: String?,

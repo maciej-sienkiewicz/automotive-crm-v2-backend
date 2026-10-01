@@ -68,7 +68,6 @@ object LeaveRequestFixtures {
         endDate = end,
         workingDays = 5,
         reason = null,
-        substituteEmployeeId = null,
         status = status,
         createdBy = employeeUserId ?: UUID.randomUUID(),
         createdByName = "Jan Kowalski",
