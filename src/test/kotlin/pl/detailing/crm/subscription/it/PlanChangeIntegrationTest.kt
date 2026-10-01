@@ -133,12 +133,13 @@ class PlanChangeIntegrationTest : SubscriptionIntegrationTestBase() {
         val renewal = checkoutService.checkout(StudioId(studioId), BUYER, CheckoutRequest(type = PaymentOrderType.RENEWAL))
         assertEquals(BASIC_PRICE, renewal.amountCents)
         assertTrue(planManagementService.cancelPendingDowngrade(StudioId(studioId)))
+        clock.advance(Duration.ofMinutes(5))   // płatność przychodzi później niż odwołanie
 
         payAndNotify(orderRepository.findById(renewal.orderId).orElseThrow())
 
         // Zapłacono za BASIC: FULL do końca bieżącego okresu, potem BASIC — bez dopłaty nie ma FULL.
         assertEquals(listOf("CANCELLED", "PENDING"), pendingStatuses(studioId))
-        clock.advance(Duration.ofDays(5).plusMinutes(1))
+        clock.advance(Duration.ofDays(5))
         downgradeScheduler.applyDueDowngrades()
         assertEquals(PlanKey.BASIC, planOf(studioId))
     }
