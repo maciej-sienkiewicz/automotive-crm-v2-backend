@@ -138,3 +138,124 @@ Podpisywanie listy bez zmian (istniejące: `GET /attendance-sheet/{id}/file`,
   nazwiska trafiają do stopki.
 - Wiersz „RAZEM” sumuje tylko wydrukowane godziny (godziny wpisane w dzień urlopu/L4 nie są
   liczone, bo komórka pokazuje „URLOP”/„L4”).
+
+## Doprecyzowania z implementacji backendu
+
+Nazwy endpointów, pól i typów są dokładnie jak wyżej. Poniżej to, czego kontrakt nie
+rozstrzygał, i jak rozstrzyga to backend.
+
+### Kto jest na liście miesiąca
+
+- Konta z rolą liczącą czas pracy (`trackWorkTime`), aktywne, bez właścicieli, **założone
+  przed końcem miesiąca** (konto założone w październiku nie „brakuje" we wrześniu),
+- plus każdy (poza właścicielem), kto za ten miesiąc ma wiersz karty albo wpisy — także
+  gdy dziś czasu już nie liczy lub konto jest nieaktywne.
+- Sortowanie: nazwisko, potem imię (porządek polski). `name` = imię i nazwisko z rekordu
+  pracownika, a gdy go nie ma — z konta; `employeeId = null` dla konta bez rekordu.
+
+### Statusy, liczniki, etap
+
+- `NOT_STARTED` = brak wpisów **i** karta nigdy niezłożona (wiersz `DRAFT` może istnieć —
+  zakłada go np. przypomnienie albo usunięcie wszystkich wpisów).
+- `counts.notSubmitted` = `NOT_STARTED` + `DRAFT`; `RETURNED` liczy się tylko w `returned`,
+  więc liczniki sumują się do `total`.
+- Kolejność rozstrzygania `stage`: (1) jest `SUBMITTED` → `REVIEWING`; (2) najnowsza lista
+  podpisana (`APPROVED`) i `outdated` → `NEEDS_RESIGN`; (3) najnowsza lista podpisana →
+  `SIGNED` (także gdy ktoś był świadomie pominięty); (4) jest karta niezłożona albo nie ma
+  żadnej osoby → `COLLECTING`; (5) inaczej `READY_TO_SIGN`.
+- `outdated` może dotyczyć także listy **niepodpisanej** (patrz niżej) — wtedy etap nie jest
+  `NEEDS_RESIGN`, tylko wynika z kart (zwykle `READY_TO_SIGN`), a listę trzeba wygenerować
+  ponownie.
+- `canDecide` = karta nie jest kartą wywołującego **i** status to `SUBMITTED` (zatwierdź /
+  zwróć) albo `APPROVED` (odblokuj). Dla pozostałych statusów `false`.
+
+### Pola wiersza i karty
+
+- Daty (`submittedAt`, `approvedAt`, `remindedAt`, `returnedAt`, `generatedAt`) to ISO-8601
+  w UTC (`2026-09-30T10:00:00Z`).
+- `submittedAt` — ostatnie złożenie (zostaje też przy `RETURNED`/`APPROVED`);
+  `approvedAt`/`approvedByName` — tylko gdy status `APPROVED`; `remindedAt` — ostatnie
+  przypomnienie (bez względu na status).
+- `totalMinutes` i `overtimeMinutes` liczą wszystkie wpisy karty (także wpis w dzień urlopu);
+  tylko RAZEM w PDF pomija godziny spod napisu URLOP/L4.
+- `CardDay.leave` jest ustawione **tylko w dni robocze** (jak w PDF); `label`: `SICK` → „L4",
+  `ANNUAL` → „Urlop", `UNPAID` → „Urlop bezpłatny", `SPECIAL` → „Urlop okolicznościowy",
+  `PARENTAL` → „Urlop rodzicielski", `CARE` → „Opieka nad dzieckiem".
+- „Dziś" (braki, `POST /today`) liczone w strefie `Europe/Warsaw`.
+- `GET /months/{period}/cards/{userId}` dla konta spoza listy, ale z tego studia (np. bez
+  roli liczącej czas) zwraca pustą kartę `NOT_STARTED`; konto z innego studia albo
+  właściciel → 404.
+
+### Decyzje
+
+- `approve`: z `DRAFT`, `RETURNED` i `APPROVED` → **409** (`ErrorResponse`, polski
+  komunikat, np. „Karta jest zwrócona do poprawy. Zatwierdzić można ją dopiero po
+  ponownym złożeniu przez pracownika."). Własna karta → 403, karta nieistniejąca → 404.
+- `return`: body opcjonalne, ale `note` wymagana — pusta/brak → **400** `ValidationException`
+  z `field: "note"`; dłuższa niż 1000 znaków → 400. Z `DRAFT`/`RETURNED` → 409; własna → 403.
+  Notatka jest przycinana (trim).
+- Lista nieaktualna (`outdated`) powstaje przy: odblokowaniu karty (`APPROVED` → `RETURNED`),
+  która jest na liście, i przy zatwierdzeniu karty, której na liście nie ma. Dotyczy każdej
+  jeszcze aktualnej listy tego miesiąca — podpisanej **i niepodpisanej**. Niepodpisanej
+  nieaktualnej listy nie da się już zatwierdzić ani wysłać do podpisu (409 „Ta lista
+  obecności jest nieaktualna: karta czasu pracy zmieniła się po jej wygenerowaniu.
+  Wygeneruj listę ponownie."), a czekające prośby o podpis są anulowane.
+- `POST /months/{period}/approve` — `skipped[].reason` to zdania po polsku: „Własnej karty
+  nie zatwierdzasz (zasada czterech oczu).", „Karta nie została złożona.", „Karta jest już
+  zatwierdzona.", „Karta jest zwrócona do poprawy.", „Nieprawidłowy identyfikator osoby.".
+- `POST /months/{period}/remind` — `skipped[].reason`: „Ta osoba nie prowadzi karty czasu
+  pracy w tym miesiącu.", „To Twoja własna karta.", „Konto tej osoby jest nieaktywne.",
+  „Karta jest już złożona.", „Karta jest już zatwierdzona.", „Przypomnienie wysłano mniej
+  niż 12 godzin temu.", „Nieprawidłowy identyfikator osoby.". `reminded` znaczy „zapisane
+  i wysłane do push" — dostarczenie jest best-effort (osoba bez sparowanego telefonu też
+  trafia do `reminded`). Przypomnienie nie zmienia statusu karty (`NOT_STARTED` zostaje).
+
+### Lista obecności
+
+- 409 przy niepełnym miesiącu:
+  `{ error: "Niezatwierdzone karty", message, timestamp, code: "WORKTIME_CARDS_NOT_APPROVED", field: null, names: string[] }`
+  (`names` po nazwisku). Gdy nie ma **żadnej** zatwierdzonej karty → 409 zwykłym
+  `ErrorResponse` (także przy `allowIncomplete: true`).
+- Body `POST /months/{period}/sheet` jest opcjonalne (brak = `allowIncomplete: false`).
+- Zastępowane są wszystkie niepodpisane listy miesiąca (także utworzone starym
+  `POST /attendance-sheet`); usuwane dopiero po zapisaniu nowej. `sheetHistory` = wszystkie
+  starsze listy miesiąca, najnowsze pierwsze.
+- `MonthSheet.status` to `"GENERATED" | "APPROVED"`, `generatedAt` = chwila wygenerowania.
+- Na liście z kart kolumną jest **konto** (także bez rekordu pracownika). Stary
+  `AttendanceSheetResponse.employeeCount` dla takiej listy liczy karty.
+- PDF: linia „Bez zatwierdzonej karty: …" stoi nad linią stanu kart i łamie się na kolejne
+  linie zamiast ucinać nazwiska. RAZEM: godziny w sobotę/niedzielę w środku urlopu są
+  wydrukowane (weekend nie dostaje napisu URLOP), więc się liczą.
+
+### Pracownik
+
+- Karta `APPROVED` nadal blokuje zmiany jak dotąd (**403**, bez zmian); `SUBMITTED` → **409**
+  z komunikatem z kontraktu, miesiąc małą literą: „Karta za wrzesień 2026 czeka na decyzję
+  przełożonego. Jeśli trzeba coś poprawić, poproś o zwrot."
+- `returnNote` tylko przy `RETURNED` — także w `GET /periods` (lista) i w
+  `GET /worktime/team/{userId}/periods/{period}`, który zwraca te same nowe pola co karta
+  pracownika.
+- `fill-month` wpisuje 8:00 tylko w dni robocze bez urlopu/L4 i bez istniejącego wpisu
+  (jak dotąd także w dni przyszłe miesiąca).
+- Ponowne złożenie po zwrocie zapisuje w dzienniku zdarzeń `RETURNED → SUBMITTED`.
+
+### Powiadomienia i Tablica
+
+- `WORKTIME_CARD_SUBMITTED`: tytuł „Karta czasu pracy: {imię nazwisko}", treść „Złożona za
+  {miesiąc}. Czeka na Twoją decyzję.", odbiorcy: `EMPLOYEES_MANAGE` (właściciel zawsze),
+  bez składającego.
+- `WORKTIME_CARD_RETURNED`: „Karta czasu pracy do poprawy" / „Karta za {miesiąc} wróciła do
+  poprawy ({kto}). Uwagi: {notatka, do 180 znaków}".
+- `WORKTIME_CARD_APPROVED`: „Karta czasu pracy zatwierdzona" / „Karta za {miesiąc} jest
+  zatwierdzona. Decyzja: {kto}."
+- `WORKTIME_CARD_REMINDER`: „Karta czasu pracy" / „Uzupełnij i złóż kartę czasu pracy za
+  {miesiąc}."
+- Tag push-a: `worktime-card-{period}` u pracownika (nowsza wiadomość o tej samej karcie
+  zastępuje starszą), `worktime-card-{userId}-{period}` u menedżerów.
+- `WORKTIME_CARDS_PENDING`: tekst bez kropki na końcu, dokładnie jak w kontrakcie; klucz
+  `WORKTIME_CARDS_PENDING_{epochSecond najświeższego złożenia}` (nowa karta odzywa się mimo
+  zamknięcia podpowiedzi). Własna karta się nie liczy.
+- `WORKTIME_MISSING` dla `EMPLOYEES_MANAGE`: bez własnej karty menedżera. `WORKTIME_UNUSED`
+  („Wyłącz funkcję") zostaje tylko dla właściciela — menedżer w tej sytuacji dostaje
+  `WORKTIME_MISSING` z nazwiskami.
+- `GET /pending-count.sheetsToSign` liczy miesiące do bieżącego włącznie (przyszłe pomija).
