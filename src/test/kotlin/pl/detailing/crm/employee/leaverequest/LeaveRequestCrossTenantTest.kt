@@ -97,7 +97,7 @@ class LeaveRequestCrossTenantTest {
     fun `employee of studio A cannot withdraw a request of studio B`() {
         val userA = UserId.random()
         every { employeeRepository.findByStudioIdAndUserId(studioA.value, userA.value) } returns LeaveRequestFixtures.employee(studioA, userA)
-        val handler = WithdrawLeaveRequestHandler(access, leaveRequestRepository, mockk(relaxed = true), RecordingTransactionManager().template())
+        val handler = WithdrawLeaveRequestHandler(access, leaveRequestRepository, employeeRepository, mockk(relaxed = true), RecordingTransactionManager().template())
 
         assertThrows<NotFoundException> { runBlocking { handler.handle(studioA, userA, "Ktoś", requestB.id) } }
         verify(exactly = 0) { leaveRequestRepository.markWithdrawn(any(), any(), any(), any(), any()) }

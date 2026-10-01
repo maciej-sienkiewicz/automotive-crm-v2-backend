@@ -3,6 +3,7 @@ package pl.detailing.crm.employee.leaverequest
 import pl.detailing.crm.auth.UserPrincipal
 import pl.detailing.crm.employee.infrastructure.EmployeeEntity
 import pl.detailing.crm.employee.leave.domain.LeaveType
+import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestOrigin
 import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestStatus
 import pl.detailing.crm.employee.leaverequest.domain.LeaveSignatureMethod
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
@@ -55,7 +56,11 @@ object LeaveRequestFixtures {
         leaveType: LeaveType = LeaveType.ANNUAL,
         onDemand: Boolean = false,
         documentSha256: String = "a".repeat(64),
-        employeeSignedSha256: String? = if (status == LeaveRequestStatus.DRAFT) null else "b".repeat(64)
+        employeeSignedSha256: String? = if (status == LeaveRequestStatus.DRAFT) null else "b".repeat(64),
+        origin: LeaveRequestOrigin = LeaveRequestOrigin.SELF_SERVICE,
+        createdBy: UUID = employeeUserId ?: UUID.randomUUID(),
+        createdByName: String = "Jan Kowalski",
+        employeeSignatureMethod: LeaveSignatureMethod = LeaveSignatureMethod.DEVICE_DRAWN
     ) = LeaveRequestEntity(
         id = id,
         studioId = studioId.value,
@@ -69,13 +74,14 @@ object LeaveRequestFixtures {
         workingDays = 5,
         reason = null,
         status = status,
-        createdBy = employeeUserId ?: UUID.randomUUID(),
-        createdByName = "Jan Kowalski",
+        origin = origin,
+        createdBy = createdBy,
+        createdByName = createdByName,
         createdAt = Instant.now(),
         documentS3Key = "${studioId.value}/leave-requests/$id/draft.pdf",
         documentSha256 = documentSha256,
         employeeSignedAt = if (status == LeaveRequestStatus.DRAFT) null else Instant.now(),
-        employeeSignatureMethod = if (status == LeaveRequestStatus.DRAFT) null else LeaveSignatureMethod.DEVICE_DRAWN,
+        employeeSignatureMethod = if (status == LeaveRequestStatus.DRAFT) null else employeeSignatureMethod,
         employeeSignedPdfS3Key = if (status == LeaveRequestStatus.DRAFT) null else "${studioId.value}/leave-requests/$id/employee-signed-1.pdf",
         employeeSignedSha256 = employeeSignedSha256
     )

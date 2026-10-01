@@ -153,7 +153,9 @@ class PushEventBridge(
                 ),
                 // Wnioskodawca nie rozpatruje własnego wniosku — także właściciel z rekordem
                 // pracownika — więc powiadomienie „czeka na Twoją decyzję" nie jest dla niego.
-                excludeUserId = event.employeeUserId
+                // Przy wniosku ON_BEHALF nie jest też dla administratora, który go wprowadził:
+                // właśnie przyjął podpis pracownika na swoim urządzeniu.
+                excludeUserIds = listOfNotNull(event.employeeUserId, event.createdByUserId)
             )
         }
     }

@@ -10,6 +10,8 @@ import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.auth.UserPrincipal
+import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestStatus
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestRepository
@@ -29,6 +31,7 @@ import java.util.UUID
 class WithdrawLeaveRequestHandler(
     private val access: LeaveRequestAccess,
     private val leaveRequestRepository: LeaveRequestRepository,
+    private val employeeRepository: EmployeeRepository,
     private val auditService: AuditService,
     private val transactionTemplate: TransactionTemplate
 ) {
@@ -60,6 +63,50 @@ class WithdrawLeaveRequestHandler(
             )
             access.ownRequest(studioId, employee.id, request.id)
         }
+
+    /**
+     * Administrator porzuca szkic, który wprowadził w imieniu pracownika (pracownik nie
+     * podpisał albo wniosek był pomyłką). Tylko szkic i tylko własny: po podpisie
+     * pracownika to już wniosek do rozpatrzenia — odrzuca się go decyzją z uzasadnieniem.
+     * Status WITHDRAWN jak przy wycofaniu, pliki zostają.
+     */
+    suspend fun discardOnBehalf(principal: UserPrincipal, requestId: UUID) = withContext(Dispatchers.IO) {
+        val request = access.onBehalfRequest(principal.studioId, requestId, principal.userId)
+        if (request.status != LeaveRequestStatus.DRAFT) throw notDiscardable(request.status)
+
+        transactionTemplate.executeWithoutResult {
+            val updated = leaveRequestRepository.markOnBehalfDraftDiscarded(
+                id = request.id, studioId = principal.studioId.value, at = Instant.now(), by = principal.userId.value
+            )
+            if (updated == 0) {
+                throw notDiscardable(leaveRequestRepository.findByIdAndStudioId(request.id, principal.studioId.value)?.status)
+            }
+        }
+
+        val employeeName = employeeRepository.findByIdAndStudioId(request.employeeId, principal.studioId.value)
+            ?.let { "${it.firstName} ${it.lastName}".trim() } ?: "—"
+        auditService.recordSync(
+            AuditEvent(
+                studioId = principal.studioId,
+                actor = AuditActor.employee(principal.userId, principal.fullName),
+                module = AuditModule.EMPLOYEE,
+                action = AuditAction.LEAVE_CANCELLED,
+                entityId = request.employeeId.toString(),
+                entityDisplayName = employeeName,
+                changes = listOf(FieldChange("status", LeaveRequestStatus.DRAFT.name, LeaveRequestStatus.WITHDRAWN.name)),
+                metadata = mapOf(
+                    "leaveRequestId" to request.id.toString(),
+                    "number" to request.number,
+                    "origin" to request.origin.name
+                )
+            )
+        )
+    }
+
+    private fun notDiscardable(status: LeaveRequestStatus?) = ConflictException(
+        if (status == LeaveRequestStatus.WITHDRAWN) "Ten szkic został już porzucony"
+        else "Pracownik podpisał już ten wniosek — porzucić można tylko szkic. Rozpatrz go albo odrzuć."
+    )
 
     private fun notWithdrawable() =
         ConflictException("Wniosek został już rozpatrzony — wycofać można tylko wniosek przed decyzją")

@@ -21,7 +21,9 @@ import java.time.ZoneId
  *    „od wczoraj" nie jest już o nic prośbą, a w kolejce udawałby, że decyzja wciąż
  *    ma sens. Znika z „Oczekujących" i trafia do „Rozpatrzonych", pliki zostają.
  *  - DRAFT starszy niż doba → usunięty razem z plikiem. Szkic bez podpisu nie jest
- *    dokumentem: pracownik zamknął kreator i nie wrócił.
+ *    dokumentem: pracownik zamknął kreator i nie wrócił. Dotyczy obu pochodzeń — także
+ *    szkicu ON_BEHALF, którego pracownik nie podpisał przy administratorze, a ten go nie
+ *    porzucił. Zapytanie celowo nie filtruje po `origin`.
  *
  * Bez rozproszonej blokady (w projekcie nie ma ShedLocka): każdy krok to warunkowy
  * UPDATE/DELETE „… WHERE status = …", więc dwie instancje przechodzące tę samą listę
