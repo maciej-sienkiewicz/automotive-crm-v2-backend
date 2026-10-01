@@ -25,8 +25,8 @@ i podpis zdalny (tablet/SMS, `AWAITING_EMPLOYEE_SIGNATURE`), wymiar urlopu.
 ```ts
 type LeaveType = 'ANNUAL' | 'UNPAID' | 'SPECIAL' | 'PARENTAL' | 'CARE'; // SICK nie jest wnioskiem
 type LeaveRequestStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'CANCELLED' | 'EXPIRED';
-type SignatureMethod = 'DEVICE_DRAWN' | 'SAVED_SIGNATURE';
-type ApprovalBasis = 'OWNER' | 'PERMISSION';
+type SignatureMethod = 'DEVICE_DRAWN' | 'SAVED_SIGNATURE' | 'IN_PERSON';
+type LeaveRequestOrigin = 'SELF_SERVICE' | 'ON_BEHALF';
 
 interface LeaveRequestSummary {
   id: string;
@@ -40,8 +40,8 @@ interface LeaveRequestSummary {
   workingDays: number;
   status: LeaveRequestStatus;
   reason: string | null;
-  substituteEmployeeId: string | null;
-  substituteName: string | null;
+  origin: LeaveRequestOrigin;
+  createdByName: string | null;   // kto wprowadził wniosek (przy ON_BEHALF: administrator)
   createdAt: string;
   employeeSignedAt: string | null;
   decidedAt: string | null;
@@ -61,8 +61,6 @@ interface OverlappingAbsence {
 interface LeaveRequestDetail extends LeaveRequestSummary {
   employeeSignatureMethod: SignatureMethod | null;
   decisionSignatureMethod: SignatureMethod | null;
-  decidedByBasis: ApprovalBasis | null;
-  decidedByRoleName: string | null;
   overlappingAbsences: OverlappingAbsence[]; // inne osoby nieobecne w tym terminie
   canDecide: boolean;                        // dla bieżącego użytkownika
   decisionBlockedReason: string | null;      // np. "Własnego wniosku urlopowego nie można rozpatrzyć"
@@ -81,7 +79,7 @@ Bez uprawnienia. Pracownik = rekord `employees` powiązany z zalogowanym kontem
 |---|---|---|---|
 | GET | `/` | — | `{ requests: LeaveRequestSummary[], summary: { year: number, usedWorkingDays: number, pendingCount: number } }` (bez DRAFT, najnowsze pierwsze) |
 | GET | `/preview?startDate&endDate` | — | `{ workingDays: number, holidays: { date: string, name: string }[] }` |
-| POST | `/` | `{ leaveType, onDemand, startDate, endDate, reason?, substituteEmployeeId? }` | `{ request: LeaveRequestDetail, session: SigningSession }` — status `DRAFT`, PDF wygenerowany |
+| POST | `/` | `{ leaveType, onDemand, startDate, endDate, reason? }` | `{ request: LeaveRequestDetail, session: SigningSession }` — status `DRAFT`, PDF wygenerowany |
 | POST | `/{id}/signing-session` | — | `SigningSession` (nowy challenge dla DRAFT) |
 | GET | `/{id}/document` | — | `application/pdf` — dokładnie te bajty, których hash jest w sesji |
 | POST | `/{id}/submit` | `{ signatureImageBase64, documentSha256, challenge, declarationAccepted: true }` | `LeaveRequestDetail` (`PENDING`) |
@@ -92,7 +90,7 @@ Walidacja (400, komunikat po polsku, pole `field` gdy dotyczy pola):
 `endDate < startDate`; `startDate` w przeszłości (poza `onDemand` na dziś);
 `workingDays == 0`; nakładanie się z własnym wnioskiem PENDING/APPROVED lub wpisem
 w `employee_leaves`; `onDemand` tylko przy ANNUAL i łącznie ≤ 4 dni w roku
-kalendarzowym; `reason` wymagany przy `SPECIAL`; `substituteEmployeeId` ≠ wnioskodawca.
+kalendarzowym; `reason` wymagany przy `SPECIAL`.
 
 ## Rozpatrywanie — `/api/v1/leave-requests`
 
@@ -168,3 +166,39 @@ Uzupełnienia i jedno ograniczenie wynikające z implementacji. Pola i ścieżki
   `NAVIGATE` „Rozpatrz" → `/employees/leave-requests`, klucz
   `LEAVE_REQUESTS_PENDING_{epochSecond najnowszego złożenia}` (drzemka 7 dni, nowy wniosek
   = nowy klucz).
+
+## Zmiany z 01.10.2026 (v2)
+
+Obowiązują ponad wszystkim powyżej.
+
+1. **Osoba zastępująca usunięta całkowicie** — z API (`substituteEmployeeId`,
+   `substituteName`), walidacji, PDF i bazy (V172 usuwa kolumnę). Pole przysłane przez
+   starego klienta jest ignorowane.
+2. **„Podstawa uprawnienia” usunięta** z PDF i z API (`decidedByBasis`,
+   `decidedByRoleName` znikają z `LeaveRequestDetail`). Backend nadal zapisuje podstawę
+   w bazie i w audycie — to ślad, nie treść dokumentu.
+3. **Urlop dodany przez administratora** (`origin: 'ON_BEHALF'`). Dwa podpisy zostają:
+   pracownik podpisuje osobiście na urządzeniu studia (metoda `IN_PERSON`, karta podpisów
+   zapisuje, kto wprowadził wniosek i na czyim urządzeniu), potem administrator
+   zatwierdza zwykłą decyzją z podpisem. Pracownik nie musi mieć konta w systemie.
+   Endpointy pod `/api/v1/leave-requests` (`EMPLOYEES_LEAVES_APPROVE`, właściciel zawsze):
+
+| Metoda | Ścieżka | Body | Odpowiedź |
+|---|---|---|---|
+| POST | `/` | `{ employeeId, leaveType, onDemand, startDate, endDate, reason? }` | 201 `{ request: LeaveRequestDetail, session: SigningSession }` — `DRAFT`, `origin: ON_BEHALF` |
+| GET | `/preview?employeeId&startDate&endDate` | — | jak samoobsługowe `/preview` (dni robocze, święta) |
+| POST | `/{id}/employee-signing-session` | — | `SigningSession` (nowy challenge dla szkicu ON_BEHALF) |
+| POST | `/{id}/employee-signature` | `{ signatureImageBase64, documentSha256, challenge, declarationAccepted: true }` | `LeaveRequestDetail` (`PENDING`) |
+| POST | `/{id}/discard` | — | 204 — porzucenie szkicu ON_BEHALF (status `WITHDRAWN`) |
+
+   - `GET /{id}/document` dla szkicu `ON_BEHALF` utworzonego przez wywołującego zwraca
+     dokument bez podpisów (H1); w pozostałych przypadkach jak dotąd (wersja po podpisie
+     pracownika).
+   - Walidacja jak w samoobsłudze (te same reguły dla pracownika `employeeId`), plus:
+     `employeeId` musi istnieć w studiu; nie wolno utworzyć wniosku dla siebie
+     (403 „Własny wniosek złóż w zakładce Urlop”).
+   - Po `employee-signature` wniosek jest zwykłym `PENDING`: ta sama osoba może od razu
+     przejść do `decision-session` → `approve`/`reject` (to nie jest samozatwierdzenie —
+     wnioskodawcą jest pracownik). Push `LEAVE_REQUEST_SUBMITTED` nie idzie do autora
+     wniosku ON_BEHALF.
+
