@@ -197,6 +197,68 @@ object PushMessages {
         else -> "${from.format(leaveDateWithYear)}–${to.format(leaveDateWithYear)}"
     }
 
+    // ─── Karty czasu pracy ───────────────────────────────────────────────────
+
+    /** Najdłuższa notatka zwrotu w treści push-a; resztę pracownik przeczyta na karcie. */
+    private const val RETURN_NOTE_MAX = 180
+
+    /**
+     * Do menedżerów. Nazwisko pracownika to dane kadrowe, nie klienta — jak przy wniosku
+     * urlopowym nie ma wariantu maskowanego.
+     *
+     * @param monthLabel miesiąc w środku zdania: „wrzesień 2026".
+     */
+    fun worktimeCardSubmitted(userId: String, employeeName: String, period: String, monthLabel: String): Message =
+        Message(
+            PushPayload(
+                type = PushNotificationType.WORKTIME_CARD_SUBMITTED,
+                title = "Karta czasu pracy: ${employeeName.ifBlank { "pracownik" }}",
+                body = "Złożona za $monthLabel. Czeka na Twoją decyzję.",
+                url = "/employees/worktime?period=$period",
+                icon = PushIcon.APP,
+                tag = "worktime-card-$userId-$period"
+            )
+        )
+
+    /** Do pracownika: karta wraca do poprawy, z notatką przełożonego. */
+    fun worktimeCardReturned(period: String, monthLabel: String, note: String?, decidedByName: String?): PushPayload {
+        val cleanNote = note?.trim()?.takeIf { it.isNotBlank() }?.let {
+            if (it.length > RETURN_NOTE_MAX) it.take(RETURN_NOTE_MAX - 1).trimEnd() + "…" else it
+        }
+        val who = decidedByName?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+        return PushPayload(
+            type = PushNotificationType.WORKTIME_CARD_RETURNED,
+            title = "Karta czasu pracy do poprawy",
+            body = "Karta za $monthLabel wróciła do poprawy$who." + (cleanNote?.let { " Uwagi: $it" } ?: ""),
+            url = "/worktime?period=$period",
+            icon = PushIcon.APP,
+            tag = "worktime-card-$period"
+        )
+    }
+
+    /** Do pracownika: karta zatwierdzona. */
+    fun worktimeCardApproved(period: String, monthLabel: String, decidedByName: String?): PushPayload {
+        val who = decidedByName?.takeIf { it.isNotBlank() }?.let { " Decyzja: $it." } ?: ""
+        return PushPayload(
+            type = PushNotificationType.WORKTIME_CARD_APPROVED,
+            title = "Karta czasu pracy zatwierdzona",
+            body = "Karta za $monthLabel jest zatwierdzona.$who",
+            url = "/worktime?period=$period",
+            icon = PushIcon.APP,
+            tag = "worktime-card-$period"
+        )
+    }
+
+    /** Do pracownika: przypomnienie menedżera. */
+    fun worktimeCardReminder(period: String, monthLabel: String): PushPayload = PushPayload(
+        type = PushNotificationType.WORKTIME_CARD_REMINDER,
+        title = "Karta czasu pracy",
+        body = "Uzupełnij i złóż kartę czasu pracy za $monthLabel.",
+        url = "/worktime?period=$period",
+        icon = PushIcon.APP,
+        tag = "worktime-card-$period"
+    )
+
     // ─── e) Kampania konkurencji w rejonie ───────────────────────────────────
 
     /** One studio's news from one refresh; [debut] = the company had never advertised before. */

@@ -15,6 +15,10 @@ import pl.detailing.crm.shared.ReservationCreatedEvent
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.VehicleCheckedInEvent
 import pl.detailing.crm.shared.VisitCompletedEvent
+import pl.detailing.crm.worktime.WorkTimeCardDecidedEvent
+import pl.detailing.crm.worktime.WorkTimeCardReminderEvent
+import pl.detailing.crm.worktime.WorkTimeCardSubmittedEvent
+import pl.detailing.crm.worktime.toPolishLabelInSentence
 
 /**
  * Turns domain events into Web Push notifications, mirroring how
@@ -177,6 +181,62 @@ class PushEventBridge(
                     endDate = event.endDate,
                     decidedByName = event.decidedByName
                 )
+            )
+        }
+    }
+
+    /** g) Pracownik złożył kartę czasu pracy — do wszystkich, którzy mogą o niej zdecydować. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onWorkTimeCardSubmitted(event: WorkTimeCardSubmittedEvent) {
+        send("karcie czasu pracy") {
+            pushNotifier.broadcast(
+                studioId = event.studioId,
+                requiredPermission = Permission.EMPLOYEES_MANAGE,
+                message = PushMessages.worktimeCardSubmitted(
+                    userId = event.employeeUserId.value.toString(),
+                    employeeName = event.employeeName,
+                    period = event.period.toString(),
+                    monthLabel = event.period.toPolishLabelInSentence()
+                ),
+                // Własnej karty nikt nie zatwierdza (zasada czterech oczu) — także menedżer,
+                // który sam prowadzi kartę.
+                excludeUserId = event.employeeUserId
+            )
+        }
+    }
+
+    /** h) Karta zatwierdzona albo zwrócona do poprawy — do pracownika. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onWorkTimeCardDecided(event: WorkTimeCardDecidedEvent) {
+        val period = event.period.toString()
+        val label = event.period.toPolishLabelInSentence()
+        send("decyzji w karcie czasu pracy") {
+            pushNotifier.notifyUser(
+                studioId = event.studioId,
+                userId = event.employeeUserId,
+                anyOf = emptyList(),
+                payload = when (event.outcome) {
+                    WorkTimeCardDecidedEvent.Outcome.APPROVED ->
+                        PushMessages.worktimeCardApproved(period, label, event.decidedByName)
+                    WorkTimeCardDecidedEvent.Outcome.RETURNED ->
+                        PushMessages.worktimeCardReturned(period, label, event.note, event.decidedByName)
+                }
+            )
+        }
+    }
+
+    /** i) Przypomnienie o karcie czasu pracy — do pracownika. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    fun onWorkTimeCardReminder(event: WorkTimeCardReminderEvent) {
+        send("przypomnieniu o karcie czasu pracy") {
+            pushNotifier.notifyUser(
+                studioId = event.studioId,
+                userId = event.employeeUserId,
+                anyOf = emptyList(),
+                payload = PushMessages.worktimeCardReminder(event.period.toString(), event.period.toPolishLabelInSentence())
             )
         }
     }

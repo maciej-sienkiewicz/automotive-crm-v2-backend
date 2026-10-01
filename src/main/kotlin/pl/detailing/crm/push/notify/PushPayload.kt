@@ -42,6 +42,18 @@ enum class PushNotificationType {
     /** Wniosek urlopowy rozpatrzony albo zatwierdzony urlop odwołany — do pracownika. */
     LEAVE_REQUEST_DECIDED,
 
+    /** Pracownik złożył kartę czasu pracy — do EMPLOYEES_MANAGE (bez składającego). */
+    WORKTIME_CARD_SUBMITTED,
+
+    /** Karta czasu pracy zwrócona do poprawy (z notatką) — do pracownika. */
+    WORKTIME_CARD_RETURNED,
+
+    /** Karta czasu pracy zatwierdzona — do pracownika. */
+    WORKTIME_CARD_APPROVED,
+
+    /** Menedżer przypomina o uzupełnieniu i złożeniu karty — do pracownika. */
+    WORKTIME_CARD_REMINDER,
+
     /** Sent on request from the pairing wizard — proof that the whole chain works. */
     TEST
 }

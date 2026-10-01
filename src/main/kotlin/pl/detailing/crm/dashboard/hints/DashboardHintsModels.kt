@@ -33,6 +33,8 @@ enum class DashboardHintKind {
     LEADS_AWAITING,
     /** Wnioski urlopowe czekają na decyzję użytkownika (właściciel albo EMPLOYEES_LEAVES_APPROVE). */
     LEAVE_REQUESTS_PENDING,
+    /** Karty czasu pracy złożone i czekające na decyzję (właściciel albo EMPLOYEES_MANAGE). */
+    WORKTIME_CARDS_PENDING,
     WORKTIME_MISSING,
     WORKTIME_UNUSED,
     COMPETITOR_STANDOUT,
