@@ -115,6 +115,7 @@ class AttendanceSheetRemoteSigning(
             throw ConflictException("Ta lista obecności jest już zatwierdzona" + (sheet.approvedByName?.let { " ($it)" } ?: "") + ".")
         }
         if (sheet.signedFileS3Key != null) throw ValidationException("Ten arkusz jest już podpisany.")
+        if (sheet.outdatedAt != null) throw attendanceSheetService.outdated()
         if (activeRequests(studioId, sheetId).isNotEmpty()) {
             throw ConflictException("Ta lista obecności czeka już na podpis. Anuluj poprzednią prośbę, zanim wyślesz nową.")
         }

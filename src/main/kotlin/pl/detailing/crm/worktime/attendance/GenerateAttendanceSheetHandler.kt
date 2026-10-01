@@ -18,6 +18,7 @@ import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
 import pl.detailing.crm.role.infrastructure.RoleRepository
 import pl.detailing.crm.shared.EmployeeId
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.shared.UserId
 import pl.detailing.crm.shared.ValidationException
 import pl.detailing.crm.shared.pdf.LogoTrim
 import pl.detailing.crm.studio.logo.CompanyLogoService
@@ -80,6 +81,9 @@ class GenerateAttendanceSheetHandler(
         const val FOOTER_LINE_Y = 52f
         const val STATUS_LINE_Y = 74f
 
+        /** Odstęp linii „Bez zatwierdzonej karty: …" nad linią stanu kart. */
+        private const val EXCLUDED_LINE_HEIGHT = 9f
+
         /** Prostokąt na podpis: tuż nad linią „Podpis osoby potwierdzającej". */
         const val SIGNATURE_BOX_X = 30.24f + 132f
         const val SIGNATURE_BOX_Y = FOOTER_LINE_Y - 2f
@@ -110,6 +114,7 @@ class GenerateAttendanceSheetHandler(
      */
     @Transactional(readOnly = true)
     suspend fun handle(command: GenerateAttendanceSheetCommand): ByteArray = withContext(Dispatchers.IO) {
+        if (command.userIds != null) return@withContext handleCards(command, command.userIds)
         if (command.employeeIds.isEmpty()) {
             throw ValidationException("Zaznacz co najmniej jednego pracownika.")
         }
@@ -148,24 +153,11 @@ class GenerateAttendanceSheetHandler(
 
         val columns = employees.map { employee ->
             val userId = employee.userId!!  // hasWorkTimeModule() przepuszcza tylko konta z rolą
-            val leaveByDay = mutableMapOf<LocalDate, LeaveType>()
-            leavesByEmployee[employee.id].orEmpty().forEach { leave ->
-                var day = maxOf(leave.startDate, from)
-                val last = minOf(leave.endDate, to)
-                while (!day.isAfter(last)) {
-                    leaveByDay[day] = leave.leaveType
-                    day = day.plusDays(1)
-                }
-            }
-            EmployeeColumn(
+            column(
+                command = command,
+                userId = userId,
                 name = "${employee.firstName} ${employee.lastName}",
-                minutesByDay = workTimeEntryRepository
-                    .findByUserIdAndStudioIdAndDateBetween(userId, command.studioId.value, from, to)
-                    .associate { it.date to it.minutes },
-                leaveByDay = leaveByDay,
-                status = workTimePeriodRepository
-                    .findByUserIdAndStudioIdAndPeriod(userId, command.studioId.value, command.period.toString())
-                    ?.status
+                leaves = leavesByEmployee[employee.id].orEmpty()
             )
         }
 
@@ -173,7 +165,81 @@ class GenerateAttendanceSheetHandler(
             period = command.period,
             columns = columns,
             studioName = settings?.name?.trim()?.ifBlank { null },
-            logoPng = logoPng
+            logoPng = logoPng,
+            excludedNames = command.excludedNames
+        )
+    }
+
+    /**
+     * Lista z przepływu miesięcznego: kolumny to KARTY (konta), nie rekordy pracowników —
+     * zatwierdzona karta konta bez rekordu pracownika też trafia na listę. O tym, które karty
+     * wchodzą, zdecydował wywołujący (tylko zatwierdzone), więc bramki modułu Czasu pracy
+     * tu nie ma: karta zatwierdzona przed odebraniem roli nadal jest rozliczeniem miesiąca.
+     */
+    private fun handleCards(command: GenerateAttendanceSheetCommand, userIds: List<UserId>): ByteArray {
+        if (userIds.isEmpty()) throw ValidationException("Brak zatwierdzonych kart czasu pracy za ten miesiąc.")
+        val from = command.period.atDay(1)
+        val to = command.period.atEndOfMonth()
+        val leavesByEmployee = employeeLeaveRepository
+            .findOverlappingRange(command.studioId.value, from, to)
+            .groupBy { it.employeeId }
+
+        val columns = userIds.distinct().map { userId ->
+            val employee = employeeRepository.findByStudioIdAndUserId(command.studioId.value, userId.value)
+            val user = userRepository.findByIdAndStudioId(userId.value, command.studioId.value)
+            val firstName = employee?.firstName ?: user?.firstName ?: ""
+            val lastName = employee?.lastName ?: user?.lastName ?: ""
+            SortableColumn(
+                lastName = lastName,
+                firstName = firstName,
+                column = column(
+                    command = command,
+                    userId = userId.value,
+                    name = "$firstName $lastName".trim().ifBlank { "Pracownik" },
+                    leaves = employee?.let { leavesByEmployee[it.id] }.orEmpty()
+                )
+            )
+        }.sortedWith(compareBy({ it.lastName.lowercase(POLISH) }, { it.firstName.lowercase(POLISH) }))
+            .map { it.column }
+
+        val settings = studioSettingsRepository.findById(command.studioId.value).orElse(null)
+        return buildPdf(
+            period = command.period,
+            columns = columns,
+            studioName = settings?.name?.trim()?.ifBlank { null },
+            logoPng = loadLogo(command.studioId),
+            excludedNames = command.excludedNames
+        )
+    }
+
+    private class SortableColumn(val lastName: String, val firstName: String, val column: EmployeeColumn)
+
+    private fun column(
+        command: GenerateAttendanceSheetCommand,
+        userId: UUID,
+        name: String,
+        leaves: List<pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveEntity>
+    ): EmployeeColumn {
+        val from = command.period.atDay(1)
+        val to = command.period.atEndOfMonth()
+        val leaveByDay = mutableMapOf<LocalDate, LeaveType>()
+        leaves.forEach { leave ->
+            var day = maxOf(leave.startDate, from)
+            val last = minOf(leave.endDate, to)
+            while (!day.isAfter(last)) {
+                leaveByDay[day] = leave.leaveType
+                day = day.plusDays(1)
+            }
+        }
+        return EmployeeColumn(
+            name = name,
+            minutesByDay = workTimeEntryRepository
+                .findByUserIdAndStudioIdAndDateBetween(userId, command.studioId.value, from, to)
+                .associate { it.date to it.minutes },
+            leaveByDay = leaveByDay,
+            status = workTimePeriodRepository
+                .findByUserIdAndStudioIdAndPeriod(userId, command.studioId.value, command.period.toString())
+                ?.status
         )
     }
 
@@ -202,7 +268,8 @@ class GenerateAttendanceSheetHandler(
         period: YearMonth,
         columns: List<EmployeeColumn>,
         studioName: String?,
-        logoPng: ByteArray?
+        logoPng: ByteArray?,
+        excludedNames: List<String>
     ): ByteArray {
         val document = PDDocument()
 
@@ -245,7 +312,8 @@ class GenerateAttendanceSheetHandler(
                     pageHeight = pageHeight,
                     pageNumber = index + 1,
                     pageCount = chunks.size,
-                    employeeCount = columns.size
+                    employeeCount = columns.size,
+                    excludedNames = excludedNames
                 )
             }
         }
@@ -292,7 +360,8 @@ class GenerateAttendanceSheetHandler(
         pageHeight: Float,
         pageNumber: Int,
         pageCount: Int,
-        employeeCount: Int
+        employeeCount: Int,
+        excludedNames: List<String>
     ) {
         val contentWidth = right - left
         var y = pageHeight - 22.32f
@@ -342,7 +411,12 @@ class GenerateAttendanceSheetHandler(
         // jednej stronie niezależnie od tego, czy miesiąc ma 28 czy 31 dni.
         // Wiersz sumy liczy się do wysokości tak samo jak dzień.
         // Tabela nie może wejść w strefę stopki: tam podpisuje się gotowy arkusz.
-        val bottomLimit = STATUS_LINE_Y + 22f
+        // Pominięci (karta niezatwierdzona) stoją nad linią stanu kart — lista ma
+        // powiedzieć wprost, że nie jest kompletna, a nie tylko pominąć kolumny.
+        val excludedLines = if (excludedNames.isEmpty()) emptyList() else wrap(
+            "Bez zatwierdzonej karty: " + excludedNames.joinToString(", "), regular, 7f, right - left
+        )
+        val bottomLimit = STATUS_LINE_Y + 22f + excludedLines.size * EXCLUDED_LINE_HEIGHT
         val available = y - headerHeight - bottomLimit
         val rowHeight = (available / (daysInMonth + 1)).coerceIn(13f, 22f)
 
@@ -421,7 +495,7 @@ class GenerateAttendanceSheetHandler(
         val totalsY = rowY - rowHeight / 2f - 3f
         drawText(cs, "RAZEM", bold, 8f, left + 6f, totalsY, INK)
         columns.forEachIndexed { index, column ->
-            val text = formatMinutes(column.totalMinutes)
+            val text = formatMinutes(column.printedTotalMinutes)
             val x = left + dayColWidth + index * employeeColWidth
             drawText(
                 cs, text, bold, 8f,
@@ -459,6 +533,10 @@ class GenerateAttendanceSheetHandler(
             }
         }
         drawText(cs, statusLabel, regular, 7f, left, STATUS_LINE_Y, INK, right - left)
+        excludedLines.forEachIndexed { index, line ->
+            val lineY = STATUS_LINE_Y + 10f + (excludedLines.size - 1 - index) * EXCLUDED_LINE_HEIGHT
+            drawText(cs, line, regular, 7f, left, lineY, INK, right - left)
+        }
 
         val footerY = FOOTER_LINE_Y
         drawText(cs, "Podpis osoby potwierdzającej:", regular, 8f, left, footerY, INK)
@@ -516,6 +594,23 @@ class GenerateAttendanceSheetHandler(
     private fun centeringOffset(text: String, font: PDFont, size: Float, width: Float): Float =
         ((width - textWidth(text, font, size)) / 2f).coerceAtLeast(2f)
 
+    /** Łamie tekst po słowach na linie nie szersze niż [maxWidth] — nazwiska nie mogą zniknąć za wielokropkiem. */
+    private fun wrap(text: String, font: PDFont, size: Float, maxWidth: Float): List<String> {
+        val lines = mutableListOf<String>()
+        var current = ""
+        text.split(" ").forEach { word ->
+            val candidate = if (current.isEmpty()) word else "$current $word"
+            if (current.isNotEmpty() && textWidth(candidate, font, size) > maxWidth) {
+                lines += current
+                current = word
+            } else {
+                current = candidate
+            }
+        }
+        if (current.isNotEmpty()) lines += current
+        return lines
+    }
+
     private fun truncate(text: String, font: PDFont, size: Float, maxWidth: Float): String {
         if (textWidth(text, font, size) <= maxWidth) return text
         var result = text
@@ -566,14 +661,32 @@ private data class EmployeeColumn(
     val leaveByDay: Map<LocalDate, LeaveType>,
     val status: PeriodStatus?
 ) {
-    val totalMinutes: Int get() = minutesByDay.values.sum()
+    /**
+     * Suma wiersza RAZEM — tylko godziny, które arkusz faktycznie WYDRUKOWAŁ. W dzień
+     * urlopu/L4 (pon–pt) komórka pokazuje „URLOP"/„L4" zamiast godzin, więc wpis z tego
+     * dnia nie może podbijać sumy: podpisujący widziałby RAZEM, którego nie da się
+     * złożyć z kratek nad nim.
+     */
+    val printedTotalMinutes: Int
+        get() = minutesByDay.entries.sumOf { (date, minutes) ->
+            val weekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
+            if (leaveByDay[date] != null && !weekend) 0 else minutes
+        }
 }
 
 /** Logo osadzone raz w dokumencie razem z miejscem, w którym staje na każdej stronie. */
 private class PlacedLogo(val image: PDImageXObject, val box: DocumentLogoPlacement.Box)
 
+/**
+ * @param employeeIds pracownicy zaznaczeni na starej liście (`POST /attendance-sheet`).
+ * @param userIds konta z zatwierdzonymi kartami — lista z przepływu miesięcznego; gdy
+ *        podane, [employeeIds] nie są używane.
+ * @param excludedNames osoby świadomie pominięte — drukowane w stopce.
+ */
 data class GenerateAttendanceSheetCommand(
     val studioId: StudioId,
     val period: YearMonth,
-    val employeeIds: List<EmployeeId>
+    val employeeIds: List<EmployeeId>,
+    val userIds: List<UserId>? = null,
+    val excludedNames: List<String> = emptyList()
 )

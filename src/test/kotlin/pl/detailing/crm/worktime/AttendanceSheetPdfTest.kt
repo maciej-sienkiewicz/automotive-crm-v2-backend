@@ -297,8 +297,14 @@ class AttendanceSheetPdfTest {
         assertEquals(1, Regex("URLOP").findAll(text).count(), text)
     }
 
+    /**
+     * Kontrakt list miesięcznych: RAZEM sumuje tylko WYDRUKOWANE godziny. Komórka dnia
+     * urlopu pokazuje „URLOP", więc godziny wpisane na ten dzień nie mogą podbijać sumy —
+     * podpisujący widziałby RAZEM, którego nie da się złożyć z kratek nad nim. (Wcześniej
+     * suma je liczyła; konflikt wpisu z urlopem widać teraz na karcie, nie w sumie arkusza.)
+     */
     @Test
-    fun `godziny wpisane w dzien urlopu nie przykrywaja napisu, ale zostaja w sumie`() = runBlocking {
+    fun `godziny wpisane w dzien urlopu nie przykrywaja napisu i nie wchodza do sumy`() = runBlocking {
         stubSettings()
         val anna = employee("Anna", "Kowalska", UUID.randomUUID())
         val march = YearMonth.of(2026, 3)
@@ -308,7 +314,57 @@ class AttendanceSheetPdfTest {
         val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
 
         assertEquals(1, Regex("URLOP").findAll(text).count(), text)
-        assertTrue(text.contains("16:00"), "Suma nadal liczy wpisane godziny — konflikt ma być widoczny, nie ukryty: $text")
+        assertTrue(Regex("RAZEM\\s+8:00").containsMatchIn(text), "Suma = tylko wydrukowane 8:00 z 3 marca: $text")
+        assertTrue(!text.contains("16:00"), "Godziny spod napisu URLOP nie wchodzą do sumy: $text")
+    }
+
+    @Test
+    fun `godziny w weekend objety urlopem sa wydrukowane, wiec licza sie do sumy`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        val march = YearMonth.of(2026, 3)
+        // 7 marca 2026 to sobota w środku urlopu 6–9.03 — kratka pokazuje godziny, nie URLOP.
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(6 to 480, 7 to 240))
+        every { leaveRepository.findOverlappingRange(any(), any(), any()) } returns listOf(leave(anna, march, from = 6, to = 9))
+
+        val text = textOf(handler.handle(GenerateAttendanceSheetCommand(studio, march, listOf(EmployeeId(anna.id)))))
+
+        assertTrue(Regex("RAZEM\\s+4:00").containsMatchIn(text), text)
+    }
+
+    // ── Lista z przepływu miesięcznego (z kart) ──────────────────────────────
+
+    @Test
+    fun `lista z kart drukuje tylko wskazane karty, a pominietych wypisuje w stopce`() = runBlocking {
+        stubSettings()
+        val anna = employee("Anna", "Kowalska", UUID.randomUUID())
+        register(anna, tracksWorkTime = true, hoursByDay = mapOf(2 to 480))
+        every { employeeRepository.findByStudioIdAndUserId(studio.value, anna.userId!!) } returns anna
+        // Konto bez rekordu pracownika też ma kartę — kolumna z nazwiskiem z konta.
+        val accountOnly = UUID.randomUUID()
+        val user = mockk<UserEntity>()
+        every { user.firstName } returns "Bartek"
+        every { user.lastName } returns "Bezrekordowy"
+        every { userRepository.findByIdAndStudioId(accountOnly, studio.value) } returns user
+        every { employeeRepository.findByStudioIdAndUserId(studio.value, accountOnly) } returns null
+        every { entryRepository.findByUserIdAndStudioIdAndDateBetween(accountOnly, studio.value, any(), any()) } returns emptyList()
+        every { periodRepository.findByUserIdAndStudioIdAndPeriod(accountOnly, studio.value, any()) } returns null
+
+        val text = textOf(
+            handler.handle(
+                GenerateAttendanceSheetCommand(
+                    studioId = studio,
+                    period = YearMonth.of(2026, 3),
+                    employeeIds = emptyList(),
+                    userIds = listOf(pl.detailing.crm.shared.UserId(anna.userId!!), pl.detailing.crm.shared.UserId(accountOnly)),
+                    excludedNames = listOf("Cezary Cichy", "Dorota Długa")
+                )
+            )
+        )
+
+        assertTrue(text.contains("Kowalska") && text.contains("Bezrekordowy"), text)
+        assertTrue(text.contains("Bez zatwierdzonej karty: Cezary Cichy, Dorota Długa"), text)
+        assertEquals(1, Regex("Cichy").findAll(text).count(), "Pominięci tylko w stopce, bez własnej kolumny: $text")
     }
 
     @Test
