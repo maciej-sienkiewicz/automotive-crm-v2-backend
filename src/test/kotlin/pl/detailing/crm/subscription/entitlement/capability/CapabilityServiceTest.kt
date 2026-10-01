@@ -24,12 +24,15 @@ class CapabilityServiceTest {
     private val studioId = StudioId.random()
 
     private fun stubEntitlements(vararg features: FeatureKey) {
-        every { entitlementService.getEntitlements(studioId) } returns StudioEntitlements(
+        val entitlements = StudioEntitlements(
             planKey = PlanKey.BASIC,
             planName = "Podstawowy",
             enabledFeatures = features.toSet(),
             activeAddOnKeys = emptySet()
         )
+        every { entitlementService.getEntitlements(studioId) } returns entitlements
+        // Odmowa jest sprawdzana drugi raz na stanie z bazy — tu ten sam stan.
+        every { entitlementService.readCurrent(studioId) } returns entitlements
         every { entitlementService.getAllAddOns() } returns listOf(
             addOn(AddOnKey.CLIENT_COMMUNICATION, setOf(FeatureKey.SMS_EMAIL), 4900),
             addOn(AddOnKey.E_SIGNATURES, setOf(FeatureKey.E_SIGNATURES), 2900),
@@ -47,6 +50,20 @@ class CapabilityServiceTest {
         isActive = true,
         isAvailable = true
     )
+
+    // ── Nieświeży cache ──────────────────────────────────────────────────────
+
+    @Test
+    fun `odmowa z nieswiezego cache'u jest sprawdzana w bazie - studio tuz po zakupie modulu nie jest blokowane`() {
+        stubEntitlements()   // cache: bez modułu
+        every { entitlementService.readCurrent(studioId) } returns StudioEntitlements(
+            planKey = PlanKey.BASIC, planName = "Podstawowy",
+            enabledFeatures = setOf(FeatureKey.SMS_EMAIL), activeAddOnKeys = setOf(AddOnKey.CLIENT_COMMUNICATION)
+        )
+
+        assertTrue(service.hasCapability(studioId, CapabilityKey.COMM_SEND_TRANSACTIONAL))
+        assertTrue(service.resolveOne(studioId, CapabilityKey.COMM_SEND_TRANSACTIONAL).enabled)
+    }
 
     // ── Single-feature capabilities ──────────────────────────────────────────
 

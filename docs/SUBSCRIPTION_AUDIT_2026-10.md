@@ -4,12 +4,16 @@ Zakres: cykl życia subskrypcji i planów (`subscription/**`), uprawnienia (`sub
 płatności Przelewy24 (`payments/**`), schedulery wygaszania i downgrade'ów, mapowanie JPA i schemat tabel
 rozliczeniowych. Ścieżki w tabelach są względne wobec `src/main/kotlin/pl/detailing/crm/`.
 
+> **Stan na koniec października 2026: plan naprawczy jest wdrożony** — status każdego zarzutu,
+> błędy znalezione w przeglądzie wdrożenia i instrukcja wdrożenia są w **części 5**. Części 1–4
+> opisują stan sprzed naprawy i zostają jako uzasadnienie zmian.
+
 Metoda: przegląd kodu, a każdy zarzut, który da się sprawdzić na bazie, **odtworzony na prawdziwym
-PostgreSQL 16** (nie na mockach i nie w transakcji testowej). Odtworzenia są w repozytorium jako
-`src/test/kotlin/pl/detailing/crm/subscription/SubscriptionKnownDefectsTest.kt` — każdy test opisuje
-POPRAWNE zachowanie i dziś pada dokładnie z powodu opisanego niżej (`@Disabled` z identyfikatorem
-defektu; PR naprawczy zdejmuje adnotację). Kolumna „Dowód" mówi, czy zarzut jest odtworzony (**R**),
-czy wynika z analizy kodu (**K**).
+PostgreSQL 16** (nie na mockach i nie w transakcji testowej). Odtworzenia były w repozytorium jako
+`SubscriptionKnownDefectsTest` — każdy test opisywał POPRAWNE zachowanie i przed naprawą padał
+dokładnie z powodu opisanego niżej. Po naprawie te same scenariusze są testami poprawnego zachowania
+w `subscription/it/SubscriptionAuditRegressionIntegrationTest`. Kolumna „Dowód" mówi, czy zarzut jest
+odtworzony (**R**), czy wynika z analizy kodu (**K**).
 
 Legenda ważności: **Critical** — klient płaci i nie dostaje usługi albo dostaje ją podwójnie/za darmo,
 w zwykłym przebiegu (bez wyścigu) i bez żadnego sygnału; **High** — to samo, ale tylko przy wyścigu
@@ -662,13 +666,15 @@ Cache: `RedisCacheManager.builder(...).transactionAware()` — wpisy i unieważn
 
 ## CZĘŚĆ 3 — Testy integracyjne
 
-### 3.1 Co już jest
+### 3.1 Odtworzenia (przed naprawą)
 
 `SubscriptionKnownDefectsTest` — 9 testów defektów (`@Disabled` z identyfikatorem) i 1 strażnik
-refaktoru JPA (zielony, ma zostać zielony). Uruchomione na PostgreSQL 16: po wyłączeniu `@Disabled`
-dziewięć pada dokładnie z powodów z części 1:
+refaktoru JPA. Uruchomione na PostgreSQL 16 przed naprawą dziewięć padało dokładnie z powodów
+z części 1 (tabela niżej). Po naprawie klasa jest zastąpiona przez
+`subscription/it/SubscriptionAuditRegressionIntegrationTest`, w której te same scenariusze przechodzą
+(część 5).
 
-| Test | Wynik dziś |
+| Test | Wynik przed naprawą |
 |---|---|
 | J1 | `UnexpectedRollbackException: Transaction silently rolled back because it has been marked as rollback-only` |
 | J2 | studio za zatrutym: `expected: <EXPIRED> but was: <TRIALING>` |
@@ -680,7 +686,7 @@ dziewięć pada dokładnie z powodów z części 1:
 | D1 (moduł) | `duplicate key value violates unique constraint "uq_studio_add_ons"` |
 | D1 (plan) | 3× `DataIntegrityViolationException` przy 4 równoległych wywołaniach |
 
-### 3.2 Docelowa struktura
+### 3.2 Docelowa struktura (stan wdrożony: część 5, nazwy klas trochę inne)
 
 ```
 src/test/kotlin/pl/detailing/crm/subscription/
@@ -841,3 +847,122 @@ WHERE s.subscription_status IN ('EXPIRED', 'NO_PLAN')
 GROUP BY 1;
 SELECT count(*) FROM studios WHERE subscription_status = 'PAST_DUE';
 ```
+
+---
+
+## CZĘŚĆ 5 — Stan wdrożenia planu (gałąź `claude/lucid-planck-651itz`)
+
+Plan z części 2 jest wdrożony w całości (fazy 0–3), w backendzie i we froncie, na gałęziach
+o tej samej nazwie. Każdy defekt odtworzony w części 3.1 ma test POPRAWNEGO zachowania, który
+przechodzi na PostgreSQL 16: `subscription/it/SubscriptionAuditRegressionIntegrationTest` (dawny
+`SubscriptionKnownDefectsTest`, usunięty — jego scenariusze żyją tam pod tymi samymi
+identyfikatorami). Wdrożenie przeszło potem przegląd z kilku perspektyw (pieniądze, współbieżność,
+protokół P24, schemat, kontrakt API); znalezione tam błędy są naprawione i opisane w 5.2.
+
+### 5.1 Status zarzutów
+
+| Id | Status | Gdzie | Test |
+|---|---|---|---|
+| S1 | naprawione | `PricingService.nextPeriodPrice` (cena = plan i moduły KOLEJNEGO okresu), `OrderFulfillmentService.applyRenewal` (dostarcza dokładnie to, za co zapłacono), `PlanManagementService.isCancellable` | `S1 …` ×2, `PlanChangeIntegrationTest` |
+| S2 | naprawione | `ScheduledPlanChangeApplier` (blokada studia → świeży odczyt → decyzja), `cancelPendingDowngrade` pod tą samą blokadą | `S2 …` ×2 |
+| S3 | naprawione dla HTTP, wysyłek i Instagrama | `CapabilityService` (kupione × stan rozliczeń, `lockedBy = SUBSCRIPTION`), `OutboundCommunicationGateway`, `InstagramSyncOrchestrator` | `SubscriptionLifecycleIntegrationTest` |
+| S4 | naprawione | `ProrationService.midPeriodPurchaseMode` — zakup w trakcie okresu tylko w trialu (0 zł) i w trwającym opłaconym okresie | `S4 …` ×2 |
+| S5 | naprawione | `PAST_DUE` = karencja z datą końca (`grace_ends_at`, domyślnie 7 dni) | `SubscriptionLifecycleTest`, `…LifecycleIntegrationTest` |
+| S6 | naprawione | wyłączenie modułu z końcem opłaconego okresu (`cancel_at`), `POST …/add-ons/{key}/resume` | `PlanChangeIntegrationTest` |
+| S7 | naprawione | `ProrationService.calculatePlanUpgrade` zalicza opłacone moduły | `PlanChangeIntegrationTest` (7550 gr) |
+| S8 | naprawione | jedna maszyna stanów `SubscriptionLifecycle`; ta sama granica czasu w interceptorze, capability i jobie | `SubscriptionLifecycleTest` |
+| S9 | naprawione | proporcja co do sekundy, zaokrąglenie raz na końcu, minimum doba; zakup w trialu startuje z końcem triala, a reszta triala nie jest liczona do dopłat | `ProrationServiceTest`, `StackedPeriodMoneyIntegrationTest` |
+| D1, D5 | naprawione | `ensurePlanAssigned` = `INSERT … ON CONFLICT DO NOTHING`; `activateAddOn` pod blokadą z `refresh` | `D1 …` ×2 |
+| D2 | naprawione | `@Version` na planie, zmianie planu, zamówieniu; blokady pesymistyczne w stałej kolejności studio → plan → moduły → zamówienie | P1, S2 |
+| D3, D4 | naprawione | agregat planu zmieniany na miejscu (`changePlan`), bez „nowej instancji z tym samym id" | `GUARD …` |
+| D6 | naprawione | `cancelPendingForStudio` z `flushAutomatically` i podbiciem wersji | — |
+| D7 | naprawione | V172: unikaty częściowe, klucze obce, CHECK-i | `SubscriptionSchemaIntegrationTest` |
+| D8 | naprawione | `DemoAccountService` zapewnia plan, `DemoCleanupJob` kasuje wiersze rozliczeń przed studiem | — |
+| P1 | naprawione | inbox `payment_notifications` (unikat provider + orderId P24), dzierżawa obsługi, blokady studio → zamówienie, unikat `(order_id, event_type)` w historii | `P1 …` ×2 |
+| P2 | naprawione | decyzja przed `verify`; duplikat opłaconej płatności bez `verify`; zamówienie EXPIRED/FAILED przyjmuje spóźnioną płatność | `PaymentFlowIntegrationTest` |
+| P3 | naprawione | mock tylko jawny (`P24_MOCK_MODE=true`); brak poświadczeń = checkout 503, webhook 503 bez zapisu, ERROR przy starcie, miernik `payments.p24.enabled` | `PaymentFlowIntegrationTest`, `Przelewy24WebhookControllerTest` |
+| P4 | naprawione | timeouty 3 s / 10 s; HTTP do P24 zawsze poza transakcją bazy | `Przelewy24ClientTest` |
+| P5 | naprawione | `PaymentReconciliationJob`: ponowienia, dokańczanie PAID, odpytanie P24 o PENDING i wygaszone, wygaszanie porzuconych | `PaymentFlowIntegrationTest` |
+| P6 | naprawione | PAID (zapłacone) ≠ FULFILLED (zrealizowane); błąd realizacji zostawia PAID | `PaymentFlowIntegrationTest` |
+| P7 | naprawione | jedno otwarte zamówienie na produkt (unikat częściowy + ponowne użycie, 409 `CHECKOUT_IN_PROGRESS` w trakcie rejestracji); drugi opłacony zakup → REFUND_REQUIRED | `P7 …` ×2 |
+| P8 | naprawione | podpisy z serializatora JSON (Jackson), nie ze sklejania | `Przelewy24ClientTest` |
+| P9 | poza zakresem | płatności cykliczne to nowy zakres produktu | — |
+| J1, J2 | naprawione | pętle bez transakcji, jedno studio = jedna transakcja `REQUIRES_NEW`, mierniki niepowodzeń | `J1 …`, `J2 …` |
+| J3 | naprawione | `SKIP LOCKED` (dwie instancje nie biorą tego samego studia), stronicowanie po ID | `…LifecycleIntegrationTest` |
+| J4 | naprawione | patrz S3, S5 | — |
+| J5 | naprawione | unieważnianie cache'u teraz i po zakończeniu transakcji; odmowa capability sprawdzana drugi raz na stanie z bazy (cache nie zablokuje studia tuż po zapłacie); `hasFeature` nadal omija cache przez wywołanie wewnętrzne — wydajność, nie poprawność | `CacheConfigSerializationTest`, `CapabilityServiceTest` |
+
+### 5.2 Błędy znalezione w przeglądzie wdrożenia (naprawione)
+
+Przegląd z perspektywy pieniędzy, współbieżności i protokołu P24 znalazł błędy, których
+odtworzenia z części 3 nie obejmowały, bo dotyczą nowego kodu albo „spiętrzonych" okresów
+(kolejny okres opłacony, zanim skończył się bieżący). Każdy ma teraz test
+(`StackedPeriodMoneyIntegrationTest`, `PaymentFlowIntegrationTest`, `CacheConfigSerializationTest`).
+
+- **Cache uprawnień w Redisie nie przyjmował dat** (krytyczny): stan rozliczeń w uprawnieniach
+  (`Instant`) bez `JavaTimeModule` — każde sprawdzenie uprawnień kończyłoby się wyjątkiem.
+  Testy integracyjne używały cache'u w pamięci bez serializacji; teraz serializują tym samym
+  mapperem co produkcja, a błąd odczytu/zapisu cache'u idzie do bazy zamiast 500.
+- **Opłacony z góry okres jest zamrożony**: ponowne zaplanowanie downgrade'u przesuwało go na
+  koniec okresu opłaconego w niższym planie (FULL za cenę BASIC, co miesiąc); cofnięcie
+  wyłączenia modułu po odnowieniu bez niego dawało moduł za darmo; ponowne „wyłącz" oddalało
+  datę wyłączenia. Teraz: 409 `DOWNGRADE_ALREADY_PAID` / `ADD_ON_RENEWAL_ALREADY_PAID`, pole
+  `resumable`, data wyłączenia nigdy się nie oddala.
+- **Odnowienie dostarcza dokładnie to, za co zapłacono** (plan i moduły z zamówienia); stare
+  zamówienie, którego nie da się już dostarczyć (kolejny okres opłacony w innym planie), idzie
+  do zwrotu zamiast przedłużać okres.
+- **Dopłaty proporcjonalne pamiętają okres, do którego je policzono** (`priced_until`): upgrade
+  opłacony po odnowieniu albo po końcu okresu → zwrot; moduł → działa do końca tamtego okresu.
+- **Karencja nie jest darmowa dla odczekujących**: odnowienie do 30 dni po końcu karencji
+  rozlicza wykorzystane dni karencji (bez tego: 37 dni za cenę 30 w każdym cyklu). Studio
+  wygaszone przed końcem karencji (np. ręcznie) i wracające po dłuższej przerwie zaczyna od zapłaty.
+  *To decyzja biznesowa — jej zmiana to jedna stała (`SubscriptionLifecycle.GRACE_RECOVERY_WINDOW`).*
+- **Inbox P24**: dzierżawa obsługi (webhook, ponowienie od P24 i worker nie weryfikują tej samej
+  płatności równolegle), ponowienie od P24 przed terminem nie zużywa prób, nieudane weryfikacje
+  nie kończą się stanem końcowym (co godzinę, alarm `payments.notifications.retry.long`),
+  rozstrzygnięta notyfikacja nie jest cofana przez spóźnioną porażkę.
+- **Rekoncyliacja**: odzyskanie liczone tylko dla rozliczonych płatności; odrzucone nie wracają
+  w każdym przebiegu; bez bramki zamówienia wygasają NIEoznaczone jako sprawdzone, więc po
+  przywróceniu poświadczeń są sprawdzane; wygaszone ze stroną płatności — co 6 h przez tydzień.
+- **Checkout**: wykonalność sprawdzana drugi raz pod blokadą studia (podwójne kliknięcie
+  „Aktywuj" kończyło się zwrotem), otwarte zamówienia blokowane przed wygaszeniem, darmowe
+  zamówienie bez efektu → CANCELLED zamiast kolejki zwrotów.
+
+### 5.3 Odstępstwa od planu i decyzje do potwierdzenia
+
+- **0.2: brak poświadczeń P24 nie zatrzymuje startu aplikacji.** CRM ma działać, gdy płatności
+  leżą (wizyty, kalendarz). Zamiast tego: checkout i webhook odpowiadają 503, start loguje ERROR,
+  miernik `payments.p24.enabled = 0` jest do podpięcia pod alarm. Darmowych pakietów nie ma
+  w żadnym wariancie konfiguracji.
+- **Zwroty nie są automatyczne.** Płatność, której efektu nie da się zastosować, kończy jako
+  `REFUND_REQUIRED` z powodem, licznikiem `payments.refund.required` i logiem ERROR. Zwrot przez
+  API P24 wymaga decyzji, kto go zatwierdza — do zrobienia osobno.
+- **Ścieżki `/api/mobile/**`, `/api/tablet/**`, `/api/v1/carddav/**` nadal omijają interceptor
+  rozliczeń** (inne uwierzytelnianie). Ich blokada po wygaśnięciu (np. tablet do podpisu w trakcie
+  wydania auta) to decyzja produktowa.
+- **Inne joby w tle** (39 klas z `@Scheduled`) nie zostały przejrzane jeden po drugim — stan
+  rozliczeń sprawdzają teraz wszystkie wysyłki (przez `OutboundCommunicationGateway`)
+  i synchronizacja Instagrama.
+- **Moduł opłacony w odnowieniu, który w międzyczasie zniknął**, jest włączany od razu — studio
+  dostaje go kilka dni przed początkiem opłaconego okresu. Świadomie na korzyść klienta, który
+  za ten moduł zapłacił.
+
+### 5.4 Wdrożenie — co musi się stać na produkcji
+
+1. **Przed wdrożeniem**: zapytania Q1–Q6 z części 4. V172 sama porządkuje duplikaty PENDING
+   (downgrade'y → CANCELLED, zamówienia → EXPIRED) i sieroty planów; zduplikowanego
+   `p24_order_id` NIE rusza — wtedy indeks jest pomijany z WARNING, a wiersze trzeba wyjaśnić ręcznie.
+2. **Zmienne środowiskowe** (`deploy/docker-compose*.yaml`): `ENV_P24_MERCHANT_ID`,
+   `ENV_P24_POS_ID`, `ENV_P24_CRC`, `ENV_P24_API_KEY`, `ENV_P24_SANDBOX` (produkcja: `false`).
+   **Bez nich zakup odpowiada 503** — wcześniej ten sam brak rozdawał pakiety za darmo. Środowisko
+   bez P24: `ENV_P24_MOCK_MODE=true` jawnie. `ENV_SUBSCRIPTION_GRACE_PERIOD_DAYS` (domyślnie 7).
+   Środowisko develop z sandboxem P24 musi mieć własne `ENV_BACKEND_BASE_URL` — domyślny adres
+   kieruje notyfikacje do produkcji.
+3. **Alarmy**: `payments.p24.enabled == 0`, `payments.refund.required`,
+   `payments.notifications.retry.long`, `subscription.lifecycle.failures`,
+   `subscription.scheduled.changes.failures`, `payments.reconciliation.failures`, mierniki
+   `subscription.reconciliation.*` (w tym `notifications.needs.review` i `orders.paid.unfulfilled`).
+4. Cache uprawnień ma nowy prefiks (`crm:v5:`) — stare wpisy bez stanu rozliczeń nie są czytane.
+5. Testy integracyjne: `./gradlew test -PksefStub -PrunTestcontainers --tests 'pl.detailing.crm.subscription.it.*'`
+   (Docker) albo z `SUBSCRIPTION_IT_JDBC_URL` wskazującym serwer Postgresa (każda klasa zakłada
+   własną bazę).

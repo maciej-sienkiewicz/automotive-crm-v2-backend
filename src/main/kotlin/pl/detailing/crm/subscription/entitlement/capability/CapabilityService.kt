@@ -44,10 +44,17 @@ class CapabilityService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    /** True when the subscription is usable and the studio's enabled features satisfy the capability. */
+    /**
+     * True when the subscription is usable and the studio's enabled features satisfy the capability.
+     *
+     * Odmowa jest sprawdzana drugi raz na stanie z bazy. Wpis w cache'u może pochodzić sprzed
+     * chwili, w której studio zapłaciło (równoległe żądanie wczytało stary stan i zapisało go
+     * po unieważnieniu) — wtedy klient tuż po zapłacie dostawał „subskrypcja nieaktywna" przez
+     * kilka minut. Odmowy są rzadkie, więc drugi odczyt nic nie kosztuje; zgody nie są sprawdzane.
+     */
     fun hasCapability(studioId: StudioId, capability: CapabilityKey): Boolean {
-        val entitlements = entitlementService.getEntitlements(studioId)
-        return subscriptionUsable(entitlements) && capability.missingFeaturesFor(entitlements.enabledFeatures).isEmpty()
+        fun allows(e: StudioEntitlements) = subscriptionUsable(e) && capability.missingFeaturesFor(e.enabledFeatures).isEmpty()
+        return allows(entitlementService.getEntitlements(studioId)) || allows(entitlementService.readCurrent(studioId))
     }
 
     /** The features the studio lacks for this capability (independent of subscription state); empty means bought. */
@@ -58,7 +65,8 @@ class CapabilityService(
 
     /** Czy studio może teraz korzystać z kupionych modułów (trial, opłacony okres, karencja). */
     fun isSubscriptionUsable(studioId: StudioId): Boolean =
-        subscriptionUsable(entitlementService.getEntitlements(studioId))
+        subscriptionUsable(entitlementService.getEntitlements(studioId)) ||
+            subscriptionUsable(entitlementService.readCurrent(studioId))
 
     /**
      * Fail-closed guard for enforcement points.
@@ -88,7 +96,9 @@ class CapabilityService(
 
     /** Resolves a single capability with upsell metadata for the missing features. */
     fun resolveOne(studioId: StudioId, capability: CapabilityKey): CapabilityDecision {
-        val entitlements = entitlementService.getEntitlements(studioId)
+        val cached = entitlementService.getEntitlements(studioId)
+        val entitlements = if (subscriptionUsable(cached) && capability.missingFeaturesFor(cached.enabledFeatures).isEmpty()) cached
+            else entitlementService.readCurrent(studioId)
         if (!subscriptionUsable(entitlements)) return CapabilityDecision.subscriptionInactive(capability)
 
         val missing = capability.missingFeaturesFor(entitlements.enabledFeatures)
