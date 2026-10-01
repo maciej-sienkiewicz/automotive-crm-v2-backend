@@ -233,16 +233,12 @@
     margin-right: 6.00pt;
   }
 
-  /* ============ Uzasadnienie / zastępstwo ============ */
-  .notes {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 13.06pt;
-  }
-  .notes .col { width: 261.94pt; }
-  .notes .tab.reason     { width: 132.00pt; }
-  .notes .tab.substitute { width: 112.00pt; }
-  .notes .box { margin-top: 2.41pt; height: 32.00pt; }
+  /* ============ Uzasadnienie ============ */
+  /* Na całą szerokość: limit 250 znaków mieści się w dwóch wierszach, trzeci jest
+     zapasem na szerokie znaki (wysokość = 3 x 8.98pt + 4pt). */
+  .notes { margin-top: 13.06pt; }
+  .notes .tab.reason { width: 132.00pt; }
+  .notes .box { margin-top: 2.41pt; height: 30.94pt; }
 
   /* ============ Oświadczenia ============ */
   .terms-tab { margin-top: 13.06pt; width: 164.00pt; }
@@ -377,16 +373,10 @@
     <div class="opt"><div class="checkbox" data-field="type_parental"></div>Rodzicielski / wychowawczy</div>
   </div>
 
-  <!-- Uzasadnienie / zastępstwo -->
+  <!-- Uzasadnienie -->
   <div class="notes">
-    <div class="col">
-      <div class="tab reason">UZASADNIENIE WNIOSKU</div>
-      <div class="box multiline" data-field="reason"></div>
-    </div>
-    <div class="col">
-      <div class="tab substitute">OSOBA ZASTĘPUJĄCA</div>
-      <div class="box multiline" data-field="substitute"></div>
-    </div>
+    <div class="tab reason">UZASADNIENIE WNIOSKU</div>
+    <div class="box multiline" data-field="reason"></div>
   </div>
 
   <!-- Oświadczenia pracownika -->

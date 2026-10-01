@@ -114,10 +114,7 @@ class SubmitLeaveRequestHandler(
         try {
             transactionTemplate.executeWithoutResult {
                 employeeRepository.lockForUpdate(employee.id, command.studioId.value)
-                val draft = LeaveRequestDraft(
-                    request.leaveType, request.onDemand, request.startDate, request.endDate,
-                    request.reason, request.substituteEmployeeId
-                )
+                val draft = LeaveRequestDraft(request.leaveType, request.onDemand, request.startDate, request.endDate, request.reason)
                 validator.checkTerm(draft, LocalDate.now(warsaw))
                 validator.checkAgainstExisting(command.studioId.value, employee.id, request.id, draft)
 

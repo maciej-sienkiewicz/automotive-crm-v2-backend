@@ -1,7 +1,6 @@
 package pl.detailing.crm.employee.leaverequest.domain
 
 import org.springframework.stereotype.Component
-import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.leave.domain.LeaveType
 import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestRepository
@@ -18,8 +17,7 @@ data class LeaveRequestDraft(
     val onDemand: Boolean,
     val startDate: LocalDate,
     val endDate: LocalDate,
-    val reason: String?,
-    val substituteEmployeeId: UUID?
+    val reason: String?
 )
 
 /**
@@ -34,8 +32,7 @@ data class LeaveRequestDraft(
 @Component
 class LeaveRequestValidator(
     private val leaveRequestRepository: LeaveRequestRepository,
-    private val employeeLeaveRepository: EmployeeLeaveRepository,
-    private val employeeRepository: EmployeeRepository
+    private val employeeLeaveRepository: EmployeeLeaveRepository
 ) {
     companion object {
         /** Art. 167² KP: urlop na żądanie — najwyżej 4 dni w roku kalendarzowym. */
@@ -53,8 +50,7 @@ class LeaveRequestValidator(
         onDemand: Boolean,
         startDate: LocalDate?,
         endDate: LocalDate?,
-        reason: String?,
-        substituteEmployeeId: String?
+        reason: String?
     ): LeaveRequestDraft {
         val type = leaveType?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
             LeaveType.entries.firstOrNull { it.name == raw.uppercase() }
@@ -87,13 +83,7 @@ class LeaveRequestValidator(
         if (type == LeaveType.SPECIAL && cleanReason == null) {
             throw ValidationException("Podaj uzasadnienie — przy urlopie okolicznościowym jest wymagane", field = "reason")
         }
-
-        val substitute = substituteEmployeeId?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
-            runCatching { UUID.fromString(raw) }.getOrElse {
-                throw ValidationException("Nie znaleziono osoby zastępującej", field = "substituteEmployeeId")
-            }
-        }
-        return LeaveRequestDraft(type, onDemand, start, end, cleanReason, substitute)
+        return LeaveRequestDraft(type, onDemand, start, end, cleanReason)
     }
 
     /**
@@ -120,16 +110,6 @@ class LeaveRequestValidator(
         return workingDays
     }
 
-    /** Osoba zastępująca: z tego studia i nie sam wnioskodawca. Zwraca jej imię i nazwisko. */
-    fun checkSubstitute(studioId: UUID, requesterEmployeeId: UUID, draft: LeaveRequestDraft): String? {
-        val substituteId = draft.substituteEmployeeId ?: return null
-        if (substituteId == requesterEmployeeId) {
-            throw ValidationException("Osoba zastępująca nie może być wnioskodawcą", field = "substituteEmployeeId")
-        }
-        val substitute = employeeRepository.findByIdAndStudioId(substituteId, studioId)
-            ?: throw ValidationException("Nie znaleziono osoby zastępującej", field = "substituteEmployeeId")
-        return "${substitute.firstName} ${substitute.lastName}".trim()
-    }
 
     /**
      * Kolizje z tym, co już zajmuje termin pracownika, i limit urlopu na żądanie.

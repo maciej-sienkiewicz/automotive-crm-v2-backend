@@ -53,8 +53,7 @@ data class LeaveRequestPdfData(
     val workingDays: Int,
     val leaveType: LeaveType,
     val onDemand: Boolean,
-    val reason: String?,
-    val substituteName: String?
+    val reason: String?
 )
 
 /**
@@ -75,7 +74,7 @@ data class LeaveRequestPdfData(
 class LeaveRequestPdfRenderer {
 
     companion object {
-        /** Tyle znaków uzasadnienia mieści się w polu (4 wiersze) — pilnuje tego walidacja. */
+        /** Tyle znaków uzasadnienia mieści się w polu (3 wiersze na całą szerokość) — pilnuje tego walidacja. */
         const val MAX_REASON_LENGTH = 250
 
         /** Tyle znaków uzasadnienia decyzji mieści się w polu (2 wiersze na całą szerokość). */
@@ -90,7 +89,7 @@ class LeaveRequestPdfRenderer {
         private const val BOX_H = 18.42f
         private const val CHECK = 18.42f
         private const val SIG_H = 39.25f
-        private const val NOTES_H = 4 * FIELD_LEAD + 4f
+        private const val NOTES_H = 3 * FIELD_LEAD + 4f
         private const val DECISION_NOTE_H = 2 * FIELD_LEAD + 4f
 
         val STATEMENTS = listOf(
@@ -189,17 +188,13 @@ class LeaveRequestPdfRenderer {
         }
         s.y -= 2 * CHECK + 4.73f
 
-        // ── Uzasadnienie / zastępstwo ───────────────────────────────────────────
+        // ── Uzasadnienie ────────────────────────────────────────────────────────
+        // Na całą szerokość: 250 znaków (limit walidacji) mieści się w dwóch wierszach,
+        // trzeci jest zapasem na tekst z szerokimi znakami — skrócenie uzasadnienia na
+        // podpisanym dokumencie byłoby gorsze niż kilka punktów pustego pola.
         s.y -= 13.06f
-        val notesTop = s.y
-        val notesW = 261.94f
-        val reasonBox = labeledBox(s, leftX, notesTop, notesW, "UZASADNIENIE WNIOSKU", NOTES_H, 2.41f, tabW = 132f)
-        val substituteBox = labeledBox(
-            s, DocumentStyle.LEFT + DocumentStyle.CONTENT_W - notesW, notesTop, notesW, "OSOBA ZASTĘPUJĄCA", NOTES_H, 2.41f,
-            tabW = 112f
-        )
+        val reasonBox = labeledBox(s, leftX, s.y, DocumentStyle.CONTENT_W, "UZASADNIENIE WNIOSKU", NOTES_H, 2.41f, tabW = 132f)
         multiLine(s, reasonBox, data.reason ?: "")
-        multiLine(s, substituteBox, data.substituteName ?: "")
         s.y = reasonBox.y
 
         // ── Oświadczenia pracownika ─────────────────────────────────────────────
@@ -417,7 +412,6 @@ class LeaveRequestPdfRenderer {
         workingDays = 0,
         leaveType = LeaveType.ANNUAL,
         onDemand = false,
-        reason = null,
-        substituteName = null
+        reason = null
     )
 }
