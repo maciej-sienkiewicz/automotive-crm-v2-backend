@@ -3,7 +3,6 @@ package pl.detailing.crm.employee.leaverequest.pdf
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.employee.leave.domain.LeaveType
-import pl.detailing.crm.employee.leaverequest.domain.ApprovalBasis
 import pl.detailing.crm.employee.leaverequest.domain.LeaveSignatureMethod
 import pl.detailing.crm.employee.leaverequest.domain.RequestableLeaveTypes
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
@@ -107,12 +106,13 @@ class LeaveRequestDocumentService(
         return store(StudioId(request.studioId), request.id, "employee-signed-${suffix()}.pdf", signed)
     }
 
-    /** Wszystko, co trafia na dokument i kartę podpisów przy decyzji. */
+    /**
+     * Wszystko, co trafia na dokument i kartę podpisów przy decyzji. Bez podstawy
+     * uprawnienia (kontrakt v2) — tę handler zapisuje w bazie i w dzienniku zdarzeń.
+     */
     data class DecisionStamp(
         val approved: Boolean,
         val decidedByName: String,
-        val basis: ApprovalBasis,
-        val roleName: String?,
         val note: String?,
         val method: LeaveSignatureMethod,
         val decidedAt: Instant,
@@ -132,7 +132,6 @@ class LeaveRequestDocumentService(
             pdf = employeeSignedBytes,
             approved = stamp.approved,
             decidedByName = stamp.decidedByName,
-            basisText = basisText(stamp.basis, stamp.roleName),
             note = stamp.note,
             normalizedSignaturePng = normalizedSignature,
             decidedAt = stamp.decidedAt
@@ -192,12 +191,6 @@ class LeaveRequestDocumentService(
     suspend fun deleteQuietly(s3Key: String) {
         runCatching { storageService.deleteDocument(s3Key) }
             .onFailure { logger.warn("Could not delete leave request file {}", s3Key, it) }
-    }
-
-    /** „Właściciel studia" albo „Uprawnienie: Akceptacja wniosków urlopowych, rola: Kierownik zmiany". */
-    fun basisText(basis: ApprovalBasis, roleName: String?): String = when (basis) {
-        ApprovalBasis.OWNER -> "Właściciel studia"
-        ApprovalBasis.PERMISSION -> "Uprawnienie: Akceptacja wniosków urlopowych" + (roleName?.let { ", rola: $it" } ?: "")
     }
 
     fun documentName(request: LeaveRequestEntity): String =

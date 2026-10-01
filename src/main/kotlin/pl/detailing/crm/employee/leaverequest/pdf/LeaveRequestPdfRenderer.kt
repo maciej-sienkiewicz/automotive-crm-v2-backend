@@ -27,7 +27,6 @@ data class LeaveRequestPdfLayout(
     val decisionApproved: PdfBox,
     val decisionRejected: PdfBox,
     val decidedBy: PdfBox,
-    val decisionBasis: PdfBox,
     val decisionNote: PdfBox,
     val approverSignature: PdfBox,
     val decidedAt: PdfBox,
@@ -88,7 +87,9 @@ class LeaveRequestPdfRenderer {
         private const val LABEL_FONT = 8f
         private const val BOX_H = 18.42f
         private const val CHECK = 18.42f
-        private const val SIG_H = 39.25f
+        // Wyższe niż pola tekstowe: miejsce po „Podstawie uprawnienia" (v2) dostały podpisy,
+        // rysowane palcem na ekranie: skalowane „contain", w wyższym polu są po prostu czytelniejsze.
+        private const val SIG_H = 51.25f
         private const val NOTES_H = 3 * FIELD_LEAD + 4f
         private const val DECISION_NOTE_H = 2 * FIELD_LEAD + 4f
 
@@ -103,10 +104,9 @@ class LeaveRequestPdfRenderer {
                 "karta podpisów dołączona do dokumentu."
         )
 
-        const val FOOTNOTE = "Wniosek jest ważny wyłącznie z oboma podpisami. Osoba rozpatrująca działa w imieniu " +
-            "pracodawcy jako właściciel studia albo na podstawie uprawnienia „Akceptacja wniosków urlopowych” " +
-            "nadanego w systemie; podstawa obowiązująca w chwili decyzji jest wpisana powyżej. Do dokumentu " +
-            "dołączona jest karta podpisów z przebiegiem obu sesji podpisywania."
+        const val FOOTNOTE = "Wniosek jest ważny wyłącznie z oboma podpisami: pracownika oraz osoby rozpatrującej, " +
+            "która podejmuje decyzję w imieniu pracodawcy. Do dokumentu dołączona jest karta podpisów " +
+            "z przebiegiem obu sesji podpisywania."
     }
 
     /**
@@ -234,9 +234,10 @@ class LeaveRequestPdfRenderer {
         val rejectedBox = option(s, rejectedX, s.y, "Nie wyrażam zgody")
         s.y -= CHECK
         s.y -= 4.71f
+        // Bez „Podstawy uprawnienia" (kontrakt v2): to, czy rozpatrujący działał jako
+        // właściciel, czy z uprawnienia, jest śladem w bazie i dzienniku zdarzeń, a nie
+        // treścią oświadczenia pracodawcy wobec pracownika.
         val decidedByBox = fieldRow(s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, 104f, "Osoba rozpatrująca")
-        s.y -= BOX_H + 4.71f
-        val basisBox = fieldRow(s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, 104f, "Podstawa uprawnienia")
         s.y -= BOX_H + 8f
         val decisionNoteBox = labeledBox(
             s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, "UZASADNIENIE DECYZJI", DECISION_NOTE_H, 2.41f, tabW = 132f
@@ -257,7 +258,6 @@ class LeaveRequestPdfRenderer {
             decisionApproved = approvedBox,
             decisionRejected = rejectedBox,
             decidedBy = decidedByBox,
-            decisionBasis = basisBox,
             decisionNote = decisionNoteBox,
             approverSignature = approverSignature,
             decidedAt = decidedAt,

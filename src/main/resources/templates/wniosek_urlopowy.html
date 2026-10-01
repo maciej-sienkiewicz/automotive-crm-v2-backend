@@ -272,7 +272,9 @@
   .sign-row .tab.signer   { width: 123.84pt; }
   .sign-row .tab.approver { width: 172.00pt; }
   .sign-row .tab.when     { width: 150.00pt; }
-  .sign-row .sig { margin-top: 2.30pt; height: 39.25pt; }
+  /* Pole podpisu wyższe od pól tekstowych: miejsce po „Podstawie uprawnienia”
+     (usuniętej z dokumentu) dostały podpisy, które rysuje się palcem na telefonie. */
+  .sign-row .sig { margin-top: 2.30pt; height: 51.25pt; }
   .sign-row .when-box {
     margin-top: 2.55pt;
     height: 18.42pt;
@@ -409,7 +411,6 @@
       <div class="opt"><div class="checkbox" data-field="decision_rejected"></div>Nie wyrażam zgody</div>
     </div>
     <div class="field-row"><label>Osoba rozpatrująca</label><div class="box" data-field="decidedby"></div></div>
-    <div class="field-row"><label>Podstawa uprawnienia</label><div class="box" data-field="decisionbasis"></div></div>
     <div class="decision-note">
       <div class="tab">UZASADNIENIE DECYZJI</div>
       <div class="box multiline" data-field="decisionnote"></div>
@@ -430,10 +431,9 @@
 
   <!-- Przypis -->
   <div class="footnote">
-    Wniosek jest ważny wyłącznie z oboma podpisami. Osoba rozpatrująca działa w imieniu pracodawcy jako
-    właściciel studia albo na podstawie uprawnienia „Akceptacja wniosków urlopowych” nadanego w systemie;
-    podstawa obowiązująca w chwili decyzji jest wpisana powyżej. Do dokumentu dołączona jest karta
-    podpisów z przebiegiem obu sesji podpisywania.
+    Wniosek jest ważny wyłącznie z oboma podpisami: pracownika oraz osoby rozpatrującej, która podejmuje
+    decyzję w imieniu pracodawcy. Do dokumentu dołączona jest karta podpisów z przebiegiem obu sesji
+    podpisywania.
   </div>
 
 </div>

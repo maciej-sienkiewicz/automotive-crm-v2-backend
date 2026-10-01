@@ -45,7 +45,11 @@ enum class LeaveSignatureMethod {
     SAVED_SIGNATURE
 }
 
-/** Na jakiej podstawie rozpatrujący działa w imieniu pracodawcy (drukowane na dokumencie). */
+/**
+ * Na jakiej podstawie rozpatrujący działa w imieniu pracodawcy. Zapisywana w bazie
+ * i w dzienniku zdarzeń jako ślad decyzji; od v2 kontraktu nie jest drukowana na
+ * dokumencie ani zwracana w API.
+ */
 enum class ApprovalBasis {
     OWNER,
     PERMISSION

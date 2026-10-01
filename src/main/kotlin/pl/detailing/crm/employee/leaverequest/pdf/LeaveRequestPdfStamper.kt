@@ -47,14 +47,13 @@ class LeaveRequestPdfStamper(private val renderer: LeaveRequestPdfRenderer) {
         }
 
     /**
-     * Decyzja: zaznaczenie, osoba i podstawa, uzasadnienie, podpis i chwila decyzji.
+     * Decyzja: zaznaczenie, osoba rozpatrująca, uzasadnienie, podpis i chwila decyzji.
      * [appendPages] dokłada strony na końcu — tam trafia karta podpisów.
      */
     fun stampDecision(
         pdf: ByteArray,
         approved: Boolean,
         decidedByName: String,
-        basisText: String,
         note: String?,
         normalizedSignaturePng: ByteArray,
         decidedAt: Instant,
@@ -63,7 +62,6 @@ class LeaveRequestPdfStamper(private val renderer: LeaveRequestPdfRenderer) {
         val layout = renderer.layout
         ink.mark(if (approved) layout.decisionApproved else layout.decisionRejected)
         ink.singleLine(layout.decidedBy, decidedByName)
-        ink.singleLine(layout.decisionBasis, basisText)
         note?.takeIf { it.isNotBlank() }?.let { ink.multiLine(layout.decisionNote, it) }
         ink.signature(layout.approverSignature, normalizedSignaturePng)
         ink.singleLine(layout.decidedAt, TIMESTAMP.format(decidedAt), bold = true)

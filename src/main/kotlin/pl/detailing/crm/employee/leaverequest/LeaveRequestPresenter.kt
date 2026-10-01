@@ -64,8 +64,6 @@ class LeaveRequestPresenter(
             cancelReason = s.cancelReason,
             employeeSignatureMethod = request.employeeSignatureMethod?.name,
             decisionSignatureMethod = request.decisionSignatureMethod?.name,
-            decidedByBasis = request.decidedByBasis?.name,
-            decidedByRoleName = request.decidedByRoleName,
             overlappingAbsences = overlapping(request, names),
             canDecide = request.status == LeaveRequestStatus.PENDING && blockedReason == null,
             decisionBlockedReason = blockedReason,
