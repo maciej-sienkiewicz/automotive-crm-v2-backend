@@ -104,6 +104,125 @@ class AttendanceSheetService(
     }
 
     /**
+     * Lista z przepływu miesięcznego: wyłącznie z ZATWIERDZONYCH kart [userIds], z osobami
+     * świadomie pominiętymi ([excludedNames]) w stopce PDF i w API. Wybór kart i decyzja
+     * o pominięciu zapadają wyżej (WorkTimeMonthService) — tu powstaje dokument.
+     *
+     * @param employeeIds rekordy pracowników tych kont (o ile istnieją) — dla zgodności
+     *        z widokami, które liczą skład listy po pracownikach.
+     */
+    suspend fun generateFromCards(
+        studioId: StudioId,
+        userId: UserId,
+        userName: String?,
+        period: YearMonth,
+        userIds: List<UserId>,
+        employeeIds: List<EmployeeId>,
+        excludedNames: List<String>
+    ): AttendanceSheetEntity {
+        val pdfBytes = generateHandler.handle(
+            GenerateAttendanceSheetCommand(
+                studioId = studioId,
+                period = period,
+                employeeIds = emptyList(),
+                userIds = userIds,
+                excludedNames = excludedNames
+            )
+        )
+
+        val id = UUID.randomUUID()
+        val s3Key = "${studioId.value}/attendance-sheets/$period/$id.pdf"
+        storageService.uploadDocument(
+            s3Key = s3Key,
+            fileBytes = pdfBytes,
+            contentType = "application/pdf",
+            metadata = mapOf("period" to period.toString(), "studioId" to studioId.value.toString())
+        )
+
+        val sheet = save(
+            AttendanceSheetEntity(
+                id = id,
+                studioId = studioId.value,
+                period = period.toString(),
+                employeeIdsJson = json.writeValueAsString(employeeIds.map { it.value.toString() }),
+                fileS3Key = s3Key,
+                createdBy = userId.value,
+                createdAt = Instant.now(),
+                createdByName = userName?.trim()?.ifBlank { null },
+                excludedNamesJson = json.writeValueAsString(excludedNames),
+                userIdsJson = json.writeValueAsString(userIds.map { it.value.toString() })
+            )
+        )
+        audit(
+            studioId, userId, userName, AuditAction.ATTENDANCE_SHEET_GENERATED, sheet,
+            listOfNotNull(
+                FieldChange("period", null, sheet.period),
+                FieldChange("employeeCount", null, userIds.size.toString()),
+                excludedNames.takeIf { it.isNotEmpty() }?.let { FieldChange("excludedNames", null, it.joinToString(", ")) }
+            )
+        )
+        return sheet
+    }
+
+    /**
+     * Unieważnia listy miesiąca po zmianie karty [cardUserId].
+     *
+     * @param onSheet true — karta, która JEST na liście, została odblokowana (lista
+     *        pokazuje godziny, których nikt już nie potwierdza); false — zatwierdzono kartę,
+     *        której na liście NIE MA (lista przestała być pełna).
+     *
+     * Dotyczy też listy jeszcze niepodpisanej: podpis pod nieaktualnymi godzinami byłby
+     * gorszy niż brak podpisu, więc taka lista traci prośby o podpis i nie da się jej już
+     * zatwierdzić — trzeba ją wygenerować na nowo.
+     */
+    @Transactional
+    fun outdateAfterCardChange(
+        studioId: StudioId,
+        period: YearMonth,
+        cardUserId: UserId,
+        cardEmployeeId: EmployeeId?,
+        onSheet: Boolean,
+        actorId: UserId,
+        actorName: String?
+    ): List<AttendanceSheetEntity> {
+        val now = Instant.now()
+        val affected = repository.findByStudioIdAndPeriod(studioId.value, period.toString())
+            .filter { it.outdatedAt == null }
+            .filter { includesCard(it, cardUserId, cardEmployeeId) == onSheet }
+        affected.forEach { sheet ->
+            sheet.outdatedAt = now
+            repository.save(sheet)
+            if (sheet.status == AttendanceSheetStatus.GENERATED) {
+                cancelPendingSignatureRequests(studioId, sheet.id, actorId, actorName ?: "System")
+            }
+            logger.info(
+                "Attendance sheet outdated: studioId={}, sheetId={}, period={}, card={}, onSheet={}",
+                studioId, sheet.id, period, cardUserId, onSheet
+            )
+        }
+        return affected
+    }
+
+    /**
+     * Czy karta osoby jest na liście. Lista z przepływu miesięcznego zna konta ([AttendanceSheetEntity.userIdsJson]);
+     * starsza zna tylko rekordy pracowników.
+     */
+    fun includesCard(sheet: AttendanceSheetEntity, userId: UserId, employeeId: EmployeeId?): Boolean {
+        val users = userIdsOf(sheet)
+        if (users != null) return userId.value.toString() in users
+        return employeeId != null && employeeId.value.toString() in employeeIdsOf(sheet)
+    }
+
+    fun userIdsOf(entity: AttendanceSheetEntity): List<String>? =
+        entity.userIdsJson?.let { raw -> runCatching { json.readValue<List<String>>(raw) }.getOrNull() }
+
+    fun excludedNamesOf(entity: AttendanceSheetEntity): List<String> =
+        runCatching { json.readValue<List<String>>(entity.excludedNamesJson) }.getOrDefault(emptyList())
+
+    /** Ilu osób dotyczy lista — kont z przepływu miesięcznego albo pracowników ze starszej listy. */
+    fun peopleCountOf(entity: AttendanceSheetEntity): Int = userIdsOf(entity)?.size ?: employeeIdsOf(entity).size
+
+    /**
      * Bajty dokumentu: podpisana wersja, gdy istnieje.
      *
      * Po podpisaniu nikt nie chce już oryginału — a gdyby chciał, oryginał nadal leży
@@ -138,6 +257,7 @@ class AttendanceSheetService(
     ): AttendanceSheetEntity {
         val sheet = require(studioId, sheetId)
         if (sheet.status == AttendanceSheetStatus.APPROVED) throw alreadyApproved(sheet)
+        if (sheet.outdatedAt != null) throw outdated()
         val approvedAt = Instant.now()
 
         // Podpis sprawdzamy i wtapiamy, zanim cokolwiek się zmieni: odrzucone zatwierdzenie
@@ -197,6 +317,7 @@ class AttendanceSheetService(
         val sheet = require(studioId, sheetId)
         if (sheet.status == AttendanceSheetStatus.APPROVED) throw alreadyApproved(sheet)
         if (sheet.signedFileS3Key != null) throw ValidationException("Ten arkusz jest już podpisany.")
+        if (sheet.outdatedAt != null) throw outdated()
 
         storeSignedAndApprove(sheet, signedPdf, signedAt, approverId, approverName)
         logger.info(
@@ -262,6 +383,30 @@ class AttendanceSheetService(
         )
     }
 
+    /**
+     * Usuwa niepodpisaną listę, którą zastępuje nowsza za ten sam miesiąc. Lista podpisana
+     * w międzyczasie zostaje (false) — jest dokumentem, a nie szkicem.
+     */
+    suspend fun deleteIfUnsigned(studioId: StudioId, userId: UserId, userName: String, sheetId: UUID): Boolean {
+        val sheet = repository.findByIdAndStudioId(sheetId, studioId.value) ?: return false
+        if (sheet.status != AttendanceSheetStatus.GENERATED || sheet.signedFileS3Key != null) return false
+        cancelPendingSignatureRequests(studioId, sheetId, userId, userName)
+        if (repository.deleteUnsignedByIdAndStudioId(sheetId, studioId.value) == 0) return false
+
+        listOf(sheet.fileS3Key).forEach { key ->
+            runCatching { storageService.deleteDocument(key) }
+                .onFailure { logger.warn("Could not delete attendance sheet file {} [sheetId={}]", key, sheetId, it) }
+        }
+        audit(
+            studioId, userId, userName, AuditAction.ATTENDANCE_SHEET_DELETED, sheet,
+            listOf(
+                FieldChange("period", sheet.period, null),
+                FieldChange("status", sheet.status.name, null)
+            )
+        )
+        return true
+    }
+
     @Transactional(readOnly = true)
     fun history(studioId: StudioId, limit: Int): List<AttendanceSheetEntity> =
         repository.findByStudioIdOrderByCreatedAtDesc(
@@ -288,6 +433,11 @@ class AttendanceSheetService(
     fun documentNameOf(sheet: AttendanceSheetEntity): String = "Lista obecności — ${monthLabel(sheet.period)}"
 
     private fun notFound(sheetId: UUID) = EntityNotFoundException("Nie znaleziono listy obecności o id: $sheetId")
+
+    /** Lista unieważniona zmianą karty — podpis pod nią potwierdzałby nieaktualne godziny. */
+    fun outdated() = ConflictException(
+        "Ta lista obecności jest nieaktualna: karta czasu pracy zmieniła się po jej wygenerowaniu. Wygeneruj listę ponownie."
+    )
 
     private fun alreadyApproved(sheet: AttendanceSheetEntity) = ConflictException(
         "Ta lista obecności jest już zatwierdzona" + (sheet.approvedByName?.let { " ($it)" } ?: "") + "."

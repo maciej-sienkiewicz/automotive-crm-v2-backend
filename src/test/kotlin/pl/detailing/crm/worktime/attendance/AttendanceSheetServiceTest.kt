@@ -356,4 +356,88 @@ class AttendanceSheetServiceTest {
         coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
         assertTrue(audited.isEmpty())
     }
+
+    // ── Lista miesięczna: lista nieaktualna po zmianie karty ─────────────────
+
+    private val cardUser = UserId.random()
+
+    private fun monthSheet(
+        status: AttendanceSheetStatus,
+        userIds: List<UserId>,
+        id: UUID = UUID.randomUUID(),
+        outdatedAt: Instant? = null
+    ) = AttendanceSheetEntity(
+        id = id, studioId = studioId.value, period = "2026-09", employeeIdsJson = "[]", fileS3Key = "$id.pdf",
+        createdBy = UUID.randomUUID(), createdAt = Instant.parse("2026-10-01T08:00:00Z"), status = status,
+        outdatedAt = outdatedAt, userIdsJson = userIds.joinToString(",", "[", "]") { "\"${it.value}\"" }
+    )
+
+    @Test
+    fun `odblokowanie karty uniewaznia podpisana liste, na ktorej jest ta osoba`() {
+        val withUser = monthSheet(AttendanceSheetStatus.APPROVED, listOf(cardUser))
+        val withoutUser = monthSheet(AttendanceSheetStatus.APPROVED, listOf(UserId.random()))
+        every { repository.findByStudioIdAndPeriod(studioId.value, "2026-09") } returns listOf(withUser, withoutUser)
+        every { repository.save(any()) } answers { firstArg() }
+
+        val outdated = service.outdateAfterCardChange(
+            studioId, YearMonth.of(2026, 9), cardUser, null, onSheet = true, actorId = adminId, actorName = "Jan"
+        )
+
+        assertEquals(listOf(withUser.id), outdated.map { it.id })
+        assertTrue(withUser.outdatedAt != null)
+        assertEquals(null, withoutUser.outdatedAt)
+    }
+
+    @Test
+    fun `zatwierdzenie karty pominietej na podpisanej liscie uniewaznia liste`() {
+        val signedWithoutUser = monthSheet(AttendanceSheetStatus.APPROVED, listOf(UserId.random()))
+        val alreadyOutdated = monthSheet(AttendanceSheetStatus.APPROVED, emptyList(), outdatedAt = Instant.parse("2026-09-20T08:00:00Z"))
+        every { repository.findByStudioIdAndPeriod(studioId.value, "2026-09") } returns listOf(signedWithoutUser, alreadyOutdated)
+        every { repository.save(any()) } answers { firstArg() }
+
+        val outdated = service.outdateAfterCardChange(
+            studioId, YearMonth.of(2026, 9), cardUser, null, onSheet = false, actorId = adminId, actorName = "Jan"
+        )
+
+        assertEquals(listOf(signedWithoutUser.id), outdated.map { it.id })
+        assertEquals(Instant.parse("2026-09-20T08:00:00Z"), alreadyOutdated.outdatedAt, "Data unieważnienia się nie przesuwa")
+    }
+
+    @Test
+    fun `lista sprzed przeplywu miesiecznego rozpoznaje osobe po rekordzie pracownika`() {
+        val employeeId = EmployeeId.random()
+        val legacy = sheet().let {
+            AttendanceSheetEntity(
+                id = it.id, studioId = it.studioId, period = it.period, employeeIdsJson = "[\"${employeeId.value}\"]",
+                fileS3Key = it.fileS3Key, createdBy = it.createdBy, createdAt = it.createdAt
+            )
+        }
+
+        assertTrue(service.includesCard(legacy, cardUser, employeeId))
+        assertTrue(!service.includesCard(legacy, cardUser, null))
+    }
+
+    @Test
+    fun `nieaktualnej listy nie da sie podpisac ani zatwierdzic`() {
+        val stale = monthSheet(AttendanceSheetStatus.GENERATED, listOf(cardUser), id = sheetId, outdatedAt = Instant.now())
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns stale
+
+        assertThrows<ConflictException> { runBlocking { service.approve(studioId, adminId, "Jan", sheetId, signature) } }
+        assertThrows<ConflictException> {
+            runBlocking { service.approveWithSignedDocument(studioId, sheetId, adminId, "Jan", byteArrayOf(7), Instant.now(), "TABLET") }
+        }
+        coVerify(exactly = 0) { storage.uploadDocument(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `zastepowanie listy nie kasuje listy podpisanej w miedzyczasie`() {
+        every { repository.findByIdAndStudioId(sheetId, studioId.value) } returns
+            monthSheet(AttendanceSheetStatus.APPROVED, listOf(cardUser), id = sheetId)
+
+        val deleted = runBlocking { service.deleteIfUnsigned(studioId, adminId, "Jan", sheetId) }
+
+        assertTrue(!deleted)
+        verify(exactly = 0) { repository.deleteUnsignedByIdAndStudioId(any(), any()) }
+        coVerify(exactly = 0) { storage.deleteDocument(any()) }
+    }
 }

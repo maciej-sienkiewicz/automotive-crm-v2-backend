@@ -33,4 +33,12 @@ interface WorkTimeEntryRepository : JpaRepository<WorkTimeEntryEntity, UUID> {
         @Param("from") from: LocalDate,
         @Param("to") to: LocalDate
     ): Int?
+
+    /** Wpisy wszystkich osób studia w zakresie — przegląd miesiąca jednym zapytaniem. */
+    @Query("SELECT e FROM WorkTimeEntryEntity e WHERE e.studioId = :studioId AND e.date BETWEEN :from AND :to ORDER BY e.date")
+    fun findByStudioIdAndDateBetween(
+        @Param("studioId") studioId: UUID,
+        @Param("from") from: LocalDate,
+        @Param("to") to: LocalDate
+    ): List<WorkTimeEntryEntity>
 }

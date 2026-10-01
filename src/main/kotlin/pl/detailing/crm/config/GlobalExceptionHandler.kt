@@ -333,6 +333,26 @@ class GlobalExceptionHandler(
             ))
     }
 
+    /**
+     * Lista obecności z niezatwierdzonymi kartami: 409 z nazwiskami, żeby okno mogło zapytać
+     * „wygenerować bez nich?" i wypisać, kogo to dotyczy.
+     */
+    @ExceptionHandler(pl.detailing.crm.worktime.IncompleteAttendanceSheetException::class)
+    fun handleIncompleteAttendanceSheet(
+        ex: pl.detailing.crm.worktime.IncompleteAttendanceSheetException
+    ): ResponseEntity<pl.detailing.crm.worktime.IncompleteAttendanceSheetResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(pl.detailing.crm.worktime.IncompleteAttendanceSheetResponse(
+                error = "Niezatwierdzone karty",
+                message = ex.message ?: "Nie wszystkie karty są zatwierdzone.",
+                timestamp = Instant.now().toString(),
+                code = "WORKTIME_CARDS_NOT_APPROVED",
+                field = null,
+                names = ex.names
+            ))
+    }
+
     @ExceptionHandler(VehiclePlateExistsException::class)
     fun handleVehiclePlateExists(ex: VehiclePlateExistsException): ResponseEntity<VehiclePlateExistsResponse> {
         return ResponseEntity

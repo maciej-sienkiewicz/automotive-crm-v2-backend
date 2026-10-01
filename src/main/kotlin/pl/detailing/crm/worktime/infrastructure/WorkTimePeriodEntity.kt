@@ -52,6 +52,10 @@ class WorkTimePeriodEntity(
     @Column(name = "return_note", length = 1000)
     var returnNote: String? = null,
 
+    /** Ostatnie przypomnienie menedżera o tej karcie (V173) — limit jednego push-a na 12 h. */
+    @Column(name = "reminded_at", columnDefinition = "timestamp with time zone")
+    var remindedAt: Instant? = null,
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamp with time zone")
     val createdAt: Instant = Instant.now(),
 

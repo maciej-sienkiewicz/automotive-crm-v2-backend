@@ -86,7 +86,28 @@ class AttendanceSheetEntity(
     var approvedBy: UUID? = null,
 
     @Column(name = "approved_by_name", length = 200)
-    var approvedByName: String? = null
+    var approvedByName: String? = null,
+
+    /**
+     * Lista nieaktualna (V173): po jej wygenerowaniu odblokowano kartę, która na niej jest,
+     * albo zatwierdzono kartę, której na niej nie ma. Podpisana zostaje jako historia,
+     * ale miesiąc wymaga nowego podpisu; niepodpisanej nie da się już podpisać.
+     */
+    @Column(name = "outdated_at", columnDefinition = "timestamp with time zone")
+    var outdatedAt: Instant? = null,
+
+    /** Imiona i nazwiska osób świadomie pominiętych (karta niezatwierdzona) — JSON-owa lista. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "excluded_names", nullable = false, columnDefinition = "jsonb")
+    val excludedNamesJson: String = "[]",
+
+    /**
+     * Konta, których karty są na liście (lista z przepływu miesięcznego). Null dla list
+     * sprzed V173 i ze starego endpointu — tam skład opisuje [employeeIdsJson].
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "user_ids", columnDefinition = "jsonb")
+    val userIdsJson: String? = null
 )
 
 /**
@@ -107,6 +128,14 @@ interface AttendanceSheetRepository : JpaRepository<AttendanceSheetEntity, UUID>
     fun findByIdAndStudioId(id: UUID, studioId: UUID): AttendanceSheetEntity?
 
     fun findByStudioIdOrderByCreatedAtDesc(studioId: UUID, pageable: Pageable): List<AttendanceSheetEntity>
+
+    /** Wszystkie listy jednego miesiąca, od najnowszej — bieżąca i jej historia. */
+    @Query("SELECT s FROM AttendanceSheetEntity s WHERE s.studioId = :studioId AND s.period = :period ORDER BY s.createdAt DESC")
+    fun findByStudioIdAndPeriod(@Param("studioId") studioId: UUID, @Param("period") period: String): List<AttendanceSheetEntity>
+
+    /** Wszystkie listy studia, od najnowszej — licznik spraw czekających na podpis. */
+    @Query("SELECT s FROM AttendanceSheetEntity s WHERE s.studioId = :studioId ORDER BY s.createdAt DESC")
+    fun findAllOfStudio(@Param("studioId") studioId: UUID): List<AttendanceSheetEntity>
 
     /**
      * Zatwierdzenie wyłącznie z [AttendanceSheetStatus.GENERATED], jednym zapytaniem: dwóch
@@ -155,4 +184,18 @@ interface AttendanceSheetRepository : JpaRepository<AttendanceSheetEntity, UUID>
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM AttendanceSheetEntity s WHERE s.id = :id AND s.studioId = :studioId")
     fun deleteByIdAndStudioId(@Param("id") id: UUID, @Param("studioId") studioId: UUID): Int
+
+    /**
+     * Usuwa listę tylko wtedy, gdy nadal jest niepodpisana — zastępowanie listy nowszą nie
+     * może skasować dokumentu, który ktoś w międzyczasie podpisał na tablecie.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        DELETE FROM AttendanceSheetEntity s
+        WHERE s.id = :id AND s.studioId = :studioId AND s.status = 'GENERATED' AND s.signedFileS3Key IS NULL
+        """
+    )
+    fun deleteUnsignedByIdAndStudioId(@Param("id") id: UUID, @Param("studioId") studioId: UUID): Int
 }

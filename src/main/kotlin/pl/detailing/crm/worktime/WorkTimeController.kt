@@ -24,7 +24,6 @@ import pl.detailing.crm.worktime.attendance.AttendanceSheetRemoteSigning
 import pl.detailing.crm.worktime.attendance.AttendanceSheetService
 import pl.detailing.crm.worktime.attendance.AttendanceSheetStatus
 import pl.detailing.crm.worktime.attendance.AttendanceSigningOptions
-import pl.detailing.crm.worktime.infrastructure.PeriodStatus
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeParseException
@@ -61,11 +60,7 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
         val localDate = parseDate(date)
         if (body.minutes < 0 || body.minutes > 1440) throw ValidationException("Czas pracy musi być między 0 a 1440 minut (24h)")
 
-        val periodEntity = workTimeService.getPeriodOrNull(principal.userId.value, localDate.yearMonth())
-        if (periodEntity?.status == PeriodStatus.APPROVED) {
-            throw ForbiddenException("Karta jest zaakceptowana — edycja niemożliwa do czasu zwrotu do poprawy")
-        }
-
+        // Karta złożona (409) i zatwierdzona (403) są tylko do odczytu — pilnuje tego serwis.
         val entry = workTimeService.upsertEntry(principal.userId, principal.studioId, localDate, body.minutes, body.note)
         return ResponseEntity.ok(entry)
     }
@@ -75,12 +70,6 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
         val principal = SecurityContextHelper.getCurrentUser()
         requireTrackWorkTime(principal)
         val localDate = parseDate(date)
-
-        val periodEntity = workTimeService.getPeriodOrNull(principal.userId.value, localDate.yearMonth())
-        if (periodEntity?.status == PeriodStatus.APPROVED) {
-            throw ForbiddenException("Karta jest zaakceptowana — edycja niemożliwa do czasu zwrotu do poprawy")
-        }
-
         workTimeService.deleteEntry(principal.userId, principal.studioId, localDate)
         return ResponseEntity.noContent().build()
     }
@@ -90,12 +79,6 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
         val principal = SecurityContextHelper.getCurrentUser()
         requireTrackWorkTime(principal)
         val yearMonth = parsePeriod(period)
-
-        val periodEntity = workTimeService.getPeriodOrNull(principal.userId.value, yearMonth)
-        if (periodEntity?.status == PeriodStatus.APPROVED) {
-            throw ForbiddenException("Karta jest zaakceptowana — edycja niemożliwa do czasu zwrotu do poprawy")
-        }
-
         return ResponseEntity.ok(
             workTimeService.fillMonth(principal.userId, principal.studioId, yearMonth)
         )
@@ -105,15 +88,7 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
     fun standardToday(): ResponseEntity<EntryResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
         requireTrackWorkTime(principal)
-        val today = LocalDate.now()
-
-        val periodEntity = workTimeService.getPeriodOrNull(principal.userId.value, today.yearMonth())
-        if (periodEntity?.status == PeriodStatus.APPROVED) {
-            throw ForbiddenException("Karta jest zaakceptowana — edycja niemożliwa do czasu zwrotu do poprawy")
-        }
-
-        val entry = workTimeService.upsertEntry(principal.userId, principal.studioId, today, 480, null)
-        return ResponseEntity.ok(entry)
+        return ResponseEntity.ok(workTimeService.standardToday(principal.userId, principal.studioId))
     }
 
     @PostMapping("/periods/{period}/submit")
@@ -139,10 +114,69 @@ class MyWorkTimeController(private val workTimeService: WorkTimeService) {
 @RequestMapping("/api/v1/worktime/team")
 class TeamWorkTimeController(
     private val workTimeService: WorkTimeService,
+    private val monthService: WorkTimeMonthService,
     private val attendanceSheetService: AttendanceSheetService,
     private val remoteSigning: AttendanceSheetRemoteSigning,
     private val signatureEventPublisher: SignatureEventPublisher
 ) {
+
+    // ── Lista miesięczna (docs/api-worktime-months.md) ──────────────────────────
+
+    /** Przegląd miesiąca: kto złożył, kto nie, co czeka na decyzję, stan listy obecności. */
+    @GetMapping("/months/{period}")
+    fun monthOverview(@PathVariable period: String): ResponseEntity<MonthOverviewResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(monthService.overview(principal.studioId, principal.userId, parsePeriod(period)))
+    }
+
+    /** Karta jednej osoby z wszystkimi dniami miesiąca. */
+    @GetMapping("/months/{period}/cards/{userId}")
+    fun monthCard(@PathVariable period: String, @PathVariable userId: String): ResponseEntity<CardDetailResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            monthService.cardDetail(principal.studioId, principal.userId, parsePeriod(period), parseUserId(userId))
+        )
+    }
+
+    /** Zatwierdzenie wielu złożonych kart naraz; własna i niezłożone wracają w `skipped`. */
+    @PostMapping("/months/{period}/approve")
+    fun bulkApprove(@PathVariable period: String, @RequestBody body: UserIdsRequest): ResponseEntity<BulkApproveResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(
+            monthService.bulkApprove(principal.studioId, principal.userId, principal.fullName, parsePeriod(period), body.userIds)
+        )
+    }
+
+    /** Push „Uzupełnij i złóż kartę" — ta sama osoba najwyżej raz na 12 godzin. */
+    @PostMapping("/months/{period}/remind")
+    fun remind(@PathVariable period: String, @RequestBody body: UserIdsRequest): ResponseEntity<RemindResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(monthService.remind(principal.studioId, principal.userId, parsePeriod(period), body.userIds))
+    }
+
+    /** Lista obecności z zatwierdzonych kart miesiąca (409 z nazwiskami, gdy niepełna). */
+    @PostMapping("/months/{period}/sheet")
+    fun generateMonthSheet(
+        @PathVariable period: String,
+        @RequestBody(required = false) body: GenerateMonthSheetRequest?
+    ): ResponseEntity<MonthSheetResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val sheet = monthService.generateSheet(
+            studioId = principal.studioId,
+            callerId = principal.userId,
+            callerName = principal.fullName,
+            yearMonth = parsePeriod(period),
+            allowIncomplete = body?.allowIncomplete ?: false
+        )
+        ResponseEntity.status(HttpStatus.CREATED).body(sheet)
+    }
+
+    /** Licznik dla menu: karty czekające na decyzję i miesiące do podpisu. */
+    @GetMapping("/pending-count")
+    fun pendingCount(): ResponseEntity<PendingCountResponse> {
+        val principal = SecurityContextHelper.getCurrentUser()
+        return ResponseEntity.ok(monthService.pendingCount(principal.studioId, principal.userId))
+    }
 
     /**
      * Lista obecności na wskazany miesiąc dla zaznaczonych pracowników.
@@ -330,7 +364,7 @@ class TeamWorkTimeController(
     private fun AttendanceSheetEntity.toResponse() = AttendanceSheetResponse(
         id = id.toString(),
         period = period,
-        employeeCount = attendanceSheetService.employeeIdsOf(this).size,
+        employeeCount = attendanceSheetService.peopleCountOf(this),
         signed = signedFileS3Key != null,
         signerName = signerName,
         signedAt = signedAt?.toEpochMilli(),
@@ -359,30 +393,35 @@ class TeamWorkTimeController(
         return ResponseEntity.ok(workTimeService.getPeriodDetail(targetUserId, principal.studioId, yearMonth))
     }
 
+    /** Zatwierdzenie karty — tylko złożonej (z RETURNED: 409). Odpowiedź: wiersz listy miesięcznej. */
     @PostMapping("/{userId}/periods/{period}/approve")
     fun approvePeriod(
         @PathVariable userId: String,
         @PathVariable period: String
-    ): ResponseEntity<PeriodSummaryResponse> {
+    ): ResponseEntity<MonthCardRowResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val targetUserId = UserId.fromString(userId)
-        val yearMonth = parsePeriod(period)
         return ResponseEntity.ok(
-            workTimeService.approvePeriod(targetUserId, principal.studioId, yearMonth, principal.userId)
+            monthService.approveCard(
+                principal.studioId, principal.userId, principal.fullName, parsePeriod(period), parseUserId(userId)
+            )
         )
     }
 
+    /**
+     * Zwrot do poprawy (ze złożonej) albo odblokowanie (z zatwierdzonej) — z wymaganą
+     * notatką. Odblokowanie karty z podpisanej listy czyni listę nieaktualną.
+     */
     @PostMapping("/{userId}/periods/{period}/return")
     fun returnPeriod(
         @PathVariable userId: String,
         @PathVariable period: String,
-        @RequestBody body: ReturnPeriodRequest
-    ): ResponseEntity<PeriodSummaryResponse> {
+        @RequestBody(required = false) body: ReturnPeriodRequest?
+    ): ResponseEntity<MonthCardRowResponse> {
         val principal = SecurityContextHelper.getCurrentUser()
-        val targetUserId = UserId.fromString(userId)
-        val yearMonth = parsePeriod(period)
         return ResponseEntity.ok(
-            workTimeService.returnPeriod(targetUserId, principal.studioId, yearMonth, principal.userId, body.note)
+            monthService.returnCard(
+                principal.studioId, principal.userId, principal.fullName, parsePeriod(period), parseUserId(userId), body?.note
+            )
         )
     }
 }
@@ -474,8 +513,15 @@ data class PeriodDetailResponse(
     val entryCount: Int,
     val overtimeMinutes: Int,
     val overtimeHours: String,
+    /** Tylko przy karcie zwróconej (RETURNED). */
     val returnNote: String?,
-    val entries: List<EntryResponse>
+    val entries: List<EntryResponse>,
+    /** Wszystkie dni miesiąca: wpis, dzień roboczy, święto, urlop/L4, brak. */
+    val days: List<CardDayResponse> = emptyList(),
+    /** Norma: (dni robocze − dni robocze urlopu/L4) × 8 h. */
+    val expectedMinutes: Int = 0,
+    /** Dni robocze do dziś bez wpisu i bez urlopu (miesiąc przeszły: wszystkie). */
+    val missingWorkingDays: Int = 0
 )
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -484,8 +530,11 @@ private fun parsePeriod(period: String): YearMonth =
     try { YearMonth.parse(period) }
     catch (e: DateTimeParseException) { throw ValidationException("Nieprawidłowy format okresu: '$period' (oczekiwany YYYY-MM)") }
 
+private fun parseUserId(userId: String): UserId =
+    try { UserId(UUID.fromString(userId.trim())) }
+    catch (e: IllegalArgumentException) { throw ValidationException("Nieprawidłowy identyfikator osoby: '$userId'") }
+
 private fun parseDate(date: String): LocalDate =
     try { LocalDate.parse(date) }
     catch (e: DateTimeParseException) { throw ValidationException("Nieprawidłowy format daty: '$date' (oczekiwany YYYY-MM-DD)") }
 
-private fun LocalDate.yearMonth(): YearMonth = YearMonth.from(this)

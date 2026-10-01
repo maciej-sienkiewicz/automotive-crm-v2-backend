@@ -122,6 +122,7 @@ object AuditFieldCatalog {
         "periodStart" to FieldDefinition("Początek okresu", AuditValueType.DATE),
         "periodEnd" to FieldDefinition("Koniec okresu", AuditValueType.DATE),
         "leave" to FieldDefinition("Urlop", AuditValueType.TEXT),
+        "excludedNames" to FieldDefinition("Bez zatwierdzonej karty", AuditValueType.TEXT),
 
         // Campaigns / communication
         "campaignName" to FieldDefinition("Nazwa kampanii", AuditValueType.TEXT),
