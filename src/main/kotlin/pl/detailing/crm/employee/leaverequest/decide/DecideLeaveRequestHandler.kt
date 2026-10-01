@@ -144,8 +144,6 @@ class DecideLeaveRequestHandler(
         val stamp = LeaveRequestDocumentService.DecisionStamp(
             approved = command.approve,
             decidedByName = decidedByName,
-            basis = basis,
-            roleName = roleName,
             note = note,
             method = method,
             decidedAt = decidedAt,
@@ -277,7 +275,10 @@ class DecideLeaveRequestHandler(
         return leave.id
     }
 
-    /** Nazwa roli rozpatrującego z chwili decyzji — drukowana w „Podstawie uprawnienia". */
+    /**
+     * Nazwa roli rozpatrującego z chwili decyzji — ślad w bazie i w dzienniku zdarzeń.
+     * Na dokumencie jej nie ma (kontrakt v2): podstawa uprawnienia nie jest treścią decyzji.
+     */
     private fun roleNameOf(principal: UserPrincipal): String? {
         val roleId = userRepository.findByIdAndStudioId(principal.userId.value, principal.studioId.value)?.customRoleId
             ?: return null

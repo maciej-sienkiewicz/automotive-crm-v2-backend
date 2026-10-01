@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
+import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.leave.domain.LeaveType
@@ -74,6 +75,7 @@ class DecideLeaveRequestHandlerTest {
     private val userSignatureService = mockk<UserSignatureService>()
     private val documents = mockk<LeaveRequestDocumentService>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val auditService = mockk<AuditService>(relaxed = true)
     private val tx = RecordingTransactionManager()
 
     private val handler = DecideLeaveRequestHandler(
@@ -88,7 +90,7 @@ class DecideLeaveRequestHandlerTest {
         sessions = LeaveSigningSessions(integrity),
         documents = documents,
         signatureImageProcessor = SignatureImageProcessor(),
-        auditService = mockk<AuditService>(relaxed = true),
+        auditService = auditService,
         eventPublisher = eventPublisher,
         transactionTemplate = tx.template()
     )
@@ -240,6 +242,12 @@ class DecideLeaveRequestHandlerTest {
                 ApprovalBasis.PERMISSION, "Kierownik zmiany", any(), null, LeaveSignatureMethod.SAVED_SIGNATURE,
                 any(), any(), any(), any(), any(), any()
             )
+        }
+        // Kontrakt v2: podstawy nie ma na dokumencie ani w API, ale zostaje śladem w dzienniku zdarzeń.
+        verify(exactly = 1) {
+            auditService.recordSync(match<AuditEvent> {
+                it.metadata["basis"] == "PERMISSION" && it.metadata["roleName"] == "Kierownik zmiany"
+            })
         }
     }
 

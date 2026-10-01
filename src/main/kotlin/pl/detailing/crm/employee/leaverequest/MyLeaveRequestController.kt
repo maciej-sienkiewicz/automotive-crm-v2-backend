@@ -265,8 +265,6 @@ data class LeaveRequestDetailResponse(
     val cancelReason: String?,
     val employeeSignatureMethod: String?,
     val decisionSignatureMethod: String?,
-    val decidedByBasis: String?,
-    val decidedByRoleName: String?,
     val overlappingAbsences: List<OverlappingAbsenceResponse>,
     val canDecide: Boolean,
     val decisionBlockedReason: String?,

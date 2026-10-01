@@ -35,8 +35,8 @@ class LeaveRequestContractJsonTest {
     }
 
     @Test
-    fun `responses do not carry the substitute`() {
-        val removed = setOf("substituteEmployeeId", "substituteName")
+    fun `responses carry neither the substitute nor the approval basis`() {
+        val removed = setOf("substituteEmployeeId", "substituteName", "decidedByBasis", "decidedByRoleName")
         listOf(LeaveRequestSummaryResponse::class, LeaveRequestDetailResponse::class).forEach { type ->
             val fields = type.memberProperties.map { it.name }.toSet()
             assertFalse(fields.any { it in removed }, "${type.simpleName} nadal ma ${fields.intersect(removed)}")

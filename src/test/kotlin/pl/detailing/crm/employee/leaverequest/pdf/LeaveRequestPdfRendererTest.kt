@@ -58,7 +58,7 @@ class LeaveRequestPdfRendererTest {
             "PRACODAWCA", "WNIOSEK URLOPOWY", "NR WNIOSKU", "DATA I GODZINA ZŁOŻENIA", "SPOSÓB ZŁOŻENIA",
             "PRACOWNIK", "TERMIN URLOPU", "RODZAJ URLOPU", "UZASADNIENIE WNIOSKU",
             "OŚWIADCZENIA PRACOWNIKA", "PODPIS PRACOWNIKA", "DECYZJA PRACODAWCY", "Osoba rozpatrująca",
-            "Podstawa uprawnienia", "UZASADNIENIE DECYZJI", "PODPIS OSOBY ROZPATRUJĄCEJ",
+            "UZASADNIENIE DECYZJI", "PODPIS OSOBY ROZPATRUJĄCEJ",
             "WU/2026/0012", "Zażółć Gęślą-Jaźń", "03.11.2026", "NIP 7251234567"
         ).forEach { assertTrue(text.contains(it), "Brak na wniosku: $it") }
         // Kontrakt v2: wniosek nie wskazuje osoby zastępującej.
@@ -102,7 +102,6 @@ class LeaveRequestPdfRendererTest {
             pdf = signed,
             approved = true,
             decidedByName = "Anna Nowak",
-            basisText = "Uprawnienie: Akceptacja wniosków urlopowych, rola: Kierownik zmiany",
             note = "Zgoda, zastępstwo ustalone.",
             normalizedSignaturePng = signature,
             decidedAt = Instant.now()
@@ -122,7 +121,7 @@ class LeaveRequestPdfRendererTest {
         assertEquals(before + 1, pages(final))
         val text = text(final)
         assertTrue(text.contains("Anna Nowak"))
-        assertTrue(text.contains("rola: Kierownik zmiany"))
+        assertFalse(text.contains("Podstawa uprawnienia"), "Kontrakt v2: bez podstawy uprawnienia na dokumencie")
         assertTrue(text.contains("KARTA PODPISÓW"))
         assertTrue(text.contains("b".repeat(64)), "Karta niesie skrót dokumentu podpisanego przez rozpatrującego")
     }
@@ -130,7 +129,7 @@ class LeaveRequestPdfRendererTest {
     @Test
     fun `rejection stamp renders the note`() {
         val signed = stamper.stampEmployeeSignature(renderer.render(data(leaveType = LeaveType.ANNUAL, onDemand = true)), signature, Instant.now())
-        val final = stamper.stampDecision(signed, false, "Właściciel", "Właściciel studia", "Brak obsady w tym terminie", signature, Instant.now())
+        val final = stamper.stampDecision(signed, false, "Właściciel", "Brak obsady w tym terminie", signature, Instant.now())
         assertEquals(1, pages(final))
         assertTrue(text(final).contains("Brak obsady w tym terminie"))
     }
