@@ -233,15 +233,9 @@
     margin-right: 6.00pt;
   }
 
-  /* ============ Uzasadnienie / zastępstwo ============ */
-  .notes {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 13.06pt;
-  }
-  .notes .col { width: 261.94pt; }
-  .notes .tab.reason     { width: 132.00pt; }
-  .notes .tab.substitute { width: 112.00pt; }
+  /* ============ Uzasadnienie (na całą szerokość) ============ */
+  .notes { margin-top: 13.06pt; }
+  .notes .tab.reason { width: 132.00pt; }
   .notes .box { margin-top: 2.41pt; height: 32.00pt; }
 
   /* ============ Oświadczenia ============ */
@@ -377,16 +371,10 @@
     <div class="opt"><div class="checkbox" data-field="type_parental"></div>Rodzicielski / wychowawczy</div>
   </div>
 
-  <!-- Uzasadnienie / zastępstwo -->
+  <!-- Uzasadnienie -->
   <div class="notes">
-    <div class="col">
-      <div class="tab reason">UZASADNIENIE WNIOSKU</div>
-      <div class="box multiline" data-field="reason"></div>
-    </div>
-    <div class="col">
-      <div class="tab substitute">OSOBA ZASTĘPUJĄCA</div>
-      <div class="box multiline" data-field="substitute"></div>
-    </div>
+    <div class="tab reason">UZASADNIENIE WNIOSKU</div>
+    <div class="box multiline" data-field="reason"></div>
   </div>
 
   <!-- Oświadczenia pracownika -->
@@ -419,7 +407,6 @@
       <div class="opt"><div class="checkbox" data-field="decision_rejected"></div>Nie wyrażam zgody</div>
     </div>
     <div class="field-row"><label>Osoba rozpatrująca</label><div class="box" data-field="decidedby"></div></div>
-    <div class="field-row"><label>Podstawa uprawnienia</label><div class="box" data-field="decisionbasis"></div></div>
     <div class="decision-note">
       <div class="tab">UZASADNIENIE DECYZJI</div>
       <div class="box multiline" data-field="decisionnote"></div>
@@ -441,9 +428,8 @@
   <!-- Przypis -->
   <div class="footnote">
     Wniosek jest ważny wyłącznie z oboma podpisami. Osoba rozpatrująca działa w imieniu pracodawcy jako
-    właściciel studia albo na podstawie uprawnienia „Akceptacja wniosków urlopowych” nadanego w systemie;
-    podstawa obowiązująca w chwili decyzji jest wpisana powyżej. Do dokumentu dołączona jest karta
-    podpisów z przebiegiem obu sesji podpisywania.
+    właściciel studia albo na podstawie uprawnienia „Akceptacja wniosków urlopowych” nadanego w systemie.
+    Do dokumentu dołączona jest karta podpisów z przebiegiem obu sesji podpisywania.
   </div>
 
 </div>

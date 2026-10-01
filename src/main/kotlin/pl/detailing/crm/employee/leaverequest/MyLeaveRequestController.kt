@@ -96,8 +96,7 @@ class MyLeaveRequestController(
                 onDemand = body.onDemand ?: false,
                 startDate = body.startDate,
                 endDate = body.endDate,
-                reason = body.reason,
-                substituteEmployeeId = body.substituteEmployeeId
+                reason = body.reason
             )
         )
         ResponseEntity.status(HttpStatus.CREATED).body(
@@ -179,8 +178,7 @@ data class CreateLeaveRequestRequest(
     val onDemand: Boolean? = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
-    val reason: String? = null,
-    val substituteEmployeeId: String? = null
+    val reason: String? = null
 )
 
 data class SubmitLeaveRequestRequest(
@@ -222,8 +220,6 @@ data class LeaveRequestSummaryResponse(
     val workingDays: Int,
     val status: String,
     val reason: String?,
-    val substituteEmployeeId: String?,
-    val substituteName: String?,
     val createdAt: String,
     val employeeSignedAt: String?,
     val decidedAt: String?,
@@ -254,8 +250,6 @@ data class LeaveRequestDetailResponse(
     val workingDays: Int,
     val status: String,
     val reason: String?,
-    val substituteEmployeeId: String?,
-    val substituteName: String?,
     val createdAt: String,
     val employeeSignedAt: String?,
     val decidedAt: String?,
@@ -264,8 +258,6 @@ data class LeaveRequestDetailResponse(
     val cancelReason: String?,
     val employeeSignatureMethod: String?,
     val decisionSignatureMethod: String?,
-    val decidedByBasis: String?,
-    val decidedByRoleName: String?,
     val overlappingAbsences: List<OverlappingAbsenceResponse>,
     val canDecide: Boolean,
     val decisionBlockedReason: String?,

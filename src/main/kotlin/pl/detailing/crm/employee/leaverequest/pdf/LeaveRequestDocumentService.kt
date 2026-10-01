@@ -64,8 +64,7 @@ class LeaveRequestDocumentService(
         val workingDays: Int,
         val leaveType: LeaveType,
         val onDemand: Boolean,
-        val reason: String?,
-        val substituteName: String?
+        val reason: String?
     )
 
     /** Generuje szkic wniosku (H1) i zapisuje go w S3. */
@@ -91,8 +90,7 @@ class LeaveRequestDocumentService(
                 workingDays = content.workingDays,
                 leaveType = content.leaveType,
                 onDemand = content.onDemand,
-                reason = content.reason,
-                substituteName = content.substituteName
+                reason = content.reason
             )
         )
         return store(studioId, requestId, "draft.pdf", bytes)
@@ -105,7 +103,7 @@ class LeaveRequestDocumentService(
         normalizedSignature: ByteArray,
         signedAt: Instant
     ): StoredPdf {
-        val signed = stamper.stampEmployeeSignature(draftBytes, normalizedSignature, signedAt)
+        val signed = stamper.stampEmployeeSignature(draftBytes, normalizedSignature, signedAt, request.pdfLayoutVersion)
         return store(StudioId(request.studioId), request.id, "employee-signed-${suffix()}.pdf", signed)
     }
 
@@ -134,10 +132,11 @@ class LeaveRequestDocumentService(
             pdf = employeeSignedBytes,
             approved = stamp.approved,
             decidedByName = stamp.decidedByName,
-            basisText = basisText(stamp.basis, stamp.roleName),
             note = stamp.note,
             normalizedSignaturePng = normalizedSignature,
-            decidedAt = stamp.decidedAt
+            decidedAt = stamp.decidedAt,
+            layoutVersion = request.pdfLayoutVersion,
+            legacyBasisText = legacyBasisText(stamp.basis, stamp.roleName)
         ) { document ->
             auditTrailPageGenerator.appendSignatureCard(
                 document = document,
@@ -196,8 +195,12 @@ class LeaveRequestDocumentService(
             .onFailure { logger.warn("Could not delete leave request file {}", s3Key, it) }
     }
 
-    /** „Właściciel studia" albo „Uprawnienie: Akceptacja wniosków urlopowych, rola: Kierownik zmiany". */
-    fun basisText(basis: ApprovalBasis, roleName: String?): String = when (basis) {
+    /**
+     * Treść wiersza „Podstawa uprawnienia" — drukowana już tylko na wnioskach w układzie 1
+     * (patrz [LeaveRequestPdfStamper.stampDecision]). W bazie podstawa zostaje jako ślad
+     * audytowy decyzji (`decided_by_basis`), ale nie trafia na nowe dokumenty ani do API.
+     */
+    fun legacyBasisText(basis: ApprovalBasis, roleName: String?): String = when (basis) {
         ApprovalBasis.OWNER -> "Właściciel studia"
         ApprovalBasis.PERMISSION -> "Uprawnienie: Akceptacja wniosków urlopowych" + (roleName?.let { ", rola: $it" } ?: "")
     }

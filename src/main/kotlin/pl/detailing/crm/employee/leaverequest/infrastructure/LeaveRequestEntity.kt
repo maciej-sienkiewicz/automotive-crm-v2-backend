@@ -73,8 +73,13 @@ class LeaveRequestEntity(
     @Column(name = "reason", length = 1000)
     val reason: String?,
 
-    @Column(name = "substitute_employee_id", columnDefinition = "uuid")
-    val substituteEmployeeId: UUID?,
+    /**
+     * Układ PDF, w którym wygenerowano dokument — stemple podpisu i decyzji biorą pola
+     * z [pl.detailing.crm.employee.leaverequest.pdf.LeaveRequestPdfRenderer.layoutFor].
+     * Wnioski sprzed V172 mają 1.
+     */
+    @Column(name = "pdf_layout_version", nullable = false)
+    val pdfLayoutVersion: Int,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 40)

@@ -26,7 +26,6 @@ i podpis zdalny (tablet/SMS, `AWAITING_EMPLOYEE_SIGNATURE`), wymiar urlopu.
 type LeaveType = 'ANNUAL' | 'UNPAID' | 'SPECIAL' | 'PARENTAL' | 'CARE'; // SICK nie jest wnioskiem
 type LeaveRequestStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'CANCELLED' | 'EXPIRED';
 type SignatureMethod = 'DEVICE_DRAWN' | 'SAVED_SIGNATURE';
-type ApprovalBasis = 'OWNER' | 'PERMISSION';
 
 interface LeaveRequestSummary {
   id: string;
@@ -40,8 +39,6 @@ interface LeaveRequestSummary {
   workingDays: number;
   status: LeaveRequestStatus;
   reason: string | null;
-  substituteEmployeeId: string | null;
-  substituteName: string | null;
   createdAt: string;
   employeeSignedAt: string | null;
   decidedAt: string | null;
@@ -61,8 +58,6 @@ interface OverlappingAbsence {
 interface LeaveRequestDetail extends LeaveRequestSummary {
   employeeSignatureMethod: SignatureMethod | null;
   decisionSignatureMethod: SignatureMethod | null;
-  decidedByBasis: ApprovalBasis | null;
-  decidedByRoleName: string | null;
   overlappingAbsences: OverlappingAbsence[]; // inne osoby nieobecne w tym terminie
   canDecide: boolean;                        // dla bieżącego użytkownika
   decisionBlockedReason: string | null;      // np. "Własnego wniosku urlopowego nie można rozpatrzyć"
@@ -81,7 +76,7 @@ Bez uprawnienia. Pracownik = rekord `employees` powiązany z zalogowanym kontem
 |---|---|---|---|
 | GET | `/` | — | `{ requests: LeaveRequestSummary[], summary: { year: number, usedWorkingDays: number, pendingCount: number } }` (bez DRAFT, najnowsze pierwsze) |
 | GET | `/preview?startDate&endDate` | — | `{ workingDays: number, holidays: { date: string, name: string }[] }` |
-| POST | `/` | `{ leaveType, onDemand, startDate, endDate, reason?, substituteEmployeeId? }` | `{ request: LeaveRequestDetail, session: SigningSession }` — status `DRAFT`, PDF wygenerowany |
+| POST | `/` | `{ leaveType, onDemand, startDate, endDate, reason? }` | `{ request: LeaveRequestDetail, session: SigningSession }` — status `DRAFT`, PDF wygenerowany |
 | POST | `/{id}/signing-session` | — | `SigningSession` (nowy challenge dla DRAFT) |
 | GET | `/{id}/document` | — | `application/pdf` — dokładnie te bajty, których hash jest w sesji |
 | POST | `/{id}/submit` | `{ signatureImageBase64, documentSha256, challenge, declarationAccepted: true }` | `LeaveRequestDetail` (`PENDING`) |
@@ -92,7 +87,12 @@ Walidacja (400, komunikat po polsku, pole `field` gdy dotyczy pola):
 `endDate < startDate`; `startDate` w przeszłości (poza `onDemand` na dziś);
 `workingDays == 0`; nakładanie się z własnym wnioskiem PENDING/APPROVED lub wpisem
 w `employee_leaves`; `onDemand` tylko przy ANNUAL i łącznie ≤ 4 dni w roku
-kalendarzowym; `reason` wymagany przy `SPECIAL`; `substituteEmployeeId` ≠ wnioskodawca.
+kalendarzowym; `reason` wymagany przy `SPECIAL`.
+
+Osoby zastępującej nie ma (V172): ani w żądaniu, ani w odpowiedzi, ani na dokumencie.
+Podstawa uprawnienia rozpatrującego (`OWNER` / `PERMISSION`) zostaje w bazie jako ślad
+audytowy decyzji, ale nie trafia do API ani na nowe wnioski — drukuje się tylko na
+wnioskach wygenerowanych przed V172 (układ PDF 1), których przypis ją zapowiada.
 
 ## Rozpatrywanie — `/api/v1/leave-requests`
 
@@ -134,7 +134,7 @@ Uzupełnienia i jedno ograniczenie wynikające z implementacji. Pola i ścieżki
 
 - **Błąd walidacji (400)**: ciało jak wszędzie (`{ error, message, timestamp }`) plus
   `field: string | null` — nazwa pola żądania (`leaveType`, `onDemand`, `startDate`,
-  `endDate`, `reason`, `substituteEmployeeId`, `declarationAccepted`, `signatureImageBase64`,
+  `endDate`, `reason`, `declarationAccepted`, `signatureImageBase64`,
   `useSavedSignature`, `note`, `documentSha256`, `challenge`), gdy błąd dotyczy jednego pola.
 - **Limit długości (nowe ograniczenie)**: `reason` przy tworzeniu wniosku i `note` przy
   decyzji — najwyżej **250 znaków** (400 z `field`). Tyle mieści się w polu na wniosku PDF,

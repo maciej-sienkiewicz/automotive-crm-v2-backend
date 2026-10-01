@@ -5,8 +5,10 @@ import org.apache.pdfbox.text.PDFTextStripper
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pl.detailing.crm.employee.leave.domain.LeaveType
 import pl.detailing.crm.employee.leaverequest.LeaveRequestFixtures
 import pl.detailing.crm.shared.pdf.DocumentStyle
@@ -42,8 +44,7 @@ class LeaveRequestPdfRendererTest {
             workingDays = 4,
             leaveType = leaveType,
             onDemand = onDemand,
-            reason = reason,
-            substituteName = "Tomasz Wiśniewski"
+            reason = reason
         )
 
     private fun text(pdf: ByteArray): String = Loader.loadPDF(pdf).use { PDFTextStripper().getText(it) }
@@ -57,11 +58,40 @@ class LeaveRequestPdfRendererTest {
         val text = text(pdf)
         listOf(
             "PRACODAWCA", "WNIOSEK URLOPOWY", "NR WNIOSKU", "DATA I GODZINA ZŁOŻENIA", "SPOSÓB ZŁOŻENIA",
-            "PRACOWNIK", "TERMIN URLOPU", "RODZAJ URLOPU", "UZASADNIENIE WNIOSKU", "OSOBA ZASTĘPUJĄCA",
+            "PRACOWNIK", "TERMIN URLOPU", "RODZAJ URLOPU", "UZASADNIENIE WNIOSKU",
             "OŚWIADCZENIA PRACOWNIKA", "PODPIS PRACOWNIKA", "DECYZJA PRACODAWCY", "Osoba rozpatrująca",
-            "Podstawa uprawnienia", "UZASADNIENIE DECYZJI", "PODPIS OSOBY ROZPATRUJĄCEJ",
-            "WU/2026/0012", "Zażółć Gęślą-Jaźń", "03.11.2026", "Tomasz Wiśniewski", "NIP 7251234567"
+            "UZASADNIENIE DECYZJI", "PODPIS OSOBY ROZPATRUJĄCEJ",
+            "WU/2026/0012", "Zażółć Gęślą-Jaźń", "03.11.2026", "NIP 7251234567"
         ).forEach { assertTrue(text.contains(it), "Brak na wniosku: $it") }
+    }
+
+    @Test
+    fun `no substitute and no approval basis on a new request`() {
+        val text = text(renderer.render(data()))
+        listOf("OSOBA ZASTĘPUJĄCA", "Podstawa uprawnienia", "wpisana powyżej").forEach {
+            assertFalse(text.contains(it), "Na nowym wniosku nie może być: $it")
+        }
+        assertEquals(null, renderer.layout.decisionBasis)
+    }
+
+    @Test
+    fun `employee fields stay where layout 1 had them`() {
+        // Szkic wygenerowany przed V172 dostaje podpis pracownika już po wdrożeniu — pola
+        // pracownika muszą leżeć w obu układach dokładnie w tym samym miejscu.
+        val v1 = LeaveRequestPdfRenderer.LAYOUT_V1
+        val v2 = renderer.layout
+        listOf(v1.submittedAt to v2.submittedAt, v1.employeeSignature to v2.employeeSignature, v1.employeeSignedAt to v2.employeeSignedAt)
+            .forEach { (old, new) ->
+                assertEquals(old.x, new.x, 0.01f); assertEquals(old.y, new.y, 0.01f)
+                assertEquals(old.w, new.w, 0.01f); assertEquals(old.h, new.h, 0.01f)
+            }
+    }
+
+    @Test
+    fun `layout follows the version stored on the request`() {
+        assertSame(LeaveRequestPdfRenderer.LAYOUT_V1, renderer.layoutFor(1))
+        assertSame(renderer.layout, renderer.layoutFor(LeaveRequestPdfRenderer.CURRENT_LAYOUT_VERSION))
+        assertThrows<IllegalStateException> { renderer.layoutFor(99) }
     }
 
     @Test
@@ -101,8 +131,7 @@ class LeaveRequestPdfRendererTest {
             pdf = signed,
             approved = true,
             decidedByName = "Anna Nowak",
-            basisText = "Uprawnienie: Akceptacja wniosków urlopowych, rola: Kierownik zmiany",
-            note = "Zgoda, zastępstwo ustalone.",
+            note = "Zgoda, urlop uzgodniony z zespołem.",
             normalizedSignaturePng = signature,
             decidedAt = Instant.now()
         ) { document ->
@@ -121,7 +150,7 @@ class LeaveRequestPdfRendererTest {
         assertEquals(before + 1, pages(final))
         val text = text(final)
         assertTrue(text.contains("Anna Nowak"))
-        assertTrue(text.contains("rola: Kierownik zmiany"))
+        assertFalse(text.contains("rola: Kierownik zmiany"), "Podstawa nie trafia na nowy dokument")
         assertTrue(text.contains("KARTA PODPISÓW"))
         assertTrue(text.contains("b".repeat(64)), "Karta niesie skrót dokumentu podpisanego przez rozpatrującego")
     }
@@ -129,8 +158,21 @@ class LeaveRequestPdfRendererTest {
     @Test
     fun `rejection stamp renders the note`() {
         val signed = stamper.stampEmployeeSignature(renderer.render(data(leaveType = LeaveType.ANNUAL, onDemand = true)), signature, Instant.now())
-        val final = stamper.stampDecision(signed, false, "Właściciel", "Właściciel studia", "Brak obsady w tym terminie", signature, Instant.now())
+        val final = stamper.stampDecision(signed, false, "Właściciel", "Brak obsady w tym terminie", signature, Instant.now())
         assertEquals(1, pages(final))
         assertTrue(text(final).contains("Brak obsady w tym terminie"))
+    }
+
+    @Test
+    fun `request from layout 1 gets its approval basis filled in`() {
+        // Pracownik podpisał dokument z wierszem „Podstawa uprawnienia" i przypisem, który
+        // ją zapowiada — taki wniosek nie może dostać decyzji z pustym polem.
+        val signed = stamper.stampEmployeeSignature(renderer.render(data()), signature, Instant.now(), layoutVersion = 1)
+        val final = stamper.stampDecision(
+            pdf = signed, approved = true, decidedByName = "Anna Nowak", note = null,
+            normalizedSignaturePng = signature, decidedAt = Instant.now(),
+            layoutVersion = 1, legacyBasisText = "Właściciel studia"
+        )
+        assertTrue(text(final).contains("Właściciel studia"))
     }
 }

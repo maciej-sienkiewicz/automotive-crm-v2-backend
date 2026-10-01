@@ -20,8 +20,9 @@ import java.util.Locale
  * złożenia (H1 → H2) i decyzję z podpisem rozpatrującego (H2 → H3).
  *
  * Każdy stempel zwraca NOWY plik — wejście zostaje nietknięte, bo to na jego skrót
- * powołuje się podpis. Pola bierze z [LeaveRequestPdfRenderer.layout], więc tekst
- * i podpis trafiają dokładnie w szare pola narysowane przy generowaniu.
+ * powołuje się podpis. Pola bierze z [LeaveRequestPdfRenderer.layoutFor] dla układu,
+ * w którym wniosek POWSTAŁ (`pdf_layout_version`), więc tekst i podpis trafiają dokładnie
+ * w szare pola narysowane przy generowaniu — także na wniosku sprzed zmiany układu.
  *
  * Obraz podpisu przychodzi już znormalizowany (przezroczyste PNG z samymi pociągnięciami,
  * [pl.detailing.crm.signing.infrastructure.SignatureImageProcessor]) i żyje wyłącznie
@@ -37,9 +38,14 @@ class LeaveRequestPdfStamper(private val renderer: LeaveRequestPdfRenderer) {
     }
 
     /** Podpis pracownika: chwila złożenia w metryczce, obraz w polu podpisu, data i godzina obok. */
-    fun stampEmployeeSignature(pdf: ByteArray, normalizedSignaturePng: ByteArray, signedAt: Instant): ByteArray =
+    fun stampEmployeeSignature(
+        pdf: ByteArray,
+        normalizedSignaturePng: ByteArray,
+        signedAt: Instant,
+        layoutVersion: Int = LeaveRequestPdfRenderer.CURRENT_LAYOUT_VERSION
+    ): ByteArray =
         edit(pdf) { ink ->
-            val layout = renderer.layout
+            val layout = renderer.layoutFor(layoutVersion)
             val at = TIMESTAMP.format(signedAt)
             ink.singleLine(layout.submittedAt, at, bold = true)
             ink.signature(layout.employeeSignature, normalizedSignaturePng)
@@ -47,23 +53,28 @@ class LeaveRequestPdfStamper(private val renderer: LeaveRequestPdfRenderer) {
         }
 
     /**
-     * Decyzja: zaznaczenie, osoba i podstawa, uzasadnienie, podpis i chwila decyzji.
+     * Decyzja: zaznaczenie, osoba, uzasadnienie, podpis i chwila decyzji.
      * [appendPages] dokłada strony na końcu — tam trafia karta podpisów.
+     *
+     * [legacyBasisText] trafia tylko na wniosek w układzie 1: ma on na stronie wiersz
+     * „Podstawa uprawnienia", a jego przypis zapowiada, że podstawa jest wpisana powyżej.
+     * Pracownik podpisał właśnie taki dokument, więc pole nie może zostać na nim puste.
      */
     fun stampDecision(
         pdf: ByteArray,
         approved: Boolean,
         decidedByName: String,
-        basisText: String,
         note: String?,
         normalizedSignaturePng: ByteArray,
         decidedAt: Instant,
+        layoutVersion: Int = LeaveRequestPdfRenderer.CURRENT_LAYOUT_VERSION,
+        legacyBasisText: String? = null,
         appendPages: (PDDocument) -> Unit = {}
     ): ByteArray = edit(pdf, appendPages) { ink ->
-        val layout = renderer.layout
+        val layout = renderer.layoutFor(layoutVersion)
         ink.mark(if (approved) layout.decisionApproved else layout.decisionRejected)
         ink.singleLine(layout.decidedBy, decidedByName)
-        ink.singleLine(layout.decisionBasis, basisText)
+        layout.decisionBasis?.let { box -> legacyBasisText?.let { ink.singleLine(box, it) } }
         note?.takeIf { it.isNotBlank() }?.let { ink.multiLine(layout.decisionNote, it) }
         ink.signature(layout.approverSignature, normalizedSignaturePng)
         ink.singleLine(layout.decidedAt, TIMESTAMP.format(decidedAt), bold = true)

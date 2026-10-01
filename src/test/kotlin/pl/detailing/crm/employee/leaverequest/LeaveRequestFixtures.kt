@@ -6,6 +6,7 @@ import pl.detailing.crm.employee.leave.domain.LeaveType
 import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestStatus
 import pl.detailing.crm.employee.leaverequest.domain.LeaveSignatureMethod
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
+import pl.detailing.crm.employee.leaverequest.pdf.LeaveRequestPdfRenderer
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.awt.BasicStroke
@@ -55,7 +56,8 @@ object LeaveRequestFixtures {
         leaveType: LeaveType = LeaveType.ANNUAL,
         onDemand: Boolean = false,
         documentSha256: String = "a".repeat(64),
-        employeeSignedSha256: String? = if (status == LeaveRequestStatus.DRAFT) null else "b".repeat(64)
+        employeeSignedSha256: String? = if (status == LeaveRequestStatus.DRAFT) null else "b".repeat(64),
+        pdfLayoutVersion: Int = LeaveRequestPdfRenderer.CURRENT_LAYOUT_VERSION
     ) = LeaveRequestEntity(
         id = id,
         studioId = studioId.value,
@@ -68,7 +70,7 @@ object LeaveRequestFixtures {
         endDate = end,
         workingDays = 5,
         reason = null,
-        substituteEmployeeId = null,
+        pdfLayoutVersion = pdfLayoutVersion,
         status = status,
         createdBy = employeeUserId ?: UUID.randomUUID(),
         createdByName = "Jan Kowalski",

@@ -12,6 +12,7 @@ import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestCounter
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestRepository
 import pl.detailing.crm.employee.leaverequest.pdf.LeaveRequestDocumentService
+import pl.detailing.crm.employee.leaverequest.pdf.LeaveRequestPdfRenderer
 import pl.detailing.crm.employee.leaverequest.query.LeaveRequestAccess
 import pl.detailing.crm.employee.leaverequest.session.LeaveSigningSessions
 import pl.detailing.crm.employee.leaverequest.session.SigningSession
@@ -30,8 +31,7 @@ data class CreateLeaveRequestCommand(
     val onDemand: Boolean,
     val startDate: LocalDate?,
     val endDate: LocalDate?,
-    val reason: String?,
-    val substituteEmployeeId: String?
+    val reason: String?
 )
 
 data class CreateLeaveRequestResult(val request: LeaveRequestEntity, val session: SigningSession)
@@ -66,15 +66,11 @@ class CreateLeaveRequestHandler(
         val employeeEmail: String?,
         val employeePhone: String?,
         val workingDays: Int,
-        val substituteName: String?,
         val number: String
     )
 
     suspend fun handle(command: CreateLeaveRequestCommand): CreateLeaveRequestResult = withContext(Dispatchers.IO) {
-        val draft = validator.parse(
-            command.leaveType, command.onDemand, command.startDate, command.endDate,
-            command.reason, command.substituteEmployeeId
-        )
+        val draft = validator.parse(command.leaveType, command.onDemand, command.startDate, command.endDate, command.reason)
         val today = LocalDate.now(warsaw)
         val requestId = UUID.randomUUID()
         val studio = command.studioId.value
@@ -86,7 +82,6 @@ class CreateLeaveRequestHandler(
             val employee = access.employeeOf(command.studioId, command.userId)
             employeeRepository.lockForUpdate(employee.id, studio)
             val workingDays = validator.checkTerm(draft, today)
-            val substituteName = validator.checkSubstitute(studio, employee.id, draft)
             validator.checkAgainstExisting(studio, employee.id, requestId, draft)
             val year = today.year
             Prepared(
@@ -95,7 +90,6 @@ class CreateLeaveRequestHandler(
                 employeeEmail = employee.email,
                 employeePhone = employee.phone,
                 workingDays = workingDays,
-                substituteName = substituteName,
                 number = "WU/$year/${counterRepository.nextValue(studio, year).toString().padStart(4, '0')}"
             )
         }!!
@@ -115,8 +109,7 @@ class CreateLeaveRequestHandler(
                 workingDays = prepared.workingDays,
                 leaveType = draft.leaveType,
                 onDemand = draft.onDemand,
-                reason = draft.reason,
-                substituteName = prepared.substituteName
+                reason = draft.reason
             )
         )
 
@@ -135,7 +128,7 @@ class CreateLeaveRequestHandler(
                     endDate = draft.endDate,
                     workingDays = prepared.workingDays,
                     reason = draft.reason,
-                    substituteEmployeeId = draft.substituteEmployeeId,
+                    pdfLayoutVersion = LeaveRequestPdfRenderer.CURRENT_LAYOUT_VERSION,
                     status = LeaveRequestStatus.DRAFT,
                     origin = LeaveRequestOrigin.SELF_SERVICE,
                     createdBy = command.userId.value,

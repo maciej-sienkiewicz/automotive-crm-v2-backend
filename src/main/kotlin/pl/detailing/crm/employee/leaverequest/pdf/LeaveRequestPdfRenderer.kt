@@ -27,7 +27,8 @@ data class LeaveRequestPdfLayout(
     val decisionApproved: PdfBox,
     val decisionRejected: PdfBox,
     val decidedBy: PdfBox,
-    val decisionBasis: PdfBox,
+    /** Pole „Podstawa uprawnienia" — jest tylko w układzie 1 (dokumenty sprzed V172). */
+    val decisionBasis: PdfBox?,
     val decisionNote: PdfBox,
     val approverSignature: PdfBox,
     val decidedAt: PdfBox,
@@ -53,8 +54,7 @@ data class LeaveRequestPdfData(
     val workingDays: Int,
     val leaveType: LeaveType,
     val onDemand: Boolean,
-    val reason: String?,
-    val substituteName: String?
+    val reason: String?
 )
 
 /**
@@ -70,6 +70,11 @@ data class LeaveRequestPdfData(
  * mieści, jest skracany. To warunek stempli — podpis pracownika i decyzja trafiają na
  * dokument później, w innym żądaniu, i muszą trafić w te same pola ([layout]). Dlatego
  * długość uzasadnienia i notatki decyzji ogranicza walidacja ([MAX_REASON_LENGTH]).
+ *
+ * Z tego samego powodu zmiana położenia któregokolwiek stemplowanego pola to NOWY układ
+ * ([CURRENT_LAYOUT_VERSION]), a nie poprawka: wniosek pamięta, w którym układzie powstał
+ * (`leave_requests.pdf_layout_version`), i stempel bierze pola z [layoutFor]. Inaczej
+ * wniosek złożony przed wdrożeniem dostałby decyzję i podpis rozpatrującego obok pól.
  */
 @Service
 class LeaveRequestPdfRenderer {
@@ -106,15 +111,48 @@ class LeaveRequestPdfRenderer {
 
         const val FOOTNOTE = "Wniosek jest ważny wyłącznie z oboma podpisami. Osoba rozpatrująca działa w imieniu " +
             "pracodawcy jako właściciel studia albo na podstawie uprawnienia „Akceptacja wniosków urlopowych” " +
-            "nadanego w systemie; podstawa obowiązująca w chwili decyzji jest wpisana powyżej. Do dokumentu " +
-            "dołączona jest karta podpisów z przebiegiem obu sesji podpisywania."
+            "nadanego w systemie. Do dokumentu dołączona jest karta podpisów z przebiegiem obu sesji podpisywania."
+
+        /**
+         * Układ 2: bez pola „Osoba zastępująca" i bez wiersza „Podstawa uprawnienia"
+         * (zastępstw ani podstawy na dokumencie nie prowadzimy).
+         */
+        const val CURRENT_LAYOUT_VERSION = 2
+
+        /**
+         * Układ 1, zamrożony: wnioski wygenerowane przed V172 mają na stronie wiersz
+         * „Podstawa uprawnienia", a pod nim przesunięte w dół uzasadnienie i podpis decyzji.
+         * Liczby odczytane z renderera w tej wersji co do punktu. Pola pracownika są w obu
+         * układach te same — różni się tylko część „Decyzja pracodawcy".
+         */
+        val LAYOUT_V1 = LeaveRequestPdfLayout(
+            submittedAt = PdfBox(175.68001f, 692.97f, 183.12f, 18.42f),
+            employeeSignature = PdfBox(30.24f, 281.43005f, 261.94f, 39.25f),
+            employeeSignedAt = PdfBox(303.74f, 281.43005f, 261.94f, 18.42f),
+            decisionApproved = PdfBox(30.24f, 223.09006f, 18.42f, 18.42f),
+            decisionRejected = PdfBox(269.156f, 223.09006f, 18.42f, 18.42f),
+            decidedBy = PdfBox(140.51001f, 199.96005f, 425.16998f, 18.42f),
+            decisionBasis = PdfBox(140.51001f, 176.83005f, 425.16998f, 18.42f),
+            decisionNote = PdfBox(30.24f, 130.54004f, 535.44f, 21.96f),
+            approverSignature = PdfBox(30.24f, 66.07004f, 261.94f, 39.25f),
+            decidedAt = PdfBox(303.74f, 66.07004f, 261.94f, 18.42f),
+            contentBottom = 66.07004f,
+            footnoteTop = 56.0f
+        )
     }
 
     /**
-     * Położenia pól do stempli. Liczone tym samym przebiegiem co [render] (na pustych
-     * danych), więc stempel i renderer nie mogą się rozjechać.
+     * Położenia pól do stempli w bieżącym układzie. Liczone tym samym przebiegiem co
+     * [render] (na pustych danych), więc stempel i renderer nie mogą się rozjechać.
      */
     val layout: LeaveRequestPdfLayout by lazy { draw(sample()).second }
+
+    /** Pola do stempli dla wniosku wygenerowanego w układzie [version]. */
+    fun layoutFor(version: Int): LeaveRequestPdfLayout = when (version) {
+        1 -> LAYOUT_V1
+        CURRENT_LAYOUT_VERSION -> layout
+        else -> throw IllegalStateException("Nieznany układ wniosku urlopowego: $version")
+    }
 
     /** Szkic wniosku bez podpisów (H1) — pola decyzji i podpisów zostają puste. */
     fun render(data: LeaveRequestPdfData): ByteArray = draw(data).first
@@ -189,17 +227,12 @@ class LeaveRequestPdfRenderer {
         }
         s.y -= 2 * CHECK + 4.73f
 
-        // ── Uzasadnienie / zastępstwo ───────────────────────────────────────────
+        // ── Uzasadnienie ────────────────────────────────────────────────────────
+        // Na całą szerokość — obok stało kiedyś pole „Osoba zastępująca". Ta sama wysokość
+        // co wtedy, więc pola niżej (podpis pracownika) zostają tam, gdzie były w układzie 1.
         s.y -= 13.06f
-        val notesTop = s.y
-        val notesW = 261.94f
-        val reasonBox = labeledBox(s, leftX, notesTop, notesW, "UZASADNIENIE WNIOSKU", NOTES_H, 2.41f, tabW = 132f)
-        val substituteBox = labeledBox(
-            s, DocumentStyle.LEFT + DocumentStyle.CONTENT_W - notesW, notesTop, notesW, "OSOBA ZASTĘPUJĄCA", NOTES_H, 2.41f,
-            tabW = 112f
-        )
+        val reasonBox = labeledBox(s, leftX, s.y, DocumentStyle.CONTENT_W, "UZASADNIENIE WNIOSKU", NOTES_H, 2.41f, tabW = 132f)
         multiLine(s, reasonBox, data.reason ?: "")
-        multiLine(s, substituteBox, data.substituteName ?: "")
         s.y = reasonBox.y
 
         // ── Oświadczenia pracownika ─────────────────────────────────────────────
@@ -240,8 +273,6 @@ class LeaveRequestPdfRenderer {
         s.y -= CHECK
         s.y -= 4.71f
         val decidedByBox = fieldRow(s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, 104f, "Osoba rozpatrująca")
-        s.y -= BOX_H + 4.71f
-        val basisBox = fieldRow(s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, 104f, "Podstawa uprawnienia")
         s.y -= BOX_H + 8f
         val decisionNoteBox = labeledBox(
             s, DocumentStyle.LEFT, s.y, DocumentStyle.CONTENT_W, "UZASADNIENIE DECYZJI", DECISION_NOTE_H, 2.41f, tabW = 132f
@@ -262,7 +293,7 @@ class LeaveRequestPdfRenderer {
             decisionApproved = approvedBox,
             decisionRejected = rejectedBox,
             decidedBy = decidedByBox,
-            decisionBasis = basisBox,
+            decisionBasis = null,
             decisionNote = decisionNoteBox,
             approverSignature = approverSignature,
             decidedAt = decidedAt,
@@ -417,7 +448,6 @@ class LeaveRequestPdfRenderer {
         workingDays = 0,
         leaveType = LeaveType.ANNUAL,
         onDemand = false,
-        reason = null,
-        substituteName = null
+        reason = null
     )
 }

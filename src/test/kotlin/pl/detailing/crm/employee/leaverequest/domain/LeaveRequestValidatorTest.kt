@@ -5,7 +5,6 @@ import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.leave.domain.LeaveType
 import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveEntity
 import pl.detailing.crm.employee.leave.infrastructure.EmployeeLeaveRepository
@@ -21,8 +20,7 @@ class LeaveRequestValidatorTest {
 
     private val requests = mockk<LeaveRequestRepository>()
     private val leaves = mockk<EmployeeLeaveRepository>()
-    private val employees = mockk<EmployeeRepository>()
-    private val validator = LeaveRequestValidator(requests, leaves, employees)
+    private val validator = LeaveRequestValidator(requests, leaves)
 
     private val studio = StudioId.random()
     private val employeeId = UUID.randomUUID()
@@ -40,31 +38,30 @@ class LeaveRequestValidatorTest {
         onDemand: Boolean = false,
         start: LocalDate = today.plusDays(5),
         end: LocalDate = start,
-        reason: String? = null,
-        substitute: UUID? = null
-    ) = LeaveRequestDraft(type, onDemand, start, end, reason, substitute)
+        reason: String? = null
+    ) = LeaveRequestDraft(type, onDemand, start, end, reason)
 
     private fun fieldOf(block: () -> Unit): String? = assertThrows<ValidationException> { block() }.field
 
     @Test
     fun `end before start points at endDate`() {
-        assertEquals("endDate", fieldOf { validator.parse("ANNUAL", false, today.plusDays(3), today.plusDays(2), null, null) })
+        assertEquals("endDate", fieldOf { validator.parse("ANNUAL", false, today.plusDays(3), today.plusDays(2), null) })
     }
 
     @Test
     fun `sick leave is not a request`() {
-        assertEquals("leaveType", fieldOf { validator.parse("SICK", false, today, today, null, null) })
+        assertEquals("leaveType", fieldOf { validator.parse("SICK", false, today, today, null) })
     }
 
     @Test
     fun `special leave requires a reason`() {
-        assertEquals("reason", fieldOf { validator.parse("SPECIAL", false, today.plusDays(1), today.plusDays(1), "   ", null) })
-        validator.parse("SPECIAL", false, today.plusDays(1), today.plusDays(1), "Ślub brata", null)
+        assertEquals("reason", fieldOf { validator.parse("SPECIAL", false, today.plusDays(1), today.plusDays(1), "   ") })
+        validator.parse("SPECIAL", false, today.plusDays(1), today.plusDays(1), "Ślub brata")
     }
 
     @Test
     fun `on demand only with annual leave`() {
-        assertEquals("onDemand", fieldOf { validator.parse("UNPAID", true, today, today, null, null) })
+        assertEquals("onDemand", fieldOf { validator.parse("UNPAID", true, today, today, null) })
     }
 
     @Test
@@ -80,11 +77,6 @@ class LeaveRequestValidatorTest {
         assertEquals("startDate", fieldOf {
             validator.checkTerm(draft(start = LocalDate.of(2026, 10, 3), end = LocalDate.of(2026, 10, 4)), today)
         })
-    }
-
-    @Test
-    fun `substitute cannot be the requester`() {
-        assertEquals("substituteEmployeeId", fieldOf { validator.checkSubstitute(studio.value, employeeId, draft(substitute = employeeId)) })
     }
 
     @Test
@@ -132,6 +124,6 @@ class LeaveRequestValidatorTest {
 
     @Test
     fun `reason longer than what fits on the document is refused`() {
-        assertEquals("reason", fieldOf { validator.parse("ANNUAL", false, today.plusDays(1), today.plusDays(1), "x".repeat(251), null) })
+        assertEquals("reason", fieldOf { validator.parse("ANNUAL", false, today.plusDays(1), today.plusDays(1), "x".repeat(251)) })
     }
 }
