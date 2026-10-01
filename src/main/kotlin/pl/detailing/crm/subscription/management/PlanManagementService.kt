@@ -180,6 +180,16 @@ class PlanManagementService(
     fun isCancellable(studio: StudioEntity, pending: PendingPlanChangeEntity): Boolean =
         studio.subscriptionEndsAt?.isAfter(pending.effectiveAt) != true
 
+    /** Wyłączenie modułu da się cofnąć, dopóki opłacony czas nie sięga dalej niż data wyłączenia. */
+    fun isAddOnResumable(studio: StudioEntity, cancelAt: Instant): Boolean =
+        studio.subscriptionEndsAt?.isAfter(cancelAt) != true
+
+    private fun downgradeAlreadyPaid(pending: PendingPlanChangeEntity) = SubscriptionConflictException(
+        code = "DOWNGRADE_ALREADY_PAID",
+        message = "Kolejny okres jest już opłacony w planie ${pending.toPlanKey.displayName}, więc tej zmiany nie można odwołać ani przesunąć. " +
+            "Po jej wejściu w życie możesz przejść na wyższy plan z dopłatą proporcjonalną."
+    )
+
     // ── Free mutations ────────────────────────────────────────────────────────
 
     /**
@@ -192,8 +202,16 @@ class PlanManagementService(
      */
     @Transactional
     fun schedulePlanDowngrade(studioId: StudioId, newPlanKey: PlanKey): StudioEntitlements {
-        studioRepository.lockById(studioId.value)
+        val studio = studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
+
+        // Downgrade, za którego kolejny okres już zapłacono, jest zamrożony. Ponowne zaplanowanie
+        // przesuwało go wcześniej na koniec OPŁACONEGO okresu, a nowy wiersz dawał się już
+        // odwołać — FULL za cenę BASIC w każdym okresie (przegląd planu naprawczego).
+        getPendingDowngrade(studioId)?.takeIf { !isCancellable(studio, it) }?.let { frozen ->
+            if (frozen.toPlanKey == newPlanKey) return entitlementService.readCurrent(studioId)
+            throw downgradeAlreadyPaid(frozen)
+        }
         // Pod blokadą decyduje stan z bazy, nie wpis z cache'u: ten mógł powstać sprzed
         // zatwierdzonej właśnie zmiany (np. upgrade'u), której unieważnienie jeszcze nie doszło.
         val current = entitlementService.readCurrent(studioId)
@@ -246,13 +264,7 @@ class PlanManagementService(
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
         val pending = getPendingDowngrade(studioId) ?: return false
 
-        if (!isCancellable(studio, pending)) {
-            throw SubscriptionConflictException(
-                code = "DOWNGRADE_ALREADY_PAID",
-                message = "Kolejny okres jest już opłacony w planie ${pending.toPlanKey.displayName}, więc tej zmiany nie można odwołać. " +
-                    "Po jej wejściu w życie możesz przejść na wyższy plan z dopłatą proporcjonalną."
-            )
-        }
+        if (!isCancellable(studio, pending)) throw downgradeAlreadyPaid(pending)
 
         pending.status = PendingPlanChangeStatus.CANCELLED
         logger.info("Studio={} cancelled pending downgrade (user request)", studioId)
@@ -274,9 +286,10 @@ class PlanManagementService(
 
         val result = entitlementService.cancelAddOn(studioId, addOnKey, cancelAt)
         if (result == AddOnCancellationResult.NOT_ACTIVE) return result
+        val effectiveCancelAt = entitlementService.readCurrent(studioId).addOnCancellations[addOnKey] ?: cancelAt
 
         val description = when (result) {
-            AddOnCancellationResult.SCHEDULED -> "Wyłączenie modułu ${addOn?.name ?: addOnKey.name} z końcem okresu (${cancelAt?.let(BillingDates::format)})"
+            AddOnCancellationResult.SCHEDULED -> "Wyłączenie modułu ${addOn?.name ?: addOnKey.name} z końcem okresu (${effectiveCancelAt?.let(BillingDates::format)})"
             else -> "Dezaktywacja modułu ${addOn?.name ?: addOnKey.name}"
         }
         paymentLogRepository.save(
@@ -292,11 +305,25 @@ class PlanManagementService(
         return result
     }
 
-    /** Cofa zaplanowane wyłączenie modułu (bez opłaty — moduł jest opłacony do końca okresu). */
+    /**
+     * Cofa zaplanowane wyłączenie modułu — bez opłaty, ale tylko dopóki kolejny okres nie jest
+     * opłacony. Odnowienie liczone bez wyłączanego modułu kupuje okres BEZ niego; cofnięcie
+     * wyłączenia po takiej zapłacie dawało moduł za darmo na cały okres, co miesiąc od nowa
+     * (przegląd planu naprawczego). Wtedy moduł działa do daty wyłączenia, a od niej można go
+     * dokupić na resztę okresu.
+     */
     @Transactional
     fun resumeAddOn(studioId: StudioId, addOnKey: AddOnKey) {
-        studioRepository.lockById(studioId.value)
+        val studio = studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
+        val cancelAt = entitlementService.readCurrent(studioId).addOnCancellations[addOnKey]
+        if (cancelAt != null && !isAddOnResumable(studio, cancelAt)) {
+            throw SubscriptionConflictException(
+                code = "ADD_ON_RENEWAL_ALREADY_PAID",
+                message = "Kolejny okres jest już opłacony bez tego modułu, więc nie da się cofnąć jego wyłączenia. " +
+                    "Moduł działa do ${BillingDates.format(cancelAt)} — od tego dnia możesz go dokupić na resztę okresu."
+            )
+        }
         if (!entitlementService.resumeAddOn(studioId, addOnKey)) {
             throw EntityNotFoundException("Moduł nie jest aktywny: $addOnKey")
         }

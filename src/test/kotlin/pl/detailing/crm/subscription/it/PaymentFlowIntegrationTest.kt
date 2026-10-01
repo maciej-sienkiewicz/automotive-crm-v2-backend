@@ -17,6 +17,7 @@ import pl.detailing.crm.payments.notification.PaymentNotificationSource
 import pl.detailing.crm.payments.order.PaymentOrderStatus
 import pl.detailing.crm.payments.order.PaymentOrderType
 import pl.detailing.crm.payments.p24.Przelewy24Properties
+import pl.detailing.crm.payments.reconciliation.PaymentReconciliationJob
 import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import pl.detailing.crm.shared.PaymentsUnavailableException
 import pl.detailing.crm.shared.StudioId
@@ -162,6 +163,82 @@ class PaymentFlowIntegrationTest : SubscriptionIntegrationTestBase() {
 
         assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
         assertEquals(setOf(AddOnKey.FINANCE_MODULE), addOnsOf(studioId))
+    }
+
+    @Test
+    fun `ponowienie od P24 przed terminem ponowienia nie wola verify i nie zuzywa prob`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 3_000, planKey = PlanKey.BASIC, addOns = listOf(AddOnKey.FINANCE_MODULE))
+        val notification = signedNotification(order.sessionId, order.amountCents, gateway.pay(order.sessionId, order.amountCents))
+        gateway.verifyFails = true
+        notificationProcessor.process(notificationProcessor.record(notification))
+
+        // P24 ponawia notyfikację, zanim minął termin naszego ponowienia (minuta po pierwszej próbie).
+        val resend = notificationProcessor.process(notificationProcessor.record(notification))
+
+        assertEquals(NotificationOutcome.RETRY_SCHEDULED, resend)
+        assertEquals(1, gateway.count(HttpMethod.PUT, "/api/v1/transaction/verify"))
+        assertEquals(1, (notificationRow(order.sessionId)["attempts"] as Number).toInt())
+    }
+
+    @Test
+    fun `wielogodzinna awaria verify nie konczy sie stanem koncowym - platnosc domyka sie po naprawie`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 3_000, planKey = PlanKey.BASIC, addOns = listOf(AddOnKey.FINANCE_MODULE))
+        gateway.verifyFails = true
+        payAndNotify(order)
+
+        repeat(14) {
+            clock.advance(Duration.ofMinutes(61))
+            paymentReconciliationJob.reconcile()
+        }
+
+        assertEquals("RECEIVED", notificationRow(order.sessionId)["status"], "nadal czeka — nie trafia do przeglądu na zawsze")
+        assertTrue(counter("payments.notifications.retry.long") > 0.0, "długie ponawianie jest alarmem")
+        assertEquals(PaymentOrderStatus.EXPIRED, orderStatus(order.id), "zamówienie wygasło, ale przyjmie płatność")
+
+        gateway.verifyFails = false
+        clock.advance(Duration.ofMinutes(61))
+        paymentReconciliationJob.reconcile()
+
+        assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
+        assertEquals(setOf(AddOnKey.FINANCE_MODULE), addOnsOf(studioId))
+    }
+
+    @Test
+    fun `rekoncyliacja nie liczy odrzuconej platnosci jako odzyskanej i wygasza zamowienie`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 3_000, planKey = PlanKey.BASIC, addOns = listOf(AddOnKey.FINANCE_MODULE),
+            token = "TOKEN-x")
+        gateway.pay(order.sessionId, 2_999)   // w P24 zapłacono inną kwotę
+
+        clock.advance(Duration.ofMinutes(31))
+        paymentReconciliationJob.reconcile()
+
+        assertEquals("REJECTED", notificationRow(order.sessionId)["status"])
+        assertEquals(PaymentOrderStatus.EXPIRED, orderStatus(order.id))
+        assertEquals(0.0, counter("payments.reconciliation.recovered.payments"))
+    }
+
+    @Test
+    fun `bez bramki porzucone zamowienie wygasa nieoznaczone, a po przywroceniu poswiadczen jest sprawdzane`() {
+        val studioId = activeStudio(PlanKey.BASIC)
+        val order = order(studioId, PaymentOrderType.ADD_ON_PURCHASE, 3_000, planKey = PlanKey.BASIC, addOns = listOf(AddOnKey.FINANCE_MODULE),
+            token = "TOKEN-x")
+        gateway.pay(order.sessionId, order.amountCents)   // kupujący zapłacił w trakcie przerwy w konfiguracji
+        val blindJob = PaymentReconciliationJob(notificationRepository, orderRepository, notificationProcessor, fulfillmentService,
+            p24Client, Przelewy24Properties(), accessPolicy, meterRegistry, transactionManager)
+
+        clock.advance(Duration.ofMinutes(31))
+        blindJob.reconcile()
+        assertEquals(PaymentOrderStatus.EXPIRED, orderStatus(order.id))
+        assertNull(jdbc.queryForObject("SELECT last_reconciled_at FROM payment_orders WHERE id = ?", java.sql.Timestamp::class.java, order.id))
+        assertEquals(0, gateway.count(HttpMethod.GET, "/api/v1/transaction/by/sessionId/"))
+
+        clock.advance(Duration.ofHours(1))
+        paymentReconciliationJob.reconcile()   // poświadczenia wróciły
+
+        assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
     }
 
     @Test

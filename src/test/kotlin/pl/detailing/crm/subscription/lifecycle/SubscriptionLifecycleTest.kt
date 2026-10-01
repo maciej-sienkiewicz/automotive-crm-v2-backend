@@ -428,20 +428,35 @@ class SubscriptionLifecycleTest {
         }
 
         @Test
-        fun `odnowienie po karencji liczy sie od zaplaty`() {
+        fun `odnowienie wkrotce po karencji rozlicza wykorzystana karencje`() {
+            // Gdyby okres liczył się od zapłaty, wystarczyło odczekać koniec karencji i zapłacić
+            // minutę później: 37 dni pracy za cenę 30 w każdym cyklu (przegląd planu naprawczego).
             val oldEnd = now - days(9)
             val pastDue = billing(PAST_DUE, subscriptionEndsAt = oldEnd, graceEndsAt = oldEnd + grace)
-            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(pastDue, now, grace))
+            assertEquals(now - grace, SubscriptionLifecycle.paidPeriodStart(pastDue, now, grace))
 
             val lateActive = billing(ACTIVE, subscriptionEndsAt = oldEnd)
-            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(lateActive, now, grace))
+            assertEquals(now - grace, SubscriptionLifecycle.paidPeriodStart(lateActive, now, grace))
+
+            val expired = billing(EXPIRED, subscriptionEndsAt = oldEnd)
+            assertEquals(now - grace, SubscriptionLifecycle.paidPeriodStart(expired, now, grace))
         }
 
         @Test
-        fun `odnowienie dokladnie w chwili konca karencji liczy sie od zaplaty`() {
+        fun `odnowienie po dluzszej przerwie liczy sie od zaplaty`() {
+            val oldEnd = now - grace - SubscriptionLifecycle.GRACE_RECOVERY_WINDOW - Duration.ofMinutes(1)
+            val expired = billing(EXPIRED, subscriptionEndsAt = oldEnd)
+            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(expired, now, grace))
+
+            val atWindowEdge = billing(EXPIRED, subscriptionEndsAt = now - grace - SubscriptionLifecycle.GRACE_RECOVERY_WINDOW)
+            assertEquals(now - grace, SubscriptionLifecycle.paidPeriodStart(atWindowEdge, now, grace))
+        }
+
+        @Test
+        fun `odnowienie dokladnie w chwili konca karencji jest ciagle ze starym okresem`() {
             val oldEnd = now - grace
             val b = billing(PAST_DUE, subscriptionEndsAt = oldEnd, graceEndsAt = now)
-            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(b, now, grace))
+            assertEquals(oldEnd, SubscriptionLifecycle.paidPeriodStart(b, now, grace))
         }
 
         @Test
@@ -458,9 +473,15 @@ class SubscriptionLifecycleTest {
         }
 
         @Test
-        fun `EXPIRED i NO_PLAN licza sie od zaplaty, nawet z niedawnym koncem okresu`() {
+        fun `EXPIRED przed koncem karencji i NO_PLAN licza sie od zaplaty`() {
+            // EXPIRED dzień po końcu okresu (np. wygaszone ręcznie) — z karencji nie korzystało.
             val expired = billing(EXPIRED, subscriptionEndsAt = now - days(1), graceEndsAt = now + days(6))
             assertEquals(now, SubscriptionLifecycle.paidPeriodStart(expired, now, grace))
+            val expiredNoGraceDate = billing(EXPIRED, subscriptionEndsAt = now - days(1))
+            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(expiredNoGraceDate, now, grace))
+
+            val expiredTrial = billing(EXPIRED, trialEndsAt = now - days(1))
+            assertEquals(now, SubscriptionLifecycle.paidPeriodStart(expiredTrial, now, grace))
 
             val noPlan = billing(NO_PLAN, trialEndsAt = now + days(3), subscriptionEndsAt = now + days(3))
             assertEquals(now, SubscriptionLifecycle.paidPeriodStart(noPlan, now, grace))
@@ -482,8 +503,9 @@ class SubscriptionLifecycleTest {
             val paidAt = now
             val fulfilledAt = now + Duration.ofHours(2)
             assertEquals(oldEnd, SubscriptionLifecycle.paidPeriodStart(b, paidAt, grace))
-            // Kontrast: gdyby wołający podał chwilę realizacji, okres liczyłby się od niej.
-            assertEquals(fulfilledAt, SubscriptionLifecycle.paidPeriodStart(b, fulfilledAt, grace))
+            // Kontrast: gdyby wołający podał chwilę realizacji (już po karencji), okres zacząłby
+            // się godzinę później niż stary koniec — klient straciłby godzinę opłaconego czasu.
+            assertEquals(fulfilledAt - grace, SubscriptionLifecycle.paidPeriodStart(b, fulfilledAt, grace))
         }
     }
 

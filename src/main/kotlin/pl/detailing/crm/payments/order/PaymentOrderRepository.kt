@@ -48,6 +48,29 @@ interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID> {
         @Param("statuses") statuses: Collection<PaymentOrderStatus>
     ): List<PaymentOrderEntity>
 
+    /**
+     * To samo z blokadą wierszy — dla checkoutu, który je wygasza. Bez blokady równoległa
+     * notyfikacja albo rekoncyliacja podbijała wersję zamówienia między odczytem a wygaszeniem,
+     * a checkout kończył się błędem 500 (optimistic lock). Kolejność blokad: studio → zamówienia.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT o FROM PaymentOrderEntity o
+        WHERE o.studioId = :studioId
+          AND o.type = :type
+          AND o.addOnKeysRaw = :addOnKeysRaw
+          AND o.planKey = :planKey
+          AND o.status IN :statuses
+        ORDER BY o.createdAt DESC
+    """)
+    fun lockOpenForProduct(
+        @Param("studioId") studioId: UUID,
+        @Param("type") type: PaymentOrderType,
+        @Param("planKey") planKey: PlanKey,
+        @Param("addOnKeysRaw") addOnKeysRaw: String,
+        @Param("statuses") statuses: Collection<PaymentOrderStatus>
+    ): List<PaymentOrderEntity>
+
     /** Opłacone, ale niezrealizowane — worker ponawia realizację. */
     @Query("""
         SELECT o.id FROM PaymentOrderEntity o
@@ -64,7 +87,7 @@ interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID> {
         SELECT o.id FROM PaymentOrderEntity o
         WHERE o.status = 'PENDING' AND o.createdAt <= :createdBefore
           AND (o.lastReconciledAt IS NULL OR o.lastReconciledAt <= :reconciledBefore)
-        ORDER BY o.createdAt ASC
+        ORDER BY o.lastReconciledAt ASC NULLS FIRST, o.createdAt ASC
     """)
     fun findStalePendingIds(
         @Param("createdBefore") createdBefore: Instant,
@@ -73,14 +96,20 @@ interface PaymentOrderRepository : JpaRepository<PaymentOrderEntity, UUID> {
     ): List<UUID>
 
     /**
-     * Zamówienia wygaszone bez zapytania P24 (zastąpione nowszym zamówieniem, porządek V172)
-     * — jedno sprawdzenie każdego, czy nie zostało jednak opłacone, a notyfikacja nie zginęła.
+     * Zamówienia wygaszone, które wciąż mogą zostać opłacone (strona płatności P24 była
+     * wydana): niesprawdzone ani razu (zastąpione nowszym zamówieniem, porządek V172,
+     * wygaszone przy wyłączonej bramce) i — rzadziej — sprawdzone dawniej niż [reconciledBefore].
+     * Spóźniona płatność nie może zależeć wyłącznie od tego, czy dotrze notyfikacja.
      */
     @Query("""
         SELECT o.id FROM PaymentOrderEntity o
-        WHERE o.status = 'EXPIRED' AND o.p24Token IS NOT NULL AND o.lastReconciledAt IS NULL
-          AND o.createdAt >= :createdAfter
-        ORDER BY o.createdAt ASC
+        WHERE o.status = 'EXPIRED' AND o.p24Token IS NOT NULL AND o.createdAt >= :createdAfter
+          AND (o.lastReconciledAt IS NULL OR o.lastReconciledAt <= :reconciledBefore)
+        ORDER BY o.lastReconciledAt ASC NULLS FIRST, o.createdAt ASC
     """)
-    fun findUncheckedExpiredIds(@Param("createdAfter") createdAfter: Instant, pageable: Pageable): List<UUID>
+    fun findExpiredDueForCheck(
+        @Param("createdAfter") createdAfter: Instant,
+        @Param("reconciledBefore") reconciledBefore: Instant,
+        pageable: Pageable
+    ): List<UUID>
 }

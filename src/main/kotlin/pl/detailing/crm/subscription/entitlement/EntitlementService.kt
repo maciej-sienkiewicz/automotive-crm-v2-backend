@@ -208,11 +208,14 @@ class EntitlementService(
         val row = subscription.activeAddOns.firstOrNull { it.addOn.key == addOnKey }
             ?: return AddOnCancellationResult.NOT_ACTIVE
 
-        val result = if (cancelAt == null || !cancelAt.isAfter(clock.instant())) {
+        // Data wyłączenia nigdy się nie oddala: ponowne „wyłącz" po opłaceniu kolejnego okresu
+        // bez modułu przesuwało ją na koniec tego okresu — moduł za darmo (przegląd planu naprawczego).
+        val effectiveCancelAt = listOfNotNull(row.cancelAt, cancelAt).minOrNull()
+        val result = if (effectiveCancelAt == null || !effectiveCancelAt.isAfter(clock.instant())) {
             subscription.activeAddOns.remove(row)
             AddOnCancellationResult.REMOVED
         } else {
-            row.cancelAt = cancelAt
+            row.cancelAt = effectiveCancelAt
             AddOnCancellationResult.SCHEDULED
         }
         cacheInvalidator.evict(studioId)

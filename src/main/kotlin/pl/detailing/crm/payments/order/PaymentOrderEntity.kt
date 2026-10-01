@@ -139,6 +139,15 @@ class PaymentOrderEntity(
     @Column(name = "last_reconciled_at", columnDefinition = "timestamp with time zone")
     var lastReconciledAt: Instant? = null,
 
+    /**
+     * Koniec opłaconego okresu, do którego policzono dopłatę proporcjonalną (PLAN_UPGRADE,
+     * ADD_ON_PURCHASE). Realizacja sprawdza, że ten okres wciąż trwa i się nie wydłużył —
+     * inaczej dopłata za 5 dni, opłacona już po odnowieniu, dawała efekt na cały kolejny okres.
+     * Null dla zamówień bez proracji i sprzed V172.
+     */
+    @Column(name = "priced_until", columnDefinition = "timestamp with time zone")
+    val pricedUntil: Instant? = null,
+
     // Null przed pierwszym zapisem → persist zamiast merge; potem optymistyczna blokada (audyt, D2, D4).
     @Version
     @Column(name = "version", nullable = false, columnDefinition = "BIGINT NOT NULL DEFAULT 0")
@@ -166,6 +175,16 @@ class PaymentOrderEntity(
         status = PaymentOrderStatus.REFUND_REQUIRED
         failureReason = reason.take(500)
         fulfilledAt = at
+    }
+
+    /**
+     * Zamówienie za 0 zł (trial), którego efektu nie da się już zastosować — nie ma czego
+     * zwracać, więc nie trafia do kolejki zwrotów ani na alarm `payments.refund.required`.
+     */
+    fun cancelFreeOrder(reason: String) {
+        check(status == PaymentOrderStatus.PAID && amountCents == 0L) { "Zamówienie $id w stanie $status za $amountCents gr nie jest darmowym zamówieniem do anulowania" }
+        status = PaymentOrderStatus.CANCELLED
+        failureReason = reason.take(500)
     }
 
     fun expire(reason: String) {

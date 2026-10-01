@@ -167,7 +167,8 @@ class SubscriptionLifecycleIntegrationTest : SubscriptionIntegrationTestBase() {
         payAndNotify(orderRepository.findById(renewal.orderId).orElseThrow())
 
         assertEquals(SubscriptionStatus.ACTIVE, statusOf(studioId))
-        assertEquals(clock.instant().plus(Duration.ofDays(30)), endsAtOf(studioId), "po karencji nowy okres liczy się od zapłaty")
+        // Zapłata dzień po karencji: wykorzystane 7 dni karencji wchodzi do opłaconego okresu.
+        assertEquals(clock.instant().minus(Duration.ofDays(7)).plus(Duration.ofDays(30)), endsAtOf(studioId))
         assertTrue(capabilityService.hasCapability(StudioId(studioId), CapabilityKey.FINANCE_ACCESS), "dostęp wraca bez czekania na job")
     }
 
@@ -259,7 +260,8 @@ class SubscriptionLifecycleIntegrationTest : SubscriptionIntegrationTestBase() {
 
         assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
         assertEquals(SubscriptionStatus.ACTIVE, statusOf(studioId), "opłacone studio nie zostaje wygaszone")
-        assertEquals(clock.instant().plus(Duration.ofDays(30)), endsAtOf(studioId))
+        assertEquals(clock.instant().minus(Duration.ofDays(7)).plus(Duration.ofDays(30)), endsAtOf(studioId),
+            "ta sama data bez względu na to, kto wygrał wyścig")
         assertNull(graceEndsAtOf(studioId))
     }
 }

@@ -15,6 +15,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionConflictException
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.shared.ValidationException
+import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
@@ -28,6 +29,7 @@ import pl.detailing.crm.subscription.pricing.MidPeriodPurchaseMode
 import pl.detailing.crm.subscription.pricing.PricingService
 import pl.detailing.crm.subscription.pricing.ProrationService
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 // ─── API types ────────────────────────────────────────────────────────────────
@@ -175,8 +177,9 @@ class CheckoutService(
      * przyjmuje spóźnioną płatność — kupujący, który jeszcze je opłaca, niczego nie traci.
      */
     private fun openOrderFor(studioId: StudioId, type: PaymentOrderType, draft: OrderDraft): OpenOrder = tx.execute {
-        studioRepository.lockById(studioId.value)
+        val studio = studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
+        revalidateUnderLock(studio, studioId, type, draft)
         val addOnKeysRaw = PaymentOrderEntity.encodeAddOnKeys(draft.addOnKeys)
 
         val awaitingActivation = orderRepository.findOpenForProduct(
@@ -188,10 +191,10 @@ class CheckoutService(
 
         val now = accessPolicy.now()
         val reusableSince = now.minus(Duration.ofMinutes((properties.transactionTimeLimitMinutes - 1).coerceAtLeast(1).toLong()))
-        val open = orderRepository.findOpenForProduct(
+        val open = orderRepository.lockOpenForProduct(
             studioId.value, type, draft.planKey, addOnKeysRaw, listOf(PaymentOrderStatus.PENDING)
         )
-        open.firstOrNull { it.p24Token != null && it.amountCents == draft.amountCents && it.createdAt.isAfter(reusableSince) }
+        open.firstOrNull { it.p24Token != null && it.createdAt.isAfter(reusableSince) && samePrice(it, draft) }
             ?.let { return@execute OpenOrder.Reused(it) }
         // Zamówienie bez tokenu sprzed chwili = pierwsze kliknięcie właśnie rejestruje się w P24.
         // Wygaszenie go tutaj dałoby dwie żywe strony płatności na ten sam zakup (pierwsza
@@ -215,11 +218,51 @@ class CheckoutService(
                     addOnKeysRaw = addOnKeysRaw,
                     amountCents = draft.amountCents,
                     description = draft.description,
-                    createdAt = now
+                    createdAt = now,
+                    pricedUntil = draft.pricedUntil
                 )
             )
         )
     }!!
+
+    /**
+     * Wykonalność sprawdzona drugi raz, pod blokadą studia i na stanie z bazy. Szkic zamówienia
+     * powstaje wcześniej, z cache'u i bez blokady: podwójne kliknięcie „Aktywuj moduł" czekało
+     * na blokadę trzymaną przez realizację pierwszego i zakładało drugie zamówienie na moduł,
+     * który właśnie stał się aktywny — kończące się zwrotem (przegląd planu naprawczego).
+     */
+    private fun revalidateUnderLock(studio: StudioEntity, studioId: StudioId, type: PaymentOrderType, draft: OrderDraft) {
+        when (type) {
+            PaymentOrderType.INITIAL_PURCHASE ->
+                if (studio.subscriptionStatus == SubscriptionStatus.ACTIVE || studio.subscriptionStatus == SubscriptionStatus.PAST_DUE) {
+                    throw ValidationException("Studio ma już subskrypcję — użyj przedłużenia lub zmiany pakietu.")
+                }
+            PaymentOrderType.PLAN_UPGRADE -> {
+                val currentPlan = requirePlan(entitlementService.readCurrent(studioId).planKey)
+                if (requirePlan(draft.planKey).monthlyPriceGrossCents <= currentPlan.monthlyPriceGrossCents) {
+                    throw ValidationException("Studio ma już pakiet ${currentPlan.name}.")
+                }
+            }
+            PaymentOrderType.ADD_ON_PURCHASE -> {
+                val current = entitlementService.readCurrent(studioId)
+                if (current.planKey == PlanKey.FULL) throw ValidationException("Pakiet FULL zawiera już wszystkie moduły.")
+                if (draft.addOnKeys.any { it in current.activeAddOnKeys }) throw ValidationException("Ten moduł jest już aktywny.")
+            }
+            // Skład odnowienia porównuje realizacja (OrderFulfillmentService.applyRenewal).
+            PaymentOrderType.RENEWAL -> Unit
+        }
+    }
+
+    /**
+     * Ta sama cena — z tolerancją 1 grosza dla dopłaty proporcjonalnej za TEN SAM okres: proporcja
+     * liczona co do sekundy zmienia się o grosz co kilka minut, a starsze zamówienie (dłuższe okno)
+     * nigdy nie jest tańsze od nowego. Bez tolerancji ponowne kliknięcie trafiające w zmianę grosza
+     * zakładałoby drugie zamówienie zamiast wskazać pierwsze.
+     */
+    private fun samePrice(open: PaymentOrderEntity, draft: OrderDraft): Boolean =
+        open.amountCents == draft.amountCents ||
+            (draft.pricedUntil != null && open.pricedUntil == draft.pricedUntil &&
+                open.amountCents - draft.amountCents in 0..1)
 
     // ─── Order drafts ─────────────────────────────────────────────────────────
 
@@ -227,7 +270,9 @@ class CheckoutService(
         val planKey: PlanKey,
         val addOnKeys: List<AddOnKey>,
         val amountCents: Long,
-        val description: String
+        val description: String,
+        /** Koniec okresu, do którego policzono proporcję — tylko dopłaty w trakcie okresu. */
+        val pricedUntil: Instant? = null
     )
 
     /** First purchase: full month of plan + selected modules. For NO_PLAN, TRIALING and EXPIRED studios. */
@@ -287,21 +332,22 @@ class CheckoutService(
             throw ValidationException("Ta operacja obsługuje tylko przejście na droższy pakiet. Downgrade wykonaj przez zmianę planu (bez płatności).")
         }
 
-        val amount = when (prorationService.midPeriodPurchaseMode(studioId)) {
-            MidPeriodPurchaseMode.TRIAL_FREE -> 0L
+        val proration = when (prorationService.midPeriodPurchaseMode(studioId)) {
+            MidPeriodPurchaseMode.TRIAL_FREE -> null
             MidPeriodPurchaseMode.PRORATED -> prorationService.calculatePlanUpgrade(
                 studioId, currentPlan.monthlyPriceGrossCents, newPlan.monthlyPriceGrossCents,
                 planManagementService.paidAddOnCredits(entitlements)
-            )!!.proratedAmountCents
+            )!!
             MidPeriodPurchaseMode.NOT_ALLOWED -> throw ValidationException(PlanManagementService.NOT_ALLOWED_EXPLANATION)
         }
-        val days = prorationService.daysRemainingInPeriod(studioId)
 
         return OrderDraft(
             planKey = newPlanKey,
             addOnKeys = emptyList(),
-            amountCents = amount,
-            description = "Zmiana pakietu na ${newPlan.name}" + (days?.let { " — $it dni (proporcjonalnie)" } ?: " (okres próbny)")
+            amountCents = proration?.proratedAmountCents ?: 0L,
+            description = "Zmiana pakietu na ${newPlan.name}" +
+                (proration?.let { " — ${it.daysRemaining} dni (proporcjonalnie)" } ?: " (okres próbny)"),
+            pricedUntil = proration?.periodEndsAt
         )
     }
 
@@ -323,26 +369,32 @@ class CheckoutService(
             throw ValidationException("Pakiet FULL zawiera już wszystkie moduły.")
         }
         entitlements.addOnCancellations[addOnKey]?.let { cancelAt ->
-            throw ValidationException("Ten moduł działa do ${BillingDates.format(cancelAt)} i jest opłacony do końca okresu — przywróć go zamiast kupować ponownie.")
+            val studio = requireStudio(studioId)
+            throw ValidationException(
+                if (planManagementService.isAddOnResumable(studio, cancelAt))
+                    "Ten moduł działa do ${BillingDates.format(cancelAt)} i jest opłacony do końca okresu — przywróć go zamiast kupować ponownie."
+                else
+                    "Ten moduł działa do ${BillingDates.format(cancelAt)}, a kolejny okres opłacono już bez niego — od tego dnia możesz go dokupić na resztę okresu."
+            )
         }
         if (addOnKey in entitlements.activeAddOnKeys) {
             throw ValidationException("Ten moduł jest już aktywny.")
         }
 
         val addOn = requirePurchasableAddOns(listOf(addOnKey)).single()
-        val amount = when (prorationService.midPeriodPurchaseMode(studioId)) {
-            MidPeriodPurchaseMode.TRIAL_FREE -> 0L
-            MidPeriodPurchaseMode.PRORATED ->
-                prorationService.calculateAddOnActivation(studioId, addOn.monthlyPriceGrossCents!!)!!.proratedAmountCents
+        val proration = when (prorationService.midPeriodPurchaseMode(studioId)) {
+            MidPeriodPurchaseMode.TRIAL_FREE -> null
+            MidPeriodPurchaseMode.PRORATED -> prorationService.calculateAddOnActivation(studioId, addOn.monthlyPriceGrossCents!!)!!
             MidPeriodPurchaseMode.NOT_ALLOWED -> throw ValidationException(PlanManagementService.NOT_ALLOWED_EXPLANATION)
         }
-        val days = prorationService.daysRemainingInPeriod(studioId)
 
         return OrderDraft(
             planKey = entitlements.planKey,
             addOnKeys = listOf(addOnKey),
-            amountCents = amount,
-            description = "Moduł ${addOn.name}" + (days?.let { " — $it dni (proporcjonalnie)" } ?: " (okres próbny)")
+            amountCents = proration?.proratedAmountCents ?: 0L,
+            description = "Moduł ${addOn.name}" +
+                (proration?.let { " — ${it.daysRemaining} dni (proporcjonalnie)" } ?: " (okres próbny)"),
+            pricedUntil = proration?.periodEndsAt
         )
     }
 

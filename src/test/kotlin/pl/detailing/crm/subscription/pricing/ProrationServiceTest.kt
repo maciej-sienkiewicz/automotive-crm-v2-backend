@@ -142,15 +142,19 @@ class ProrationServiceTest {
         }
 
         @Test
-        fun `pelne dni zaokraglane w dol`() {
+        fun `dni do opisu to dni rozpoczete, a kwota liczy sie co do sekundy`() {
+            // Dawniej dni zaokrąglane w dół: zakup na 10 dni i 23 h kosztował jak na 10 dni,
+            // choć moduł działał prawie 11 (przegląd planu naprawczego).
             givenStudio(ACTIVE, subscriptionEndsAt = now + days(10) + Duration.ofHours(23))
-            assertEquals(10L, service.daysRemainingInPeriod(studioId))
+            assertEquals(11L, service.daysRemainingInPeriod(studioId))
+            // 3000 × (10 d 23 h / 30 d) = 1095,83 → 1096 (dawniej 3000 × 10/30 = 1000).
+            assertEquals(1_096L, service.calculateAddOnActivation(studioId, 3_000)!!.proratedAmountCents)
 
             givenStudio(ACTIVE, subscriptionEndsAt = now + days(30))
             assertEquals(30L, service.daysRemainingInPeriod(studioId))
 
             givenStudio(ACTIVE, subscriptionEndsAt = now + days(30) - Duration.ofSeconds(1))
-            assertEquals(29L, service.daysRemainingInPeriod(studioId))
+            assertEquals(30L, service.daysRemainingInPeriod(studioId))
         }
 
         @Test

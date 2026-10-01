@@ -117,19 +117,49 @@ object SubscriptionLifecycle {
      *  - trwający okres albo karencja → od końca opłaconego okresu: dni karencji są płatne,
      *    inaczej każde spóźnione odnowienie dawałoby darmowe dni;
      *  - trial → od końca triala: zakup w trakcie triala nie przepala jego reszty;
-     *  - brak dostępu (EXPIRED, NO_PLAN, karencja już minęła) → od chwili zapłaty.
+     *  - karencja minęła niedawno (do [GRACE_RECOVERY_WINDOW] po jej końcu) → od chwili zapłaty
+     *    MINUS wykorzystana karencja. Bez tego karencja byłaby darmowa dla każdego, kto odczeka
+     *    jej koniec i zapłaci minutę później: 37 dni pracy za cenę 30 w każdym cyklu (przegląd
+     *    planu naprawczego). Kto wraca po dłuższej przerwie albo został wygaszony przed końcem
+     *    karencji (nie korzystał z niej), zaczyna od chwili zapłaty;
+     *  - pozostałe (NO_PLAN, wygasły trial, dawno wygasłe) → od chwili zapłaty.
      *
      * Liczone od [paidAt] (chwili otrzymania pieniędzy), nie od chwili realizacji — ponowiona
      * realizacja nie przesuwa dat.
      */
-    fun paidPeriodStart(billing: BillingSnapshot, paidAt: Instant, grace: Duration): Instant = when {
-        billing.status == SubscriptionStatus.TRIALING && billing.trialEndsAt?.isAfter(paidAt) == true ->
-            billing.trialEndsAt
-        (billing.status == SubscriptionStatus.ACTIVE || billing.status == SubscriptionStatus.PAST_DUE) &&
-                billing.subscriptionEndsAt != null && isAccessible(billing, paidAt, grace) ->
-            billing.subscriptionEndsAt
-        else -> paidAt
+    fun paidPeriodStart(billing: BillingSnapshot, paidAt: Instant, grace: Duration): Instant {
+        val trialEndsAt = billing.trialEndsAt
+        if (billing.status == SubscriptionStatus.TRIALING && trialEndsAt != null && trialEndsAt.isAfter(paidAt)) {
+            return trialEndsAt
+        }
+        val paidUntil = billing.subscriptionEndsAt ?: return paidAt
+        val hadPaidPeriod = billing.status == SubscriptionStatus.ACTIVE || billing.status == SubscriptionStatus.PAST_DUE ||
+                billing.status == SubscriptionStatus.EXPIRED
+        if (!hadPaidPeriod) return paidAt
+        if (billing.status != SubscriptionStatus.EXPIRED && isAccessible(billing, paidAt, grace)) return paidUntil
+        if (!paidUntil.isBefore(paidAt)) return paidAt
+
+        // Karencja kończy się na `grace_ends_at` (PAST_DUE) albo `koniec okresu + karencja`
+        // (ACTIVE przed przebiegiem joba; EXPIRED, któremu job ją wyczyścił).
+        val graceEnd = billing.graceEndsAt ?: paidUntil.plus(grace)
+        // Wygaszone przed końcem karencji (np. ręcznie) — z karencji nie korzystało, nie płaci za nią.
+        if (paidAt.isBefore(graceEnd)) return paidAt
+        if (paidAt.isAfter(graceEnd.plus(GRACE_RECOVERY_WINDOW))) return paidAt
+        val graceUsed = Duration.between(paidUntil, graceEnd).coerceIn(Duration.ZERO, grace)
+        return paidAt.minus(graceUsed)
     }
+
+    /**
+     * Od kiedy biegnie OPŁACONY czas, za który dopłaca się przy zakupie w trakcie okresu.
+     * Zwykle „teraz"; po zakupie w trakcie triala — koniec triala: reszta triala jest darmowa,
+     * więc nie wolno jej wliczać do proracji (przegląd planu naprawczego: moduł kupiony dzień
+     * po zakupie pakietu w trialu kosztował trzy miesięczne ceny).
+     */
+    fun billableFrom(billing: BillingSnapshot, now: Instant): Instant =
+        billing.trialEndsAt?.takeIf { billing.status == SubscriptionStatus.ACTIVE && it.isAfter(now) } ?: now
+
+    /** Ile po końcu karencji zapłata nadal rozlicza wykorzystane dni karencji. */
+    val GRACE_RECOVERY_WINDOW: Duration = Duration.ofDays(30)
 
     private fun graceEndOf(billing: BillingSnapshot, grace: Duration): Instant? =
         billing.graceEndsAt ?: billing.subscriptionEndsAt?.plus(grace)

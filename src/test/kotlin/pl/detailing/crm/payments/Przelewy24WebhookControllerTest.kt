@@ -38,7 +38,8 @@ class Przelewy24WebhookControllerTest {
 
     private val p24Client = mockk<Przelewy24Client>()
     private val processor = mockk<PaymentNotificationProcessor>()
-    private val mockMvc: MockMvc = MockMvcBuilders.standaloneSetup(Przelewy24WebhookController(p24Client, processor)).build()
+    private val properties = Przelewy24Properties(merchantId = 11111, posId = 22222, crc = "crc-secret", apiKey = "api-key")
+    private val mockMvc: MockMvc = MockMvcBuilders.standaloneSetup(Przelewy24WebhookController(p24Client, processor, properties)).build()
 
     private val url = "/api/v1/payments/p24/status"
     private val notificationId = UUID.fromString("00000000-0000-0000-0000-00000000a001")
@@ -169,7 +170,7 @@ class Przelewy24WebhookControllerTest {
         val realClient = Przelewy24Client(
             Przelewy24Properties(merchantId = 11111, posId = 22222, crc = "crc-secret", apiKey = "api-key")
         )
-        val mvc = MockMvcBuilders.standaloneSetup(Przelewy24WebhookController(realClient, processor)).build()
+        val mvc = MockMvcBuilders.standaloneSetup(Przelewy24WebhookController(realClient, processor, properties)).build()
         val unsigned = expected.copy(statement = "Opłata za pakiet/Łódź", sign = "")
         val signed = unsigned.copy(sign = realClient.notificationSign(unsigned))
         every { processor.record(any()) } returns notificationId
@@ -186,6 +187,30 @@ class Przelewy24WebhookControllerTest {
     }
 
     // ─── Kody odpowiedzi ──────────────────────────────────────────────────────
+
+    @Test
+    fun `bez poswiadczen P24 - 503 i nic nie jest zapisywane, bo podpis z pustym CRC da sie podrobic`() {
+        val unconfigured = MockMvcBuilders.standaloneSetup(
+            Przelewy24WebhookController(p24Client, processor, Przelewy24Properties())
+        ).build()
+
+        unconfigured.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(jacksonObjectMapper().writeValueAsString(expected)))
+            .andExpect(status().isServiceUnavailable)
+
+        verify(exactly = 0) { p24Client.isNotificationSignValid(any()) }
+        verify(exactly = 0) { processor.record(any()) }
+    }
+
+    @Test
+    fun `notyfikacja dla innego sprzedawcy albo punktu - 400 i nic nie jest zapisywane`() {
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON)
+            .content(jacksonObjectMapper().writeValueAsString(expected.copy(merchantId = 99999))))
+            .andExpect(status().isBadRequest)
+        mockMvc.perform(post(url).contentType(MediaType.APPLICATION_FORM_URLENCODED).content(formBody(expected.copy(posId = 99999))))
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { processor.record(any()) }
+    }
 
     @Test
     fun `niepoprawny podpis - 400 i nic nie jest zapisywane`() {

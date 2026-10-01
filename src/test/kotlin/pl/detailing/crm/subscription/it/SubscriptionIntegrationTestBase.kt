@@ -13,11 +13,14 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.EnableCaching
-import org.springframework.cache.concurrent.ConcurrentMapCacheManager
+import org.springframework.cache.concurrent.ConcurrentMapCache
+import org.springframework.cache.support.SimpleCacheManager
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.core.io.ClassPathResource
+import org.springframework.core.serializer.support.SerializationDelegate
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.PlatformTransactionManager
@@ -25,11 +28,13 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.client.RestTemplate
+import pl.detailing.crm.config.CacheConfig
 import pl.detailing.crm.customer.consent.template.DefaultMarketingConsentProvisioner
 import pl.detailing.crm.payments.checkout.CheckoutService
 import pl.detailing.crm.payments.checkout.OrderFulfillmentService
 import pl.detailing.crm.payments.checkout.SubscriptionFulfillmentSideEffects
 import pl.detailing.crm.payments.notification.PaymentNotificationProcessor
+import pl.detailing.crm.payments.notification.PaymentNotificationRepository
 import pl.detailing.crm.payments.order.PaymentOrderEntity
 import pl.detailing.crm.payments.order.PaymentOrderRepository
 import pl.detailing.crm.payments.order.PaymentOrderStatus
@@ -73,6 +78,7 @@ import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.sql.DataSource
 
 /**
@@ -143,7 +149,23 @@ abstract class SubscriptionIntegrationTestBase {
     class Beans {
         @Bean @Primary fun clock(): MutableClock = MutableClock()
         @Bean fun meterRegistry(): MeterRegistry = SimpleMeterRegistry()
-        @Bean fun cacheManager(): CacheManager = ConcurrentMapCacheManager(EntitlementCacheInvalidator.CACHE_NAME)
+        /**
+         * Cache w pamięci, ale z wartościami przepuszczanymi przez serializer Redisa z produkcji
+         * ([CacheConfig.redisObjectMapper]). Zwykły ConcurrentMapCacheManager trzyma obiekty bez
+         * serializacji — przez niego nie dało się zobaczyć, że uprawnienia z datami nie dają się
+         * zapisać w Redisie.
+         */
+        @Bean fun cacheManager(): CacheManager {
+            val redisSerializer = GenericJackson2JsonRedisSerializer(CacheConfig.redisObjectMapper())
+            val serialization = SerializationDelegate(
+                { value, out -> out.write(redisSerializer.serialize(value)) },
+                { input -> redisSerializer.deserialize(input.readAllBytes()) }
+            )
+            return SimpleCacheManager().apply {
+                // Konstruktor z serializacją jest chroniony — stąd podklasa.
+                setCaches(listOf(object : ConcurrentMapCache(EntitlementCacheInvalidator.CACHE_NAME, ConcurrentHashMap(), false, serialization) {}))
+            }
+        }
         @Bean fun fakeP24Gateway(): FakeP24Gateway = FakeP24Gateway()
         @Bean fun przelewy24Client(properties: Przelewy24Properties, gateway: FakeP24Gateway): Przelewy24Client =
             Przelewy24Client(properties, RestTemplate().apply { interceptors.add(gateway) })
@@ -179,6 +201,7 @@ abstract class SubscriptionIntegrationTestBase {
     @Autowired lateinit var studioAddOnRepository: StudioAddOnRepository
     @Autowired lateinit var pendingRepository: PendingPlanChangeRepository
     @Autowired lateinit var orderRepository: PaymentOrderRepository
+    @Autowired lateinit var notificationRepository: PaymentNotificationRepository
     @Autowired lateinit var paymentLogRepository: SubscriptionPaymentLogRepository
 
     @Autowired lateinit var accessPolicy: SubscriptionAccessPolicy
@@ -213,6 +236,8 @@ abstract class SubscriptionIntegrationTestBase {
         cacheManager.getCache(EntitlementCacheInvalidator.CACHE_NAME)?.clear()
         clock.set(MutableClock.DEFAULT_START)
         gateway.reset()
+        counterBaseline.clear()
+        meterRegistry.meters.filterIsInstance<io.micrometer.core.instrument.Counter>().forEach { counterBaseline[it.id] = it.count() }
         seedCatalog()
     }
 
@@ -373,8 +398,14 @@ abstract class SubscriptionIntegrationTestBase {
             "SELECT count(*) FROM subscription_payment_log WHERE studio_id = ? AND event_type = ?", Long::class.java, studioId, eventType
         )!!
 
+    /**
+     * Przyrost licznika W TYM TEŚCIE. Rejestr mierników jest wspólny dla wszystkich testów klasy
+     * (jeden kontekst), więc wartość bezwzględna zależałaby od kolejności testów.
+     */
     protected fun counter(name: String, vararg tags: String): Double =
-        meterRegistry.find(name).tags(*tags).counters().sumOf { it.count() }
+        meterRegistry.find(name).tags(*tags).counters().sumOf { it.count() - (counterBaseline[it.id] ?: 0.0) }
+
+    private val counterBaseline = mutableMapOf<io.micrometer.core.instrument.Meter.Id, Double>()
 
     // ── Awaria jednego wiersza ───────────────────────────────────────────────
 

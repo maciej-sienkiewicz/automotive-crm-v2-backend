@@ -112,7 +112,8 @@ class SubscriptionAuditRegressionIntegrationTest : SubscriptionIntegrationTestBa
         val notification = signedNotification(order.sessionId, order.amountCents, p24OrderId)
 
         // Pierwsza obsługa stoi w `verify` (HTTP do P24), gdy przychodzi ponowienie tej samej
-        // notyfikacji i przechodzi całą ścieżkę. Dawniej obie realizowały zamówienie: +60 dni.
+        // notyfikacji. Dawniej obie realizowały zamówienie: +60 dni. Teraz ponowienie trafia
+        // w ten sam wiersz inboxu z dzierżawą pierwszej obsługi i kończy się bez drugiego `verify`.
         val firstInVerify = CountDownLatch(1)
         val duplicateDone = CountDownLatch(1)
         val gateArmed = AtomicBoolean(true)
@@ -133,6 +134,7 @@ class SubscriptionAuditRegressionIntegrationTest : SubscriptionIntegrationTestBa
         assertEquals(1L, ledgerCount(studioId, "SUBSCRIPTION_RENEWAL"))
         assertEquals(PaymentOrderStatus.FULFILLED, orderStatus(order.id))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM payment_notifications", Long::class.java))
+        assertEquals(1, gateway.count(HttpMethod.PUT, "/api/v1/transaction/verify"), "duplikat nie weryfikuje drugi raz")
     }
 
     @Test

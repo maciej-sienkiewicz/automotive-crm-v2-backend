@@ -39,6 +39,10 @@ ALTER TABLE studio_subscription_add_ons ADD COLUMN IF NOT EXISTS cancel_at TIMES
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMPTZ;
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS last_reconciled_at TIMESTAMPTZ;
 
+-- Do kiedy sięga okres, za który policzono dopłatę proporcjonalną (upgrade, moduł): realizacja
+-- sprawdza, że to wciąż ten sam okres — odnowienie opłacone w międzyczasie go wydłuża.
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS priced_until TIMESTAMPTZ;
+
 -- Wpis w historii płatności wie, którego zamówienia dotyczy.
 ALTER TABLE subscription_payment_log ADD COLUMN IF NOT EXISTS order_id UUID;
 

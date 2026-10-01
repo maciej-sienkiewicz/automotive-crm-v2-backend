@@ -58,6 +58,9 @@ class SubscriptionAccessPolicy(
     fun hasRunningPaidPeriod(billing: BillingSnapshot, at: Instant = now()): Boolean =
         SubscriptionLifecycle.hasRunningPaidPeriod(billing, at)
 
+    fun billableFrom(billing: BillingSnapshot, at: Instant = now()): Instant =
+        SubscriptionLifecycle.billableFrom(billing, at)
+
     fun isTrialRunning(billing: BillingSnapshot, at: Instant = now()): Boolean =
         SubscriptionLifecycle.isTrialRunning(billing, at)
 }

@@ -173,7 +173,12 @@ data class ActiveAddOnDto(
     val name: String,
     val monthlyPriceGrossCents: Long?,
     /** Moduł wyłączy się z końcem okresu w tej chwili; null — odnawia się z planem. */
-    val cancelAt: Instant?
+    val cancelAt: Instant?,
+    /**
+     * Czy wyłączenie da się cofnąć („Przywróć"). False, gdy kolejny okres opłacono już bez
+     * tego modułu — wtedy moduł można dokupić dopiero od [cancelAt].
+     */
+    val resumable: Boolean = cancelAt != null
 )
 
 data class PlanChangePreviewDto(
@@ -306,18 +311,21 @@ class EntitlementsController(
 
         val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
 
+        val studio = studioRepository.findByStudioId(studioId.value)
         val activeAddOnDtos = entitlements.activeAddOnKeys.mapNotNull { addOnKey ->
             allAddOns.find { it.key == addOnKey }?.let { addOn ->
+                val cancelAt = entitlements.addOnCancellations[addOn.key]
                 ActiveAddOnDto(
                     key = addOn.key.name,
                     name = addOn.name,
                     monthlyPriceGrossCents = addOn.monthlyPriceGrossCents,
-                    cancelAt = entitlements.addOnCancellations[addOn.key]
+                    cancelAt = cancelAt,
+                    resumable = cancelAt != null &&
+                        (studio?.let { planManagementService.isAddOnResumable(it, cancelAt) } ?: true)
                 )
             }
         }
 
-        val studio = studioRepository.findByStudioId(studioId.value)
         val pendingDowngrade = planManagementService.getPendingDowngrade(studioId)?.let { pending ->
             val targetPlan = plans.firstOrNull { it.key == pending.toPlanKey }
             PendingDowngradeDto(

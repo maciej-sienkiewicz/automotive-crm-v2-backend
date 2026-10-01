@@ -140,7 +140,18 @@ class PaymentNotificationEntity(
         nextAttemptAt = null
     }
 
+    /** Notyfikacja wciąż czeka na rozstrzygnięcie (nie PROCESSED / REJECTED / NEEDS_REVIEW). */
+    val isOpen: Boolean
+        get() = status == PaymentNotificationStatus.RECEIVED || status == PaymentNotificationStatus.UNMATCHED
+
+    /** Obsługa w toku do [until] — worker i ponowienie od P24 nie biorą jej w tym czasie. */
+    fun lease(until: Instant) {
+        nextAttemptAt = until
+    }
+
+    /** Planuje ponowienie; rozstrzygniętej notyfikacji nie cofa (spóźniona porażka równoległej obsługi). */
     fun scheduleRetry(error: String, retryAt: Instant) {
+        if (!isOpen) return
         status = PaymentNotificationStatus.RECEIVED
         attempts += 1
         lastError = error.take(2000)

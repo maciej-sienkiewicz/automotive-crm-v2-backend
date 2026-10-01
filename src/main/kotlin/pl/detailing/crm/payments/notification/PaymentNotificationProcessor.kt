@@ -56,6 +56,10 @@ enum class NotificationOutcome {
  *  4. REALIZACJA — [OrderFulfillmentService.fulfillIfPaid], własna transakcja, idempotentna
  *     po zamówieniu. Błąd zostawia PAID; ponawia `PaymentReconciliationJob`.
  *
+ * Krok 1 bierze na notyfikację krótką dzierżawę (`next_attempt_at`), więc ta sama płatność nie
+ * jest weryfikowana równolegle przez webhook, ponowienie od P24 i worker. Błędy przejściowe nie
+ * mają stanu końcowego — ponowienie co najwyżej co godzinę, z alarmem po 12 próbach.
+ *
  * Nie wolno wołać z wnętrza otwartej transakcji: kroki muszą zatwierdzać się osobno.
  */
 @Service
@@ -157,6 +161,10 @@ class PaymentNotificationProcessor(
             PaymentNotificationStatus.RECEIVED, PaymentNotificationStatus.UNMATCHED -> Unit
         }
         val now = accessPolicy.now()
+        // Ponowienie zaplanowane na później albo obsługa w toku (dzierżawa niżej): ponowiona przez
+        // P24 notyfikacja nie woła `verify` drugi raz i nie zużywa limitu prób, a worker nie
+        // ściga się z webhookiem, który właśnie weryfikuje tę samą płatność.
+        if (n.nextAttemptAt?.isAfter(now) == true) return Decision.Finished(NotificationOutcome.RETRY_SCHEDULED)
 
         val order = orderRepository.lockBySessionId(n.sessionId)
         if (order == null) {
@@ -200,6 +208,7 @@ class PaymentNotificationProcessor(
             return Decision.Finished(NotificationOutcome.NEEDS_REVIEW)
         }
 
+        n.lease(now.plus(PROCESSING_LEASE))
         return Decision.Verify(order.id, n.sessionId, n.providerOrderId, n.amountCents, n.alreadyVerified)
     }
 
@@ -233,6 +242,8 @@ class PaymentNotificationProcessor(
             FulfillmentOutcome.FULFILLED, FulfillmentOutcome.ALREADY_SETTLED -> NotificationOutcome.FULFILLED
             FulfillmentOutcome.REFUND_REQUIRED -> NotificationOutcome.REFUND_REQUIRED
             FulfillmentOutcome.NOT_PAID -> NotificationOutcome.PAID_AWAITING_FULFILLMENT
+            // Zamówienie opłacone przez P24 nigdy nie jest darmowe — gdyby jednak, człowiek ma to zobaczyć.
+            FulfillmentOutcome.CANCELLED -> NotificationOutcome.NEEDS_REVIEW
         }
     } catch (e: Exception) {
         // Zamówienie zostaje PAID — fakt płatności jest zapisany; realizację ponowi worker.
@@ -245,15 +256,23 @@ class PaymentNotificationProcessor(
         return try {
             tx.execute {
                 val n = notificationRepository.lockById(notificationId) ?: return@execute NotificationOutcome.RETRY_SCHEDULED
-                val now = accessPolicy.now()
-                if (n.attempts + 1 >= MAX_ATTEMPTS) {
-                    n.markNeedsReview("$error (po ${n.attempts + 1} próbach)", now)
-                    logger.error("P24 notyfikacja {} po {} nieudanych próbach — do wyjaśnienia ręcznie", n.id, n.attempts + 1)
-                    NotificationOutcome.NEEDS_REVIEW
-                } else {
-                    n.scheduleRetry(error, now.plus(backoff(n.attempts)))
-                    NotificationOutcome.RETRY_SCHEDULED
+                // Równoległa obsługa zdążyła ją rozstrzygnąć — jej wynik zostaje.
+                if (!n.isOpen) return@execute when (n.status) {
+                    PaymentNotificationStatus.REJECTED -> NotificationOutcome.REJECTED
+                    PaymentNotificationStatus.NEEDS_REVIEW -> NotificationOutcome.NEEDS_REVIEW
+                    else -> NotificationOutcome.DUPLICATE
                 }
+                val now = accessPolicy.now()
+                // Bez stanu końcowego: płatność, którą P24 ma, a której nie umiemy potwierdzić
+                // (awaria P24, zła konfiguracja na kilka godzin), ma się sama domknąć, gdy przyczyna
+                // minie. Dawniej po 12 próbach trafiała do przeglądu i nic już jej nie ruszało —
+                // ani ponowienia P24, ani rekoncyliacja. Teraz: co godzinę i alarm.
+                if (n.attempts + 1 >= LONG_RETRY_AFTER_ATTEMPTS) {
+                    meterRegistry.counter("payments.notifications.retry.long").increment()
+                    logger.error("P24 notyfikacja {} nadal nierozstrzygnięta po {} próbach: {} — ponawiam co godzinę", n.id, n.attempts + 1, error)
+                }
+                n.scheduleRetry(error, now.plus(backoff(n.attempts)))
+                NotificationOutcome.RETRY_SCHEDULED
             }!!.let(::count)
         } catch (e: Exception) {
             // Nawet zapis ponowienia się nie udał (baza leży) — wiersz zostaje RECEIVED,
@@ -274,7 +293,10 @@ class PaymentNotificationProcessor(
         /** Stan transakcji w P24: wpłacona, jeszcze niezweryfikowana. */
         const val P24_STATUS_PAID = 1
 
-        private const val MAX_ATTEMPTS = 12
+        /** Od tylu prób każde kolejne ponowienie jest alarmem (backoff dochodzi już do godziny). */
+        private const val LONG_RETRY_AFTER_ATTEMPTS = 12
+        /** Ile trwa dzierżawa obsługi (decyzja → verify → zapis); po niej podejmie ją worker. */
+        private val PROCESSING_LEASE: Duration = Duration.ofMinutes(2)
         private val UNMATCHED_RETRY_DELAY: Duration = Duration.ofMinutes(5)
         private val UNMATCHED_GIVE_UP_AFTER: Duration = Duration.ofHours(24)
 

@@ -6,8 +6,8 @@ import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 /**
  * Jak wolno dziś kupić coś „w trakcie okresu" (upgrade planu, dokupienie modułu).
@@ -31,12 +31,16 @@ data class PaidAddOnCredit(val monthlyPriceCents: Long, val cancelAt: Instant?)
 /**
  * Calculates prorated billing amounts for mid-period plan changes and add-on activations.
  *
- * Strategy (Stripe-style daily rate):
- *   daysRemaining   = floor(subscriptionEndsAt - now), at least 1
- *   proratedAmount  = round(monthlyPriceCents × daysRemaining / 30)
+ *   okno           = [max(teraz, koniec triala), subscriptionEndsAt]  — opłacony czas, który zostaje
+ *   proratedAmount = round(monthlyPriceCents × max(długość okna, 1 doba) / 30 dni)
  *
- * Zaokrąglenie dopiero na końcu: dawniej stawka dzienna była zaokrąglana przed mnożeniem,
- * więc (29900 − 9900)/30 = 666,67 → 667 gr, a za 30 dni 20010 gr zamiast 20000 (audyt, S9).
+ * Proporcja liczona co do sekundy, zaokrąglenie dopiero na końcu. Dawniej stawka dzienna była
+ * zaokrąglana przed mnożeniem ((29900 − 9900)/30 = 666,67 → 667 gr, za 30 dni 20010 gr zamiast
+ * 20000 — audyt, S9), a potem liczba dni była zaokrąglana w dół: zakup na 29 dni i 23 h
+ * kosztował jak na 29 dni, choć działał 30 (przegląd planu naprawczego).
+ *
+ * Okno zaczyna się po trialu, jeśli pakiet kupiono w jego trakcie: reszta triala jest darmowa
+ * i nie jest częścią opłaconego okresu ([pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle.billableFrom]).
  *
  * Downgrades are never charged mid-period — the new (lower) plan takes effect at
  * the end of the paid period, so there is nothing to bill.
@@ -49,7 +53,7 @@ class ProrationService(
 
     /**
      * Describes the proration for a single billing action.
-     * [effectiveAt] is when the change will actually take effect — upgrades/add-ons: immediately.
+     * [daysRemaining] — do opisu dla człowieka: rozpoczęte dni okna (zaokrąglone w górę).
      */
     data class ProrationResult(
         val daysRemaining: Long,
@@ -57,6 +61,15 @@ class ProrationService(
         val proratedAmountCents: Long,
         val currency: String
     )
+
+    /**
+     * Opłacony czas, który zostaje do końca trwającego okresu. [chargeable] — co najmniej doba:
+     * zakup na sekundy przed końcem okresu kosztowałby 0 zł, a upgrade zostaje także w karencji.
+     */
+    private data class BillableWindow(val from: Instant, val endsAt: Instant) {
+        val length: Duration get() = Duration.between(from, endsAt)
+        val chargeable: Duration get() = maxOf(length, MINIMUM_CHARGE)
+    }
 
     fun midPeriodPurchaseMode(studioId: StudioId): MidPeriodPurchaseMode {
         val billing = studioRepository.findByStudioId(studioId.value)?.billing() ?: return MidPeriodPurchaseMode.NOT_ALLOWED
@@ -73,9 +86,8 @@ class ProrationService(
      * Null when no paid period is running (trial → free; otherwise the caller rejects the purchase).
      */
     fun calculateAddOnActivation(studioId: StudioId, monthlyPriceCents: Long): ProrationResult? {
-        val endsAt = runningPeriodEnd(studioId) ?: return null
-        val days = daysUntil(endsAt)
-        return ProrationResult(days, endsAt, prorate(monthlyPriceCents, days), CURRENCY)
+        val window = billableWindow(studioId) ?: return null
+        return ProrationResult(daysLabel(window.length), window.endsAt, prorate(monthlyPriceCents, window.chargeable), CURRENCY)
     }
 
     /**
@@ -92,17 +104,16 @@ class ProrationService(
         paidAddOns: List<PaidAddOnCredit> = emptyList()
     ): ProrationResult? {
         if (newMonthlyPriceCents <= currentMonthlyPriceCents) return null
-        val endsAt = runningPeriodEnd(studioId) ?: return null
-        val days = daysUntil(endsAt)
+        val window = billableWindow(studioId) ?: return null
 
-        val planDifference = BigDecimal(newMonthlyPriceCents - currentMonthlyPriceCents).multiply(BigDecimal(days))
+        val planDifference = BigDecimal(newMonthlyPriceCents - currentMonthlyPriceCents).multiply(BigDecimal(window.chargeable.seconds))
         val addOnCredit = paidAddOns.fold(BigDecimal.ZERO) { acc, addOn ->
-            val creditEnd = addOn.cancelAt?.takeIf { it.isBefore(endsAt) } ?: endsAt
-            val creditDays = if (creditEnd.isAfter(accessPolicy.now())) daysUntil(creditEnd) else 0L
-            acc + BigDecimal(addOn.monthlyPriceCents).multiply(BigDecimal(creditDays))
+            val creditEnd = addOn.cancelAt?.takeIf { it.isBefore(window.endsAt) } ?: window.endsAt
+            val creditSeconds = if (creditEnd.isAfter(window.from)) Duration.between(window.from, creditEnd).seconds else 0L
+            acc + BigDecimal(addOn.monthlyPriceCents).multiply(BigDecimal(creditSeconds))
         }
-        val amount = (planDifference - addOnCredit).divide(DAYS_IN_PERIOD, 0, RoundingMode.HALF_UP).toLong()
-        return ProrationResult(days, endsAt, amount.coerceAtLeast(0), CURRENCY)
+        val amount = (planDifference - addOnCredit).divide(SECONDS_IN_PERIOD, 0, RoundingMode.HALF_UP).toLong()
+        return ProrationResult(daysLabel(window.length), window.endsAt, amount.coerceAtLeast(0), CURRENCY)
     }
 
     /** Koniec trwającego opłaconego okresu; null w trialu, karencji i po wygaśnięciu. */
@@ -111,17 +122,36 @@ class ProrationService(
         return if (accessPolicy.hasRunningPaidPeriod(billing)) billing.subscriptionEndsAt else null
     }
 
-    /** Returns how many days are left in the running paid period, or null. */
-    fun daysRemainingInPeriod(studioId: StudioId): Long? = runningPeriodEnd(studioId)?.let(::daysUntil)
+    /** Rozpoczęte dni opłaconego czasu do końca trwającego okresu, or null. */
+    fun daysRemainingInPeriod(studioId: StudioId): Long? = billableWindow(studioId)?.let { daysLabel(it.length) }
 
-    private fun daysUntil(endsAt: Instant): Long =
-        ChronoUnit.DAYS.between(accessPolicy.now(), endsAt).coerceAtLeast(1)
+    private fun billableWindow(studioId: StudioId): BillableWindow? {
+        val billing = studioRepository.findByStudioId(studioId.value)?.billing() ?: return null
+        val now = accessPolicy.now()
+        if (!accessPolicy.hasRunningPaidPeriod(billing, now)) return null
+        val endsAt = billing.subscriptionEndsAt!!
+        return BillableWindow(accessPolicy.billableFrom(billing, now).coerceAtMost(endsAt), endsAt)
+    }
+
+    private fun Instant.coerceAtMost(limit: Instant): Instant = if (isAfter(limit)) limit else this
 
     companion object {
         private const val CURRENCY = "PLN"
-        private val DAYS_IN_PERIOD = BigDecimal(30)
+        private val PERIOD: Duration = Duration.ofDays(30)
+        private val MINIMUM_CHARGE: Duration = Duration.ofDays(1)
+        private val SECONDS_IN_PERIOD = BigDecimal(PERIOD.seconds)
 
-        fun prorate(monthlyCents: Long, days: Long): Long =
-            BigDecimal(monthlyCents).multiply(BigDecimal(days)).divide(DAYS_IN_PERIOD, 0, RoundingMode.HALF_UP).toLong()
+        /** Cena za [length] opłaconego czasu przy cenie [monthlyCents] za 30 dni, zaokrąglona raz, na końcu. */
+        fun prorate(monthlyCents: Long, length: Duration): Long =
+            BigDecimal(monthlyCents).multiply(BigDecimal(length.seconds.coerceAtLeast(0)))
+                .divide(SECONDS_IN_PERIOD, 0, RoundingMode.HALF_UP).toLong()
+
+        fun prorate(monthlyCents: Long, days: Long): Long = prorate(monthlyCents, Duration.ofDays(days))
+
+        /** Rozpoczęte dni — „za 29 dni i 23 h" to dla człowieka 30 dni, nie 29. Co najmniej 1. */
+        fun daysLabel(length: Duration): Long {
+            val days = length.toDays()
+            return (if (length.minusDays(days).isZero) days else days + 1).coerceAtLeast(1)
+        }
     }
 }

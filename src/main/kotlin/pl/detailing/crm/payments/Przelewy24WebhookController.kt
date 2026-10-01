@@ -1,6 +1,7 @@
 package pl.detailing.crm.payments
 
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ModelAttribute
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import pl.detailing.crm.payments.notification.PaymentNotificationProcessor
 import pl.detailing.crm.payments.p24.Przelewy24Client
+import pl.detailing.crm.payments.p24.Przelewy24Properties
 
 /**
  * Server-to-server payment status notifications from Przelewy24.
@@ -32,7 +34,8 @@ import pl.detailing.crm.payments.p24.Przelewy24Client
 @RequestMapping("/api/v1/payments/p24")
 class Przelewy24WebhookController(
     private val p24Client: Przelewy24Client,
-    private val processor: PaymentNotificationProcessor
+    private val processor: PaymentNotificationProcessor,
+    private val properties: Przelewy24Properties
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -49,6 +52,21 @@ class Przelewy24WebhookController(
             "P24 notification received sessionId={} orderId={} amount={}",
             notification.sessionId, notification.orderId, notification.amount
         )
+
+        // Bez poświadczeń podpis liczy się z pustym CRC — każdy umie go podrobić, a każda
+        // podrobiona notyfikacja zostawałaby w inboxie na stałe. 503 (nie 400): P24 ponowi,
+        // gdy poświadczenia wrócą, a przyczyna jest widoczna w logu.
+        if (!properties.isConfigured) {
+            logger.error("P24 notification sessionId={} rejected: Przelewy24 is not configured", notification.sessionId)
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("payments not configured")
+        }
+        if (notification.merchantId != properties.merchantId || notification.posId != properties.posId) {
+            logger.warn(
+                "P24 notification sessionId={} for another merchant/pos ({}/{})",
+                notification.sessionId, notification.merchantId, notification.posId
+            )
+            return ResponseEntity.badRequest().body("unknown merchant")
+        }
 
         if (!p24Client.isNotificationSignValid(notification)) {
             logger.warn("P24 notification with INVALID signature sessionId={}", notification.sessionId)
