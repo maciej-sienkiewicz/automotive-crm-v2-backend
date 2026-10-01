@@ -110,20 +110,28 @@ class LeaveRequestValidator(
         return workingDays
     }
 
-
     /**
      * Kolizje z tym, co już zajmuje termin pracownika, i limit urlopu na żądanie.
      * Wymaga blokady wiersza pracownika w bieżącej transakcji.
      *
      * @param excludeId wniosek sprawdzany (przy złożeniu szkicu nie koliduje sam ze sobą)
+     * @param onBehalf komunikat dla administratora wprowadzającego wniosek („pracownik ma"),
+     *   a nie dla samego pracownika („masz") — reguły są te same
      */
-    fun checkAgainstExisting(studioId: UUID, employeeId: UUID, excludeId: UUID, draft: LeaveRequestDraft) {
+    fun checkAgainstExisting(
+        studioId: UUID,
+        employeeId: UUID,
+        excludeId: UUID,
+        draft: LeaveRequestDraft,
+        onBehalf: Boolean = false
+    ) {
+        val has = if (onBehalf) "pracownik ma" else "masz"
         leaveRequestRepository.findOverlappingOfEmployee(
             studioId, employeeId, LeaveRequestStatus.BLOCKING, draft.startDate, draft.endDate, excludeId
         ).firstOrNull()?.let { other ->
             val state = if (other.status == LeaveRequestStatus.APPROVED) "zatwierdzony" else "oczekuje na decyzję"
             throw ValidationException(
-                "W tym terminie masz już wniosek ${other.number} (${range(other.startDate, other.endDate)}, $state)",
+                "W tym terminie $has już wniosek ${other.number} (${range(other.startDate, other.endDate)}, $state)",
                 field = "startDate"
             )
         }
@@ -132,7 +140,7 @@ class LeaveRequestValidator(
             .firstOrNull()?.let { leave ->
                 val what = if (leave.leaveType == LeaveType.SICK) "zwolnienie lekarskie" else "urlop"
                 throw ValidationException(
-                    "W tym terminie masz już wpisaną nieobecność ($what ${range(leave.startDate, leave.endDate)})",
+                    "W tym terminie $has już wpisaną nieobecność ($what ${range(leave.startDate, leave.endDate)})",
                     field = "startDate"
                 )
             }

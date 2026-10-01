@@ -85,6 +85,15 @@ class LeaveRequestQueryService(
         )
     }
 
+    /**
+     * Licznik dni w kreatorze wniosku ON_BEHALF. Pracownik nie zmienia wyniku (święta są
+     * wspólne), ale identyfikator spoza studia ma dać 404 jak w każdej innej ścieżce.
+     */
+    fun previewFor(studioId: StudioId, employeeId: UUID, startDate: LocalDate, endDate: LocalDate): Preview {
+        access.employeeInStudio(studioId, employeeId)
+        return preview(startDate, endDate)
+    }
+
     fun queue(studioId: StudioId, filter: LeaveRequestQueueFilter, employeeId: UUID?): List<LeaveRequestEntity> {
         val page = PageRequest.of(0, MAX_QUEUE)
         return if (employeeId == null) {

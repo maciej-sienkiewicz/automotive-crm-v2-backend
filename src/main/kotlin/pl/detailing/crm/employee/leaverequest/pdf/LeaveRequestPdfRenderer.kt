@@ -135,7 +135,7 @@ class LeaveRequestPdfRenderer {
         mx += metaWidths[1] + metaGap
         val modeBox = labeledBox(s, mx, metaTop, metaWidths[2], "SPOSÓB ZŁOŻENIA", BOX_H, 2.55f)
         singleLine(s, numberBox, data.number, bold = true)
-        singleLine(s, modeBox, data.submissionMode)
+        twoLines(s, modeBox, data.submissionMode)
         s.y = numberBox.y
 
         // ── Pracownik / termin ──────────────────────────────────────────────────
@@ -382,6 +382,25 @@ class LeaveRequestPdfRenderer {
         if (value.isBlank()) return
         val font = if (bold) s.bold else s.regular
         s.text(font, FIELD_FONT, box.x + 2f, box.y + box.h / 2f - 2.5f, s.ellipsize(value, font, FIELD_FONT, box.w - 4f), Color.BLACK)
+    }
+
+    /**
+     * Jeden wiersz, a gdy się nie mieści — dwa ciaśniejsze w tym samym polu. „Sposób
+     * złożenia" przy wniosku wprowadzonym przez administratora niesie jego nazwisko,
+     * a ucięte nazwisko na dokumencie jest gorsze niż mniejszy odstęp między wierszami.
+     */
+    private fun twoLines(s: DocumentSheet, box: PdfBox, value: String) {
+        if (s.widthOf(s.regular, FIELD_FONT, value) <= box.w - 4f) return singleLine(s, box, value)
+        val lines = s.wrap(value, s.regular, FIELD_FONT, box.w - 4f)
+        val shown = if (lines.size <= 2) lines else {
+            listOf(lines[0], s.ellipsize(lines.drop(1).joinToString(" "), s.regular, FIELD_FONT, box.w - 4f))
+        }
+        val lead = 8f
+        var baseline = box.y + box.h / 2f + lead / 2f - 2.5f
+        shown.forEach { line ->
+            s.text(s.regular, FIELD_FONT, box.x + 2f, baseline, line, Color.BLACK)
+            baseline -= lead
+        }
     }
 
     private fun multiLine(s: DocumentSheet, box: PdfBox, value: String) {

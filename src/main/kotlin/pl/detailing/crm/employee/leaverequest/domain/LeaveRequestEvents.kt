@@ -8,12 +8,17 @@ import java.util.UUID
 /**
  * Pracownik podpisał i złożył wniosek. Publikowane w transakcji złożenia; powiadomienie
  * do rozpatrujących wychodzi dopiero po commicie (PushEventBridge, AFTER_COMMIT).
+ *
+ * [employeeUserId] bywa null (wniosek ON_BEHALF dla pracownika bez konta), a
+ * [createdByUserId] to administrator, który wniosek wprowadził — ten stoi właśnie przy
+ * pracowniku podpisującym na jego urządzeniu, więc „czeka na Twoją decyzję" nie jest dla niego.
  */
 data class LeaveRequestSubmittedEvent(
     val studioId: StudioId,
     val requestId: UUID,
     val number: String,
     val employeeUserId: UserId?,
+    val createdByUserId: UserId,
     val employeeName: String,
     val kindLabel: String,
     val startDate: LocalDate,

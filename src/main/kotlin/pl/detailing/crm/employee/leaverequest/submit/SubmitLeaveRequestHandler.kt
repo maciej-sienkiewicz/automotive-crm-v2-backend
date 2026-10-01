@@ -12,6 +12,7 @@ import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
 import pl.detailing.crm.audit.domain.FieldChange
+import pl.detailing.crm.employee.infrastructure.EmployeeEntity
 import pl.detailing.crm.employee.infrastructure.EmployeeRepository
 import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestDraft
 import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestStatus
@@ -59,6 +60,12 @@ data class SubmitLeaveRequestCommand(
  *  4. wersja z podpisem (H2) to NOWY plik; H1 zostaje nietknięty;
  *  5. kolizje terminu sprawdzane jeszcze raz pod blokadą pracownika — szkice się nie
  *     blokują, więc dwa szkice na ten sam termin mogły powstać, a złożyć można jeden.
+ *
+ * Dwa wejścia, jedna ścieżka podpisu ([sign]): [handle] — pracownik na własnym koncie
+ * (DEVICE_DRAWN), [handleInPerson] — pracownik podpisuje osobiście na urządzeniu
+ * administratora, który wprowadził wniosek w jego imieniu (IN_PERSON). Kontrole WYSIWYS,
+ * tokenu i kolizji nie mogą się różnić między nimi: to ten sam podpis pod tym samym
+ * oświadczeniem, inna jest tylko sesja.
  */
 @Service
 class SubmitLeaveRequestHandler(
@@ -76,9 +83,32 @@ class SubmitLeaveRequestHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val warsaw = ZoneId.of("Europe/Warsaw")
 
+    /** Samoobsługa: [SubmitLeaveRequestCommand.userId] to konto pracownika. */
     suspend fun handle(command: SubmitLeaveRequestCommand): LeaveRequestEntity = withContext(Dispatchers.IO) {
         val employee = access.employeeOf(command.studioId, command.userId)
         val request = access.ownRequest(command.studioId, employee.id, command.requestId)
+        sign(command, employee, request, LeaveSignatureMethod.DEVICE_DRAWN)
+    }
+
+    /**
+     * Wniosek ON_BEHALF: [SubmitLeaveRequestCommand.userId] to administrator, który go
+     * wprowadził, a podpis składa osobiście pracownik na jego urządzeniu. Adres IP
+     * i przeglądarka są więc urządzenia administratora — i tak opisuje je karta podpisów.
+     */
+    suspend fun handleInPerson(command: SubmitLeaveRequestCommand): LeaveRequestEntity = withContext(Dispatchers.IO) {
+        val request = access.onBehalfRequest(command.studioId, command.requestId, command.userId)
+        // Ponownie „nie dla siebie": konto mogło zostać powiązane z pracownikiem po utworzeniu szkicu.
+        val employee = access.employeeForOnBehalf(command.studioId, request.employeeId, command.userId)
+        sign(command, employee, request, LeaveSignatureMethod.IN_PERSON)
+    }
+
+    private suspend fun sign(
+        command: SubmitLeaveRequestCommand,
+        employee: EmployeeEntity,
+        request: LeaveRequestEntity,
+        method: LeaveSignatureMethod
+    ): LeaveRequestEntity {
+        val inPerson = method == LeaveSignatureMethod.IN_PERSON
         if (request.status != LeaveRequestStatus.DRAFT) throw alreadySubmitted(request)
 
         if (!command.declarationAccepted) {
@@ -116,13 +146,13 @@ class SubmitLeaveRequestHandler(
                 employeeRepository.lockForUpdate(employee.id, command.studioId.value)
                 val draft = LeaveRequestDraft(request.leaveType, request.onDemand, request.startDate, request.endDate, request.reason)
                 validator.checkTerm(draft, LocalDate.now(warsaw))
-                validator.checkAgainstExisting(command.studioId.value, employee.id, request.id, draft)
+                validator.checkAgainstExisting(command.studioId.value, employee.id, request.id, draft, onBehalf = inPerson)
 
                 val updated = leaveRequestRepository.markSubmitted(
                     id = request.id,
                     studioId = command.studioId.value,
                     signedAt = signedAt,
-                    method = LeaveSignatureMethod.DEVICE_DRAWN,
+                    method = method,
                     pdfKey = stored.s3Key,
                     sha256 = stored.sha256,
                     ip = command.ipAddress?.take(45),
@@ -137,7 +167,8 @@ class SubmitLeaveRequestHandler(
                         studioId = command.studioId,
                         requestId = request.id,
                         number = request.number,
-                        employeeUserId = command.userId,
+                        employeeUserId = request.employeeUserId?.let(::UserId),
+                        createdByUserId = UserId(request.createdBy),
                         employeeName = "${employee.firstName} ${employee.lastName}".trim(),
                         kindLabel = RequestableLeaveTypes.label(request.leaveType, request.onDemand),
                         startDate = request.startDate,
@@ -152,7 +183,8 @@ class SubmitLeaveRequestHandler(
             throw e
         }
 
-        val submitted = access.ownRequest(command.studioId, employee.id, request.id)
+        val submitted = leaveRequestRepository.findByIdAndStudioId(request.id, command.studioId.value)
+            ?: throw ConflictException("Nie udało się złożyć wniosku — spróbuj ponownie")
         auditService.recordSync(
             AuditEvent(
                 studioId = command.studioId,
@@ -169,12 +201,17 @@ class SubmitLeaveRequestHandler(
                     "leaveRequestId" to submitted.id.toString(),
                     "number" to submitted.number,
                     "workingDays" to submitted.workingDays.toString(),
-                    "documentSha256" to (submitted.employeeSignedSha256 ?: "")
+                    "documentSha256" to (submitted.employeeSignedSha256 ?: ""),
+                    "origin" to submitted.origin.name,
+                    "signatureMethod" to method.name
                 )
             )
         )
-        logger.info("Leave request submitted: studioId={}, requestId={}, number={}", command.studioId, request.id, request.number)
-        submitted
+        logger.info(
+            "Leave request submitted: studioId={}, requestId={}, number={}, method={}",
+            command.studioId, request.id, request.number, method
+        )
+        return submitted
     }
 
     private fun alreadySubmitted(request: LeaveRequestEntity) = ConflictException(

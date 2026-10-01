@@ -41,8 +41,18 @@ enum class LeaveRequestStatus {
 
 /** Jak złożono podpis. Pracownik zawsze rysuje na żywo — to jego oświadczenie woli. */
 enum class LeaveSignatureMethod {
+    /** Narysowany na ekranie własnego urządzenia podpisującego (samoobsługa, decyzja). */
     DEVICE_DRAWN,
-    SAVED_SIGNATURE
+
+    /** Zapisany podpis z profilu rozpatrującego, użyty świadomie przy decyzji. */
+    SAVED_SIGNATURE,
+
+    /**
+     * Pracownik podpisał osobiście, na ekranie urządzenia osoby, która wprowadziła wniosek
+     * w jego imieniu (ON_BEHALF). Nadal narysowany na żywo — inna jest tylko sesja: konto
+     * i urządzenie należą do wprowadzającego, więc karta podpisów musi to powiedzieć wprost.
+     */
+    IN_PERSON
 }
 
 /**
@@ -55,9 +65,19 @@ enum class ApprovalBasis {
     PERMISSION
 }
 
-/** Skąd wniosek przyszedł. W tym wydaniu wyłącznie samoobsługa pracownika. */
+/** Skąd wniosek przyszedł. */
 enum class LeaveRequestOrigin {
-    SELF_SERVICE
+    /** Pracownik złożył sam, w zakładce „Urlop". */
+    SELF_SERVICE,
+
+    /**
+     * Wprowadził administrator (właściciel albo osoba z EMPLOYEES_LEAVES_APPROVE), a pracownik
+     * podpisał osobiście na jego urządzeniu. Pracownik nie musi mieć konta w systemie.
+     * Szkic należy do wprowadzającego (`created_by`): tylko on widzi go i porzuca, a pracownik
+     * — nawet z kontem — nie podpisze go z własnej samoobsługi, bo dokument mówi „podpisany
+     * osobiście na urządzeniu wprowadzającego".
+     */
+    ON_BEHALF
 }
 
 /**

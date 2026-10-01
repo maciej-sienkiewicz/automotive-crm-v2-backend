@@ -202,3 +202,37 @@ Obowiązują ponad wszystkim powyżej.
      wnioskodawcą jest pracownik). Push `LEAVE_REQUEST_SUBMITTED` nie idzie do autora
      wniosku ON_BEHALF.
 
+
+### Doprecyzowania v2 z implementacji backendu
+
+Uzupełnienia sekcji v2. Pola, ścieżki i kody z tabeli wyżej — bez zmian.
+
+- **Szkic ON_BEHALF należy do wprowadzającego.** Nie tylko `GET /{id}/document`, ale też
+  `employee-signing-session`, `employee-signature` i `discard` działają wyłącznie dla
+  osoby, która wniosek utworzyła; inny administrator dostaje 404 (podpis osobisty jest
+  opisany na karcie podpisów jako złożony na urządzeniu wprowadzającego). Pracownik nie
+  widzi szkicu ON_BEHALF w samoobsłudze (404 na `/my/leave-requests/{id}/…`). Po podpisie
+  wniosek jest zwykłym `PENDING` dla wszystkich rozpatrujących i dla pracownika.
+- `GET /api/v1/leave-requests/{id}` dla szkicu (także ON_BEHALF) — nadal 404; szczegóły
+  szkicu przychodzą w odpowiedzi `POST /`.
+- `POST /` (ON_BEHALF): brak `employeeId` → 400 `field: "employeeId"` „Wybierz pracownika”;
+  `employeeId` spoza studia albo niebędący UUID → 404 „Nie znaleziono pracownika”; wniosek
+  dla siebie → 403 „Własny wniosek złóż w zakładce Urlop”. Kolejność: najpierw pracownik
+  (404/403), potem pola (400). Komunikaty kolizji mówią o pracowniku („W tym terminie
+  pracownik ma już wniosek…”), a nie „masz już”.
+- `GET /preview?employeeId&startDate&endDate`: `employeeId` spoza studia → 404 „Nie znaleziono
+  pracownika”. Wynik jak w samoobsłudze.
+- `POST /{id}/employee-signature`: błędy jak przy samoobsługowym `/submit` (400 z `field`
+  dla `declarationAccepted`, `documentSha256`, `challenge`, `signatureImageBase64`; 409 przy
+  niezgodnym skrócie, zużytym tokenie, już podpisanym albo porzuconym szkicu).
+  `employeeSignatureMethod` = `IN_PERSON`. Adres IP i przeglądarka na karcie podpisów są
+  urządzenia wprowadzającego — karta mówi to wprost.
+- `POST /{id}/discard` dla wniosku już podpisanego przez pracownika → 409 (taki wniosek się
+  odrzuca decyzją); ponowne porzucenie → 409 „Ten szkic został już porzucony”.
+- „Sposób złożenia” na PDF przy ON_BEHALF: „Wprowadzony przez: {createdByName}, podpisany
+  osobiście” (przy dłuższym nazwisku w dwóch wierszach).
+- `createdByName` przy `SELF_SERVICE` = imię i nazwisko pracownika, który złożył wniosek
+  (to on go wprowadził); `null` tylko przy pustym imieniu konta.
+- Szkic ON_BEHALF niepodpisany ani nieporzucony usuwa po dobie ten sam job co szkice
+  samoobsługowe.
+- Pole `field` błędu 400: dochodzi `employeeId`; `substituteEmployeeId` już nie występuje.

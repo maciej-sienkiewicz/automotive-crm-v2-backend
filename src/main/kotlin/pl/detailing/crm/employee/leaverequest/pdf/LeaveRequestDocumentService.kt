@@ -3,6 +3,7 @@ package pl.detailing.crm.employee.leaverequest.pdf
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import pl.detailing.crm.employee.leave.domain.LeaveType
+import pl.detailing.crm.employee.leaverequest.domain.LeaveRequestOrigin
 import pl.detailing.crm.employee.leaverequest.domain.LeaveSignatureMethod
 import pl.detailing.crm.employee.leaverequest.domain.RequestableLeaveTypes
 import pl.detailing.crm.employee.leaverequest.infrastructure.LeaveRequestEntity
@@ -42,6 +43,17 @@ class LeaveRequestDocumentService(
     companion object {
         const val SUBMISSION_MODE = "Samodzielnie w aplikacji, podpis na ekranie"
 
+        /**
+         * „Sposób złożenia" drukowany na wniosku. Przy ON_BEHALF mówi, kto wprowadził wniosek
+         * i że pracownik podpisał go osobiście — zanim jeszcze podpisze: to opis procedury,
+         * którą pracownik widzi na dokumencie, a nie relacja z jej przebiegu (ta jest na
+         * karcie podpisów).
+         */
+        fun submissionMode(origin: LeaveRequestOrigin, createdByName: String?): String = when (origin) {
+            LeaveRequestOrigin.SELF_SERVICE -> SUBMISSION_MODE
+            LeaveRequestOrigin.ON_BEHALF -> "Wprowadzony przez: ${createdByName ?: "administrator"}, podpisany osobiście"
+        }
+
         /** Treść oświadczenia, które pracownik zaznacza przed podpisem — trafia na kartę podpisów. */
         const val EMPLOYEE_DECLARATION = "Znam treść wniosku i podpisuję go."
 
@@ -55,6 +67,7 @@ class LeaveRequestDocumentService(
     /** Dane pracownika i wniosku potrzebne do wydruku. */
     data class DraftContent(
         val number: String,
+        val submissionMode: String,
         val employeeName: String,
         val employeeEmail: String?,
         val employeePhone: String?,
@@ -72,7 +85,7 @@ class LeaveRequestDocumentService(
         val bytes = renderer.render(
             LeaveRequestPdfData(
                 number = content.number,
-                submissionMode = SUBMISSION_MODE,
+                submissionMode = content.submissionMode,
                 employerName = settings?.name?.trim()?.takeIf { it.isNotBlank() } ?: "Pracodawca",
                 employerAddress = listOfNotNull(
                     settings?.street?.trim()?.takeIf { it.isNotBlank() },
@@ -128,6 +141,11 @@ class LeaveRequestDocumentService(
         normalizedSignature: ByteArray,
         stamp: DecisionStamp
     ): StoredPdf {
+        // Podpis osobisty na cudzym urządzeniu: karta mówi wprost, czyje to urządzenie
+        // i sesja — inaczej adres IP i przeglądarka przy podpisie pracownika wskazywałyby
+        // na konto, które do niego nie należy, bez słowa wyjaśnienia.
+        val inPersonCreator = (request.createdByName ?: "administrator")
+            .takeIf { request.employeeSignatureMethod == LeaveSignatureMethod.IN_PERSON }
         val final = stamper.stampDecision(
             pdf = employeeSignedBytes,
             approved = stamp.approved,
@@ -147,12 +165,15 @@ class LeaveRequestDocumentService(
                         "dni robocze: ${request.workingDays}",
                     "Decyzja" to if (stamp.approved) "zgoda na urlop" else "brak zgody",
                     "Skrót SHA-256 wniosku bez podpisów" to request.documentSha256
+                ) + listOfNotNull(
+                    inPersonCreator?.let { "Osoba wprowadzająca wniosek" to "$it, w imieniu pracownika" }
                 ),
                 signatures = listOf(
                     SignatureCardEntry(
-                        role = "pracownik, złożenie wniosku",
+                        role = if (inPersonCreator != null) "pracownik, złożenie wniosku osobiście" else "pracownik, złożenie wniosku",
                         signerName = employeeName,
-                        method = methodLabel(request.employeeSignatureMethod ?: LeaveSignatureMethod.DEVICE_DRAWN),
+                        method = inPersonCreator?.let { inPersonMethod(it) }
+                            ?: methodLabel(request.employeeSignatureMethod ?: LeaveSignatureMethod.DEVICE_DRAWN),
                         signedAt = request.employeeSignedAt ?: stamp.decidedAt,
                         ipAddress = request.employeeSignerIp,
                         device = request.employeeSignerUserAgent?.take(MAX_DEVICE_LENGTH),
@@ -177,7 +198,11 @@ class LeaveRequestDocumentService(
                     "Każda sesja podpisu miała jednorazowy token, zużyty przy podpisie. Podpis odręczny " +
                     "przetworzono wyłącznie w pamięci serwera i scalono z dokumentem; podpis zapisany " +
                     "w profilu użytkownika jest oznaczony powyżej jako „zapisany podpis”. Wcześniejsze " +
-                    "wersje dokumentu są przechowywane bez zmian."
+                    "wersje dokumentu są przechowywane bez zmian." +
+                    (inPersonCreator?.let {
+                        " Pracownik podpisał wniosek osobiście na urządzeniu osoby, która go wprowadziła ($it); " +
+                            "adres IP i urządzenie przy jego podpisie dotyczą tego urządzenia i tej sesji."
+                    } ?: "")
             )
         }
         return store(StudioId(request.studioId), request.id, "final-${suffix()}.pdf", final)
@@ -199,7 +224,12 @@ class LeaveRequestDocumentService(
     private fun methodLabel(method: LeaveSignatureMethod): String = when (method) {
         LeaveSignatureMethod.DEVICE_DRAWN -> "podpis odręczny złożony na ekranie urządzenia"
         LeaveSignatureMethod.SAVED_SIGNATURE -> "zapisany podpis z profilu użytkownika, użyty świadomie przy decyzji"
+        LeaveSignatureMethod.IN_PERSON -> inPersonMethod(null)
     }
+
+    private fun inPersonMethod(creator: String?): String =
+        "podpis odręczny złożony osobiście na ekranie urządzenia osoby wprowadzającej wniosek" +
+            (creator?.let { " ($it)" } ?: "")
 
     private suspend fun store(studioId: StudioId, requestId: UUID, fileName: String, bytes: ByteArray): StoredPdf {
         val key = "${studioId.value}/leave-requests/$requestId/$fileName"

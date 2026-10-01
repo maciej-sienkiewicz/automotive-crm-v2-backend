@@ -53,6 +53,9 @@ class PushNotifier(
      * @param excludeUserId the person whose action this reports. Someone who just
      *        booked a slot or checked a car in does not need their own pocket to tell
      *        them so; the notification is for everyone else.
+     * @param excludeUserIds more such people, when one action has several — a leave
+     *        request entered on an employee's behalf has both the employee and the
+     *        administrator who entered it.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun broadcast(
@@ -60,9 +63,11 @@ class PushNotifier(
         requiredPermission: Permission?,
         message: PushMessages.Message,
         ttlSeconds: Long = 6 * 3600,
-        excludeUserId: UserId? = null
+        excludeUserId: UserId? = null,
+        excludeUserIds: Collection<UserId> = emptyList()
     ) {
         if (!webPushSender.isConfigured) return
+        val excluded = (excludeUserIds + listOfNotNull(excludeUserId)).map { it.value }.toSet()
 
         val devices = pushDeviceRepository.findByStudioIdAndRevokedAtIsNull(studioId.value)
         if (devices.isEmpty()) return
@@ -70,7 +75,7 @@ class PushNotifier(
         // One permission check per USER, not per device: someone with a phone and a
         // tablet paired must not cost two identical lookups.
         val recipients = devices.map { it.userId }.distinct()
-            .filter { it != excludeUserId?.value }
+            .filter { it !in excluded }
             .mapNotNull { recipient(UserId(it), studioId, requiredPermission) }
             .associateBy { it.userId }
         if (recipients.isEmpty()) return

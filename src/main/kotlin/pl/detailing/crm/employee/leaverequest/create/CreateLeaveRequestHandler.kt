@@ -15,6 +15,7 @@ import pl.detailing.crm.employee.leaverequest.pdf.LeaveRequestDocumentService
 import pl.detailing.crm.employee.leaverequest.query.LeaveRequestAccess
 import pl.detailing.crm.employee.leaverequest.session.LeaveSigningSessions
 import pl.detailing.crm.employee.leaverequest.session.SigningSession
+import pl.detailing.crm.shared.NotFoundException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.UserId
 import java.time.Instant
@@ -22,10 +23,17 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
+/**
+ * @param userId / [userName] kto wprowadza wniosek (`created_by`): pracownik w samoobsłudze,
+ *   administrator przy [onBehalfOfEmployeeId]
+ * @param onBehalfOfEmployeeId pracownik, w którego imieniu administrator wprowadza wniosek
+ *   (ON_BEHALF); null = samoobsługa, pracownik to rekord konta [userId]
+ */
 data class CreateLeaveRequestCommand(
     val studioId: StudioId,
     val userId: UserId,
     val userName: String,
+    val onBehalfOfEmployeeId: UUID? = null,
     val leaveType: String?,
     val onDemand: Boolean,
     val startDate: LocalDate?,
@@ -37,6 +45,11 @@ data class CreateLeaveRequestResult(val request: LeaveRequestEntity, val session
 
 /**
  * Pracownik zaczyna wniosek: walidacja, numer, wypełniony PDF (H1) i sesja podpisu.
+ *
+ * Ta sama ścieżka obsługuje wniosek wprowadzony przez administratora w imieniu pracownika
+ * (ON_BEHALF): inaczej jest tylko ustalony pracownik ([LeaveRequestAccess.employeeForOnBehalf]),
+ * pochodzenie i „Sposób złożenia" na dokumencie. Reguły terminu, kolizji i limitu na żądanie
+ * są te same — drugi zestaw walidacji rozjechałby się z pierwszym przy pierwszej zmianie.
  *
  * Wynikiem jest SZKIC — dokument, który pracownik zobaczy dokładnie w tej postaci przed
  * podpisem. Szkic nie trafia do kolejki ani do kalendarza, a job usuwa go po dobie.
@@ -69,6 +82,12 @@ class CreateLeaveRequestHandler(
     )
 
     suspend fun handle(command: CreateLeaveRequestCommand): CreateLeaveRequestResult = withContext(Dispatchers.IO) {
+        // Najpierw kto, potem co: 404/403 („nie ten pracownik") przed błędami pól formularza.
+        val onBehalf = command.onBehalfOfEmployeeId != null
+        val employee = command.onBehalfOfEmployeeId
+            ?.let { access.employeeForOnBehalf(command.studioId, it, command.userId) }
+            ?: access.employeeOf(command.studioId, command.userId)
+        val createdByName = command.userName.trim().ifBlank { null }
         val draft = validator.parse(command.leaveType, command.onDemand, command.startDate, command.endDate, command.reason)
         val today = LocalDate.now(warsaw)
         val requestId = UUID.randomUUID()
@@ -78,10 +97,10 @@ class CreateLeaveRequestHandler(
         // na Dispatchers.IO wymyka się transakcji z interceptora (patrz AuditLogWriter),
         // a blokada wiersza pracownika i licznik numeracji jej wymagają.
         val prepared = transactionTemplate.execute {
-            val employee = access.employeeOf(command.studioId, command.userId)
             employeeRepository.lockForUpdate(employee.id, studio)
+                ?: throw NotFoundException(LeaveRequestAccess.EMPLOYEE_NOT_FOUND)
             val workingDays = validator.checkTerm(draft, today)
-            validator.checkAgainstExisting(studio, employee.id, requestId, draft)
+            validator.checkAgainstExisting(studio, employee.id, requestId, draft, onBehalf)
             val year = today.year
             Prepared(
                 employeeId = employee.id,
@@ -100,6 +119,10 @@ class CreateLeaveRequestHandler(
             command.studioId, requestId,
             LeaveRequestDocumentService.DraftContent(
                 number = prepared.number,
+                submissionMode = LeaveRequestDocumentService.submissionMode(
+                    if (onBehalf) LeaveRequestOrigin.ON_BEHALF else LeaveRequestOrigin.SELF_SERVICE,
+                    createdByName
+                ),
                 employeeName = prepared.employeeName,
                 employeeEmail = prepared.employeeEmail,
                 employeePhone = prepared.employeePhone,
@@ -120,7 +143,7 @@ class CreateLeaveRequestHandler(
                     studioId = studio,
                     number = prepared.number,
                     employeeId = prepared.employeeId,
-                    employeeUserId = command.userId.value,
+                    employeeUserId = employee.userId,
                     leaveType = draft.leaveType,
                     onDemand = draft.onDemand,
                     startDate = draft.startDate,
@@ -128,9 +151,9 @@ class CreateLeaveRequestHandler(
                     workingDays = prepared.workingDays,
                     reason = draft.reason,
                     status = LeaveRequestStatus.DRAFT,
-                    origin = LeaveRequestOrigin.SELF_SERVICE,
+                    origin = if (onBehalf) LeaveRequestOrigin.ON_BEHALF else LeaveRequestOrigin.SELF_SERVICE,
                     createdBy = command.userId.value,
-                    createdByName = command.userName.trim().ifBlank { null },
+                    createdByName = createdByName,
                     createdAt = now,
                     documentS3Key = stored.s3Key,
                     documentSha256 = stored.sha256,

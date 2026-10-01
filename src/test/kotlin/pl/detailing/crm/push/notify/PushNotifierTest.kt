@@ -98,4 +98,15 @@ class PushNotifierTest {
         assertEquals(setOf(owner, detailer), sent.keys)
         verify(exactly = 2) { sender.send(any(), any(), any()) }
     }
+
+    @Test
+    fun `kilku autorow jednego zdarzenia - zaden nie dostaje powiadomienia`() {
+        // Wniosek urlopowy wprowadzony w imieniu pracownika: ani pracownik, ani wprowadzający.
+        notifier.broadcast(
+            studio, Permission.VISITS_VIEW, message,
+            excludeUserId = UserId(receptionist), excludeUserIds = listOf(UserId(detailer))
+        )
+
+        assertEquals(setOf(owner), sent.keys)
+    }
 }

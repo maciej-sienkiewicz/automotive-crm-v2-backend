@@ -242,6 +242,28 @@ interface LeaveRequestRepository : JpaRepository<LeaveRequestEntity, UUID> {
         @Param("by") by: UUID
     ): Int
 
+    /**
+     * Porzucenie szkicu ON_BEHALF przez wprowadzającego — wyłącznie ze stanu DRAFT. Osobno
+     * od [markWithdrawn], które przepuszcza też PENDING: podpis pracownika złożony w tej
+     * samej chwili wygrywa, a nie zostaje po cichu wycofany przez „Porzuć".
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE LeaveRequestEntity r
+        SET r.status = 'WITHDRAWN', r.cancelledAt = :at, r.cancelledBy = :by,
+            r.updatedAt = :at, r.version = r.version + 1
+        WHERE r.id = :id AND r.studioId = :studioId AND r.createdBy = :by
+          AND r.origin = 'ON_BEHALF' AND r.status = 'DRAFT'
+        """
+    )
+    fun markOnBehalfDraftDiscarded(
+        @Param("id") id: UUID,
+        @Param("studioId") studioId: UUID,
+        @Param("at") at: Instant,
+        @Param("by") by: UUID
+    ): Int
+
     /** Odwołanie zatwierdzonego urlopu — wyłącznie z APPROVED. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(

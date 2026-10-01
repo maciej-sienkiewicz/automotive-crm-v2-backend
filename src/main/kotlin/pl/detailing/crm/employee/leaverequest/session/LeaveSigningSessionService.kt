@@ -29,6 +29,19 @@ class LeaveSigningSessionService(
         return sessions.issueEmployee(request.id, request.documentSha256)
     }
 
+    /**
+     * Sesja podpisu osobistego dla szkicu ON_BEHALF — wyłącznie dla administratora, który
+     * go wprowadził (na jego urządzeniu pracownik podpisuje). Ten sam token co
+     * w samoobsłudze: szkic ma jednego podpisującego, niezależnie od ścieżki.
+     */
+    fun forEmployeeInPerson(principal: UserPrincipal, requestId: UUID): SigningSession {
+        val request = access.onBehalfRequest(principal.studioId, requestId, principal.userId)
+        if (request.status != LeaveRequestStatus.DRAFT) {
+            throw ConflictException("Ten wniosek jest już podpisany albo porzucony — nie wymaga podpisu pracownika")
+        }
+        return sessions.issueEmployee(request.id, request.documentSha256)
+    }
+
     /** Polityka przed statusem, jak przy samej decyzji: własny wniosek to 403 w każdym stanie. */
     fun forDecision(principal: UserPrincipal, requestId: UUID): SigningSession {
         val request = access.submittedRequest(principal.studioId, requestId)
