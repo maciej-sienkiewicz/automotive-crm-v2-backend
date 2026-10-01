@@ -19,7 +19,16 @@ interface VisitPhotoRepository : JpaRepository<VisitPhotoEntity, UUID> {
         @Param("studioId") studioId: UUID
     ): VisitPhotoEntity?
 
-    /** Photos without a generated thumbnail, newest first — consumed by the thumbnail backfill job. */
-    @Query("SELECT p FROM VisitPhotoEntity p WHERE p.thumbnailFileId IS NULL ORDER BY p.uploadedAt DESC")
+    /**
+     * Zdjęcia do (ponownego) wygenerowania miniatury, dla ThumbnailBackfillJob: najpierw bez
+     * miniatury, potem z miniaturą sprzed poprawki orientacji EXIF (klucz bez `.upright.jpg`);
+     * w obu grupach najnowsze pierwsze.
+     */
+    @Query(
+        "SELECT p FROM VisitPhotoEntity p " +
+        "WHERE p.thumbnailFileId IS NULL " +
+        "   OR (p.thumbnailFileId LIKE 'thumbs/%' AND p.thumbnailFileId NOT LIKE '%.upright.jpg') " +
+        "ORDER BY CASE WHEN p.thumbnailFileId IS NULL THEN 0 ELSE 1 END, p.uploadedAt DESC"
+    )
     fun findMissingThumbnails(pageable: Pageable): List<VisitPhotoEntity>
 }
