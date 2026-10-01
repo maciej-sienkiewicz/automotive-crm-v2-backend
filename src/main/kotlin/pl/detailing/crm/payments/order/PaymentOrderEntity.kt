@@ -10,9 +10,9 @@ import java.util.UUID
  * What the buyer is paying for. The webhook fulfils the order based on this type.
  */
 enum class PaymentOrderType(val displayName: String) {
-    /** First purchase (studio has NO_PLAN or EXPIRED): plan + optional modules, 30 days of access. */
+    /** First purchase (studio has NO_PLAN, TRIALING or EXPIRED): plan + optional modules, 30 days of access. */
     INITIAL_PURCHASE("Aktywacja pakietu"),
-    /** Extends the current subscription by 30 days at the current plan + modules price. */
+    /** Extends the current subscription by 30 days at the price of the plan + modules of the NEXT period. */
     RENEWAL("Przedłużenie subskrypcji"),
     /** Mid-period upgrade BASIC → FULL, charged pro rata for the remaining days. */
     PLAN_UPGRADE("Zmiana pakietu"),
@@ -20,15 +20,47 @@ enum class PaymentOrderType(val displayName: String) {
     ADD_ON_PURCHASE("Dokupienie modułu")
 }
 
+/**
+ * Stan zamówienia. „Zapłacone" i „zrealizowane" to dwa różne fakty i dwa różne stany:
+ *
+ * ```
+ * PENDING ──płatność zweryfikowana──▶ PAID ──efekt zastosowany──▶ FULFILLED
+ *    │                                  └──efekt niemożliwy──▶ REFUND_REQUIRED
+ *    └──porzucone──▶ EXPIRED ──spóźniona płatność──▶ PAID
+ * ```
+ *
+ * Wcześniej błąd realizacji cofał PAID do PENDING razem z resztą transakcji — fakt
+ * otrzymania pieniędzy znikał z bazy (audyt, P6). Teraz PAID jest zapisywane osobno
+ * i nigdy nie jest wycofywane; nieudana realizacja zostawia PAID, a ponawia ją worker.
+ */
 enum class PaymentOrderStatus {
-    /** Registered (or awaiting registration) at P24; payment not confirmed yet. */
+    /** Zamówienie utworzone (i zwykle zarejestrowane w P24); płatności jeszcze nie ma. */
     PENDING,
-    /** Payment confirmed and the order's business effect applied. */
+    /** Pieniądze otrzymane i zweryfikowane w P24; efekt biznesowy jeszcze niezastosowany. */
     PAID,
-    /** P24 reported a problem or verification failed. */
+    /** Efekt biznesowy zastosowany — stan końcowy udanego zakupu. */
+    FULFILLED,
+    /** Rejestracja w P24 nie powiodła się (zamówienie nigdy nie było do opłacenia) albo stan historyczny. */
     FAILED,
-    /** Superseded/abandoned before payment. */
-    CANCELLED
+    /** Wycofane przed płatnością; stan historyczny. */
+    CANCELLED,
+    /**
+     * Porzucone — nikt nie zapłacił w czasie ważności transakcji P24. NIE jest stanem
+     * końcowym dla pieniędzy: spóźniona, zweryfikowana płatność przenosi zamówienie do PAID.
+     */
+    EXPIRED,
+    /**
+     * Pieniądze przyjęte, ale efektu nie da się zastosować (moduł już aktywny, plan już
+     * zmieniony, studio opłacone innym zamówieniem). Wymaga zwrotu przez operatora —
+     * świadomy stan zamiast płatności przepadającej po cichu (audyt, P2c, P7).
+     */
+    REFUND_REQUIRED;
+
+    /** Płatność za zamówienie w tym stanie jest przyjmowana (a nie traktowana jako druga). */
+    val acceptsPayment: Boolean get() = this == PENDING || this == EXPIRED || this == FAILED || this == CANCELLED
+
+    /** Pieniądze za to zamówienie już są. */
+    val isPaid: Boolean get() = this == PAID || this == FULFILLED || this == REFUND_REQUIRED
 }
 
 /**
@@ -36,6 +68,10 @@ enum class PaymentOrderStatus {
  *
  * [sessionId] is our unique P24 session identifier (also used to correlate webhook
  * notifications). One order = one P24 transaction; retries create new orders.
+ *
+ * Każda zmiana stanu przechodzi przez metody tej klasy i odbywa się pod blokadą wiersza
+ * (`PaymentOrderRepository.lockById`) — dwie obsługi tej samej płatności nie mogą już obie
+ * przeczytać PENDING i obie zrealizować zamówienia (audyt, P1).
  */
 @Entity
 @Table(
@@ -94,12 +130,57 @@ class PaymentOrderEntity(
     val createdAt: Instant = Instant.now(),
 
     @Column(name = "paid_at")
-    var paidAt: Instant? = null
+    var paidAt: Instant? = null,
+
+    @Column(name = "fulfilled_at", columnDefinition = "timestamp with time zone")
+    var fulfilledAt: Instant? = null,
+
+    /** Ostatnie sprawdzenie stanu transakcji w API P24 przez worker rekoncyliacji. */
+    @Column(name = "last_reconciled_at", columnDefinition = "timestamp with time zone")
+    var lastReconciledAt: Instant? = null,
+
+    // Null przed pierwszym zapisem → persist zamiast merge; potem optymistyczna blokada (audyt, D2, D4).
+    @Version
+    @Column(name = "version", nullable = false, columnDefinition = "BIGINT NOT NULL DEFAULT 0")
+    var version: Long? = null
 ) {
     val addOnKeys: List<AddOnKey>
         get() = addOnKeysRaw.split(',').filter { it.isNotBlank() }.map { AddOnKey.valueOf(it) }
 
+    /** Płatność zweryfikowana: zapisuje fakt otrzymania pieniędzy. Wołać pod blokadą wiersza. */
+    fun markPaid(p24OrderId: Long?, at: Instant) {
+        check(status.acceptsPayment) { "Zamówienie $id w stanie $status nie przyjmuje płatności" }
+        status = PaymentOrderStatus.PAID
+        if (p24OrderId != null) this.p24OrderId = p24OrderId
+        paidAt = at
+    }
+
+    fun markFulfilled(at: Instant) {
+        check(status == PaymentOrderStatus.PAID) { "Zamówienie $id w stanie $status nie może zostać zrealizowane" }
+        status = PaymentOrderStatus.FULFILLED
+        fulfilledAt = at
+    }
+
+    fun markRefundRequired(reason: String, at: Instant) {
+        check(status == PaymentOrderStatus.PAID) { "Zamówienie $id w stanie $status nie może czekać na zwrot" }
+        status = PaymentOrderStatus.REFUND_REQUIRED
+        failureReason = reason.take(500)
+        fulfilledAt = at
+    }
+
+    fun expire(reason: String) {
+        if (status != PaymentOrderStatus.PENDING) return
+        status = PaymentOrderStatus.EXPIRED
+        failureReason = reason.take(500)
+    }
+
+    fun fail(reason: String) {
+        if (status != PaymentOrderStatus.PENDING) return
+        status = PaymentOrderStatus.FAILED
+        failureReason = reason.take(500)
+    }
+
     companion object {
-        fun encodeAddOnKeys(keys: Collection<AddOnKey>): String = keys.joinToString(",") { it.name }
+        fun encodeAddOnKeys(keys: Collection<AddOnKey>): String = keys.sortedBy { it.name }.joinToString(",") { it.name }
     }
 }

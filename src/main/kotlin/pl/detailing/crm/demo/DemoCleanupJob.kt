@@ -241,6 +241,26 @@ class DemoCleanupJob(
         userRepository.deleteById(demo.userId)
         entityManager.flush()
 
+        // 23b. Rozliczenia z platformą. Zamówienia płatności mają od V172 klucz obcy
+        // ON DELETE RESTRICT (pieniądze nie znikają kaskadą), więc idą przed studiem; plan,
+        // moduły i zaplanowane zmiany dawniej zostawały jako sieroty, bo nic ich nie kasowało.
+        entityManager.createQuery(
+            """DELETE FROM StudioAddOnEntity a WHERE a.studioSubscriptionPlan.id IN
+               (SELECT p.id FROM StudioSubscriptionPlanEntity p WHERE p.studioId = :studioId)"""
+        ).setParameter("studioId", studioId).executeUpdate()
+        listOf(
+            "StudioSubscriptionPlanEntity",
+            "PendingPlanChangeEntity",
+            "SubscriptionPaymentLogEntity",
+            "PaymentNotificationEntity",
+            "PaymentOrderEntity"
+        ).forEach { entity ->
+            entityManager.createQuery("DELETE FROM $entity e WHERE e.studioId = :studioId")
+                .setParameter("studioId", studioId)
+                .executeUpdate()
+        }
+        entityManager.flush()
+
         // 24. Delete studio
         studioRepository.deleteById(studioId)
         entityManager.flush()

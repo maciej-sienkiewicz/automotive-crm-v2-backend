@@ -39,7 +39,8 @@ data class StudioResetStep(
  * Co świadomie ZOSTAJE (decyzja produktowa, nie przeoczenie):
  *  - rozliczenia wobec platformy: `studios`, `studio_subscription_plans`,
  *    `studio_subscription_add_ons`, `pending_plan_changes`, `subscription_payment_log`,
- *    `payment_orders` — plan i historia płatności to relacja studio ↔ platforma;
+ *    `payment_orders`, `payment_notifications` — plan i historia płatności to relacja
+ *    studio ↔ platforma;
  *  - saldo i historia kredytów SMS (`sms_credit_balances`, `sms_credit_transactions`) —
  *    to zapłacone środki;
  *  - `audit_logs` — dziennik jest rejestrem; reset sam zostawia w nim wpis CRITICAL;

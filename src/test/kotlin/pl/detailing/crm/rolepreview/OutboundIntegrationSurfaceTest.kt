@@ -93,6 +93,12 @@ class OutboundIntegrationSurfaceTest {
         "Przelewy24WebhookController" to NeverForSandbox(
             "powiadomienia Przelewy24 o zamówieniach, których piaskownica nie założy - CheckoutService jej odmawia"
         ),
+        "PaymentNotificationProcessor" to NeverForSandbox(
+            "weryfikuje w Przelewy24 płatności za zamówienia, których piaskownica nie założy - CheckoutService jej odmawia"
+        ),
+        "PaymentReconciliationJob" to NeverForSandbox(
+            "pyta Przelewy24 o stan zamówień, których piaskownica nie założy - CheckoutService jej odmawia"
+        ),
         "GusConfig.gusCompanyService" to Self,
         "GusConfig.gusRawSoapClient" to callers(
             "GusConfig.gusCompanyService",

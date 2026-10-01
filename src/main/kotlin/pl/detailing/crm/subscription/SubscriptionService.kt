@@ -11,12 +11,14 @@ import pl.detailing.crm.shared.*
 import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * Subscription lifecycle: studio creation, trial management, status queries
- * and expiry sweeps.
+ * Subscription lifecycle: studio creation, trial management and status queries.
+ * Przejścia wynikające z upływu czasu (trial → EXPIRED, ACTIVE → PAST_DUE → EXPIRED)
+ * wykonuje [pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycleJob].
  *
  * All money movement lives in the payments module ([pl.detailing.crm.payments]):
  * purchases, renewals, upgrades and module activations go through
@@ -28,7 +30,8 @@ class SubscriptionService(
     private val entitlementService: EntitlementService,
     private val studioProvisioningService: StudioProvisioningService,
     private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
-    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
+    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner,
+    private val accessPolicy: SubscriptionAccessPolicy
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -89,27 +92,34 @@ class SubscriptionService(
         return studio
     }
 
-    /** Starts the free trial for a studio that has never used one. */
+    /**
+     * Starts the free trial for a studio that has never used one.
+     *
+     * Zwykła funkcja z prawdziwą transakcją i blokadą wiersza studia — wcześniej `suspend`
+     * z `withContext(Dispatchers.IO)` pod `@Transactional`, czyli bez transakcji: zapis studia
+     * i wiersza planu mogły się rozjechać, a dwa kliknięcia „Rozpocznij trial" ścigały się.
+     */
     @Transactional
-    suspend fun startTrial(studioId: StudioId): SubscriptionInfo = withContext(Dispatchers.IO) {
-        val entity = studioRepository.findByStudioId(studioId.value)
+    fun startTrial(studioId: StudioId): SubscriptionInfo {
+        val entity = studioRepository.lockById(studioId.value)
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
 
         if (entity.trialUsed) throw ValidationException("Okres próbny został już wykorzystany.")
-        if (entity.subscriptionStatus == SubscriptionStatus.ACTIVE)
+        if (entity.subscriptionStatus == SubscriptionStatus.ACTIVE || entity.subscriptionStatus == SubscriptionStatus.PAST_DUE)
             throw ValidationException("Studio ma już aktywną subskrypcję.")
 
-        val trialEndsAt = Instant.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
+        val trialEndsAt = accessPolicy.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
         entity.subscriptionStatus = SubscriptionStatus.TRIALING
         entity.trialEndsAt = trialEndsAt
+        entity.graceEndsAt = null
         entity.trialUsed = true
-        studioRepository.save(entity)
 
         // Legacy studios created before the provisioning invariant may lack the row.
         entitlementService.ensurePlanAssigned(studioId)
+        entitlementService.evictEntitlementsCache(studioId)
 
         logger.info("Studio={} started free trial, ends at {}", studioId, trialEndsAt)
-        entity.toDomain().toSubscriptionInfo()
+        return entity.toDomain().toSubscriptionInfo(accessPolicy)
     }
 
     // ─── Status ───────────────────────────────────────────────────────────────
@@ -119,44 +129,20 @@ class SubscriptionService(
             ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
     }
 
+    /**
+     * Bramka dostępu do API. Decyzja z [SubscriptionAccessPolicy] — tej samej, której używa
+     * [pl.detailing.crm.subscription.entitlement.capability.CapabilityService] dla zadań w tle
+     * i job cyklu życia, więc w tej samej chwili wszystkie trzy mówią to samo.
+     */
     suspend fun validateAccess(studioId: StudioId) = withContext(Dispatchers.IO) {
         val studio = getStudio(studioId)
-        if (!studio.isAccessible()) {
+        if (!accessPolicy.isAccessible(studio.billing())) {
             throw ForbiddenException("Brak dostępu. Status subskrypcji: ${studio.subscriptionStatus}")
         }
     }
 
     suspend fun getSubscriptionInfo(studioId: StudioId): SubscriptionInfo = withContext(Dispatchers.IO) {
-        val studio = getStudio(studioId)
-        studio.toSubscriptionInfo()
-    }
-
-    // ─── Maintenance ──────────────────────────────────────────────────────────
-
-    @Transactional
-    suspend fun expireTrials() = withContext(Dispatchers.IO) {
-        val now = Instant.now()
-        val expiredStudios = studioRepository.findExpiredTrials(now)
-
-        expiredStudios.forEach { entity ->
-            entity.subscriptionStatus = SubscriptionStatus.EXPIRED
-            studioRepository.save(entity)
-        }
-
-        expiredStudios.size
-    }
-
-    @Transactional
-    suspend fun expireSubscriptions() = withContext(Dispatchers.IO) {
-        val now = Instant.now()
-        val expiredStudios = studioRepository.findExpiredSubscriptions(now)
-
-        expiredStudios.forEach { entity ->
-            entity.subscriptionStatus = SubscriptionStatus.EXPIRED
-            studioRepository.save(entity)
-        }
-
-        expiredStudios.size
+        getStudio(studioId).toSubscriptionInfo(accessPolicy)
     }
 }
 
@@ -164,18 +150,32 @@ class SubscriptionService(
 
 data class SubscriptionInfo(
     val status: SubscriptionStatus,
+    /** Dni do końca dostępu: triala, opłaconego okresu, a w karencji — do końca karencji. */
     val daysRemaining: Long?,
     val subscriptionEndsAt: Instant?,
     val trialEndsAt: Instant?,
     val isAccessible: Boolean,
-    val trialUsed: Boolean
+    val trialUsed: Boolean,
+    /** Koniec karencji — okres minął, dostęp trwa do tej chwili, czeka na odnowienie. */
+    val graceEndsAt: Instant? = null,
+    val inGrace: Boolean = false
 )
 
-private fun Studio.toSubscriptionInfo() = SubscriptionInfo(
-    status = subscriptionStatus,
-    daysRemaining = getDaysRemaining(),
-    subscriptionEndsAt = subscriptionEndsAt,
-    trialEndsAt = trialEndsAt,
-    isAccessible = isAccessible(),
-    trialUsed = trialUsed
-)
+internal fun Studio.toSubscriptionInfo(policy: SubscriptionAccessPolicy): SubscriptionInfo {
+    val billing = billing()
+    val now = policy.now()
+    val inGrace = policy.isInGrace(billing, now)
+    val accessEndsAt = policy.accessEndsAt(billing)
+    return SubscriptionInfo(
+        status = subscriptionStatus,
+        daysRemaining = accessEndsAt?.let {
+            if (it.isAfter(now)) java.time.Duration.between(now, it).toDays() else 0L
+        },
+        subscriptionEndsAt = subscriptionEndsAt,
+        trialEndsAt = trialEndsAt,
+        isAccessible = policy.isAccessible(billing, now),
+        trialUsed = trialUsed,
+        graceEndsAt = if (inGrace) accessEndsAt else null,
+        inGrace = inGrace
+    )
+}

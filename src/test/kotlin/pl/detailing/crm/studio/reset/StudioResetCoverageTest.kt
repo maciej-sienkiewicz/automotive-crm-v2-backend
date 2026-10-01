@@ -34,6 +34,7 @@ class StudioResetCoverageTest {
         "PendingPlanChangeEntity" to "zaplanowana zmiana planu to sprawa billingowa",
         "SubscriptionPaymentLogEntity" to "historia płatności wobec platformy",
         "PaymentOrderEntity" to "zamówienia płatności wobec platformy",
+        "PaymentNotificationEntity" to "notyfikacje płatności P24 wobec platformy — dowód otrzymania pieniędzy",
         // Zapłacone środki.
         "SmsCreditBalanceEntity" to "saldo SMS to pieniądze klienta",
         "SmsCreditTransactionEntity" to "historia kredytów SMS to pieniądze klienta",

@@ -140,15 +140,30 @@ enum class CapabilityKey(
  * features the studio lacks — the UI uses it to point the upsell at the right
  * module instead of showing a generic "no access".
  */
+/** Co blokuje capability: brak kupionego modułu czy nieaktywna subskrypcja. */
+enum class CapabilityLock { MODULE, SUBSCRIPTION }
+
 data class CapabilityDecision(
     val capability: CapabilityKey,
     val enabled: Boolean,
     val missingFeatures: Set<FeatureKey>,
-    val upsell: List<CapabilityUpsellOption>
+    val upsell: List<CapabilityUpsellOption>,
+    /**
+     * Null, gdy dozwolone. SUBSCRIPTION — studio KUPIŁO moduł, ale nie może z niego teraz
+     * korzystać (subskrypcja wygasła); UI ma wtedy prowadzić do odnowienia, a nie do
+     * dokupienia modułu, którego studio już ma.
+     */
+    val lockedBy: CapabilityLock? = if (enabled) null else CapabilityLock.MODULE
 ) {
     companion object {
         fun allowed(capability: CapabilityKey) =
             CapabilityDecision(capability, enabled = true, missingFeatures = emptySet(), upsell = emptyList())
+
+        fun subscriptionInactive(capability: CapabilityKey) =
+            CapabilityDecision(
+                capability, enabled = false, missingFeatures = emptySet(), upsell = emptyList(),
+                lockedBy = CapabilityLock.SUBSCRIPTION
+            )
     }
 }
 

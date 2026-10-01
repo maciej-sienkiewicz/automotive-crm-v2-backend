@@ -9,6 +9,10 @@ import pl.detailing.crm.instagram.analytics.SuggestionService
 import pl.detailing.crm.instagram.analytics.TopicClassificationService
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileEntity
 import pl.detailing.crm.instagram.infrastructure.InstagramProfileRepository
+import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityKey
+import pl.detailing.crm.subscription.entitlement.capability.CapabilityService
+import java.util.UUID
 
 /**
  * Spina pełny przepływ synchronizacji: pobranie danych → klasyfikacja tematów →
@@ -29,7 +33,8 @@ class InstagramSyncOrchestrator(
     private val aggregationService: InstagramAggregationService,
     private val insightEngine: InsightEngine,
     private val suggestionService: SuggestionService,
-    private val weeklyDigestService: WeeklyDigestService
+    private val weeklyDigestService: WeeklyDigestService,
+    private val capabilityService: CapabilityService
 ) {
     private val log = LoggerFactory.getLogger(InstagramSyncOrchestrator::class.java)
 
@@ -58,8 +63,36 @@ class InstagramSyncOrchestrator(
             .onFailure { log.error("Instagram sync: błąd insightów po initial sync: {}", it.message, it) }
     }
 
-    fun dailySyncAll() {
+    /**
+     * Profile, które obserwuje co najmniej jedno studio z AKTYWNYM modułem monitoringu
+     * (kupionym i opłaconym). Wcześniej synchronizacja szła dla każdego obserwowanego profilu,
+     * także gdy wszyscy obserwujący mieli wygasłą subskrypcję — płatne wywołania zewnętrznego
+     * API dla nikogo, kto za nie płaci (audyt, S3).
+     *
+     * Błąd sprawdzenia przepuszcza profil (fail-open): to ścieżka kosztowa, nie pieniężna ani
+     * bezpieczeństwa — awaria cache'u nie może wyłączyć monitoringu płacącym klientom.
+     */
+    private fun profilesWithEntitledFollower(): List<InstagramProfileEntity> {
         val profiles = profileRepository.findAllActiveDistinct()
+        if (profiles.isEmpty()) return profiles
+
+        val followers = profileRepository.findActiveFollows().groupBy({ it.profileId }, { it.studioId })
+        val entitledCache = HashMap<UUID, Boolean>()
+        fun entitled(studioId: UUID) = entitledCache.getOrPut(studioId) {
+            runCatching { capabilityService.hasCapability(StudioId(studioId), CapabilityKey.INSTAGRAM_MONITOR) }
+                .onFailure { log.warn("Instagram sync: nie sprawdzono uprawnień studia {}: {}", studioId, it.message) }
+                .getOrDefault(true)
+        }
+
+        val (toSync, skipped) = profiles.partition { profile -> followers[profile.id].orEmpty().any(::entitled) }
+        if (skipped.isNotEmpty()) {
+            log.info("Instagram sync: pominięto {} profili bez obserwującego studia z aktywnym modułem", skipped.size)
+        }
+        return toSync
+    }
+
+    fun dailySyncAll() {
+        val profiles = profilesWithEntitledFollower()
         if (profiles.isEmpty()) return
 
         log.info("Instagram daily sync: start dla {} profili", profiles.size)
@@ -84,7 +117,7 @@ class InstagramSyncOrchestrator(
     }
 
     fun weeklySyncAll() {
-        val profiles = profileRepository.findAllActiveDistinct()
+        val profiles = profilesWithEntitledFollower()
         if (profiles.isEmpty()) return
 
         log.info("Instagram weekly sync: start dla {} profili", profiles.size)

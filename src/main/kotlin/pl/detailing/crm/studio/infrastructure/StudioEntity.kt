@@ -5,6 +5,7 @@ import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.domain.StudioKind
+import pl.detailing.crm.subscription.lifecycle.BillingSnapshot
 import java.time.Instant
 import java.util.UUID
 
@@ -56,8 +57,23 @@ class StudioEntity(
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false, updatable = false, length = 20, columnDefinition = "VARCHAR(20) DEFAULT 'REGULAR'")
-    val kind: StudioKind = StudioKind.REGULAR
+    val kind: StudioKind = StudioKind.REGULAR,
+
+    /**
+     * Koniec okresu karencji — ustawiany przy przejściu ACTIVE → PAST_DUE, czyszczony przy
+     * każdym innym przejściu. PAST_DUE bez tej daty dawał kiedyś dostęp bez końca (audyt, S5).
+     */
+    @Column(name = "grace_ends_at", columnDefinition = "timestamp with time zone")
+    var graceEndsAt: Instant? = null
 ) {
+    /** Stan rozliczeniowy do decyzji [pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle]. */
+    fun billing(): BillingSnapshot = BillingSnapshot(
+        status = subscriptionStatus,
+        trialEndsAt = trialEndsAt,
+        subscriptionEndsAt = subscriptionEndsAt,
+        graceEndsAt = graceEndsAt
+    )
+
     fun toDomain(): Studio = Studio(
         id = StudioId(id),
         name = name,
@@ -67,7 +83,8 @@ class StudioEntity(
         trialUsed = trialUsed,
         createdAt = createdAt,
         emailAlias = emailAlias,
-        kind = kind
+        kind = kind,
+        graceEndsAt = graceEndsAt
     )
 
     companion object {
@@ -80,7 +97,8 @@ class StudioEntity(
             trialUsed = studio.trialUsed,
             createdAt = studio.createdAt,
             emailAlias = studio.emailAlias,
-            kind = studio.kind
+            kind = studio.kind,
+            graceEndsAt = studio.graceEndsAt
         )
     }
 }

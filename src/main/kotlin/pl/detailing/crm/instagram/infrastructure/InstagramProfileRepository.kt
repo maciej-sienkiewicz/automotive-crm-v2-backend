@@ -27,6 +27,14 @@ interface InstagramProfileRepository : JpaRepository<InstagramProfileEntity, UUI
     """)
     fun findAllActiveDistinct(): List<InstagramProfileEntity>
 
+    /** Pary (profil, studio) aktywnych obserwacji — do sprawdzenia, kto ma prawo do synchronizacji. */
+    @Query("""
+        SELECT new pl.detailing.crm.instagram.infrastructure.ActiveProfileFollow(sip.profileId, sip.studioId)
+        FROM StudioInstagramProfileEntity sip
+        WHERE sip.status = pl.detailing.crm.shared.InstagramProfileStatus.ACTIVE
+    """)
+    fun findActiveFollows(): List<ActiveProfileFollow>
+
     /**
      * Profile obserwowane przez kogokolwiek i mające wskazaną stronę na Facebooku —
      * tylko te da się sprawdzić w Bibliotece reklam Meta.
@@ -53,3 +61,5 @@ interface InstagramProfileRepository : JpaRepository<InstagramProfileEntity, UUI
     """)
     fun findByExternalUrlLike(@Param("domain") domain: String): List<InstagramProfileEntity>
 }
+
+data class ActiveProfileFollow(val profileId: UUID, val studioId: UUID)

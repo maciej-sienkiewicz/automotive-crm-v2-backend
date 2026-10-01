@@ -19,16 +19,20 @@ import java.time.Instant
 data class SubscriptionStatusResponse(
     val status: SubscriptionStatus,
     val isAccessible: Boolean,
+    /** Dni do końca dostępu (trial, okres, a w karencji — do końca karencji). */
     val daysRemaining: Long?,
     val subscriptionEndsAt: Instant?,
     val trialEndsAt: Instant?,
-    val trialUsed: Boolean
+    val trialUsed: Boolean,
+    /** Koniec karencji: okres minął, dostęp trwa do tej chwili i czeka na odnowienie. */
+    val graceEndsAt: Instant?,
+    val inGrace: Boolean
 )
 
 /**
  * Single entry in the payment/event history.
  *
- * [eventType] — one of: SUBSCRIPTION_PURCHASE, PLAN_UPGRADE, PLAN_DOWNGRADE,
+ * [eventType] — one of: SUBSCRIPTION_PURCHASE, SUBSCRIPTION_RENEWAL, PLAN_UPGRADE, PLAN_DOWNGRADE,
  *                        ADD_ON_ACTIVATION, ADD_ON_DEACTIVATION
  * [amountCents] — 0 for events with no charge (downgrades, deactivations).
  * [plan]        — the plan that was active at the time of the event, or null if unknown
@@ -187,5 +191,7 @@ private fun SubscriptionInfo.toResponse() = SubscriptionStatusResponse(
     daysRemaining = daysRemaining,
     subscriptionEndsAt = subscriptionEndsAt,
     trialEndsAt = trialEndsAt,
-    trialUsed = trialUsed
+    trialUsed = trialUsed,
+    graceEndsAt = graceEndsAt,
+    inGrace = inGrace
 )

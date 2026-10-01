@@ -26,5 +26,14 @@ class StudioAddOnEntity(
     val addOn: AddOnEntity,
 
     @Column(name = "activated_at", nullable = false)
-    val activatedAt: Instant = Instant.now()
+    val activatedAt: Instant = Instant.now(),
+
+    /**
+     * Moduł wyłączony „z końcem okresu": działa do tej chwili, nie wchodzi do ceny odnowienia,
+     * a usuwa go [pl.detailing.crm.subscription.management.PlanDowngradeScheduler]. Null —
+     * moduł odnawia się razem z planem. Dawniej dezaktywacja zdejmowała moduł natychmiast,
+     * choć był opłacony do końca okresu (audyt, S6).
+     */
+    @Column(name = "cancel_at", columnDefinition = "timestamp with time zone")
+    var cancelAt: Instant? = null
 )

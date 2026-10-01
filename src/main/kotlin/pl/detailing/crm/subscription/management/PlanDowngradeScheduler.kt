@@ -1,112 +1,151 @@
 package pl.detailing.crm.subscription.management
 
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import pl.detailing.crm.shared.StudioId
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
+import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
+import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository
+import pl.detailing.crm.subscription.entitlement.infrastructure.StudioAddOnRepository
 import pl.detailing.crm.subscription.infrastructure.SubscriptionEventType
 import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogEntity
 import pl.detailing.crm.subscription.infrastructure.SubscriptionPaymentLogRepository
+import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
 import java.time.Instant
+import java.util.UUID
 
 /**
- * Scheduled job that applies deferred plan downgrades.
+ * Stosuje zmiany zaplanowane na koniec okresu: downgrade'y planu i wyłączenia modułów.
  *
- * Background:
- *   When a studio requests a downgrade (e.g. FULL → BASIC), the change is not
- *   applied immediately — the studio keeps its current plan until the end of its paid
- *   billing period. [PlanManagementService.changePlan] records the intent as a
- *   [PendingPlanChangeEntity] with [PendingPlanChangeStatus.PENDING].
+ * Dawna wersja miała `@Transactional` na całej pętli i `try/catch` na wiersz. Wyglądało to na
+ * izolację, ale `EntitlementService.assignPlan` dołączał do transakcji zewnętrznej: wyjątek
+ * przechodzący przez jego proxy oznaczał CAŁĄ transakcję jako rollback-only, `catch` go połykał,
+ * a commit na końcu rzucał `UnexpectedRollbackException`. Jedno „zatrute" studio cofało
+ * downgrade'y wszystkich, co godzinę od nowa (audyt, J1 — odtworzone na Postgresie).
  *
- * This job runs every hour and processes all PENDING rows whose [effectiveAt]
- * timestamp has passed:
- *   1. Calls [EntitlementService.assignPlan] to switch the plan and evict the cache.
- *   2. Marks the row as [PendingPlanChangeStatus.APPLIED].
- *   3. Appends a [SubscriptionPaymentLogEntity] entry for the audit trail.
- *
- * Failure handling:
- *   Each row is processed independently inside its own try/catch so a failure
- *   on one studio does not block others. Failed rows remain PENDING and will be
- *   retried on the next run. After repeated failures an operator can inspect the
- *   row via the DB and the ERROR log entry.
- *
- * Multi-instance safety:
- *   The job may run on multiple instances simultaneously in a scaled deployment.
- *   The [PendingPlanChangeRepository.findDueChanges] query does not use SELECT FOR
- *   UPDATE (not all JPA providers support it uniformly), so a small window exists
- *   where two instances process the same row. The worst outcome is that
- *   [EntitlementService.assignPlan] is called twice with the same plan key — which
- *   is idempotent. For strict deduplication, replace with a database-level advisory
- *   lock or a distributed lock (Redisson) before going to production at scale.
+ * Teraz pętla NIE ma transakcji: rozdziela pracę, a każdy wiersz idzie we własnej
+ * ([ScheduledPlanChangeApplier], `REQUIRES_NEW`). Błąd jednego to miernik
+ * `subscription.scheduled.changes.failures` i ponowienie w kolejnym przebiegu.
  */
 @Component
 class PlanDowngradeScheduler(
     private val pendingPlanChangeRepository: PendingPlanChangeRepository,
+    private val studioAddOnRepository: StudioAddOnRepository,
+    private val applier: ScheduledPlanChangeApplier,
+    private val accessPolicy: SubscriptionAccessPolicy,
+    meterRegistry: MeterRegistry
+) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+    private val failures = meterRegistry.counter("subscription.scheduled.changes.failures")
+
+    /** Co 10 minut, przesunięte o 5 minut względem joba cyklu życia. */
+    @Scheduled(cron = "0 5/10 * * * *")
+    fun applyDueDowngrades() {
+        val now = accessPolicy.now()
+
+        val dueDowngrades = pendingPlanChangeRepository.findDueIds(now, PageRequest.of(0, BATCH_SIZE))
+        var applied = 0
+        for (pendingId in dueDowngrades) {
+            try {
+                if (applier.applyDowngrade(pendingId, now)) applied++
+            } catch (e: Exception) {
+                failures.increment()
+                logger.error("Downgrade {} nie został zastosowany — ponowienie w kolejnym przebiegu", pendingId, e)
+            }
+        }
+
+        val dueCancellations = studioAddOnRepository.findDueCancellations(now, PageRequest.of(0, BATCH_SIZE))
+        var removed = 0
+        for (due in dueCancellations) {
+            try {
+                if (applier.removeCancelledAddOn(due.studioId, due.addOnKey, now)) removed++
+            } catch (e: Exception) {
+                failures.increment()
+                logger.error("Wyłączenie modułu {} studia {} nie powiodło się — ponowienie w kolejnym przebiegu", due.addOnKey, due.studioId, e)
+            }
+        }
+
+        if (dueDowngrades.isNotEmpty() || dueCancellations.isNotEmpty()) {
+            logger.info(
+                "Zmiany na koniec okresu: downgrade'y {}/{}, wyłączenia modułów {}/{}",
+                applied, dueDowngrades.size, removed, dueCancellations.size
+            )
+        }
+    }
+
+    companion object {
+        const val BATCH_SIZE = 500
+    }
+}
+
+/**
+ * Jedna zaplanowana zmiana jednego studia, we własnej transakcji. Kolejność jest zawsze ta
+ * sama: blokada studia → świeży odczyt wiersza → decyzja → zmiana. Ta sama blokada stoi
+ * przed odwołaniem downgrade'u przez właściciela, więc odpowiedź „anulowano" nie może
+ * zostać nadpisana przez równoległy przebieg (audyt, S2).
+ */
+@Service
+class ScheduledPlanChangeApplier(
+    private val pendingPlanChangeRepository: PendingPlanChangeRepository,
+    private val studioRepository: StudioRepository,
     private val entitlementService: EntitlementService,
+    private val addOnRepository: AddOnJpaRepository,
     private val paymentLogRepository: SubscriptionPaymentLogRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    /**
-     * Runs every hour at the top of the hour.
-     * Processes all PENDING downgrade rows whose effective date has arrived.
-     */
-    @Scheduled(cron = "0 0 * * * *")
-    @Transactional
-    fun applyDueDowngrades() {
-        val now = Instant.now()
-        val due = pendingPlanChangeRepository.findDueChanges(now)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun applyDowngrade(pendingId: UUID, now: Instant): Boolean {
+        // Studio bez ładowania wiersza zmiany: wiersz wczytany PRZED blokadą byłby stanem,
+        // na którym decyzja „czy wciąż PENDING" nic nie znaczy.
+        val studioId = pendingPlanChangeRepository.findStudioIdById(pendingId) ?: return false
+        studioRepository.lockById(studioId) ?: return false
+        val pending = pendingPlanChangeRepository.findById(pendingId).orElse(null) ?: return false
+        if (pending.status != PendingPlanChangeStatus.PENDING || pending.effectiveAt.isAfter(now)) return false
 
-        if (due.isEmpty()) return
-
-        logger.info("PlanDowngradeScheduler: found {} pending downgrade(s) to apply", due.size)
-
-        var applied = 0
-        var failed = 0
-
-        for (pending in due) {
-            try {
-                applyDowngrade(pending, now)
-                applied++
-            } catch (e: Exception) {
-                failed++
-                logger.error(
-                    "Failed to apply downgrade id={} studio={} from={} to={}: {}",
-                    pending.id, pending.studioId, pending.fromPlanKey, pending.toPlanKey, e.message, e
-                )
-            }
-        }
-
-        logger.info(
-            "PlanDowngradeScheduler: applied={} failed={}",
-            applied, if (failed > 0) "$failed (see ERROR logs above)" else 0
-        )
-    }
-
-    private fun applyDowngrade(pending: PendingPlanChangeEntity, now: Instant) {
-        val studioId = StudioId(pending.studioId)
-
-        entitlementService.assignPlan(studioId, pending.toPlanKey)
-
+        entitlementService.changePlan(StudioId(studioId), pending.toPlanKey)
         pending.status = PendingPlanChangeStatus.APPLIED
         pending.appliedAt = now
-        pendingPlanChangeRepository.save(pending)
 
         paymentLogRepository.save(
             SubscriptionPaymentLogEntity(
-                studioId = pending.studioId,
+                studioId = studioId,
                 eventType = SubscriptionEventType.PLAN_DOWNGRADE,
                 amountInCents = 0,
                 planKey = pending.toPlanKey,
                 description = "Downgrade z ${pending.fromPlanKey.displayName} do ${pending.toPlanKey.displayName} — zastosowany automatycznie"
             )
         )
-
         logger.info(
             "Applied downgrade studio={} from={} to={} (scheduled for {}, applied at {})",
             studioId, pending.fromPlanKey, pending.toPlanKey, pending.effectiveAt, now
         )
+        return true
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun removeCancelledAddOn(studioId: UUID, addOnKey: AddOnKey, now: Instant): Boolean {
+        val removed = entitlementService.removeAddOnIfCancellationDue(StudioId(studioId), addOnKey, now)
+        if (!removed) return false
+
+        val planKey = entitlementService.getEntitlements(StudioId(studioId)).planKey
+        paymentLogRepository.save(
+            SubscriptionPaymentLogEntity(
+                studioId = studioId,
+                eventType = SubscriptionEventType.ADD_ON_DEACTIVATION,
+                amountInCents = 0,
+                planKey = planKey,
+                addOnKey = addOnKey.name,
+                description = "Wyłączenie modułu ${addOnRepository.findByKey(addOnKey)?.name ?: addOnKey.name} z końcem okresu — zastosowane automatycznie"
+            )
+        )
+        return true
     }
 }

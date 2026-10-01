@@ -1,7 +1,12 @@
 package pl.detailing.crm.studio.infrastructure
 
 import pl.detailing.crm.studio.domain.StudioKind
+import jakarta.persistence.LockModeType
+import jakarta.persistence.QueryHint
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.QueryHints
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -30,17 +35,37 @@ interface StudioRepository : JpaRepository<StudioEntity, UUID> {
     @Query("SELECT s FROM StudioEntity s WHERE s.emailAlias = :emailAlias")
     fun findByEmailAlias(@Param("emailAlias") emailAlias: String): StudioEntity?
 
-    @Query("""
-        SELECT s FROM StudioEntity s
-        WHERE s.subscriptionStatus = 'TRIALING'
-        AND s.trialEndsAt < :now
-    """)
-    fun findExpiredTrials(@Param("now") now: Instant): List<StudioEntity>
+    /**
+     * Wiersz studia z blokadą (`SELECT … FOR UPDATE`). Każda mutacja subskrypcji zaczyna od
+     * niej — zakupy, zmiany planu, przejścia cyklu życia i realizacje zamówień jednego studia
+     * idą po kolei, a decyzja zapada na stanie odczytanym POD blokadą (audyt, inwariant 2).
+     * Kolejność blokad w całym module: studio → plan → moduły → zamówienie.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM StudioEntity s WHERE s.id = :id")
+    fun lockById(@Param("id") id: UUID): StudioEntity?
 
+    /**
+     * Jak [lockById], ale z `SKIP LOCKED`: zajęty wiersz zwraca null zamiast czekać. Dla
+     * jobów — druga instancja (albo zakup w toku) pomija studio, kolejny przebieg je dokończy.
+     * Wartość -2 to w Hibernate [org.hibernate.LockOptions.SKIP_LOCKED].
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
+    @Query("SELECT s FROM StudioEntity s WHERE s.id = :id")
+    fun tryLockById(@Param("id") id: UUID): StudioEntity?
+
+    /**
+     * Studia z należnym przejściem cyklu życia (trial minął, okres minął, karencja minęła).
+     * Same ID, porcjami: job decyduje dopiero pod blokadą wiersza, a granica czasu (`<=`)
+     * jest ta sama, co w [pl.detailing.crm.subscription.lifecycle.SubscriptionLifecycle].
+     */
     @Query("""
-        SELECT s FROM StudioEntity s
-        WHERE s.subscriptionStatus = 'ACTIVE'
-        AND s.subscriptionEndsAt < :now
+        SELECT s.id FROM StudioEntity s
+        WHERE (s.subscriptionStatus = 'TRIALING' AND s.trialEndsAt <= :now)
+           OR (s.subscriptionStatus = 'ACTIVE' AND s.subscriptionEndsAt <= :now)
+           OR (s.subscriptionStatus = 'PAST_DUE' AND (s.graceEndsAt IS NULL OR s.graceEndsAt <= :now))
+        ORDER BY s.id
     """)
-    fun findExpiredSubscriptions(@Param("now") now: Instant): List<StudioEntity>
+    fun findIdsDueForLifecycleTransition(@Param("now") now: Instant, pageable: Pageable): List<UUID>
 }

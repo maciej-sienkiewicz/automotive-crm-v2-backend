@@ -307,6 +307,51 @@ class GlobalExceptionHandler(
             ))
     }
 
+    /**
+     * 403 `SUBSCRIPTION_INACTIVE` z warstwy uprawnień — ten sam kod co z
+     * [SubscriptionInterceptor], żeby paywall frontendu reagował na jeden sygnał. Dociera tu
+     * głównie ze ścieżek wyłączonych z interceptora (aplikacja mobilna, tablet) i z kontroli
+     * modułów, które od teraz uwzględniają status rozliczeniowy, nie tylko kupiony plan.
+     */
+    @ExceptionHandler(SubscriptionInactiveException::class)
+    fun handleSubscriptionInactive(ex: SubscriptionInactiveException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
+            .body(ErrorResponse(
+                error = "Subskrypcja nieaktywna",
+                message = ex.message ?: "Subskrypcja studia nie jest aktywna",
+                timestamp = Instant.now().toString(),
+                code = "SUBSCRIPTION_INACTIVE"
+            ))
+
+    /** 409 dla operacji na subskrypcji niezgodnej z jej stanem; `code` mówi frontendowi, co się stało. */
+    @ExceptionHandler(SubscriptionConflictException::class)
+    fun handleSubscriptionConflict(ex: SubscriptionConflictException): ResponseEntity<ErrorResponse> {
+        log.info("SubscriptionConflict [{}] {}: {}", resolveContext(), ex.code, ex.message)
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(ErrorResponse(
+                error = "Konflikt stanu subskrypcji",
+                message = ex.message ?: "Operacja jest sprzeczna z aktualnym stanem subskrypcji",
+                timestamp = Instant.now().toString(),
+                code = ex.code
+            ))
+    }
+
+    /** 503: bramka płatności nieskonfigurowana lub niedostępna — odmowa zamiast realizacji za darmo. */
+    @ExceptionHandler(PaymentsUnavailableException::class)
+    fun handlePaymentsUnavailable(ex: PaymentsUnavailableException): ResponseEntity<ErrorResponse> {
+        log.error("PaymentsUnavailable [{}]: {}", resolveContext(), ex.message)
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(ErrorResponse(
+                error = "Płatności niedostępne",
+                message = ex.message ?: "Płatności są chwilowo niedostępne",
+                timestamp = Instant.now().toString(),
+                code = "PAYMENTS_UNAVAILABLE"
+            ))
+    }
+
     @ExceptionHandler(ConflictException::class)
     fun handleConflict(ex: ConflictException): ResponseEntity<ErrorResponse> {
         return ResponseEntity
@@ -530,7 +575,9 @@ class GlobalExceptionHandler(
             "idx_ig_stories_story_id" to "Story Instagram o podanym identyfikatorze już istnieje.",
             "idx_protocol_mappings_unique" to "Mapowanie pola protokołu już istnieje.",
             "idx_consent_templates_def_version" to "Szablon zgody w tej wersji już istnieje.",
-            "idx_sms_send_log_appointment_trigger" to "Wiadomość SMS dla tej wizyty i zdarzenia została już wysłana."
+            "idx_sms_send_log_appointment_trigger" to "Wiadomość SMS dla tej wizyty i zdarzenia została już wysłana.",
+            "uq_payment_orders_one_open_per_product" to "Na ten zakup czeka już otwarte zamówienie — dokończ płatność albo spróbuj ponownie za chwilę.",
+            "uq_pending_plan_changes_one_pending" to "Zmiana planu jest już zaplanowana — odśwież widok subskrypcji."
         )
     }
 }

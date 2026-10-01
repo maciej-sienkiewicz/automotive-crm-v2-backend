@@ -155,6 +155,7 @@ class RolePreviewSandboxEraser(
             "StudioSubscriptionPlanEntity",
             "PendingPlanChangeEntity",
             "SubscriptionPaymentLogEntity",
+            "PaymentNotificationEntity",
             "PaymentOrderEntity",
             "SmsCreditBalanceEntity",
             "SmsCreditTransactionEntity",

@@ -66,5 +66,14 @@ class SubscriptionPaymentLogEntity(
     val description: String,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: Instant = Instant.now()
+    val createdAt: Instant = Instant.now(),
+
+    /**
+     * Zamówienie, którego efekt ten wpis opisuje. Unikat (order_id, event_type) z V172 sprawia,
+     * że ta sama płatność nie zostawi dwóch wpisów tego samego rodzaju — podwójna realizacja
+     * kończy się błędem bazy, a nie cichym dublem w historii (audyt, P1). Null dla zdarzeń bez
+     * zamówienia (downgrade, dezaktywacja modułu) i dla historii sprzed V172.
+     */
+    @Column(name = "order_id")
+    val orderId: UUID? = null
 )

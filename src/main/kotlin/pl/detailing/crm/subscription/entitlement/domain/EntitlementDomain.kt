@@ -1,6 +1,8 @@
 package pl.detailing.crm.subscription.entitlement.domain
 
 import pl.detailing.crm.subscription.entitlement.FeatureKey
+import pl.detailing.crm.subscription.lifecycle.BillingSnapshot
+import java.time.Instant
 import java.util.UUID
 
 data class Feature(
@@ -41,8 +43,19 @@ data class StudioEntitlements(
     val planKey: PlanKey,
     val planName: String,
     val enabledFeatures: Set<FeatureKey>,
-    val activeAddOnKeys: Set<AddOnKey>
+    val activeAddOnKeys: Set<AddOnKey>,
+    /**
+     * Stan rozliczeniowy studia w chwili wczytania (daty, nie decyzja — patrz [BillingSnapshot]).
+     * [enabledFeatures] mówi, co studio KUPIŁO; czy może z tego teraz korzystać, rozstrzyga
+     * [pl.detailing.crm.subscription.entitlement.capability.CapabilityService] na podstawie
+     * tego pola. Wcześniej studio po wygaśnięciu nadal „miało" FULL i automatyzacje działały
+     * w tle bez opłaty (audyt, S3). Null tylko w obiektach budowanych ręcznie (testy).
+     */
+    val billing: BillingSnapshot? = null,
+    /** Moduły z zaplanowanym wyłączeniem z końcem okresu → kiedy wyłączą się. */
+    val addOnCancellations: Map<AddOnKey, Instant> = emptyMap()
 ) {
+    /** Czy studio KUPIŁO funkcję (plan + moduły) — bez względu na stan płatności. */
     fun hasFeature(key: FeatureKey): Boolean = key in enabledFeatures
 }
 

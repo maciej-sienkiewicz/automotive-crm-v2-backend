@@ -50,6 +50,20 @@ services:
       # crm.role-preview w application.properties).
       ROLE_PREVIEW_ENABLED: ${ENV_ROLE_PREVIEW_ENABLED:-false}
       ROLE_PREVIEW_BASE_URL: ${ENV_ROLE_PREVIEW_BASE_URL:-}
+      # Przelewy24. Bez kompletu poświadczeń checkout odpowiada 503 — NIE realizuje zamówień
+      # za darmo (dawny automatyczny tryb mock, audyt subskrypcji P3). Realizacja bez pobrania
+      # pieniędzy tylko jawnie: ENV_P24_MOCK_MODE=true. Domyślne wartości po ':-', bo pusta
+      # zmienna (np. P24_MOCK_MODE="") wywróciłaby start aplikacji na konwersji typu.
+      P24_MOCK_MODE: ${ENV_P24_MOCK_MODE:-false}
+      P24_SANDBOX: ${ENV_P24_SANDBOX:-false}
+      P24_MERCHANT_ID: ${ENV_P24_MERCHANT_ID:-0}
+      P24_POS_ID: ${ENV_P24_POS_ID:-0}
+      P24_CRC: ${ENV_P24_CRC:-}
+      P24_API_KEY: ${ENV_P24_API_KEY:-}
+      FRONTEND_BASE_URL: ${ENV_FRONTEND_BASE_URL:-https://detailboost.pl}
+      BACKEND_BASE_URL: ${ENV_BACKEND_BASE_URL:-https://api.detailboost.pl}
+      # Karencja po końcu opłaconego okresu (PAST_DUE), w dniach; 0 = bez karencji.
+      SUBSCRIPTION_GRACE_PERIOD_DAYS: ${ENV_SUBSCRIPTION_GRACE_PERIOD_DAYS:-7}
     depends_on:
       - redis
     networks:

@@ -1,13 +1,14 @@
 package pl.detailing.crm.payments
 
 import org.slf4j.LoggerFactory
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
-import pl.detailing.crm.payments.checkout.CheckoutService
-import pl.detailing.crm.payments.order.PaymentOrderRepository
+import pl.detailing.crm.payments.notification.PaymentNotificationProcessor
 import pl.detailing.crm.payments.p24.Przelewy24Client
 
 /**
@@ -18,50 +19,57 @@ import pl.detailing.crm.payments.p24.Przelewy24Client
  * amount/currency cross-check against our order, and a mandatory verify call
  * back to the P24 API before the order is fulfilled.
  *
- * P24 retries the notification until it receives HTTP 200 with body "OK",
- * so any processing error must return a non-200 status.
+ * Kolejność po audycie (P1, P2, P5): podpis → TRWAŁY ZAPIS notyfikacji (inbox, idempotentny
+ * po orderId P24) → obsługa ([PaymentNotificationProcessor]). Od chwili zapisu ponowienia są
+ * nasze — 200 „OK" wraca także wtedy, gdy obsługa czeka na ponowienie (P24 i tak ponawia
+ * notyfikacje do skutecznego `verify`, nie do kodu HTTP: 3, 5, 15, 30, 60, 150 i 450 min).
+ * Jedyny przypadek, w którym odpowiadamy błędem serwera, to nieudany ZAPIS — wtedy
+ * ponowienie P24 jest jedyną kopią informacji o płatności.
+ *
+ * P24 opisuje notyfikację raz jako JSON, raz jako pola formularza — przyjmujemy oba formaty.
  */
 @RestController
 @RequestMapping("/api/v1/payments/p24")
 class Przelewy24WebhookController(
     private val p24Client: Przelewy24Client,
-    private val checkoutService: CheckoutService,
-    private val orderRepository: PaymentOrderRepository
+    private val processor: PaymentNotificationProcessor
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    @PostMapping("/status")
-    fun handleStatusNotification(@RequestBody notification: Przelewy24Client.P24Notification): ResponseEntity<String> {
-        logger.info("P24 notification received sessionId={} orderId={} amount={}",
-            notification.sessionId, notification.orderId, notification.amount)
+    @PostMapping("/status", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun handleJsonNotification(@RequestBody notification: Przelewy24Client.P24Notification): ResponseEntity<String> =
+        handle(notification)
+
+    @PostMapping("/status", consumes = [MediaType.APPLICATION_FORM_URLENCODED_VALUE])
+    fun handleFormNotification(@ModelAttribute notification: Przelewy24Client.P24Notification): ResponseEntity<String> =
+        handle(notification)
+
+    private fun handle(notification: Przelewy24Client.P24Notification): ResponseEntity<String> {
+        logger.info(
+            "P24 notification received sessionId={} orderId={} amount={}",
+            notification.sessionId, notification.orderId, notification.amount
+        )
 
         if (!p24Client.isNotificationSignValid(notification)) {
             logger.warn("P24 notification with INVALID signature sessionId={}", notification.sessionId)
             return ResponseEntity.badRequest().body("invalid signature")
         }
 
-        val order = orderRepository.findBySessionId(notification.sessionId)
-        if (order == null) {
-            logger.warn("P24 notification for unknown sessionId={}", notification.sessionId)
-            return ResponseEntity.badRequest().body("unknown session")
-        }
-
-        if (notification.amount != order.amountCents || notification.currency != order.currency) {
-            checkoutService.failOrder(
-                notification.sessionId,
-                "Kwota/waluta notyfikacji (${notification.amount} ${notification.currency}) niezgodna z zamówieniem (${order.amountCents} ${order.currency})"
-            )
-            logger.error("P24 notification amount mismatch sessionId={}", notification.sessionId)
-            return ResponseEntity.badRequest().body("amount mismatch")
-        }
-
-        return try {
-            p24Client.verifyTransaction(notification.sessionId, notification.orderId, notification.amount)
-            checkoutService.completeOrder(notification.sessionId, notification.orderId)
-            ResponseEntity.ok("OK")
+        val notificationId = try {
+            processor.record(notification)
         } catch (e: Exception) {
-            logger.error("P24 notification processing failed sessionId={}: {}", notification.sessionId, e.message, e)
-            ResponseEntity.internalServerError().body("processing error")
+            logger.error("P24 notification sessionId={} NOT STORED — P24 retry is the only copy", notification.sessionId, e)
+            return ResponseEntity.internalServerError().body("storage error")
         }
+
+        val outcome = try {
+            processor.process(notificationId)
+        } catch (e: Exception) {
+            // Zapisana notyfikacja zostaje RECEIVED — dokończy ją worker rekoncyliacji.
+            logger.error("P24 notification {} processing crashed — worker will retry", notificationId, e)
+            null
+        }
+        logger.info("P24 notification {} sessionId={} → {}", notificationId, notification.sessionId, outcome)
+        return ResponseEntity.ok("OK")
     }
 }

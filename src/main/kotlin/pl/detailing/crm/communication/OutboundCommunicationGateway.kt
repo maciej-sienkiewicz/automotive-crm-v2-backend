@@ -161,15 +161,22 @@ class OutboundCommunicationGateway(
         val capability = category.requiredCapability
         if (capabilityService.hasCapability(StudioId(studioId), capability)) return null
 
+        // Od audytu subskrypcji capability uwzględnia też stan płatności: studio, które moduł
+        // kupiło, ale nie opłaciło okresu, nie wysyła w tle (audyt, S3). Powód w odpowiedzi
+        // musi to rozróżniać — „moduł nie jest aktywny" kierowałby do dokupienia modułu,
+        // który studio już ma.
+        val subscriptionInactive = !capabilityService.isSubscriptionUsable(StudioId(studioId))
         meterRegistry.counter(
             "communication.blocked.module",
-            "category", category.name, "capability", capability.name
+            "category", category.name, "capability", capability.name,
+            "reason", if (subscriptionInactive) "subscription" else "module"
         ).increment()
         logger.warn(
-            "Outbound {} blocked — capability {} not entitled for studio={}",
-            category, capability, studioId
+            "Outbound {} blocked — capability {} not usable for studio={} (subscriptionInactive={})",
+            category, capability, studioId, subscriptionInactive
         )
-        return "Moduł '${capability.displayName}' nie jest aktywny w tym studiu — wiadomość zablokowana"
+        return if (subscriptionInactive) "Subskrypcja studia nie jest aktywna — wiadomość zablokowana"
+        else "Moduł '${capability.displayName}' nie jest aktywny w tym studiu — wiadomość zablokowana"
     }
 
     /**

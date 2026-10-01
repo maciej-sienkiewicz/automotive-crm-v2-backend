@@ -17,6 +17,7 @@ import pl.detailing.crm.studio.infrastructure.StudioEntity
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.user.infrastructure.UserEntity
 import pl.detailing.crm.user.infrastructure.UserRepository
+import pl.detailing.crm.subscription.entitlement.EntitlementService
 import pl.detailing.crm.voice.MobileTokenService
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -32,7 +33,8 @@ class DemoAccountService(
     private val mobileTokenService: MobileTokenService,
     private val securityContextRepository: SecurityContextRepository,
     private val defaultProtocolTemplateProvisioner: DefaultProtocolTemplateProvisioner,
-    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner
+    private val defaultMarketingConsentProvisioner: DefaultMarketingConsentProvisioner,
+    private val entitlementService: EntitlementService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -65,6 +67,10 @@ class DemoAccountService(
             kind = StudioKind.DEMO
         )
         studioRepository.save(studioEntity)
+        // Wiersz planu od pierwszej chwili, jak przy każdym studiu (StudioProvisioningService):
+        // bez niego konto demo serwowało „degraded entitlements" z logiem ERROR i zapalało
+        // alarm rekoncyliacji brakującego planu, dopóki backfill przy starcie go nie dopisał.
+        entitlementService.ensurePlanAssigned(studioId)
 
         val userEntity = UserEntity(
             id = userId.value,

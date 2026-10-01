@@ -13,23 +13,32 @@ import java.util.concurrent.atomic.AtomicLong
  * subscription system. It never repairs silently — it makes drift IMPOSSIBLE
  * TO MISS, because every incident this job reports is either a paying customer
  * who did not get what they paid for, or a studio using paid features for free.
+ * (Naprawia — to, co da się naprawić automatycznie — `PaymentReconciliationJob`.)
  *
  * Checks, each exported as a gauge (wire alerts to non-zero values):
  *
  *  1. `subscription.reconciliation.studios.missing.plan.row`
- *     Studios with billing status TRIALING/ACTIVE but no `studio_subscription_plans`
- *     row — a violation of the provisioning invariant (should be 0 after
- *     StudioSubscriptionBackfill; non-zero means provisioning regressed).
+ *     Studios with billing status TRIALING/ACTIVE/PAST_DUE but no `studio_subscription_plans`
+ *     row — a violation of the provisioning invariant.
  *
  *  2. `subscription.reconciliation.orders.stuck.pending`
- *     Payment orders PENDING for over an hour with a P24 token issued — the buyer
- *     may have paid while the webhook keeps failing (this was the exact signature
- *     of the "Studio nie ma aktywnego planu subskrypcji" incident: money captured,
- *     fulfillment rolling back on every retry).
+ *     Zamówienia PENDING z tokenem P24 starsze niż czas ważności + 30 min. Worker
+ *     rekoncyliacji wygasza porzucone koszyki, więc tu zostaje tylko to, czego nie umiał
+ *     domknąć (P24 niedostępne, błąd w kodzie). Dawniej miernik liczył każdy porzucony
+ *     koszyk i dzwonił zawsze (audyt, P5).
  *
- *  3. `subscription.reconciliation.orders.paid.unlogged`
- *     Orders PAID with no matching audit entry in `subscription_payment_log` —
- *     fulfillment claims success but left no trace; investigate immediately.
+ *  3. `subscription.reconciliation.orders.paid.unfulfilled`
+ *     Pieniądze są (PAID) od ponad 15 minut, efektu nie ma — realizacja się nie udaje.
+ *
+ *  4. `subscription.reconciliation.orders.paid.unlogged`
+ *     Orders FULFILLED with no matching entry in `subscription_payment_log`.
+ *
+ *  5. `subscription.reconciliation.orders.refund.required`
+ *     Zapłacone, a niemożliwe do zrealizowania — każde wymaga zwrotu przez operatora.
+ *
+ *  6. `subscription.reconciliation.notifications.needs.review`
+ *     Notyfikacje płatności, których system nie rozstrzygnie sam (druga płatność za
+ *     opłacone zamówienie, niezgodna kwota, wyczerpane ponowienia, brak zamówienia po 24 h).
  */
 @Component
 class SubscriptionReconciliationJob(
@@ -44,69 +53,61 @@ class SubscriptionReconciliationJob(
     private val ordersStuckPending = meterRegistry.gauge(
         "subscription.reconciliation.orders.stuck.pending", AtomicLong(0)
     )!!
+    private val ordersPaidUnfulfilled = meterRegistry.gauge(
+        "subscription.reconciliation.orders.paid.unfulfilled", AtomicLong(0)
+    )!!
     private val ordersPaidUnlogged = meterRegistry.gauge(
         "subscription.reconciliation.orders.paid.unlogged", AtomicLong(0)
+    )!!
+    private val ordersRefundRequired = meterRegistry.gauge(
+        "subscription.reconciliation.orders.refund.required", AtomicLong(0)
+    )!!
+    private val notificationsNeedsReview = meterRegistry.gauge(
+        "subscription.reconciliation.notifications.needs.review", AtomicLong(0)
     )!!
 
     /** Every 15 minutes; read-only queries against indexed columns. */
     @Scheduled(fixedDelayString = "PT15M", initialDelayString = "PT2M")
     fun reconcile() {
-        reportStudiosMissingPlanRow()
-        reportStuckPendingOrders()
-        reportPaidOrdersWithoutAuditLog()
-    }
-
-    private fun reportStudiosMissingPlanRow() {
-        val ids = jdbcTemplate.query(
-            """
+        report(studiosMissingPlanRow, "active/trialing studio(s) without a plan row", """
             SELECT s.id FROM studios s
-            WHERE s.subscription_status IN ('TRIALING', 'ACTIVE')
+            WHERE s.subscription_status IN ('TRIALING', 'ACTIVE', 'PAST_DUE')
               AND NOT EXISTS (SELECT 1 FROM studio_subscription_plans sp WHERE sp.studio_id = s.id)
-            """.trimIndent()
-        ) { rs, _ -> rs.getObject("id", UUID::class.java) }
-
-        studiosMissingPlanRow.set(ids.size.toLong())
-        if (ids.isNotEmpty()) {
-            logger.error("RECONCILIATION: {} active/trialing studio(s) without a plan row: {}", ids.size, ids)
-        }
-    }
-
-    private fun reportStuckPendingOrders() {
-        val rows = jdbcTemplate.query(
-            """
-            SELECT id, studio_id FROM payment_orders
+        """)
+        report(ordersStuckPending, "payment order(s) stuck PENDING with a P24 token past expiry", """
+            SELECT id FROM payment_orders
             WHERE status = 'PENDING'
               AND p24_token IS NOT NULL
-              AND created_at < now() - interval '1 hour'
-            """.trimIndent()
-        ) { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getObject("studio_id", UUID::class.java) }
-
-        ordersStuckPending.set(rows.size.toLong())
-        if (rows.isNotEmpty()) {
-            logger.error(
-                "RECONCILIATION: {} payment order(s) stuck PENDING >1h with a P24 token — " +
-                "possible captured payments without fulfillment: {}", rows.size, rows
-            )
-        }
-    }
-
-    private fun reportPaidOrdersWithoutAuditLog() {
-        val ids = jdbcTemplate.query(
-            """
+              AND created_at < now() - interval '90 minutes'
+        """)
+        report(ordersPaidUnfulfilled, "PAID order(s) not fulfilled for over 15 minutes", """
+            SELECT id FROM payment_orders
+            WHERE status = 'PAID' AND paid_at < now() - interval '15 minutes'
+        """)
+        report(ordersPaidUnlogged, "FULFILLED order(s) without a payment-log entry", """
             SELECT o.id FROM payment_orders o
-            WHERE o.status = 'PAID'
-              AND o.paid_at < now() - interval '15 minutes'
+            WHERE o.status = 'FULFILLED'
+              AND o.fulfilled_at < now() - interval '15 minutes'
               AND NOT EXISTS (
                   SELECT 1 FROM subscription_payment_log l
-                  WHERE l.transaction_id = CAST(o.p24_order_id AS TEXT)
+                  WHERE l.order_id = o.id
+                     OR l.transaction_id = CAST(o.p24_order_id AS TEXT)
                      OR l.transaction_id = o.session_id
               )
-            """.trimIndent()
-        ) { rs, _ -> rs.getObject("id", UUID::class.java) }
+        """)
+        report(ordersRefundRequired, "order(s) paid but impossible to fulfil — refund required", """
+            SELECT id FROM payment_orders WHERE status = 'REFUND_REQUIRED'
+        """)
+        report(notificationsNeedsReview, "payment notification(s) needing manual review", """
+            SELECT id FROM payment_notifications WHERE status = 'NEEDS_REVIEW'
+        """)
+    }
 
-        ordersPaidUnlogged.set(ids.size.toLong())
+    private fun report(gauge: AtomicLong, what: String, sql: String) {
+        val ids = jdbcTemplate.query(sql.trimIndent()) { rs, _ -> rs.getObject("id", UUID::class.java) }
+        gauge.set(ids.size.toLong())
         if (ids.isNotEmpty()) {
-            logger.error("RECONCILIATION: {} PAID order(s) without a payment-log entry: {}", ids.size, ids)
+            logger.error("RECONCILIATION: {} {}: {}", ids.size, what, ids.take(50))
         }
     }
 }

@@ -15,6 +15,9 @@ import pl.detailing.crm.subscription.management.PlanChangePreview
 import pl.detailing.crm.subscription.management.PlanManagementService
 import pl.detailing.crm.subscription.pricing.PricingService
 import pl.detailing.crm.subscription.SubscriptionService
+import pl.detailing.crm.subscription.pricing.ProrationService
+import pl.detailing.crm.subscription.pricing.MidPeriodPurchaseMode
+import pl.detailing.crm.studio.infrastructure.StudioRepository
 import java.time.Instant
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -43,14 +46,26 @@ data class EntitlementsResponse(
     val plan: PlanSummaryDto,
     val features: Map<String, FeatureStatusDto>,
     val capabilities: Map<String, CapabilityStatusDto>,
-    val activeAddOns: List<String>
+    val activeAddOns: List<String>,
+    /** NO_PLAN | TRIALING | ACTIVE | PAST_DUE | EXPIRED */
+    val billingStatus: String,
+    /**
+     * False — studio nie może teraz korzystać z kupionych modułów (subskrypcja wygasła):
+     * każda capability i funkcja ma `enabled: false`, capability z `lockedBy = SUBSCRIPTION`.
+     */
+    val subscriptionActive: Boolean
 )
 
 data class CapabilityStatusDto(
     val enabled: Boolean,
     val displayName: String,
     val missingFeatures: List<MissingFeatureItemDto>,
-    val upsell: List<CapabilityUpsellDto>
+    val upsell: List<CapabilityUpsellDto>,
+    /**
+     * MODULE — brak kupionego modułu (upsell ma sens); SUBSCRIPTION — moduł kupiony, ale
+     * subskrypcja nieaktywna: UI prowadzi do odnowienia, nie do dokupienia modułu. Null gdy dozwolone.
+     */
+    val lockedBy: String?
 )
 
 data class MissingFeatureItemDto(
@@ -118,13 +133,17 @@ data class PreviewAddOnRequest(val addOnKey: AddOnKey)
 /**
  * Unified "my subscription" view — combines billing status with plan/add-on details.
  *
- * [billingStatus]    — TRIALING | ACTIVE | PAST_DUE | EXPIRED
+ * [billingStatus]    — NO_PLAN | TRIALING | ACTIVE | PAST_DUE | EXPIRED
  * [plan]             — currently assigned feature plan
  * [activeAddOns]     — add-ons currently active with their pricing
  * [pendingDowngrade] — scheduled plan change (if any); null when none is pending
  * [periodEndsAt]     — when the current billing period ends (null during trial)
  * [daysRemaining]    — days left in the current billing period
  * [monthlyCostCents] — total monthly cost (plan + add-ons) at the current rates
+ * [nextRenewalCostCents] — cena KOLEJNEGO okresu (plan po zaplanowanym downgradzie, moduły
+ *                      bez zaplanowanego wyłączenia) — ta sama kwota, którą policzy checkout RENEWAL
+ * [graceEndsAt]      — koniec karencji (okres minął, dostęp trwa do tej chwili)
+ * [canPurchaseMidPeriod] — czy teraz wolno kupić upgrade lub moduł (trial albo trwający opłacony okres)
  */
 data class MyPlanResponse(
     val billingStatus: String,
@@ -135,20 +154,26 @@ data class MyPlanResponse(
     val trialEndsAt: Instant?,
     val daysRemaining: Long?,
     val monthlyCostCents: Long,
-    val nextRenewalCostCents: Long?
+    val nextRenewalCostCents: Long?,
+    val graceEndsAt: Instant?,
+    val canPurchaseMidPeriod: Boolean
 )
 
 /** Describes a scheduled plan downgrade that has not yet been applied. */
 data class PendingDowngradeDto(
     val toPlanKey: String,
     val toPlanName: String,
-    val effectiveAt: Instant
+    val effectiveAt: Instant,
+    /** False, gdy kolejny okres jest już opłacony w cenie niższego planu (odwołanie → 409). */
+    val cancellable: Boolean
 )
 
 data class ActiveAddOnDto(
     val key: String,
     val name: String,
-    val monthlyPriceGrossCents: Long?
+    val monthlyPriceGrossCents: Long?,
+    /** Moduł wyłączy się z końcem okresu w tej chwili; null — odnawia się z planem. */
+    val cancelAt: Instant?
 )
 
 data class PlanChangePreviewDto(
@@ -160,7 +185,9 @@ data class PlanChangePreviewDto(
     val proratedAmountFormatted: String?,
     val daysRemaining: Long?,
     val periodEndsAt: Instant?,
-    val explanation: String
+    val explanation: String,
+    /** False, gdy zmiany nie da się teraz kupić — najpierw odnowienie. */
+    val allowed: Boolean
 )
 
 data class AddOnActivationPreviewDto(
@@ -170,7 +197,8 @@ data class AddOnActivationPreviewDto(
     val proratedAmountFormatted: String?,
     val daysRemaining: Long?,
     val periodEndsAt: Instant?,
-    val explanation: String
+    val explanation: String,
+    val allowed: Boolean
 )
 
 // ── Controller ────────────────────────────────────────────────────────────────
@@ -192,7 +220,8 @@ data class AddOnActivationPreviewDto(
  * Free mutations (OWNER only — no payment involved):
  *   POST   /api/v1/subscription/change-plan       → schedule a downgrade (deferred to period end)
  *   DELETE /api/v1/subscription/pending-plan-change → cancel a scheduled downgrade
- *   DELETE /api/v1/subscription/add-ons/{key}     → deactivate add-on (no refund)
+ *   DELETE /api/v1/subscription/add-ons/{key}     → wyłącz moduł z końcem opłaconego okresu (w trialu od razu)
+ *   POST   /api/v1/subscription/add-ons/{key}/resume → cofnij zaplanowane wyłączenie
  *
  * Paid mutations (purchase, renewal, upgrade, module purchase) go through
  * POST /api/v1/subscription/checkout → Przelewy24 (see payments module).
@@ -203,7 +232,9 @@ class EntitlementsController(
     private val capabilityService: CapabilityService,
     private val pricingService: PricingService,
     private val planManagementService: PlanManagementService,
-    private val subscriptionService: SubscriptionService
+    private val subscriptionService: SubscriptionService,
+    private val prorationService: ProrationService,
+    private val studioRepository: StudioRepository
 ) {
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -221,7 +252,8 @@ class EntitlementsController(
         val plans = entitlementService.getAllPlans()
 
         val planSummary = plans.firstOrNull { it.key == entitlements.planKey } ?: plans.first()
-        val featureMap = buildFeatureMap(entitlements, allAddOns)
+        val subscriptionActive = capabilityService.isSubscriptionUsable(studioId)
+        val featureMap = buildFeatureMap(entitlements, allAddOns, subscriptionActive)
         val capabilityMap = capabilityService.resolve(studioId).decisions.entries.associate { (key, decision) ->
             key.name to CapabilityStatusDto(
                 enabled = decision.enabled,
@@ -236,7 +268,8 @@ class EntitlementsController(
                         monthlyPriceGrossCents = it.monthlyPriceGrossCents,
                         isAvailable = it.isAvailable
                     )
-                }
+                },
+                lockedBy = decision.lockedBy?.name
             )
         }
 
@@ -249,7 +282,9 @@ class EntitlementsController(
                 ),
                 features = featureMap,
                 capabilities = capabilityMap,
-                activeAddOns = entitlements.activeAddOnKeys.map { it.name }
+                activeAddOns = entitlements.activeAddOnKeys.map { it.name },
+                billingStatus = (entitlements.billing?.status ?: pl.detailing.crm.shared.SubscriptionStatus.NO_PLAN).name,
+                subscriptionActive = subscriptionActive
             )
         )
     }
@@ -273,20 +308,31 @@ class EntitlementsController(
 
         val activeAddOnDtos = entitlements.activeAddOnKeys.mapNotNull { addOnKey ->
             allAddOns.find { it.key == addOnKey }?.let { addOn ->
-                ActiveAddOnDto(key = addOn.key.name, name = addOn.name, monthlyPriceGrossCents = addOn.monthlyPriceGrossCents)
+                ActiveAddOnDto(
+                    key = addOn.key.name,
+                    name = addOn.name,
+                    monthlyPriceGrossCents = addOn.monthlyPriceGrossCents,
+                    cancelAt = entitlements.addOnCancellations[addOn.key]
+                )
             }
         }
 
+        val studio = studioRepository.findByStudioId(studioId.value)
         val pendingDowngrade = planManagementService.getPendingDowngrade(studioId)?.let { pending ->
             val targetPlan = plans.firstOrNull { it.key == pending.toPlanKey }
             PendingDowngradeDto(
                 toPlanKey = pending.toPlanKey.name,
                 toPlanName = targetPlan?.name ?: pending.toPlanKey.displayName,
-                effectiveAt = pending.effectiveAt
+                effectiveAt = pending.effectiveAt,
+                cancellable = studio?.let { planManagementService.isCancellable(it, pending) } ?: true
             )
         }
 
         val monthlyCostCents = planSummary.monthlyPriceGrossCents + activeAddOnDtos.sumOf { it.monthlyPriceGrossCents ?: 0L }
+        // Cena kolejnego okresu — ta sama funkcja liczy kwotę zamówienia RENEWAL, więc przycisk
+        // i bramka płatności nie mogą się rozjechać (audyt, S1).
+        val nextRenewalCostCents = if (billingInfo.status == pl.detailing.crm.shared.SubscriptionStatus.NO_PLAN) null
+        else pricingService.nextPeriodPrice(studioId).amountCents
 
         return ResponseEntity.ok(
             MyPlanResponse(
@@ -298,7 +344,9 @@ class EntitlementsController(
                 trialEndsAt = billingInfo.trialEndsAt,
                 daysRemaining = billingInfo.daysRemaining,
                 monthlyCostCents = monthlyCostCents,
-                nextRenewalCostCents = if (billingInfo.isAccessible) monthlyCostCents else null
+                nextRenewalCostCents = nextRenewalCostCents,
+                graceEndsAt = billingInfo.graceEndsAt,
+                canPurchaseMidPeriod = prorationService.midPeriodPurchaseMode(studioId) != MidPeriodPurchaseMode.NOT_ALLOWED
             )
         )
     }
@@ -306,7 +354,8 @@ class EntitlementsController(
     /**
      * Cancels a scheduled plan downgrade.
      * The studio keeps its current plan for the full billing period.
-     * Returns 204 if cancelled, 404 if there was no pending downgrade.
+     * Returns 204 if cancelled, 404 if there was no pending downgrade (also: już zastosowany),
+     * 409 `DOWNGRADE_ALREADY_PAID`, gdy kolejny okres jest opłacony w cenie niższego planu.
      */
     @DeleteMapping("/api/v1/subscription/pending-plan-change")
     fun cancelPendingDowngrade(): ResponseEntity<Void> {
@@ -372,14 +421,24 @@ class EntitlementsController(
     }
 
     /**
-     * Deactivates an add-on. Features are removed immediately from the entitlement cache.
-     * No refund is issued for the remaining period.
+     * Wyłącza moduł z końcem opłaconego okresu — do tej chwili działa i nie wchodzi do ceny
+     * odnowienia. Bez trwającego opłaconego okresu (trial, karencja) — od razu. Datę wyłączenia
+     * zwraca `my-plan` (`activeAddOns[].cancelAt`).
      */
     @DeleteMapping("/api/v1/subscription/add-ons/{key}")
     fun deactivateAddOn(@PathVariable key: AddOnKey): ResponseEntity<EntitlementsResponse> {
         requireOwner()
         val studioId = SecurityContextHelper.getCurrentStudioId()
-        planManagementService.deactivateAddOnWithLog(studioId, key)
+        planManagementService.cancelAddOn(studioId, key)
+        return getMyEntitlements()
+    }
+
+    /** Cofa zaplanowane wyłączenie modułu. 404, gdy moduł nie jest aktywny. */
+    @PostMapping("/api/v1/subscription/add-ons/{key}/resume")
+    fun resumeAddOn(@PathVariable key: AddOnKey): ResponseEntity<EntitlementsResponse> {
+        requireOwner()
+        val studioId = SecurityContextHelper.getCurrentStudioId()
+        planManagementService.resumeAddOn(studioId, key)
         return getMyEntitlements()
     }
 
@@ -394,7 +453,8 @@ class EntitlementsController(
 
     private fun buildFeatureMap(
         entitlements: pl.detailing.crm.subscription.entitlement.domain.StudioEntitlements,
-        allAddOns: List<AddOn>
+        allAddOns: List<AddOn>,
+        subscriptionActive: Boolean
     ): Map<String, FeatureStatusDto> {
         val addOnByFeature: Map<FeatureKey, AddOn> = allAddOns
             .flatMap { addOn -> addOn.features.map { feature -> feature to addOn } }
@@ -405,13 +465,16 @@ class EntitlementsController(
             .toSet()
 
         return FeatureKey.entries.associate { featureKey ->
-            val enabled = entitlements.hasFeature(featureKey)
+            val bought = entitlements.hasFeature(featureKey)
+            // Funkcja kupiona przy nieaktywnej subskrypcji: wyłączona, ale bez propozycji
+            // dokupienia modułu, który studio już ma — droga wiedzie przez odnowienie.
+            val enabled = bought && subscriptionActive
             val source = when {
                 !enabled -> null
                 featureKey in addOnFeatureKeys -> "ADD_ON"
                 else -> "PLAN"
             }
-            val upsell = if (!enabled) {
+            val upsell = if (!bought) {
                 val relevantAddOn = addOnByFeature[featureKey]
                 UpsellDto(
                     addOnKey = relevantAddOn?.key?.name,
@@ -456,7 +519,8 @@ private fun PlanChangePreview.toDto() = PlanChangePreviewDto(
     },
     daysRemaining = daysRemaining,
     periodEndsAt = periodEndsAt,
-    explanation = explanation
+    explanation = explanation,
+    allowed = allowed
 )
 
 private fun AddOnActivationPreview.toDto() = AddOnActivationPreviewDto(
@@ -468,5 +532,6 @@ private fun AddOnActivationPreview.toDto() = AddOnActivationPreviewDto(
     },
     daysRemaining = daysRemaining,
     periodEndsAt = periodEndsAt,
-    explanation = explanation
+    explanation = explanation,
+    allowed = allowed
 )

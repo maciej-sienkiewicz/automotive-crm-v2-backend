@@ -11,9 +11,14 @@ enum class PendingPlanChangeStatus { PENDING, APPLIED, CANCELLED }
  * Records a deferred plan downgrade that will be applied by [PlanDowngradeScheduler]
  * at [effectiveAt] (= the end of the studio's current billing period).
  *
- * Invariant: at most one PENDING row per studio (enforced by unique constraint).
+ * Invariant: at most one PENDING row per studio — od V172 pilnuje tego częściowy unikat
+ * `uq_pending_plan_changes_one_pending` (wcześniej ten akapit twierdził, że ograniczenie
+ * istnieje, a w schemacie go nie było — audyt, D7).
  * When the user upgrades before [effectiveAt], the row is moved to CANCELLED.
  * When the scheduler processes the row, it is moved to APPLIED.
+ *
+ * Każda zmiana statusu dzieje się pod blokadą wiersza studia, na encji wczytanej PO jej
+ * założeniu — anulowanie i zastosowanie nie mogą się już wyprzedzić (audyt, S2).
  *
  * [fromPlanKey] is stored for audit/history purposes — it is the plan active
  * when the downgrade was requested, not necessarily at the time it is applied.
@@ -53,5 +58,10 @@ class PendingPlanChangeEntity(
     var status: PendingPlanChangeStatus = PendingPlanChangeStatus.PENDING,
 
     @Column(name = "applied_at")
-    var appliedAt: Instant? = null
+    var appliedAt: Instant? = null,
+
+    // Null przed pierwszym zapisem → persist zamiast merge; potem optymistyczna blokada (audyt, D2, D4).
+    @Version
+    @Column(name = "version", nullable = false, columnDefinition = "BIGINT NOT NULL DEFAULT 0")
+    var version: Long? = null
 )

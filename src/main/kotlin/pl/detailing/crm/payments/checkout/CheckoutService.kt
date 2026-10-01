@@ -1,14 +1,16 @@
 package pl.detailing.crm.payments.checkout
 
-import pl.detailing.crm.rolepreview.SimulatedEffectChannel
-import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import pl.detailing.crm.payments.order.*
 import pl.detailing.crm.payments.p24.Przelewy24Client
 import pl.detailing.crm.payments.p24.Przelewy24Properties
+import pl.detailing.crm.rolepreview.RolePreviewOutboundGuard
+import pl.detailing.crm.rolepreview.SimulatedEffectChannel
 import pl.detailing.crm.shared.EntityNotFoundException
+import pl.detailing.crm.shared.PaymentsUnavailableException
 import pl.detailing.crm.shared.StudioId
 import pl.detailing.crm.shared.SubscriptionStatus
 import pl.detailing.crm.shared.ValidationException
@@ -18,7 +20,13 @@ import pl.detailing.crm.subscription.entitlement.domain.AddOnKey
 import pl.detailing.crm.subscription.entitlement.domain.PlanKey
 import pl.detailing.crm.subscription.entitlement.infrastructure.AddOnJpaRepository
 import pl.detailing.crm.subscription.entitlement.infrastructure.PlanJpaRepository
+import pl.detailing.crm.subscription.lifecycle.BillingDates
+import pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy
+import pl.detailing.crm.subscription.management.PlanManagementService
+import pl.detailing.crm.subscription.pricing.MidPeriodPurchaseMode
+import pl.detailing.crm.subscription.pricing.PricingService
 import pl.detailing.crm.subscription.pricing.ProrationService
+import java.time.Duration
 import java.util.UUID
 
 // ─── API types ────────────────────────────────────────────────────────────────
@@ -31,7 +39,8 @@ data class CheckoutRequest(
 
 /**
  * [paymentUrl] — Przelewy24 payment page to redirect the buyer to; null when the
- *   order required no payment (or mock mode) and was fulfilled immediately.
+ *   order required no payment (or explicit mock mode) and was settled immediately —
+ *   wtedy [status] mówi, jak się skończyło (FULFILLED albo REFUND_REQUIRED).
  */
 data class CheckoutResponse(
     val orderId: UUID,
@@ -45,12 +54,25 @@ data class CheckoutResponse(
 /**
  * Creates payment orders for every paid subscription operation and hands the buyer
  * off to Przelewy24. Zero-amount operations (e.g. add-on activation during trial)
- * are fulfilled immediately without a payment round-trip.
+ * are settled immediately without a payment round-trip.
  *
  * Pricing rules (Product decision):
  *   - FULL already contains every module — orders combining FULL with add-ons are rejected.
  *   - À la carte modules are priced above their share of the FULL bundle, so
  *     self-assembled packages always cost more than FULL (BASIC 99 + all modules 256 = 355 vs FULL 299).
+ *
+ * Zmiany po audycie subskrypcji (docs/SUBSCRIPTION_AUDIT_2026-10.md):
+ *  - INTENCJA PRZED P24: zamówienie jest zatwierdzone w bazie, zanim pójdzie żądanie do P24,
+ *    a samo wywołanie HTTP biegnie poza transakcją (wcześniej w środku — połączenie z puli
+ *    czekało na P24 bez timeoutu, P4). Notyfikacja zawsze znajdzie zamówienie.
+ *  - JEDNO OTWARTE ZAMÓWIENIE NA PRODUKT: podwójne kliknięcie albo druga karta dostaje to
+ *    samo zamówienie zamiast drugiego do opłacenia (P7). Rozstrzyga to blokada studia,
+ *    a ostatnią linią obrony jest częściowy unikat `uq_payment_orders_one_open_per_product`.
+ *  - FAIL-CLOSED: bez poświadczeń P24 i bez jawnego mocka checkout odpowiada 503 — dawniej
+ *    takie zamówienia realizowały się za darmo (P3).
+ *  - Upgrade i dokupienie modułu tylko w trialu albo w trwającym opłaconym okresie — dawniej
+ *    po wygaśnięciu kosztowały 0 zł (S4).
+ *  - Odnowienie kosztuje tyle, ile plan i moduły KOLEJNEGO okresu (S1).
  */
 @Service
 class CheckoutService(
@@ -61,13 +83,22 @@ class CheckoutService(
     private val studioRepository: StudioRepository,
     private val entitlementService: EntitlementService,
     private val prorationService: ProrationService,
+    private val pricingService: PricingService,
+    private val planManagementService: PlanManagementService,
     private val planRepository: PlanJpaRepository,
     private val addOnRepository: AddOnJpaRepository,
-    private val rolePreviewGuard: RolePreviewOutboundGuard
+    private val accessPolicy: SubscriptionAccessPolicy,
+    private val rolePreviewGuard: RolePreviewOutboundGuard,
+    transactionManager: PlatformTransactionManager
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val tx = TransactionTemplate(transactionManager)
 
-    @Transactional
+    private sealed interface OpenOrder {
+        data class Reused(val order: PaymentOrderEntity) : OpenOrder
+        data class Created(val order: PaymentOrderEntity) : OpenOrder
+    }
+
     fun checkout(studioId: StudioId, buyerEmail: String, request: CheckoutRequest): CheckoutResponse {
         // Zakupy są tylko dla właściciela, którym pracownik piaskownicy nigdy nie jest - to
         // druga linia: podgląd roli nie zakłada zamówień i niczego nie płaci.
@@ -80,105 +111,124 @@ class CheckoutService(
             PaymentOrderType.ADD_ON_PURCHASE -> prepareAddOnPurchase(studioId, request)
         }
 
-        val order = orderRepository.save(
-            PaymentOrderEntity(
-                studioId = studioId.value,
-                sessionId = "CRM-${UUID.randomUUID()}",
-                type = request.type,
-                planKey = draft.planKey,
-                addOnKeysRaw = PaymentOrderEntity.encodeAddOnKeys(draft.addOnKeys),
-                amountCents = draft.amountCents,
-                description = draft.description
-            )
-        )
+        val settlesWithoutGateway = draft.amountCents <= 0 || properties.mockMode
+        if (!settlesWithoutGateway && !properties.isConfigured) {
+            logger.error("Checkout {} studia {} odrzucony: Przelewy24 nieskonfigurowane, mock wyłączony", request.type, studioId)
+            throw PaymentsUnavailableException()
+        }
 
-        // Nothing to charge, mock explicitly enabled, or no P24 credentials → settle immediately.
-        val useMock = properties.mockMode || !properties.isConfigured
-        if (order.amountCents <= 0 || useMock) {
-            order.status = PaymentOrderStatus.PAID
-            order.paidAt = java.time.Instant.now()
-            orderRepository.save(order)
-            fulfillmentService.fulfill(order)
+        val order = when (val open = openOrderFor(studioId, request.type, draft)) {
+            is OpenOrder.Reused -> {
+                logger.info("Checkout {} studia {}: zwracam otwarte zamówienie {}", request.type, studioId, open.order.id)
+                return open.order.toResponse(paymentUrl = open.order.p24Token?.let(properties::paymentPageUrl))
+            }
+            is OpenOrder.Created -> open.order
+        }
+
+        if (settlesWithoutGateway) {
+            tx.executeWithoutResult {
+                orderRepository.lockById(order.id)!!.markPaid(p24OrderId = null, at = accessPolicy.now())
+            }
+            fulfillmentService.fulfillIfPaid(order.id)
+            val settled = orderRepository.findById(order.id).orElseThrow()
             logger.info(
-                "Order {} settled without P24 (amount={} mockMode={} configured={})",
-                order.id, order.amountCents, properties.mockMode, properties.isConfigured
+                "Order {} settled without P24 (amount={} mockMode={}) → {}",
+                order.id, order.amountCents, properties.mockMode, settled.status
             )
-            return order.toResponse(paymentUrl = null)
+            return settled.toResponse(paymentUrl = null)
         }
 
-        val token = p24Client.registerTransaction(
-            Przelewy24Client.RegisterTransactionCommand(
-                sessionId = order.sessionId,
-                amountCents = order.amountCents,
-                description = order.description,
-                email = buyerEmail,
-                urlReturn = "${properties.frontendBaseUrl}/payments/result?orderId=${order.id}",
-                urlStatus = "${properties.backendBaseUrl}/api/v1/payments/p24/status"
+        // HTTP do P24 poza transakcją — zamówienie jest już zatwierdzone w bazie.
+        val token = try {
+            p24Client.registerTransaction(
+                Przelewy24Client.RegisterTransactionCommand(
+                    sessionId = order.sessionId,
+                    amountCents = order.amountCents,
+                    description = order.description,
+                    email = buyerEmail,
+                    urlReturn = "${properties.frontendBaseUrl}/payments/result?orderId=${order.id}",
+                    urlStatus = "${properties.backendBaseUrl}/api/v1/payments/p24/status"
+                )
             )
-        )
-        order.p24Token = token
-        orderRepository.save(order)
-
-        return order.toResponse(paymentUrl = properties.paymentPageUrl(token))
-    }
-
-    /**
-     * Settles an order after a verified P24 notification. Idempotent: a second
-     * notification for an already-PAID order is a no-op.
-     */
-    @Transactional
-    fun completeOrder(sessionId: String, p24OrderId: Long) {
-        val order = orderRepository.findBySessionId(sessionId)
-            ?: throw EntityNotFoundException("Zamówienie nie zostało znalezione: $sessionId")
-
-        if (order.status == PaymentOrderStatus.PAID) {
-            logger.info("Order {} already PAID — duplicate notification ignored", order.id)
-            return
-        }
-        if (order.status != PaymentOrderStatus.PENDING) {
-            throw ValidationException("Zamówienie ${order.id} ma status ${order.status} i nie może zostać opłacone")
+        } catch (e: Exception) {
+            tx.executeWithoutResult { orderRepository.lockById(order.id)?.fail("Rejestracja w Przelewy24 nie powiodła się: ${e.message}") }
+            logger.error("Rejestracja zamówienia {} w P24 nie powiodła się", order.id, e)
+            throw PaymentsUnavailableException("Nie udało się połączyć z bramką płatności. Spróbuj ponownie za chwilę.")
         }
 
-        order.status = PaymentOrderStatus.PAID
-        order.p24OrderId = p24OrderId
-        order.paidAt = java.time.Instant.now()
-        orderRepository.save(order)
-
-        fulfillmentService.fulfill(order)
-    }
-
-    @Transactional
-    fun failOrder(sessionId: String, reason: String) {
-        val order = orderRepository.findBySessionId(sessionId) ?: return
-        if (order.status != PaymentOrderStatus.PENDING) return
-        order.status = PaymentOrderStatus.FAILED
-        order.failureReason = reason.take(500)
-        orderRepository.save(order)
-        logger.warn("Order {} marked FAILED: {}", order.id, reason)
+        val registered = tx.execute {
+            orderRepository.lockById(order.id)!!.also { if (it.status == PaymentOrderStatus.PENDING) it.p24Token = token }
+        }!!
+        return registered.toResponse(paymentUrl = properties.paymentPageUrl(token))
     }
 
     fun getOrder(studioId: StudioId, orderId: UUID): PaymentOrderEntity =
         orderRepository.findByIdAndStudioId(orderId, studioId.value)
             ?: throw EntityNotFoundException("Zamówienie nie zostało znalezione: $orderId")
 
+    // ─── One open order per product ───────────────────────────────────────────
+
+    /**
+     * Pod blokadą studia: zwraca otwarte zamówienie na ten sam produkt, jeśli wciąż da się je
+     * opłacić (token P24 ważny, ta sama kwota), a starsze wygasza. Wygaszone (EXPIRED) nadal
+     * przyjmuje spóźnioną płatność — kupujący, który jeszcze je opłaca, niczego nie traci.
+     */
+    private fun openOrderFor(studioId: StudioId, type: PaymentOrderType, draft: OrderDraft): OpenOrder = tx.execute {
+        studioRepository.lockById(studioId.value)
+            ?: throw EntityNotFoundException("Studio nie zostało znalezione: $studioId")
+        val addOnKeysRaw = PaymentOrderEntity.encodeAddOnKeys(draft.addOnKeys)
+
+        val awaitingActivation = orderRepository.findOpenForProduct(
+            studioId.value, type, draft.planKey, addOnKeysRaw, listOf(PaymentOrderStatus.PAID)
+        )
+        if (awaitingActivation.isNotEmpty()) {
+            throw ValidationException("Płatność za ten zakup została już przyjęta — trwa aktywacja. Odśwież stronę za chwilę.")
+        }
+
+        val now = accessPolicy.now()
+        val reusableSince = now.minus(Duration.ofMinutes((properties.transactionTimeLimitMinutes - 1).coerceAtLeast(1).toLong()))
+        val open = orderRepository.findOpenForProduct(
+            studioId.value, type, draft.planKey, addOnKeysRaw, listOf(PaymentOrderStatus.PENDING)
+        )
+        open.firstOrNull { it.p24Token != null && it.amountCents == draft.amountCents && it.createdAt.isAfter(reusableSince) }
+            ?.let { return@execute OpenOrder.Reused(it) }
+        open.forEach { it.expire("Zastąpione nowszym zamówieniem na ten sam zakup") }
+        orderRepository.flush()
+
+        OpenOrder.Created(
+            orderRepository.save(
+                PaymentOrderEntity(
+                    studioId = studioId.value,
+                    sessionId = "CRM-${UUID.randomUUID()}",
+                    type = type,
+                    planKey = draft.planKey,
+                    addOnKeysRaw = addOnKeysRaw,
+                    amountCents = draft.amountCents,
+                    description = draft.description,
+                    createdAt = now
+                )
+            )
+        )
+    }!!
+
     // ─── Order drafts ─────────────────────────────────────────────────────────
 
     private data class OrderDraft(
-        val planKey: PlanKey?,
+        val planKey: PlanKey,
         val addOnKeys: List<AddOnKey>,
         val amountCents: Long,
         val description: String
     )
 
-    /** First purchase: full month of plan + selected modules. Only for NO_PLAN/EXPIRED studios. */
+    /** First purchase: full month of plan + selected modules. For NO_PLAN, TRIALING and EXPIRED studios. */
     private fun prepareInitialPurchase(studioId: StudioId, request: CheckoutRequest): OrderDraft {
         val planKey = request.planKey
             ?: throw ValidationException("Wybierz pakiet (BASIC lub FULL).")
         validatePlanAddOnCombination(planKey, request.addOnKeys)
 
         val studio = requireStudio(studioId)
-        if (studio.subscriptionStatus == SubscriptionStatus.ACTIVE) {
-            throw ValidationException("Studio ma już aktywną subskrypcję — użyj przedłużenia lub zmiany pakietu.")
+        if (studio.subscriptionStatus == SubscriptionStatus.ACTIVE || studio.subscriptionStatus == SubscriptionStatus.PAST_DUE) {
+            throw ValidationException("Studio ma już subskrypcję — użyj przedłużenia lub zmiany pakietu.")
         }
 
         val plan = requirePlan(planKey)
@@ -188,34 +238,30 @@ class CheckoutService(
         val moduleNames = addOns.joinToString(", ") { it.name }
         return OrderDraft(
             planKey = planKey,
-            addOnKeys = request.addOnKeys,
+            addOnKeys = request.addOnKeys.sortedBy { it.name },
             amountCents = amount,
             description = "Pakiet ${plan.name} — 30 dni" +
                     if (addOns.isNotEmpty()) " + moduły: $moduleNames" else ""
         )
     }
 
-    /** Renewal: 30 more days at the current plan + active modules price. */
+    /** Renewal: 30 more days at the price of the NEXT period (plan po downgradzie, moduły bez wyłączenia). */
     private fun prepareRenewal(studioId: StudioId): OrderDraft {
         val studio = requireStudio(studioId)
         if (studio.subscriptionStatus == SubscriptionStatus.NO_PLAN) {
             throw ValidationException("Studio nie ma jeszcze pakietu — wybierz pakiet zamiast przedłużenia.")
         }
 
-        val entitlements = entitlementService.getEntitlements(studioId)
-        val plan = requirePlan(entitlements.planKey)
-        val activeAddOns = addOnRepository.findAllByKeyIn(entitlements.activeAddOnKeys)
-        val amount = plan.monthlyPriceGrossCents + activeAddOns.sumOf { it.monthlyPriceGrossCents ?: 0L }
-
+        val next = pricingService.nextPeriodPrice(studioId)
         return OrderDraft(
-            planKey = entitlements.planKey,
-            addOnKeys = entitlements.activeAddOnKeys.toList(),
-            amountCents = amount,
-            description = "Przedłużenie subskrypcji (${plan.name}) — 30 dni"
+            planKey = next.planKey,
+            addOnKeys = next.addOnKeys,
+            amountCents = next.amountCents,
+            description = "Przedłużenie subskrypcji (${next.planName}) — 30 dni"
         )
     }
 
-    /** Mid-period upgrade to a more expensive plan, charged pro rata. */
+    /** Mid-period upgrade to a more expensive plan, charged pro rata z zaliczeniem opłaconych modułów. */
     private fun preparePlanUpgrade(studioId: StudioId, request: CheckoutRequest): OrderDraft {
         val newPlanKey = request.planKey
             ?: throw ValidationException("Wybierz pakiet docelowy.")
@@ -231,16 +277,21 @@ class CheckoutService(
             throw ValidationException("Ta operacja obsługuje tylko przejście na droższy pakiet. Downgrade wykonaj przez zmianę planu (bez płatności).")
         }
 
-        val proration = prorationService.calculatePlanUpgrade(
-            studioId, currentPlan.monthlyPriceGrossCents, newPlan.monthlyPriceGrossCents
-        )
+        val amount = when (prorationService.midPeriodPurchaseMode(studioId)) {
+            MidPeriodPurchaseMode.TRIAL_FREE -> 0L
+            MidPeriodPurchaseMode.PRORATED -> prorationService.calculatePlanUpgrade(
+                studioId, currentPlan.monthlyPriceGrossCents, newPlan.monthlyPriceGrossCents,
+                planManagementService.paidAddOnCredits(entitlements)
+            )!!.proratedAmountCents
+            MidPeriodPurchaseMode.NOT_ALLOWED -> throw ValidationException(PlanManagementService.NOT_ALLOWED_EXPLANATION)
+        }
+        val days = prorationService.daysRemainingInPeriod(studioId)
 
         return OrderDraft(
             planKey = newPlanKey,
             addOnKeys = emptyList(),
-            amountCents = proration?.proratedAmountCents ?: 0L,
-            description = "Zmiana pakietu na ${newPlan.name}" +
-                    (proration?.let { " — ${it.daysRemaining} dni (proporcjonalnie)" } ?: " (okres próbny)")
+            amountCents = amount,
+            description = "Zmiana pakietu na ${newPlan.name}" + (days?.let { " — $it dni (proporcjonalnie)" } ?: " (okres próbny)")
         )
     }
 
@@ -261,19 +312,27 @@ class CheckoutService(
         if (entitlements.planKey == PlanKey.FULL) {
             throw ValidationException("Pakiet FULL zawiera już wszystkie moduły.")
         }
+        entitlements.addOnCancellations[addOnKey]?.let { cancelAt ->
+            throw ValidationException("Ten moduł działa do ${BillingDates.format(cancelAt)} i jest opłacony do końca okresu — przywróć go zamiast kupować ponownie.")
+        }
         if (addOnKey in entitlements.activeAddOnKeys) {
             throw ValidationException("Ten moduł jest już aktywny.")
         }
 
         val addOn = requirePurchasableAddOns(listOf(addOnKey)).single()
-        val proration = prorationService.calculateAddOnActivation(studioId, addOn.monthlyPriceGrossCents!!)
+        val amount = when (prorationService.midPeriodPurchaseMode(studioId)) {
+            MidPeriodPurchaseMode.TRIAL_FREE -> 0L
+            MidPeriodPurchaseMode.PRORATED ->
+                prorationService.calculateAddOnActivation(studioId, addOn.monthlyPriceGrossCents!!)!!.proratedAmountCents
+            MidPeriodPurchaseMode.NOT_ALLOWED -> throw ValidationException(PlanManagementService.NOT_ALLOWED_EXPLANATION)
+        }
+        val days = prorationService.daysRemainingInPeriod(studioId)
 
         return OrderDraft(
             planKey = entitlements.planKey,
             addOnKeys = listOf(addOnKey),
-            amountCents = proration?.proratedAmountCents ?: 0L,
-            description = "Moduł ${addOn.name}" +
-                    (proration?.let { " — ${it.daysRemaining} dni (proporcjonalnie)" } ?: " (okres próbny)")
+            amountCents = amount,
+            description = "Moduł ${addOn.name}" + (days?.let { " — $it dni (proporcjonalnie)" } ?: " (okres próbny)")
         )
     }
 

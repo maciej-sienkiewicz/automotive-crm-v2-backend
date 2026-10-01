@@ -41,8 +41,11 @@ class CacheConfig {
          * Prefix of every cache key in Redis. Code that reaches cache keys directly (e.g.
          * dropping all entries of a studio by pattern) must take it from here — bumping the
          * version only in the cache manager left such a pattern pointing at dead keys.
+         *
+         * v5: [pl.detailing.crm.subscription.entitlement.domain.StudioEntitlements] dostał stan
+         * rozliczeniowy i daty wyłączeń modułów — wpisy v4 nie mają tych pól.
          */
-        const val CACHE_KEY_PREFIX = "crm:v4:"
+        const val CACHE_KEY_PREFIX = "crm:v5:"
     }
 
     @Bean

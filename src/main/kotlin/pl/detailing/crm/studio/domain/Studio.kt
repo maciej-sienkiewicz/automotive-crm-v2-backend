@@ -5,6 +5,7 @@ import jakarta.persistence.*
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
+import pl.detailing.crm.subscription.lifecycle.BillingSnapshot
 import java.time.Instant
 
 // ==================== DOMAIN MODEL ====================
@@ -22,34 +23,20 @@ data class Studio(
     val createdAt: Instant,
     val emailAlias: String?,
     /** Rodzaj studia - nadawany przy zakładaniu, nigdy nie zmieniany (patrz [StudioKind]). */
-    val kind: StudioKind = StudioKind.REGULAR
+    val kind: StudioKind = StudioKind.REGULAR,
+    /** Koniec karencji (PAST_DUE); null w pozostałych stanach. */
+    val graceEndsAt: Instant? = null
 ) {
-    fun isTrialActive(): Boolean =
-        subscriptionStatus == SubscriptionStatus.TRIALING &&
-        trialEndsAt != null &&
-        trialEndsAt.isAfter(Instant.now())
-
-    fun isSubscriptionActive(): Boolean =
-        subscriptionStatus == SubscriptionStatus.ACTIVE &&
-        subscriptionEndsAt != null &&
-        subscriptionEndsAt.isAfter(Instant.now())
-
-    fun isAccessible(): Boolean = when (subscriptionStatus) {
-        SubscriptionStatus.NO_PLAN   -> false
-        SubscriptionStatus.TRIALING  -> isTrialActive()
-        SubscriptionStatus.ACTIVE    -> isSubscriptionActive()
-        SubscriptionStatus.PAST_DUE  -> true
-        SubscriptionStatus.EXPIRED   -> false
-    }
-
-    fun getDaysRemaining(): Long? {
-        val expiresAt = when (subscriptionStatus) {
-            SubscriptionStatus.TRIALING -> trialEndsAt
-            SubscriptionStatus.ACTIVE   -> subscriptionEndsAt
-            else                        -> null
-        } ?: return null
-
-        val now = Instant.now()
-        return if (expiresAt.isAfter(now)) java.time.Duration.between(now, expiresAt).toDays() else 0L
-    }
+    /**
+     * Stan rozliczeniowy. O dostępie decyduje
+     * [pl.detailing.crm.subscription.lifecycle.SubscriptionAccessPolicy] — dawne
+     * `isAccessible()`/`isSubscriptionActive()` liczyły to tutaj z `Instant.now()`, z inną
+     * granicą czasu niż scheduler i z `PAST_DUE` otwartym bez końca (audyt, S5, S8).
+     */
+    fun billing(): BillingSnapshot = BillingSnapshot(
+        status = subscriptionStatus,
+        trialEndsAt = trialEndsAt,
+        subscriptionEndsAt = subscriptionEndsAt,
+        graceEndsAt = graceEndsAt
+    )
 }
