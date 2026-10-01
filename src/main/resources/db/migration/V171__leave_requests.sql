@@ -14,6 +14,38 @@
 -- nie może wymagać migracji, żeby aplikacja w ogóle wstała.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- Pozostałość starego modułu kadr (commit 09085f35, wycofany w 7936155f): Hibernate
+-- założył wtedy sam, poza Flyway, tabelę leave_requests o innym schemacie (status,
+-- business_days_count, reviewed_by…). Na bazach, które ją mają, „CREATE TABLE IF NOT
+-- EXISTS" niżej po cichu ją pomijał, a migracja padała dopiero na indeksie nowej
+-- kolumny — tak wyłożył się start produkcji 01.10.2026. Starej tabeli nie kasujemy
+-- (to dane, nikt ich świadomie nie porzucił) ani nie przenosimy (wnioski bez podpisów
+-- i dokumentów nie są wnioskami w nowym znaczeniu): odsuwamy ją pod nazwę
+-- leave_requests_legacy razem z kluczem głównym, bo nazwa leave_requests_pkey jest
+-- globalna w schemacie i zderzyłaby się z kluczem nowej tabeli. Rozpoznajemy ją po
+-- braku kolumny, której stary schemat nie miał, więc ponowne uruchomienie na bazie
+-- z nową tabelą niczego nie rusza.
+DO $$
+BEGIN
+    IF to_regclass('leave_requests') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'leave_requests'
+             AND column_name = 'document_sha256'
+       ) THEN
+        ALTER TABLE leave_requests RENAME TO leave_requests_legacy;
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'leave_requests_pkey'
+              AND conrelid = 'leave_requests_legacy'::regclass
+        ) THEN
+            -- Zmiana nazwy ograniczenia zmienia też nazwę indeksu, który je realizuje.
+            ALTER TABLE leave_requests_legacy RENAME CONSTRAINT leave_requests_pkey TO leave_requests_legacy_pkey;
+        END IF;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS leave_requests (
     id                           UUID PRIMARY KEY,
     studio_id                    UUID          NOT NULL,
