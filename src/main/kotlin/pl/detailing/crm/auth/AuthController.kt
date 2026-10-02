@@ -14,6 +14,7 @@ import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.web.bind.annotation.*
 import pl.detailing.crm.auth.login.LoginHandler
 import pl.detailing.crm.auth.login.LoginRequest
+import pl.detailing.crm.user.presence.UserPresenceService
 import pl.detailing.crm.auth.passwordreset.ForgotPasswordRequest
 import pl.detailing.crm.auth.passwordreset.PasswordResetTokenService
 import pl.detailing.crm.auth.passwordreset.RequestPasswordResetHandler
@@ -47,7 +48,8 @@ class AuthController(
     private val studioSettingsRepository: StudioSettingsRepository,
     private val rolePreviewStudios: RolePreviewStudios,
     private val rolePreviewService: RolePreviewService,
-    private val employeeRepository: EmployeeRepository
+    private val employeeRepository: EmployeeRepository,
+    private val userPresenceService: UserPresenceService
 ) {
 
     @PostMapping("/signup")
@@ -94,6 +96,7 @@ class AuthController(
         SecurityContextHolder.setContext(context)
 
         securityContextRepository.saveContext(context, httpRequest, httpResponse)
+        userPresenceService.recordLogin(userPrincipal.userId.value)
 
         ResponseEntity.ok(response)
     }

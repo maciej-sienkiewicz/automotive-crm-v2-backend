@@ -3,10 +3,12 @@ package pl.detailing.crm.config
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import pl.detailing.crm.user.presence.UserPresenceInterceptor
 
 @Configuration
 class WebMvcConfig(
-    private val subscriptionInterceptor: SubscriptionInterceptor
+    private val subscriptionInterceptor: SubscriptionInterceptor,
+    private val userPresenceInterceptor: UserPresenceInterceptor
 ) : WebMvcConfigurer {
 
     /**
@@ -45,5 +47,10 @@ class WebMvcConfig(
                 // Platform operator console — cross-tenant, has no studio to bill-check
                 "/api/internal/**"
             )
+
+        // „Ostatnio w aplikacji" w oknie pracownika. Bez wyłączeń: interceptor nic nie
+        // robi bez sesji użytkownika i nigdy nie zatrzymuje zapytania.
+        registry.addInterceptor(userPresenceInterceptor)
+            .addPathPatterns("/api/**")
     }
 }

@@ -104,4 +104,15 @@ interface UserRepository : JpaRepository<UserEntity, UUID> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE UserEntity u SET u.invitationPending = false WHERE u.id = :userId AND u.invitationPending = true")
     fun markInvitationAccepted(@Param("userId") userId: UUID): Int
+
+    /** Udane logowanie: od tej chwili użytkownik jest też „w aplikacji". */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserEntity u SET u.lastLoginAt = :at, u.lastSeenAt = :at WHERE u.id = :userId")
+    fun markLoggedIn(@Param("userId") userId: UUID, @Param("at") at: Instant): Int
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserEntity u SET u.lastSeenAt = :at WHERE u.id = :userId")
+    fun markSeen(@Param("userId") userId: UUID, @Param("at") at: Instant): Int
 }

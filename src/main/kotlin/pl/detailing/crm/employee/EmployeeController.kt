@@ -43,6 +43,7 @@ class EmployeeController(
     private val deleteEmployeeHandler: DeleteEmployeeHandler,
     private val changeEmployeeAccountPasswordHandler: ChangeEmployeeAccountPasswordHandler,
     private val resendEmployeeInvitationHandler: ResendEmployeeInvitationHandler,
+    private val sendEmployeePasswordResetHandler: SendEmployeePasswordResetHandler,
     private val passwordResetProperties: PasswordResetProperties,
     private val userRepository: UserRepository,
     private val roleRepository: RoleRepository,
@@ -93,9 +94,13 @@ class EmployeeController(
         val pendingUserIds: Set<String> = studioUsers
             .filter { it.invitationPending }
             .mapTo(HashSet()) { it.id.toString() }
+        // Kolumna „Ostatnio w aplikacji" w zakładce „Zespół" - też tylko dla zarządzających.
+        val lastSeenByUser: Map<String, Instant> = studioUsers
+            .mapNotNull { u -> u.lastSeenAt?.let { u.id.toString() to it } }
+            .toMap()
 
         ResponseEntity.ok(EmployeeListResponse(
-            items = paginatedItems.map { it.toListItem(roleByUser, pendingUserIds) },
+            items = paginatedItems.map { it.toListItem(roleByUser, pendingUserIds, lastSeenByUser) },
             pagination = EmployeePaginationInfo(
                 currentPage = safePage,
                 totalPages = Pagination.totalPages(totalItems, safeLimit),
@@ -278,6 +283,21 @@ class EmployeeController(
         ResponseEntity.ok(ResendInvitationResponse(sentAt = result.sentAt, expiresAt = result.expiresAt))
     }
 
+    /** „Resetuj hasło" - pracownik dostaje e-mail z linkiem do ustawienia nowego hasła. */
+    @PostMapping("/{employeeId}/account/password-reset")
+    @RequiresPermission(Permission.EMPLOYEES_MANAGE)
+    fun sendPasswordReset(@PathVariable employeeId: String): ResponseEntity<PasswordResetSentResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+
+        val result = sendEmployeePasswordResetHandler.handle(
+            studioId = principal.studioId,
+            employeeId = EmployeeId.fromString(employeeId),
+            requestedBy = principal.userId,
+            requestedByName = principal.fullName
+        )
+        ResponseEntity.ok(PasswordResetSentResponse(email = result.email, sentAt = result.sentAt, expiresAt = result.expiresAt))
+    }
+
     private fun accountInfoOf(user: UserEntity): EmployeeAccountInfo {
         val sentAt = user.invitationSentAt.takeIf { user.invitationPending }
         return EmployeeAccountInfo(
@@ -288,7 +308,9 @@ class EmployeeController(
             email = user.email,
             invitationPending = user.invitationPending,
             invitationSentAt = sentAt,
-            invitationExpiresAt = sentAt?.plus(Duration.ofHours(passwordResetProperties.invitationTokenTtlHours))
+            invitationExpiresAt = sentAt?.plus(Duration.ofHours(passwordResetProperties.invitationTokenTtlHours)),
+            lastLoginAt = user.lastLoginAt,
+            lastSeenAt = user.lastSeenAt
         )
     }
 }
@@ -323,7 +345,9 @@ data class EmployeeListItem(
      * different states the UI must tell apart, using [hasAccount]: no account at all,
      * an account with no role (no access), or a caller not allowed to see roles.
      */
-    val role: RoleRef? = null
+    val role: RoleRef? = null,
+    /** Ostatnia aktywność w aplikacji (tylko dla zarządzających zespołem, jak [role]). */
+    val lastSeenAt: Instant? = null
 )
 
 data class RoleRef(
@@ -356,7 +380,17 @@ data class EmployeeAccountInfo(
     /** Kiedy doszło ostatnie zaproszenie; null, gdy nie czeka albo wysyłka się nie udała. */
     val invitationSentAt: Instant? = null,
     /** Do kiedy działa link z ostatniego zaproszenia. */
-    val invitationExpiresAt: Instant? = null
+    val invitationExpiresAt: Instant? = null,
+    /** Ostatnie udane logowanie hasłem albo PIN-em; null, gdy nie logował się od V174. */
+    val lastLoginAt: Instant? = null,
+    /** Ostatnia aktywność w aplikacji, z dokładnością do godziny. */
+    val lastSeenAt: Instant? = null
+)
+
+data class PasswordResetSentResponse(
+    val email: String,
+    val sentAt: Instant,
+    val expiresAt: Instant
 )
 
 data class ResendInvitationResponse(
@@ -383,7 +417,8 @@ data class EmployeeDetailResponse(
 
 private fun Employee.toListItem(
     roleByUser: Map<String, RoleRef> = emptyMap(),
-    pendingUserIds: Set<String> = emptySet()
+    pendingUserIds: Set<String> = emptySet(),
+    lastSeenByUser: Map<String, Instant> = emptyMap()
 ) = EmployeeListItem(
     id = id.toString(),
     firstName = firstName,
@@ -393,7 +428,8 @@ private fun Employee.toListItem(
     phone = phone,
     hasAccount = userId != null,
     accountPending = userId?.let { it.toString() in pendingUserIds } ?: false,
-    role = userId?.let { roleByUser[it.toString()] }
+    role = userId?.let { roleByUser[it.toString()] },
+    lastSeenAt = userId?.let { lastSeenByUser[it.toString()] }
 )
 
 private fun Employee.toDetailResponse(accountInfo: EmployeeAccountInfo? = null) = EmployeeDetailResponse(

@@ -84,7 +84,18 @@ class UserEntity(
 
     /** Kiedy ostatnio doszło zaproszenie (utworzenie konta albo „Wyślij maila ponownie"). */
     @Column(name = "invitation_sent_at", nullable = true, columnDefinition = "timestamp with time zone")
-    var invitationSentAt: Instant? = null
+    var invitationSentAt: Instant? = null,
+
+    /** Ostatnie udane logowanie hasłem albo PIN-em (V174). */
+    @Column(name = "last_login_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var lastLoginAt: Instant? = null,
+
+    /**
+     * Ostatnia aktywność w aplikacji, z dokładnością do godziny (V174). Zapisuje ją
+     * [pl.detailing.crm.user.presence.UserPresenceService], nie encja - patrz tam.
+     */
+    @Column(name = "last_seen_at", nullable = true, columnDefinition = "timestamp with time zone")
+    var lastSeenAt: Instant? = null
 ) {
     fun toDomain(): User = User(
         id = UserId(id),

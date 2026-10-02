@@ -84,6 +84,7 @@ class OutboundIntegrationSurfaceTest {
         "RequestPasswordResetHandler" to Self,
         "ProvisionEmployeeAccountHandler" to Self,
         "ResendEmployeeInvitationHandler" to Self,
+        "SendEmployeePasswordResetHandler" to Self,
         "ReportProblemService" to Self,
         "SmsAuthorizationNotifier" to Self,
         "MetaPageChangeRequestMailer" to Self,

@@ -1,5 +1,6 @@
 package pl.detailing.crm.pin
 
+import pl.detailing.crm.user.presence.UserPresenceService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import kotlinx.coroutines.runBlocking
@@ -29,7 +30,8 @@ class PinController(
     private val securityContextRepository: SecurityContextRepository,
     private val mobileTokenService: MobileTokenService,
     private val permissionCheckService: PermissionCheckService,
-    private val redisTemplate: StringRedisTemplate
+    private val redisTemplate: StringRedisTemplate,
+    private val userPresenceService: UserPresenceService
 ) {
 
     /** Current user's PIN status. */
@@ -77,6 +79,8 @@ class PinController(
         context.authentication = newPrincipal
         SecurityContextHolder.setContext(context)
         securityContextRepository.saveContext(context, httpRequest, httpResponse)
+        // Wejście PIN-em na wspólnym komputerze to dla kadr też logowanie tej osoby.
+        userPresenceService.recordLogin(targetUserId)
 
         ResponseEntity.ok(response)
     }

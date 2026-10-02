@@ -1,5 +1,6 @@
 package pl.detailing.crm.pin
 
+import pl.detailing.crm.user.presence.UserPresenceService
 import pl.detailing.crm.rolepreview.RolePreviewStudios
 import io.mockk.mockk
 import io.mockk.every
@@ -122,10 +123,12 @@ class PinBruteForceAndSessionTest {
         val newPrincipal = UserPrincipal(UserId(owner.id), StudioId(studioId), true, owner.email, "Owner One", "")
         coEvery { switchHandler.handle(any(), any(), any()) } returns Pair(UnifiedAuthResponse(success = true), newPrincipal)
 
+        val presence = mockk<UserPresenceService>(relaxed = true)
         val controller = PinController(
             mockk<SetPinHandler>(relaxed = true), switchHandler, userRepository,
             mockk<SubscriptionService>(relaxed = true), mockk<SecurityContextRepository>(relaxed = true),
-            mockk<MobileTokenService>(relaxed = true), mockk<PermissionCheckService>(relaxed = true), redis
+            mockk<MobileTokenService>(relaxed = true), mockk<PermissionCheckService>(relaxed = true), redis,
+            presence
         )
         val mockMvc = MockMvcBuilders.standaloneSetup(controller).build()
 
@@ -141,6 +144,8 @@ class PinBruteForceAndSessionTest {
         ).andExpect(status().isOk).andReturn()
 
         assertNotEquals(idBefore, result.request.session!!.id, "session id must change when the identity changes")
+        // Wejście PIN-em to dla kadr logowanie tej osoby („Ostatnie logowanie" w oknie pracownika).
+        verify(exactly = 1) { presence.recordLogin(owner.id, any()) }
     }
 }
 
