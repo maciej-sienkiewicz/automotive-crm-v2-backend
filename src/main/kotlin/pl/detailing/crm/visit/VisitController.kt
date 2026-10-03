@@ -605,13 +605,14 @@ class VisitController(
      * DELETE /api/visits/{visitId}/cancel
      *
      * Validates visit is in DRAFT status and cancels it.
-     * Appointment remains in CONFIRMED status (ready to be converted again).
+     * A reservation from the calendar stays (ready to be converted again); the shadow
+     * appointment of a walk-in is removed with the visit - `reservationKept` says which.
      */
     @DeleteMapping("/{visitId}/cancel")
     @RequiresPermission(Permission.VISITS_VIEW)
     fun cancelDraftVisit(
         @PathVariable visitId: String
-    ): ResponseEntity<Void> = runBlocking {
+    ): ResponseEntity<CancelDraftVisitResponse> = runBlocking {
         val principal = SecurityContextHelper.getCurrentUser()
 
         val command = CancelDraftVisitCommand(
@@ -621,9 +622,9 @@ class VisitController(
             userName = principal.fullName
         )
 
-        cancelDraftVisitHandler.handle(command)
+        val result = cancelDraftVisitHandler.handle(command)
 
-        ResponseEntity.noContent().build()
+        ResponseEntity.ok(CancelDraftVisitResponse(reservationKept = result.reservationKept))
     }
 
     /**
@@ -1139,3 +1140,6 @@ private fun pl.detailing.crm.visit.drafts.OpenDraftVisitView.toResponse() = Open
     hasPhotos = hasPhotos,
     hasDamageMap = hasDamageMap
 )
+
+/** Odpowiedź anulowania szkicu: czy rezerwacja została w kalendarzu (false przy walk-inie). */
+data class CancelDraftVisitResponse(val reservationKept: Boolean)

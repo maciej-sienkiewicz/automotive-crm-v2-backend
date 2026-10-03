@@ -36,7 +36,8 @@ class CheckinController(
     private val s3StorageService: S3ProtocolStorageService,
     private val uploadContextTokenService: UploadContextTokenService,
     private val checkinDamagePointsService: CheckinDamagePointsService,
-    private val checkinPhotoService: pl.detailing.crm.checkin.qr.CheckinPhotoService
+    private val checkinPhotoService: pl.detailing.crm.checkin.qr.CheckinPhotoService,
+    private val reviseDraftVisitHandler: ReviseDraftVisitHandler
 ) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -163,30 +164,7 @@ class CheckinController(
         )
 
         // Convert protocols to DTOs
-        val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val templateName = if (protocol.templateId != null) {
-                protocolTemplateRepository.findByIdAndStudioId(protocol.templateId.value, principal.studioId.value)
-                    ?.toDomain()?.name ?: "Unknown"
-            } else {
-                protocol.consentDefinitionId?.let { defId ->
-                    consentDefinitionRepository.findByIdAndStudioId(defId.value, principal.studioId.value)?.name
-                } ?: "Consent"
-            }
-
-            val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
-                s3StorageService.generateDownloadUrl(s3Key)
-            }
-
-            VisitProtocolDto(
-                id = protocol.id.toString(),
-                templateId = protocol.templateId?.toString(),
-                templateName = templateName,
-                stage = protocol.stage.name,
-                consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
-                status = protocol.status.name,
-                filledPdfUrl = filledPdfUrl
-            )
-        }
+        val protocolDtos = protocolsResult.protocols.map { toProtocolDto(it, principal.studioId) }
 
         ResponseEntity
             .status(HttpStatus.CREATED)
@@ -316,30 +294,7 @@ class CheckinController(
             )
         )
 
-        val protocolDtos = protocolsResult.protocols.map { protocol ->
-            val templateName = if (protocol.templateId != null) {
-                protocolTemplateRepository.findByIdAndStudioId(protocol.templateId.value, principal.studioId.value)
-                    ?.toDomain()?.name ?: "Unknown"
-            } else {
-                protocol.consentDefinitionId?.let { defId ->
-                    consentDefinitionRepository.findByIdAndStudioId(defId.value, principal.studioId.value)?.name
-                } ?: "Consent"
-            }
-
-            val filledPdfUrl = protocol.filledPdfS3Key?.let { s3Key ->
-                s3StorageService.generateDownloadUrl(s3Key)
-            }
-
-            VisitProtocolDto(
-                id = protocol.id.toString(),
-                templateId = protocol.templateId?.toString(),
-                templateName = templateName,
-                stage = protocol.stage.name,
-                consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
-                status = protocol.status.name,
-                filledPdfUrl = filledPdfUrl
-            )
-        }
+        val protocolDtos = protocolsResult.protocols.map { toProtocolDto(it, principal.studioId) }
 
         ResponseEntity
             .status(HttpStatus.CREATED)
@@ -347,6 +302,50 @@ class CheckinController(
                 visitId = result.visitId.value.toString(),
                 protocols = protocolDtos
             ))
+    }
+
+    /**
+     * „Wróć do formularza" w oknie dokumentów przyjęcia: nowe usługi dla tego samego
+     * szkicu i nowe dokumenty przyjęcia (stare, także podpisane, znikają).
+     * PUT /api/checkin/drafts/{visitId}/services
+     */
+    @PutMapping("/drafts/{visitId}/services")
+    fun reviseDraftServices(
+        @PathVariable visitId: String,
+        @RequestBody request: ReviseDraftServicesRequest
+    ): ResponseEntity<ReservationToVisitResponse> = runBlocking {
+        val principal = SecurityContextHelper.getCurrentUser()
+        val protocols = reviseDraftVisitHandler.handle(ReviseDraftServicesCommand(
+            visitId = VisitId.fromString(visitId),
+            studioId = principal.studioId,
+            userId = principal.userId,
+            userName = principal.fullName,
+            services = request.services
+        ))
+        ResponseEntity.ok(ReservationToVisitResponse(
+            visitId = visitId,
+            protocols = protocols.map { toProtocolDto(it, principal.studioId) }
+        ))
+    }
+
+    private fun toProtocolDto(protocol: pl.detailing.crm.protocol.domain.VisitProtocol, studioId: StudioId): VisitProtocolDto {
+        val templateName = if (protocol.templateId != null) {
+            protocolTemplateRepository.findByIdAndStudioId(protocol.templateId.value, studioId.value)
+                ?.toDomain()?.name ?: "Unknown"
+        } else {
+            protocol.consentDefinitionId?.let { defId ->
+                consentDefinitionRepository.findByIdAndStudioId(defId.value, studioId.value)?.name
+            } ?: "Consent"
+        }
+        return VisitProtocolDto(
+            id = protocol.id.toString(),
+            templateId = protocol.templateId?.toString(),
+            templateName = templateName,
+            stage = protocol.stage.name,
+            consentDefinitionId = protocol.consentDefinitionId?.value?.toString(),
+            status = protocol.status.name,
+            filledPdfUrl = protocol.filledPdfS3Key?.let { s3StorageService.generateDownloadUrl(it) }
+        )
     }
 
     /**
@@ -622,6 +621,10 @@ data class ServiceLineItemRequest(
 data class AdjustmentRequest(
     val type: String,
     val value: Double  // Double to support decimal percentages like -49.19
+)
+
+data class ReviseDraftServicesRequest(
+    val services: List<ServiceLineItemRequest>
 )
 
 data class ReservationToVisitResponse(

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
+import pl.detailing.crm.appointment.infrastructure.AppointmentRepository
 import pl.detailing.crm.audit.domain.*
 import pl.detailing.crm.protocol.infrastructure.S3ProtocolStorageService
 import pl.detailing.crm.protocol.infrastructure.VisitProtocolRepository
@@ -14,6 +15,7 @@ import pl.detailing.crm.visit.infrastructure.S3DamageMapStorageService
 import pl.detailing.crm.visit.infrastructure.VisitDocumentRepository
 import pl.detailing.crm.visit.infrastructure.VisitJournalEntryRepository
 import pl.detailing.crm.visit.infrastructure.VisitRepository
+import java.time.Instant
 
 /**
  * Handler for cancelling a DRAFT visit.
@@ -23,7 +25,9 @@ import pl.detailing.crm.visit.infrastructure.VisitRepository
  * - Deletes all associated protocols, documents and journal entries from database
  * - Deletes the visit from database
  * - Deletes protocol/document/damage-map files from S3 (after the DB commit)
- * - Appointment remains in CONFIRMED status (ready to be converted again)
+ * - Appointment remains in CONFIRMED status (ready to be converted again) - unless it is
+ *   the shadow appointment of a walk-in check-in, which is soft-deleted together with the
+ *   visit: nobody booked it, so leaving it would put a phantom reservation in the calendar
  *
  * All database deletions happen in ONE real transaction (TransactionTemplate — the
  * body of a `@Transactional suspend` function running on Dispatchers.IO escapes the
@@ -46,7 +50,8 @@ class CancelDraftVisitHandler(
     private val s3DamageMapStorageService: S3DamageMapStorageService,
     private val transactionTemplate: TransactionTemplate,
     private val auditService: AuditService,
-    private val signatureRequestLifecycleService: SignatureRequestLifecycleService
+    private val signatureRequestLifecycleService: SignatureRequestLifecycleService,
+    private val appointmentRepository: AppointmentRepository
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -54,7 +59,8 @@ class CancelDraftVisitHandler(
         val visitNumber: String,
         val protocolS3Keys: List<String>,
         val documentS3Keys: List<String>,
-        val damageMapS3Key: String?
+        val damageMapS3Key: String?,
+        val walkInAppointmentRemoved: Boolean
     )
 
     suspend fun handle(command: CancelDraftVisitCommand): CancelDraftVisitResult =
@@ -90,18 +96,30 @@ class CancelDraftVisitHandler(
                 val journalEntries = visitJournalEntryRepository.findByVisitId(command.visitId.value)
                 visitJournalEntryRepository.deleteAll(journalEntries)
 
-                val result = DbCancellationResult(
+                visitRepository.delete(visitEntity)
+
+                // Rezerwacja z kalendarza zostaje bez zmian - auto można przyjąć od nowa.
+                // Rezerwacja-cień walk-inu („Wizyta" w kalendarzu) nie była niczyją
+                // rezerwacją: znika razem ze szkicem, w tej samej transakcji, także gdy
+                // szkic sprząta StaleDraftVisitCleanupJob.
+                val walkInAppointment = appointmentRepository
+                    .findByIdAndStudioId(visitEntity.appointmentId, command.studioId.value)
+                    ?.takeIf { it.walkIn }
+                walkInAppointment?.let {
+                    val now = Instant.now()
+                    it.deletedAt = now
+                    it.updatedAt = now
+                    command.userId?.let { userId -> it.updatedBy = userId.value }
+                    appointmentRepository.save(it)
+                }
+
+                DbCancellationResult(
                     visitNumber = visitEntity.visitNumber,
                     protocolS3Keys = protocolS3Keys,
                     documentS3Keys = documentS3Keys,
-                    damageMapS3Key = visitEntity.damageMapFileId
+                    damageMapS3Key = visitEntity.damageMapFileId,
+                    walkInAppointmentRemoved = walkInAppointment != null
                 )
-
-                visitRepository.delete(visitEntity)
-
-                // Note: Appointment remains in CONFIRMED status and is NOT modified
-                // This allows the appointment to be converted to a new visit later
-                result
             }!!
 
             // Żądania podpisu protokołów tej wizyty schodzą z tabletu. Inaczej klient
@@ -156,7 +174,10 @@ class CancelDraftVisitHandler(
                 metadata = command.reason?.let { mapOf("reason" to it) } ?: emptyMap()
             ))
 
-            CancelDraftVisitResult(visitId = command.visitId)
+            CancelDraftVisitResult(
+                visitId = command.visitId,
+                reservationKept = !db.walkInAppointmentRemoved
+            )
         }
 }
 
@@ -171,5 +192,7 @@ data class CancelDraftVisitCommand(
 )
 
 data class CancelDraftVisitResult(
-    val visitId: VisitId
+    val visitId: VisitId,
+    /** false = szkic był walk-inem i jego rezerwacja-cień zniknęła razem z nim. */
+    val reservationKept: Boolean = true
 )

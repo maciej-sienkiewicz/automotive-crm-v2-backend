@@ -51,7 +51,7 @@ class CancelDraftVisitHandlerSignatureTest {
 
     private val handler = CancelDraftVisitHandler(
         visitRepository, protocols, documents, journal, protocolStorage, damageMapStorage,
-        transactions, audit, signatures,
+        transactions, audit, signatures, mockk(relaxed = true),
     )
 
     init {

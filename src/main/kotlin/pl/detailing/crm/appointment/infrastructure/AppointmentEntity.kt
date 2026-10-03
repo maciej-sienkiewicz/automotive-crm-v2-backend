@@ -106,7 +106,15 @@ class AppointmentEntity(
     var d2dDeliveryStreet: String? = null,
 
     @Column(name = "d2d_notes", columnDefinition = "TEXT")
-    var d2dNotes: String? = null
+    var d2dNotes: String? = null,
+
+    /**
+     * Rezerwacja-cień założona przez przyjęcie walk-in (V175) - anulowanie jego szkicu
+     * usuwa ją razem z wizytą. Zapisywane tylko przy INSERT (`updatable = false`):
+     * zapisy przez `fromDomain(...)` nie znają tego pola i inaczej by je zerowały.
+     */
+    @Column(name = "walk_in", nullable = false, updatable = false, columnDefinition = "boolean not null default false")
+    var walkIn: Boolean = false
 ) {
     fun toDomain(): Appointment = Appointment(
         id = AppointmentId(id),

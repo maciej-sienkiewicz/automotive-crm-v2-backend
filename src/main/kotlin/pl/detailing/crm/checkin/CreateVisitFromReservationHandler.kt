@@ -41,11 +41,13 @@ import pl.detailing.crm.audit.domain.AuditContext
 import pl.detailing.crm.audit.domain.AuditEvent
 import pl.detailing.crm.audit.domain.AuditModule
 import pl.detailing.crm.audit.domain.AuditService
+import pl.detailing.crm.audit.domain.FieldChange
 import pl.detailing.crm.checkin.qr.CheckinPhotoService
 import pl.detailing.crm.checkin.qr.UploadContextTokenService
 import pl.detailing.crm.communication.AppointmentCommunicationLinker
 import pl.detailing.crm.visit.domain.VisitPhoto
 import pl.detailing.crm.visit.infrastructure.VisitEntity
+import pl.detailing.crm.visit.infrastructure.auditDisplayName
 import pl.detailing.crm.visit.infrastructure.VisitRepository
 import pl.detailing.crm.doortodoor.domain.DoorToDoor
 import pl.detailing.crm.doortodoor.domain.DoorToDoorAddress
@@ -929,6 +931,70 @@ class CreateVisitFromReservationHandler(
     }
 
     /** Ceny katalogowe usług z żądania check-inu — źródło dokładnego brutto, gdy klient API go nie przysłał. */
+    /**
+     * „Wróć do formularza" w oknie dokumentów przyjęcia: klient przy podpisie mówi
+     * „dorzućmy jeszcze renowację kierownicy". Szkic zostaje - z numerem, zdjęciami
+     * i mapą uszkodzeń (zdjęcia są przy zakładaniu szkicu przenoszone z sesji, więc
+     * założenie wizyty od nowa by je zgubiło) - a podmieniamy tylko jego usługi.
+     *
+     * Usługi liczy ten sam silnik co przy zakładaniu szkicu, z dokładnym brutto
+     * z żądania, z rezerwacji albo z katalogu (resolveCheckinBaseGross, CLAUDE.md §1).
+     * Dokumenty przyjęcia generuje od nowa [ReviseDraftVisitHandler].
+     */
+    @Transactional
+    suspend fun reviseDraftServices(command: ReviseDraftServicesCommand): Unit =
+        withContext(Dispatchers.IO) {
+            if (command.services.isEmpty()) {
+                throw ValidationException("Wybierz co najmniej jedną usługę")
+            }
+            val visitEntity = visitRepository.findByIdAndStudioId(command.visitId.value, command.studioId.value)
+                ?: throw EntityNotFoundException("Wizyta nie została znaleziona")
+            if (visitEntity.status != VisitStatus.DRAFT) {
+                throw ValidationException("Usługi przyjęcia można zmienić tylko przed zatwierdzeniem wizyty")
+            }
+            visitEntity.serviceItems.size // lazy collection przed toDomain()
+            val visit = visitEntity.toDomain()
+
+            // Dokładne brutto z prawdziwej rezerwacji; rezerwacja-cień walk-inu nie ma
+            // nic, czego nie byłoby w żądaniu.
+            val reservationItems = appointmentRepository
+                .findByIdAndStudioId(visitEntity.appointmentId, command.studioId.value)
+                ?.takeUnless { it.walkIn }
+                ?.toDomain()?.lineItems
+                ?: emptyList()
+            val catalog = loadCatalog(command.services, command.studioId)
+
+            val serviceItems = command.services.map { serviceReq ->
+                val adjustmentType = AdjustmentType.valueOf(serviceReq.adjustment.type)
+                val adjustmentValue = when (adjustmentType) {
+                    AdjustmentType.PERCENT -> AdjustmentType.convertPercentValueToBasisPoints(serviceReq.adjustment.value)
+                    else -> Math.round(serviceReq.adjustment.value)
+                }
+                toConfirmedVisitItem(AppointmentLineItem.create(
+                    serviceId = serviceReq.serviceId?.let { ServiceId.fromString(it) },
+                    serviceName = serviceReq.serviceName,
+                    basePriceNet = Money.fromCents(serviceReq.basePriceNet),
+                    vatRate = VatRate.fromInt(serviceReq.vatRate),
+                    adjustmentType = adjustmentType,
+                    adjustmentValue = adjustmentValue,
+                    customNote = serviceReq.note,
+                    basePriceGross = resolveCheckinBaseGross(serviceReq, reservationItems, catalog)
+                ))
+            }
+
+            visitRepository.save(VisitEntity.fromDomain(visit.copy(serviceItems = serviceItems)))
+
+            auditService.record(AuditEvent(
+                studioId = command.studioId,
+                actor = AuditActor.employee(command.userId, command.userName),
+                module = AuditModule.VISIT,
+                entityId = command.visitId.value.toString(),
+                entityDisplayName = visitEntity.auditDisplayName,
+                action = AuditAction.SERVICES_UPDATED,
+                changes = listOf(FieldChange("checkinServices", visit.serviceItems.size.toString(), serviceItems.size.toString()))
+            ))
+        }
+
     private fun loadCatalog(
         services: List<ServiceLineItemRequest>,
         studioId: StudioId
@@ -1015,7 +1081,7 @@ class CreateVisitFromReservationHandler(
             updatedAt = Instant.now()
         )
 
-        appointmentRepository.save(AppointmentEntity.fromDomain(appointment))
+        appointmentRepository.save(AppointmentEntity.fromDomain(appointment).apply { walkIn = true })
         return appointment
     }
 
@@ -1347,3 +1413,11 @@ internal fun checkinPhoto(id: UUID, fileId: String, fileName: String, userId: Us
         uploadedBy = userId.value,
         uploadedByName = userName
     )
+
+data class ReviseDraftServicesCommand(
+    val visitId: VisitId,
+    val studioId: StudioId,
+    val userId: UserId,
+    val userName: String?,
+    val services: List<ServiceLineItemRequest>
+)
