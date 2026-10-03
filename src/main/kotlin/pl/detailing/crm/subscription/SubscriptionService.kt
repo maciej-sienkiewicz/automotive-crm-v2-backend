@@ -12,7 +12,8 @@ import pl.detailing.crm.studio.domain.Studio
 import pl.detailing.crm.studio.infrastructure.StudioRepository
 import pl.detailing.crm.subscription.entitlement.EntitlementService
 import java.time.Instant
-import java.time.temporal.ChronoUnit
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
  * Subscription lifecycle: studio creation, trial management, status queries
@@ -33,7 +34,13 @@ class SubscriptionService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        private const val TRIAL_DURATION_DAYS = 60L
+        /**
+         * Okres próbny: 3 miesiące kalendarzowe, tyle obiecuje strona sprzedażowa
+         * („Pierwsze 3 miesiące za darmo"). Liczone w czasie polskim, nie w dniach:
+         * trial zaczęty 15 marca kończy się 15 czerwca, a nie dzień czy dwa wcześniej.
+         */
+        private const val TRIAL_DURATION_MONTHS = 3L
+        private val TRIAL_ZONE: ZoneId = ZoneId.of("Europe/Warsaw")
     }
 
     /**
@@ -99,7 +106,7 @@ class SubscriptionService(
         if (entity.subscriptionStatus == SubscriptionStatus.ACTIVE)
             throw ValidationException("Studio ma już aktywną subskrypcję.")
 
-        val trialEndsAt = Instant.now().plus(TRIAL_DURATION_DAYS, ChronoUnit.DAYS)
+        val trialEndsAt = ZonedDateTime.now(TRIAL_ZONE).plusMonths(TRIAL_DURATION_MONTHS).toInstant()
         entity.subscriptionStatus = SubscriptionStatus.TRIALING
         entity.trialEndsAt = trialEndsAt
         entity.trialUsed = true
